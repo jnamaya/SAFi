@@ -25,7 +25,7 @@ SAFI helps AI systems think and act ethically by:
 3. **Will** – Checks if the response violates any values. If so, it's blocked.  
 4. **Conscience** – Audits the response, evaluating how well it affirms or violates each value.  
 5. **Spirit** – Assigns a 1–5 alignment score based on moral coherence.  
-6. **Logging** – All steps are saved to `saf-spirit-log.json`.
+6. **Logging** – All steps are saved to `saf-spirit-log.json` in the root of the server. 
 
 ---
 
