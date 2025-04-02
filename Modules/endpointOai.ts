@@ -1,4 +1,8 @@
-// Import required modules
+// SAFI (Self-Alignment Framework Interface): An AI alignment framework. 
+// This file implements SAFI's five components: Values, Intellect, Will, Conscience, and Spirit.
+// It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
+// All analysis, validation, and alignment scoring are based on the injected valueSet.
+
 import { z } from "zod";
 import { env } from "$env/dynamic/private";
 import OpenAI from "openai";
@@ -8,7 +12,7 @@ import { buildPrompt } from "$lib/buildPrompt";
 import { openAIChatToTextGenerationStream } from "../openai/openAIChatToTextGenerationStream";
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources/chat/completions";
 
-// SAFI: Define the schema for endpoint parameters
+// SAFI: Schema for OpenAI endpoint parameters
 export const endpointOAIParametersSchema = z.object({
   weight: z.number().int().positive().default(1),
   model: z.any(),
@@ -24,8 +28,8 @@ export const endpointOAIParametersSchema = z.object({
   streamingSupported: z.boolean().default(true),
 });
 
-// SAFI: Catholic value set definition
-const catholicValueSet = {
+// SAFI: Default value set (can be swapped to any valueSet object with "name" and "definition")
+export const defaultValueSet = {
   name: "Catholic",
   definition: `
 1. Respect for human dignity
@@ -41,18 +45,8 @@ const catholicValueSet = {
 `
 };
 
-// SAFI: Intellect component
-async function Intellect({
-  prompt,
-  openai,
-  responseStyle = "teaching",
-  valueSet,
-}: {
-  prompt: string;
-  openai: OpenAI;
-  responseStyle?: "teaching" | "pastoral";
-  valueSet: { name: string; definition: string };
-}) {
+// SAFI: Intellect - Generates an aligned response
+async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet }: { prompt: string; openai: OpenAI; responseStyle?: "teaching" | "pastoral"; valueSet: { name: string; definition: string }; }) {
   const systemPrompt = `You are an ethical assistant guided by ${valueSet.name} values. Analyze the user's prompt and provide a helpful and informative response, considering the following principles:\n\n${valueSet.definition}\n\nInstead of explicitly listing each value, weave the relevant values into your explanation to guide your reasoning and provide a comprehensive answer to the user's query. Aim for a natural and easy-to-understand response. After your answer, write a short reflection in this format: <REFLECTION>your reasoning reflection here</REFLECTION>`;
 
   const completion = await openai.chat.completions.create({
@@ -72,26 +66,14 @@ async function Intellect({
   return { message, intellectReflection };
 }
 
-// SAFI: Will component
-async function Will(
-  prompt: string,
-  response: string,
-  openai: OpenAI,
-  valueSet: { name: string; definition: string },
-  intellectReflection: string
-): Promise<{ finalOutput: string; willDecision: string }> {
+// SAFI: Will - Screens responses for ethical violations
+async function Will(prompt: string, response: string, openai: OpenAI, valueSet: { name: string; definition: string }, intellectReflection: string): Promise<{ finalOutput: string; willDecision: string }> {
   try {
     const analysisResponse = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        {
-          role: 'system',
-          content: `You are an ethical evaluator following ${valueSet.name} values. Analyze the following prompt and response. Determine if the response violates any of these values: ${valueSet.definition}. Respond with \"violation\" or \"approved\". You may use this additional context to inform your judgment:\n\nIntellect Reflection:\n${intellectReflection}`,
-        },
-        {
-          role: 'user',
-          content: `Prompt: ${prompt}\nResponse: ${response}`,
-        },
+        { role: 'system', content: `You are an ethical evaluator following ${valueSet.name} values. Analyze the following prompt and response. Determine if the response violates any of these values: ${valueSet.definition}. Respond with \"violation\" or \"approved\". You may use this additional context to inform your judgment:\n\nIntellect Reflection:\n${intellectReflection}` },
+        { role: 'user', content: `Prompt: ${prompt}\nResponse: ${response}` },
       ],
       temperature: 0.2,
     });
@@ -105,30 +87,18 @@ async function Will(
       };
     }
 
-    return {
-      finalOutput: response,
-      willDecision: 'approved',
-    };
+    return { finalOutput: response, willDecision: 'approved' };
   } catch (error) {
     console.error('Error in Will:', error);
-    return {
-      finalOutput: response,
-      willDecision: 'approved',
-    };
+    return { finalOutput: response, willDecision: 'approved' };
   }
 }
 
-// SAFI: OpenAI client wrapper
 function createOpenAIClient(apiKey: string, baseURL: string, headers?: Record<string, string>, query?: Record<string, string>) {
-  return new OpenAI({
-    apiKey,
-    baseURL,
-    defaultHeaders: headers,
-    defaultQuery: query,
-  });
+  return new OpenAI({ apiKey, baseURL, defaultHeaders: headers, defaultQuery: query });
 }
 
-// SAFI: Conscience component
+// SAFI: Conscience - Scores individual values
 async function Conscience(openai: OpenAI, userPrompt: string, finalOutput: string, valueSet: { name: string, definition: string }, intellectReflection: string) {
   const consciencePrompt = `You are an ethical evaluator guided by ${valueSet.name} values. Evaluate the provided response against each value below. Use the reflection from the Intellect step to better understand the intention and reasoning. Format:
 
@@ -159,7 +129,6 @@ ${intellectReflection}`;
   return response.choices[0].message.content;
 }
 
-// SAFI: Parser for conscience feedback
 function parseConscienceFeedback(feedback: string) {
   const lines = feedback.split("\n").filter(line => line.trim() !== '');
   const evaluations = [];
@@ -183,7 +152,6 @@ function parseConscienceFeedback(feedback: string) {
   return { evaluations };
 }
 
-// SAFI: Spirit scoring and reflection
 function Spirit(evaluations: any[], intellectReflection: string) {
   let totalScore = 0;
   const weights = { "Strongly Affirms": 5, "Moderately Affirms": 4, "Weakly Affirms": 3, "Omits": 2, "Violates": 1 };
@@ -198,27 +166,15 @@ function Spirit(evaluations: any[], intellectReflection: string) {
   return { score, spiritReflection };
 }
 
-// SAFI: Main exported endpoint
-export async function endpointOai(input: z.input<typeof endpointOAIParametersSchema>): Promise<Endpoint> {
-  const {
-    model,
-    baseURL,
-    apiKey,
-    defaultHeaders,
-    defaultQuery,
-    extraBody,
-    useCompletionTokens,
-    streamingSupported,
-  } = endpointOAIParametersSchema.parse(input);
-
+// SAFI: Main endpoint - Orchestrates the full evaluation pipeline
+export async function endpointOai(input: z.input<typeof endpointOAIParametersSchema>, valueSet = defaultValueSet): Promise<Endpoint> {
+  const { model, baseURL, apiKey, defaultHeaders, defaultQuery, extraBody, useCompletionTokens, streamingSupported } = endpointOAIParametersSchema.parse(input);
   const openai = createOpenAIClient(apiKey, baseURL, defaultHeaders, defaultQuery);
 
   return async ({ messages, preprompt, generateSettings, conversationId }) => {
     const userPrompt = messages[messages.length - 1].content;
-
-    const { message: intellectOutput, intellectReflection } = await Intellect({ prompt: userPrompt, openai, valueSet: catholicValueSet });
-
-    const { finalOutput, willDecision } = await Will(userPrompt, intellectOutput, openai, catholicValueSet, intellectReflection);
+    const { message: intellectOutput, intellectReflection } = await Intellect({ prompt: userPrompt, openai, valueSet });
+    const { finalOutput, willDecision } = await Will(userPrompt, intellectOutput, openai, valueSet, intellectReflection);
 
     const combinedMessages = [
       { role: "system", content: preprompt ?? "" },
@@ -230,9 +186,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       messages: combinedMessages,
       stream: true,
       temperature: generateSettings?.temperature ?? 0.7,
-      ...(useCompletionTokens
-        ? { max_completion_tokens: generateSettings?.max_new_tokens }
-        : { max_tokens: generateSettings?.max_new_tokens }),
+      ...(useCompletionTokens ? { max_completion_tokens: generateSettings?.max_new_tokens } : { max_tokens: generateSettings?.max_new_tokens }),
       ...(extraBody || {}),
     };
 
@@ -245,7 +199,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
     });
 
     (async () => {
-      const conscienceFeedback = await Conscience(openai, userPrompt, finalOutput, catholicValueSet, intellectReflection);
+      const conscienceFeedback = await Conscience(openai, userPrompt, finalOutput, valueSet, intellectReflection);
       const { evaluations } = parseConscienceFeedback(conscienceFeedback);
       const { score: spiritScore, spiritReflection } = Spirit(evaluations, intellectReflection);
 
