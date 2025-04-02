@@ -1,5 +1,3 @@
-#  SAFi
-
 # SAFi
 
 **SAFi** (Self-Alignment Framework Interface) is a modular, open-source **AI reasoning framework** designed to ensure ethical integrity through structured, self-correcting decision-making. It enables AI systems—especially large language models—to evaluate, refine, and align their outputs with a consistent ethical framework.
