@@ -40,7 +40,7 @@ SAFI helps AI systems think and act ethically by:
 
 The frontend of SAFI uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui), which is simple to install once your server is ready.
 
-### Steps (using bash) :
+###  Installing chat-ui (using bash) :
 
 git clone https://github.com/huggingface/chat-ui <br>
 cd chat-ui <br>
@@ -48,15 +48,9 @@ npm install
 
 ---
 
-## 🔄 Swapping the Value Set
+## 🔄 Setting up huggingface chat-ui
 
-The system uses a modular value set (found in `/valuesets`). To change:
-
-- Replace the default values with your own ethical system.
-- Keep the format consistent: a name + 10 principle definitions.
-- Future versions will support dynamic loading.
-
----
+Once you have the huggingface chat-ui installed, download the 
 
 ## 🤝 Contributing
 
