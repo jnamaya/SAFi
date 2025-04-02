@@ -29,28 +29,85 @@ SAFI helps AI systems think and act ethically by:
 
 ---
 
-## 🧪 Installing SAFI on Your Own Server
+## 🧪 Installing SAFI on Your Own Server 
 
 ### Requirements:
 1. A Linux-based dedicated server (e.g., Ubuntu)
 2. An OpenAI API key
 3. A domain name *(optional, for custom deployment)*
 
-### Setup Instructions:
+The frontend of the system uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui). It’s simple to install after your server is ready. Run:
 
-The frontend of SAFI uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui), which is simple to install once your server is ready.
-
-###  Installing chat-ui (using bash) :
-
-git clone https://github.com/huggingface/chat-ui <br>
-cd chat-ui <br>
+```bash
+git clone https://github.com/huggingface/chat-ui
+cd chat-ui
 npm install
+```
 
 ---
 
-## 🔄 Setting up huggingface chat-ui
+## 🔄 Setting Up Hugging Face Chat UI
 
-Once you have the huggingface chat-ui installed, download the 
+Once you have Hugging Face's Chat UI installed, follow these steps to add SAFI functionality:
+
+1. **Replace the endpoint file**  
+   Download the `endpointOai.ts` file from the `Modules` folder in this repo and replace the one located in:
+
+```
+/chat-ui/src/lib/server/endpoints/openai/endpointOai.ts
+```
+
+This injects SAFI logic into the OpenAI endpoint.
+
+2. **Create your environment file**  
+In the root of the `chat-ui` folder, create a new file called `.env.local` and paste the following code:
+
+<details>
+<summary>📋 Click to view .env.local example</summary>
+
+```env
+OPENAI_API_KEY=
+
+ANTHROPIC_API_KEY=
+
+MODELS=`[
+  { "name": "gpt-4o", "displayName": "GPT 4o", "endpoints": [{ "type": "openai" }] },
+  { "name": "claude-3-5-sonnet-20241022", "displayName": "Claude 3.5 Sonnet", "endpoints": [{ "type": "anthropic" }] }
+]`
+
+OPENID_CONFIG=`{
+  "PROVIDER_URL": "https://accounts.google.com",
+  "CLIENT_ID": "",
+  "CLIENT_SECRET": "",
+  "SCOPES": "openid profile email"
+}`
+
+PUBLIC_APP_NAME=SAFI
+PUBLIC_APP_VERSION=0.1
+PUBLIC_APP_ASSETS=safi
+PUBLIC_APP_COLOR=blue
+PUBLIC_APP_DESCRIPTION=SAFI uses the Self-Alignment Framework to think, filter, reflect, and log its decisions ethically.
+PUBLIC_APP_DATA_SHARING="Your conversations are private and never used for training. Spirit-level summaries may be logged locally for ethical alignment."
+PUBLIC_APP_DISCLAIMER="SAFI is a prototype. Responses are AI-generated and should be used with discernment and personal judgment."
+```
+
+</details>
+
+👉 **Add your OpenAI API key** where indicated. Anthropic support is currently being tested — SAFI may still route all calls through OpenAI depending on your endpoint configuration.
+
+> 💬 *Note:* I'm still working on making Chat UI support multiple models from the same endpoint cleanly. This setup is a workaround. If you're more experienced with routing logic or model registration, feel free to suggest improvements or contribute via pull request!
+
+---
+
+## 🔄 Swapping the Value Set
+
+The system uses a modular value set (found in `/valuesets`). To change:
+
+- Replace the default values with your own ethical system.
+- Keep the format consistent: a name + 10 principle definitions.
+- Future versions will support dynamic loading.
+
+---
 
 ## 🤝 Contributing
 
@@ -80,6 +137,7 @@ SAFI was created by Nelson as a prototype for ethically grounded AI systems. Thi
 ---
 
 ## ✝️ Pilot Value Set (Catholic – for testing)
+
 ```
 1. Respect for human dignity
 2. Commitment to truth
@@ -98,6 +156,4 @@ Use this as a model — or swap it for your own system.
 ---
 
 For questions or collaborations, feel free to open an issue or reach out.
-
-
 
