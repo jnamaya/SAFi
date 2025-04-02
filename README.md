@@ -1,14 +1,14 @@
-# SAFi
+#  SAFi
 
-**SAFI** (Self-Alignment Framework Interface) is a modular, open-source AI reasoning framework designed to ensure ethical integrity through structured, self-correcting decision-making. SAFI is based on the [Self-Alignment Framework ](https://selfalignmentframework.com/) a closed-loop ethical architecture composed of five components: **Values → Intellect → Will → Conscience → Spirit**.
+** SAFi** (Self-Alignment Framework Interface) is a modular, open-source AI reasoning framework designed to ensure ethical integrity through structured, self-correcting decision-making.  SAFi is based on the [Self-Alignment Framework ](https://selfalignmentframework.com/) a closed-loop ethical architecture composed of five components: **Values → Intellect → Will → Conscience → Spirit**.
 
-This pilot implementation uses a Catholic value set for demonstration purposes. SAFI is value-agnostic and designed to support any well-defined ethical system.
+This pilot implementation uses a Catholic value set for demonstration purposes.  SAFi is value-agnostic and designed to support any well-defined ethical system.
 
 ---
 
-## 🚀 What SAFI Does
+## 🚀 What  SAFi Does
 
-SAFI helps AI systems think and act ethically by:
+ SAFi helps AI systems think and act ethically by:
 
 1. **Reflecting** on prompts using a selected value set  
 2. **Blocking** ethically misaligned outputs  
@@ -18,7 +18,7 @@ SAFI helps AI systems think and act ethically by:
 
 ---
 
-## 🔁 SAFI Reasoning Loop
+## 🔁  SAFi Reasoning Loop
 
 1. **User Input** – You ask a question or give a prompt.  
 2. **Intellect** – The system reasons through the value set and generates a response + reflection.  
@@ -29,7 +29,7 @@ SAFI helps AI systems think and act ethically by:
 
 ---
 
-## 🧪 Installing SAFI on Your Own Server 
+## 🧪 Installing  SAFi on Your Own Server 
 
 ### Requirements:
 1. A Linux-based dedicated server (e.g., Ubuntu)
@@ -48,7 +48,7 @@ npm install
 
 ## 🔄 Setting Up Hugging Face Chat UI
 
-Once you have Hugging Face's Chat UI installed, follow these steps to add SAFI functionality:
+Once you have Hugging Face's Chat UI installed, follow these steps to add  SAFi functionality:
 
 1. **Replace the endpoint file**  
    Download the `endpointOai.ts` file from the `Modules` folder in this repo and replace the one located in:
@@ -57,7 +57,7 @@ Once you have Hugging Face's Chat UI installed, follow these steps to add SAFI f
 /chat-ui/src/lib/server/endpoints/openai/endpointOai.ts
 ```
 
-This injects SAFI logic into the OpenAI endpoint.
+This injects  SAFi logic into the OpenAI endpoint.
 
 2. **Create your environment file**  
 In the root of the `chat-ui` folder, create a new file called `.env.local` and paste the following code:
@@ -82,18 +82,18 @@ OPENID_CONFIG=`{
   "SCOPES": "openid profile email"
 }`
 
-PUBLIC_APP_NAME=SAFI
+PUBLIC_APP_NAME= SAFi
 PUBLIC_APP_VERSION=0.1
-PUBLIC_APP_ASSETS=safi
+PUBLIC_APP_ASSETS= SAFi
 PUBLIC_APP_COLOR=blue
-PUBLIC_APP_DESCRIPTION=SAFI uses the Self-Alignment Framework to think, filter, reflect, and log its decisions ethically.
+PUBLIC_APP_DESCRIPTION= SAFi uses the Self-Alignment Framework to think, filter, reflect, and log its decisions ethically.
 PUBLIC_APP_DATA_SHARING="Your conversations are private and never used for training. Spirit-level summaries may be logged locally for ethical alignment."
-PUBLIC_APP_DISCLAIMER="SAFI is a prototype. Responses are AI-generated and should be used with discernment and personal judgment."
+PUBLIC_APP_DISCLAIMER=" SAFi is a prototype. Responses are AI-generated and should be used with discernment and personal judgment."
 ```
 
 </details>
 
-👉 **Add your OpenAI API key** where indicated. Anthropic support is currently being tested — SAFI may still route all calls through OpenAI depending on your endpoint configuration.
+👉 **Add your OpenAI API key** where indicated. Anthropic support is currently being tested —  SAFi may still route all calls through OpenAI depending on your endpoint configuration.
 
 > 💬 *Note:* I'm still working on making Chat UI support multiple models from the same endpoint cleanly. This setup is a workaround. If you're more experienced with routing logic or model registration, feel free to suggest improvements or contribute via pull request!
 
@@ -132,7 +132,7 @@ This project is open-sourced under the MIT License. See `LICENSE` for details.
 
 ## 🌐 Credits
 
-SAFI was created by Nelson as a prototype for ethically grounded AI systems. This implementation uses Catholic values for testing, but the framework is designed to be value-neutral, modular, and universally applicable.
+ SAFi was created by Nelson as a prototype for ethically grounded AI systems. This implementation uses Catholic values for testing, but the framework is designed to be value-neutral, modular, and universally applicable.
 
 ---
 
