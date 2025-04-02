@@ -29,44 +29,22 @@ SAFI helps AI systems think and act ethically by:
 
 ---
 
-## 🧱 Folder Structure
+## 🧪 Installing SAFI on Your Own Server
 
-```bash
-safi/
-├── src/                      # Core logic (Intellect, Will, Conscience, Spirit)
-├── valuesets/               # Plug-in value sets (Catholic used in pilot)
-├── examples/                # Example prompts + logs
-├── saf-spirit-log.json      # Logged outputs
-├── README.md                # You're here
-├── LICENSE                  # MIT License
-```
+### Requirements:
+1. A Linux-based dedicated server (e.g., Ubuntu)
+2. An OpenAI API key
+3. A domain name *(optional, for custom deployment)*
 
----
+### Setup Instructions:
 
-## 🧪 Try SAFI Locally
+The frontend of SAFI uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui), which is simple to install once your server is ready.
 
-1. **Clone the repo**
-```bash
-git clone https://github.com/your-username/safi.git
-cd safi
-```
+### Steps (using bash) :
 
-2. **Install dependencies**
-```bash
+git clone https://github.com/huggingface/chat-ui <br>
+cd chat-ui <br>
 npm install
-```
-
-3. **Set your OpenAI key** in a `.env` file:
-```env
-OPENAI_API_KEY=your-api-key-here
-```
-
-4. **Run the system**
-```bash
-npm run dev
-```
-
-5. **Send a test prompt** through your interface or add one manually in code.
 
 ---
 
