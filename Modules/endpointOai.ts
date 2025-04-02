@@ -1,4 +1,4 @@
-// SAFI (Self-Alignment Framework Interface): An AI alignment framework. 
+// SAFi (Self-Alignment Framework Interface): An AI alignment framework. 
 // This file implements SAFI's five components: Values, Intellect, Will, Conscience, and Spirit.
 // It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
 // All analysis, validation, and alignment scoring are based on the injected valueSet.
