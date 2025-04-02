@@ -1,8 +1,13 @@
 #  SAFi
 
-**SAFi** (Self-Alignment Framework Interface) is a modular, open-source AI reasoning framework designed to ensure ethical integrity through structured, self-correcting decision-making.  SAFi is based on the [Self-Alignment Framework ](https://selfalignmentframework.com/) a closed-loop ethical architecture composed of five components: **Values → Intellect → Will → Conscience → Spirit**.
+# SAFi
 
-This pilot implementation uses a Catholic value set for demonstration purposes.  SAFi is value-agnostic and designed to support any well-defined ethical system.
+**SAFi** (Self-Alignment Framework Interface) is a modular, open-source **AI reasoning framework** designed to ensure ethical integrity through structured, self-correcting decision-making. It enables AI systems—especially large language models—to evaluate, refine, and align their outputs with a consistent ethical framework.
+
+SAFi is based on the [Self-Alignment Framework](https://selfalignmentframework.com/), a closed-loop ethical architecture composed of five interdependent components: **Values → Intellect → Will → Conscience → Spirit**. Each component contributes to morally coherent responses by simulating an internal ethical dialogue within the AI.
+
+This pilot implementation uses a Catholic value set for demonstration purposes. However, **SAFi is value-agnostic** and can be configured to support **any clearly defined ethical system**, making it ideal for responsible AI development across diverse philosophical, cultural, or institutional contexts.
+
 
 ---
 
