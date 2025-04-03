@@ -4,7 +4,7 @@
 
 SAFi directly addresses three of the most pressing challenges in AI today—**bias**, **value drift**, and **hallucination**—by embedding ethical reflection, enforcement, and long-term coherence directly into the system’s reasoning loop. It is **value-agnostic**, fully **auditable**, and designed to support **compliance**, **moral accountability**, and **alignment transparency** across a wide range of use cases.
 
-This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the framework, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
+This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the system, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
 ## 🚀 What SAFi Does
 
