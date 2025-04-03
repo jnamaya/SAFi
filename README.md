@@ -6,7 +6,6 @@ SAFi directly addresses three of the most pressing challenges in AI today—**bi
 
 This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the framework, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
-
 ## 🚀 What SAFi Does
 
 SAFi helps AI systems think and act ethically by:
@@ -127,22 +126,21 @@ export const defaultValueSet = {
 
 From here, you can give your value set a name and define each value specifically. SAFi will automatically adjust to this new value set. There’s no required number of values, but for effective testing and evaluation, we recommend including at least **three well-defined values**.
 
----
+## ✅ SAFi Pilot Status
 
-## 🤝 Contributing
+| Component        | Status       | Notes                                                                 |
+|------------------|--------------|------------------------------------------------------------------------|
+| **Framework**     | ✔️ Complete   | SAF theoretical structure fully implemented in code                   |
+| **Closed-Loop Logic** | ✔️ Operational | Full Values → Intellect → Will → Conscience → Spirit cycle executed |
+| **Will Filtering**   | ⚠️ Working (Lenient) | Will approves borderline prompts; stricter tuning possible            |
+| **Conscience Scoring** | ✔️ Accurate   | Value-by-value scoring confirmed, with transparent justification     |
+| **Spirit Calculation** | ✔️ Aligned    | Spirit scores show nuanced ethical coherence                         |
+| **Logging**           | ✔️ Enabled    | `saf-spirit-log.json` captures full trace for audits & debugging     |
+| **Test Suite**        | ✔️ Running    | Golden prompts pass/fail against expectations                        |
+| **Value Set Modularity** | ✔️ Confirmed | Value sets can be swapped with ease                                  |
 
-We welcome contributions in:
-- Prompt testing
-- Value set design
-- Component optimization
-- Internationalization of ethical systems
-
-To contribute:
-- Fork the repo
-- Create a new branch
-- Submit a pull request
-
----
+> 🚀 **SAFi v0.1 – Pilot Complete**  
+> The system is stable, ethical reasoning is functioning, and logs demonstrate real-world ethical alignment.
 
 ## 📜 License
 
@@ -154,26 +152,7 @@ This project is open-sourced under the MIT License. See `LICENSE` for details.
 
  SAFi was created by Nelson as a prototype for ethically grounded AI systems. This implementation uses Catholic values for testing, but the framework is designed to be value-neutral, modular, and universally applicable.
 
----
 
-## ✝️ Pilot Value Set (Catholic – for testing)
-
-```
-1. Respect for human dignity
-2. Commitment to truth
-3. Justice and fairness
-4. Charity and compassion
-5. Prudence in judgment
-6. Temperance in action
-7. Fortitude in moral courage
-8. Obedience to God and Church
-9. Subsidiarity and personal responsibility
-10. Pursuit of the common good
-```
-
-Use this as a model — or swap it for your own system.
-
----
 
 For questions or collaborations, feel free to open an issue or reach out.
 
