@@ -37,7 +37,7 @@ SAFi processes every prompt through a six-step ethical reasoning loop:
 2. An OpenAI API key
 3. A domain name *(optional, for custom deployment)*
 
-The frontend of the system uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui). It’s simple to install after your server is ready. Run:
+The frontend of the system uses the [Hugging Face Chat UI](https://github.com/huggingface/chat-ui). It’s simple to install after your server is ready, from the command line run:
 
 ```bash
 git clone https://github.com/huggingface/chat-ui
@@ -51,8 +51,7 @@ npm install
 
 Once you have Hugging Face's Chat UI installed, follow these steps to add  SAFi functionality:
 
-1. **Replace the endpoint file**  
-   Download the `endpointOai.ts` file from the `Modules` folder in this repo and replace the one located in:
+1. Download the `endpointOai.ts` file from the `Modules` folder in this repo and replace the one located in:
 
 ```
 /chat-ui/src/lib/server/endpoints/openai/endpointOai.ts
@@ -102,11 +101,34 @@ PUBLIC_APP_DISCLAIMER=" SAFi is a prototype. Responses are AI-generated and shou
 
 ## 🔄 Swapping the Value Set
 
-The system uses a modular value set (found in `/valuesets`). To change:
+One of the first things you might want to do is customize the **value set** for your version of SAFi. SAFi is designed to be value-agnostic, so you can align it with any ethical framework—religious, philosophical, institutional, or personal.
 
-- Replace the default values with your own ethical system.
-- Keep the format consistent: a name + 10 principle definitions.
-- Future versions will support dynamic loading.
+### 🛠 How to Change the Value Set
+
+1. Open the `endpointOai.ts` file in your SAFi backend code.
+2. Locate and modify the following section:
+
+```ts
+// SAFi: Default value set (can be swapped to any valueSet object with "name" and "definition")
+export const defaultValueSet = {
+  name: "Catholic",
+  definition: `
+1. Respect for human dignity
+2. Commitment to truth
+3. Justice and fairness
+4. Charity and compassion
+5. Prudence in judgment
+6. Temperance in action
+7. Fortitude in moral courage
+8. Obedience to God and Church
+9. Subsidiarity and personal responsibility
+10. Pursuit of the common good
+`
+};
+
+`````
+
+From here, you can give your value set a name and define each value specifically. SAFi will automatically adjust to this new value set. There’s no required number of values, but for effective testing and evaluation, we recommend including at least **three well-defined values**.
 
 ---
 
