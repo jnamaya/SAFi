@@ -10,15 +10,15 @@ This repository contains the full SAFi codebase along with setup instructions fo
 
 ---
 
-## 🚀 What  SAFi Does
+## 🚀 What SAFi Does
 
- SAFi helps AI systems think and act ethically by:
+SAFi helps AI systems think and act ethically by:
+- 🔍 Reflecting on prompts using a selected **value set**
+- 🛑 Blocking outputs that violate declared **ethical principles**
+- 📊 Evaluating responses against each individual **value**
+- 💡 Scoring the overall **moral coherence** of each interaction
+- 🧾 Logging the full reasoning process for **transparency and auditing**
 
-1. **Reflecting** on prompts using a selected value set  
-2. **Blocking** ethically misaligned outputs  
-3. **Evaluating** decisions against each value  
-4. **Scoring** overall moral coherence  
-5. **Logging** the full process for transparency
 
 ---
 
