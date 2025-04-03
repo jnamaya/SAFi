@@ -150,7 +150,7 @@ This project is open-sourced under the MIT License. See `LICENSE` for details.
 
 ## 🌐 Credits
 
- SAFi was created by Nelson as a prototype for ethically grounded AI systems. This implementation uses Catholic values for testing, but the framework is designed to be value-neutral, modular, and universally applicable.
+ SAFi was created by Nelson Amaya as a prototype for ethically grounded AI systems. This implementation uses Catholic values for testing, but the framework is designed to be value-neutral, modular, and universally applicable.
 
 
 
