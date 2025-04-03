@@ -126,27 +126,74 @@ export const defaultValueSet = {
 
 From here, you can give your value set a name and define each value specifically. SAFi will automatically adjust to this new value set. There’s no required number of values, but for effective testing and evaluation, we recommend including at least **three well-defined values**.
 
-## ✅ SAFi Pilot Status
+---
+# 🔭 SAFi Feature Roadmap
 
-| Component        | Status       | Notes                                                                 |
-|------------------|--------------|------------------------------------------------------------------------|
-| **Framework**     | ✔️ Complete   | SAF theoretical structure fully implemented in code                   |
-| **Closed-Loop Logic** | ✔️ Operational | Full Values → Intellect → Will → Conscience → Spirit cycle executed |
-| **Will Filtering**   | ⚠️ Working (Lenient) | Will approves borderline prompts; stricter tuning possible            |
-| **Conscience Scoring** | ✔️ Accurate   | Value-by-value scoring confirmed, with transparent justification     |
-| **Spirit Calculation** | ✔️ Aligned    | Spirit scores show nuanced ethical coherence                         |
-| **Logging**           | ✔️ Enabled    | `saf-spirit-log.json` captures full trace for audits & debugging     |
-| **Test Suite**        | ✔️ Running    | Golden prompts pass/fail against expectations                        |
-| **Value Set Modularity** | ✔️ Confirmed | Value sets can be swapped with ease                                  |
+## 🚀 Pilot Status
 
-> 🚀 **SAFi v0.1 – Pilot Complete**  
-> The system is stable, ethical reasoning is functioning, and logs demonstrate real-world ethical alignment.
+SAFi is currently operating as a faithful implementation of the [Self-Alignment Framework (SAF)](https://your-site-link.com), executing the full closed-loop sequence:
+
+**Values → Intellect → Will → Conscience → Spirit**
+
+This ethical loop is functioning effectively in the pilot system. Early testing confirms that SAFi can evaluate prompts, enforce value alignment, and log moral coherence in real time.
+
+## 🛠️ Planned Features for Next Iteration
+
+### 1. ⚖️ Enhanced Will – Contextual Prioritization & Feedback Loop
+Currently, the Will component performs a binary decision: `approve` or `block`. The next version will:
+- Allow Will to prioritize specific values based on context.
+- Enable Will to send targeted feedback to Intellect to re-run the prompt with different value weighting.
+- Support ethical prioritization in morally complex scenarios.
+
+### 2. 🧠 Session Memory – Toward Ethical Continuity
+SAFi is stateless at present. This feature introduces:
+- Per-user session memory managed by Spirit.
+- Ethical summaries and past interactions accessible to Intellect.
+- Conversation-level alignment that builds over time, helping SAFi evolve into a self-regulating system.
+
+### 3. 🗃️ Database-Backed Logging for Spirit
+The current implementation writes logs to a flat JSON file. Next steps:
+- Migrate Spirit logs to a database engine (e.g., MongoDB or Postgres).
+- Enable structured queries, user-level histories, and multi-session evaluations.
+- Improve compliance support and enable external audits.
+
+## 🔮 Additional Roadmap Ideas
+
+### 4. 🧩 Modular ValueSet Control Panel (Planned for Admin Interface)
+- A frontend interface to define, lock, or propose changes to value sets.
+- Support value governance models with permission levels.
+- Ensure institutional compliance by preventing unauthorized edits.
+
+### 5. 🧪 Prompt Validation Sandbox
+- Let admins test prompts in a side-by-side view: raw LLM vs SAFi output.
+- Visualize alignment scores, Will decisions, and value coverage.
+- Useful for training, education, and onboarding users to SAFi’s behavior.
+
+### 6. 📊 Admin Dashboard for Compliance & Insights
+- Track most common prompts, average Spirit scores, Will decisions over time.
+- Identify ethical drift or misuse patterns.
+- Export reports for governance, policy reviews, or external auditing.
+
+### 7. 👥 Multi-Agent Reasoning with Redundant LLMs
+- Configure Intellect, Will, or Conscience to run on different LLMs (e.g., GPT-4 for Intellect, Claude for Will).
+- Compare outputs for redundancy, conflict detection, or LLM bias mitigation.
+
+### 8. 🛡️ Locked Compliance Mode
+- Allow institutions to "freeze" their value set and SAFi behavior.
+- Any changes must go through an approval workflow.
+- Log compliance state and generate attestations for certifications or audits.
+
+
+## 🧱 Long-Term Vision
+
+SAFi is more than a chatbot. It’s a modular, ethically grounded **reasoning agent** that can adapt to the ethical frameworks of any institution. As it matures, SAFi will become a trusted interface for AI alignment, compliance, education, and governance across sectors.
+
+
 
 ## 📜 License
 
 This project is open-sourced under the MIT License. See `LICENSE` for details.
 
----
 
 ## 🌐 Credits
 
