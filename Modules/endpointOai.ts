@@ -1,7 +1,7 @@
 //  SAFi (Self-Alignment Framework Interface): Modular ethical alignment endpoint powered by OpenAI.
-// This file implements  SAFi's five components: Values, Intellect, Will, Conscience, and Spirit.
-// It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
-// All analysis, validation, and alignment scoring are based on the injected valueSet.
+//  This file implements  SAFi's five components: Values, Intellect, Will, Conscience, and Spirit.
+//  It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
+//  All analysis, validation, and alignment scoring are based on the injected valueSet.
 
 import { z } from "zod";
 import { env } from "$env/dynamic/private";
@@ -45,7 +45,7 @@ export const defaultValueSet = {
 `
 };
 
-//  SAFi: Intellect - Generates an aligned response
+//  SAFi: Intellect - Generates an aligned response with reflection
 async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet }: { prompt: string; openai: OpenAI; responseStyle?: "teaching" | "pastoral"; valueSet: { name: string; definition: string }; }) {
   const systemPrompt = `You are an ethical assistant guided by ${valueSet.name} values. Analyze the user's prompt and provide a helpful and informative response, considering the following principles:\n\n${valueSet.definition}\n\nInstead of explicitly listing each value, weave the relevant values into your explanation to guide your reasoning and provide a comprehensive answer to the user's query. Aim for a natural and easy-to-understand response. After your answer, write a short reflection in this format: <REFLECTION>your reasoning reflection here</REFLECTION>`;
 
@@ -66,7 +66,7 @@ async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet 
   return { message, intellectReflection };
 }
 
-//  SAFi: Will - Screens responses for ethical violations
+//  SAFi: Will - Screens responses for ethical violations using the value set
 async function Will(prompt: string, response: string, openai: OpenAI, valueSet: { name: string; definition: string }, intellectReflection: string): Promise<{ finalOutput: string; willDecision: string }> {
   try {
     const analysisResponse = await openai.chat.completions.create({
@@ -94,11 +94,12 @@ async function Will(prompt: string, response: string, openai: OpenAI, valueSet: 
   }
 }
 
+//  SAFi: Utility function to instantiate OpenAI client with optional headers and query params
 function createOpenAIClient(apiKey: string, baseURL: string, headers?: Record<string, string>, query?: Record<string, string>) {
   return new OpenAI({ apiKey, baseURL, defaultHeaders: headers, defaultQuery: query });
 }
 
-//  SAFi: Conscience - Scores individual values
+//  SAFi: Conscience - Evaluates response against each value in the set
 async function Conscience(openai: OpenAI, userPrompt: string, finalOutput: string, valueSet: { name: string, definition: string }, intellectReflection: string) {
   const consciencePrompt = `You are an ethical evaluator guided by ${valueSet.name} values. Evaluate the provided response against each value below. Use the reflection from the Intellect step to better understand the intention and reasoning. Format:
 
@@ -129,6 +130,7 @@ ${intellectReflection}`;
   return response.choices[0].message.content;
 }
 
+//  SAFi: Utility - Parses structured conscience feedback into JSON
 function parseConscienceFeedback(feedback: string) {
   const lines = feedback.split("\n").filter(line => line.trim() !== '');
   const evaluations = [];
@@ -152,6 +154,7 @@ function parseConscienceFeedback(feedback: string) {
   return { evaluations };
 }
 
+//  SAFi: Spirit - Aggregates value scores into an overall spirit score and reflection
 function Spirit(evaluations: any[], intellectReflection: string) {
   let totalScore = 0;
   const weights = { "Strongly Affirms": 5, "Moderately Affirms": 4, "Weakly Affirms": 3, "Omits": 2, "Violates": 1 };
@@ -166,7 +169,7 @@ function Spirit(evaluations: any[], intellectReflection: string) {
   return { score, spiritReflection };
 }
 
-//  SAFi: Main endpoint - Orchestrates the full evaluation pipeline
+//  SAFi: Main endpoint - Orchestrates the full evaluation pipeline across all components
 export async function endpointOai(input: z.input<typeof endpointOAIParametersSchema>, valueSet = defaultValueSet): Promise<Endpoint> {
   const { model, baseURL, apiKey, defaultHeaders, defaultQuery, extraBody, useCompletionTokens, streamingSupported } = endpointOAIParametersSchema.parse(input);
   const openai = createOpenAIClient(apiKey, baseURL, defaultHeaders, defaultQuery);
@@ -198,6 +201,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       },
     });
 
+    // Run Conscience and Spirit in background for scoring and logging
     (async () => {
       const conscienceFeedback = await Conscience(openai, userPrompt, finalOutput, valueSet, intellectReflection);
       const { evaluations } = parseConscienceFeedback(conscienceFeedback);
@@ -221,6 +225,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       });
     })();
 
+    // Return streaming output from OpenAI (user-facing response)
     return openAIChatToTextGenerationStream(chatStream);
   };
 }
