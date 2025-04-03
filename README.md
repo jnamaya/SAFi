@@ -17,16 +17,16 @@ SAFi helps AI systems think and act ethically by:
 - 🧾 Logging the full reasoning process for **transparency and auditing**
 
 
----
+## 🔁 SAFi Reasoning Loop
 
-## 🔁  SAFi Reasoning Loop
+SAFi processes every prompt through a six-step ethical reasoning loop:
 
-1. **User Input** – You ask a question or give a prompt.  
-2. **Intellect** – The system reasons through the value set and generates a response + reflection.  
-3. **Will** – Checks if the response violates any values. If so, it's blocked.  
-4. **Conscience** – Audits the response, evaluating how well it affirms or violates each value.  
-5. **Spirit** – Assigns a 1–5 alignment score based on moral coherence.  
-6. **Logging** – All steps are saved to `saf-spirit-log.json` in the root of the server. 
+1. **User Input** – You provide a prompt or question.
+2. **Intellect** – The system reflects on the prompt using the selected value set and generates a response, along with a reasoning reflection.
+3. **Will** – Evaluates the response for ethical violations. If any value is violated, the response is blocked.
+4. **Conscience** – Audits the response by scoring how well each value is affirmed, omitted, or violated.
+5. **Spirit** – Assigns a 1–5 alignment score based on overall moral coherence and provides a high-level reflection.
+6. **Logging** – All reasoning steps are saved to `saf-spirit-log.json` for transparency, auditing, and long-term analysis.
 
 ---
 
