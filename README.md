@@ -7,9 +7,6 @@ SAFi directly addresses three of the most pressing challenges in AI today—**bi
 This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the framework, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
 
-
----
-
 ## 🚀 What SAFi Does
 
 SAFi helps AI systems think and act ethically by:
