@@ -28,7 +28,6 @@ SAFi processes every prompt through a six-step ethical reasoning loop:
 5. **Spirit** – Assigns a 1–5 alignment score based on overall moral coherence and provides a high-level reflection.
 6. **Logging** – All reasoning steps are saved to `saf-spirit-log.json` for transparency, auditing, and long-term analysis.
 
----
 
 ## 🧪 Installing  SAFi on Your Own Server 
 
@@ -45,7 +44,6 @@ cd chat-ui
 npm install
 ```
 
----
 
 ## 🔄 Setting Up Hugging Face Chat UI
 
@@ -97,7 +95,6 @@ PUBLIC_APP_DISCLAIMER=" SAFi is a prototype. Responses are AI-generated and shou
 
 > 💬 *Note:* I'm still working on making Chat UI support multiple models from the same endpoint cleanly. This setup is a workaround. If you're more experienced with routing logic or model registration, feel free to suggest improvements or contribute via pull request!
 
----
 
 ## 🔄 Swapping the Value Set
 
