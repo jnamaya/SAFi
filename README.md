@@ -126,7 +126,6 @@ export const defaultValueSet = {
 
 From here, you can give your value set a name and define each value specifically. SAFi will automatically adjust to this new value set. There’s no required number of values, but for effective testing and evaluation, we recommend including at least **three well-defined values**.
 
----
 # 🔭 SAFi Feature Roadmap
 
 ## 🚀 Pilot Status
