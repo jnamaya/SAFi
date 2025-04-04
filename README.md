@@ -19,7 +19,7 @@ SAFi enables moral machines that:
 
 ## SAFi Reasoning Loop
 
-Every prompt is processed through a six-step ethical reasoning machine:
+Every prompt is processed through a six-step ethical reasoning system:
 
 1. **User Input** – You provide a prompt or question.
 2. **Intellect** – The system reflects on the prompt using the selected value set and generates a response, along with a reasoning reflection.
