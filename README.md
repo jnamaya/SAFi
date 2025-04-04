@@ -1,24 +1,25 @@
 # SAFi (Self-Alignment Framework Interface)
 
-**SAFi** is a modular ethical reasoning system for AI agents. Built on the [Self-Alignment Framework](https://www.selfalignmentframework.com), SAFi enables closed-loop moral alignment by evaluating AI outputs across five dimensions: **Values**, **Intellect**, **Will**, **Conscience**, and **Spirit**.
+**SAFi** is a modular **moral reasoning system** designed to apply the principles of the [Self-Alignment Framework (SAF)](https://www.selfalignmentframework.com) to real-world decision-making. While it uses AI models (like GPT-4 or Claude) to generate responses, SAFi itself is **not an AI model** — it is a **structured ethical system** that governs, evaluates, and reflects on the behavior of those models.
 
-SAFi directly addresses three of the most pressing challenges in AI today—**bias**, **value drift**, and **hallucination**—by embedding ethical reflection, enforcement, and long-term coherence directly into the system’s reasoning loop. It is **value-agnostic**, fully **auditable**, and designed to support **compliance**, **moral accountability**, and **alignment transparency** across a wide range of use cases.
+SAFi enables closed-loop moral alignment by processing outputs through five interdependent components: **Values**, **Intellect**, **Will**, **Conscience**, and **Spirit**. Together, these form a reasoning cycle that allows SAFi to assess alignment, enforce moral boundaries, and reflect on long-term coherence.
+
+It directly addresses three of the most pressing challenges in AI today — **bias**, **value drift**, and **hallucination** — by embedding ethical reasoning and feedback into every decision. SAFi is **value-agnostic**, **fully auditable**, and designed to support **compliance**, **moral accountability**, and **alignment transparency** across a wide range of use cases.
 
 This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the system, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
 ## What SAFi Does
 
-SAFi helps AI systems think and act ethically by:
-- Reflecting on prompts using a selected value set
-- Blocking outputs that violate the value set
-- Evaluating responses against each individual value
-- Scoring the overall **moral coherence** of each interaction
-- Logging the full reasoning process for transparency and auditing
+SAFi enables moral machines that:
+- Reflect on prompts using a selected value set
+- Block or approve outputs based on ethical alignment
+- Evaluate responses against each individual value
+- Score the overall **moral coherence** of each interaction
+- Log the full reasoning process for transparency and auditing
 
+## SAFi Reasoning Loop
 
-##  SAFi Reasoning Loop
-
-SAFi processes every prompt through a six-step ethical reasoning loop:
+Every prompt is processed through a six-step ethical reasoning machine:
 
 1. **User Input** – You provide a prompt or question.
 2. **Intellect** – The system reflects on the prompt using the selected value set and generates a response, along with a reasoning reflection.
