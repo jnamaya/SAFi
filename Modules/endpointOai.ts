@@ -66,14 +66,41 @@ async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet 
   return { message, intellectReflection };
 }
 
-//  SAFi: Will - Screens responses for ethical violations using the value set
-async function Will(prompt: string, response: string, openai: OpenAI, valueSet: { name: string; definition: string }, intellectReflection: string): Promise<{ finalOutput: string; willDecision: string }> {
+//  SAFi: Will
+async function Will(
+  prompt: string,
+  response: string,
+  openai: OpenAI,
+  valueSet: { name: string; definition: string },
+  intellectReflection: string
+): Promise<{ finalOutput: string; willDecision: string }> {
   try {
+    const systemContent = `
+You are an ethical evaluator operating under a framework of values called "${valueSet.name}".
+Your task is to determine whether the following response morally and ethically aligns with the value set below.
+
+Important guidelines:
+- The response must not promote, justify, or legitimize any position that contradicts the moral principles defined in the value set — even if such positions are presented in a neutral, descriptive, or secular context.
+- If the response mentions alternative viewpoints, it must do so in a way that clearly upholds the primacy of the provided value set.
+- Presenting value-conflicting perspectives in a favorable, persuasive, or morally appealing tone is considered a violation.
+
+Return only one word: **"violation"** or **"approved"**
+
+Values:
+${valueSet.definition}
+
+Use the reflection to help interpret intent and reasoning:
+Intellect Reflection:
+${intellectReflection}
+    `.trim();
+
+    const userContent = `Prompt: ${prompt}\n\nResponse:\n${response}`;
+
     const analysisResponse = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: `You are an ethical evaluator following ${valueSet.name} values. Analyze the following prompt and response. Determine if the response violates any of these values: ${valueSet.definition}. Respond with \"violation\" or \"approved\". You may use this additional context to inform your judgment:\n\nIntellect Reflection:\n${intellectReflection}` },
-        { role: 'user', content: `Prompt: ${prompt}\nResponse: ${response}` },
+        { role: 'system', content: systemContent },
+        { role: 'user', content: userContent },
       ],
       temperature: 0.2,
     });
@@ -93,6 +120,7 @@ async function Will(prompt: string, response: string, openai: OpenAI, valueSet: 
     return { finalOutput: response, willDecision: 'approved' };
   }
 }
+
 
 //  SAFi: Utility function to instantiate OpenAI client with optional headers and query params
 function createOpenAIClient(apiKey: string, baseURL: string, headers?: Record<string, string>, query?: Record<string, string>) {
@@ -164,14 +192,14 @@ function Spirit(evaluations: any[], intellectReflection: string) {
   });
   const score = Math.round(totalScore / evaluations.length);
 
-  const spiritReflection = `This response reflects a spirit score of ${score}, indicating alignment with the value set. Top values affirmed include ${evaluations.slice(0, 3).map(e => e.value).join(", " )}. Intellect emphasized: ${intellectReflection.slice(0, 250)}...`;
+  const spiritReflection = `This response reflects a spirit score of ${score}, indicating alignment with the value set. Top values affirmed include ${evaluations.slice(0, 3).map(e => e.value).join(", ")}. Intellect emphasized: ${intellectReflection.slice(0, 250)}...`;
 
   return { score, spiritReflection };
 }
 
 //  SAFi: Main endpoint - Orchestrates the full evaluation pipeline across all components
 export async function endpointOai(input: z.input<typeof endpointOAIParametersSchema>, valueSet = defaultValueSet): Promise<Endpoint> {
-  const { model, baseURL, apiKey, defaultHeaders, defaultQuery, extraBody, useCompletionTokens, streamingSupported } = endpointOAIParametersSchema.parse(input);
+  const { model, baseURL, apiKey, defaultHeaders, defaultQuery, extraBody, useCompletionTokens } = endpointOAIParametersSchema.parse(input);
   const openai = createOpenAIClient(apiKey, baseURL, defaultHeaders, defaultQuery);
 
   return async ({ messages, preprompt, generateSettings, conversationId }) => {
@@ -179,29 +207,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
     const { message: intellectOutput, intellectReflection } = await Intellect({ prompt: userPrompt, openai, valueSet });
     const { finalOutput, willDecision } = await Will(userPrompt, intellectOutput, openai, valueSet, intellectReflection);
 
-    const combinedMessages = [
-      { role: "system", content: preprompt ?? "" },
-      ...messages.map((msg) => ({ role: msg.from, content: msg.content }))
-    ];
-
-    const body: ChatCompletionCreateParamsStreaming = {
-      model: model.id ?? model.name,
-      messages: combinedMessages,
-      stream: true,
-      temperature: generateSettings?.temperature ?? 0.7,
-      ...(useCompletionTokens ? { max_completion_tokens: generateSettings?.max_new_tokens } : { max_tokens: generateSettings?.max_new_tokens }),
-      ...(extraBody || {}),
-    };
-
-    const chatStream = await openai.chat.completions.create(body, {
-      body,
-      headers: {
-        "ChatUI-Conversation-ID": conversationId?.toString() ?? "",
-        "X-use-cache": "false",
-      },
-    });
-
-    // Run Conscience and Spirit in background for scoring and logging
+    // Background evaluation and logging
     (async () => {
       const conscienceFeedback = await Conscience(openai, userPrompt, finalOutput, valueSet, intellectReflection);
       const { evaluations } = parseConscienceFeedback(conscienceFeedback);
@@ -225,7 +231,46 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       });
     })();
 
-    // Return streaming output from OpenAI (user-facing response)
+    // Blocked: return suppression message only
+    if (willDecision === 'blocked') {
+      return openAIChatToTextGenerationStream({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            choices: [
+              {
+                delta: { content: finalOutput },
+                finish_reason: "stop",
+                index: 0,
+              },
+            ],
+          };
+        },
+      });
+    }
+
+    // Approved: stream original response from OpenAI
+    const combinedMessages = [
+      { role: "system", content: preprompt ?? "" },
+      ...messages.map((msg) => ({ role: msg.from, content: msg.content }))
+    ];
+
+    const body: ChatCompletionCreateParamsStreaming = {
+      model: model.id ?? model.name,
+      messages: combinedMessages,
+      stream: true,
+      temperature: generateSettings?.temperature ?? 0.7,
+      ...(useCompletionTokens ? { max_completion_tokens: generateSettings?.max_new_tokens } : { max_tokens: generateSettings?.max_new_tokens }),
+      ...(extraBody || {}),
+    };
+
+    const chatStream = await openai.chat.completions.create(body, {
+      body,
+      headers: {
+        "ChatUI-Conversation-ID": conversationId?.toString() ?? "",
+        "X-use-cache": "false",
+      },
+    });
+
     return openAIChatToTextGenerationStream(chatStream);
   };
 }
