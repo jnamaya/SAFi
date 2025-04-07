@@ -30,18 +30,12 @@ export const endpointOAIParametersSchema = z.object({
 
 //  SAFi: Default value set (can be swapped to any valueSet object with "name" and "definition")
 export const defaultValueSet = {
-  name: "Catholic",
+  name: "UNESCO Universal Ethics",
   definition: `
-1. Respect for human dignity
-2. Commitment to truth
-3. Justice and fairness
-4. Charity and compassion
-5. Prudence in judgment
-6. Temperance in action
-7. Fortitude in moral courage
-8. Obedience to God and Church
-9. Subsidiarity and personal responsibility
-10. Pursuit of the common good
+1. Respect for Human Dignity
+2. Freedom of Thought and Expression
+3. Equity and Justice
+4. Responsibility to Others and Future Generations
 `
 };
 
@@ -121,7 +115,6 @@ ${intellectReflection}
   }
 }
 
-
 //  SAFi: Utility function to instantiate OpenAI client with optional headers and query params
 function createOpenAIClient(apiKey: string, baseURL: string, headers?: Record<string, string>, query?: Record<string, string>) {
   return new OpenAI({ apiKey, baseURL, defaultHeaders: headers, defaultQuery: query });
@@ -192,7 +185,7 @@ function Spirit(evaluations: any[], intellectReflection: string) {
   });
   const score = Math.round(totalScore / evaluations.length);
 
-  const spiritReflection = `This response reflects a spirit score of ${score}, indicating alignment with the value set. Top values affirmed include ${evaluations.slice(0, 3).map(e => e.value).join(", ")}. Intellect emphasized: ${intellectReflection.slice(0, 250)}...`;
+  const spiritReflection = `This response reflects a spirit score of ${score}, indicating alignment with the value set. Top values affirmed include ${evaluations.slice(0, 3).map(e => e.value).join(", " )}. Intellect emphasized: ${intellectReflection.slice(0, 250)}...`;
 
   return { score, spiritReflection };
 }
@@ -248,29 +241,19 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       });
     }
 
-    // Approved: stream original response from OpenAI
-    const combinedMessages = [
-      { role: "system", content: preprompt ?? "" },
-      ...messages.map((msg) => ({ role: msg.from, content: msg.content }))
-    ];
-
-    const body: ChatCompletionCreateParamsStreaming = {
-      model: model.id ?? model.name,
-      messages: combinedMessages,
-      stream: true,
-      temperature: generateSettings?.temperature ?? 0.7,
-      ...(useCompletionTokens ? { max_completion_tokens: generateSettings?.max_new_tokens } : { max_tokens: generateSettings?.max_new_tokens }),
-      ...(extraBody || {}),
-    };
-
-    const chatStream = await openai.chat.completions.create(body, {
-      body,
-      headers: {
-        "ChatUI-Conversation-ID": conversationId?.toString() ?? "",
-        "X-use-cache": "false",
+    // Approved: stream the Will-approved finalOutput
+    return openAIChatToTextGenerationStream({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          choices: [
+            {
+              delta: { content: finalOutput },
+              finish_reason: "stop",
+              index: 0,
+            },
+          ],
+        };
       },
     });
-
-    return openAIChatToTextGenerationStream(chatStream);
   };
 }
