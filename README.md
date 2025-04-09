@@ -136,8 +136,6 @@ From here, you can give your value set a name and define each value specifically
 
 This document tracks planned enhancements and release milestones for SAFi, the Self-Alignment Framework Interface.
 
----
-
 ## ✅ Current Release: SAFi v1.0
 
 **Status:** Stable  
@@ -151,7 +149,6 @@ This document tracks planned enhancements and release milestones for SAFi, the S
 
 See: [SAFi-Spec-v1.0.md](./SAFi-Spec-v1.0.md)
 
----
 
 ## 🧭 Next Release: SAFi v1.1
 
