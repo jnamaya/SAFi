@@ -73,4 +73,4 @@ Coming in [SAFi v1.1 ](https://github.com/jnamaya/SAFi/?tab=readme-ov-file#%EF%B
 ---
 
 🔗 For setup, contribution, and full protocol docs, visit the main repository:  
-👉 [SAFi GitHub Repository](https://github.com/jnamaya/SAFi)
+[SAFi GitHub Repository](https://github.com/jnamaya/SAFi)
