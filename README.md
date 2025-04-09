@@ -28,6 +28,11 @@ Every prompt is processed through a six-step ethical reasoning system:
 5. **Spirit** – Assigns a 1–5 alignment score based on overall moral coherence and provides a high-level reflection.
 6. **Logging** – All reasoning steps are saved to `saf-spirit-log.json` for transparency, auditing, and long-term analysis.
 
+## SAFi v1.0 Protocol Specification
+
+SAFi v1.0 is the first official release of the ethical reasoning engine. This version defines the structure, input/output logic, and scoring mechanisms of the SAF loop in code.
+
+[Read the full SAFi v1.0 Specification](./SAFi-Spec-v1.0.md)
 
 ## Installing  SAFi on Your Own Server 
 
