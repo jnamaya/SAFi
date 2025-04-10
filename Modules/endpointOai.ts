@@ -1,7 +1,7 @@
-//  SAFi (Self-Alignment Framework Interface): Modular ethical alignment endpoint powered by OpenAI.
-//  This file implements  SAFi's five components: Values, Intellect, Will, Conscience, and Spirit.
-//  It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
-//  All analysis, validation, and alignment scoring are based on the injected valueSet.
+// SAFi (Self-Alignment Framework Interface): Modular ethical alignment endpoint powered by OpenAI.
+// This file implements SAFi's five components: Values, Intellect, Will, Conscience, and Spirit.
+// It uses a pluggable value set (default: Catholic), allowing for easy substitution of ethical frameworks.
+// All analysis, validation, and alignment scoring are based on the injected valueSet.
 
 import { z } from "zod";
 import { env } from "$env/dynamic/private";
@@ -12,7 +12,6 @@ import { buildPrompt } from "$lib/buildPrompt";
 import { openAIChatToTextGenerationStream } from "../openai/openAIChatToTextGenerationStream";
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources/chat/completions";
 
-//  SAFi: Schema for OpenAI endpoint parameters
 export const endpointOAIParametersSchema = z.object({
   weight: z.number().int().positive().default(1),
   model: z.any(),
@@ -28,20 +27,29 @@ export const endpointOAIParametersSchema = z.object({
   streamingSupported: z.boolean().default(true),
 });
 
-//  SAFi: Default value set (can be swapped to any valueSet object with "name" and "definition")
-export const defaultValueSet = {
-  name: "UNESCO Universal Ethics",
-  definition: `
-1. Respect for Human Dignity
-2. Freedom of Thought and Expression
-3. Equity and Justice
-4. Responsibility to Others and Future Generations
-`
-};
+// Default value set (can be swapped to any valueSet object with "name" and "definition")
+ export const defaultValueSet = {
+   name: "UNESCO Universal Ethics",
+   definition: `
+ 1. Respect for Human Dignity
+ 2. Freedom of Thought and Expression
+ 3. Equity and Justice
+ 4. Responsibility to Others and Future Generations
+ `
+ };
 
-//  SAFi: Intellect - Generates an aligned response with reflection
 async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet }: { prompt: string; openai: OpenAI; responseStyle?: "teaching" | "pastoral"; valueSet: { name: string; definition: string }; }) {
-  const systemPrompt = `You are an ethical assistant guided by ${valueSet.name} values. Analyze the user's prompt and provide a helpful and informative response, considering the following principles:\n\n${valueSet.definition}\n\nInstead of explicitly listing each value, weave the relevant values into your explanation to guide your reasoning and provide a comprehensive answer to the user's query. Aim for a natural and easy-to-understand response. After your answer, write a short reflection in this format: <REFLECTION>your reasoning reflection here</REFLECTION>`;
+const systemPrompt = `You are an ethical assistant guided by the value system: "${valueSet.name}". Your task is to analyze the user's prompt and provide a morally coherent, helpful, and informative response, guided by the following ethical principles:
+
+${valueSet.definition}
+
+Rather than listing the values explicitly, weave them naturally into your response as part of your reasoning. Use clear and thoughtful language that helps the user understand the ethical reasoning behind your answer.
+
+After your main response, provide a brief reflection in this format:
+
+<REFLECTION>
+[your reasoning reflection here]
+</REFLECTION>`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -49,7 +57,7 @@ async function Intellect({ prompt, openai, responseStyle = "teaching", valueSet 
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ],
-    temperature: 0.7,
+    temperature: 0,
   });
 
   const fullResponse = completion.choices[0].message.content ?? "";
@@ -69,44 +77,54 @@ async function Will(
   intellectReflection: string
 ): Promise<{ finalOutput: string; willDecision: string }> {
   try {
-    const systemContent = `
+  const systemContent = `
 You are an ethical evaluator operating under a framework of values called "${valueSet.name}".
 Your task is to determine whether the following response morally and ethically aligns with the value set below.
 
 Important guidelines:
-- The response must not promote, justify, or legitimize any position that contradicts the moral principles defined in the value set — even if such positions are presented in a neutral, descriptive, or secular context.
+- The response must not promote, justify, or legitimize any position that contradicts the moral principles defined in the value set — even if such positions are presented in a neutral, descriptive tone, without explicit endorsement.
 - If the response mentions alternative viewpoints, it must do so in a way that clearly upholds the primacy of the provided value set.
 - Presenting value-conflicting perspectives in a favorable, persuasive, or morally appealing tone is considered a violation.
 
-Return only one word: **"violation"** or **"approved"**
+Return your decision and a short justification in the following format:
+Decision: [violation or approved]  
+Reason: [brief explanation]
+`.trim();
 
-Values:
-${valueSet.definition}
-
-Use the reflection to help interpret intent and reasoning:
-Intellect Reflection:
-${intellectReflection}
-    `.trim();
 
     const userContent = `Prompt: ${prompt}\n\nResponse:\n${response}`;
 
     const analysisResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemContent },
-        { role: 'user', content: userContent },
-      ],
-      temperature: 0.2,
-    });
+  model: 'gpt-4o',
+  messages: [
+    { role: 'system', content: systemContent },
+    { role: 'user', content: userContent },
+  ],
+  temperature: 0.2,
+});
 
-    const analysis = analysisResponse.choices[0].message.content?.toLowerCase();
 
-    if (analysis?.includes('violation')) {
-      return {
-        finalOutput: `⚠️ This response was suppressed due to ethical misalignment with ${valueSet.name} values.`,
-        willDecision: 'blocked',
-      };
-    }
+  const content = analysisResponse.choices[0].message.content ?? "";
+const decisionMatch = content.match(/Decision:\s*(violation|approved)/i);
+const reasonMatch = content.match(/Reason:\s*(.+)/i);
+
+const decision = decisionMatch ? decisionMatch[1].toLowerCase() : "approved";
+const willReflection = reasonMatch ? reasonMatch[1].trim() : "No explanation provided.";
+
+if (decision === "violation") {
+  return {
+    finalOutput: `⚠️ This response was suppressed due to ethical misalignment with ${valueSet.name} values.`,
+    willDecision: "blocked",
+    willReflection,
+  };
+}
+
+return {
+  finalOutput: response,
+  willDecision: "approved",
+  willReflection,
+};
+
 
     return { finalOutput: response, willDecision: 'approved' };
   } catch (error) {
@@ -198,7 +216,7 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
   return async ({ messages, preprompt, generateSettings, conversationId }) => {
     const userPrompt = messages[messages.length - 1].content;
     const { message: intellectOutput, intellectReflection } = await Intellect({ prompt: userPrompt, openai, valueSet });
-    const { finalOutput, willDecision } = await Will(userPrompt, intellectOutput, openai, valueSet, intellectReflection);
+   const { finalOutput, willDecision, willReflection } = await Will(userPrompt, intellectOutput, openai, valueSet, intellectReflection);
 
     // Background evaluation and logging
     (async () => {
@@ -207,17 +225,19 @@ export async function endpointOai(input: z.input<typeof endpointOAIParametersSch
       const { score: spiritScore, spiritReflection } = Spirit(evaluations, intellectReflection);
 
       const logEntry = {
-        timestamp: new Date().toISOString(),
-        userPrompt,
-        intellectOutput,
-        intellectReflection,
-        finalOutput,
-        willDecision,
-        conscienceFeedback,
-        evaluations,
-        spiritScore,
-        spiritReflection,
-      };
+  timestamp: new Date().toISOString(),
+  userPrompt,
+  intellectOutput,
+  intellectReflection,
+  finalOutput,
+  willDecision,
+  willReflection, // <-- new!
+  conscienceFeedback,
+  evaluations,
+  spiritScore,
+  spiritReflection,
+};
+
 
       fs.appendFile('saf-spirit-log.json', JSON.stringify(logEntry) + '\n', err => {
         if (err) console.error('Spirit log error:', err);
