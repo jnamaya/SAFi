@@ -1,7 +1,7 @@
 # 🚀 SAFi v1.0 Release
 
 **Version:** 1.0  
-**Status:** ✅ Stable  
+**Status:** Stable  
 **Release Date:** April 2025  
 **Codename:** “Aquinas”
 
