@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** April 2025  
 **Status:** Stable  
-**Maintainer:** Self-Alignment Framework Institute  
+**Maintainer:** SAF Institute  
 **Implementation:** [GitHub Repository](https://github.com/jnamaya/SAFi/)
 
 ---
