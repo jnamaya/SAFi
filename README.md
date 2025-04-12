@@ -6,6 +6,7 @@ SAFi operates as a closed-loop reasoning engine, cycling every interaction throu
 
 **AI’s most well-known flaws—opacity, drift, and moral indifference—are not engineering oversights. They are architectural consequences.**  
 SAFi addresses them not by patching symptoms, but by solving the structural void at their core: the absence of ethical reasoning. With SAFi, alignment becomes a function, not a filter.
+
 This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the system, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
 ## What SAFi Does
