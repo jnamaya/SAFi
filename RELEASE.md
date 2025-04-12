@@ -5,6 +5,22 @@
 **Release Date:** April 2025  
 **Codename:** “Aquinas”
 
+### Why the Codename “Aquinas”?
+
+This release is named in honor of **St. Thomas Aquinas**, whose work profoundly influenced the Self-Alignment Framework.
+
+Long before us, he architected these moral faculties—**Intellect**, **Will**, and **Conscience**—as essential to the soul's journey toward the good.
+
+> “The good is not merely chosen—it is discerned, willed, and lived in alignment with truth.”  
+> — *Aquinas*
+
+Like his moral architecture, **SAFi v1.0** implements a complete ethical loop:  
+**Values → Intellect → Will → Conscience → Spirit**
+
+With this release, SAFi becomes the first system to encode Aquinas’s ethical reasoning structure into machine logic—offering a transparent, programmable conscience for intelligent systems.
+
+While Aquinas viewed Intellect and Will as powers of the rational soul, and Conscience as an act of reason applying moral knowledge, SAFi interprets the entire ethical loop—**Values, Intellect, Will, Conscience, and Spirit**—as the operational structure of the soul. Within this system, **Spirit** serves as the integrative faculty that evaluates moral harmony over time
+
 ---
 
 ## Overview
