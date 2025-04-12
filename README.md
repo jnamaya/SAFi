@@ -1,11 +1,11 @@
 # SAFi (Self-Alignment Framework Interface)
 
-**SAFi** is a modular **moral reasoning system** designed to apply the principles of the [Self-Alignment Framework (SAF)](https://www.selfalignmentframework.com) to real-world decision-making. While it uses AI models (like GPT-4 or Claude) to generate responses, SAFi itself is **not an AI model** — it is a **structured ethical system** that governs, evaluates, and reflects on the behavior of those models.
+**SAFi** (Self-Alignment Framework Interface) is a modular moral reasoning system that applies the principles of the [Self-Alignment Framework](https://www.selfalignmentframework.com) (SAF) to real-world decision-making. While it integrates language models like GPT-4 or Claude to generate responses, SAFi itself is not an AI model—it is an ethical architecture that governs, evaluates, and reflects on the behavior of those models.
 
-SAFi enables closed-loop moral alignment by processing outputs through five interdependent components: **Values**, **Intellect**, **Will**, **Conscience**, and **Spirit**. Together, these form a reasoning cycle that allows SAFi to assess alignment, enforce moral boundaries, and reflect on long-term coherence.
+SAFi operates as a closed-loop reasoning engine, cycling every interaction through five interdependent components: **Values**, **Intellect**, **Will**, **Conscience**, and **Spirit**. This structure enables SAFi not only to enforce value alignment, but to reflect on it—and to learn from it—through an interpretable moral feedback loop.
 
-It directly addresses three of the most pressing challenges in AI today — **bias**, **value drift**, and **hallucination** — by embedding ethical reasoning and feedback into every decision. SAFi is **value-agnostic**, **fully auditable**, and designed to support **compliance**, **moral accountability**, and **alignment transparency** across a wide range of use cases.
-
+**AI’s most well-known flaws—opacity, drift, and moral indifference—are not engineering oversights. They are architectural consequences.**  
+SAFi addresses them not by patching symptoms, but by solving the structural void at their core: the absence of ethical reasoning. With SAFi, alignment becomes a function, not a filter.
 This repository contains the full SAFi codebase along with setup instructions for running the system on your own server. You are encouraged to test the system, explore its logging and feedback mechanisms, and contribute improvements through pull requests.
 
 ## What SAFi Does
