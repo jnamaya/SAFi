@@ -9,7 +9,7 @@
 
 This release is named in honor of **St. Thomas Aquinas**, whose work profoundly influenced the Self-Alignment Framework.
 
-Long before us, he architected these moral faculties—**Intellect**, **Will**, and **Conscience**—as essential to the soul's journey toward the good.
+SAFi operationalizes an Aquinas‑inspired faculty structure, adapted for closed‑loop systems.
 
 > “The good is not merely chosen—it is discerned, willed, and lived in alignment with truth.”  
 > — *Aquinas*
