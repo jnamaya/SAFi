@@ -41,7 +41,7 @@ It is now running in a live server with an active URL.
   - **Intellect**: Ethical reasoning and explanation
   - **Will**: Response validation (approve/block)
   - **Conscience**: Value-by-value scoring
-  - **Spirit**: Final alignment score (1–5) with reflection
+  - **Spirit**: Final alignment score (1–10) with reflection
 
 ### Logging + Transparency
 - Logs every interaction to `saf-spirit-log.json`
