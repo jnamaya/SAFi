@@ -168,7 +168,7 @@ All outputs are logged to `saf-spirit-log.json` in newline-delimited JSON.
 
 ## Notes
 
-- **SAFi v1.0** uses **OpenAI GPT-4o** for the Intellect module only.  
+- **SAFi v1.0** uses **OpenAI GPT-4o** for the Intellect module.  
 - **Loop integrity** is independent of model choice (LLM-agnostic).  
 - **Default value set** = UNESCO Universal Declaration on Bioethics and Human Rights.  
 - **Value-agnostic design** allows plugging in any coherent set (religious, civic, institutional).  
