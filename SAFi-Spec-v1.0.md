@@ -6,8 +6,6 @@
 **Maintainer:** SAF Institute  
 **Implementation:** [GitHub Repository](https://github.com/jnamaya/SAFi/)
 
----
-
 ## Overview
 
 **SAFi (Self-Alignment Framework Interface)** is the first open-source implementation of the Self-Alignment Framework (SAF), a closed-loop ethical reasoning protocol. It evaluates AI model outputs for moral alignment through five interdependent components:
@@ -20,8 +18,6 @@
 
 This document defines the full loop behavior, including input/output, scoring, and logging structure, based on the official v1.0 implementation.
 
----
-
 ## Component Flow
 
 ### 1. **Input**
@@ -31,8 +27,6 @@ This document defines the full loop behavior, including input/output, scoring, a
 - `valueSet`: An object containing:
   - `name`: Human-readable label (e.g., "UNESCO Universal Ethics")
   - `definition`: A newline-separated list of values
-
----
 
 ### 2. **Intellect**
 
@@ -48,7 +42,6 @@ Generate a morally informed response and a reasoning reflection.
 - `message`: The AI-generated response (excluding reflection)
 - `intellectReflection`: Extracted reflection text for reasoning transparency
 
----
 ### 3. **Will**
 
 **Purpose:**  
