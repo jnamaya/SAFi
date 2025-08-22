@@ -14,3 +14,30 @@ safi_memory.db
 # Any local environment files (if you create them later)
 .env
 .env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+.next/
+out/
+coverage/
+.cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
