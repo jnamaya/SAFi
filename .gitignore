@@ -1,0 +1,16 @@
+# Python virtual environment
+/venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Log files (contains user prompts)
+saf-spirit-log.jsonl
+
+# Database file (contains user memory and private data)
+safi_memory.db
+
+# Any local environment files (if you create them later)
+.env
+.env.*
