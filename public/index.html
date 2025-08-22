@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<!-- The lang attribute is essential for screen readers and search engines. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Added a more descriptive meta description for SEO and sharing previews. -->
+  <meta name="description" content="SAFi - The Ethical Reasoning Engine. Ask ethical questions and get guided answers." />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>SAFi - Ethical Reasoning Engine</title>
+
+  <!-- External Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <!-- Your custom stylesheet -->
+  <!-- It's good practice to link your own stylesheets after library styles. -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Tailwind and Dark Mode Configuration -->
+ <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <script>
+    // This script is fine for preventing FOUC (Flash of Unstyled Content)
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  </script>
+</head>
+<body class="min-h-[100dvh] w-full bg-white text-black dark:bg-black dark:text-white transition-colors duration-300 overflow-x-hidden">
+
+  <!-- Using a main landmark for the primary content of the page -->
+  <main id="app-container" class="w-full h-full flex relative min-h-0 overflow-y-auto">
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
+
+    <!-- The sidebar is a complementary landmark -->
+    <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-64 bg-neutral-100 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:sticky md:top-0 md:h-[100dvh] md:shrink-0 md:flex overflow-y-auto sidebar-scrollbar">
+      <div class="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+        <h2 class="font-semibold">Conversations</h2>
+        <!-- Explicitly setting type="button" prevents accidental form submission. -->
+        <!-- Added aria-label for accessibility, describing what the button does. -->
+        <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
+          <!-- aria-hidden="true" tells screen readers to ignore this decorative icon. -->
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-2">
+        <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-500 transition flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+          New Chat
+        </button>
+      </div>
+      <!-- The navigation landmark helps users find their way around. -->
+      <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 sidebar-scrollbar min-h-0"></nav>
+      <div id="user-profile-sidebar" class="p-4 border-t border-neutral-200 dark:border-neutral-800"></div>
+    </aside>
+
+    <div class="flex-1 h-full flex justify-center min-h-0">
+      <!-- Changed to a <section> for better semantic grouping of content -->
+      <section class="w-full max-w-4xl h-full flex flex-col min-h-0 px-3 sm:px-0">
+        <div id="login-view" class="w-full h-full flex flex-col items-center justify-center bg-white dark:bg-black p-6 overflow-y-auto overscroll-contain min-h-0">
+          <!-- Alt text should be descriptive. If the logo is just decorative, alt="" is also an option. -->
+          <img src="assets/logo.png" alt="SAFi Application Logo" class="h-16 w-16 mb-6 rounded-xl" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
+          <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
+          <p class="text-neutral-500 dark:text-neutral-400 mt-2 mb-8">The Ethical Reasoning Engine</p>
+          <button id="login-button" type="button" class="flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
+            <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+            Sign in with Google
+          </button>
+        </div>
+
+        <div id="chat-view" class="w-full h-full hidden flex-col bg-white dark:bg-black min-h-0">
+          <!-- The header landmark is useful for page structure -->
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between sticky top-0 bg-white/80 dark:bg-black/80 backdrop-blur z-20">
+            <div class="flex items-center gap-3">
+              <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 md:hidden">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
+              <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
+            </div>
+            <div class="flex items-center gap-3">
+              <!-- aria-live="polite" will make screen readers announce changes to the connection status. -->
+              <div id="connection-status" class="flex items-center gap-2 text-sm text-neutral-500" aria-live="polite">
+                <div id="connection-status-dot" class="w-2 h-2 rounded-full bg-yellow-400"></div>
+                <span id="connection-status-text">Connecting</span>
+              </div>
+              <button id="theme-toggle" type="button" aria-label="Toggle dark mode" class="p-2 rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800">
+                <svg id="theme-icon-light" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a 4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                <svg id="theme-icon-dark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <!-- This is the main content area for the chat itself -->
+          <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col gap-5">
+            <!-- --- CHANGE START --- I've removed the 'hidden' class so you can see this element. --- -->
+            <div id="empty-state" class="m-auto text-center">
+            <!-- --- CHANGE END --- -->
+              <img src="assets/logo.png" alt="" class="h-16 w-16 mb-4 rounded-xl mx-auto" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
+              <h2 class="text-xl font-semibold">How can I help you today?</h2>
+              <p class="text-neutral-500 dark:text-neutral-400 mt-2">Ask me an ethical question to get started.</p>
+              <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
+                  <button type="button" class="example-prompt-btn">"Is it ethical to use AI for hiring?"</button>
+                  <button type="button" class="example-prompt-btn">"What are the moral implications of gene editing?"</button>
+                  <button type="button" class="example-prompt-btn">"Explain the trolley problem."</button>
+                  <button type="button" class="example-prompt-btn">"Should I report a coworker for minor misconduct?"</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- The footer landmark contains the message composer -->
+          <footer id="composer-footer" class="sticky bottom-0 p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur">
+            <!-- Using a <form> element is more semantic for user input -->
+            <form id="chat-form" class="flex w-full max-w-full items-end gap-2 bg-white dark:bg-neutral-900 border border-green-600 rounded-full px-4 py-2 shadow-md focus-within:ring-2 focus-within:ring-green-500 transition">
+              <!-- Added a visually hidden label for the textarea for screen readers -->
+              <label for="message-input" class="sr-only">Ask something</label>
+              <textarea id="message-input" rows="1" class="flex-1 w-full resize-none bg-transparent placeholder-neutral-500 border-none focus:ring-0 focus:outline-none px-2 py-2 text-[16px] sm:text-sm" placeholder="Ask something..."></textarea>
+              <!-- Changed to type="submit" to work with the form. It can now be submitted by pressing Enter. -->
+              <button id="send-button" type="submit" aria-label="Send message" class="shrink-0 bg-green-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-green-500 disabled:bg-neutral-500 transition">Send</button>
+            </form>
+          </footer>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
+  
+  <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
+  
+  <!-- Added ARIA roles to make the modal more accessible -->
+  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
+        <button id="close-conscience-modal" type="button" aria-label="Close ethical reasoning modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">×</button>
+      </div>
+      <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">This answer was guided by the following ethical principles:</p>
+      <div id="conscience-details" class="space-y-3"></div>
+  </div>
+
+  <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+      <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
+      <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure you want to permanently delete your account and all of your conversations? This action cannot be undone.</p>
+      <div class="flex justify-end gap-3 mt-6">
+        <button id="cancel-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
+        <button id="confirm-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete Account</button>
+      </div>
+  </div>
+
+  <!-- Your main JavaScript file -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

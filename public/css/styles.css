@@ -1,0 +1,135 @@
+body { 
+  font-family: 'Source Sans Pro', 'Inter', sans-serif; 
+  font-size: 17px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body { 
+  overflow-x: hidden; 
+  max-width: 100%; 
+}
+
+#app-container { 
+  max-width: 100%; 
+  overflow-x: hidden; 
+}
+
+#chat-window, #convo-list { 
+  -webkit-overflow-scrolling: touch; 
+}
+
+.sidebar-scrollbar::-webkit-scrollbar { 
+  width: 6px; 
+}
+.sidebar-scrollbar::-webkit-scrollbar-track { 
+  background: transparent; 
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb { 
+  background: #a3a3a3; 
+  border-radius: 3px; 
+}
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb { 
+  background: #374151; 
+}
+
+.chat-bubble { 
+  line-height: 1.6; 
+}
+.chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
+  font-weight: 700; 
+  margin: 0.25rem 0 0.375rem; 
+}
+.chat-bubble h1 { font-size: 1.2rem; }
+.chat-bubble h2 { font-size: 1.1rem; }
+.chat-bubble h3 { font-size: 1rem; }
+.chat-bubble p { margin: 0.5rem 0; }
+.chat-bubble ul, .chat-bubble ol { 
+  padding-left: 1.25rem; 
+  margin: 0.5rem 0; 
+}
+.chat-bubble li { margin: 0.25rem 0; }
+.chat-bubble a { text-decoration: underline; }
+.chat-bubble code { 
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; 
+  font-size: 0.9em; 
+  background: rgba(0,0,0,.06); 
+  padding: .15rem .35rem; 
+  border-radius: .35rem; 
+}
+.dark .chat-bubble code { 
+  background: rgba(255,255,255,.08); 
+}
+.chat-bubble pre { 
+  background: #0b1220; 
+  color: #e5e7eb; 
+  padding: 0.85rem; 
+  border-radius: 0.75rem; 
+  overflow: auto; 
+  font-size: 0.9rem; 
+}
+.dark .chat-bubble pre { 
+  background: #0b1220; 
+}
+.chat-bubble blockquote { 
+  border-left: 3px solid rgba(0,0,0,.15); 
+  padding-left: .75rem; 
+  color: #525252; 
+}
+.dark .chat-bubble blockquote { 
+  border-color: rgba(255,255,255,.25); 
+  color: #a3a3a3; 
+}
+
+.msg { 
+  max-width: min(72ch, 100%); 
+  word-break: break-word; 
+}
+
+/* --- UPDATED STYLE FOR THE TIMESTAMP --- */
+/* Increased specificity to override Tailwind's base styles */
+.msg .stamp { 
+  font-size: .75rem; /* Makes the font smaller */
+  opacity: .7; /* Makes it slightly faded */
+  margin-top: .35rem; /* Adds space above the timestamp */
+}
+/* --- END OF UPDATED STYLE --- */
+
+.toast { 
+  transform: translateY(100%); 
+  opacity: 0; 
+  transition: transform 0.3s ease, opacity 0.3s ease; 
+}
+.toast.show { 
+  transform: translateY(0); 
+  opacity: 1; 
+}
+
+#connection-status-dot { 
+  transition: background-color 0.5s ease; 
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.blinking-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.2em;
+  background-color: currentColor;
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+}
