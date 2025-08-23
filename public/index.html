@@ -9,7 +9,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
@@ -108,7 +108,9 @@
     </div>
   </main>
 
-  <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
+  <!-- --- CHANGE START: Toast container moved to the top right --- -->
+  <div id="toast-container" class="fixed top-5 right-5 z-50"></div>
+  <!-- --- CHANGE END --- -->
   
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
