@@ -91,7 +91,7 @@ async function sendMessage() {
 
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
-    autoSize(); // This will now correctly disable the button
+    autoSize();
     
     const loadingIndicator = ui.showLoadingIndicator();
 
@@ -126,7 +126,7 @@ async function sendMessage() {
         loadingIndicator.remove();
         ui.displayMessage('ai', 'Sorry, an error occurred.', new Date());
         ui.elements.messageInput.value = originalMessage;
-        autoSize(); // Restore text and correctly set button state
+        autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
         ui.updateConnectionStatus(false);
     } finally {
@@ -138,19 +138,15 @@ function autoSize() {
     const input = ui.elements.messageInput;
     const sendButton = ui.elements.sendButton;
 
-    // 1. Enable/disable the send button based on input content
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
-    // 2. Handle textarea resizing with a max height
-    input.style.height = 'auto'; // Reset height to correctly calculate the new scrollHeight
+    input.style.height = 'auto';
     const scrollHeight = input.scrollHeight;
-    const maxHeight = 120; // Max height in pixels (approx. 6 lines of text)
+    const maxHeight = 120; 
     
-    // Set the new height, capped at the max height
     input.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
 
-    // Make the textarea scrollable only when it reaches the max height
     if (scrollHeight > maxHeight) {
         input.classList.add('overflow-y-auto', 'custom-scrollbar');
     } else {
@@ -182,22 +178,26 @@ function showOptionsMenu(event, id, title) {
     setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
 }
 
+// --- CHANGE START: Logic updated to prevent toast bug ---
 async function handleRename(id, oldTitle) {
     const newTitle = prompt('Enter new name for the conversation:', oldTitle);
     if (newTitle && newTitle.trim() !== oldTitle) {
         await api.renameConversation(id, newTitle);
-        await loadConversations();
         ui.showToast('Conversation renamed.', 'success');
+        // Do not await the UI reload, let it run without blocking.
+        loadConversations();
     }
 }
 
 async function handleDelete(id) {
     if (confirm('Are you sure you want to delete this conversation?')) {
         await api.deleteConversation(id);
-        await loadConversations();
         ui.showToast('Conversation deleted.', 'success');
+        // Do not await the UI reload, let it run without blocking.
+        loadConversations();
     }
 }
+// --- CHANGE END ---
 
 async function handleLogout() {
     await fetch(api.urls.LOGOUT, { credentials: 'include' });
@@ -221,8 +221,8 @@ function initializeApp() {
     checkLoginStatus();
     setInterval(() => api.checkConnection().then(ui.updateConnectionStatus), 60000);
 
-    ui.elements.sendButton.disabled = true; // Start with the button disabled
-    ui.elements.messageInput.addEventListener('input', autoSize); // This now handles everything
+    ui.elements.sendButton.disabled = true;
+    ui.elements.messageInput.addEventListener('input', autoSize);
 
     ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
     ui.elements.sendButton.addEventListener('click', sendMessage);
