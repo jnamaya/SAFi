@@ -1,6 +1,5 @@
 body { 
-  /* CHANGE: Set "Inter" as the primary font for a cleaner look */
-  font-family: 'Inter', 'Source Sans Pro', sans-serif; 
+  font-family: 'Roboto', 'Inter', 'Source Sans Pro', sans-serif; 
   font-size: 17px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -50,7 +49,7 @@ html, body {
 .chat-bubble { 
   /* Increased line-height for better text breathing room */
   line-height: 1.7; 
-  font-size: 16px; /* Slightly larger base font for readability */
+  font-size: 17px; /* Slightly larger base font for readability */
 }
 
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
