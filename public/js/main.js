@@ -182,19 +182,21 @@ function showOptionsMenu(event, id, title) {
 async function handleRename(id, oldTitle) {
     const newTitle = prompt('Enter new name for the conversation:', oldTitle);
     if (newTitle && newTitle.trim() !== oldTitle) {
-        await api.renameConversation(id, newTitle);
+        // Show toast immediately for instant feedback.
         ui.showToast('Conversation renamed.', 'success');
-        // Do not await the UI reload, let it run without blocking.
-        loadConversations();
+        // Then, perform the async operations.
+        await api.renameConversation(id, newTitle);
+        await loadConversations();
     }
 }
 
 async function handleDelete(id) {
     if (confirm('Are you sure you want to delete this conversation?')) {
-        await api.deleteConversation(id);
+        // Show toast immediately for instant feedback.
         ui.showToast('Conversation deleted.', 'success');
-        // Do not await the UI reload, let it run without blocking.
-        loadConversations();
+        // Then, perform the async operations.
+        await api.deleteConversation(id);
+        await loadConversations();
     }
 }
 // --- CHANGE END ---
