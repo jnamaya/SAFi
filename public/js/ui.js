@@ -1,4 +1,4 @@
-import { formatTime } from './utils.js';
+import { formatTime /*, escapeHtml if you add it later */ } from './utils.js';
 
 export const elements = {
   loginView: document.getElementById('login-view'),
@@ -28,6 +28,8 @@ export const elements = {
   deleteAccountModal: document.getElementById('delete-account-modal'),
   composerFooter: document.getElementById('composer-footer'),
   closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
+  // CHANGE: Added the new mobile close button
+  mobileCloseConscienceModalBtn: document.getElementById('mobile-close-conscience-modal'),
   cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
   confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
   conscienceDetails: document.getElementById('conscience-details'),
@@ -293,7 +295,6 @@ function makeCopyButton(text) {
 
 export function displayEmptyState(activeProfile) {
   if (activeProfile && elements.activeProfileDisplay) {
-    // CHANGE: Your backend sends an array of objects, so we access the 'value' property of each.
     const valuesHtml = (activeProfile.values || [])
       .map(v => `<span class="inline-block bg-neutral-200 dark:bg-neutral-700 rounded-full px-3 py-1 text-xs font-semibold text-neutral-700 dark:text-neutral-200">${v.value}</span>`)
       .join(' ');

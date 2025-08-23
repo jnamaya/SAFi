@@ -42,8 +42,11 @@ async function loadConversations() {
 
 async function startNewConversation() {
     try {
-        await api.createNewConversation();
+        const newConvo = await api.createNewConversation();
         await loadConversations();
+        if (newConvo && newConvo.id) {
+            await switchConversation(newConvo.id);
+        }
     } catch (error) {
         console.error('Failed to create new conversation:', error);
         ui.showToast('Could not start a new chat.', 'error');
@@ -64,12 +67,8 @@ async function switchConversation(id) {
                 ui.displayMessage(turn.role, turn.content, date, null, (ledger) => ui.showModal('conscience', ledger));
             });
         } else {
-            // In a real app, you would fetch this from your API.
-            const mockActiveProfile = {
-                name: 'Default Ethical Framework',
-                values: ['Beneficence', 'Non-maleficence', 'Autonomy', 'Justice']
-            };
-            ui.displayEmptyState(mockActiveProfile);
+            const activeProfile = await api.fetchActiveProfile();
+            ui.displayEmptyState(activeProfile);
         }
         
         msgCountByConvo[id] = history?.length || 0;
@@ -77,7 +76,7 @@ async function switchConversation(id) {
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        ui.displayEmptyState();
+        ui.displayEmptyState(); 
     }
 }
 
@@ -92,8 +91,8 @@ async function sendMessage() {
 
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
-    autoSize();
-    ui.elements.sendButton.disabled = true;
+    autoSize(); // This will now correctly disable the button
+    
     const loadingIndicator = ui.showLoadingIndicator();
 
     try {
@@ -127,18 +126,37 @@ async function sendMessage() {
         loadingIndicator.remove();
         ui.displayMessage('ai', 'Sorry, an error occurred.', new Date());
         ui.elements.messageInput.value = originalMessage;
-        autoSize();
+        autoSize(); // Restore text and correctly set button state
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
         ui.updateConnectionStatus(false);
     } finally {
-        ui.elements.sendButton.disabled = false;
         ui.elements.messageInput.focus();
     }
 }
 
 function autoSize() {
-    ui.elements.messageInput.style.height = 'auto';
-    ui.elements.messageInput.style.height = `${Math.min(ui.elements.messageInput.scrollHeight, 200)}px`;
+    const input = ui.elements.messageInput;
+    const sendButton = ui.elements.sendButton;
+
+    // 1. Enable/disable the send button based on input content
+    const hasText = input.value.trim().length > 0;
+    sendButton.disabled = !hasText;
+
+    // 2. Handle textarea resizing with a max height
+    input.style.height = 'auto'; // Reset height to correctly calculate the new scrollHeight
+    const scrollHeight = input.scrollHeight;
+    const maxHeight = 120; // Max height in pixels (approx. 6 lines of text)
+    
+    // Set the new height, capped at the max height
+    input.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+
+    // Make the textarea scrollable only when it reaches the max height
+    if (scrollHeight > maxHeight) {
+        input.classList.add('overflow-y-auto', 'custom-scrollbar');
+    } else {
+        input.classList.remove('overflow-y-auto', 'custom-scrollbar');
+    }
+
     ui.scrollToBottom();
 }
 
@@ -203,10 +221,12 @@ function initializeApp() {
     checkLoginStatus();
     setInterval(() => api.checkConnection().then(ui.updateConnectionStatus), 60000);
 
+    ui.elements.sendButton.disabled = true; // Start with the button disabled
+    ui.elements.messageInput.addEventListener('input', autoSize); // This now handles everything
+
     ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
     ui.elements.sendButton.addEventListener('click', sendMessage);
     ui.elements.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-    ui.elements.messageInput.addEventListener('input', autoSize);
     ui.elements.newChatButton.addEventListener('click', () => { startNewConversation(); if (window.innerWidth < 768) ui.closeSidebar(); });
     
     ui.elements.themeToggle.addEventListener('click', () => {
@@ -219,6 +239,7 @@ function initializeApp() {
     ui.elements.closeSidebarButton.addEventListener('click', ui.closeSidebar);
     ui.elements.sidebarOverlay.addEventListener('click', ui.closeSidebar);
     ui.elements.closeConscienceModalBtn.addEventListener('click', ui.closeModal);
+    ui.elements.mobileCloseConscienceModalBtn.addEventListener('click', ui.closeModal);
     ui.elements.cancelDeleteBtn.addEventListener('click', ui.closeModal);
     ui.elements.modalBackdrop.addEventListener('click', ui.closeModal);
     ui.elements.confirmDeleteBtn.addEventListener('click', handleDeleteAccount);
