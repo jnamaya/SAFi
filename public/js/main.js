@@ -56,30 +56,28 @@ async function switchConversation(id) {
     ui.resetChatView();
 
     try {
-        const [history, convos] = await Promise.all([
-            api.fetchHistory(id),
-            api.fetchConversations()
-        ]);
+        const history = await api.fetchHistory(id);
         
-        const current = convos?.find(c => String(c.id) === String(id));
-        ui.elements.chatTitle.textContent = current?.title || 'Chat';
-
         if (history?.length > 0) {
             history.forEach((turn, i) => {
                 const date = turn.timestamp ? new Date(turn.timestamp) : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
                 ui.displayMessage(turn.role, turn.content, date, null, (ledger) => ui.showModal('conscience', ledger));
             });
         } else {
-            ui.elements.emptyState.classList.remove('hidden');
+            // In a real app, you would fetch this from your API.
+            const mockActiveProfile = {
+                name: 'Default Ethical Framework',
+                values: ['Beneficence', 'Non-maleficence', 'Autonomy', 'Justice']
+            };
+            ui.displayEmptyState(mockActiveProfile);
         }
         
         msgCountByConvo[id] = history?.length || 0;
-        ui.adjustChatPadding();
         ui.scrollToBottom();
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        ui.elements.emptyState.classList.remove('hidden');
+        ui.displayEmptyState();
     }
 }
 
@@ -104,18 +102,18 @@ async function sendMessage() {
         
         const aiNow = new Date();
         const consciencePayload = {
-  ledger: aiResponse.conscienceLedger || [],
-  profile: aiResponse.activeProfile || null,
-  values: aiResponse.activeValues || []
-};
+          ledger: aiResponse.conscienceLedger || [],
+          profile: aiResponse.activeProfile || null,
+          values: aiResponse.activeValues || []
+        };
 
-ui.displayMessage(
-  'ai',
-  aiResponse.finalOutput,
-  aiNow,
-  consciencePayload,
-  (payload) => ui.showModal('conscience', payload)
-);
+        ui.displayMessage(
+          'ai',
+          aiResponse.finalOutput,
+          aiNow,
+          consciencePayload,
+          (payload) => ui.showModal('conscience', payload)
+        );
 
         utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'ai', aiResponse.finalOutput, aiNow);
         bumpMsgCount(currentConversationId);
@@ -123,7 +121,6 @@ ui.displayMessage(
         if (aiResponse.newTitle) {
             const link = document.querySelector(`#convo-list div[data-id="${currentConversationId}"] button`);
             if (link) link.textContent = aiResponse.newTitle;
-            if (ui.elements.chatTitle.textContent === 'New Chat') ui.elements.chatTitle.textContent = aiResponse.newTitle;
         }
         ui.updateConnectionStatus(true);
     } catch (error) {
@@ -139,39 +136,11 @@ ui.displayMessage(
     }
 }
 
-function renderConscienceHeader(container, payload) {
-  const name = payload.profile || 'Current value set';
-  const chips = (payload.values || []).map(v => (
-    `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">
-       ${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span>
-     </span>`
-  )).join(' ');
-
-  const html = `
-    <div class="mb-4">
-      <div class="text-xs uppercase tracking-wide text-neutral-500">Active value set</div>
-      <div class="text-base font-semibold">${name}</div>
-      <div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div>
-    </div>
-  `;
-  container.insertAdjacentHTML('afterbegin', html);
+function autoSize() {
+    ui.elements.messageInput.style.height = 'auto';
+    ui.elements.messageInput.style.height = `${Math.min(ui.elements.messageInput.scrollHeight, 200)}px`;
+    ui.scrollToBottom();
 }
-
-function renderConscienceLedger(container, ledger) {
-  // If you already have your own card renderer, call it instead of this function.
-  const items = (ledger || []).map(row => {
-    const s = Number(row.score || 0);
-    const dir = s > 0 ? 'Upholds' : s < 0 ? 'Conflicts with' : 'Neutral on';
-    return `
-      <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
-        <div class="font-semibold">${dir} ${row.value}</div>
-        <div class="text-sm text-neutral-600 dark:text-neutral-400 mt-1">${row.reason || ''}</div>
-      </div>
-    `;
-  }).join('');
-  container.insertAdjacentHTML('beforeend', items || '<div class="text-sm text-neutral-500">No ledger available.</div>');
-}
-
 
 function showOptionsMenu(event, id, title) {
     event.stopPropagation();
@@ -229,31 +198,11 @@ async function handleDeleteAccount() {
     }
 }
 
-function autoSize() {
-    ui.elements.messageInput.style.height = 'auto';
-    ui.elements.messageInput.style.height = `${Math.min(ui.elements.messageInput.scrollHeight, 200)}px`;
-    ui.adjustChatPadding();
-    ui.scrollToBottom();
-}
-
-/**
- * Main app initialization function.
- * This function is called once the DOM is fully loaded.
- */
 function initializeApp() {
-    // Set the initial theme icon state
     ui.updateThemeUI();
-    
-    // Check login status and load initial data
     checkLoginStatus();
-    
-    // Adjust UI elements
-    ui.adjustChatPadding();
-    
-    // Set up periodic connection check
     setInterval(() => api.checkConnection().then(ui.updateConnectionStatus), 60000);
 
-    // --- Attach all event listeners ---
     ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
     ui.elements.sendButton.addEventListener('click', sendMessage);
     ui.elements.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
@@ -281,10 +230,9 @@ function initializeApp() {
         });
         btn.className = 'p-3 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-sm text-left hover:bg-neutral-200 dark:hover:bg-neutral-700 transition';
     });
-
-    new ResizeObserver(() => { ui.adjustChatPadding(); ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
-    window.addEventListener('resize', () => { ui.adjustChatPadding(); ui.scrollToBottom(); });
+    
+    new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
+    window.addEventListener('resize', () => { ui.scrollToBottom(); });
 }
 
-// Start the application once the DOM is ready
 document.addEventListener('DOMContentLoaded', initializeApp);

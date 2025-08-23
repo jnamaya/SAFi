@@ -7,6 +7,8 @@ export const urls = {
     LOGOUT: `${API_BASE_URL}/api/logout`,
     ME: `${API_BASE_URL}/api/me`,
     CONVERSATIONS: `${API_BASE_URL}/api/conversations`,
+    // CHANGE: Added the new profiles endpoint
+    PROFILES: `${API_BASE_URL}/api/profiles`,
     PROCESS_PROMPT: `${API_BASE_URL}/api/process_prompt`,
     HEALTH: `${API_BASE_URL}/api/health`,
 };
@@ -28,6 +30,13 @@ export async function checkConnection() {
     } catch (error) {
         return false;
     }
+}
+
+// CHANGE: This new function calls your backend to get the active value profile.
+export async function fetchActiveProfile() {
+    const response = await fetch(urls.PROFILES, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    return await response.json();
 }
 
 export async function fetchConversations() {
