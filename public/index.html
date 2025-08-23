@@ -1,14 +1,11 @@
 <!DOCTYPE html>
-<!-- The lang attribute is essential for screen readers and search engines. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- Added a more descriptive meta description for SEO and sharing previews. -->
   <meta name="description" content="SAFi - The Ethical Reasoning Engine. Ask ethical questions and get guided answers." />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>SAFi - Ethical Reasoning Engine</title>
 
-  <!-- External Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,16 +13,12 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
-  <!-- Your custom stylesheet -->
-  <!-- It's good practice to link your own stylesheets after library styles. -->
   <link rel="stylesheet" href="styles.css">
 
-  <!-- Tailwind and Dark Mode Configuration -->
  <script>
     tailwind.config = { darkMode: 'class' };
   </script>
   <script>
-    // This script is fine for preventing FOUC (Flash of Unstyled Content)
     if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
     } else {
@@ -33,20 +26,15 @@
     }
   </script>
 </head>
-<body class="min-h-[100dvh] w-full bg-white text-black dark:bg-black dark:text-white transition-colors duration-300 overflow-x-hidden">
+<body class="h-[100dvh] w-full bg-white text-black dark:bg-black dark:text-white transition-colors duration-300 overflow-hidden">
 
-  <!-- Using a main landmark for the primary content of the page -->
-  <main id="app-container" class="w-full h-full flex relative min-h-0 overflow-y-auto">
+  <main id="app-container" class="w-full h-full flex relative">
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
 
-    <!-- The sidebar is a complementary landmark -->
-    <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-64 bg-neutral-100 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:sticky md:top-0 md:h-[100dvh] md:shrink-0 md:flex overflow-y-auto sidebar-scrollbar">
+    <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-64 bg-neutral-100 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:shrink-0 h-full">
       <div class="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
         <h2 class="font-semibold">Conversations</h2>
-        <!-- Explicitly setting type="button" prevents accidental form submission. -->
-        <!-- Added aria-label for accessibility, describing what the button does. -->
         <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
-          <!-- aria-hidden="true" tells screen readers to ignore this decorative icon. -->
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
@@ -56,16 +44,13 @@
           New Chat
         </button>
       </div>
-      <!-- The navigation landmark helps users find their way around. -->
-      <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 sidebar-scrollbar min-h-0"></nav>
+      <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar min-h-0"></nav>
       <div id="user-profile-sidebar" class="p-4 border-t border-neutral-200 dark:border-neutral-800"></div>
     </aside>
 
-    <div class="flex-1 h-full flex justify-center min-h-0">
-      <!-- Changed to a <section> for better semantic grouping of content -->
-      <section class="w-full max-w-4xl h-full flex flex-col min-h-0 px-3 sm:px-0">
+    <div class="flex-1 flex flex-col min-w-0">
+      <section class="w-full max-w-4xl mx-auto flex flex-col flex-1 min-h-0 px-3 sm:px-0">
         <div id="login-view" class="w-full h-full flex flex-col items-center justify-center bg-white dark:bg-black p-6 overflow-y-auto overscroll-contain min-h-0">
-          <!-- Alt text should be descriptive. If the logo is just decorative, alt="" is also an option. -->
           <img src="assets/logo.png" alt="SAFi Application Logo" class="h-16 w-16 mb-6 rounded-xl" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
           <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
           <p class="text-neutral-500 dark:text-neutral-400 mt-2 mb-8">The Ethical Reasoning Engine</p>
@@ -75,9 +60,8 @@
           </button>
         </div>
 
-        <div id="chat-view" class="w-full h-full hidden flex-col bg-white dark:bg-black min-h-0">
-          <!-- The header landmark is useful for page structure -->
-          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between sticky top-0 bg-white/80 dark:bg-black/80 backdrop-blur z-20">
+        <div id="chat-view" class="w-full h-full hidden flex flex-col bg-white dark:bg-black min-h-0">
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20">
             <div class="flex items-center gap-3">
               <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 md:hidden">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -86,7 +70,6 @@
               <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
             </div>
             <div class="flex items-center gap-3">
-              <!-- aria-live="polite" will make screen readers announce changes to the connection status. -->
               <div id="connection-status" class="flex items-center gap-2 text-sm text-neutral-500" aria-live="polite">
                 <div id="connection-status-dot" class="w-2 h-2 rounded-full bg-yellow-400"></div>
                 <span id="connection-status-text">Connecting</span>
@@ -98,12 +81,10 @@
             </div>
           </header>
 
-          <!-- This is the main content area for the chat itself -->
-          <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col gap-5">
-            <!-- --- CHANGE START --- I've removed the 'hidden' class so you can see this element. --- -->
+          <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col gap-5 custom-scrollbar">
             <div id="empty-state" class="m-auto text-center">
-            <!-- --- CHANGE END --- -->
               <img src="assets/logo.png" alt="" class="h-16 w-16 mb-4 rounded-xl mx-auto" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
+              <div id="active-profile-display" class="mb-6 text-sm"></div>
               <h2 class="text-xl font-semibold">How can I help you today?</h2>
               <p class="text-neutral-500 dark:text-neutral-400 mt-2">Ask me an ethical question to get started.</p>
               <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
@@ -115,14 +96,10 @@
             </div>
           </div>
 
-          <!-- The footer landmark contains the message composer -->
-          <footer id="composer-footer" class="sticky bottom-0 p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur">
-            <!-- Using a <form> element is more semantic for user input -->
+          <footer id="composer-footer" class="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur">
             <form id="chat-form" class="flex w-full max-w-full items-end gap-2 bg-white dark:bg-neutral-900 border border-green-600 rounded-full px-4 py-2 shadow-md focus-within:ring-2 focus-within:ring-green-500 transition">
-              <!-- Added a visually hidden label for the textarea for screen readers -->
               <label for="message-input" class="sr-only">Ask something</label>
               <textarea id="message-input" rows="1" class="flex-1 w-full resize-none bg-transparent placeholder-neutral-500 border-none focus:ring-0 focus:outline-none px-2 py-2 text-[16px] sm:text-sm" placeholder="Ask something..."></textarea>
-              <!-- Changed to type="submit" to work with the form. It can now be submitted by pressing Enter. -->
               <button id="send-button" type="submit" aria-label="Send message" class="shrink-0 bg-green-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-green-500 disabled:bg-neutral-500 transition">Send</button>
             </form>
           </footer>
@@ -130,12 +107,11 @@
       </section>
     </div>
   </main>
-
+  
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
   
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
-  <!-- Added ARIA roles to make the modal more accessible -->
   <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
       <div class="flex items-center justify-between mb-4">
         <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
@@ -154,7 +130,6 @@
       </div>
   </div>
 
-  <!-- Your main JavaScript file -->
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
