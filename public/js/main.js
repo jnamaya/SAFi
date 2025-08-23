@@ -103,7 +103,20 @@ async function sendMessage() {
         loadingIndicator.remove();
         
         const aiNow = new Date();
-        ui.displayMessage('ai', aiResponse.finalOutput, aiNow, aiResponse.conscienceLedger, (ledger) => ui.showModal('conscience', ledger));
+        const consciencePayload = {
+  ledger: aiResponse.conscienceLedger || [],
+  profile: aiResponse.activeProfile || null,
+  values: aiResponse.activeValues || []
+};
+
+ui.displayMessage(
+  'ai',
+  aiResponse.finalOutput,
+  aiNow,
+  consciencePayload,
+  (payload) => ui.showModal('conscience', payload)
+);
+
         utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'ai', aiResponse.finalOutput, aiNow);
         bumpMsgCount(currentConversationId);
 
@@ -125,6 +138,40 @@ async function sendMessage() {
         ui.elements.messageInput.focus();
     }
 }
+
+function renderConscienceHeader(container, payload) {
+  const name = payload.profile || 'Current value set';
+  const chips = (payload.values || []).map(v => (
+    `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">
+       ${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span>
+     </span>`
+  )).join(' ');
+
+  const html = `
+    <div class="mb-4">
+      <div class="text-xs uppercase tracking-wide text-neutral-500">Active value set</div>
+      <div class="text-base font-semibold">${name}</div>
+      <div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div>
+    </div>
+  `;
+  container.insertAdjacentHTML('afterbegin', html);
+}
+
+function renderConscienceLedger(container, ledger) {
+  // If you already have your own card renderer, call it instead of this function.
+  const items = (ledger || []).map(row => {
+    const s = Number(row.score || 0);
+    const dir = s > 0 ? 'Upholds' : s < 0 ? 'Conflicts with' : 'Neutral on';
+    return `
+      <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
+        <div class="font-semibold">${dir} ${row.value}</div>
+        <div class="text-sm text-neutral-600 dark:text-neutral-400 mt-1">${row.reason || ''}</div>
+      </div>
+    `;
+  }).join('');
+  container.insertAdjacentHTML('beforeend', items || '<div class="text-sm text-neutral-500">No ledger available.</div>');
+}
+
 
 function showOptionsMenu(event, id, title) {
     event.stopPropagation();
