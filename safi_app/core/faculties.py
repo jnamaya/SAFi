@@ -15,6 +15,31 @@ class IntellectEngine:
         self.model = model or "gpt-4o-mini"
         self.profile = profile or {}
         self.last_error: Optional[str] = None
+        self.require_reflection: bool = bool(self.profile.get("require_reflection", True))
+
+    async def _reflect(self, *, user_prompt: str, draft: str, worldview: str) -> str:
+        sys = (
+            "You are a careful ethic reviewer. Produce a concise reflection on the ANSWER. "
+            "Keep it 3–6 bullets. Focus on alignment with the stated worldview and values, "
+            "edge cases, and risks. Output ONLY the reflection text."
+        )
+        user = (
+            f"USER PROMPT:\n{user_prompt}\n\n"
+            f"WORLDVIEW (may be empty):\n{worldview or ''}\n\n"
+            f"ANSWER:\n{draft}\n\n"
+            "Write the reflection now."
+        )
+        try:
+            resp = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=self.model,
+                temperature=0.3,
+                messages=[{"role": "system", "content": sys},
+                          {"role": "user", "content": user}],
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception:
+            return ""
 
     async def generate(self, *, user_prompt: str, memory_summary: str) -> Tuple[Optional[str], Optional[str]]:
         self.last_error = None
@@ -22,12 +47,24 @@ class IntellectEngine:
         worldview = self.profile.get("worldview")
         style = self.profile.get("style")
 
+        fmt = (
+            "Format your response EXACTLY like this:\n"
+            "<ANSWER>\n"
+            "…final answer in plain text…\n"
+            "</ANSWER>\n"
+            "<REFLECTION>\n"
+            "…3–6 short bullets on value alignment, caveats, and risks…\n"
+            "</REFLECTION>"
+        )
+
         if worldview or style:
-            sys_lines = [ln for ln in [worldview, style, memory_injection] if ln]
+            sys_lines = [ln for ln in [worldview, style, memory_injection, fmt] if ln]
             system_prompt = "\n\n".join(sys_lines)
         else:
-            system_prompt = ("You are an ethical assistant speaking in a natural, conversational tone. "
-                             "Give a direct answer first.\n\n" + memory_injection)
+            system_prompt = (
+                "You are an ethical assistant speaking in a natural, conversational tone. "
+                "Give a direct answer first.\n\n" + memory_injection + "\n\n" + fmt
+            )
 
         msgs = [
             {"role": "system", "content": system_prompt},
@@ -48,11 +85,26 @@ class IntellectEngine:
                     messages=msgs,
                 )
                 text = resp.choices[0].message.content or ""
-                parts = text.split('<REFLECTION>')
-                draft = parts[0].strip()
-                reflection = parts[1].replace('</REFLECTION>', '').strip() if len(parts) > 1 else ""
+
+                answer = ""
+                reflection = ""
+                if "<ANSWER>" in text and "</ANSWER>" in text:
+                    answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip()
+                else:
+                    answer = text.split("<REFLECTION>")[0].strip()
+
+                if "<REFLECTION>" in text and "</REFLECTION>" in text:
+                    reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip()
+                else:
+                    reflection = ""
+
+                if self.require_reflection and not reflection and answer:
+                    reflection = await self._reflect(
+                        user_prompt=user_prompt, draft=answer, worldview=worldview or ""
+                    )
+
                 self.model = m
-                return draft, reflection
+                return (answer or None), (reflection or "")
             except Exception as e:
                 self.last_error = f"{type(e).__name__}: {e} (model={m})"
                 continue
@@ -79,21 +131,19 @@ class WillGate:
         rules = self.profile.get("will_rules") or [
             "Do not approve content that promotes or beautifies violations of the values.",
         ]
-        safety = self.profile.get("safety_overrides") or []
         name = self.profile.get("name", "")
 
-        lines = [
+        policy = "\n".join([
             "You are Will, the ethical gatekeeper. Decide if the draft aligns with the value set.",
             f"Tradition: {name}" if name else "",
             "Rules:",
             *[f"- {r}" for r in rules],
-            "Return JSON {decision: 'approve'|'violation', reason: string}.",
-            f"Value Set:\n{json.dumps(self.values, indent=2)}",
-        ]
-        if safety:
-            lines.insert(-2, "Safety:")
-            lines[lines.index("Safety:")+1:1] = [f"- {s}" for s in safety]
-        policy = "\n".join([x for x in lines if x])
+            "Value Set:",
+            json.dumps(self.values, indent=2),
+            "Return a single JSON object with exactly these keys: decision, reason.",
+            "decision ∈ {'approve','violation'}. reason is a concise natural language sentence.",
+        ])
+
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
         try:
@@ -113,11 +163,19 @@ class WillGate:
             except Exception:
                 obj = {}
 
-            decision = obj.get("decision", "violation")
-            reason = obj.get("reason", "No reason")
+            decision = str(obj.get("decision") or "").strip().lower()
+            reason = (obj.get("reason") or "").strip()
+
+            if decision not in {"approve", "violation"}:
+                decision = "violation"
+
+            if not reason:
+                reason = "Decision explained by Will policies and the active value set."
+
             tup = (decision, reason)
             self.cache[key] = tup
             return tup
+
         except Exception as e:
             return ("violation", f"Will exception: {type(e).__name__}: {e}")
 
@@ -132,7 +190,8 @@ class ConscienceAuditor:
         values_str = "\n".join([f"- {v['value']}" for v in self.values])
         sys_prompt = (
             "You are Conscience. Score the ANSWER's alignment with each value (not the behavior discussed). "
-            "Use scores in {-1, 0, 0.5, 1} and confidence in [0,1]. Return JSON {evaluations:[{value,score,confidence,reason}...]}."
+            "Use scores in {-1, 0, 0.5, 1} and confidence in [0,1]. "
+            "Return JSON {evaluations:[{value,score,confidence,reason}...]}"
         )
         body = (
             f"VALUES:\n{values_str}\n\nPROMPT:\n{user_prompt}\n\nOUTPUT:\n{final_output}\n\nREFLECTION:\n{reflection}"
