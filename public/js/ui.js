@@ -1,4 +1,4 @@
-import { formatTime /*, escapeHtml if you add it later */ } from './utils.js';
+import { formatTime } from './utils.js';
 
 export const elements = {
   loginView: document.getElementById('login-view'),
@@ -19,6 +19,7 @@ export const elements = {
   closeSidebarButton: document.getElementById('close-sidebar-button'),
   sidebarOverlay: document.getElementById('sidebar-overlay'),
   emptyState: document.getElementById('empty-state'),
+  activeProfileDisplay: document.getElementById('active-profile-display'),
   connectionStatusDot: document.getElementById('connection-status-dot'),
   connectionStatusText: document.getElementById('connection-status-text'),
   toastContainer: document.getElementById('toast-container'),
@@ -113,7 +114,6 @@ export function displayMessage(sender, text, date = new Date(), payloadOrLedger 
 
   const style = `style="font-size: 0.75rem; margin-top: 0.35rem;"`;
 
-  // Detect whether we got the old array or the new payload
   const isArray = Array.isArray(payloadOrLedger);
   const payload = isArray
     ? { ledger: payloadOrLedger }
@@ -211,8 +211,6 @@ export function showModal(kind, data) {
     modal.classList.remove('hidden');
     return;
   }
-
-  // other modal kinds...
 }
 
 function renderConscienceHeader(container, profileName, values) {
@@ -236,33 +234,13 @@ function renderConscienceHeader(container, profileName, values) {
 function renderConscienceLedger(container, ledger) {
   const html = (ledger || []).map(row => {
     const s = Number(row.score ?? 0);
-
-    // bucket + styling
     const bucket = s > 0 ? 'uphold' : s < 0 ? 'conflict' : 'neutral';
-
     const tone = {
-      uphold: {
-        icon: '▲',
-        pill: 'text-green-700 bg-green-50 dark:text-green-300 dark:bg-green-900/30',
-        title: 'text-green-700 dark:text-green-300',
-        label: 'Upholds',
-      },
-      conflict: {
-        icon: '▼',
-        pill: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-900/30',
-        title: 'text-red-700 dark:text-red-300',
-        label: 'Conflicts with',
-      },
-      neutral: {
-        icon: '•',
-        pill: 'text-neutral-600 bg-neutral-100 dark:text-neutral-300 dark:bg-neutral-800',
-        title: 'text-neutral-800 dark:text-neutral-200',
-        label: 'Neutral on',
-      }
+      uphold: { icon: '▲', pill: 'text-green-700 bg-green-50 dark:text-green-300 dark:bg-green-900/30', title: 'text-green-700 dark:text-green-300', label: 'Upholds' },
+      conflict: { icon: '▼', pill: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-900/30', title: 'text-red-700 dark:text-red-300', label: 'Conflicts with' },
+      neutral: { icon: '•', pill: 'text-neutral-600 bg-neutral-100 dark:text-neutral-300 dark:bg-neutral-800', title: 'text-neutral-800 dark:text-neutral-200', label: 'Neutral on' }
     }[bucket];
-
     const reason = row.reason ? DOMPurify.sanitize(String(row.reason)) : '';
-
     return `
       <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 mb-3">
         <div class="flex items-center gap-2 mb-1">
@@ -270,27 +248,15 @@ function renderConscienceLedger(container, ledger) {
           <div class="font-semibold ${tone.title}">${tone.label} ${row.value}</div>
         </div>
         <div class="text-sm text-neutral-600 dark:text-neutral-400">${reason}</div>
-      </div>
-    `;
+      </div>`;
   }).join('');
-
-  container.insertAdjacentHTML(
-    'beforeend',
-    html || '<div class="text-sm text-neutral-500">No ledger available.</div>'
-  );
+  container.insertAdjacentHTML('beforeend', html || '<div class="text-sm text-neutral-500">No ledger available.</div>');
 }
-
 
 export function closeModal() {
   elements.modalBackdrop.classList.add('hidden');
   elements.conscienceModal.classList.add('hidden');
   elements.deleteAccountModal.classList.add('hidden');
-}
-
-export function adjustChatPadding() {
-  if (!elements.composerFooter) return;
-  const extra = 16;
-  elements.chatWindow.style.paddingBottom = `${elements.composerFooter.offsetHeight + extra}px`;
 }
 
 export function scrollToBottom() {
@@ -325,9 +291,26 @@ function makeCopyButton(text) {
   return btn;
 }
 
+export function displayEmptyState(activeProfile) {
+  if (activeProfile && elements.activeProfileDisplay) {
+    // CHANGE: Your backend sends an array of objects, so we access the 'value' property of each.
+    const valuesHtml = (activeProfile.values || [])
+      .map(v => `<span class="inline-block bg-neutral-200 dark:bg-neutral-700 rounded-full px-3 py-1 text-xs font-semibold text-neutral-700 dark:text-neutral-200">${v.value}</span>`)
+      .join(' ');
+
+    elements.activeProfileDisplay.innerHTML = `
+      <p class="text-neutral-500 dark:text-neutral-400 mb-2">Using value set:</p>
+      <div class="font-semibold text-base mb-3">${activeProfile.current || 'Default'}</div>
+      <div class="flex flex-wrap justify-center gap-2 max-w-md mx-auto">${valuesHtml}</div>
+    `;
+  }
+  elements.emptyState.classList.remove('hidden');
+}
+
 export function resetChatView() {
   lastRenderedDay = '';
   elements.chatWindow.innerHTML = '';
+  if(elements.activeProfileDisplay) elements.activeProfileDisplay.innerHTML = '';
   elements.emptyState.classList.add('hidden');
 }
 

@@ -27,8 +27,30 @@ export function setTimestamp(convoId, index, role, content, date) {
   localStorage.setItem(key, String((date instanceof Date ? date : new Date(date)).getTime()));
 }
 
+/**
+ * Formats a Date object into a string like "10:30 AM".
+ * @param {Date} date The date to format.
+ * @returns {string} The formatted time string.
+ */
 export function formatTime(date) {
+  if (!(date instanceof Date)) {
+    return '';
+  }
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/**
+ * A utility function for escaping HTML to prevent XSS attacks.
+ * @param {string} str The string to escape.
+ * @returns {string} The escaped string.
+ */
+export function escapeHtml(str) {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 export async function responseToJsonSafe(res) {
