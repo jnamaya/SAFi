@@ -71,8 +71,8 @@ export function updateUIForAuthState(user, logoutHandler) {
         </div>
       </div>
       <div class="mt-4 flex items-center justify-between text-sm">
+      <button id="delete-account-btn" class="font-semibold text-red-600 dark:text-red-500 hover:underline">Delete</button>
         <button id="logout-button" class="font-semibold text-neutral-500 hover:text-black dark:hover:text-white">Sign Out</button>
-        <button id="delete-account-btn" class="font-semibold text-red-600 dark:text-red-500 hover:underline">Delete Account</button>
       </div>`;
     document.getElementById('logout-button').addEventListener('click', logoutHandler);
     document.getElementById('delete-account-btn').addEventListener('click', () => showModal('delete'));
