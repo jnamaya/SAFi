@@ -97,28 +97,37 @@
           </div>
 
           <footer id="composer-footer" class="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur">
-            <form id="chat-form" class="flex w-full max-w-full items-end gap-2 bg-white dark:bg-neutral-900 border border-green-600 rounded-full px-4 py-2 shadow-md focus-within:ring-2 focus-within:ring-green-500 transition">
+            <form id="chat-form" class="flex w-full max-w-full items-end gap-2 bg-white dark:bg-neutral-900 border border-green-600 rounded-full px-4 py-2 shadow-md focus-within:ring-2 focus-within:ring-green-500 transition-all duration-300">
               <label for="message-input" class="sr-only">Ask something</label>
               <textarea id="message-input" rows="1" class="flex-1 w-full resize-none bg-transparent placeholder-neutral-500 border-none focus:ring-0 focus:outline-none px-2 py-2 text-[16px] sm:text-sm" placeholder="Ask something..."></textarea>
-              <button id="send-button" type="submit" aria-label="Send message" class="shrink-0 bg-green-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-green-500 disabled:bg-neutral-500 transition">Send</button>
+              <button id="send-button" type="submit" aria-label="Send message" class="shrink-0 bg-green-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-green-500 disabled:bg-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">Send</button>
             </form>
           </footer>
         </div>
       </section>
     </div>
   </main>
-  
+
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
   
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
-  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
-      <div class="flex items-center justify-between mb-4">
+  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" 
+       class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[80vh]">
+      
+      <div class="flex items-center justify-between mb-4 shrink-0">
         <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
-        <button id="close-conscience-modal" type="button" aria-label="Close ethical reasoning modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">×</button>
+        <button id="close-conscience-modal" type="button" aria-label="Close ethical reasoning modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 hidden sm:block">×</button>
       </div>
-      <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">This answer was guided by the following ethical principles:</p>
-      <div id="conscience-details" class="space-y-3"></div>
+      
+      <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
+        <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">This answer was guided by the following ethical principles:</p>
+        <div id="conscience-details" class="space-y-3"></div>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700 shrink-0 sm:hidden">
+        <button id="mobile-close-conscience-modal" type="button" class="w-full px-4 py-2 rounded-lg font-semibold bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition">Close</button>
+      </div>
   </div>
 
   <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">

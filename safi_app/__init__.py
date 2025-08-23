@@ -1,5 +1,5 @@
 import os
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -11,17 +11,18 @@ cors = CORS()
 
 def create_app():
     """Application factory function."""
+    # This line is already correctly pointing to your 'public' folder.
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
     
-    # Apply middleware
+    # Apply middleware - This is important for your production setup.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     # Configure extensions with the app instance inside the factory
     oauth.init_app(app)
     cors.init_app(app, supports_credentials=True)
 
-    # Register the Google OAuth client
+    # Register the Google OAuth client using your existing, correct configuration.
     oauth.register(
         name='google',
         client_id=app.config['GOOGLE_CLIENT_ID'],
@@ -34,18 +35,25 @@ def create_app():
         jwks_uri="https://www.googleapis.com/oauth2/v3/certs"
     )
 
-    # Import and register blueprints inside the factory
-    # This avoids circular imports because the blueprints are imported
-    # after the 'oauth' object has been created and configured.
+    # Import and register blueprints inside the factory to avoid circular imports.
     from .api.auth import auth_bp
     from .api.conversations import conversations_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
 
-    # Route to serve the frontend
-    @app.route('/')
-    def serve_index():
-        return app.send_static_file('index.html')
+    # --- MODIFIED ROUTE TO SERVE THE FRONTEND ---
+    # This replaces your original serve_index route with a "catch-all" that
+    # is necessary for single-page applications.
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve(path):
+        # If the requested path is a file that exists in your 'public' folder (like js/main.js),
+        # Flask's static file handling will serve it automatically.
+        # If the path is not a file, it's a frontend route, so we serve index.html.
+        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+        else:
+            return send_from_directory(app.static_folder, 'index.html')
 
     return app
