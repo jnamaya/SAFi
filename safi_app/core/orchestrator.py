@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 import sys
-import os
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -53,28 +53,33 @@ class SAFi:
             raise ValueError(f"Value weights must sum to 1.0, got {total}")
 
         self.db_name = getattr(config, 'DATABASE_NAME', 'safi.db')
-        # Legacy single-file fallback
-        self.log_file = getattr(config, 'LOG_FILE', 'safi.log')
-
-        # New: date-sharded logging support
-        self.log_dir = getattr(config, 'LOG_DIR', None)
+        
+        # Logging configuration
+        self.log_dir = getattr(config, 'LOG_DIR', 'logs')
         self.log_template = getattr(config, 'LOG_FILE_TEMPLATE', None)
-        if self.log_template:
-            # Ensure directory exists when using templated logging
-            os.makedirs(self.log_dir or '.', exist_ok=True)
+        self.legacy_log_file = getattr(config, 'LOG_FILE', 'safi-spirit-log.jsonl')
 
+        # Name used for UI & responses
+        self.active_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
+
+        # Persistent memory for Spirit
         dim = max(len(self.values), 1)
-        self.memory = initial_memory or {"turn": 0, "mu": np.zeros(dim)}
+        loaded_memory = db.load_spirit_memory(self.db_name, self.active_profile_name)
+        if loaded_memory:
+            self.memory = loaded_memory
+            if len(self.memory.get("mu", [])) != dim:
+                self.memory["mu"] = np.zeros(dim)
+        else:
+            self.memory = {"turn": 0, "mu": np.zeros(dim)}
+
 
         self.intellect_engine = IntellectEngine(self.client, model=getattr(config, 'INTELLECT_MODEL', 'gpt-4o-mini'), profile=self.profile)
         self.will_gate = WillGate(self.client, model=getattr(config, 'WILL_MODEL', 'gpt-4o-mini'), values=self.values, profile=self.profile)
         self.conscience = ConscienceAuditor(self.client, model=getattr(config, 'CONSCIENCE_MODEL', 'gpt-4o-mini'), values=self.values)
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, 'SPIRIT_BETA', 0.9))
 
-        # Name used for UI & responses
-        self.active_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
 
-        print("SAFi: ethics-from-values active; Conscience values-only.")
+        print(f"SAFi: profile '{self.active_profile_name}' active; Conscience values-only.")
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         history = db.fetch_chat_history_for_conversation(self.db_name, conversation_id)
@@ -103,7 +108,6 @@ class SAFi:
             db.insert_memory_entry(self.db_name, conversation_id, "prompt", user_prompt)
             db.insert_memory_entry(self.db_name, conversation_id, "final_output", safe_response)
 
-            # Log immediately so suppression entries are visible in JSONL
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "t": int(self.memory['turn']) + 1,
@@ -116,6 +120,7 @@ class SAFi:
                 "conscienceLedger": [],
                 "spiritScore": None,
                 "spiritNote": "Suppressed by Will.",
+                "drift": None,
                 "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)},
                 "p_t_vector": [],
                 "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(),
@@ -131,7 +136,6 @@ class SAFi:
                 "conscienceLedger": [],
             }
 
-        # Run Conscience (now deterministic) and record
         ledger = await self.conscience.evaluate(final_output=a_t, user_prompt=user_prompt, reflection=r_t)
 
         db.insert_memory_entry(self.db_name, conversation_id, "prompt", user_prompt)
@@ -145,7 +149,6 @@ class SAFi:
         snap_hash = dict_sha256(snapshot)
         db.upsert_audit_snapshot(self.db_name, t_next, user_id, snap_hash, snapshot)
 
-        # async audit/logging
         threading.Thread(
             target=self._run_audit_thread,
             args=(snapshot, snap_hash, ledger, D_t, E_t),
@@ -163,40 +166,38 @@ class SAFi:
         }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, ledger: List[Dict[str, Any]], will_decision: str, will_reason: str):
-        S_t, note, mu_new, p_t = self.spirit.compute(ledger, self.memory.get('mu', np.zeros(len(self.values))))
+        S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, self.memory.get('mu', np.zeros(len(self.values))))
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot['t'],
             "userPrompt": snapshot['x_t'], "intellectDraft": snapshot['a_t'],
             "intellectReflection": snapshot['r_t'] or "", "finalOutput": snapshot['a_t'],
             "willDecision": will_decision, "willReason": will_reason,
             "conscienceLedger": ledger,
-            "spiritScore": S_t, "spiritNote": note, "params": snapshot['params'],
+            "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot['params'],
             "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist()
         }
         self._append_log(log_entry)
+        
         self.memory['turn'] += 1
         self.memory['mu'] = np.array(mu_new)
+        db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
+
 
     def _append_log(self, log_entry: Dict[str, Any]):
-        """Append a JSONL row to the current log. If a template is configured,
-        derive the path from the entry timestamp using UTC, so late/backfilled
-        entries land in the correct date bucket.
-        """
+        log_path = self.legacy_log_file
+        if self.log_template:
+            try:
+                ts_str = log_entry.get("timestamp", datetime.now(timezone.utc).isoformat())
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                fname = ts.strftime(self.log_template)
+                p = Path(self.log_dir)
+                p.mkdir(parents=True, exist_ok=True)
+                log_path = p / fname
+            except Exception as e:
+                print(f"Could not format daily log path, falling back to legacy. Error: {e}", file=sys.stderr)
+
         try:
-            ts = log_entry.get("timestamp")
-            if ts:
-                # Support ISO 8601 with Z or explicit offset
-                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            else:
-                dt = datetime.now(timezone.utc)
-
-            if self.log_template:
-                fname = dt.strftime(self.log_template)
-                path = os.path.join(self.log_dir or ".", fname)
-            else:
-                path = self.log_file
-
-            with open(path, 'a', encoding='utf-8') as f:
+            with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e:
-            print(f"Log write error: {e}", file=sys.stderr)
+            print(f"Log write error to {log_path}: {e}", file=sys.stderr)
