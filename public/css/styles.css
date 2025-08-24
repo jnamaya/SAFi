@@ -49,8 +49,9 @@ html, body {
 .chat-bubble { 
   /* Increased line-height for better text breathing room */
   line-height: 1.7; 
-  font-size: 17px; /* Slightly larger base font for readability */
+  font-size: 16px; /* Slightly larger base font for readability */
 }
+
 
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
   font-weight: 600; /* Bolder headings */
