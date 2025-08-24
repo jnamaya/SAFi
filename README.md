@@ -9,7 +9,7 @@ This loop turns ethics into system logic, ensuring transparency, accountability,
 ## Features
 
 * Closed-loop reasoning cycle across five faculties
-* Pluggable value sets (default: UNESCO bioethics, but configurable)
+* Pluggable value sets
 * Conscience scoring with numeric + textual rationale
 * Spirit coherence score (1–10) with drift detection
 * Full JSON logging of each turn for auditing
