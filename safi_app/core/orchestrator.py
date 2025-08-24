@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 import sys
+import os
 
 from openai import OpenAI
 
@@ -52,7 +53,15 @@ class SAFi:
             raise ValueError(f"Value weights must sum to 1.0, got {total}")
 
         self.db_name = getattr(config, 'DATABASE_NAME', 'safi.db')
+        # Legacy single-file fallback
         self.log_file = getattr(config, 'LOG_FILE', 'safi.log')
+
+        # New: date-sharded logging support
+        self.log_dir = getattr(config, 'LOG_DIR', None)
+        self.log_template = getattr(config, 'LOG_FILE_TEMPLATE', None)
+        if self.log_template:
+            # Ensure directory exists when using templated logging
+            os.makedirs(self.log_dir or '.', exist_ok=True)
 
         dim = max(len(self.values), 1)
         self.memory = initial_memory or {"turn": 0, "mu": np.zeros(dim)}
@@ -169,8 +178,25 @@ class SAFi:
         self.memory['mu'] = np.array(mu_new)
 
     def _append_log(self, log_entry: Dict[str, Any]):
+        """Append a JSONL row to the current log. If a template is configured,
+        derive the path from the entry timestamp using UTC, so late/backfilled
+        entries land in the correct date bucket.
+        """
         try:
-            with open(self.log_file, 'a', encoding='utf-8') as f:
+            ts = log_entry.get("timestamp")
+            if ts:
+                # Support ISO 8601 with Z or explicit offset
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            else:
+                dt = datetime.now(timezone.utc)
+
+            if self.log_template:
+                fname = dt.strftime(self.log_template)
+                path = os.path.join(self.log_dir or ".", fname)
+            else:
+                path = self.log_file
+
+            with open(path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e:
             print(f"Log write error: {e}", file=sys.stderr)
