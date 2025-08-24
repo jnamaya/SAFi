@@ -42,7 +42,7 @@ Thumbs.db
 .idea/
 .vscode/
 # a simple dashboard created in streamit
-safi_dashboard.py
+dashboard/
 
 #test file
 test.py
