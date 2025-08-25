@@ -91,7 +91,10 @@
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
               </button>
               <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
-              <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
+              <!-- --- CHANGE: Added a container for the title and new tagline --- -->
+              <div>
+                <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
+              </div>
             </div>
             <div class="flex items-center gap-3">
               <div id="connection-status" class="flex items-center gap-2 text-sm text-neutral-500" aria-live="polite">
@@ -106,8 +109,7 @@
           </header>
 
           <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col justify-start gap-5 custom-scrollbar">
-            <!-- --- CHANGE: Simplified the empty state container --- -->
-            <div id="empty-state" class="text-center">
+            <div id="empty-state" class="text-center pt-8">
               <div id="active-profile-display">
                 <!-- This div will be populated by ui.js -->
               </div>
