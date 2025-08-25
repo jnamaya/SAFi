@@ -60,7 +60,10 @@ class SAFi:
         self.legacy_log_file = getattr(config, 'LOG_FILE', 'safi-spirit-log.jsonl')
 
         # Name used for UI & responses
-        self.active_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
+        # MODIFIED: Force the active profile name to lowercase to ensure consistency
+        raw_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
+        self.active_profile_name = raw_profile_name.lower()
+
 
         # Persistent memory for Spirit
         dim = max(len(self.values), 1)
@@ -189,7 +192,8 @@ class SAFi:
             try:
                 ts_str = log_entry.get("timestamp", datetime.now(timezone.utc).isoformat())
                 ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                fname = ts.strftime(self.log_template)
+                profile_log_template = self.log_template.format(profile=self.active_profile_name)
+                fname = ts.strftime(profile_log_template)
                 p = Path(self.log_dir)
                 p.mkdir(parents=True, exist_ok=True)
                 log_path = p / fname
