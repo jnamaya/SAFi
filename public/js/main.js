@@ -68,7 +68,7 @@ async function switchConversation(id) {
             });
         } else {
             const activeProfile = await api.fetchActiveProfile();
-            ui.displayEmptyState(activeProfile);
+            ui.displayEmptyState(activeProfile, handleExamplePromptClick);
         }
         
         msgCountByConvo[id] = history?.length || 0;
@@ -76,8 +76,21 @@ async function switchConversation(id) {
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        ui.displayEmptyState(); 
+        // --- CHANGE: If history fails, still try to fetch the profile for the empty state ---
+        try {
+            const activeProfile = await api.fetchActiveProfile();
+            ui.displayEmptyState(activeProfile, handleExamplePromptClick);
+        } catch (profileError) {
+            console.error('Failed to fetch active profile for empty state:', profileError);
+            ui.displayEmptyState({}, handleExamplePromptClick); 
+        }
     }
+}
+
+function handleExamplePromptClick(promptText) {
+    ui.elements.messageInput.value = promptText;
+    sendMessage();
+    autoSize();
 }
 
 async function sendMessage() {
@@ -178,13 +191,10 @@ function showOptionsMenu(event, id, title) {
     setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
 }
 
-// --- CHANGE START: Logic updated to prevent toast bug ---
 async function handleRename(id, oldTitle) {
     const newTitle = prompt('Enter new name for the conversation:', oldTitle);
     if (newTitle && newTitle.trim() !== oldTitle) {
-        // Show toast immediately for instant feedback.
         ui.showToast('Conversation renamed.', 'success');
-        // Then, perform the async operations.
         await api.renameConversation(id, newTitle);
         await loadConversations();
     }
@@ -192,14 +202,11 @@ async function handleRename(id, oldTitle) {
 
 async function handleDelete(id) {
     if (confirm('Are you sure you want to delete this conversation?')) {
-        // Show toast immediately for instant feedback.
         ui.showToast('Conversation deleted.', 'success');
-        // Then, perform the async operations.
         await api.deleteConversation(id);
         await loadConversations();
     }
 }
-// --- CHANGE END ---
 
 async function handleLogout() {
     await fetch(api.urls.LOGOUT, { credentials: 'include' });
@@ -245,14 +252,6 @@ function initializeApp() {
     ui.elements.cancelDeleteBtn.addEventListener('click', ui.closeModal);
     ui.elements.modalBackdrop.addEventListener('click', ui.closeModal);
     ui.elements.confirmDeleteBtn.addEventListener('click', handleDeleteAccount);
-    
-    document.querySelectorAll('.example-prompt-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            ui.elements.messageInput.value = btn.textContent.replace(/"/g, '');
-            sendMessage();
-        });
-        btn.className = 'p-3 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-sm text-left hover:bg-neutral-200 dark:hover:bg-neutral-700 transition';
-    });
     
     new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
     window.addEventListener('resize', () => { ui.scrollToBottom(); });

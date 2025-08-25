@@ -1,4 +1,4 @@
-import { formatTime /*, escapeHtml if you add it later */ } from './utils.js';
+import { formatTime } from './utils.js';
 
 export const elements = {
   loginView: document.getElementById('login-view'),
@@ -28,7 +28,6 @@ export const elements = {
   deleteAccountModal: document.getElementById('delete-account-modal'),
   composerFooter: document.getElementById('composer-footer'),
   closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-  // CHANGE: Added the new mobile close button
   mobileCloseConscienceModalBtn: document.getElementById('mobile-close-conscience-modal'),
   cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
   confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
@@ -213,6 +212,10 @@ export function showModal(kind, data) {
     modal.classList.remove('hidden');
     return;
   }
+  if (kind === 'delete') {
+      elements.deleteAccountModal.classList.remove('hidden');
+      elements.modalBackdrop.classList.remove('hidden');
+  }
 }
 
 function renderConscienceHeader(container, profileName, values) {
@@ -293,25 +296,51 @@ function makeCopyButton(text) {
   return btn;
 }
 
-export function displayEmptyState(activeProfile) {
+export function displayEmptyState(activeProfile, promptClickHandler) {
   if (activeProfile && elements.activeProfileDisplay) {
     const valuesHtml = (activeProfile.values || [])
-      .map(v => `<span class="inline-block bg-neutral-200 dark:bg-neutral-700 rounded-full px-3 py-1 text-xs font-semibold text-neutral-700 dark:text-neutral-200">${v.value}</span>`)
+      .map(v => `<span class="value-chip">${v.value}</span>`)
       .join(' ');
 
+    const promptsHtml = (activeProfile.example_prompts || [])
+      .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
+      .join('');
+
     elements.activeProfileDisplay.innerHTML = `
-      <p class="text-neutral-500 dark:text-neutral-400 mb-2">Using value set:</p>
-      <div class="font-semibold text-base mb-3">${activeProfile.current || 'Default'}</div>
-      <div class="flex flex-wrap justify-center gap-2 max-w-md mx-auto">${valuesHtml}</div>
+      <div class="text-center">
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
+        <h2 class="text-2xl font-semibold my-2">${activeProfile.current || 'Default'}</h2>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">value set, which includes:</p>
+        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">Try asking one of these questions to start:</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">
+          ${promptsHtml}
+        </div>
+      </div>
     `;
+    
+    document.querySelectorAll('.example-prompt-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            promptClickHandler(btn.textContent.replace(/"/g, ''));
+        });
+    });
+
   }
   elements.emptyState.classList.remove('hidden');
 }
 
 export function resetChatView() {
   lastRenderedDay = '';
-  elements.chatWindow.innerHTML = '';
+  // Loop through all direct children of chatWindow
+  Array.from(elements.chatWindow.children).forEach(child => {
+    // If the child is not the empty-state div, remove it.
+    if (child.id !== 'empty-state') {
+      child.remove();
+    }
+  });
+  // Clear the dynamic content from the previous welcome screen
   if(elements.activeProfileDisplay) elements.activeProfileDisplay.innerHTML = '';
+  // Hide the empty state until it's needed again
   elements.emptyState.classList.add('hidden');
 }
 
