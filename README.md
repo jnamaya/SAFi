@@ -6,7 +6,6 @@ SAFi is the first open-source implementation of the Self-Alignment Framework (SA
 
 This loop turns ethics into system logic, ensuring transparency, accountability, and drift detection.
 
----
 
 ## Live Demo & Dashboard
 
@@ -17,7 +16,6 @@ You can try SAFi live and view the administrative dashboard here:
 
 (Please note: The public demo is rate-limited to 10 prompts per user per day.)
 
----
 
 ## Features
 
@@ -27,7 +25,6 @@ You can try SAFi live and view the administrative dashboard here:
 * Spirit coherence score (1–10) with drift detection
 * Full JSON logging of each turn for auditing
 
----
 
 ## Architecture
 
@@ -66,8 +63,6 @@ You can try SAFi live and view the administrative dashboard here:
 }
 ```
 
----
-
 ## Installation
 
 ### Requirements
@@ -94,27 +89,21 @@ python safi.py
 * `valuesets/` – directory for custom ethical frameworks
 * `Logs` – written to `saf-spirit-log.json` (newline-delimited JSON)
 
----
-
 ## Roadmap
 
 * **v1.0 (current)** – Stable closed-loop reasoning, UNESCO default values, JSON logs
 * **v1.1 (planned)** – Modular value-set loader, structured Conscience JSON, real-time loop packets
 * **v1.2 (future)** – Web UI, flexible logging backends, visual drift dashboards
 
----
 
 ## Specification
 
 For the full mathematical and architectural definition of SAFi v1.0, see: *SAFi v1.0 Specification*
 
----
 
 ## License
 
 * SAFi code: GNU GPL v3
 * SAF protocol (theory): MIT License
-
----
 
 SAFi is the first bridge between philosophy and machine logic—making values explicit, enforceable, and auditable.
