@@ -82,16 +82,11 @@
           </header>
 
           <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col gap-5 custom-scrollbar">
+            <!-- --- CHANGE: Simplified the empty state to be a container for dynamic content --- -->
             <div id="empty-state" class="m-auto text-center">
               <img src="assets/logo.png" alt="" class="h-16 w-16 mb-4 rounded-xl mx-auto" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
-              <div id="active-profile-display" class="mb-6 text-sm"></div>
-              <h2 class="text-xl font-semibold">How can I help you today?</h2>
-              <p class="text-neutral-500 dark:text-neutral-400 mt-2">Ask me an ethical question to get started.</p>
-              <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto">
-                  <button type="button" class="example-prompt-btn">"Is it ethical to use AI for hiring?"</button>
-                  <button type="button" class="example-prompt-btn">"What are the moral implications of gene editing?"</button>
-                  <button type="button" class="example-prompt-btn">"Explain the trolley problem."</button>
-                  <button type="button" class="example-prompt-btn">"Should I report a coworker for minor misconduct?"</button>
+              <div id="active-profile-display">
+                <!-- This div will be populated by ui.js -->
               </div>
             </div>
           </div>
@@ -108,9 +103,7 @@
     </div>
   </main>
 
-  <!-- --- CHANGE START: Toast container moved back to the bottom right --- -->
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
-  <!-- --- CHANGE END --- -->
   
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   

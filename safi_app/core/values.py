@@ -49,6 +49,12 @@ CATHOLIC_PROFILE: Dict[str, Any] = {
         {"value": "Prudence in Judgment",      "weight": 0.20},
         {"value": "Pursuit of the Common Good","weight": 0.20},
     ],
+    # --- CHANGE: Added example prompts specific to this profile ---
+    "example_prompts": [
+        "Explain the principle of double effect with an example.",
+        "What is the Catholic understanding of social justice?",
+        "How does the Church view the relationship between faith and reason?"
+    ]
 }
 
 
@@ -79,6 +85,12 @@ SECULAR_PROFILE: Dict[str, Any] = {
         {"value": "Minimizing Harm",    "weight": 0.20},
         {"value": "Human Flourishing",  "weight": 0.20}
     ],
+    # --- CHANGE: Added example prompts specific to this profile ---
+    "example_prompts": [
+        "What are the ethical considerations of AI in hiring?",
+        "Explain the concept of a 'just war' from a secular viewpoint.",
+        "Summarize the arguments for and against universal basic income."
+    ]
 }
 
 PROFILES: Dict[str, Dict[str, Any]] = {
