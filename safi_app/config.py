@@ -16,7 +16,8 @@ class Config:
 
     # new date-sharded logging
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
-    LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "saf-spirit-%Y-%m-%d.jsonl")
+    # MODIFIED: Added {profile} placeholder for profile-specific log files
+    LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-spirit-%Y-%m-%d.jsonl")
 
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "gpt-4o")
     WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "gpt-4o")
@@ -25,4 +26,4 @@ class Config:
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
     # default values profile key
-    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "secular").strip().lower()
+    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "catholic").strip().lower()
