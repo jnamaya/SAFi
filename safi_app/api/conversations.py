@@ -27,21 +27,44 @@ def get_user_id():
         return None
     return user.get('sub') or user.get('id')
 
+# ... (your other routes like /health, /profiles, etc. remain the same) ...
+
+@conversations_bp.route('/process_prompt', methods=['POST'])
+def process_prompt_endpoint():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    
+    # --- CHANGE: Enforce the daily prompt limit ---
+    limit = Config.DAILY_PROMPT_LIMIT
+    if limit > 0:
+        count = db.get_todays_prompt_count(Config.DATABASE_NAME, user_id)
+        if count >= limit:
+            return jsonify({
+                "error": f"You have reached your daily limit of {limit} messages. Please try again tomorrow."
+            }), 429 # HTTP 429: Too Many Requests
+
+    data = request.json
+    if 'message' not in data or 'conversation_id' not in data:
+        return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
+    
+    # Record the usage before processing
+    if limit > 0:
+        db.record_prompt_usage(Config.DATABASE_NAME, user_id)
+
+    result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
+    return jsonify(result)
+
+# ... (the rest of your conversation routes) ...
 @conversations_bp.route('/health')
 def health_check():
     prof = getattr(saf_system, 'profile', None) or {}
     return jsonify({"status": "ok", "profile": prof.get("name", _current_profile_name)})
 
-# --- CHANGE: This is the new endpoint for the frontend ---
 @conversations_bp.route('/profiles', methods=['GET'])
 def profiles_list():
     prof = getattr(saf_system, 'profile', None) or {}
-    # Add some example prompts to the response
-    prompts = prof.get("example_prompts", [
-        "What are the ethical considerations of AI in hiring?",
-        "Explain the concept of a 'just war'.",
-        "Summarize the arguments for and against universal basic income."
-    ])
+    prompts = prof.get("example_prompts", [])
     return jsonify({
         "current": prof.get("name", _current_profile_name),
         "key": _current_profile_name,
@@ -90,59 +113,38 @@ def handle_create_conversation():
 @conversations_bp.route('/conversations/<conversation_id>', methods=['PUT'])
 def handle_rename_conversation(conversation_id):
     user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
+    if not user_id: return jsonify({"error": "Authentication required."}), 401
     data = request.json
     new_title = data.get('title')
-    if not new_title:
-        return jsonify({"error": "'title' is required."}), 400
+    if not new_title: return jsonify({"error": "'title' is required."}), 400
     db.rename_conversation(Config.DATABASE_NAME, conversation_id, new_title)
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>', methods=['DELETE'])
 def handle_delete_conversation(conversation_id):
     user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
+    if not user_id: return jsonify({"error": "Authentication required."}), 401
     db.delete_conversation(Config.DATABASE_NAME, conversation_id)
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])
 def get_chat_history(conversation_id):
     user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
+    if not user_id: return jsonify({"error": "Authentication required."}), 401
     history = db.fetch_chat_history_for_conversation(Config.DATABASE_NAME, conversation_id)
     return jsonify(history)
 
 @conversations_bp.route('/conversations/<conversation_id>/export', methods=['GET'])
 def export_chat_history(conversation_id):
     user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
+    if not user_id: return jsonify({"error": "Authentication required."}), 401
     history = db.fetch_chat_history_for_conversation(Config.DATABASE_NAME, conversation_id)
     convos = db.fetch_user_conversations(Config.DATABASE_NAME, user_id)
     convo_title = next((c['title'] for c in convos if c['id'] == conversation_id), "Untitled")
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()
     export_data = {
-        "title": convo_title,
-        "conversation_id": conversation_id,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "history": history
+        "title": convo_title, "conversation_id": conversation_id,
+        "exported_at": datetime.now(timezone.utc).isoformat(), "history": history
     }
-    return Response(
-        json.dumps(export_data, indent=2),
-        mimetype='application/json',
-        headers={'Content-Disposition': f'attachment;filename=SAFi-Export-{filename_title}.json'}
-    )
-
-@conversations_bp.route('/process_prompt', methods=['POST'])
-def process_prompt_endpoint():
-    user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
-    data = request.json
-    if 'message' not in data or 'conversation_id' not in data:
-        return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
-    result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
-    return jsonify(result)
+    return Response(json.dumps(export_data, indent=2), mimetype='application/json',
+                    headers={'Content-Disposition': f'attachment;filename=SAFi-Export-{filename_title}.json'})
