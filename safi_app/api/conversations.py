@@ -12,7 +12,7 @@ conversations_bp = Blueprint('conversations', __name__)
 
 db.init_db(Config.DATABASE_NAME)
 
-_current_profile_name = getattr(Config, "DEFAULT_PROFILE", "catholic")
+_current_profile_name = getattr(Config, "DEFAULT_PROFILE", "secular")
 
 def _load_safi(profile_name: str) -> SAFi:
     prof = get_profile(profile_name)
@@ -32,16 +32,23 @@ def health_check():
     prof = getattr(saf_system, 'profile', None) or {}
     return jsonify({"status": "ok", "profile": prof.get("name", _current_profile_name)})
 
-# --- profiles API ---
+# --- CHANGE: This is the new endpoint for the frontend ---
 @conversations_bp.route('/profiles', methods=['GET'])
 def profiles_list():
     prof = getattr(saf_system, 'profile', None) or {}
+    # Add some example prompts to the response
+    prompts = prof.get("example_prompts", [
+        "What are the ethical considerations of AI in hiring?",
+        "Explain the concept of a 'just war'.",
+        "Summarize the arguments for and against universal basic income."
+    ])
     return jsonify({
         "current": prof.get("name", _current_profile_name),
         "key": _current_profile_name,
         "available": list_profiles(),
         "worldview": prof.get("worldview"),
         "values": prof.get("values", []),
+        "example_prompts": prompts
     })
 
 @conversations_bp.route('/profiles', methods=['POST'])

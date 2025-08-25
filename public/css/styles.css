@@ -45,28 +45,23 @@ html, body {
   background-clip: content-box;
 }
 
-/* --- CHANGE START: Enhanced Readability Styles --- */
 .chat-bubble { 
-  /* Increased line-height for better text breathing room */
   line-height: 1.7; 
-  font-size: 16px; /* Slightly larger base font for readability */
+  font-size: 16px;
 }
 
-
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
-  font-weight: 600; /* Bolder headings */
-  margin-top: 1.25em; /* More space above headings */
-  margin-bottom: 0.5em; /* Space below headings */
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
 }
 .chat-bubble h1 { font-size: 1.25rem; }
 .chat-bubble h2 { font-size: 1.15rem; }
 .chat-bubble h3 { font-size: 1.05rem; }
 
-/* Add more space between paragraphs */
 .chat-bubble p { 
   margin-bottom: 1em; 
 }
-/* Remove margin from the last element in a bubble to prevent extra space */
 .chat-bubble > *:last-child {
     margin-bottom: 0;
 }
@@ -78,7 +73,6 @@ html, body {
 .chat-bubble li { 
   margin-bottom: 0.5em; 
 }
-/* --- CHANGE END --- */
 
 .chat-bubble a { text-decoration: underline; }
 .chat-bubble code { 
@@ -160,4 +154,41 @@ html, body {
   animation: blink 1s step-end infinite;
   margin-left: 2px;
   vertical-align: text-bottom;
+}
+
+/* --- CHANGE: Styles for the new empty state --- */
+.value-chip {
+    display: inline-block;
+    background-color: #e5e7eb; /* bg-neutral-200 */
+    border-radius: 9999px; /* rounded-full */
+    padding: 0.25rem 0.75rem; /* px-3 py-1 */
+    font-size: 0.875rem; /* text-sm */
+    font-weight: 600; /* font-semibold */
+    color: #374151; /* text-neutral-700 */
+}
+
+.dark .value-chip {
+    background-color: #374151; /* dark:bg-neutral-700 */
+    color: #d1d5db; /* dark:text-neutral-200 */
+}
+
+.example-prompt-btn {
+    padding: 0.75rem; /* p-3 */
+    background-color: #f3f4f6; /* bg-neutral-100 */
+    border-radius: 0.5rem; /* rounded-lg */
+    font-size: 0.875rem; /* text-sm */
+    text-align: left;
+    transition: background-color 0.2s;
+}
+
+.example-prompt-btn:hover {
+    background-color: #e5e7eb; /* hover:bg-neutral-200 */
+}
+
+.dark .example-prompt-btn {
+    background-color: #1f2937; /* dark:bg-neutral-800 */
+}
+
+.dark .example-prompt-btn:hover {
+    background-color: #374151; /* dark:hover:bg-neutral-700 */
 }
