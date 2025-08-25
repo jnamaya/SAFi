@@ -306,9 +306,10 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
       .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
       .join('');
 
+    // --- CHANGE: Added -mt-12 to push the text block up and changed text-sm to text-base ---
     elements.activeProfileDisplay.innerHTML = `
-      <div class="text-center">
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
+      <div class="text-center -mt-12">
+        <p class="text-base text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.current || 'Default'}</h2>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">value set, which includes:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
