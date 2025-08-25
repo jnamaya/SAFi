@@ -25,4 +25,4 @@ class Config:
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
     # default values profile key
-    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "catholic").strip().lower()
+    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "secular").strip().lower()
