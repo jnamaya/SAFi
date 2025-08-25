@@ -53,8 +53,33 @@
         <div id="login-view" class="w-full h-full flex flex-col items-center justify-center bg-white dark:bg-black p-6 overflow-y-auto overscroll-contain min-h-0">
           <img src="assets/logo.png" alt="SAFi Application Logo" class="h-16 w-16 mb-6 rounded-xl" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
           <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
-          <p class="text-neutral-500 dark:text-neutral-400 mt-2 mb-8">The Ethical Reasoning Engine</p>
-          <button id="login-button" type="button" class="flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
+          <p class="text-neutral-500 dark:text-neutral-400 mt-2">The Ethical Reasoning Engine</p>
+          
+          <div class="max-w-2xl mx-auto text-left text-sm mt-8 space-y-6">
+            <div>
+              <h2 class="font-semibold text-base mb-2">How SAFi Works</h2>
+              <p class="text-neutral-600 dark:text-neutral-300">SAFi processes every prompt through a multi-agent system designed for ethical reasoning:</p>
+              <ul class="list-disc list-inside mt-2 space-y-1 text-neutral-600 dark:text-neutral-300">
+                <li><strong class="font-medium text-black dark:text-white">Values:</strong> The foundational ethical principles that configure and guide the entire system.</li>
+                <li><strong class="font-medium text-black dark:text-white">Intellect:</strong> Generates an initial, knowledgeable <strong>draft answer</strong> based on the user's prompt.</li>
+                <li><strong class="font-medium text-black dark:text-white">Will:</strong> Checks the <strong>draft answer</strong> against a set of strict rules and values that must be met.</li>
+                <li><strong class="font-medium text-black dark:text-white">Conscience:</strong> Audits the final answer against the abstract values and produces a detailed score for each.</li>
+                <li><strong class="font-medium text-black dark:text-white">Spirit:</strong> Analyzes the report from the Conscience to calculate a final 1-10 alignment score and monitor long-term ethical drift.</li>
+              </ul>
+              <p class="text-neutral-600 dark:text-neutral-300 mt-3">
+                For more details, visit: <a href="https://selfalignmentframework.com" target="_blank" rel="noopener noreferrer" class="text-green-600 dark:text-green-500 hover:underline font-medium">https://selfalignmentframework.com</a>
+              </p>
+            </div>
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 p-4 rounded-r-lg">
+              <h3 class="font-bold text-yellow-800 dark:text-yellow-200">Important Notice</h3>
+              <!-- --- CHANGE: Updated the privacy warning text --- -->
+              <p class="text-yellow-700 dark:text-yellow-300 mt-1">
+                SAFi logs all the reasoning process including the prompt used so please do not prompt it with any personal, private, or sensitive information.
+              </p>
+            </div>
+          </div>
+
+          <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
             <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
             Sign in with Google
           </button>
@@ -82,7 +107,6 @@
           </header>
 
           <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col gap-5 custom-scrollbar">
-            <!-- --- CHANGE: Simplified the empty state to be a container for dynamic content --- -->
             <div id="empty-state" class="m-auto text-center">
               <div id="active-profile-display">
                 <!-- This div will be populated by ui.js -->
