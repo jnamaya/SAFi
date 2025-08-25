@@ -11,8 +11,10 @@ from ..utils import normalize_text, dict_sha256
 
 class IntellectEngine:
     def __init__(self, client: OpenAI, model: str, profile: Optional[Dict[str, Any]] = None):
+        # Model must be provided by wiring (e.g., Config.INTELLECT_MODEL).
         self.client = client
-        self.model = model or "gpt-4o-mini"
+        self.model = model
+        # Profile is the single source of worldview, style, and any ethics text.
         self.profile = profile or {}
         self.last_error: Optional[str] = None
         self.require_reflection: bool = bool(self.profile.get("require_reflection", True))
@@ -43,9 +45,10 @@ class IntellectEngine:
 
     async def generate(self, *, user_prompt: str, memory_summary: str) -> Tuple[Optional[str], Optional[str]]:
         self.last_error = None
+
+        worldview = self.profile.get("worldview", "")
+        style = self.profile.get("style", "")
         memory_injection = f"MEMORY SUMMARY:\n{memory_summary}" if memory_summary else ""
-        worldview = self.profile.get("worldview")
-        style = self.profile.get("style")
 
         fmt = (
             "Format your response EXACTLY like this:\n"
@@ -57,66 +60,56 @@ class IntellectEngine:
             "</REFLECTION>"
         )
 
-        if worldview or style:
-            sys_lines = [ln for ln in [worldview, style, memory_injection, fmt] if ln]
-            system_prompt = "\n\n".join(sys_lines)
-        else:
-            system_prompt = (
-                "You are an ethical assistant speaking in a natural, conversational tone. "
-                "Give a direct answer first.\n\n" + memory_injection + "\n\n" + fmt
-            )
+        # System prompt contains only what the profile provides plus the formatter.
+        sys_lines = [ln for ln in [worldview, style, memory_injection, fmt] if ln]
+        system_prompt = "\n\n".join(sys_lines)
 
         msgs = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 
-        candidates = [self.model, "gpt-4o-mini", "gpt-4o"]
-        tried = set()
-        for m in candidates:
-            if not m or m in tried:
-                continue
-            tried.add(m)
-            try:
-                resp = await asyncio.to_thread(
-                    self.client.chat.completions.create,
-                    model=m,
-                    temperature=1.0,
-                    messages=msgs,
-                )
-                text = resp.choices[0].message.content or ""
+        # Use only the configured model. No silent fallbacks that could smuggle different behavior.
+        try:
+            resp = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=self.model,
+                temperature=1.0,
+                messages=msgs,
+            )
+            text = resp.choices[0].message.content or ""
 
-                answer = ""
+            answer = ""
+            reflection = ""
+            if "<ANSWER>" in text and "</ANSWER>" in text:
+                answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip()
+            else:
+                # If a model ignored the format, take everything before REFLECTION tag if present.
+                answer = text.split("<REFLECTION>")[0].strip()
+
+            if "<REFLECTION>" in text and "</REFLECTION>" in text:
+                reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip()
+            else:
                 reflection = ""
-                if "<ANSWER>" in text and "</ANSWER>" in text:
-                    answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip()
-                else:
-                    answer = text.split("<REFLECTION>")[0].strip()
 
-                if "<REFLECTION>" in text and "</REFLECTION>" in text:
-                    reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip()
-                else:
-                    reflection = ""
+            if self.require_reflection and not reflection and answer:
+                reflection = await self._reflect(
+                    user_prompt=user_prompt, draft=answer, worldview=worldview or ""
+                )
 
-                if self.require_reflection and not reflection and answer:
-                    reflection = await self._reflect(
-                        user_prompt=user_prompt, draft=answer, worldview=worldview or ""
-                    )
-
-                self.model = m
-                return (answer or None), (reflection or "")
-            except Exception as e:
-                self.last_error = f"{type(e).__name__}: {e} (model={m})"
-                continue
-
-        return None, None
+            return (answer or None), (reflection or "")
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e} (model={self.model})"
+            return None, None
 
 
 class WillGate:
     def __init__(self, client: OpenAI, model: str, *, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None):
+        # Model must be provided by wiring (e.g., Config.WILL_MODEL).
         self.client = client
-        self.model = model or "gpt-4o-mini"
+        self.model = model
         self.values = values
+        # Profile must come from values.py (worldview-independent). Rules live there.
         self.profile = profile or {}
         self.cache: Dict[str, Tuple[str, str]] = {}
 
@@ -128,10 +121,14 @@ class WillGate:
         if key in self.cache:
             return self.cache[key]
 
-        rules = self.profile.get("will_rules") or [
-            "Do not approve content that promotes or beautifies violations of the values.",
-        ]
+        # Rules come only from the profile injected from values.py.
+        rules = self.profile.get("will_rules") or []
         name = self.profile.get("name", "")
+
+        # If no explicit rules are provided, derive a neutral alignment rule from the active values.
+        if not rules:
+            joined = ", ".join(v["value"] for v in self.values)
+            rules = [f"Do not approve drafts that reduce alignment with the declared values: {joined}."]
 
         policy = "\n".join([
             "You are Will, the ethical gatekeeper. Decide if the draft aligns with the value set.",
@@ -182,8 +179,9 @@ class WillGate:
 
 class ConscienceAuditor:
     def __init__(self, client: OpenAI, model: str, values: List[Dict[str, Any]]):
+        # Model must be provided by wiring (e.g., Config.CONSCIENCE_MODEL).
         self.client = client
-        self.model = model or "gpt-4o-mini"
+        self.model = model
         self.values = values
 
     async def evaluate(self, *, final_output: str, user_prompt: str, reflection: str) -> List[Dict[str, Any]]:
