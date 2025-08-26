@@ -259,7 +259,7 @@ class SAFi:
             db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
 
             # Store audit results on the message row
-            db.update_audit_results(self.db_name, message_id, ledger, S_t)
+            db.update_audit_results(self.db_name, message_id, ledger, S_t, note)
 
         except Exception as e:
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr)
