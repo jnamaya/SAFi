@@ -4,6 +4,7 @@ import * as utils from './utils.js';
 
 let currentConversationId = null;
 const msgCountByConvo = {};
+let activeProfile = {};
 
 function getMsgCount(id) { return msgCountByConvo[id] ?? 0; }
 function bumpMsgCount(id) { msgCountByConvo[id] = getMsgCount(id) + 1; }
@@ -15,6 +16,7 @@ async function checkLoginStatus() {
     ui.updateUIForAuthState(user, handleLogout);
     
     if (user) {
+        activeProfile = await api.fetchActiveProfile();
         await loadConversations();
     }
     
@@ -64,10 +66,25 @@ async function switchConversation(id) {
         if (history?.length > 0) {
             history.forEach((turn, i) => {
                 const date = turn.timestamp ? new Date(turn.timestamp) : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
-                ui.displayMessage(turn.role, turn.content, date, null, (ledger) => ui.showModal('conscience', ledger));
+                
+                // --- CHANGE: The payload now includes the spirit_score ---
+                const payload = {
+                    ledger: turn.conscience_ledger || [],
+                    profile: activeProfile.current,
+                    values: activeProfile.values,
+                    spirit_score: turn.spirit_score 
+                };
+
+                ui.displayMessage(
+                    turn.role, 
+                    turn.content, 
+                    date, 
+                    turn.message_id,
+                    payload,
+                    (p) => ui.showModal('conscience', p)
+                );
             });
         } else {
-            const activeProfile = await api.fetchActiveProfile();
             ui.displayEmptyState(activeProfile, handleExamplePromptClick);
         }
         
@@ -76,14 +93,7 @@ async function switchConversation(id) {
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        // --- CHANGE: If history fails, still try to fetch the profile for the empty state ---
-        try {
-            const activeProfile = await api.fetchActiveProfile();
-            ui.displayEmptyState(activeProfile, handleExamplePromptClick);
-        } catch (profileError) {
-            console.error('Failed to fetch active profile for empty state:', profileError);
-            ui.displayEmptyState({}, handleExamplePromptClick); 
-        }
+        ui.displayEmptyState(activeProfile, handleExamplePromptClick);
     }
 }
 
@@ -98,7 +108,7 @@ async function sendMessage() {
     if (!userMessage || !currentConversationId) return;
     
     const now = new Date();
-    ui.displayMessage('user', userMessage, now);
+    ui.displayMessage('user', userMessage, now, null, null, null);
     utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'user', userMessage, now);
     bumpMsgCount(currentConversationId);
 
@@ -109,35 +119,36 @@ async function sendMessage() {
     const loadingIndicator = ui.showLoadingIndicator();
 
     try {
-        const aiResponse = await api.processUserMessage(userMessage, currentConversationId);
+        const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
         loadingIndicator.remove();
         
         const aiNow = new Date();
-        const consciencePayload = {
-          ledger: aiResponse.conscienceLedger || [],
-          profile: aiResponse.activeProfile || null,
-          values: aiResponse.activeValues || []
-        };
-
+        
         ui.displayMessage(
           'ai',
-          aiResponse.finalOutput,
+          initialResponse.finalOutput,
           aiNow,
-          consciencePayload,
+          initialResponse.messageId,
+          null, 
           (payload) => ui.showModal('conscience', payload)
         );
 
-        utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'ai', aiResponse.finalOutput, aiNow);
+        utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'ai', initialResponse.finalOutput, aiNow);
         bumpMsgCount(currentConversationId);
 
-        if (aiResponse.newTitle) {
+        if (initialResponse.newTitle) {
             const link = document.querySelector(`#convo-list div[data-id="${currentConversationId}"] button`);
-            if (link) link.textContent = aiResponse.newTitle;
+            if (link) link.textContent = initialResponse.newTitle;
         }
+        
+        if (initialResponse.messageId) {
+            pollForAuditResults(initialResponse.messageId);
+        }
+        
         ui.updateConnectionStatus(true);
     } catch (error) {
         loadingIndicator.remove();
-        ui.displayMessage('ai', 'Sorry, an error occurred.', new Date());
+        ui.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
@@ -146,6 +157,35 @@ async function sendMessage() {
         ui.elements.messageInput.focus();
     }
 }
+
+function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
+    let attempts = 0;
+
+    const executePoll = async (resolve, reject) => {
+        const result = await api.fetchAuditResult(messageId);
+        attempts++;
+
+        if (result && result.status === 'complete') {
+            // --- CHANGE: The payload now includes the spirit_score from the poll result ---
+            const payload = {
+                ledger: result.ledger || [],
+                profile: result.profile || null,
+                values: result.values || [],
+                spirit_score: result.spirit_score
+            };
+            ui.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
+            resolve(result);
+        } else if (attempts >= maxAttempts) {
+            console.warn(`Stopped polling for message ${messageId} after ${maxAttempts} attempts.`);
+            reject(new Error('Polling timed out.'));
+        } else {
+            setTimeout(() => executePoll(resolve, reject), interval);
+        }
+    };
+
+    return new Promise(executePoll);
+}
+
 
 function autoSize() {
     const input = ui.elements.messageInput;

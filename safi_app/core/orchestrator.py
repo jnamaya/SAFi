@@ -1,6 +1,8 @@
 from __future__ import annotations
 import json
 import threading
+import uuid
+import asyncio
 import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
@@ -59,8 +61,6 @@ class SAFi:
         self.log_template = getattr(config, 'LOG_FILE_TEMPLATE', None)
         self.legacy_log_file = getattr(config, 'LOG_FILE', 'safi-spirit-log.jsonl')
 
-        # Name used for UI & responses
-        # MODIFIED: Force the active profile name to lowercase to ensure consistency
         raw_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
         self.active_profile_name = raw_profile_name.lower()
 
@@ -90,59 +90,43 @@ class SAFi:
         memory_summary = db.fetch_recent_user_memory(self.db_name, conversation_id)
 
         a_t, r_t = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary)
+        
+        message_id = str(uuid.uuid4())
+
+        db.insert_memory_entry(self.db_name, conversation_id, "user", user_prompt)
+
         if not a_t:
             err = getattr(self.intellect_engine, 'last_error', None) or "Unknown model/API error"
             msg = f"Intellect failed: {err}"
-            db.insert_memory_entry(self.db_name, conversation_id, "prompt", user_prompt)
-            db.insert_memory_entry(self.db_name, conversation_id, "final_output", msg)
+            db.insert_memory_entry(self.db_name, conversation_id, "ai", msg, message_id=message_id, audit_status='complete')
             return {
-                "finalOutput": msg,
-                "newTitle": new_title,
-                "willDecision": "violation",
-                "willReason": "Intellect failed to produce an answer.",
-                "activeProfile": self.active_profile_name,
-                "activeValues": self.values,
-                "conscienceLedger": [],
+                "finalOutput": msg, "newTitle": new_title, "willDecision": "violation",
+                "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name,
+                "activeValues": self.values, "conscienceLedger": [], "messageId": message_id
             }
 
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
+        
         if D_t == 'violation':
             safe_response = f"This response was suppressed. Reason: {E_t}"
-            db.insert_memory_entry(self.db_name, conversation_id, "prompt", user_prompt)
-            db.insert_memory_entry(self.db_name, conversation_id, "final_output", safe_response)
+            db.insert_memory_entry(self.db_name, conversation_id, "ai", safe_response, message_id=message_id, audit_status='complete')
 
             self._append_log({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "t": int(self.memory['turn']) + 1,
-                "userPrompt": user_prompt,
-                "intellectDraft": a_t,
-                "intellectReflection": r_t or "",
-                "finalOutput": safe_response,
-                "willDecision": D_t,
-                "willReason": E_t,
-                "conscienceLedger": [],
-                "spiritScore": None,
-                "spiritNote": "Suppressed by Will.",
-                "drift": None,
-                "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)},
-                "p_t_vector": [],
+                "timestamp": datetime.now(timezone.utc).isoformat(), "t": int(self.memory['turn']) + 1,
+                "userPrompt": user_prompt, "intellectDraft": a_t, "intellectReflection": r_t or "",
+                "finalOutput": safe_response, "willDecision": D_t, "willReason": E_t,
+                "conscienceLedger": [], "spiritScore": None, "spiritNote": "Suppressed by Will.", "drift": None,
+                "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)}, "p_t_vector": [],
                 "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(),
             })
 
             return {
-                "finalOutput": safe_response,
-                "newTitle": new_title,
-                "willDecision": D_t,
-                "willReason": E_t,
-                "activeProfile": self.active_profile_name,
-                "activeValues": self.values,
-                "conscienceLedger": [],
+                "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t,
+                "willReason": E_t, "activeProfile": self.active_profile_name,
+                "activeValues": self.values, "conscienceLedger": [], "messageId": message_id
             }
 
-        ledger = await self.conscience.evaluate(final_output=a_t, user_prompt=user_prompt, reflection=r_t)
-
-        db.insert_memory_entry(self.db_name, conversation_id, "prompt", user_prompt)
-        db.insert_memory_entry(self.db_name, conversation_id, "final_output", a_t)
+        db.insert_memory_entry(self.db_name, conversation_id, "ai", a_t, message_id=message_id, audit_status='pending')
 
         t_next = int(self.memory['turn']) + 1
         snapshot = {
@@ -154,36 +138,54 @@ class SAFi:
 
         threading.Thread(
             target=self._run_audit_thread,
-            args=(snapshot, snap_hash, ledger, D_t, E_t),
+            args=(snapshot, snap_hash, D_t, E_t, message_id),
             daemon=True
         ).start()
 
         return {
-            "finalOutput": a_t,
-            "newTitle": new_title,
-            "conscienceLedger": ledger,
-            "willDecision": D_t,
-            "willReason": E_t,
-            "activeProfile": self.active_profile_name,
-            "activeValues": self.values,
+            "finalOutput": a_t, "newTitle": new_title, "conscienceLedger": [],
+            "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name,
+            "activeValues": self.values, "messageId": message_id
         }
 
-    def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, ledger: List[Dict[str, Any]], will_decision: str, will_reason: str):
-        S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, self.memory.get('mu', np.zeros(len(self.values))))
-        log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot['t'],
-            "userPrompt": snapshot['x_t'], "intellectDraft": snapshot['a_t'],
-            "intellectReflection": snapshot['r_t'] or "", "finalOutput": snapshot['a_t'],
-            "willDecision": will_decision, "willReason": will_reason,
-            "conscienceLedger": ledger,
-            "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot['params'],
-            "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist()
-        }
-        self._append_log(log_entry)
-        
-        self.memory['turn'] += 1
-        self.memory['mu'] = np.array(mu_new)
-        db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
+    def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, will_decision: str, will_reason: str, message_id: str):
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            ledger = loop.run_until_complete(self.conscience.evaluate(
+                final_output=snapshot['a_t'], 
+                user_prompt=snapshot['x_t'], 
+                reflection=snapshot['r_t']
+            ))
+            loop.close()
+
+            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, self.memory.get('mu', np.zeros(len(self.values))))
+            
+            log_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot['t'],
+                "userPrompt": snapshot['x_t'], "intellectDraft": snapshot['a_t'],
+                "intellectReflection": snapshot['r_t'] or "", "finalOutput": snapshot['a_t'],
+                "willDecision": will_decision, "willReason": will_reason,
+                "conscienceLedger": ledger,
+                "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot['params'],
+                "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist()
+            }
+            self._append_log(log_entry)
+            
+            self.memory['turn'] += 1
+            self.memory['mu'] = np.array(mu_new)
+            db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
+
+            # --- FIX: Pass the spirit score (S_t) to the database update function ---
+            db.update_audit_results(self.db_name, message_id, ledger, S_t)
+        except Exception as e:
+            print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr)
+            print(f"Message ID: {message_id}", file=sys.stderr)
+            print(f"Exception: {type(e).__name__}: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            print(f"--- END ERROR IN AUDIT THREAD ---", file=sys.stderr)
 
 
     def _append_log(self, log_entry: Dict[str, Any]):
