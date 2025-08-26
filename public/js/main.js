@@ -65,9 +65,14 @@ async function switchConversation(id) {
         
         if (history?.length > 0) {
             history.forEach((turn, i) => {
-                const date = turn.timestamp ? new Date(turn.timestamp) : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
+                // --- FIX: Explicitly treat the server timestamp as UTC ---
+                // The server provides a string like "YYYY-MM-DD HH:MM:SS". We reformat it to
+                // "YYYY-MM-DDTHH:MM:SSZ", which JavaScript correctly interprets as UTC.
+                const dateString = turn.timestamp;
+                const date = dateString 
+                    ? new Date(dateString.replace(' ', 'T') + 'Z') 
+                    : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
                 
-                // --- CHANGE: The payload now includes the spirit_score ---
                 const payload = {
                     ledger: turn.conscience_ledger || [],
                     profile: activeProfile.current,
@@ -166,7 +171,6 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         attempts++;
 
         if (result && result.status === 'complete') {
-            // --- CHANGE: The payload now includes the spirit_score from the poll result ---
             const payload = {
                 ledger: result.ledger || [],
                 profile: result.profile || null,
