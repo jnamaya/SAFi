@@ -27,9 +27,6 @@ async function checkLoginStatus() {
         
         await loadConversations();
     }
-    
-    const isOnline = await api.checkConnection();
-    ui.updateConnectionStatus(isOnline);
 }
 
 async function handleProfileChange(event) {
@@ -52,20 +49,26 @@ async function loadConversations() {
     try {
         const conversations = await api.fetchConversations();
         ui.elements.convoList.innerHTML = '';
+        // Add back the "History" heading after clearing
+        ui.elements.convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
+
         if (conversations?.length > 0) {
             const currentConvoExists = conversations.some(c => c.id === currentConversationId);
             const targetConvoId = (currentConversationId && currentConvoExists) ? currentConversationId : conversations[0].id;
             
-            conversations.forEach(convo => ui.renderConversationLink(convo, switchConversation, showOptionsMenu));
+            const handlers = {
+                switchHandler: switchConversation,
+                renameHandler: handleRename,
+                deleteHandler: handleDelete
+            };
+            conversations.forEach(convo => ui.renderConversationLink(convo, handlers));
             await switchConversation(targetConvoId);
         } else {
             await startNewConversation();
         }
-        ui.updateConnectionStatus(true);
     } catch (error) {
         console.error('Failed to load conversations:', error);
         ui.showToast('Failed to load conversations.', 'error');
-        ui.updateConnectionStatus(false);
     }
 }
 
@@ -97,7 +100,6 @@ async function switchConversation(id) {
                     ? new Date(dateString.replace(' ', 'T') + 'Z') 
                     : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
                 
-                // --- CHANGE: The payload for the modal now uses historical data from the 'turn' object ---
                 const payload = {
                     ledger: turn.conscience_ledger || [],
                     profile: turn.profile_name,
@@ -167,7 +169,7 @@ async function sendMessage() {
         bumpMsgCount(currentConversationId);
 
         if (initialResponse.newTitle) {
-            const link = document.querySelector(`#convo-list div[data-id="${currentConversationId}"] button`);
+            const link = document.querySelector(`#convo-list a[data-id="${currentConversationId}"] span`);
             if (link) link.textContent = initialResponse.newTitle;
         }
         
@@ -175,14 +177,12 @@ async function sendMessage() {
             pollForAuditResults(initialResponse.messageId);
         }
         
-        ui.updateConnectionStatus(true);
     } catch (error) {
         loadingIndicator.remove();
         ui.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
-        ui.updateConnectionStatus(false);
     } finally {
         ui.elements.messageInput.focus();
     }
@@ -196,7 +196,6 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         attempts++;
 
         if (result && result.status === 'complete') {
-            // --- CHANGE: The result from the API now contains the correct historical data ---
             const payload = {
                 ledger: result.ledger || [],
                 profile: result.profile || null,
@@ -239,42 +238,31 @@ function autoSize() {
     ui.scrollToBottom();
 }
 
-function showOptionsMenu(event, id, title) {
-    event.stopPropagation();
-    document.querySelector('.options-menu')?.remove();
-    const menu = document.createElement('div');
-    menu.className = 'options-menu absolute z-50 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 text-sm py-1';
-    menu.style.left = `${event.clientX}px`;
-    menu.style.top = `${event.clientY}px`;
-    menu.innerHTML = `
-        <button class="w-full text-left px-4 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-600" data-action="rename">Rename</button>
-        <button class="w-full text-left px-4 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-600" data-action="export">Export</button>
-        <button class="w-full text-left px-4 py-2 text-red-600 dark:text-red-500 hover:bg-neutral-100 dark:hover:bg-neutral-600" data-action="delete">Delete</button>`;
-    document.body.appendChild(menu);
-    menu.addEventListener('click', (e) => {
-        const action = e.target.dataset.action;
-        if (action === 'rename') handleRename(id, title);
-        if (action === 'export') window.open(`${api.urls.CONVERSATIONS}/${id}/export`, '_blank');
-        if (action === 'delete') handleDelete(id);
-        menu.remove();
-    });
-    setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
-}
-
 async function handleRename(id, oldTitle) {
     const newTitle = prompt('Enter new name for the conversation:', oldTitle);
     if (newTitle && newTitle.trim() !== oldTitle) {
-        ui.showToast('Conversation renamed.', 'success');
-        await api.renameConversation(id, newTitle);
-        await loadConversations();
+        try {
+            await api.renameConversation(id, newTitle);
+            ui.showToast('Conversation renamed.', 'success');
+            await loadConversations();
+        } catch (error) {
+            ui.showToast('Could not rename conversation.', 'error');
+        }
     }
 }
 
 async function handleDelete(id) {
     if (confirm('Are you sure you want to delete this conversation?')) {
-        ui.showToast('Conversation deleted.', 'success');
-        await api.deleteConversation(id);
-        await loadConversations();
+        try {
+            await api.deleteConversation(id);
+            ui.showToast('Conversation deleted.', 'success');
+            if (id === currentConversationId) {
+                currentConversationId = null;
+            }
+            await loadConversations();
+        } catch (error) {
+            ui.showToast('Could not delete conversation.', 'error');
+        }
     }
 }
 
@@ -296,9 +284,7 @@ async function handleDeleteAccount() {
 }
 
 function initializeApp() {
-    ui.updateThemeUI();
     checkLoginStatus();
-    setInterval(() => api.checkConnection().then(ui.updateConnectionStatus), 60000);
 
     ui.elements.sendButton.disabled = true;
     ui.elements.messageInput.addEventListener('input', autoSize);
@@ -308,20 +294,29 @@ function initializeApp() {
     ui.elements.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
     ui.elements.newChatButton.addEventListener('click', () => { startNewConversation(); if (window.innerWidth < 768) ui.closeSidebar(); });
     
-    ui.elements.themeToggle.addEventListener('click', () => {
-        document.documentElement.classList.toggle('dark');
-        localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-        ui.updateThemeUI();
-    });
-    
     ui.elements.menuToggle.addEventListener('click', ui.openSidebar);
     ui.elements.closeSidebarButton.addEventListener('click', ui.closeSidebar);
     ui.elements.sidebarOverlay.addEventListener('click', ui.closeSidebar);
     ui.elements.closeConscienceModalBtn.addEventListener('click', ui.closeModal);
-    ui.elements.mobileCloseConscienceModalBtn.addEventListener('click', ui.closeModal);
     ui.elements.cancelDeleteBtn.addEventListener('click', ui.closeModal);
     ui.elements.modalBackdrop.addEventListener('click', ui.closeModal);
     ui.elements.confirmDeleteBtn.addEventListener('click', handleDeleteAccount);
+    
+    document.addEventListener('click', (event) => {
+        const settingsMenu = document.getElementById('settings-menu');
+        const settingsDropdown = document.getElementById('settings-dropdown');
+        if (settingsMenu && !settingsMenu.contains(event.target)) {
+            settingsDropdown?.classList.add('hidden');
+        }
+    });
+
+    ui.elements.userProfileContainer.addEventListener('click', (event) => {
+        const settingsButton = event.target.closest('#settings-button');
+        if (settingsButton) {
+            const settingsDropdown = document.getElementById('settings-dropdown');
+            settingsDropdown?.classList.toggle('hidden');
+        }
+    });
     
     new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
     window.addEventListener('resize', () => { ui.scrollToBottom(); });

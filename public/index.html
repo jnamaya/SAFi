@@ -9,7 +9,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
@@ -27,7 +27,7 @@
   </script>
 
 <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-NBYEV6VJGX"></script>
+<script async src="https://www.googletagmanager.com/gtag/js/id=G-NBYEV6VJGX"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
@@ -37,28 +37,42 @@
 </script>
   
 </head>
-<body class="h-[100dvh] w-full bg-white text-black dark:bg-black dark:text-white transition-colors duration-300 overflow-hidden">
+<body class="h-[100dvh] w-full bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
 
   <main id="app-container" class="w-full h-full flex relative">
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
 
-    <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-64 bg-neutral-100 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:shrink-0 h-full">
-      <div class="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
-        <h2 class="font-semibold">Conversations</h2>
+    <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-80 bg-white dark:bg-gray-900/50 text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:shrink-0 h-full border-r border-gray-200 dark:border-gray-800">
+      
+      <!-- Sidebar Header -->
+      <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
+          <div>
+            <h1 class="text-lg font-bold">SAFi</h1>
+            <p class="text-xs text-gray-500 dark:text-gray-400">The Ethical Reasoning Engine</p>
+          </div>
+        </div>
         <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <div class="p-2">
-        <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-500 transition flex items-center justify-center gap-2">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+
+      <!-- New Chat Button -->
+      <div class="p-4 shrink-0">
+        <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2.5 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
           New Chat
         </button>
       </div>
-      <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar min-h-0"></nav>
-      <!-- --- CHANGE: Added a container for the profile selector --- -->
-      <div id="user-profile-sidebar" class="p-4 border-t border-neutral-200 dark:border-neutral-800">
-          <!-- This will be populated by ui.js -->
+
+      <!-- Conversation History -->
+      <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar min-h-0">
+        <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>
+      </nav>
+      
+      <!-- User Profile / Settings -->
+      <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
       </div>
     </aside>
 
@@ -68,30 +82,24 @@
           <img src="assets/logo.png" alt="SAFi Application Logo" class="h-16 w-16 mb-6 rounded-xl" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
           <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
           <p class="text-neutral-500 dark:text-neutral-400 mt-2">The Ethical Reasoning Engine</p>
-          
           <div class="max-w-2xl mx-auto text-left text-sm mt-8 space-y-6">
             <div>
               <h2 class="font-semibold text-base mb-2">How SAFi Works</h2>
               <p class="text-neutral-600 dark:text-neutral-300">SAFi processes every prompt through a multi-agent system designed for ethical reasoning:</p>
               <ul class="list-disc list-inside mt-2 space-y-1 text-neutral-600 dark:text-neutral-300">
-                <li><strong class="font-medium text-black dark:text-white">Values:</strong> The foundational ethical principles that configure and guide the entire system.</li>
-                <li><strong class="font-medium text-black dark:text-white">Intellect:</strong> Generates an initial, knowledgeable <strong>draft answer</strong> based on the user's prompt.</li>
-                <li><strong class="font-medium text-black dark:text-white">Will:</strong> Checks the <strong>draft answer</strong> against a set of strict rules and values that must be met.</li>
-                <li><strong class="font-medium text-black dark:text-white">Conscience:</strong> Audits the final answer against the abstract values and produces a detailed score for each.</li>
-                <li><strong class="font-medium text-black dark:text-white">Spirit:</strong> Analyzes the report from the Conscience to calculate a final 1-10 alignment score and monitor long-term ethical drift.</li>
+                <li><strong class="font-medium text-black dark:text-white">Values, Intellect, Will, Conscience, Spirit</strong></li>
               </ul>
               <p class="text-neutral-600 dark:text-neutral-300 mt-3">
-                For details, visit: <a href="https://selfalignmentframework.com" target="_blank" rel="noopener noreferrer" class="text-green-600 dark:text-green-500 hover:underline font-medium">https://selfalignmentframework.com</a>
+                For details, visit: <a href="https://selfalignmentframework.com" target="_blank" rel="noopener noreferrer" class="text-green-600 dark:text-green-500 hover:underline font-medium">selfalignmentframework.com</a>
               </p>
             </div>
             <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 p-4 rounded-r-lg">
               <h3 class="font-bold text-yellow-800 dark:text-yellow-200">Important Notice</h3>
               <p class="text-yellow-700 dark:text-yellow-300 mt-1">
-                SAFi logs all the reasoning process including the prompt used so please do not prompt it with any personal, private, or sensitive information.
+                SAFi logs all reasoning processes. Do not use personal or sensitive information.
               </p>
             </div>
           </div>
-
           <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
             <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
             Sign in with Google
@@ -99,33 +107,23 @@
         </div>
 
         <div id="chat-view" class="w-full h-full hidden flex flex-col bg-white dark:bg-black min-h-0">
-          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20">
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20 md:hidden">
             <div class="flex items-center gap-3">
-              <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 md:hidden">
+              <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
               </button>
-              <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
-              <div>
-                <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
-              </div>
             </div>
-            <div class="flex items-center gap-3">
-              <div id="connection-status" class="flex items-center gap-2 text-sm text-neutral-500" aria-live="polite">
-                <div id="connection-status-dot" class="w-2 h-2 rounded-full bg-yellow-400"></div>
-                <span id="connection-status-text">Connecting</span>
-              </div>
-              <button id="theme-toggle" type="button" aria-label="Toggle dark mode" class="p-2 rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800">
-                <svg id="theme-icon-light" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a 4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-                <svg id="theme-icon-dark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
-              </button>
+            <div class="text-center">
+                <!-- CHANGE: Updated font size for mobile -->
+                <h1 id="chat-title" class="text-[28px] font-semibold leading-tight truncate">SAFi</h1>
+                <p class="text-xs text-gray-500 dark:text-gray-400">The Ethical Reasoning Engine</p>
             </div>
+            <div class="w-10"></div> <!-- Placeholder for balance -->
           </header>
 
           <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col justify-start gap-5 custom-scrollbar">
             <div id="empty-state" class="text-center pt-8">
-              <div id="active-profile-display">
-                <!-- This div will be populated by ui.js -->
-              </div>
+              <div id="active-profile-display"></div>
             </div>
           </div>
 
@@ -142,34 +140,24 @@
   </main>
 
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
-  
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
-  
-  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" 
-       class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[80vh]">
-      
-      <div class="flex items-center justify-between mb-4 shrink-0">
-        <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
-        <button id="close-conscience-modal" type="button" aria-label="Close ethical reasoning modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 hidden sm:block">×</button>
-      </div>
-      
-      <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
-        <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">This answer was guided by the following ethical principles:</p>
-        <div id="conscience-details" class="space-y-3"></div>
-      </div>
-
-      <div class="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700 shrink-0 sm:hidden">
-        <button id="mobile-close-conscience-modal" type="button" class="w-full px-4 py-2 rounded-lg font-semibold bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 transition">Close</button>
-      </div>
+  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[80vh]">
+    <div class="flex items-center justify-between mb-4 shrink-0">
+      <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
+      <button id="close-conscience-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">×</button>
+    </div>
+    <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
+      <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">This answer was guided by:</p>
+      <div id="conscience-details" class="space-y-3"></div>
+    </div>
   </div>
-
   <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
-      <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
-      <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure you want to permanently delete your account and all of your conversations? This action cannot be undone.</p>
-      <div class="flex justify-end gap-3 mt-6">
-        <button id="cancel-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
-        <button id="confirm-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete Account</button>
-      </div>
+    <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
+    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure? This action is permanent.</p>
+    <div class="flex justify-end gap-3 mt-6">
+      <button id="cancel-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
+      <button id="confirm-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete</button>
+    </div>
   </div>
 
   <script type="module" src="js/main.js"></script>
