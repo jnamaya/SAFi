@@ -4,19 +4,27 @@ import * as utils from './utils.js';
 
 let currentConversationId = null;
 const msgCountByConvo = {};
-let activeProfile = {};
+let activeProfileData = {}; // Stores the full profile details
+let availableProfiles = []; // Stores the list of profile names
 
 function getMsgCount(id) { return msgCountByConvo[id] ?? 0; }
 function bumpMsgCount(id) { msgCountByConvo[id] = getMsgCount(id) + 1; }
 
 async function checkLoginStatus() {
     const me = await api.getMe();
-    const user = (me?.ok && me.user) ? me.user : (me?.user || me);
+    const user = (me && me.ok) ? me.user : null;
     
-    ui.updateUIForAuthState(user, handleLogout);
+    ui.updateUIForAuthState(user, handleLogout, handleProfileChange);
     
     if (user) {
-        activeProfile = await api.fetchActiveProfile();
+        activeProfileData = user.active_profile_details || {};
+        
+        const profilesResponse = await api.fetchAvailableProfiles();
+        availableProfiles = profilesResponse.available || [];
+        const currentProfileKey = user.active_profile || availableProfiles[0];
+        
+        ui.populateProfileSelector(availableProfiles, currentProfileKey);
+        
         await loadConversations();
     }
     
@@ -24,13 +32,32 @@ async function checkLoginStatus() {
     ui.updateConnectionStatus(isOnline);
 }
 
+async function handleProfileChange(event) {
+    const newProfileName = event.target.value;
+    try {
+        await api.updateUserProfile(newProfileName);
+        ui.showToast(`Profile switched to ${newProfileName}`, 'success');
+        
+        await checkLoginStatus();
+
+    } catch (error) {
+        console.error('Failed to switch profile:', error);
+        ui.showToast('Could not switch profile.', 'error');
+        event.target.value = activeProfileData.name ? activeProfileData.name.toLowerCase() : '';
+    }
+}
+
+
 async function loadConversations() {
     try {
         const conversations = await api.fetchConversations();
         ui.elements.convoList.innerHTML = '';
         if (conversations?.length > 0) {
+            const currentConvoExists = conversations.some(c => c.id === currentConversationId);
+            const targetConvoId = (currentConversationId && currentConvoExists) ? currentConversationId : conversations[0].id;
+            
             conversations.forEach(convo => ui.renderConversationLink(convo, switchConversation, showOptionsMenu));
-            await switchConversation(conversations[0].id);
+            await switchConversation(targetConvoId);
         } else {
             await startNewConversation();
         }
@@ -65,18 +92,16 @@ async function switchConversation(id) {
         
         if (history?.length > 0) {
             history.forEach((turn, i) => {
-                // --- FIX: Explicitly treat the server timestamp as UTC ---
-                // The server provides a string like "YYYY-MM-DD HH:MM:SS". We reformat it to
-                // "YYYY-MM-DDTHH:MM:SSZ", which JavaScript correctly interprets as UTC.
                 const dateString = turn.timestamp;
                 const date = dateString 
                     ? new Date(dateString.replace(' ', 'T') + 'Z') 
                     : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
                 
+                // --- CHANGE: The payload for the modal now uses historical data from the 'turn' object ---
                 const payload = {
                     ledger: turn.conscience_ledger || [],
-                    profile: activeProfile.current,
-                    values: activeProfile.values,
+                    profile: turn.profile_name,
+                    values: turn.profile_values,
                     spirit_score: turn.spirit_score 
                 };
 
@@ -90,7 +115,7 @@ async function switchConversation(id) {
                 );
             });
         } else {
-            ui.displayEmptyState(activeProfile, handleExamplePromptClick);
+            ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
         }
         
         msgCountByConvo[id] = history?.length || 0;
@@ -98,7 +123,7 @@ async function switchConversation(id) {
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        ui.displayEmptyState(activeProfile, handleExamplePromptClick);
+        ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
     }
 }
 
@@ -171,6 +196,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         attempts++;
 
         if (result && result.status === 'complete') {
+            // --- CHANGE: The result from the API now contains the correct historical data ---
             const payload = {
                 ledger: result.ledger || [],
                 profile: result.profile || null,
@@ -253,7 +279,7 @@ async function handleDelete(id) {
 }
 
 async function handleLogout() {
-    await fetch(api.urls.LOGOUT, { credentials: 'include' });
+    await fetch(api.urls.LOGOUT, { method: 'POST', credentials: 'include' });
     window.location.reload();
 }
 

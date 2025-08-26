@@ -102,11 +102,6 @@ class SAFi:
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         """
         One turn of interaction.
-        1) Load rolling conversation summary and history
-        2) Generate Intellect draft + reflection
-        3) Gate with Will
-        4) Return answer immediately
-        5) Fire audit and summarization threads
         """
         memory_summary = db.fetch_conversation_summary(self.db_name, conversation_id)
         history = db.fetch_chat_history_for_conversation(self.db_name, conversation_id)
@@ -134,7 +129,6 @@ class SAFi:
 
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
-        # If Will blocks, we still log and include the full memory for forensics
         if D_t == "violation":
             safe_response = f"This response was suppressed. Reason: {E_t}"
             db.insert_memory_entry(self.db_name, conversation_id, "ai", safe_response, message_id=message_id, audit_status="complete")
@@ -155,7 +149,6 @@ class SAFi:
                     "params": {"beta": getattr(self.config, "SPIRIT_BETA", 0.9)},
                     "p_t_vector": [],
                     "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(),
-                    # write the entire rolling summary in both shapes
                     "memorySummary": memory_summary,
                     "memory.summary": memory_summary,
                 }
@@ -171,10 +164,8 @@ class SAFi:
                 "messageId": message_id,
             }
 
-        # Otherwise we store the draft and audit later
         db.insert_memory_entry(self.db_name, conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
 
-        # Snapshot for audit: includes the memory and conversation id
         t_next = int(self.memory["turn"]) + 1
         snapshot = {
             "t": t_next,
@@ -186,12 +177,11 @@ class SAFi:
             "conversation_id": conversation_id,
             "params": {"beta": getattr(self.config, "SPIRIT_BETA", 0.9)},
             "mode": "conversational",
-            "memory_summary": memory_summary,  # full rolling summary
+            "memory_summary": memory_summary,
         }
         snap_hash = dict_sha256(snapshot)
         db.upsert_audit_snapshot(self.db_name, t_next, user_id, snap_hash, snapshot)
 
-        # Fire background audit and summarization
         threading.Thread(
             target=self._run_audit_thread, args=(snapshot, snap_hash, D_t, E_t, message_id), daemon=True
         ).start()
@@ -215,7 +205,6 @@ class SAFi:
     ):
         """
         Conscience scoring and Spirit update happen here.
-        We also write the JSONL log with the full memory included.
         """
         try:
             loop = asyncio.new_event_loop()
@@ -242,24 +231,30 @@ class SAFi:
                 "willReason": will_reason,
                 "conscienceLedger": ledger,
                 "spiritScore": S_t,
-                "spiritNote": note,  # keep clean, no memory snippet added
+                "spiritNote": note,
                 "drift": drift_val,
                 "params": snapshot["params"],
                 "p_t_vector": p_t.tolist(),
                 "mu_t_vector": mu_new.tolist(),
-                # write the entire rolling summary in both shapes
                 "memorySummary": snapshot.get("memory_summary") or "",
                 "memory.summary": snapshot.get("memory_summary") or "",
             }
             self._append_log(log_entry)
 
-            # Persist updated spirit memory
             self.memory["turn"] += 1
             self.memory["mu"] = np.array(mu_new)
             db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
 
-            # Store audit results on the message row
-            db.update_audit_results(self.db_name, message_id, ledger, S_t, note)
+            # --- CHANGE: Pass the profile snapshot to the database ---
+            db.update_audit_results(
+                self.db_name, 
+                message_id, 
+                ledger, 
+                S_t, 
+                note,
+                self.active_profile_name,
+                self.values
+            )
 
         except Exception as e:
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr)
@@ -276,13 +271,13 @@ class SAFi:
         """
         try:
             system_prompt = (
-    "You are a memory assistant for an AI. Your task is to maintain a rolling bullet-style memory of the conversation. "
-    "Preserve important context from earlier exchanges, but if the conversation has clearly shifted to a new topic, "
-    "summarize the earlier topic into a single short bullet before continuing with the new thread. "
-    "Do not allow the memory to grow incoherent or overloaded with irrelevant detail. "
-    "Format as: 'User asked X → AI answered Y'. "
-    "Keep enough history so the AI can remain coherent, but collapse or condense older segments once they are no longer central."
-)
+                "You are a memory assistant for an AI. Your task is to maintain a rolling bullet-style memory of the conversation. "
+                "Preserve important context from earlier exchanges, but if the conversation has clearly shifted to a new topic, "
+                "summarize the earlier topic into a single short bullet before continuing with the new thread. "
+                "Do not allow the memory to grow incoherent or overloaded with irrelevant detail. "
+                "Format as: 'User asked X → AI answered Y'. "
+                "Keep enough history so the AI can remain coherent, but collapse or condense older segments once they are no longer central."
+            )
 
             content = (
                 f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'This is the beginning of our conversation.'}\n\n"
@@ -309,7 +304,6 @@ class SAFi:
     def _append_log(self, log_entry: Dict[str, Any]):
         """
         Append a JSON line to the active log target.
-        Uses a daily template if configured, else falls back to a single legacy file.
         """
         log_path = self.legacy_log_file
         if self.log_template:
