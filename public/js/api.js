@@ -7,9 +7,10 @@ export const urls = {
     LOGOUT: `${API_BASE_URL}/api/logout`,
     ME: `${API_BASE_URL}/api/me`,
     CONVERSATIONS: `${API_BASE_URL}/api/conversations`,
-    // CHANGE: Added the new profiles endpoint
     PROFILES: `${API_BASE_URL}/api/profiles`,
     PROCESS_PROMPT: `${API_BASE_URL}/api/process_prompt`,
+    // --- NEW: URL for the audit result endpoint ---
+    AUDIT_RESULT: `${API_BASE_URL}/api/audit_result`,
     HEALTH: `${API_BASE_URL}/api/health`,
 };
 
@@ -32,7 +33,6 @@ export async function checkConnection() {
     }
 }
 
-// CHANGE: This new function calls your backend to get the active value profile.
 export async function fetchActiveProfile() {
     const response = await fetch(urls.PROFILES, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -82,6 +82,17 @@ export async function processUserMessage(message, conversationId) {
     }
     return await responseToJsonSafe(response) || {};
 }
+
+// --- NEW: Function to fetch the audit result for a specific message ---
+export async function fetchAuditResult(messageId) {
+    const response = await fetch(`${urls.AUDIT_RESULT}/${messageId}`, { credentials: 'include', cache: 'no-store' });
+    if (!response.ok) {
+        console.error(`Failed to fetch audit result for ${messageId}`);
+        return null;
+    }
+    return await responseToJsonSafe(response);
+}
+
 
 export async function deleteAccount() {
     const response = await fetch(urls.ME, { method: 'DELETE', credentials: 'include' });
