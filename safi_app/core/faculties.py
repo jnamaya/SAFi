@@ -11,10 +11,8 @@ from ..utils import normalize_text, dict_sha256
 
 class IntellectEngine:
     def __init__(self, client: OpenAI, model: str, profile: Optional[Dict[str, Any]] = None):
-        # Model must be provided by wiring (e.g., Config.INTELLECT_MODEL).
         self.client = client
         self.model = model
-        # Profile is the single source of worldview, style, and any ethics text.
         self.profile = profile or {}
         self.last_error: Optional[str] = None
         self.require_reflection: bool = bool(self.profile.get("require_reflection", True))
@@ -48,7 +46,8 @@ class IntellectEngine:
 
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
-        memory_injection = f"MEMORY SUMMARY:\n{memory_summary}" if memory_summary else ""
+        # --- CHANGE: The memory_injection now uses the summary from the database ---
+        memory_injection = f"CONTEXT: Here is a summary of the conversation so far. Use it to inform your answer.\n<summary>{memory_summary}</summary>" if memory_summary else ""
 
         fmt = (
             "Format your response EXACTLY like this:\n"
@@ -60,7 +59,6 @@ class IntellectEngine:
             "</REFLECTION>"
         )
 
-        # System prompt contains only what the profile provides plus the formatter.
         sys_lines = [ln for ln in [worldview, style, memory_injection, fmt] if ln]
         system_prompt = "\n\n".join(sys_lines)
 
@@ -69,7 +67,6 @@ class IntellectEngine:
             {"role": "user", "content": user_prompt},
         ]
 
-        # Use only the configured model. No silent fallbacks that could smuggle different behavior.
         try:
             resp = await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -84,7 +81,6 @@ class IntellectEngine:
             if "<ANSWER>" in text and "</ANSWER>" in text:
                 answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip()
             else:
-                # If a model ignored the format, take everything before REFLECTION tag if present.
                 answer = text.split("<REFLECTION>")[0].strip()
 
             if "<REFLECTION>" in text and "</REFLECTION>" in text:
@@ -105,11 +101,9 @@ class IntellectEngine:
 
 class WillGate:
     def __init__(self, client: OpenAI, model: str, *, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None):
-        # Model must be provided by wiring (e.g., Config.WILL_MODEL).
         self.client = client
         self.model = model
         self.values = values
-        # Profile must come from values.py (worldview-independent). Rules live there.
         self.profile = profile or {}
         self.cache: Dict[str, Tuple[str, str]] = {}
 
@@ -121,11 +115,9 @@ class WillGate:
         if key in self.cache:
             return self.cache[key]
 
-        # Rules come only from the profile injected from values.py.
         rules = self.profile.get("will_rules") or []
         name = self.profile.get("name", "")
 
-        # If no explicit rules are provided, derive a neutral alignment rule from the active values.
         if not rules:
             joined = ", ".join(v["value"] for v in self.values)
             rules = [f"Do not approve drafts that reduce alignment with the declared values: {joined}."]
@@ -179,7 +171,6 @@ class WillGate:
 
 class ConscienceAuditor:
     def __init__(self, client: OpenAI, model: str, values: List[Dict[str, Any]]):
-        # Model must be provided by wiring (e.g., Config.CONSCIENCE_MODEL).
         self.client = client
         self.model = model
         self.values = values
