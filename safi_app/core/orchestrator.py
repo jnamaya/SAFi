@@ -56,7 +56,6 @@ class SAFi:
 
         self.db_name = getattr(config, 'DATABASE_NAME', 'safi.db')
         
-        # Logging configuration
         self.log_dir = getattr(config, 'LOG_DIR', 'logs')
         self.log_template = getattr(config, 'LOG_FILE_TEMPLATE', None)
         self.legacy_log_file = getattr(config, 'LOG_FILE', 'safi-spirit-log.jsonl')
@@ -64,8 +63,6 @@ class SAFi:
         raw_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
         self.active_profile_name = raw_profile_name.lower()
 
-
-        # Persistent memory for Spirit
         dim = max(len(self.values), 1)
         loaded_memory = db.load_spirit_memory(self.db_name, self.active_profile_name)
         if loaded_memory:
@@ -81,18 +78,17 @@ class SAFi:
         self.conscience = ConscienceAuditor(self.client, model=getattr(config, 'CONSCIENCE_MODEL', 'gpt-4o-mini'), values=self.values)
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, 'SPIRIT_BETA', 0.9))
 
-
         print(f"SAFi: profile '{self.active_profile_name}' active; Conscience values-only.")
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
+        memory_summary = db.fetch_conversation_summary(self.db_name, conversation_id)
+        
         history = db.fetch_chat_history_for_conversation(self.db_name, conversation_id)
         new_title = db.set_conversation_title_from_first_message(self.db_name, conversation_id, user_prompt) if not history else None
-        memory_summary = db.fetch_recent_user_memory(self.db_name, conversation_id)
 
         a_t, r_t = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary)
         
         message_id = str(uuid.uuid4())
-
         db.insert_memory_entry(self.db_name, conversation_id, "user", user_prompt)
 
         if not a_t:
@@ -110,7 +106,6 @@ class SAFi:
         if D_t == 'violation':
             safe_response = f"This response was suppressed. Reason: {E_t}"
             db.insert_memory_entry(self.db_name, conversation_id, "ai", safe_response, message_id=message_id, audit_status='complete')
-
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(), "t": int(self.memory['turn']) + 1,
                 "userPrompt": user_prompt, "intellectDraft": a_t, "intellectReflection": r_t or "",
@@ -119,7 +114,6 @@ class SAFi:
                 "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)}, "p_t_vector": [],
                 "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(),
             })
-
             return {
                 "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t,
                 "willReason": E_t, "activeProfile": self.active_profile_name,
@@ -139,6 +133,12 @@ class SAFi:
         threading.Thread(
             target=self._run_audit_thread,
             args=(snapshot, snap_hash, D_t, E_t, message_id),
+            daemon=True
+        ).start()
+
+        threading.Thread(
+            target=self._run_summarization_thread,
+            args=(conversation_id, memory_summary, user_prompt, a_t),
             daemon=True
         ).start()
 
@@ -177,7 +177,6 @@ class SAFi:
             self.memory['mu'] = np.array(mu_new)
             db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
 
-            # --- FIX: Pass the spirit score (S_t) to the database update function ---
             db.update_audit_results(self.db_name, message_id, ledger, S_t)
         except Exception as e:
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr)
@@ -186,6 +185,38 @@ class SAFi:
             import traceback
             traceback.print_exc(file=sys.stderr)
             print(f"--- END ERROR IN AUDIT THREAD ---", file=sys.stderr)
+
+    def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
+        try:
+            # --- CHANGE: Updated the summarizer prompt to be first-person ---
+            system_prompt = "You are a memory assistant for an AI. Your task is to update the AI's memory based on the latest exchange. Re-write the previous memory, incorporating the new information from the user's prompt and the AI's response. The memory should be written in the first person, from the AI's perspective (e.g., 'The user asked me about X, and I responded by explaining Y'). Keep it concise and focus on the key information that will be needed to understand future questions."
+            
+            content = f"""PREVIOUS MEMORY:
+{old_summary if old_summary else 'This is the beginning of our conversation.'}
+
+LATEST EXCHANGE:
+The user said: "{user_prompt}"
+I responded: "{ai_response}"
+
+UPDATED MEMORY (written from my perspective):"""
+
+            response = self.client.chat.completions.create(
+                model=getattr(self.config, 'SUMMARIZER_MODEL', 'gpt-3.5-turbo'),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": content}
+                ],
+                temperature=0.2,
+            )
+            new_summary = response.choices[0].message.content.strip()
+            db.update_conversation_summary(self.db_name, conversation_id, new_summary)
+        except Exception as e:
+            print(f"--- ERROR IN SUMMARIZATION THREAD ---", file=sys.stderr)
+            print(f"Conversation ID: {conversation_id}", file=sys.stderr)
+            print(f"Exception: {type(e).__name__}: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            print(f"--- END ERROR IN SUMMARIZATION THREAD ---", file=sys.stderr)
 
 
     def _append_log(self, log_entry: Dict[str, Any]):

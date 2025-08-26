@@ -25,6 +25,9 @@ def init_db(db_name: str):
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # --- CHANGE: Add the memory_summary column to the conversations table ---
+    _add_column_if_not_exists(cursor, 'conversations', 'memory_summary', 'TEXT')
+
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chat_history (
@@ -40,7 +43,6 @@ def init_db(db_name: str):
     _add_column_if_not_exists(cursor, 'chat_history', 'message_id', 'TEXT')
     _add_column_if_not_exists(cursor, 'chat_history', 'conscience_ledger', 'TEXT')
     _add_column_if_not_exists(cursor, 'chat_history', 'audit_status', 'TEXT')
-    # --- CHANGE: Add a column for the spirit_score ---
     _add_column_if_not_exists(cursor, 'chat_history', 'spirit_score', 'INTEGER')
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_id ON chat_history (message_id)')
@@ -193,7 +195,6 @@ def create_conversation(db_name: str, user_id: str) -> Dict[str, str]:
 def fetch_chat_history_for_conversation(db_name: str, conversation_id: str) -> List[Dict[str, str]]:
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
-    # --- CHANGE: Fetch the new spirit_score column ---
     cursor.execute("SELECT role, content, timestamp, message_id, conscience_ledger, spirit_score FROM chat_history WHERE conversation_id = ? ORDER BY timestamp ASC", (conversation_id,))
     history = []
     for row in cursor.fetchall():
@@ -217,7 +218,6 @@ def insert_memory_entry(db_name: str, conversation_id: str, role: str, content: 
     conn.commit()
     conn.close()
 
-# --- CHANGE: Accept the spirit_score to be saved ---
 def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, Any]], spirit_score: int):
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
@@ -229,7 +229,6 @@ def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, A
     conn.commit()
     conn.close()
 
-# --- CHANGE: Return the spirit_score in the audit result ---
 def get_audit_result(db_name: str, message_id: str) -> Optional[Dict[str, Any]]:
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
@@ -250,8 +249,27 @@ def set_conversation_title_from_first_message(db_name: str, conversation_id: str
     rename_conversation(db_name, conversation_id, new_title)
     return new_title
 
+# --- DEPRECATED: This function is replaced by the summarizer logic ---
 def fetch_recent_user_memory(db_name: str, conversation_id: str, limit: int = 5) -> str:
     return ""
+
+# --- NEW: Fetches the current memory summary for a conversation ---
+def fetch_conversation_summary(db_name: str, conversation_id: str) -> str:
+    conn = sqlite3.connect(db_name, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute("SELECT memory_summary FROM conversations WHERE id = ?", (conversation_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else ""
+
+# --- NEW: Updates the memory summary for a conversation ---
+def update_conversation_summary(db_name: str, conversation_id: str, new_summary: str):
+    conn = sqlite3.connect(db_name, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE conversations SET memory_summary = ? WHERE id = ?", (new_summary, conversation_id))
+    conn.commit()
+    conn.close()
+
 
 def rename_conversation(db_name: str, conversation_id: str, new_title: str):
     conn = sqlite3.connect(db_name, timeout=10)
