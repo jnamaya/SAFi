@@ -1,6 +1,7 @@
+/* CHANGE: Switched to a more modern, professional font */
 body { 
-  font-family: 'Roboto', 'Inter', 'Source Sans Pro', sans-serif; 
-  font-size: 17px;
+  font-family: 'Inter', 'Source Sans Pro', sans-serif; 
+  font-size: 16px; /* Adjusted base font size for better readability */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -15,40 +16,35 @@ html, body {
   max-width: 100%; 
 }
 
+/* CHANGE: Updated scrollbar style to be thinner and less obtrusive */
 .custom-scrollbar {
   -webkit-overflow-scrolling: touch; 
 }
 
 .custom-scrollbar::-webkit-scrollbar { 
-  width: 8px; 
+  width: 6px; 
 }
 .custom-scrollbar::-webkit-scrollbar-track { 
   background: transparent; 
 }
 .custom-scrollbar::-webkit-scrollbar-thumb { 
-  background: #d4d4d4; 
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+  background: #cbd5e1; /* neutral-300 */
+  border-radius: 3px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #a3a3a3;
-  background-clip: content-box;
+  background: #94a3b8; /* neutral-400 */
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb { 
-  background: #404040;
-  background-clip: content-box;
+  background: #475569; /* neutral-600 */
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #525252;
-  background-clip: content-box;
+  background: #64748b; /* neutral-500 */
 }
 
 /* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
-  font-size: 16px;
 }
 
 /* --- IMPROVEMENT: Better spacing and styling for headings --- */

@@ -4,13 +4,10 @@ export const elements = {
   loginView: document.getElementById('login-view'),
   chatView: document.getElementById('chat-view'),
   loginButton: document.getElementById('login-button'),
-  userProfileSidebar: document.getElementById('user-profile-sidebar'),
+  userProfileContainer: document.getElementById('user-profile-container'),
   chatWindow: document.getElementById('chat-window'),
   messageInput: document.getElementById('message-input'),
   sendButton: document.getElementById('send-button'),
-  themeToggle: document.getElementById('theme-toggle'),
-  themeIconLight: document.getElementById('theme-icon-light'),
-  themeIconDark: document.getElementById('theme-icon-dark'),
   sidebar: document.getElementById('sidebar'),
   newChatButton: document.getElementById('new-chat-button'),
   convoList: document.getElementById('convo-list'),
@@ -20,15 +17,12 @@ export const elements = {
   sidebarOverlay: document.getElementById('sidebar-overlay'),
   emptyState: document.getElementById('empty-state'),
   activeProfileDisplay: document.getElementById('active-profile-display'),
-  connectionStatusDot: document.getElementById('connection-status-dot'),
-  connectionStatusText: document.getElementById('connection-status-text'),
   toastContainer: document.getElementById('toast-container'),
   modalBackdrop: document.getElementById('modal-backdrop'),
   conscienceModal: document.getElementById('conscience-modal'),
   deleteAccountModal: document.getElementById('delete-account-modal'),
   composerFooter: document.getElementById('composer-footer'),
   closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-  mobileCloseConscienceModalBtn: document.getElementById('mobile-close-conscience-modal'),
   cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
   confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
   conscienceDetails: document.getElementById('conscience-details'),
@@ -37,13 +31,8 @@ export const elements = {
 let activeToast = null;
 let lastRenderedDay = '';
 
-export function updateThemeUI() {
-  const isDark = document.documentElement.classList.contains('dark');
-  if (elements.themeIconLight && elements.themeIconDark) {
-    elements.themeIconLight.style.display = isDark ? 'none' : 'block';
-    elements.themeIconDark.style.display = isDark ? 'block' : 'none';
-  }
-}
+// CHANGE: This function is no longer needed as the theme toggle is part of the dynamic user profile section
+// export function updateThemeUI() { ... }
 
 export function openSidebar() {
   elements.sidebar.classList.remove('-translate-x-full');
@@ -62,33 +51,62 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
     elements.sidebar.classList.add('md:flex');
     elements.chatView.classList.remove('hidden');
 
-    const pic = user.picture || user.avatar || 'https://placehold.co/32x32';
+    const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
     const name = user.name || user.email || 'User';
     
-    elements.userProfileSidebar.innerHTML = `
-      <div class="space-y-4">
-        <div class="flex items-center gap-3">
-          <img src="${pic}" alt="User profile" class="w-8 h-8 rounded-full" />
+    elements.userProfileContainer.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3 min-w-0">
+          <img src="${pic}" alt="User Avatar" class="w-10 h-10 rounded-full">
           <div class="flex-1 min-w-0">
             <p class="text-sm font-semibold truncate">${name}</p>
-            <p class="text-xs text-neutral-500 truncate">${user.email}</p>
+            <p class="text-xs text-neutral-500 dark:text-neutral-400 truncate">${user.email}</p>
           </div>
         </div>
-        
-        <div>
-          <label for="profile-selector" class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Active Value Set</label>
-          <select id="profile-selector" class="mt-1 block w-full text-sm bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-md py-1.5 px-2 focus:ring-green-500 focus:border-green-500"></select>
+        <div class="relative" id="settings-menu">
+          <button id="settings-button" class="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-700">
+            <svg class="w-5 h-5 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          </button>
+          <div id="settings-dropdown" class="absolute bottom-full right-0 mb-2 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 hidden z-10">
+            <div class="p-2">
+              <label for="profile-selector" class="block text-xs font-medium text-neutral-500 dark:text-neutral-400 px-2 mb-1">Active Value Set</label>
+              <select id="profile-selector" class="w-full text-sm bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-md py-1.5 px-2 focus:ring-green-500 focus:border-green-500"></select>
+            </div>
+            <div class="border-t border-neutral-200 dark:border-neutral-700 my-1"></div>
+            <button id="theme-toggle" class="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700">
+                <svg id="theme-icon-dark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                <svg id="theme-icon-light" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                <span>Toggle Theme</span>
+            </button>
+            <div class="border-t border-neutral-200 dark:border-neutral-700 my-1"></div>
+            <button id="logout-button" class="block w-full text-left px-4 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700">Sign Out</button>
+            <button id="delete-account-btn" class="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">Delete Account</button>
+          </div>
         </div>
-
-        <div class="flex items-center justify-between text-sm">
-          <button id="delete-account-btn" class="font-semibold text-red-600 dark:text-red-500 hover:underline">Delete</button>
-          <button id="logout-button" class="font-semibold text-neutral-500 hover:text-black dark:hover:text-white">Sign Out</button>
-        </div>
-      </div>`;
+      </div>
+      `;
       
     document.getElementById('logout-button').addEventListener('click', logoutHandler);
     document.getElementById('delete-account-btn').addEventListener('click', () => showModal('delete'));
     document.getElementById('profile-selector').addEventListener('change', profileChangeHandler);
+    
+    const themeToggle = document.getElementById('theme-toggle');
+    const updateThemeUI = () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        const lightIcon = document.getElementById('theme-icon-light');
+        const darkIcon = document.getElementById('theme-icon-dark');
+        if(lightIcon && darkIcon) {
+            lightIcon.style.display = isDark ? 'block' : 'none';
+            darkIcon.style.display = isDark ? 'none' : 'block';
+        }
+    };
+
+    themeToggle.addEventListener('click', () => {
+        document.documentElement.classList.toggle('dark');
+        localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+        updateThemeUI();
+    });
+    updateThemeUI();
 
   } else {
     elements.loginView.classList.remove('hidden');
@@ -101,7 +119,6 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
 export function populateProfileSelector(profiles, selectedProfile) {
     const selector = document.getElementById('profile-selector');
     if (!selector) return;
-
     selector.innerHTML = '';
     profiles.forEach(profile => {
         const option = document.createElement('option');
@@ -112,58 +129,47 @@ export function populateProfileSelector(profiles, selectedProfile) {
     });
 }
 
-
-export function renderConversationLink(convo, switchHandler, optionsHandler) {
-  const convoContainer = document.createElement('div');
-  convoContainer.className = 'group flex items-center rounded-lg';
-  convoContainer.dataset.id = convo.id;
-
-  const link = document.createElement('button');
-  link.className = 'flex-1 text-left px-3 py-2 text-sm truncate';
-  link.textContent = convo.title || 'Untitled';
-  link.addEventListener('click', () => switchHandler(convo.id));
-
-  const optionsBtn = document.createElement('button');
-  optionsBtn.className = 'p-2 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700';
-  optionsBtn.innerHTML = '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>';
-  optionsBtn.addEventListener('click', (e) => optionsHandler(e, convo.id, convo.title || 'Untitled'));
-
-  convoContainer.appendChild(link);
-  convoContainer.appendChild(optionsBtn);
-  elements.convoList.appendChild(convoContainer);
+export function renderConversationLink(convo, handlers) {
+  const { switchHandler, renameHandler, deleteHandler } = handlers;
+  const link = document.createElement('a');
+  link.href = '#';
+  link.dataset.id = convo.id;
+  link.className = 'group flex items-center justify-between px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg';
+  link.innerHTML = `<span class="truncate">${convo.title || 'Untitled'}</span>
+    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <button data-action="rename" class="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-md" aria-label="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg></button>
+      <button data-action="delete" class="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-md" aria-label="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+    </div>`;
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const action = e.target.closest('button')?.dataset.action;
+    if (action === 'rename') renameHandler(convo.id, convo.title || 'Untitled');
+    else if (action === 'delete') deleteHandler(convo.id);
+    else switchHandler(convo.id);
+  });
+  elements.convoList.appendChild(link);
 }
 
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null) {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(date);
-
   const container = document.createElement('div');
-  if (messageId) {
-    container.dataset.messageId = messageId;
-  }
-  
+  if (messageId) container.dataset.messageId = messageId;
   const html = DOMPurify.sanitize(marked.parse(text ?? ''));
   const style = `style="font-size: 0.75rem; margin-top: 0.35rem;"`;
-
   const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
-
   if (sender === 'user') {
     container.className = 'flex justify-end';
     container.innerHTML = `<div class="msg bg-green-600 text-white px-5 py-3 rounded-2xl rounded-br-none shadow-md chat-bubble">${html}<div class="stamp text-white/80" ${style}>${formatTime(date)}</div></div>`;
   } else {
     container.className = 'flex items-start gap-3 group';
-    container.innerHTML = `
-      <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
+    container.innerHTML = `<img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
       <div class="relative msg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm">
         <div class="chat-bubble">${html}</div>
-        <div class="flex items-center justify-between stamp-container">
-          <div class="stamp text-neutral-500 dark:text-neutral-400" ${style}>${formatTime(date)}</div>
-        </div>
+        <div class="flex items-center justify-between stamp-container"><div class="stamp text-neutral-500 dark:text-neutral-400" ${style}>${formatTime(date)}</div></div>
       </div>`;
-
     const bubble = container.querySelector('.msg');
     bubble.appendChild(makeCopyButton(text));
-
     if (hasLedger && whyHandler) {
       const stampContainer = container.querySelector('.stamp-container');
       const whyButton = document.createElement('button');
@@ -173,7 +179,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       stampContainer.insertBefore(whyButton, stampContainer.firstChild);
     }
   }
-
   elements.chatWindow.appendChild(container);
   scrollToBottom();
   return container;
@@ -182,33 +187,26 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
     const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageContainer) return;
-
     const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
     if (!hasLedger) return;
-
     const stampContainer = messageContainer.querySelector('.stamp-container');
     if (stampContainer && !stampContainer.querySelector('.why-btn')) {
         const whyButton = document.createElement('button');
         whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
         whyButton.textContent = 'Why this answer?';
         whyButton.addEventListener('click', () => whyHandler(payload));
-        
         stampContainer.insertBefore(whyButton, stampContainer.firstChild);
     }
 }
-
 
 export function showLoadingIndicator() {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(new Date());
   const loadingContainer = document.createElement('div');
   loadingContainer.className = 'flex items-start gap-3';
-  loadingContainer.innerHTML = `
-    <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
+  loadingContainer.innerHTML = `<img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
     <div class="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none flex items-center gap-1">
-      <div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse"></div>
-      <div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.2s"></div>
-      <div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.4s"></div>
+      <div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse"></div><div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.2s"></div><div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.4s"></div>
     </div>`;
   elements.chatWindow.appendChild(loadingContainer);
   scrollToBottom();
@@ -231,76 +229,36 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
-export function updateConnectionStatus(isOnline) {
-  if (isOnline) {
-    elements.connectionStatusDot.className = 'w-2 h-2 rounded-full bg-green-500';
-    elements.connectionStatusText.textContent = 'Connected';
-  } else {
-    elements.connectionStatusDot.className = 'w-2 h-2 rounded-full bg-red-500';
-    elements.connectionStatusText.textContent = 'Offline';
-  }
-}
-
 export function showModal(kind, data) {
   if (kind === 'conscience') {
-    const payload = Array.isArray(data)
-      ? { ledger: data, profile: null, values: [], spirit_score: null }
-      : (data || { ledger: [], profile: null, values: [], spirit_score: null });
-
+    const payload = data || { ledger: [], profile: null, values: [], spirit_score: null };
     const box = document.getElementById('conscience-details');
-    const modal = document.getElementById('conscience-modal');
-    const backdrop = document.getElementById('modal-backdrop');
-    if (!box || !modal || !backdrop) return;
-
+    if (!box) return;
     box.innerHTML = '';
     renderConscienceHeader(box, payload);
     renderConscienceLedger(box, payload.ledger);
-
-    backdrop.classList.remove('hidden');
-    modal.classList.remove('hidden');
-    return;
-  }
-  if (kind === 'delete') {
-      elements.deleteAccountModal.classList.remove('hidden');
-      elements.modalBackdrop.classList.remove('hidden');
+    elements.conscienceModal.classList.remove('hidden');
+    elements.modalBackdrop.classList.remove('hidden');
+  } else if (kind === 'delete') {
+    elements.deleteAccountModal.classList.remove('hidden');
+    elements.modalBackdrop.classList.remove('hidden');
   }
 }
 
 function renderConscienceHeader(container, payload) {
   const name = payload.profile || 'Current value set';
-  const chips = (payload.values || []).map(v => (
-    `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">
-       ${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span>
-     </span>`
-  )).join(' ');
-
+  const chips = (payload.values || []).map(v => `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span></span>`).join(' ');
   let scoreHtml = '';
   if (payload.spirit_score !== null && payload.spirit_score !== undefined) {
-    const score = Math.max(1, Math.min(10, payload.spirit_score)); 
-    const scorePercentage = (score - 1) / 9 * 100; 
-    scoreHtml = `
-      <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 my-4">
-        <div class="flex items-center justify-between mb-1">
-          <div class="text-sm font-semibold">Alignment Score</div>
-          <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${score}/10</div>
-        </div>
-        <div class="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2.5">
-          <div class="bg-emerald-500 h-2.5 rounded-full" style="width: ${scorePercentage}%"></div>
-        </div>
-        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">This score reflects how well the output aligns with the active value set for this specific answer.</p>
-      </div>
-    `;
+    const score = Math.max(1, Math.min(10, payload.spirit_score));
+    const scorePercentage = (score - 1) / 9 * 100;
+    scoreHtml = `<div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 my-4">
+        <div class="flex items-center justify-between mb-1"><div class="text-sm font-semibold">Alignment Score</div><div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${score}/10</div></div>
+        <div class="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2.5"><div class="bg-emerald-500 h-2.5 rounded-full" style="width: ${scorePercentage}%"></div></div>
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">This score reflects alignment with the active value set.</p>
+      </div>`;
   }
-
-  const html = `
-    <div class="mb-4">
-      <div class="text-xs uppercase tracking-wide text-neutral-500">Value Set:</div>
-      <div class="text-base font-semibold">${name}</div>
-      <div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div>
-    </div>
-    ${scoreHtml}
-  `;
-  container.insertAdjacentHTML('afterbegin', html);
+  container.innerHTML = `<div class="mb-4"><div class="text-xs uppercase tracking-wide text-neutral-500">Value Set:</div><div class="text-base font-semibold">${name}</div><div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div></div>${scoreHtml}`;
 }
 
 function renderConscienceLedger(container, ledger) {
@@ -312,14 +270,9 @@ function renderConscienceLedger(container, ledger) {
       conflict: { icon: '▼', pill: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-900/30', title: 'text-red-700 dark:text-red-300', label: 'Conflicts with' },
       neutral: { icon: '•', pill: 'text-neutral-600 bg-neutral-100 dark:text-neutral-300 dark:bg-neutral-800', title: 'text-neutral-800 dark:text-neutral-200', label: 'Neutral on' }
     }[bucket];
-    const reason = row.reason ? DOMPurify.sanitize(String(row.reason)) : '';
-    return `
-      <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 mb-3">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full ${tone.pill} text-xs">${tone.icon}</span>
-          <div class="font-semibold ${tone.title}">${tone.label} ${row.value}</div>
-        </div>
-        <div class="text-sm text-neutral-600 dark:text-neutral-400">${reason}</div>
+    return `<div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 mb-3">
+        <div class="flex items-center gap-2 mb-1"><span class="inline-flex items-center justify-center w-5 h-5 rounded-full ${tone.pill} text-xs">${tone.icon}</span><div class="font-semibold ${tone.title}">${tone.label} ${row.value}</div></div>
+        <div class="text-sm text-neutral-600 dark:text-neutral-400">${DOMPurify.sanitize(String(row.reason || ''))}</div>
       </div>`;
   }).join('');
   container.insertAdjacentHTML('beforeend', html || '<div class="text-sm text-neutral-500">No ledger available.</div>');
@@ -365,33 +318,19 @@ function makeCopyButton(text) {
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
   if (activeProfile && elements.activeProfileDisplay) {
-    const valuesHtml = (activeProfile.values || [])
-      .map(v => `<span class="value-chip">${v.value}</span>`)
-      .join(' ');
-
-    const promptsHtml = (activeProfile.example_prompts || [])
-      .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
-      .join('');
-
-    elements.activeProfileDisplay.innerHTML = `
-      <div class="text-center pt-8">
-        <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
+    const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
+    const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
+    elements.activeProfileDisplay.innerHTML = `<div class="text-center pt-8">
+        <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is operating with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">value set, which includes:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
-        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">Try asking one of these questions to start:</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">
-          ${promptsHtml}
-        </div>
-      </div>
-    `;
-    
+        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">Try asking:</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">${promptsHtml}</div>
+      </div>`;
     document.querySelectorAll('.example-prompt-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            promptClickHandler(btn.textContent.replace(/"/g, ''));
-        });
+        btn.addEventListener('click', () => promptClickHandler(btn.textContent.replace(/"/g, '')));
     });
-
   }
   elements.emptyState.classList.remove('hidden');
 }
@@ -399,17 +338,19 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
 export function resetChatView() {
   lastRenderedDay = '';
   Array.from(elements.chatWindow.children).forEach(child => {
-    if (child.id !== 'empty-state') {
-      child.remove();
-    }
+    if (child.id !== 'empty-state') child.remove();
   });
   if(elements.activeProfileDisplay) elements.activeProfileDisplay.innerHTML = '';
   elements.emptyState.classList.add('hidden');
 }
 
 export function setActiveConvoLink(id) {
-  document.querySelectorAll('#convo-list > div').forEach(div => {
-    div.classList.toggle('bg-green-100', div.dataset.id === String(id));
-    div.classList.toggle('dark:bg-green-900', div.dataset.id === String(id));
+  document.querySelectorAll('#convo-list > a').forEach(link => {
+    const isActive = link.dataset.id === String(id);
+    link.classList.toggle('bg-green-100', isActive);
+    link.classList.toggle('dark:bg-green-900/50', isActive);
+    link.classList.toggle('text-green-800', isActive);
+    link.classList.toggle('dark:text-green-300', isActive);
+    link.classList.toggle('font-medium', isActive);
   });
 }
