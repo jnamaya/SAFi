@@ -27,35 +27,52 @@ def get_user_id():
         return None
     return user.get('sub') or user.get('id')
 
-# ... (your other routes like /health, /profiles, etc. remain the same) ...
-
 @conversations_bp.route('/process_prompt', methods=['POST'])
 def process_prompt_endpoint():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # --- CHANGE: Enforce the daily prompt limit ---
     limit = Config.DAILY_PROMPT_LIMIT
     if limit > 0:
         count = db.get_todays_prompt_count(Config.DATABASE_NAME, user_id)
         if count >= limit:
             return jsonify({
                 "error": f"You have reached your daily limit of {limit} messages. Please try again tomorrow."
-            }), 429 # HTTP 429: Too Many Requests
+            }), 429
 
     data = request.json
     if 'message' not in data or 'conversation_id' not in data:
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
     
-    # Record the usage before processing
     if limit > 0:
         db.record_prompt_usage(Config.DATABASE_NAME, user_id)
 
+    # --- CHANGE: The result now contains the immediately available response ---
+    # The full audit happens in the background.
     result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
     return jsonify(result)
 
-# ... (the rest of your conversation routes) ...
+# --- NEW: Endpoint for the client to poll for audit results ---
+@conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
+def get_audit_result_endpoint(message_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+
+    result = db.get_audit_result(Config.DATABASE_NAME, message_id)
+
+    if result:
+        # The frontend needs the profile and values to render the modal correctly
+        if result.get("status") == "complete":
+            prof = getattr(saf_system, 'profile', None) or {}
+            result["profile"] = prof.get("name", _current_profile_name)
+            result["values"] = prof.get("values", [])
+        return jsonify(result)
+    else:
+        return jsonify({"status": "not_found"}), 404
+
+
 @conversations_bp.route('/health')
 def health_check():
     prof = getattr(saf_system, 'profile', None) or {}

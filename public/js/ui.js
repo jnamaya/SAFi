@@ -106,42 +106,49 @@ export function renderConversationLink(convo, switchHandler, optionsHandler) {
   elements.convoList.appendChild(convoContainer);
 }
 
-export function displayMessage(sender, text, date = new Date(), payloadOrLedger = null, whyHandler) {
+export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null) {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(date);
 
   const container = document.createElement('div');
+  if (messageId) {
+    container.dataset.messageId = messageId;
+  }
+  
   const html = DOMPurify.sanitize(marked.parse(text ?? ''));
-
   const style = `style="font-size: 0.75rem; margin-top: 0.35rem;"`;
 
-  const isArray = Array.isArray(payloadOrLedger);
-  const payload = isArray
-    ? { ledger: payloadOrLedger }
-    : (payloadOrLedger || { ledger: [] });
-
-  const hasLedger = Array.isArray(payload.ledger) && payload.ledger.length > 0;
+  const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
 
   if (sender === 'user') {
     container.className = 'flex justify-end';
     container.innerHTML = `<div class="msg bg-green-600 text-white px-5 py-3 rounded-2xl rounded-br-none shadow-md chat-bubble">${html}<div class="stamp text-white/80" ${style}>${formatTime(date)}</div></div>`;
   } else {
+    // --- FIX: Rewrote this block to use more robust DOM manipulation ---
     container.className = 'flex items-start gap-3 group';
-    const whyButtonHtml = hasLedger ? `<button class="why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2">Why this answer?</button>` : '';
+    // 1. Set the base HTML without the conditional button
     container.innerHTML = `
       <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
       <div class="relative msg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm">
         <div class="chat-bubble">${html}</div>
-        <div class="flex items-center justify-between">
-          ${whyButtonHtml}
+        <div class="flex items-center justify-between stamp-container">
           <div class="stamp text-neutral-500 dark:text-neutral-400" ${style}>${formatTime(date)}</div>
         </div>
       </div>`;
 
+    // 2. Append the copy button
     const bubble = container.querySelector('.msg');
     bubble.appendChild(makeCopyButton(text));
-    if (hasLedger) {
-      container.querySelector('.why-btn')?.addEventListener('click', () => whyHandler(payload));
+
+    // 3. If ledger exists, create and prepend the "Why" button
+    if (hasLedger && whyHandler) {
+      const stampContainer = container.querySelector('.stamp-container');
+      const whyButton = document.createElement('button');
+      whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
+      whyButton.textContent = 'Why this answer?';
+      whyButton.addEventListener('click', () => whyHandler(payload));
+      // Prepend button to the stamp container
+      stampContainer.insertBefore(whyButton, stampContainer.firstChild);
     }
   }
 
@@ -149,6 +156,25 @@ export function displayMessage(sender, text, date = new Date(), payloadOrLedger 
   scrollToBottom();
   return container;
 }
+
+export function updateMessageWithAudit(messageId, payload, whyHandler) {
+    const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageContainer) return;
+
+    const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
+    if (!hasLedger) return;
+
+    const stampContainer = messageContainer.querySelector('.stamp-container');
+    if (stampContainer && !stampContainer.querySelector('.why-btn')) {
+        const whyButton = document.createElement('button');
+        whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
+        whyButton.textContent = 'Why this answer?';
+        whyButton.addEventListener('click', () => whyHandler(payload));
+        
+        stampContainer.insertBefore(whyButton, stampContainer.firstChild);
+    }
+}
+
 
 export function showLoadingIndicator() {
   elements.emptyState.classList.add('hidden');
@@ -196,8 +222,8 @@ export function updateConnectionStatus(isOnline) {
 export function showModal(kind, data) {
   if (kind === 'conscience') {
     const payload = Array.isArray(data)
-      ? { ledger: data, profile: null, values: [] }
-      : (data || { ledger: [], profile: null, values: [] });
+      ? { ledger: data, profile: null, values: [], spirit_score: null }
+      : (data || { ledger: [], profile: null, values: [], spirit_score: null });
 
     const box = document.getElementById('conscience-details');
     const modal = document.getElementById('conscience-modal');
@@ -205,7 +231,7 @@ export function showModal(kind, data) {
     if (!box || !modal || !backdrop) return;
 
     box.innerHTML = '';
-    renderConscienceHeader(box, payload.profile, payload.values);
+    renderConscienceHeader(box, payload);
     renderConscienceLedger(box, payload.ledger);
 
     backdrop.classList.remove('hidden');
@@ -218,13 +244,31 @@ export function showModal(kind, data) {
   }
 }
 
-function renderConscienceHeader(container, profileName, values) {
-  const name = profileName || 'Current value set';
-  const chips = (values || []).map(v => (
+function renderConscienceHeader(container, payload) {
+  const name = payload.profile || 'Current value set';
+  const chips = (payload.values || []).map(v => (
     `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">
        ${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span>
      </span>`
   )).join(' ');
+
+  let scoreHtml = '';
+  if (payload.spirit_score !== null && payload.spirit_score !== undefined) {
+    const score = Math.max(1, Math.min(10, payload.spirit_score)); 
+    const scorePercentage = (score - 1) / 9 * 100; 
+    scoreHtml = `
+      <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 my-4">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-sm font-semibold">Alignment Score</div>
+          <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${score}/10</div>
+        </div>
+        <div class="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2.5">
+          <div class="bg-emerald-500 h-2.5 rounded-full" style="width: ${scorePercentage}%"></div>
+        </div>
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">This score reflects how well the output aligns with the active value set for this specific answer.</p>
+      </div>
+    `;
+  }
 
   const html = `
     <div class="mb-4">
@@ -232,6 +276,7 @@ function renderConscienceHeader(container, profileName, values) {
       <div class="text-base font-semibold">${name}</div>
       <div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div>
     </div>
+    ${scoreHtml}
   `;
   container.insertAdjacentHTML('afterbegin', html);
 }
@@ -306,7 +351,6 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
       .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
       .join('');
 
-    // --- CHANGE: Added pt-8 to push the text block down and changed text-sm to text-lg ---
     elements.activeProfileDisplay.innerHTML = `
       <div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
@@ -332,16 +376,12 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
 
 export function resetChatView() {
   lastRenderedDay = '';
-  // Loop through all direct children of chatWindow
   Array.from(elements.chatWindow.children).forEach(child => {
-    // If the child is not the empty-state div, remove it.
     if (child.id !== 'empty-state') {
       child.remove();
     }
   });
-  // Clear the dynamic content from the previous welcome screen
   if(elements.activeProfileDisplay) elements.activeProfileDisplay.innerHTML = '';
-  // Hide the empty state until it's needed again
   elements.emptyState.classList.add('hidden');
 }
 
