@@ -49,7 +49,6 @@ async function loadConversations() {
     try {
         const conversations = await api.fetchConversations();
         ui.elements.convoList.innerHTML = '';
-        // Add back the "History" heading after clearing
         ui.elements.convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
 
         if (conversations?.length > 0) {
@@ -215,7 +214,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
     return new Promise(executePoll);
 }
 
-
+// CHANGE: Updated autoSize function for the new dynamic ask box
 function autoSize() {
     const input = ui.elements.messageInput;
     const sendButton = ui.elements.sendButton;
@@ -225,17 +224,15 @@ function autoSize() {
 
     input.style.height = 'auto';
     const scrollHeight = input.scrollHeight;
-    const maxHeight = 120; 
+    const maxHeight = 200; 
     
     input.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
 
     if (scrollHeight > maxHeight) {
-        input.classList.add('overflow-y-auto', 'custom-scrollbar');
+        input.style.overflowY = 'auto';
     } else {
-        input.classList.remove('overflow-y-auto', 'custom-scrollbar');
+        input.style.overflowY = 'hidden';
     }
-
-    ui.scrollToBottom();
 }
 
 async function handleRename(id, oldTitle) {
