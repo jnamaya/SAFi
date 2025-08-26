@@ -114,7 +114,6 @@
               </button>
             </div>
             <div class="text-center">
-                <!-- CHANGE: Updated font size for mobile -->
                 <h1 id="chat-title" class="text-[28px] font-semibold leading-tight truncate">SAFi</h1>
                 <p class="text-xs text-gray-500 dark:text-gray-400">The Ethical Reasoning Engine</p>
             </div>
@@ -127,12 +126,27 @@
             </div>
           </div>
 
+          <!-- CHANGE: Updated footer with new dynamic ask box -->
           <footer id="composer-footer" class="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur">
-            <form id="chat-form" class="flex w-full max-w-full items-end gap-2 bg-white dark:bg-neutral-900 border border-green-600 rounded-full px-4 py-2 shadow-md focus-within:ring-2 focus-within:ring-green-500 transition-all duration-300">
-              <label for="message-input" class="sr-only">Ask something</label>
-              <textarea id="message-input" rows="1" class="flex-1 w-full resize-none bg-transparent placeholder-neutral-500 border-none focus:ring-0 focus:outline-none px-2 py-2 text-[16px] sm:text-sm" placeholder="Ask something..."></textarea>
-              <button id="send-button" type="submit" aria-label="Send message" class="shrink-0 bg-green-600 text-white font-semibold px-5 py-2 rounded-full hover:bg-green-500 disabled:bg-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">Send</button>
-            </form>
+            <div class="relative">
+              <textarea 
+                id="message-input" 
+                rows="1" 
+                class="w-full resize-none bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl py-3 pl-4 pr-16 text-base placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:outline-none transition-all duration-200 custom-scrollbar" 
+                placeholder="Ask something..."
+              ></textarea>
+              <button 
+                id="send-button" 
+                type="submit" 
+                aria-label="Send message" 
+                class="absolute bottom-2 right-2 shrink-0 bg-green-600 text-white font-semibold w-10 h-10 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                disabled
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" transform="rotate(45) translate(1, -1)">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                </svg>
+              </button>
+            </div>
           </footer>
         </div>
       </section>
