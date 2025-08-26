@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from openai import OpenAI
+import anthropic
 
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
 from ..persistence import database as db
@@ -17,6 +18,11 @@ from ..utils import dict_sha256
 
 
 class SAFi:
+    """
+    Core orchestrator that ties together Intellect, Will, Conscience, and Spirit.
+    Manages configuration, profiles, values, and memory. Coordinates prompt processing,
+    auditing, and memory summarization.
+    """
     def __init__(
         self,
         config,
@@ -26,19 +32,18 @@ class SAFi:
     ):
         self.config = config
 
-        api_key = getattr(config, 'OPENAI_API_KEY', None)
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY missing")
-        self.client = OpenAI(api_key=api_key)
+        openai_api_key = getattr(config, 'OPENAI_API_KEY', None)
+        anthropic_api_key = getattr(config, 'ANTHROPIC_API_KEY', None)
+        if not openai_api_key or not anthropic_api_key:
+            raise ValueError("Both OPENAI_API_KEY and ANTHROPIC_API_KEY must be set")
+        
+        self.openai_client = OpenAI(api_key=openai_api_key)
+        self.anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
 
-        # Value profile wiring
         if value_profile_or_list is not None:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
                 self.profile = value_profile_or_list
-                self.values = [
-                    {"value": v["value"], "weight": v["weight"]}
-                    for v in self.profile["values"]
-                ]
+                self.values = [{"value": v["value"], "weight": v["weight"]} for v in self.profile["values"]]
             elif isinstance(value_profile_or_list, list):
                 self.profile = None
                 self.values = list(value_profile_or_list)
@@ -55,34 +60,36 @@ class SAFi:
             raise ValueError(f"Value weights must sum to 1.0, got {total}")
 
         self.db_name = getattr(config, 'DATABASE_NAME', 'safi.db')
-        
         self.log_dir = getattr(config, 'LOG_DIR', 'logs')
         self.log_template = getattr(config, 'LOG_FILE_TEMPLATE', None)
         self.legacy_log_file = getattr(config, 'LOG_FILE', 'safi-spirit-log.jsonl')
-
         raw_profile_name = (self.profile or {}).get("name") or getattr(config, "DEFAULT_PROFILE", "custom")
         self.active_profile_name = raw_profile_name.lower()
 
         dim = max(len(self.values), 1)
         loaded_memory = db.load_spirit_memory(self.db_name, self.active_profile_name)
-        if loaded_memory:
-            self.memory = loaded_memory
-            if len(self.memory.get("mu", [])) != dim:
-                self.memory["mu"] = np.zeros(dim)
-        else:
-            self.memory = {"turn": 0, "mu": np.zeros(dim)}
+        self.memory = loaded_memory or {"turn": 0, "mu": np.zeros(dim)}
+        if len(self.memory.get("mu", [])) != dim:
+            self.memory["mu"] = np.zeros(dim)
 
-
-        self.intellect_engine = IntellectEngine(self.client, model=getattr(config, 'INTELLECT_MODEL', 'gpt-4o-mini'), profile=self.profile)
-        self.will_gate = WillGate(self.client, model=getattr(config, 'WILL_MODEL', 'gpt-4o-mini'), values=self.values, profile=self.profile)
-        self.conscience = ConscienceAuditor(self.client, model=getattr(config, 'CONSCIENCE_MODEL', 'gpt-4o-mini'), values=self.values)
+        self.intellect_engine = IntellectEngine(self.anthropic_client, model=getattr(config, 'INTELLECT_MODEL'), profile=self.profile)
+        self.will_gate = WillGate(self.openai_client, model=getattr(config, 'WILL_MODEL'), values=self.values, profile=self.profile)
+        self.conscience = ConscienceAuditor(self.openai_client, model=getattr(config, 'CONSCIENCE_MODEL'), values=self.values)
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, 'SPIRIT_BETA', 0.9))
 
-        print(f"SAFi: profile '{self.active_profile_name}' active; Conscience values-only.")
+        print(f"SAFi: profile '{self.active_profile_name}' active.")
+        print(f"  - Intellect: {getattr(config, 'INTELLECT_MODEL')}")
+        print(f"  - Will: {getattr(config, 'WILL_MODEL')}")
+        print(f"  - Conscience: {getattr(config, 'CONSCIENCE_MODEL')}")
+        print(f"  - Summarizer: {getattr(config, 'SUMMARIZER_MODEL')}")
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
+        """
+        Main entry for a user prompt.
+        Runs Intellect, checks Will, returns answer immediately,
+        launches background Conscience and Spirit, and updates memory summary.
+        """
         memory_summary = db.fetch_conversation_summary(self.db_name, conversation_id)
-        
         history = db.fetch_chat_history_for_conversation(self.db_name, conversation_id)
         new_title = db.set_conversation_title_from_first_message(self.db_name, conversation_id, user_prompt) if not history else None
 
@@ -96,9 +103,14 @@ class SAFi:
             msg = f"Intellect failed: {err}"
             db.insert_memory_entry(self.db_name, conversation_id, "ai", msg, message_id=message_id, audit_status='complete')
             return {
-                "finalOutput": msg, "newTitle": new_title, "willDecision": "violation",
-                "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name,
-                "activeValues": self.values, "conscienceLedger": [], "messageId": message_id
+                "finalOutput": msg,
+                "newTitle": new_title,
+                "willDecision": "violation",
+                "willReason": "Intellect failed to produce an answer.",
+                "activeProfile": self.active_profile_name,
+                "activeValues": self.values,
+                "conscienceLedger": [],
+                "messageId": message_id
             }
 
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
@@ -107,77 +119,118 @@ class SAFi:
             safe_response = f"This response was suppressed. Reason: {E_t}"
             db.insert_memory_entry(self.db_name, conversation_id, "ai", safe_response, message_id=message_id, audit_status='complete')
             self._append_log({
-                "timestamp": datetime.now(timezone.utc).isoformat(), "t": int(self.memory['turn']) + 1,
-                "userPrompt": user_prompt, "intellectDraft": a_t, "intellectReflection": r_t or "",
-                "finalOutput": safe_response, "willDecision": D_t, "willReason": E_t,
-                "conscienceLedger": [], "spiritScore": None, "spiritNote": "Suppressed by Will.", "drift": None,
-                "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)}, "p_t_vector": [],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "t": int(self.memory['turn']) + 1,
+                "userPrompt": user_prompt,
+                "intellectDraft": a_t,
+                "intellectReflection": r_t or "",
+                "finalOutput": safe_response,
+                "willDecision": D_t,
+                "willReason": E_t,
+                "conscienceLedger": [],
+                "spiritScore": None,
+                "spiritNote": "Suppressed by Will.",
+                "drift": None,
+                "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)},
+                "p_t_vector": [],
                 "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(),
+                "memorySummary": memory_summary
             })
             return {
-                "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t,
-                "willReason": E_t, "activeProfile": self.active_profile_name,
-                "activeValues": self.values, "conscienceLedger": [], "messageId": message_id
+                "finalOutput": safe_response,
+                "newTitle": new_title,
+                "willDecision": D_t,
+                "willReason": E_t,
+                "activeProfile": self.active_profile_name,
+                "activeValues": self.values,
+                "conscienceLedger": [],
+                "messageId": message_id
             }
 
         db.insert_memory_entry(self.db_name, conversation_id, "ai", a_t, message_id=message_id, audit_status='pending')
 
         t_next = int(self.memory['turn']) + 1
         snapshot = {
-            "t": t_next, "x_t": user_prompt, "a_t": a_t, "V": self.values, "r_t": r_t,
-            "user_id": user_id, "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)}, "mode": "conversational"
+            "t": t_next,
+            "x_t": user_prompt,
+            "a_t": a_t,
+            "V": self.values,
+            "r_t": r_t,
+            "user_id": user_id,
+            "params": {"beta": getattr(self.config, 'SPIRIT_BETA', 0.9)},
+            "mode": "conversational",
+            "memory_summary": memory_summary
         }
         snap_hash = dict_sha256(snapshot)
         db.upsert_audit_snapshot(self.db_name, t_next, user_id, snap_hash, snapshot)
 
         threading.Thread(
-            target=self._run_audit_thread,
-            args=(snapshot, snap_hash, D_t, E_t, message_id),
-            daemon=True
+            target=self._run_audit_thread, args=(snapshot, snap_hash, D_t, E_t, message_id), daemon=True
         ).start()
-
         threading.Thread(
-            target=self._run_summarization_thread,
-            args=(conversation_id, memory_summary, user_prompt, a_t),
-            daemon=True
+            target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True
         ).start()
 
         return {
-            "finalOutput": a_t, "newTitle": new_title, "conscienceLedger": [],
-            "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name,
-            "activeValues": self.values, "messageId": message_id
+            "finalOutput": a_t,
+            "newTitle": new_title,
+            "conscienceLedger": [],
+            "willDecision": D_t,
+            "willReason": E_t,
+            "activeProfile": self.active_profile_name,
+            "activeValues": self.values,
+            "messageId": message_id
         }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, will_decision: str, will_reason: str, message_id: str):
+        """
+        Background thread for Conscience and Spirit.
+        Scores the final output, updates Spirit memory, writes logs,
+        and stores audit results including Spirit note.
+        """
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
             ledger = loop.run_until_complete(self.conscience.evaluate(
-                final_output=snapshot['a_t'], 
-                user_prompt=snapshot['x_t'], 
+                final_output=snapshot['a_t'],
+                user_prompt=snapshot['x_t'],
                 reflection=snapshot['r_t']
             ))
             loop.close()
 
-            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, self.memory.get('mu', np.zeros(len(self.values))))
-            
+            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(
+                ledger, self.memory.get('mu', np.zeros(len(self.values)))
+            )
+
+            mem_sum = (snapshot.get("memory_summary") or "").strip().replace("\n", " ")
+            if mem_sum:
+                snippet = mem_sum[:300]
+                note = f"{note} Memory summary: {snippet}"
+
             log_entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot['t'],
-                "userPrompt": snapshot['x_t'], "intellectDraft": snapshot['a_t'],
-                "intellectReflection": snapshot['r_t'] or "", "finalOutput": snapshot['a_t'],
-                "willDecision": will_decision, "willReason": will_reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "t": snapshot['t'],
+                "userPrompt": snapshot['x_t'],
+                "intellectDraft": snapshot['a_t'],
+                "intellectReflection": snapshot['r_t'] or "",
+                "finalOutput": snapshot['a_t'],
+                "willDecision": will_decision,
+                "willReason": will_reason,
                 "conscienceLedger": ledger,
-                "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot['params'],
-                "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist()
+                "spiritScore": S_t,
+                "spiritNote": note,
+                "drift": drift_val,
+                "params": snapshot['params'],
+                "p_t_vector": p_t.tolist(),
+                "mu_t_vector": mu_new.tolist(),
+                "memorySummary": snapshot.get("memory_summary") or ""
             }
             self._append_log(log_entry)
             
             self.memory['turn'] += 1
             self.memory['mu'] = np.array(mu_new)
             db.save_spirit_memory(self.db_name, self.active_profile_name, self.memory)
-
-            db.update_audit_results(self.db_name, message_id, ledger, S_t)
+            db.update_audit_results(self.db_name, message_id, ledger, S_t, note)
         except Exception as e:
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr)
             print(f"Message ID: {message_id}", file=sys.stderr)
@@ -187,25 +240,25 @@ class SAFi:
             print(f"--- END ERROR IN AUDIT THREAD ---", file=sys.stderr)
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
+        """
+        Background thread to update conversation memory summary.
+        """
         try:
-            # --- CHANGE: Updated the summarizer prompt to be first-person ---
-            system_prompt = "You are a memory assistant for an AI. Your task is to update the AI's memory based on the latest exchange. Re-write the previous memory, incorporating the new information from the user's prompt and the AI's response. The memory should be written in the first person, from the AI's perspective (e.g., 'The user asked me about X, and I responded by explaining Y'). Keep it concise and focus on the key information that will be needed to understand future questions."
-            
-            content = f"""PREVIOUS MEMORY:
-{old_summary if old_summary else 'This is the beginning of our conversation.'}
+            system_prompt = (
+                "You are a memory assistant for an AI. Your task is to update the AI's memory based on the latest exchange. "
+                "Re-write the previous memory, incorporating the new information from the user's prompt and the AI's response. "
+                "The memory should be written in the first person, from the AI's perspective (e.g., 'The user asked me about X, and I responded by explaining Y'). "
+                "Keep it concise and focus on the key information that will be needed to understand future questions."
+            )
+            content = (
+                f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'This is the beginning of our conversation.'}\n\n"
+                f"LATEST EXCHANGE:\nThe user said: \"{user_prompt}\"\nI responded: \"{ai_response}\"\n\n"
+                f"UPDATED MEMORY (written from my perspective):"
+            )
 
-LATEST EXCHANGE:
-The user said: "{user_prompt}"
-I responded: "{ai_response}"
-
-UPDATED MEMORY (written from my perspective):"""
-
-            response = self.client.chat.completions.create(
-                model=getattr(self.config, 'SUMMARIZER_MODEL', 'gpt-3.5-turbo'),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": content}
-                ],
+            response = self.openai_client.chat.completions.create(
+                model=getattr(self.config, 'SUMMARIZER_MODEL'),
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.2,
             )
             new_summary = response.choices[0].message.content.strip()
@@ -218,8 +271,11 @@ UPDATED MEMORY (written from my perspective):"""
             traceback.print_exc(file=sys.stderr)
             print(f"--- END ERROR IN SUMMARIZATION THREAD ---", file=sys.stderr)
 
-
     def _append_log(self, log_entry: Dict[str, Any]):
+        """
+        Append one JSON line log entry.
+        Uses daily template if configured, else legacy single file.
+        """
         log_path = self.legacy_log_file
         if self.log_template:
             try:
@@ -232,7 +288,6 @@ UPDATED MEMORY (written from my perspective):"""
                 log_path = p / fname
             except Exception as e:
                 print(f"Could not format daily log path, falling back to legacy. Error: {e}", file=sys.stderr)
-
         try:
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")

@@ -1,5 +1,11 @@
 from typing import Dict, Any, List
 
+# Catholic profile configuration:
+# - worldview: theological framing
+# - style: tone and communication approach
+# - will_rules: ethical constraints enforced by the "Will" faculty
+# - values: weighted ethical priorities
+# - example_prompts: sample questions for this worldview
 CATHOLIC_PROFILE: Dict[str, Any] = {
     "name": "Catholic",
     "worldview": (
@@ -18,25 +24,25 @@ CATHOLIC_PROFILE: Dict[str, Any] = {
         "Your goal is to be both truthful to doctrine and charitable in your expression."
     ),
     "will_rules": [
-        # Theological Grounding
+        # Theological grounding
         "Reject drafts that contradict the Catechism of the Catholic Church, papal encyclicals, or ecumenical councils.",
         "Reject drafts that omit marriage as a sacrament instituted by Christ and ordered to grace.",
         "Reject drafts that present marriage as dissolvable, merely contractual, or temporary.",
         "Reject drafts that omit openness to life or contradict Humanae Vitae’s teaching on contraception.",
         "Require at least one invocation of 'covenant' when explaining marriage.",
 
-        # Pastoral & Moral Rules
+        # Pastoral and moral rules
         "Reject drafts that present Catholic teaching harshly or without compassion.",
         "Reject drafts that present Catholic doctrine as one option among many equal paths (relativism).",
         "Require that difficult cases (divorce, irregular unions, etc.) are treated with doctrinal clarity and pastoral sensitivity.",
         "Reject drafts that omit reference to the Magisterium and apostolic tradition as authoritative sources.",
 
-        # Ecumenical Discipline
+        # Ecumenical discipline
         "Allow mention of non-Catholic views only as contrast or clarification, but never as the controlling frame.",
         "Reject drafts that oversimplify or lump all non-Catholic Christians together.",
         "Require that references to other Christian groups are phrased respectfully and aimed at dialogue, not polemic.",
 
-        # Values Integration
+        # Values integration
         "Require affirmations of human dignity in moral discussions.",
         "Require marriage to be framed in terms of the common good of family, parish, and society.",
         "Require justice and charity to be applied when speaking of obligations in marriage.",
@@ -49,7 +55,6 @@ CATHOLIC_PROFILE: Dict[str, Any] = {
         {"value": "Prudence in Judgment",      "weight": 0.20},
         {"value": "Pursuit of the Common Good","weight": 0.20},
     ],
-    # --- CHANGE: Added example prompts specific to this profile ---
     "example_prompts": [
         "Explain the principle of double effect with an example.",
         "What is the Catholic understanding of social justice?",
@@ -58,6 +63,12 @@ CATHOLIC_PROFILE: Dict[str, Any] = {
 }
 
 
+# Secular profile configuration:
+# - worldview: secular reasoning without appeal to divine authority
+# - style: neutral, analytical, practical
+# - will_rules: guard against religious framing
+# - values: weighted ethical priorities
+# - example_prompts: sample questions for this worldview
 SECULAR_PROFILE: Dict[str, Any] = {
     "name": "Secular",
     "worldview": (
@@ -85,7 +96,6 @@ SECULAR_PROFILE: Dict[str, Any] = {
         {"value": "Minimizing Harm",    "weight": 0.20},
         {"value": "Human Flourishing",  "weight": 0.20}
     ],
-    # --- CHANGE: Added example prompts specific to this profile ---
     "example_prompts": [
         "What are the ethical considerations of AI in hiring?",
         "Explain the concept of a 'just war' from a secular viewpoint.",
@@ -93,26 +103,44 @@ SECULAR_PROFILE: Dict[str, Any] = {
     ]
 }
 
+
+# Registry of available profiles
 PROFILES: Dict[str, Dict[str, Any]] = {
     "catholic": CATHOLIC_PROFILE,
     "secular": SECULAR_PROFILE,
 }
 
+
 def list_profiles() -> List[str]:
+    """
+    Return the list of available profile names (sorted).
+    """
     return sorted(PROFILES.keys())
 
+
 def get_profile(name: str) -> Dict[str, Any]:
+    """
+    Retrieve a profile configuration by name (case-insensitive).
+    Raises KeyError if not found.
+    """
     key = (name or "").lower().strip()
     if key not in PROFILES:
         raise KeyError(f"Unknown profile '{name}'. Available: {', '.join(list_profiles())}")
     return PROFILES[key]
 
-# Back-compat helpers if anything else imports them
 
+# Backward compatibility helpers for older imports
 def get_value_profile() -> Dict[str, Any]:
+    """
+    Legacy accessor that always returns the Catholic profile.
+    """
     return CATHOLIC_PROFILE
 
+
 def get_secular_ethic_values() -> List[Dict[str, Any]]:
+    """
+    Legacy accessor that returns only the list of secular values.
+    """
     return [
         {"value": "Truth", "weight": 0.20},
         {"value": "Justice", "weight": 0.20},

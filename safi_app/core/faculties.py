@@ -5,93 +5,60 @@ import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 
 from openai import OpenAI
+import anthropic
 
 from ..utils import normalize_text, dict_sha256
 
 
 class IntellectEngine:
-    def __init__(self, client: OpenAI, model: str, profile: Optional[Dict[str, Any]] = None):
+    """
+    Uses Anthropic's client (Claude models) to generate an answer and a reflection.
+    - Builds a system prompt including worldview, style, and memory.
+    - Requests the model to output <ANSWER> and <REFLECTION> sections.
+    - Returns both parts separately.
+    """
+    def __init__(self, client: anthropic.Anthropic, model: str, profile: Optional[Dict[str, Any]] = None):
         self.client = client
         self.model = model
         self.profile = profile or {}
         self.last_error: Optional[str] = None
-        self.require_reflection: bool = bool(self.profile.get("require_reflection", True))
-
-    async def _reflect(self, *, user_prompt: str, draft: str, worldview: str) -> str:
-        sys = (
-            "You are a careful ethic reviewer. Produce a concise reflection on the ANSWER. "
-            "Keep it 3–6 bullets. Focus on alignment with the stated worldview and values, "
-            "edge cases, and risks. Output ONLY the reflection text."
-        )
-        user = (
-            f"USER PROMPT:\n{user_prompt}\n\n"
-            f"WORLDVIEW (may be empty):\n{worldview or ''}\n\n"
-            f"ANSWER:\n{draft}\n\n"
-            "Write the reflection now."
-        )
-        try:
-            resp = await asyncio.to_thread(
-                self.client.chat.completions.create,
-                model=self.model,
-                temperature=0.3,
-                messages=[{"role": "system", "content": sys},
-                          {"role": "user", "content": user}],
-            )
-            return (resp.choices[0].message.content or "").strip()
-        except Exception:
-            return ""
 
     async def generate(self, *, user_prompt: str, memory_summary: str) -> Tuple[Optional[str], Optional[str]]:
         self.last_error = None
 
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
-        # --- CHANGE: The memory_injection now uses the summary from the database ---
-        memory_injection = f"CONTEXT: Here is a summary of the conversation so far. Use it to inform your answer.\n<summary>{memory_summary}</summary>" if memory_summary else ""
-
-        fmt = (
-            "Format your response EXACTLY like this:\n"
-            "<ANSWER>\n"
-            "…final answer in plain text…\n"
-            "</ANSWER>\n"
-            "<REFLECTION>\n"
-            "…3–6 short bullets on value alignment, caveats, and risks…\n"
-            "</REFLECTION>"
+        memory_injection = (
+            f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
+            f"<summary>{memory_summary}</summary>" if memory_summary else ""
         )
 
-        sys_lines = [ln for ln in [worldview, style, memory_injection, fmt] if ln]
-        system_prompt = "\n\n".join(sys_lines)
-
-        msgs = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        system_prompt = "\n\n".join(filter(None, [
+            worldview,
+            style,
+            memory_injection,
+            "You must format your response EXACTLY like this, with no other text before or after:",
+            "<ANSWER>",
+            "…your final answer in plain text…",
+            "</ANSWER>",
+            "<REFLECTION>",
+            "…3–6 short bullets on value alignment, caveats, and risks based on your answer…",
+            "</REFLECTION>"
+        ]))
 
         try:
             resp = await asyncio.to_thread(
-                self.client.chat.completions.create,
+                self.client.messages.create,
                 model=self.model,
+                max_tokens=4096,
                 temperature=1.0,
-                messages=msgs,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
             )
-            text = resp.choices[0].message.content or ""
+            text = resp.content[0].text if resp.content else ""
 
-            answer = ""
-            reflection = ""
-            if "<ANSWER>" in text and "</ANSWER>" in text:
-                answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip()
-            else:
-                answer = text.split("<REFLECTION>")[0].strip()
-
-            if "<REFLECTION>" in text and "</REFLECTION>" in text:
-                reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip()
-            else:
-                reflection = ""
-
-            if self.require_reflection and not reflection and answer:
-                reflection = await self._reflect(
-                    user_prompt=user_prompt, draft=answer, worldview=worldview or ""
-                )
+            answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip() if "<ANSWER>" in text else text.split("<REFLECTION>")[0].strip()
+            reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip() if "<REFLECTION>" in text else ""
 
             return (answer or None), (reflection or "")
         except Exception as e:
@@ -100,6 +67,13 @@ class IntellectEngine:
 
 
 class WillGate:
+    """
+    Uses OpenAI's client to act as a gatekeeper.
+    - Checks if a draft answer aligns with a declared set of values.
+    - Applies rules or defaults to rejecting answers that reduce alignment.
+    - Returns a decision ('approve' or 'violation') and a reason.
+    - Results are cached for identical inputs.
+    """
     def __init__(self, client: OpenAI, model: str, *, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None):
         self.client = client
         self.model = model
@@ -147,17 +121,13 @@ class WillGate:
                 ],
             )
             content = resp.choices[0].message.content or "{}"
-            try:
-                obj = json.loads(content)
-            except Exception:
-                obj = {}
+            obj = json.loads(content) if content else {}
 
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
 
             if decision not in {"approve", "violation"}:
                 decision = "violation"
-
             if not reason:
                 reason = "Decision explained by Will policies and the active value set."
 
@@ -170,6 +140,12 @@ class WillGate:
 
 
 class ConscienceAuditor:
+    """
+    Uses OpenAI's client to audit the final output.
+    - Scores alignment of the final text with each declared value.
+    - Produces a list of evaluations with value, score, confidence, and reason.
+    - Only evaluates the text itself, not the topic.
+    """
     def __init__(self, client: OpenAI, model: str, values: List[Dict[str, Any]]):
         self.client = client
         self.model = model
@@ -182,7 +158,7 @@ class ConscienceAuditor:
             "IMPORTANT: You must ONLY evaluate the text of the FINAL OUTPUT. DO NOT score the topic being discussed. "
             "For example, a neutral, factual answer about a harmful topic should receive a neutral score (0), not a negative one. "
             "Use scores in {-1, 0, 0.5, 1} and confidence in [0,1]. "
-            "Return JSON {evaluations:[{value,score,confidence,reason}...]}"
+            "Return a single JSON object with one key 'evaluations' which is a list of objects, each with keys: 'value', 'score', 'confidence', 'reason'."
         )
         body = (
             f"VALUES:\n{values_str}\n\nPROMPT:\n{user_prompt}\n\nFINAL OUTPUT:\n{final_output}\n\nREFLECTION:\n{reflection}"
@@ -192,22 +168,26 @@ class ConscienceAuditor:
                 self.client.chat.completions.create,
                 model=self.model,
                 temperature=0.2,
+                response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": body},
                 ],
             )
             content = resp.choices[0].message.content or "{}"
-            try:
-                obj = json.loads(content)
-            except Exception:
-                obj = {}
+            obj = json.loads(content) if content else {}
             return obj.get("evaluations", [])
         except Exception:
             return []
 
 
 class SpiritIntegrator:
+    """
+    Integrates conscience evaluations into a long-term spirit score.
+    - Computes a weighted score based on values, their weights, and confidences.
+    - Produces a coherence score (1–10) and drift measure.
+    - Updates running state (mu) using exponential smoothing.
+    """
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
         self.values = values
         self.beta = beta
@@ -222,8 +202,8 @@ class SpiritIntegrator:
         if any(r is None for r in sorted_rows):
             return 1, "Ledger missing values", mu_tm1, np.zeros_like(mu_tm1), None
 
-        scores = np.array([float(r['score']) for r in sorted_rows])
-        confidences = np.array([float(r['confidence']) for r in sorted_rows])
+        scores = np.array([float(r.get('score', 0)) for r in sorted_rows])
+        confidences = np.array([float(r.get('confidence', 0)) for r in sorted_rows])
 
         raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
@@ -235,3 +215,4 @@ class SpiritIntegrator:
         drift = 0.0 if denom == 0 else (1 - float(np.dot(p_t, mu_tm1) / denom))
         note = f"Coherence {spirit_score}/10, drift {drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
+
