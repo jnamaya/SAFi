@@ -45,20 +45,27 @@ html, body {
   background-clip: content-box;
 }
 
+/* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
   font-size: 16px;
 }
 
+/* --- IMPROVEMENT: Better spacing and styling for headings --- */
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
   font-weight: 600;
-  margin-top: 1.25em;
-  margin-bottom: 0.5em;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
+  line-height: 1.3;
 }
-.chat-bubble h1 { font-size: 1.25rem; }
+.chat-bubble h1 { font-size: 1.25rem; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 0.3em; }
 .chat-bubble h2 { font-size: 1.15rem; }
 .chat-bubble h3 { font-size: 1.05rem; }
+.chat-bubble > *:first-child {
+    margin-top: 0;
+}
 
+/* --- IMPROVEMENT: Consistent paragraph spacing --- */
 .chat-bubble p { 
   margin-bottom: 1em; 
 }
@@ -66,43 +73,78 @@ html, body {
     margin-bottom: 0;
 }
 
+/* --- IMPROVEMENT: Clearer styling for bulleted and numbered lists --- */
 .chat-bubble ul, .chat-bubble ol { 
-  padding-left: 1.5rem; 
+  padding-left: 1.75rem; 
   margin-bottom: 1em; 
+}
+.chat-bubble ul {
+  list-style-type: disc;
+}
+.chat-bubble ol {
+  list-style-type: decimal;
 }
 .chat-bubble li { 
   margin-bottom: 0.5em; 
+  padding-left: 0.25rem;
+}
+.chat-bubble li::marker {
+  color: #a3a3a3;
+}
+.dark .chat-bubble li::marker {
+  color: #737373;
 }
 
-.chat-bubble a { text-decoration: underline; }
+
+/* --- IMPROVEMENT: More distinct styling for links and code --- */
+.chat-bubble a { 
+  color: #16a34a; /* Tailwind green-600 */
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.dark .chat-bubble a {
+  color: #22c55e; /* Tailwind green-500 */
+}
+
 .chat-bubble code { 
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; 
   font-size: 0.9em; 
   background: rgba(0,0,0,.06); 
-  padding: .15rem .35rem; 
+  padding: .2rem .4rem; 
   border-radius: .35rem; 
+  border: 1px solid rgba(0,0,0,0.08);
 }
 .dark .chat-bubble code { 
-  background: rgba(255,255,255,.08); 
+  background: rgba(255,255,255,.1); 
+  border-color: rgba(255,255,255,0.15);
 }
+
 .chat-bubble pre { 
   background: #0b1220; 
   color: #e5e7eb; 
-  padding: 0.85rem; 
+  padding: 1rem; 
   border-radius: 0.75rem; 
-  overflow: auto; 
-  font-size: 0.9rem; 
+  overflow-x: auto; 
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
-.dark .chat-bubble pre { 
-  background: #0b1220; 
+.chat-bubble pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
 }
+
+/* --- IMPROVEMENT: More prominent blockquotes --- */
 .chat-bubble blockquote { 
-  border-left: 3px solid rgba(0,0,0,.15); 
-  padding-left: .75rem; 
+  border-left: 3px solid #16a34a; /* Tailwind green-600 */
+  padding-left: 1rem; 
+  margin-left: 0.25rem;
+  font-style: italic;
   color: #525252; 
 }
 .dark .chat-bubble blockquote { 
-  border-color: rgba(255,255,255,.25); 
+  border-color: #22c55e; /* Tailwind green-500 */
   color: #a3a3a3; 
 }
 
