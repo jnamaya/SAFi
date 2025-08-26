@@ -1,100 +1,47 @@
-import { responseToJsonSafe } from './utils.js';
-
-const API_BASE_URL = window.__API_BASE_URL__ || '';
-
 export const urls = {
-    LOGIN: `${API_BASE_URL}/api/login`,
-    LOGOUT: `${API_BASE_URL}/api/logout`,
-    ME: `${API_BASE_URL}/api/me`,
-    CONVERSATIONS: `${API_BASE_URL}/api/conversations`,
-    PROFILES: `${API_BASE_URL}/api/profiles`,
-    PROCESS_PROMPT: `${API_BASE_URL}/api/process_prompt`,
-    // --- NEW: URL for the audit result endpoint ---
-    AUDIT_RESULT: `${API_BASE_URL}/api/audit_result`,
-    HEALTH: `${API_BASE_URL}/api/health`,
+    LOGIN: '/api/login',
+    LOGOUT: '/api/logout',
+    ME: '/api/me',
+    PROFILES: '/api/profiles',
+    CONVERSATIONS: '/api/conversations',
+    PROCESS: '/api/process_prompt',
+    AUDIT: '/api/audit_result',
+    DELETE_ACCOUNT: '/api/me/delete'
 };
 
-export async function getMe() {
+async function fetchWithHandling(url, options = {}) {
     try {
-        const res = await fetch(urls.ME, { credentials: 'include', cache: 'no-store' });
-        if (!res.ok) return null;
-        return await responseToJsonSafe(res);
-    } catch {
-        return null;
-    }
-}
-
-export async function checkConnection() {
-    try {
-        const response = await fetch(urls.HEALTH);
-        return response.ok;
+        const response = await fetch(url, {
+            ...options,
+            headers: { 'Content-Type': 'application/json', ...options.headers },
+        });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred.' }));
+            throw new Error(errorData.error || errorData.message);
+        }
+        return response.json();
     } catch (error) {
-        return false;
+        console.error(`API call to ${url} failed:`, error);
+        throw error;
     }
 }
 
-export async function fetchActiveProfile() {
-    const response = await fetch(urls.PROFILES, { credentials: 'include', cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
-}
+export const getMe = () => fetch(urls.ME).then(res => res.json()).catch(() => null);
+export const fetchConversations = () => fetchWithHandling(urls.CONVERSATIONS);
+export const createNewConversation = () => fetchWithHandling(urls.CONVERSATIONS, { method: 'POST' });
+export const renameConversation = (id, title) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}`, { method: 'PUT', body: JSON.stringify({ title }) });
+export const deleteConversation = (id) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}`, { method: 'DELETE' });
+export const fetchHistory = (id) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}/history`);
+export const processUserMessage = (message, conversation_id) => fetchWithHandling(urls.PROCESS, { method: 'POST', body: JSON.stringify({ message, conversation_id }) });
+export const fetchAuditResult = (messageId) => fetchWithHandling(`${urls.AUDIT}/${messageId}`);
+export const checkConnection = () => fetch('/api/health').then(res => res.ok).catch(() => false);
+export const deleteAccount = () => fetchWithHandling(urls.DELETE_ACCOUNT, { method: 'POST' });
 
-export async function fetchConversations() {
-    const response = await fetch(urls.CONVERSATIONS, { credentials: 'include', cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return await response.json();
-}
+export const fetchAvailableProfiles = () => fetchWithHandling(urls.PROFILES);
 
-export async function createNewConversation() {
-    const res = await fetch(urls.CONVERSATIONS, { method: 'POST', credentials: 'include' });
-    if (!res.ok) throw new Error('Failed to create conversation');
-    return await res.json();
-}
-
-export async function renameConversation(id, newTitle) {
-    return await fetch(`${urls.CONVERSATIONS}/${id}`, { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        credentials: 'include', 
-        body: JSON.stringify({ title: newTitle.trim() }) 
+export const updateUserProfile = (profileName) => {
+    return fetchWithHandling('/api/me/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ profile: profileName })
     });
-}
-
-export async function deleteConversation(id) {
-    return await fetch(`${urls.CONVERSATIONS}/${id}`, { method: 'DELETE', credentials: 'include' });
-}
-
-export async function fetchHistory(id) {
-    const response = await fetch(`${urls.CONVERSATIONS}/${id}/history`, { credentials: 'include', cache: 'no-store' });
-    return await response.json();
-}
-
-export async function processUserMessage(message, conversationId) {
-    const response = await fetch(urls.PROCESS_PROMPT, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        credentials: 'include', 
-        body: JSON.stringify({ message, conversation_id: conversationId }) 
-    });
-    if (!response.ok) {
-        const errorData = await responseToJsonSafe(response);
-        throw new Error(errorData?.error || `Request failed with status ${response.status}`);
-    }
-    return await responseToJsonSafe(response) || {};
-}
-
-// --- NEW: Function to fetch the audit result for a specific message ---
-export async function fetchAuditResult(messageId) {
-    const response = await fetch(`${urls.AUDIT_RESULT}/${messageId}`, { credentials: 'include', cache: 'no-store' });
-    if (!response.ok) {
-        console.error(`Failed to fetch audit result for ${messageId}`);
-        return null;
-    }
-    return await responseToJsonSafe(response);
-}
-
-
-export async function deleteAccount() {
-    const response = await fetch(urls.ME, { method: 'DELETE', credentials: 'include' });
-    if (!response.ok) throw new Error('Failed to delete account.');
-}
+};

@@ -55,7 +55,7 @@ export function closeSidebar() {
   elements.sidebarOverlay.classList.add('hidden');
 }
 
-export function updateUIForAuthState(user, logoutHandler) {
+export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) {
   if (user) {
     elements.loginView.classList.add('hidden');
     elements.sidebar.classList.remove('hidden');
@@ -64,20 +64,32 @@ export function updateUIForAuthState(user, logoutHandler) {
 
     const pic = user.picture || user.avatar || 'https://placehold.co/32x32';
     const name = user.name || user.email || 'User';
+    
     elements.userProfileSidebar.innerHTML = `
-      <div class="flex items-center gap-3">
-        <img src="${pic}" alt="User profile" class="w-8 h-8 rounded-full" />
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold truncate">${name}</p>
-          <p class="text-xs text-neutral-500 truncate">${user.email}</p>
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <img src="${pic}" alt="User profile" class="w-8 h-8 rounded-full" />
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-semibold truncate">${name}</p>
+            <p class="text-xs text-neutral-500 truncate">${user.email}</p>
+          </div>
         </div>
-      </div>
-      <div class="mt-4 flex items-center justify-between text-sm">
-      <button id="delete-account-btn" class="font-semibold text-red-600 dark:text-red-500 hover:underline">Delete</button>
-        <button id="logout-button" class="font-semibold text-neutral-500 hover:text-black dark:hover:text-white">Sign Out</button>
+        
+        <div>
+          <label for="profile-selector" class="text-xs font-medium text-neutral-600 dark:text-neutral-400">Active Value Set</label>
+          <select id="profile-selector" class="mt-1 block w-full text-sm bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-md py-1.5 px-2 focus:ring-green-500 focus:border-green-500"></select>
+        </div>
+
+        <div class="flex items-center justify-between text-sm">
+          <button id="delete-account-btn" class="font-semibold text-red-600 dark:text-red-500 hover:underline">Delete</button>
+          <button id="logout-button" class="font-semibold text-neutral-500 hover:text-black dark:hover:text-white">Sign Out</button>
+        </div>
       </div>`;
+      
     document.getElementById('logout-button').addEventListener('click', logoutHandler);
     document.getElementById('delete-account-btn').addEventListener('click', () => showModal('delete'));
+    document.getElementById('profile-selector').addEventListener('change', profileChangeHandler);
+
   } else {
     elements.loginView.classList.remove('hidden');
     elements.sidebar.classList.add('hidden');
@@ -85,6 +97,21 @@ export function updateUIForAuthState(user, logoutHandler) {
     elements.chatView.classList.add('hidden');
   }
 }
+
+export function populateProfileSelector(profiles, selectedProfile) {
+    const selector = document.getElementById('profile-selector');
+    if (!selector) return;
+
+    selector.innerHTML = '';
+    profiles.forEach(profile => {
+        const option = document.createElement('option');
+        option.value = profile;
+        option.textContent = profile.charAt(0).toUpperCase() + profile.slice(1);
+        option.selected = profile === selectedProfile;
+        selector.appendChild(option);
+    });
+}
+
 
 export function renderConversationLink(convo, switchHandler, optionsHandler) {
   const convoContainer = document.createElement('div');
@@ -124,9 +151,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     container.className = 'flex justify-end';
     container.innerHTML = `<div class="msg bg-green-600 text-white px-5 py-3 rounded-2xl rounded-br-none shadow-md chat-bubble">${html}<div class="stamp text-white/80" ${style}>${formatTime(date)}</div></div>`;
   } else {
-    // --- FIX: Rewrote this block to use more robust DOM manipulation ---
     container.className = 'flex items-start gap-3 group';
-    // 1. Set the base HTML without the conditional button
     container.innerHTML = `
       <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
       <div class="relative msg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm">
@@ -136,18 +161,15 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         </div>
       </div>`;
 
-    // 2. Append the copy button
     const bubble = container.querySelector('.msg');
     bubble.appendChild(makeCopyButton(text));
 
-    // 3. If ledger exists, create and prepend the "Why" button
     if (hasLedger && whyHandler) {
       const stampContainer = container.querySelector('.stamp-container');
       const whyButton = document.createElement('button');
       whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
       whyButton.textContent = 'Why this answer?';
       whyButton.addEventListener('click', () => whyHandler(payload));
-      // Prepend button to the stamp container
       stampContainer.insertBefore(whyButton, stampContainer.firstChild);
     }
   }
@@ -272,7 +294,7 @@ function renderConscienceHeader(container, payload) {
 
   const html = `
     <div class="mb-4">
-      <div class="text-xs uppercase tracking-wide text-neutral-500">Active value set</div>
+      <div class="text-xs uppercase tracking-wide text-neutral-500">Value Set:</div>
       <div class="text-base font-semibold">${name}</div>
       <div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div>
     </div>
@@ -354,7 +376,7 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
     elements.activeProfileDisplay.innerHTML = `
       <div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently operating with the</p>
-        <h2 class="text-2xl font-semibold my-2">${activeProfile.current || 'Default'}</h2>
+        <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">value set, which includes:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">Try asking one of these questions to start:</p>

@@ -56,7 +56,10 @@
         </button>
       </div>
       <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar min-h-0"></nav>
-      <div id="user-profile-sidebar" class="p-4 border-t border-neutral-200 dark:border-neutral-800"></div>
+      <!-- --- CHANGE: Added a container for the profile selector --- -->
+      <div id="user-profile-sidebar" class="p-4 border-t border-neutral-200 dark:border-neutral-800">
+          <!-- This will be populated by ui.js -->
+      </div>
     </aside>
 
     <div class="flex-1 flex flex-col min-w-0">
@@ -102,7 +105,6 @@
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
               </button>
               <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
-              <!-- --- CHANGE: Added a container for the title and new tagline --- -->
               <div>
                 <h1 id="chat-title" class="text-lg font-semibold leading-tight truncate">SAFi</h1>
               </div>

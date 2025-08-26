@@ -50,6 +50,10 @@ def init_db(db_name: str):
     _add_column_if_not_exists(cursor, 'chat_history', 'audit_status', 'TEXT')
     _add_column_if_not_exists(cursor, 'chat_history', 'spirit_score', 'INTEGER')
     _add_column_if_not_exists(cursor, 'chat_history', 'spirit_note', 'TEXT')
+    # --- CHANGE: Added columns to store the profile used for each message ---
+    _add_column_if_not_exists(cursor, 'chat_history', 'profile_name', 'TEXT')
+    _add_column_if_not_exists(cursor, 'chat_history', 'profile_values', 'TEXT')
+
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_id ON chat_history (message_id)')
 
@@ -79,6 +83,8 @@ def init_db(db_name: str):
             last_login DATETIME
         )
     ''')
+    _add_column_if_not_exists(cursor, 'users', 'active_profile', 'TEXT')
+
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS audit_snapshots (
@@ -132,6 +138,32 @@ def upsert_user(db_name: str, user_info: Dict[str, Any]):
             (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture'), last_login_ts)
         )
     
+    conn.commit()
+    conn.close()
+
+def get_user_details(db_name: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a user's details, including their active_profile.
+    """
+    conn = sqlite3.connect(db_name, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, email, name, picture, active_profile FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0], "email": row[1], "name": row[2], 
+            "picture": row[3], "active_profile": row[4]
+        }
+    return None
+
+def update_user_profile(db_name: str, user_id: str, profile_name: str):
+    """
+    Update the active_profile for a given user.
+    """
+    conn = sqlite3.connect(db_name, timeout=10)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET active_profile = ? WHERE id = ?", (profile_name, user_id))
     conn.commit()
     conn.close()
 
@@ -241,19 +273,20 @@ def create_conversation(db_name: str, user_id: str) -> Dict[str, str]:
 def fetch_chat_history_for_conversation(db_name: str, conversation_id: str) -> List[Dict[str, str]]:
     """
     Return the ordered chat history for a conversation.
-    Includes conscience ledger, spirit score, and spirit note.
     """
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
+    # --- CHANGE: Select the historical profile name and values ---
     cursor.execute(
-        "SELECT role, content, timestamp, message_id, conscience_ledger, spirit_score, spirit_note "
+        "SELECT role, content, timestamp, message_id, conscience_ledger, spirit_score, spirit_note, profile_name, profile_values "
         "FROM chat_history WHERE conversation_id = ? ORDER BY timestamp ASC",
         (conversation_id,)
     )
     history = []
     for row in cursor.fetchall():
-        role, content, timestamp, message_id, ledger_json, spirit_score, spirit_note = row
+        role, content, timestamp, message_id, ledger_json, spirit_score, spirit_note, profile_name, values_json = row
         ledger = json.loads(ledger_json) if ledger_json else []
+        values = json.loads(values_json) if values_json else []
         history.append({
             "role": role,
             "content": content,
@@ -261,7 +294,9 @@ def fetch_chat_history_for_conversation(db_name: str, conversation_id: str) -> L
             "message_id": message_id,
             "conscience_ledger": ledger,
             "spirit_score": spirit_score,
-            "spirit_note": spirit_note
+            "spirit_note": spirit_note,
+            "profile_name": profile_name,
+            "profile_values": values
         })
     conn.close()
     return history
@@ -269,7 +304,7 @@ def fetch_chat_history_for_conversation(db_name: str, conversation_id: str) -> L
 
 def insert_memory_entry(db_name: str, conversation_id: str, role: str, content: str, message_id: Optional[str] = None, audit_status: Optional[str] = None):
     """
-    Insert a chat message. You can attach a message_id and audit_status.
+    Insert a chat message.
     """
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
@@ -281,17 +316,19 @@ def insert_memory_entry(db_name: str, conversation_id: str, role: str, content: 
     conn.close()
 
 
-def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str):
+# --- CHANGE: Added profile_name and profile_values to the function signature ---
+def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]]):
     """
-    Update audit results for a specific message.
-    Saves conscience ledger, marks audit complete, stores spirit score and note.
+    Update audit results for a specific message, including the profile snapshot.
     """
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
     ledger_json = json.dumps(ledger)
+    values_json = json.dumps(profile_values)
+    # --- CHANGE: Update the new profile columns in the database ---
     cursor.execute(
-        "UPDATE chat_history SET conscience_ledger = ?, audit_status = 'complete', spirit_score = ?, spirit_note = ? WHERE message_id = ?",
-        (ledger_json, spirit_score, spirit_note, message_id)
+        "UPDATE chat_history SET conscience_ledger = ?, audit_status = 'complete', spirit_score = ?, spirit_note = ?, profile_name = ?, profile_values = ? WHERE message_id = ?",
+        (ledger_json, spirit_score, spirit_note, profile_name, values_json, message_id)
     )
     conn.commit()
     conn.close()
@@ -299,20 +336,29 @@ def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, A
 
 def get_audit_result(db_name: str, message_id: str) -> Optional[Dict[str, Any]]:
     """
-    Fetch audit status, ledger, spirit score, and spirit note for a message.
+    Fetch audit status and results for a message.
     """
     conn = sqlite3.connect(db_name, timeout=10)
     cursor = conn.cursor()
+    # --- CHANGE: Select the historical profile name and values ---
     cursor.execute(
-        "SELECT audit_status, conscience_ledger, spirit_score, spirit_note FROM chat_history WHERE message_id = ?",
+        "SELECT audit_status, conscience_ledger, spirit_score, spirit_note, profile_name, profile_values FROM chat_history WHERE message_id = ?",
         (message_id,)
     )
     row = cursor.fetchone()
     conn.close()
     if row:
-        status, ledger_json, spirit_score, spirit_note = row
-        ledger = json.loads(ledger_json) if ledger_json else None
-        return {"status": status, "ledger": ledger, "spirit_score": spirit_score, "spirit_note": spirit_note}
+        status, ledger_json, spirit_score, spirit_note, profile_name, values_json = row
+        ledger = json.loads(ledger_json) if ledger_json else []
+        values = json.loads(values_json) if values_json else []
+        return {
+            "status": status, 
+            "ledger": ledger, 
+            "spirit_score": spirit_score, 
+            "spirit_note": spirit_note,
+            "profile": profile_name, # Renamed for consistency
+            "values": values
+        }
     return None
 
 
@@ -327,7 +373,7 @@ def set_conversation_title_from_first_message(db_name: str, conversation_id: str
 
 def fetch_recent_user_memory(db_name: str, conversation_id: str, limit: int = 5) -> str:
     """
-    Deprecated. Replaced by summarizer based memory.
+    Deprecated.
     """
     return ""
 
