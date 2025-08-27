@@ -39,10 +39,8 @@ class IntellectEngine:
             memory_injection,
             "You must format your response EXACTLY like this, with no other text before or after:",
             "<ANSWER>",
-            "…your final answer in plain text…",
             "</ANSWER>",
             "<REFLECTION>",
-            "…3–6 short bullets on value alignment, caveats, and risks based on your answer…",
             "</REFLECTION>"
         ]))
 
