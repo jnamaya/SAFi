@@ -260,13 +260,10 @@ function autoSize() {
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
-    // Reset height to allow shrinking
+    // Temporarily reset height to calculate the new required height
     input.style.height = 'auto';
-    // Set height to the scroll height to grow with content
-    input.style.height = `${input.scrollHeight}px`;
-    
-    // The textarea itself should not scroll; the parent container will.
-    input.style.overflowY = 'hidden';
+    const newHeight = input.scrollHeight;
+    input.style.height = `${newHeight}px`;
 }
 
 async function handleRename(id, oldTitle) {
@@ -369,10 +366,7 @@ function attachEventListeners() {
         }
     });
 
-    if (ui.elements.composerFooter) {
-        new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
-    }
-    window.addEventListener('resize', () => { if(ui.elements.chatWindow) ui.scrollToBottom(); });
+    // REMOVED the problematic resize listener that was causing the scroll issue on mobile.
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
