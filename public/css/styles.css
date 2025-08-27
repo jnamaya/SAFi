@@ -1,7 +1,8 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  font-size: 16px; /* Adjusted base font size for better readability */
+  /* CHANGE: Increased base font size for better readability */
+  font-size: 18px; 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -42,12 +43,91 @@ html, body {
   background: #64748b; /* neutral-500 */
 }
 
+/* --- NEW: Text-first chat styles from mockup --- */
+:root {
+  --bg: #ffffff;
+  --fg: #0a0a0a;
+  --muted: #6b7280;
+  --hint: #4b5563;
+  --accent: #16a34a;
+
+  --user-bg: #ecfdf5;
+  --user-fg: #064e3b;
+  --ai-fg: #111827;
+}
+
+.dark {
+  --bg: #000000;
+  --fg: #f5f5f5;
+  --muted: #9ca3af;
+  --hint: #d1d5db;
+  --accent: #22c55e;
+
+  --user-bg: #052e24;
+  --user-fg: #d1fae5;
+  --ai-fg: #f3f4f6;
+}
+
+.message-container {
+    width: min(72ch, 100%);
+    margin-inline: auto;
+}
+
+.message.user {
+  background: var(--user-bg);
+  color: var(--user-fg);
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.message.ai {
+  color: var(--ai-fg);
+}
+
+.message .chat-bubble {
+    padding: 0;
+    border: none;
+    background: transparent !important;
+    box-shadow: none;
+}
+
+.meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: baseline;
+}
+
+.why-btn {
+  font-size: 13px;
+  font-weight: 500;
+  /* CHANGE: Changed color to accent (green) */
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.why-btn:hover {
+  opacity: 0.8;
+}
+
+.stamp {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* --- End of new chat styles --- */
+
+
 /* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
 }
 
-/* --- IMPROVEMENT: Better spacing and styling for headings --- */
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
   font-weight: 600;
   margin-top: 1.5em;
@@ -61,7 +141,6 @@ html, body {
     margin-top: 0;
 }
 
-/* --- IMPROVEMENT: Consistent paragraph spacing --- */
 .chat-bubble p { 
   margin-bottom: 1em; 
 }
@@ -69,39 +148,27 @@ html, body {
     margin-bottom: 0;
 }
 
-/* --- IMPROVEMENT: Clearer styling for bulleted and numbered lists --- */
 .chat-bubble ul, .chat-bubble ol { 
   padding-left: 1.75rem; 
   margin-bottom: 1em; 
 }
-.chat-bubble ul {
-  list-style-type: disc;
-}
-.chat-bubble ol {
-  list-style-type: decimal;
-}
+.chat-bubble ul { list-style-type: disc; }
+.chat-bubble ol { list-style-type: decimal; }
 .chat-bubble li { 
   margin-bottom: 0.5em; 
   padding-left: 0.25rem;
 }
-.chat-bubble li::marker {
-  color: #a3a3a3;
-}
-.dark .chat-bubble li::marker {
-  color: #737373;
-}
+.chat-bubble li::marker { color: #a3a3a3; }
+.dark .chat-bubble li::marker { color: #737373; }
 
 
-/* --- IMPROVEMENT: More distinct styling for links and code --- */
 .chat-bubble a { 
-  color: #16a34a; /* Tailwind green-600 */
+  color: #16a34a;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
-.dark .chat-bubble a {
-  color: #22c55e; /* Tailwind green-500 */
-}
+.dark .chat-bubble a { color: #22c55e; }
 
 .chat-bubble code { 
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; 
@@ -125,34 +192,23 @@ html, body {
   font-size: 0.9rem;
   line-height: 1.5;
 }
-.chat-bubble pre code {
-  background: transparent;
-  border: none;
-  padding: 0;
-}
+.chat-bubble pre code { background: transparent; border: none; padding: 0; }
 
-/* --- IMPROVEMENT: More prominent blockquotes --- */
 .chat-bubble blockquote { 
-  border-left: 3px solid #16a34a; /* Tailwind green-600 */
+  border-left: 3px solid #16a34a;
   padding-left: 1rem; 
   margin-left: 0.25rem;
   font-style: italic;
   color: #525252; 
 }
 .dark .chat-bubble blockquote { 
-  border-color: #22c55e; /* Tailwind green-500 */
+  border-color: #22c55e;
   color: #a3a3a3; 
 }
 
 .msg { 
   max-width: min(72ch, 100%); 
   word-break: break-word; 
-}
-
-.msg .stamp { 
-  font-size: .75rem;
-  opacity: .7;
-  margin-top: .35rem;
 }
 
 .toast { 
@@ -163,10 +219,6 @@ html, body {
 .toast.show { 
   transform: translateY(0); 
   opacity: 1; 
-}
-
-#connection-status-dot { 
-  transition: background-color 0.5s ease; 
 }
 
 .sr-only {
@@ -181,52 +233,58 @@ html, body {
   border-width: 0;
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
-}
-.blinking-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 1.2em;
-  background-color: currentColor;
-  animation: blink 1s step-end infinite;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-}
-
-/* --- CHANGE: Styles for the new empty state --- */
 .value-chip {
     display: inline-block;
-    background-color: #e5e7eb; /* bg-neutral-200 */
-    border-radius: 9999px; /* rounded-full */
-    padding: 0.25rem 0.75rem; /* px-3 py-1 */
-    font-size: 0.875rem; /* text-sm */
-    font-weight: 600; /* font-semibold */
-    color: #374151; /* text-neutral-700 */
+    background-color: #e5e7eb;
+    border-radius: 9999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
 }
 
 .dark .value-chip {
-    background-color: #374151; /* dark:bg-neutral-700 */
-    color: #d1d5db; /* dark:text-neutral-200 */
+    background-color: #374151;
+    color: #d1d5db;
 }
 
 .example-prompt-btn {
-    padding: 0.75rem; /* p-3 */
-    background-color: #f3f4f6; /* bg-neutral-100 */
-    border-radius: 0.5rem; /* rounded-lg */
-    font-size: 0.875rem; /* text-sm */
+    padding: 0.75rem;
+    background-color: #f3f4f6;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
     text-align: left;
     transition: background-color 0.2s;
 }
 
-.example-prompt-btn:hover {
-    background-color: #e5e7eb; /* hover:bg-neutral-200 */
+.example-prompt-btn:hover { background-color: #e5e7eb; }
+.dark .example-prompt-btn { background-color: #1f2937; }
+.dark .example-prompt-btn:hover { background-color: #374151; }
+
+.loader {
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #3498db;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
 }
 
-.dark .example-prompt-btn {
-    background-color: #1f2937; /* dark:bg-neutral-800 */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
-.dark .example-prompt-btn:hover {
-    background-color: #374151; /* dark:hover:bg-neutral-700 */
+/* New Thinking Spinner Animation */
+.thinking-spinner {
+  border: 3px solid #e5e7eb; /* gray-200 */
+  border-top: 3px solid #16a34a; /* green-600 */
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  animation: spin 1s linear infinite;
+}
+.dark .thinking-spinner {
+  border: 3px solid #374151; /* gray-700 */
+  border-top: 3px solid #22c55e; /* green-500 */
 }

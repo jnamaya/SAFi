@@ -31,9 +31,6 @@ export const elements = {
 let activeToast = null;
 let lastRenderedDay = '';
 
-// CHANGE: This function is no longer needed as the theme toggle is part of the dynamic user profile section
-// export function updateThemeUI() { ... }
-
 export function openSidebar() {
   elements.sidebar.classList.remove('-translate-x-full');
   elements.sidebarOverlay.classList.remove('hidden');
@@ -109,6 +106,7 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
     updateThemeUI();
 
   } else {
+    elements.userProfileContainer.innerHTML = '';
     elements.loginView.classList.remove('hidden');
     elements.sidebar.classList.add('hidden');
     elements.sidebar.classList.remove('md:flex');
@@ -153,60 +151,88 @@ export function renderConversationLink(convo, handlers) {
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null) {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(date);
-  const container = document.createElement('div');
-  if (messageId) container.dataset.messageId = messageId;
+
+  const messageContainer = document.createElement('div');
+  messageContainer.className = 'message-container';
+  if (messageId) {
+    messageContainer.dataset.messageId = messageId;
+  }
+
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${sender}`;
+
   const html = DOMPurify.sanitize(marked.parse(text ?? ''));
-  const style = `style="font-size: 0.75rem; margin-top: 0.35rem;"`;
+
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'chat-bubble';
+  contentDiv.innerHTML = html;
+
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'meta';
+
+  const stampDiv = document.createElement('div');
+  stampDiv.className = 'stamp';
+  stampDiv.textContent = formatTime(date);
+
   const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
-  if (sender === 'user') {
-    container.className = 'flex justify-end';
-    container.innerHTML = `<div class="msg bg-green-600 text-white px-5 py-3 rounded-2xl rounded-br-none shadow-md chat-bubble">${html}<div class="stamp text-white/80" ${style}>${formatTime(date)}</div></div>`;
-  } else {
-    container.className = 'flex items-start gap-3 group';
-    container.innerHTML = `<img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
-      <div class="relative msg bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none shadow-sm">
-        <div class="chat-bubble">${html}</div>
-        <div class="flex items-center justify-between stamp-container"><div class="stamp text-neutral-500 dark:text-neutral-400" ${style}>${formatTime(date)}</div></div>
-      </div>`;
-    const bubble = container.querySelector('.msg');
-    bubble.appendChild(makeCopyButton(text));
-    if (hasLedger && whyHandler) {
-      const stampContainer = container.querySelector('.stamp-container');
+  if (hasLedger && whyHandler) {
       const whyButton = document.createElement('button');
-      whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
+      whyButton.className = 'why-btn';
       whyButton.textContent = 'Why this answer?';
       whyButton.addEventListener('click', () => whyHandler(payload));
-      stampContainer.insertBefore(whyButton, stampContainer.firstChild);
-    }
+      metaDiv.appendChild(whyButton);
+  } else {
+      const placeholder = document.createElement('div');
+      metaDiv.appendChild(placeholder);
   }
-  elements.chatWindow.appendChild(container);
+
+  metaDiv.appendChild(stampDiv);
+
+  messageDiv.appendChild(contentDiv);
+
+  if (sender === 'ai') {
+      messageDiv.classList.add('group', 'relative');
+      messageDiv.appendChild(makeCopyButton(text));
+  }
+
+  messageDiv.appendChild(metaDiv);
+  messageContainer.appendChild(messageDiv);
+
+  elements.chatWindow.appendChild(messageContainer);
   scrollToBottom();
-  return container;
+  return messageContainer;
 }
 
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
     const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageContainer) return;
+
     const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
     if (!hasLedger) return;
-    const stampContainer = messageContainer.querySelector('.stamp-container');
-    if (stampContainer && !stampContainer.querySelector('.why-btn')) {
+
+    const metaDiv = messageContainer.querySelector('.meta');
+    if (metaDiv && !metaDiv.querySelector('.why-btn')) {
         const whyButton = document.createElement('button');
-        whyButton.className = 'why-btn text-xs text-green-600 dark:text-green-500 font-semibold hover:underline mt-2';
+        whyButton.className = 'why-btn';
         whyButton.textContent = 'Why this answer?';
         whyButton.addEventListener('click', () => whyHandler(payload));
-        stampContainer.insertBefore(whyButton, stampContainer.firstChild);
+        
+        metaDiv.insertBefore(whyButton, metaDiv.firstChild);
     }
 }
 
+// CHANGE: Updated to use the new thinking spinner
 export function showLoadingIndicator() {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(new Date());
   const loadingContainer = document.createElement('div');
-  loadingContainer.className = 'flex items-start gap-3';
-  loadingContainer.innerHTML = `<img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg flex-shrink-0" onerror="this.onerror=null; this.src='https://placehold.co/40x40/000000/FFFFFF?text=SAFi'"/>
-    <div class="bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-5 py-3 rounded-2xl rounded-tl-none flex items-center gap-1">
-      <div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse"></div><div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.2s"></div><div class="w-2 h-2 bg-neutral-500 rounded-full animate-pulse" style="animation-delay:.4s"></div>
+  loadingContainer.className = 'message-container';
+  loadingContainer.innerHTML = `
+    <div class="message ai">
+        <div class="flex items-center gap-3">
+          <div class="thinking-spinner"></div>
+          <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic">Thinking...</span>
+        </div>
     </div>`;
   elements.chatWindow.appendChild(loadingContainer);
   scrollToBottom();

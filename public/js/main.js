@@ -137,6 +137,13 @@ function handleExamplePromptClick(promptText) {
 async function sendMessage() {
     const userMessage = ui.elements.messageInput.value.trim();
     if (!userMessage || !currentConversationId) return;
+
+    const buttonIcon = document.getElementById('button-icon');
+    const buttonLoader = document.getElementById('button-loader');
+    
+    buttonIcon.classList.add('hidden');
+    buttonLoader.classList.remove('hidden');
+    ui.elements.sendButton.disabled = true;
     
     const now = new Date();
     ui.displayMessage('user', userMessage, now, null, null, null);
@@ -149,10 +156,31 @@ async function sendMessage() {
     
     const loadingIndicator = ui.showLoadingIndicator();
 
+    // CHANGE: Adjusted SAFi loop simulation timing
+    const safiLoop = [
+        "Intellect: Generating draft...",
+        "Will: Checking rules...",
+        "Conscience: Auditing values...",
+        "Spirit: Calculating score...",
+        "Finalizing..."
+    ];
+    const thinkingStatus = document.getElementById('thinking-status');
+    let loopIndex = 0;
+    const loopInterval = setInterval(() => {
+        if (thinkingStatus && loopIndex < safiLoop.length) {
+            thinkingStatus.textContent = safiLoop[loopIndex];
+            loopIndex++;
+        } else {
+            clearInterval(loopInterval);
+        }
+    }, 1800); // Slower interval for a more realistic feel
+
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
-        loadingIndicator.remove();
         
+        clearInterval(loopInterval);
+        loadingIndicator.remove();
+
         const aiNow = new Date();
         
         ui.displayMessage(
@@ -177,12 +205,16 @@ async function sendMessage() {
         }
         
     } catch (error) {
+        clearInterval(loopInterval);
         loadingIndicator.remove();
         ui.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
+        buttonIcon.classList.remove('hidden');
+        buttonLoader.classList.add('hidden');
+        ui.elements.sendButton.disabled = false;
         ui.elements.messageInput.focus();
     }
 }
@@ -214,7 +246,6 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
     return new Promise(executePoll);
 }
 
-// CHANGE: Updated autoSize function for the new dynamic ask box
 function autoSize() {
     const input = ui.elements.messageInput;
     const sendButton = ui.elements.sendButton;
