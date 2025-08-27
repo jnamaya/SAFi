@@ -217,22 +217,3 @@ def get_profile(name: str) -> Dict[str, Any]:
     return PROFILES[key]
 
 
-# Backward compatibility helpers for older imports
-def get_value_profile() -> Dict[str, Any]:
-    """
-    Legacy accessor that always returns the Catholic profile.
-    """
-    return CATHOLIC_PROFILE
-
-
-def get_secular_ethic_values() -> List[Dict[str, Any]]:
-    """
-    Legacy accessor that returns only the list of secular values.
-    """
-    return [
-        {"value": "Truth", "weight": 0.20},
-        {"value": "Justice", "weight": 0.20},
-        {"value": "Autonomy", "weight": 0.20},
-        {"value": "Minimizing Harm", "weight": 0.20},
-        {"value": "Human Flourishing", "weight": 0.20},
-    ]
