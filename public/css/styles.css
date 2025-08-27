@@ -14,9 +14,9 @@ body {
   }
 }
 
+/* REMOVED overflow: hidden to allow the page to scroll */
 html, body { 
   height: 100%;
-  overflow: hidden; 
   max-width: 100%; 
 }
 
@@ -24,15 +24,16 @@ html, body {
   max-width: 100%; 
 }
 
-/* --- NEW: Hide scrollbar visuals while keeping scroll functionality --- */
-.custom-scrollbar::-webkit-scrollbar {
-  display: none; /* For Chrome, Safari, and Opera */
+/* --- NEW: Hide scrollbar visuals on mobile only --- */
+@media (max-width: 767px) {
+  .custom-scrollbar::-webkit-scrollbar {
+    display: none; /* For Chrome, Safari, and Opera */
+  }
+  .custom-scrollbar {
+    -ms-overflow-style: none;  /* For IE and Edge */
+    scrollbar-width: none;  /* For Firefox */
+  }
 }
-.custom-scrollbar {
-  -ms-overflow-style: none;  /* For IE and Edge */
-  scrollbar-width: none;  /* For Firefox */
-}
-/* --- End of new rule --- */
 
 #message-input::-webkit-scrollbar {
     display: none;
@@ -51,7 +52,6 @@ html, body {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  /* CHANGE: User background is now a darker grey */
   --user-bg: #e5e7eb;
   --user-fg: #1f2937;
   --ai-fg: #111827;
@@ -64,7 +64,6 @@ html, body {
   --hint: #d1d5db;
   --accent: #22c55e;
 
-  /* CHANGE: User background is now green in dark mode */
   --user-bg: #166534;
   --user-fg: #f0fdf4;
   --ai-fg: #f3f4f6;

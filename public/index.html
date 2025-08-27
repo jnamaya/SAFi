@@ -37,18 +37,18 @@
 </script>
   
 </head>
-<body class="h-[100dvh] w-full bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
+<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300">
 
-  <main id="app-container" class="w-full h-full flex relative">
+  <main id="app-container" class="w-full">
     <div id="sidebar-container">
-        <!-- Sidebar will be dynamically inserted here after login -->
+        <!-- Sidebar will be dynamically inserted here -->
     </div>
 
-    <div class="flex-1 flex flex-col min-w-0">
-      <section class="w-full max-w-4xl mx-auto flex flex-col flex-1 min-h-0 px-3 sm:px-0">
+    <div class="md:ml-80 flex flex-col min-h-screen">
+      <section class="w-full max-w-4xl mx-auto flex flex-col flex-1 px-3 sm:px-0">
         
         <!-- Login View -->
-        <div id="login-view" class="w-full h-full flex flex-col items-center bg-white dark:bg-black p-6 overflow-y-auto overscroll-contain min-h-0 pt-16">
+        <div id="login-view" class="w-full flex-1 flex flex-col items-center bg-white dark:bg-black p-6 pt-16">
           <img src="assets/logo.png" alt="SAFi Application Logo" class="h-16 w-16 mb-6 rounded-xl" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
           <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
           <p class="text-neutral-500 dark:text-neutral-400 mt-2">The Ethical Reasoning Engine</p>
@@ -77,8 +77,8 @@
         </div>
 
         <!-- Chat View (Hidden by default) -->
-        <div id="chat-view" class="w-full h-full hidden flex flex-col bg-white dark:bg-black min-h-0">
-          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20 md:hidden shrink-0">
+        <div id="chat-view" class="w-full hidden flex-1 flex-col bg-white dark:bg-black">
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20 md:hidden sticky top-0">
             <div class="flex items-center gap-3">
               <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -91,17 +91,17 @@
             <div class="w-10"></div> <!-- Placeholder for balance -->
           </header>
 
-          <div id="chat-window" class="flex-1 min-h-0 p-4 sm:p-6 overscroll-contain overflow-y-auto flex flex-col justify-start gap-5 custom-scrollbar">
+          <div id="chat-window" class="flex-1 p-4 sm:p-6 flex flex-col justify-start gap-5">
             <div id="empty-state" class="text-center pt-8">
               <div id="active-profile-display"></div>
             </div>
           </div>
 
-          <footer id="composer-footer" class="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 shrink-0">
+          <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 sticky bottom-0">
             <textarea 
               id="message-input" 
               rows="1" 
-              class="flex-1 resize-none bg-transparent py-3 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200" 
+              class="flex-1 resize-none bg-transparent py-3 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-lg" 
               placeholder="Ask something..."
             ></textarea>
             <button 
@@ -127,7 +127,6 @@
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
-  <!-- Modals remain in the main file as they are used globally -->
   <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-lg bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[80vh]">
     <div class="flex items-center justify-between mb-4 shrink-0">
       <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
