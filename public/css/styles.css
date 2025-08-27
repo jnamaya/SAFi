@@ -50,6 +50,17 @@ html, body {
   background: #64748b; /* neutral-500 */
 }
 
+/* --- NEW: Force hide scrollbar on message input --- */
+#message-input::-webkit-scrollbar {
+    display: none;
+}
+#message-input {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+/* --- End of new rule --- */
+
+
 /* --- NEW: Text-first chat styles from mockup --- */
 :root {
   --bg: #ffffff;
