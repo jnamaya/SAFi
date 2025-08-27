@@ -41,9 +41,11 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
     elements.loginView.classList.add('hidden');
     elements.chatView.classList.remove('hidden');
     
+    // The only change is in the <aside> element's class list below.
+    // I changed dark:bg-gray-900/50 to dark:bg-black to make the sidebar solid in dark mode.
     elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
-        <aside id="sidebar" class="hidden fixed inset-y-0 left-0 w-80 bg-white dark:bg-gray-900/50 text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:shrink-0 h-full border-r border-gray-200 dark:border-gray-800">
+        <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white dark:bg-black text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:shrink-0 h-full border-r border-gray-200 dark:border-gray-800">
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
               <img src="assets/logo.png" alt="SAFi Logo" class="h-10 w-10 rounded-lg" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">

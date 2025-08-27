@@ -260,17 +260,13 @@ function autoSize() {
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
+    // Reset height to allow shrinking
     input.style.height = 'auto';
-    const scrollHeight = input.scrollHeight;
-    const maxHeight = 200; 
+    // Set height to the scroll height to grow with content
+    input.style.height = `${input.scrollHeight}px`;
     
-    input.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-
-    if (scrollHeight > maxHeight) {
-        input.style.overflowY = 'auto';
-    } else {
-        input.style.overflowY = 'hidden';
-    }
+    // The textarea itself should not scroll; the parent container will.
+    input.style.overflowY = 'hidden';
 }
 
 async function handleRename(id, oldTitle) {
