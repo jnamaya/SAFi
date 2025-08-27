@@ -88,8 +88,9 @@ class SAFi:
         self.will_gate = WillGate(
             self.openai_client, model=getattr(config, "WILL_MODEL"), values=self.values, profile=self.profile
         )
+        # --- CHANGE: Pass the profile to the ConscienceAuditor ---
         self.conscience = ConscienceAuditor(
-            self.openai_client, model=getattr(config, "CONSCIENCE_MODEL"), values=self.values
+            self.openai_client, model=getattr(config, "CONSCIENCE_MODEL"), values=self.values, profile=self.profile
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
