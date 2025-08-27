@@ -11,21 +11,28 @@ function getMsgCount(id) { return msgCountByConvo[id] ?? 0; }
 function bumpMsgCount(id) { msgCountByConvo[id] = getMsgCount(id) + 1; }
 
 async function checkLoginStatus() {
-    const me = await api.getMe();
-    const user = (me && me.ok) ? me.user : null;
-    
-    ui.updateUIForAuthState(user, handleLogout, handleProfileChange);
-    
-    if (user) {
-        activeProfileData = user.active_profile_details || {};
+    try {
+        const me = await api.getMe();
+        const user = (me && me.ok) ? me.user : null;
         
-        const profilesResponse = await api.fetchAvailableProfiles();
-        availableProfiles = profilesResponse.available || [];
-        const currentProfileKey = user.active_profile || availableProfiles[0];
+        ui.updateUIForAuthState(user, handleLogout, handleProfileChange);
         
-        ui.populateProfileSelector(availableProfiles, currentProfileKey);
-        
-        await loadConversations();
+        if (user) {
+            activeProfileData = user.active_profile_details || {};
+            
+            const profilesResponse = await api.fetchAvailableProfiles();
+            availableProfiles = profilesResponse.available || [];
+            const currentProfileKey = user.active_profile || availableProfiles[0];
+            
+            ui.populateProfileSelector(availableProfiles, currentProfileKey);
+            
+            await loadConversations();
+        }
+        attachEventListeners();
+    } catch (error) {
+        console.error("Failed to check login status:", error);
+        ui.updateUIForAuthState(null);
+        attachEventListeners();
     }
 }
 
@@ -48,8 +55,7 @@ async function handleProfileChange(event) {
 async function loadConversations() {
     try {
         const conversations = await api.fetchConversations();
-        ui.elements.convoList.innerHTML = '';
-        ui.elements.convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
+        document.getElementById('convo-list').innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
 
         if (conversations?.length > 0) {
             const currentConvoExists = conversations.some(c => c.id === currentConversationId);
@@ -156,7 +162,6 @@ async function sendMessage() {
     
     const loadingIndicator = ui.showLoadingIndicator();
 
-    // CHANGE: Adjusted SAFi loop simulation timing
     const safiLoop = [
         "Intellect: Generating draft...",
         "Will: Checking rules...",
@@ -173,7 +178,7 @@ async function sendMessage() {
         } else {
             clearInterval(loopInterval);
         }
-    }, 1800); // Slower interval for a more realistic feel
+    }, 1800);
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
@@ -248,6 +253,8 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
 
 function autoSize() {
     const input = ui.elements.messageInput;
+    if (!input) return;
+
     const sendButton = ui.elements.sendButton;
 
     const hasText = input.value.trim().length > 0;
@@ -311,25 +318,53 @@ async function handleDeleteAccount() {
     }
 }
 
-function initializeApp() {
-    checkLoginStatus();
+function attachEventListeners() {
+    if (ui.elements.loginButton) {
+        ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
+    }
 
-    ui.elements.sendButton.disabled = true;
-    ui.elements.messageInput.addEventListener('input', autoSize);
+    if (ui.elements.sendButton) {
+        ui.elements.sendButton.addEventListener('click', sendMessage);
+        ui.elements.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        ui.elements.messageInput.addEventListener('input', autoSize);
+    }
+    
+    const newChatButton = document.getElementById('new-chat-button');
+    if (newChatButton) {
+        newChatButton.addEventListener('click', () => { startNewConversation(); if (window.innerWidth < 768) ui.closeSidebar(); });
+    }
 
-    ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
-    ui.elements.sendButton.addEventListener('click', sendMessage);
-    ui.elements.messageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-    ui.elements.newChatButton.addEventListener('click', () => { startNewConversation(); if (window.innerWidth < 768) ui.closeSidebar(); });
+    const menuToggle = document.getElementById('menu-toggle');
+    if (menuToggle) {
+        menuToggle.addEventListener('click', ui.openSidebar);
+    }
     
-    ui.elements.menuToggle.addEventListener('click', ui.openSidebar);
-    ui.elements.closeSidebarButton.addEventListener('click', ui.closeSidebar);
-    ui.elements.sidebarOverlay.addEventListener('click', ui.closeSidebar);
-    ui.elements.closeConscienceModalBtn.addEventListener('click', ui.closeModal);
-    ui.elements.cancelDeleteBtn.addEventListener('click', ui.closeModal);
-    ui.elements.modalBackdrop.addEventListener('click', ui.closeModal);
-    ui.elements.confirmDeleteBtn.addEventListener('click', handleDeleteAccount);
+    const closeSidebarButton = document.getElementById('close-sidebar-button');
+    if(closeSidebarButton) {
+        closeSidebarButton.addEventListener('click', ui.closeSidebar);
+    }
+
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    if(sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', ui.closeSidebar);
+    }
+
+    document.getElementById('close-conscience-modal').addEventListener('click', ui.closeModal);
+    document.getElementById('cancel-delete-btn').addEventListener('click', ui.closeModal);
+    document.getElementById('modal-backdrop').addEventListener('click', ui.closeModal);
+    document.getElementById('confirm-delete-btn').addEventListener('click', handleDeleteAccount);
     
+    const settingsMenu = document.getElementById('settings-menu');
+    if (settingsMenu) {
+        settingsMenu.addEventListener('click', (event) => {
+            const settingsButton = event.target.closest('#settings-button');
+            if (settingsButton) {
+                const settingsDropdown = document.getElementById('settings-dropdown');
+                settingsDropdown?.classList.toggle('hidden');
+            }
+        });
+    }
+
     document.addEventListener('click', (event) => {
         const settingsMenu = document.getElementById('settings-menu');
         const settingsDropdown = document.getElementById('settings-dropdown');
@@ -338,16 +373,10 @@ function initializeApp() {
         }
     });
 
-    ui.elements.userProfileContainer.addEventListener('click', (event) => {
-        const settingsButton = event.target.closest('#settings-button');
-        if (settingsButton) {
-            const settingsDropdown = document.getElementById('settings-dropdown');
-            settingsDropdown?.classList.toggle('hidden');
-        }
-    });
-    
-    new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
-    window.addEventListener('resize', () => { ui.scrollToBottom(); });
+    if (ui.elements.composerFooter) {
+        new ResizeObserver(() => { ui.scrollToBottom(); }).observe(ui.elements.composerFooter);
+    }
+    window.addEventListener('resize', () => { if(ui.elements.chatWindow) ui.scrollToBottom(); });
 }
 
-document.addEventListener('DOMContentLoaded', initializeApp);
+document.addEventListener('DOMContentLoaded', checkLoginStatus);
