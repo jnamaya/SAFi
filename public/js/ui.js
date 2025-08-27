@@ -170,9 +170,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const metaDiv = document.createElement('div');
   metaDiv.className = 'meta';
 
-  const stampDiv = document.createElement('div');
-  stampDiv.className = 'stamp';
-  stampDiv.textContent = formatTime(date);
+  const leftMeta = document.createElement('div');
+  const rightMeta = document.createElement('div');
+  rightMeta.className = 'flex items-baseline gap-3 ml-auto';
 
   const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
   if (hasLedger && whyHandler) {
@@ -180,21 +180,24 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       whyButton.className = 'why-btn';
       whyButton.textContent = 'Why this answer?';
       whyButton.addEventListener('click', () => whyHandler(payload));
-      metaDiv.appendChild(whyButton);
-  } else {
-      const placeholder = document.createElement('div');
-      metaDiv.appendChild(placeholder);
+      leftMeta.appendChild(whyButton);
   }
-
-  metaDiv.appendChild(stampDiv);
-
-  messageDiv.appendChild(contentDiv);
+  
+  metaDiv.appendChild(leftMeta);
 
   if (sender === 'ai') {
-      messageDiv.classList.add('group', 'relative');
-      messageDiv.appendChild(makeCopyButton(text));
+      rightMeta.appendChild(makeCopyButton(text));
   }
 
+  const stampDiv = document.createElement('div');
+  stampDiv.className = 'stamp';
+  stampDiv.style.marginLeft = '0';
+  stampDiv.textContent = formatTime(date);
+  
+  rightMeta.appendChild(stampDiv);
+  metaDiv.appendChild(rightMeta);
+
+  messageDiv.appendChild(contentDiv);
   messageDiv.appendChild(metaDiv);
   messageContainer.appendChild(messageDiv);
 
@@ -221,7 +224,6 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     }
 }
 
-// CHANGE: Updated to use the new thinking spinner
 export function showLoadingIndicator() {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(new Date());
@@ -325,19 +327,23 @@ function maybeInsertDayDivider(date) {
   }
 }
 
+// CHANGE: Added a title attribute for the tooltip
 function makeCopyButton(text) {
   const btn = document.createElement('button');
-  btn.className = 'absolute top-2 right-2 bg-neutral-200 dark:bg-neutral-700 text-xs px-2 py-1 rounded-md hover:bg-neutral-300 dark:hover:bg-neutral-600 opacity-0 group-hover:opacity-100 transition-opacity';
-  btn.textContent = 'Copy';
-  btn.addEventListener('click', async () => {
+  btn.className = 'meta-btn';
+  btn.title = 'Copy Text';
+  
+  const icon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+  btn.innerHTML = icon;
+
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(text);
-      btn.textContent = 'Copied!';
       showToast('Copied to clipboard', 'success');
     } catch (err) {
       showToast('Failed to copy', 'error');
     }
-    setTimeout(() => btn.textContent = 'Copy', 1500);
   });
   return btn;
 }

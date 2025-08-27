@@ -1,10 +1,17 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  /* CHANGE: Increased base font size for better readability */
+  /* CHANGE: Increased base font size for mobile */
   font-size: 18px; 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* CHANGE: Media query to adjust font size on larger screens */
+@media (min-width: 768px) {
+  body {
+    font-size: 17px;
+  }
 }
 
 html, body { 
@@ -51,8 +58,9 @@ html, body {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  --user-bg: #ecfdf5;
-  --user-fg: #064e3b;
+  /* CHANGE: User background is now light grey */
+  --user-bg: #f3f4f6;
+  --user-fg: #1f2937;
   --ai-fg: #111827;
 }
 
@@ -63,8 +71,9 @@ html, body {
   --hint: #d1d5db;
   --accent: #22c55e;
 
-  --user-bg: #052e24;
-  --user-fg: #d1fae5;
+  /* CHANGE: User background is now dark grey */
+  --user-bg: #374151;
+  --user-fg: #f3f4f6;
   --ai-fg: #f3f4f6;
 }
 
@@ -101,7 +110,6 @@ html, body {
 .why-btn {
   font-size: 13px;
   font-weight: 500;
-  /* CHANGE: Changed color to accent (green) */
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -275,7 +283,6 @@ html, body {
   100% { transform: rotate(360deg); }
 }
 
-/* New Thinking Spinner Animation */
 .thinking-spinner {
   border: 3px solid #e5e7eb; /* gray-200 */
   border-top: 3px solid #16a34a; /* green-600 */
