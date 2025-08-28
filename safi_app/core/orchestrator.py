@@ -18,9 +18,7 @@ from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritInteg
 from ..persistence import database as db
 from ..utils import dict_sha256
 
-# --- NEW ---
 # This helper function programmatically creates the feedback string for the Intellect.
-# It does NOT require an API call, making it fast and efficient.
 def _construct_spirit_feedback(mu_vector: np.ndarray, values: List[Dict[str, str]], last_drift: float) -> str:
     """
     Generates a natural-language feedback string from the spirit memory.
