@@ -22,27 +22,23 @@ def login():
 def callback():
     """
     Handle the callback from Google after authentication.
-    - Fetches the user token and info.
-    - Creates or updates the user in the database.
-    - Stores user info in the session.
     """
     try:
         token = oauth.google.authorize_access_token()
         nonce = session.pop('nonce', None)
-        # First, parse the token to validate it with the nonce
         oauth.google.parse_id_token(token, nonce=nonce)
         
-        # --- FIX: Explicitly fetch the full user profile from the userinfo endpoint ---
         user_info = oauth.google.get('userinfo').json()
 
-        db.upsert_user(Config.DATABASE_NAME, user_info)
+        # --- FIXED: Removed DATABASE_NAME argument ---
+        db.upsert_user(user_info)
         
         user_id = user_info.get('sub') or user_info.get('id')
-        user_details = db.get_user_details(Config.DATABASE_NAME, user_id)
+        user_details = db.get_user_details(user_id)
 
         if not user_details.get('active_profile'):
             default_profile = Config.DEFAULT_PROFILE
-            db.update_user_profile(Config.DATABASE_NAME, user_id, default_profile)
+            db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
         session['user'] = user_details
@@ -65,13 +61,13 @@ def logout():
 def get_me():
     """
     Return the current user's details, including their full active profile.
-    This is what the frontend uses to initialize the UI.
     """
     user_id = session.get('user', {}).get('id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
 
-    user_details = db.get_user_details(Config.DATABASE_NAME, user_id)
+    # --- FIXED: Removed DATABASE_NAME argument ---
+    user_details = db.get_user_details(user_id)
     if not user_details:
         return jsonify({"ok": False, "error": "User not found"}), 404
 
@@ -100,7 +96,8 @@ def set_user_profile():
     if not profile_name or profile_name not in list_profiles():
         return jsonify({"error": "Invalid profile name provided."}), 400
 
-    db.update_user_profile(Config.DATABASE_NAME, user_id, profile_name)
+    # --- FIXED: Removed DATABASE_NAME argument ---
+    db.update_user_profile(user_id, profile_name)
     
     user_session = session.get('user', {})
     user_session['active_profile'] = profile_name
@@ -118,6 +115,7 @@ def delete_me():
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
     
-    db.delete_user(Config.DATABASE_NAME, user_id)
+    # --- FIXED: Removed DATABASE_NAME argument ---
+    db.delete_user(user_id)
     session.clear()
     return jsonify({"status": "success"})

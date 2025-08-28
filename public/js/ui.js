@@ -240,7 +240,13 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         whyButton.textContent = 'Why this answer?';
         whyButton.addEventListener('click', () => whyHandler(payload));
         
-        metaDiv.insertBefore(whyButton, metaDiv.firstChild);
+        // --- FIXED: Insert the button into the correct part of the meta div ---
+        const leftMeta = metaDiv.querySelector('div:first-child');
+        if (leftMeta) {
+            leftMeta.appendChild(whyButton);
+        } else {
+            metaDiv.insertBefore(whyButton, metaDiv.firstChild);
+        }
     }
 }
 

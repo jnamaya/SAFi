@@ -11,14 +11,14 @@ from ..config import Config
 # Conversations API blueprint
 conversations_bp = Blueprint('conversations', __name__)
 
-# Ensure the SQLite schema exists before handling requests
-db.init_db(Config.DATABASE_NAME)
-
+# This helper function ensures the SAFi orchestrator is created
+# only when needed, using the correct user profile.
 def _load_safi(profile_name: str) -> SAFi:
     """
     Build and return a SAFi orchestrator bound to a specific profile.
     """
     prof = get_profile(profile_name)
+    # The SAFi object is created here, inside a function call, not at the global scope.
     return SAFi(config=Config, value_profile_or_list=prof)
 
 def get_user_id():
@@ -49,7 +49,7 @@ def process_prompt_endpoint():
     
     limit = Config.DAILY_PROMPT_LIMIT
     if limit > 0:
-        count = db.get_todays_prompt_count(Config.DATABASE_NAME, user_id)
+        count = db.get_todays_prompt_count(user_id)
         if count >= limit:
             return jsonify({"error": f"Daily limit of {limit} messages reached."}), 429
 
@@ -58,8 +58,9 @@ def process_prompt_endpoint():
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
     
     if limit > 0:
-        db.record_prompt_usage(Config.DATABASE_NAME, user_id)
+        db.record_prompt_usage(user_id)
 
+    # The SAFi system is loaded here, during the request, which is correct.
     user_profile = get_user_profile_name()
     saf_system = _load_safi(user_profile)
     
@@ -76,8 +77,7 @@ def get_audit_result_endpoint(message_id):
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
 
-    # --- CHANGE: The database now returns the complete, historical audit data ---
-    result = db.get_audit_result(Config.DATABASE_NAME, message_id)
+    result = db.get_audit_result(message_id)
 
     if result:
         return jsonify(result)
@@ -119,7 +119,7 @@ def get_conversations():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    conversations = db.fetch_user_conversations(Config.DATABASE_NAME, user_id)
+    conversations = db.fetch_user_conversations(user_id)
     return jsonify(conversations)
 
 
@@ -131,7 +131,7 @@ def handle_create_conversation():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    new_convo = db.create_conversation(Config.DATABASE_NAME, user_id)
+    new_convo = db.create_conversation(user_id)
     return jsonify(new_convo), 201
 
 
@@ -147,7 +147,7 @@ def handle_rename_conversation(conversation_id):
     new_title = data.get('title')
     if not new_title:
         return jsonify({"error": "'title' is required."}), 400
-    db.rename_conversation(Config.DATABASE_NAME, conversation_id, new_title)
+    db.rename_conversation(conversation_id, new_title)
     return jsonify({"status": "success"})
 
 
@@ -159,7 +159,7 @@ def handle_delete_conversation(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    db.delete_conversation(Config.DATABASE_NAME, conversation_id)
+    db.delete_conversation(conversation_id)
     return jsonify({"status": "success"})
 
 
@@ -171,7 +171,7 @@ def get_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    history = db.fetch_chat_history_for_conversation(Config.DATABASE_NAME, conversation_id)
+    history = db.fetch_chat_history_for_conversation(conversation_id)
     return jsonify(history)
 
 
@@ -183,8 +183,8 @@ def export_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    history = db.fetch_chat_history_for_conversation(Config.DATABASE_NAME, conversation_id)
-    convos = db.fetch_user_conversations(Config.DATABASE_NAME, user_id)
+    history = db.fetch_chat_history_for_conversation(conversation_id)
+    convos = db.fetch_user_conversations(user_id)
     convo_title = next((c['title'] for c in convos if c['id'] == conversation_id), "Untitled")
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()
     export_data = {

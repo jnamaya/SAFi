@@ -1,423 +1,493 @@
 # safi_app/persistence/database.py
-import sqlite3
+import mysql.connector
+from mysql.connector import pooling
 import json
 import uuid
 import numpy as np
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
+import logging
+from ..config import Config
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def _add_column_if_not_exists(cursor, table_name, column_name, column_type):
-    """
-    Add a column to a table if it doesn't already exist.
-    """
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    columns = [row[1] for row in cursor.fetchall()]
-    if column_name not in columns:
-        print(f"Adding column '{column_name}' to table '{table_name}'...")
-        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+db_pool = None
 
-
-def init_db(db_name: str):
+def get_db_connection():
     """
-    Initialize schema. Create tables and ensure columns exist.
+    Gets a connection from the pool, creating the pool if it doesn't exist.
     """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
+    global db_pool
+    if db_pool is None:
+        try:
+            logging.info("Connection pool not found. Attempting to create a new one...")
+            logging.info(f"Using DB_HOST={Config.DB_HOST}, DB_USER={Config.DB_USER}, DB_NAME={Config.DB_NAME}")
+            db_pool = mysql.connector.pooling.MySQLConnectionPool(
+                pool_name="safi_pool",
+                pool_size=5,
+                host=Config.DB_HOST,
+                user=Config.DB_USER,
+                password=Config.DB_PASSWORD,
+                database=Config.DB_NAME
+            )
+            logging.info("MySQL connection pool created successfully.")
+        except mysql.connector.Error as err:
+            logging.exception("FATAL: A database error occurred while creating the connection pool.")
+            raise err
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS conversations (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            title TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    _add_column_if_not_exists(cursor, 'conversations', 'memory_summary', 'TEXT')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
-        )
-    ''')
-    _add_column_if_not_exists(cursor, 'chat_history', 'message_id', 'TEXT')
-    _add_column_if_not_exists(cursor, 'chat_history', 'conscience_ledger', 'TEXT')
-    _add_column_if_not_exists(cursor, 'chat_history', 'audit_status', 'TEXT')
-    _add_column_if_not_exists(cursor, 'chat_history', 'spirit_score', 'INTEGER')
-    _add_column_if_not_exists(cursor, 'chat_history', 'spirit_note', 'TEXT')
-    # --- CHANGE: Added columns to store the profile used for each message ---
-    _add_column_if_not_exists(cursor, 'chat_history', 'profile_name', 'TEXT')
-    _add_column_if_not_exists(cursor, 'chat_history', 'profile_values', 'TEXT')
+    return db_pool.get_connection()
 
 
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_message_id ON chat_history (message_id)')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS prompt_usage (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            timestamp DATETIME NOT NULL
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS spirit_memory (
-            profile_name TEXT PRIMARY KEY,
-            turn INTEGER,
-            mu TEXT
-        )
-    ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT UNIQUE,
-            name TEXT,
-            picture TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_login DATETIME
-        )
-    ''')
-    _add_column_if_not_exists(cursor, 'users', 'active_profile', 'TEXT')
-
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS audit_snapshots (
-            turn INTEGER,
-            user_id TEXT,
-            hash TEXT PRIMARY KEY,
-            snapshot TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-
-def upsert_audit_snapshot(db_name: str, turn: int, user_id: str, snap_hash: str, snapshot: Dict[str, Any]):
+def init_db():
     """
-    Insert or replace an audit snapshot keyed by hash.
+    Initialize the MySQL schema.
     """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    snapshot_json = json.dumps(snapshot)
-    cursor.execute(
-        "INSERT OR REPLACE INTO audit_snapshots (turn, user_id, hash, snapshot) VALUES (?, ?, ?, ?)",
-        (turn, user_id, snap_hash, snapshot_json)
-    )
-    conn.commit()
-    conn.close()
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        logging.info("Initializing database schema...")
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(255) PRIMARY KEY,
+                email VARCHAR(255) UNIQUE,
+                name VARCHAR(255),
+                picture TEXT,
+                active_profile VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS conversations (
+                id CHAR(36) PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                title VARCHAR(255),
+                memory_summary TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                conversation_id CHAR(36) NOT NULL,
+                message_id CHAR(36) UNIQUE,
+                role VARCHAR(20) NOT NULL,
+                content TEXT,
+                audit_status VARCHAR(20),
+                conscience_ledger JSON,
+                spirit_score INT,
+                spirit_note TEXT,
+                profile_name VARCHAR(50),
+                profile_values JSON,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+                INDEX idx_message_id (message_id)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS prompt_usage (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                user_id VARCHAR(255) NOT NULL,
+                timestamp TIMESTAMP NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS spirit_memory (
+                profile_name VARCHAR(255) PRIMARY KEY,
+                turn INT,
+                mu JSON
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_snapshots (
+                turn INT,
+                user_id VARCHAR(255),
+                hash VARCHAR(64) PRIMARY KEY,
+                snapshot JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        logging.info("MySQL database schema checked/initialized successfully.")
+        conn.commit()
+    except mysql.connector.Error as err:
+        logging.exception("Database initialization failed.")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def upsert_user(db_name: str, user_info: Dict[str, Any]):
-    """
-    Insert or update a user record and last login timestamp.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    user_id = user_info.get('sub') or user_info.get('id')
-    last_login_ts = datetime.now(timezone.utc).isoformat()
+def upsert_audit_snapshot(snap_hash: str, snapshot: Dict[str, Any], turn: int, user_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        snapshot_json = json.dumps(snapshot)
+        sql = """
+            INSERT INTO audit_snapshots (hash, snapshot, turn, user_id)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE snapshot = VALUES(snapshot), turn = VALUES(turn), user_id = VALUES(user_id)
+        """
+        cursor.execute(sql, (snap_hash, snapshot_json, turn, user_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
-    user_exists = cursor.fetchone()
 
-    if user_exists:
+def upsert_user(user_info: Dict[str, Any]):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        user_id = user_info.get('sub') or user_info.get('id')
+        last_login_ts = datetime.now(timezone.utc)
+        sql = """
+            INSERT INTO users (id, email, name, picture, last_login)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                email = VALUES(email),
+                name = VALUES(name),
+                picture = VALUES(picture),
+                last_login = VALUES(last_login)
+        """
+        cursor.execute(sql, (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture'), last_login_ts))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_user_details(user_id: str) -> Optional[Dict[str, Any]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, email, name, picture, active_profile FROM users WHERE id = %s", (user_id,))
+        return cursor.fetchone()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+def update_user_profile(user_id: str, profile_name: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET active_profile = %s WHERE id = %s", (profile_name, user_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def delete_user(user_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        cursor.execute("DELETE FROM prompt_usage WHERE user_id = %s", (user_id,))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def save_spirit_memory(profile_name: str, memory: Dict[str, Any]):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        mu_list = memory.get('mu', np.array([])).tolist()
+        mu_json = json.dumps(mu_list)
+        turn = memory.get('turn', 0)
+        sql = """
+            INSERT INTO spirit_memory (profile_name, turn, mu)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                turn = VALUES(turn),
+                mu = VALUES(mu)
+        """
+        cursor.execute(sql, (profile_name, turn, mu_json))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = %s", (profile_name,))
+        row = cursor.fetchone()
+        if row:
+            turn, mu_json = row
+            mu_list = json.loads(mu_json) if mu_json else []
+            return {"turn": turn, "mu": np.array(mu_list)}
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def record_prompt_usage(user_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        timestamp = datetime.now(timezone.utc)
+        cursor.execute("INSERT INTO prompt_usage (user_id, timestamp) VALUES (%s, %s)", (user_id, timestamp))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def get_todays_prompt_count(user_id: str) -> int:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        today_utc = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        cursor.execute("SELECT COUNT(*) FROM prompt_usage WHERE user_id = %s AND DATE(timestamp) = %s", (user_id, today_utc))
+        return cursor.fetchone()[0]
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, title FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+        return cursor.fetchall()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def create_conversation(user_id: str) -> Dict[str, str]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        new_id = str(uuid.uuid4())
+        new_title = "New Conversation"
+        cursor.execute("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, %s)", (new_id, user_id, new_title))
+        conn.commit()
+        return {"id": new_id, "title": new_title}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def fetch_chat_history_for_conversation(conversation_id: str) -> List[Dict[str, Any]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            'UPDATE users SET email = ?, name = ?, picture = ?, last_login = ? WHERE id = ?',
-            (user_info.get('email'), user_info.get('name'), user_info.get('picture'), last_login_ts, user_id)
+            """
+            SELECT role, content, timestamp, message_id, conscience_ledger, 
+                   spirit_score, spirit_note, profile_name, profile_values 
+            FROM chat_history WHERE conversation_id = %s ORDER BY timestamp ASC
+            """,
+            (conversation_id,)
         )
-    else:
+        return cursor.fetchall()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def insert_memory_entry(conversation_id: str, role: str, content: str, message_id: Optional[str] = None, audit_status: Optional[str] = None):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO users (id, email, name, picture, last_login) VALUES (?, ?, ?, ?, ?)',
-            (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture'), last_login_ts)
+            "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) VALUES (%s, %s, %s, %s, %s)",
+            (conversation_id, role, content, message_id, audit_status)
         )
-    
-    conn.commit()
-    conn.close()
-
-def get_user_details(db_name: str, user_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch a user's details, including their active_profile.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, email, name, picture, active_profile FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {
-            "id": row[0], "email": row[1], "name": row[2], 
-            "picture": row[3], "active_profile": row[4]
-        }
-    return None
-
-def update_user_profile(db_name: str, user_id: str, profile_name: str):
-    """
-    Update the active_profile for a given user.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET active_profile = ? WHERE id = ?", (profile_name, user_id))
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def delete_user(db_name: str, user_id: str):
-    """
-    Delete a user and all related records.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
-    cursor.execute("DELETE FROM prompt_usage WHERE user_id = ?", (user_id,))
-    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]]):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        ledger_json = json.dumps(ledger)
+        values_json = json.dumps(profile_values)
+        sql = """
+            UPDATE chat_history 
+            SET conscience_ledger = %s, audit_status = 'complete', spirit_score = %s, 
+                spirit_note = %s, profile_name = %s, profile_values = %s 
+            WHERE message_id = %s
+        """
+        cursor.execute(sql, (ledger_json, spirit_score, spirit_note, profile_name, values_json, message_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def save_spirit_memory(db_name: str, profile_name: str, memory: Dict[str, Any]):
-    """
-    Save spirit memory for a profile.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    mu_list = memory.get('mu', np.array([])).tolist()
-    mu_json = json.dumps(mu_list)
-    turn = memory.get('turn', 0)
-    cursor.execute(
-        "INSERT OR REPLACE INTO spirit_memory (profile_name, turn, mu) VALUES (?, ?, ?)",
-        (profile_name, turn, mu_json)
-    )
-    conn.commit()
-    conn.close()
+def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        # --- FIXED: Use dictionary=True to get column names ---
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT audit_status, conscience_ledger, spirit_score, spirit_note, 
+                   profile_name, profile_values 
+            FROM chat_history WHERE message_id = %s
+            """,
+            (message_id,)
+        )
+        row = cursor.fetchone()
+        if row:
+            # --- FIXED: Standardize the keys to match the frontend expectations ---
+            # This ensures consistency between historical and polled data.
+            return {
+                "status": row.get('audit_status'),
+                "ledger": row.get('conscience_ledger'),
+                "spirit_score": row.get('spirit_score'),
+                "spirit_note": row.get('spirit_note'),
+                "profile": row.get('profile_name'), # Frontend expects 'profile'
+                "values": row.get('profile_values') # Frontend expects 'values'
+            }
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+def fetch_conversation_summary(conversation_id: str) -> str:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT memory_summary FROM conversations WHERE id = %s", (conversation_id,))
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else ""
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def load_spirit_memory(db_name: str, profile_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Load spirit memory for a profile, if present.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = ?", (profile_name,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        turn, mu_json = row
-        mu_list = json.loads(mu_json)
-        return {"turn": turn, "mu": np.array(mu_list)}
-    return None
+def update_conversation_summary(conversation_id: str, new_summary: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE conversations SET memory_summary = %s WHERE id = %s", (new_summary, conversation_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def record_prompt_usage(db_name: str, user_id: str):
-    """
-    Record one prompt usage event for a user.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    timestamp = datetime.now(timezone.utc).isoformat()
-    cursor.execute(
-        "INSERT INTO prompt_usage (user_id, timestamp) VALUES (?, ?)",
-        (user_id, timestamp)
-    )
-    conn.commit()
-    conn.close()
+def rename_conversation(conversation_id: str, new_title: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE conversations SET title = %s WHERE id = %s", (new_title, conversation_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
-def get_todays_prompt_count(db_name: str, user_id: str) -> int:
-    """
-    Count prompts used today (UTC) by a user.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    today_utc = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    cursor.execute(
-        "SELECT COUNT(*) FROM prompt_usage WHERE user_id = ? AND DATE(timestamp) = ?",
-        (user_id, today_utc)
-    )
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
+def delete_conversation(conversation_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
-
-def fetch_user_conversations(db_name: str, user_id: str) -> List[Dict[str, str]]:
-    """
-    Fetch conversations for a user, newest first.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title FROM conversations WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-    conversations = [{"id": row[0], "title": row[1]} for row in cursor.fetchall()]
-    conn.close()
-    return conversations
-
-
-def create_conversation(db_name: str, user_id: str) -> Dict[str, str]:
-    """
-    Create a new conversation and return its id and title.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    new_id = str(uuid.uuid4())
-    cursor.execute("INSERT INTO conversations (id, user_id, title) VALUES (?, ?, ?)", (new_id, user_id, "New Conversation"))
-    conn.commit()
-    conn.close()
-    return {"id": new_id, "title": "New Conversation"}
-
-
-def fetch_chat_history_for_conversation(db_name: str, conversation_id: str) -> List[Dict[str, str]]:
-    """
-    Return the ordered chat history for a conversation.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    # --- CHANGE: Select the historical profile name and values ---
-    cursor.execute(
-        "SELECT role, content, timestamp, message_id, conscience_ledger, spirit_score, spirit_note, profile_name, profile_values "
-        "FROM chat_history WHERE conversation_id = ? ORDER BY timestamp ASC",
-        (conversation_id,)
-    )
-    history = []
-    for row in cursor.fetchall():
-        role, content, timestamp, message_id, ledger_json, spirit_score, spirit_note, profile_name, values_json = row
-        ledger = json.loads(ledger_json) if ledger_json else []
-        values = json.loads(values_json) if values_json else []
-        history.append({
-            "role": role,
-            "content": content,
-            "timestamp": timestamp,
-            "message_id": message_id,
-            "conscience_ledger": ledger,
-            "spirit_score": spirit_score,
-            "spirit_note": spirit_note,
-            "profile_name": profile_name,
-            "profile_values": values
-        })
-    conn.close()
-    return history
-
-
-def insert_memory_entry(db_name: str, conversation_id: str, role: str, content: str, message_id: Optional[str] = None, audit_status: Optional[str] = None):
-    """
-    Insert a chat message.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) VALUES (?, ?, ?, ?, ?)",
-        (conversation_id, role, content, message_id, audit_status)
-    )
-    conn.commit()
-    conn.close()
-
-
-# --- CHANGE: Added profile_name and profile_values to the function signature ---
-def update_audit_results(db_name: str, message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]]):
-    """
-    Update audit results for a specific message, including the profile snapshot.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    ledger_json = json.dumps(ledger)
-    values_json = json.dumps(profile_values)
-    # --- CHANGE: Update the new profile columns in the database ---
-    cursor.execute(
-        "UPDATE chat_history SET conscience_ledger = ?, audit_status = 'complete', spirit_score = ?, spirit_note = ?, profile_name = ?, profile_values = ? WHERE message_id = ?",
-        (ledger_json, spirit_score, spirit_note, profile_name, values_json, message_id)
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_audit_result(db_name: str, message_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch audit status and results for a message.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    # --- CHANGE: Select the historical profile name and values ---
-    cursor.execute(
-        "SELECT audit_status, conscience_ledger, spirit_score, spirit_note, profile_name, profile_values FROM chat_history WHERE message_id = ?",
-        (message_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        status, ledger_json, spirit_score, spirit_note, profile_name, values_json = row
-        ledger = json.loads(ledger_json) if ledger_json else []
-        values = json.loads(values_json) if values_json else []
-        return {
-            "status": status, 
-            "ledger": ledger, 
-            "spirit_score": spirit_score, 
-            "spirit_note": spirit_note,
-            "profile": profile_name, # Renamed for consistency
-            "values": values
-        }
-    return None
-
-
-def set_conversation_title_from_first_message(db_name: str, conversation_id: str, message: str) -> str:
-    """
-    Set conversation title from the first user message.
-    """
+def set_conversation_title_from_first_message(conversation_id: str, message: str) -> str:
     new_title = (message[:50] + '...') if len(message) > 50 else message
-    rename_conversation(db_name, conversation_id, new_title)
+    rename_conversation(conversation_id, new_title)
     return new_title
-
-
-def fetch_recent_user_memory(db_name: str, conversation_id: str, limit: int = 5) -> str:
-    """
-    Deprecated.
-    """
-    return ""
-
-
-def fetch_conversation_summary(db_name: str, conversation_id: str) -> str:
-    """
-    Return the current memory summary for a conversation.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("SELECT memory_summary FROM conversations WHERE id = ?", (conversation_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row and row[0] else ""
-
-
-def update_conversation_summary(db_name: str, conversation_id: str, new_summary: str):
-    """
-    Update the stored memory summary for a conversation.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE conversations SET memory_summary = ? WHERE id = ?", (new_summary, conversation_id))
-    conn.commit()
-    conn.close()
-
-
-def rename_conversation(db_name: str, conversation_id: str, new_title: str):
-    """
-    Rename a conversation.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE conversations SET title = ? WHERE id = ?", (new_title, conversation_id))
-    conn.commit()
-    conn.close()
-
-
-def delete_conversation(db_name: str, conversation_id: str):
-    """
-    Delete a conversation and its history.
-    """
-    conn = sqlite3.connect(db_name, timeout=10)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
-    conn.commit()
-    conn.close()
