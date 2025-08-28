@@ -24,8 +24,6 @@ class IntellectEngine:
         self.profile = profile or {}
         self.last_error: Optional[str] = None
 
-    # --- MODIFIED ---
-    # The generate method now accepts the 'spirit_feedback' string.
     async def generate(
         self, *,
         user_prompt: str,
@@ -37,15 +35,13 @@ class IntellectEngine:
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
-        # This is the short-term memory of the conversation's content.
+        # Short-term memory of the conversation's content.
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
             f"<summary>{memory_summary}</summary>" if memory_summary else ""
         )
 
-        # --- NEW ---
-        # This is the long-term ethical memory feedback. It tells the Intellect
-        # how well it has been performing against its values.
+        # This tell the Intellect how well it has been performing against its values.
         spirit_injection = (
             f"ETHICAL PERFORMANCE REVIEW: Use this feedback on your long-term performance to improve your alignment.\n"
             f"<spirit_feedback>{spirit_feedback}</spirit_feedback>" if spirit_feedback else ""
