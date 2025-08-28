@@ -7,9 +7,6 @@ const msgCountByConvo = {};
 let activeProfileData = {}; // Stores the full profile details
 let availableProfiles = []; // Stores the list of profile names
 
-function getMsgCount(id) { return msgCountByConvo[id] ?? 0; }
-function bumpMsgCount(id) { msgCountByConvo[id] = getMsgCount(id) + 1; }
-
 async function checkLoginStatus() {
     try {
         const me = await api.getMe();
@@ -55,21 +52,24 @@ async function handleProfileChange(event) {
 async function loadConversations() {
     try {
         const conversations = await api.fetchConversations();
-        document.getElementById('convo-list').innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
+        const convoList = document.getElementById('convo-list');
+        convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
 
         if (conversations?.length > 0) {
-            const currentConvoExists = conversations.some(c => c.id === currentConversationId);
-            const targetConvoId = (currentConversationId && currentConvoExists) ? currentConversationId : conversations[0].id;
-            
             const handlers = {
                 switchHandler: switchConversation,
                 renameHandler: handleRename,
                 deleteHandler: handleDelete
             };
             conversations.forEach(convo => ui.renderConversationLink(convo, handlers));
+
+            const currentConvoExists = conversations.some(c => c.id === currentConversationId);
+            const targetConvoId = (currentConversationId && currentConvoExists) ? currentConversationId : conversations[0].id;
+            
             await switchConversation(targetConvoId);
         } else {
-            await startNewConversation();
+            // --- FIXED: If there are no conversations, just start a new one. ---
+            await startNewConversation(true); // Pass flag to prevent recursion
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
@@ -77,12 +77,20 @@ async function loadConversations() {
     }
 }
 
-async function startNewConversation() {
+async function startNewConversation(isInitialLoad = false) {
     try {
         const newConvo = await api.createNewConversation();
-        await loadConversations();
-        if (newConvo && newConvo.id) {
+        // --- FIXED: Only reload the conversation list if it's not the initial load ---
+        // This prevents the infinite loop.
+        if (!isInitialLoad) {
+            await loadConversations();
+        } else {
+            // If it is the initial load, just switch to the new conversation
             await switchConversation(newConvo.id);
+            // And manually add the link to the list
+            const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
+            ui.renderConversationLink(newConvo, handlers);
+            ui.setActiveConvoLink(newConvo.id);
         }
     } catch (error) {
         console.error('Failed to create new conversation:', error);
@@ -100,15 +108,15 @@ async function switchConversation(id) {
         
         if (history?.length > 0) {
             history.forEach((turn, i) => {
-                const dateString = turn.timestamp;
-                const date = dateString 
-                    ? new Date(dateString.replace(' ', 'T') + 'Z') 
-                    : utils.getOrInitTimestamp(id, i, turn.role, turn.content);
+                const date = turn.timestamp ? new Date(turn.timestamp) : new Date();
                 
+                const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
+                const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
+
                 const payload = {
-                    ledger: turn.conscience_ledger || [],
+                    ledger: ledger || [],
                     profile: turn.profile_name,
-                    values: turn.profile_values,
+                    values: values || [],
                     spirit_score: turn.spirit_score 
                 };
 
@@ -125,12 +133,10 @@ async function switchConversation(id) {
             ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
         }
         
-        msgCountByConvo[id] = history?.length || 0;
         ui.scrollToBottom();
     } catch (error) {
         console.error('Failed to switch conversation:', error);
         ui.showToast('Could not load chat history.', 'error');
-        ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
     }
 }
 
@@ -153,14 +159,13 @@ async function sendMessage() {
     
     const now = new Date();
     ui.displayMessage('user', userMessage, now, null, null, null);
-    utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'user', userMessage, now);
-    bumpMsgCount(currentConversationId);
-
+    
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
     autoSize();
     
     const loadingIndicator = ui.showLoadingIndicator();
+    const thinkingStatus = loadingIndicator.querySelector('#thinking-status');
 
     const safiLoop = [
         "Intellect: Generating draft...",
@@ -169,7 +174,6 @@ async function sendMessage() {
         "Spirit: Calculating score...",
         "Finalizing..."
     ];
-    const thinkingStatus = document.getElementById('thinking-status');
     let loopIndex = 0;
     const loopInterval = setInterval(() => {
         if (thinkingStatus && loopIndex < safiLoop.length) {
@@ -183,22 +187,14 @@ async function sendMessage() {
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
         
-        clearInterval(loopInterval);
-        loadingIndicator.remove();
-
-        const aiNow = new Date();
-        
         ui.displayMessage(
           'ai',
           initialResponse.finalOutput,
-          aiNow,
+          new Date(),
           initialResponse.messageId,
           null, 
           (payload) => ui.showModal('conscience', payload)
         );
-
-        utils.setTimestamp(currentConversationId, getMsgCount(currentConversationId), 'ai', initialResponse.finalOutput, aiNow);
-        bumpMsgCount(currentConversationId);
 
         if (initialResponse.newTitle) {
             const link = document.querySelector(`#convo-list a[data-id="${currentConversationId}"] span`);
@@ -210,13 +206,13 @@ async function sendMessage() {
         }
         
     } catch (error) {
-        clearInterval(loopInterval);
-        loadingIndicator.remove();
         ui.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
+        clearInterval(loopInterval);
+        if(loadingIndicator) loadingIndicator.remove();
         buttonIcon.classList.remove('hidden');
         buttonLoader.classList.add('hidden');
         ui.elements.sendButton.disabled = false;
@@ -232,16 +228,20 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         attempts++;
 
         if (result && result.status === 'complete') {
+            // --- FIXED: Parse ledger and values if they are strings ---
+            const ledger = typeof result.ledger === 'string' ? JSON.parse(result.ledger) : result.ledger;
+            const values = typeof result.values === 'string' ? JSON.parse(result.values) : result.values;
+
             const payload = {
-                ledger: result.ledger || [],
+                ledger: ledger || [],
                 profile: result.profile || null,
-                values: result.values || [],
+                values: values || [],
                 spirit_score: result.spirit_score
             };
+            
             ui.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
             resolve(result);
         } else if (attempts >= maxAttempts) {
-            console.warn(`Stopped polling for message ${messageId} after ${maxAttempts} attempts.`);
             reject(new Error('Polling timed out.'));
         } else {
             setTimeout(() => executePoll(resolve, reject), interval);
@@ -260,7 +260,6 @@ function autoSize() {
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
-    // Temporarily reset height to calculate the new required height
     input.style.height = 'auto';
     const newHeight = input.scrollHeight;
     input.style.height = `${newHeight}px`;
@@ -365,8 +364,6 @@ function attachEventListeners() {
             settingsDropdown?.classList.add('hidden');
         }
     });
-
-    // REMOVED the problematic resize listener that was causing the scroll issue on mobile.
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
