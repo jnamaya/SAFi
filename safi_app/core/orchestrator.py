@@ -162,7 +162,7 @@ class SAFi:
         )
 
         # --- CODE ADDED FOR TESTING ---
-        print(f"--- SPIRIT FEEDBACK TO INTELLECT: {spirit_feedback} ---", flush=True)
+        # print(f"--- SPIRIT FEEDBACK TO INTELLECT: {spirit_feedback} ---", flush=True)
         # ------------------------------
 
         # --- NEW ---
