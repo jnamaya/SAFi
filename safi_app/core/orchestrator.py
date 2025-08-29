@@ -85,7 +85,6 @@ class SAFi:
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"Value weights must sum to 1.0, got {total}")
 
-        # --- FIXED: Removed self.db_name, as it's no longer needed for db calls ---
         self.log_dir = getattr(config, "LOG_DIR", "logs")
         self.log_template = getattr(config, "LOG_FILE_TEMPLATE", None)
         self.legacy_log_file = getattr(config, "LOG_FILE", "safi-spirit-log.jsonl")
@@ -93,7 +92,6 @@ class SAFi:
         self.active_profile_name = raw_profile_name.lower()
 
         dim = max(len(self.values), 1)
-        # --- FIXED: Removed db_name argument ---
         loaded_memory = db.load_spirit_memory(self.active_profile_name)
         self.memory = loaded_memory or {"turn": 0, "mu": np.zeros(dim)}
         if len(self.memory.get("mu", [])) != dim:
@@ -118,7 +116,6 @@ class SAFi:
         """
         One turn of interaction with the self-correction loop.
         """
-        # --- FIXED: Removed db_name argument from all db calls ---
         memory_summary = db.fetch_conversation_summary(conversation_id)
         history = db.fetch_chat_history_for_conversation(conversation_id)
         new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history else None
@@ -195,9 +192,17 @@ class SAFi:
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         try:
-            system_prompt = ( "You are a memory assistant... (rest of prompt)" )
-            content = ( f"PREVIOUS MEMORY:\n{old_summary if old_summary else '...'}\n\n" f"LATEST EXCHANGE:\n...\n\n" f"UPDATED MEMORY:" )
-            response = self.openai_client.chat.completions.create( model=getattr(self.config, "SUMMARIZER_MODEL"), messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}], temperature=0.2 )
+            system_prompt = ( "You are a memory assistant for an AI. Your task is to maintain a rolling bullet-style memory of the conversation. " "Preserve important context from earlier exchanges, but if the conversation has clearly shifted to a new topic, " "summarize the earlier topic into a single short bullet before continuing with the new thread. " "Do not allow the memory to grow incoherent or overloaded with irrelevant detail. " "Format as: 'User asked X → AI answered Y'. " "Keep enough history so the AI can remain coherent, but collapse or condense older segments once they are no longer central." )
+            content = (
+                f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No conversation history.'}\n\n"
+                f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
+                f"UPDATED MEMORY (notes for the Intellect):"
+            )
+            response = self.openai_client.chat.completions.create(
+                model=getattr(self.config, "SUMMARIZER_MODEL"),
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
+                temperature=0.0,
+            )
             new_summary = response.choices[0].message.content.strip()
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
