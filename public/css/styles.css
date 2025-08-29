@@ -287,3 +287,17 @@ html, body {
   border: 3px solid #374151; /* gray-700 */
   border-top: 3px solid #22c55e; /* green-500 */
 }
+
+/* --- NEW: Invert logo color for dark mode --- */
+.dark .app-logo {
+  -webkit-filter: invert(1); /* For Safari/iOS */
+  filter: invert(1);
+  transform: translateZ(0); /* Promotes the element to its own layer to fix potential rendering bugs on mobile */
+}
+
+/* --- NEW: Specific size for login screen logo --- */
+#login-view .app-logo {
+  height: 8.5rem; /* 72px */
+  width: 8.5rem;  /* 72px */
+}
+
