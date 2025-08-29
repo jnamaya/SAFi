@@ -149,7 +149,7 @@ class SAFi:
         if D_t == "violation":
             safe_response = f"This response was suppressed. Reason: {E_t}"
             db.insert_memory_entry(conversation_id, "ai", safe_response, message_id=message_id, audit_status="complete")
-            self._append_log({ "timestamp": datetime.now(timezone.utc).isoformat(), "t": int(self.memory["turn"]) + 1, "userPrompt": user_prompt, "intellectDraft": a_t, "intellectReflection": r_t or "", "finalOutput": safe_response, "willDecision": D_t, "willReason": E_t, "conscienceLedger": [], "spiritScore": None, "spiritNote": "Suppressed by Will.", "drift": None, "params": {"beta": getattr(self.config, "SPIRIT_BETA", 0.9)}, "p_t_vector": [], "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(), "memorySummary": memory_summary })
+            self._append_log({ "timestamp": datetime.now(timezone.utc).isoformat(), "t": int(self.memory["turn"]) + 1, "userPrompt": user_prompt, "intellectDraft": a_t, "intellectReflection": r_t or "", "finalOutput": safe_response, "willDecision": D_t, "willReason": E_t, "conscienceLedger": [], "spiritScore": None, "spiritNote": "Suppressed by Will.", "drift": None, "params": {"beta": getattr(self.config, "SPIRIT_BETA", 0.9)}, "p_t_vector": [], "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist(), "memorySummary": memory_summary, "spiritFeedback": spirit_feedback })
             return { "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
@@ -159,12 +159,12 @@ class SAFi:
         snap_hash = dict_sha256(snapshot)
         db.upsert_audit_snapshot(snap_hash, snapshot, t_next, user_id)
 
-        threading.Thread(target=self._run_audit_thread, args=(snapshot, snap_hash, D_t, E_t, message_id), daemon=True).start()
+        threading.Thread(target=self._run_audit_thread, args=(snapshot, snap_hash, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
         return { "finalOutput": a_t, "newTitle": new_title, "conscienceLedger": [], "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
-    def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, will_decision: str, will_reason: str, message_id: str):
+    def _run_audit_thread(self, snapshot: Dict[str, Any], snap_hash: str, will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -181,7 +181,7 @@ class SAFi:
             
             self.last_drift = drift_val if drift_val is not None else 0.0
 
-            log_entry = { "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot["t"], "userPrompt": snapshot["x_t"], "intellectDraft": snapshot["a_t"], "intellectReflection": snapshot["r_t"] or "", "finalOutput": snapshot["a_t"], "willDecision": will_decision, "willReason": will_reason, "conscienceLedger": ledger, "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot["params"], "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist(), "memorySummary": snapshot.get("memory_summary") or "" }
+            log_entry = { "timestamp": datetime.now(timezone.utc).isoformat(), "t": snapshot["t"], "userPrompt": snapshot["x_t"], "intellectDraft": snapshot["a_t"], "intellectReflection": snapshot["r_t"] or "", "finalOutput": snapshot["a_t"], "willDecision": will_decision, "willReason": will_reason, "conscienceLedger": ledger, "spiritScore": S_t, "spiritNote": note, "drift": drift_val, "params": snapshot["params"], "p_t_vector": p_t.tolist(), "mu_t_vector": mu_new.tolist(), "memorySummary": snapshot.get("memory_summary") or "", "spiritFeedback": spirit_feedback }
             self._append_log(log_entry)
 
             self.memory["turn"] += 1
