@@ -66,6 +66,11 @@ class SAFi:
         self.openai_client = OpenAI(api_key=openai_api_key)
         self.anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
 
+        # Load system prompts from the external JSON file
+        prompts_path = Path(__file__).parent / "system_prompts.json"
+        with prompts_path.open("r", encoding="utf-8") as f:
+            self.prompts = json.load(f)
+
         if value_profile_or_list is not None:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
                 self.profile = value_profile_or_list
@@ -100,13 +105,13 @@ class SAFi:
         self.last_drift = 0.0
 
         self.intellect_engine = IntellectEngine(
-            self.anthropic_client, model=getattr(config, "INTELLECT_MODEL"), profile=self.profile
+            self.anthropic_client, model=getattr(config, "INTELLECT_MODEL"), profile=self.profile, prompt_config=self.prompts["intellect_engine"]
         )
         self.will_gate = WillGate(
-            self.openai_client, model=getattr(config, "WILL_MODEL"), values=self.values, profile=self.profile
+            self.openai_client, model=getattr(config, "WILL_MODEL"), values=self.values, profile=self.profile, prompt_config=self.prompts["will_gate"]
         )
         self.conscience = ConscienceAuditor(
-            self.openai_client, model=getattr(config, "CONSCIENCE_MODEL"), values=self.values, profile=self.profile
+            self.openai_client, model=getattr(config, "CONSCIENCE_MODEL"), values=self.values, profile=self.profile, prompt_config=self.prompts["conscience_auditor"]
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
@@ -192,7 +197,7 @@ class SAFi:
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         try:
-            system_prompt = ( "You are a memory assistant for an AI. Your task is to maintain a rolling bullet-style memory of the conversation. " "Preserve important context from earlier exchanges, but if the conversation has clearly shifted to a new topic, " "summarize the earlier topic into a single short bullet before continuing with the new thread. " "Do not allow the memory to grow incoherent or overloaded with irrelevant detail. " "Format as: 'User asked X → AI answered Y'. " "Keep enough history so the AI can remain coherent, but collapse or condense older segments once they are no longer central." )
+            system_prompt = self.prompts["summarizer"]["system_prompt"]
             content = (
                 f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No conversation history.'}\n\n"
                 f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
@@ -206,7 +211,7 @@ class SAFi:
             new_summary = response.choices[0].message.content.strip()
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
-            print(f"--- ERROR IN SUMMARIZATION THREAD ---", file=sys.stderr)
+            print(f"--- ERROR IN SUMMARization THREAD ---", file=sys.stderr)
             print(f"Exception: {type(e).__name__}: {e}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
