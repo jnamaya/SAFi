@@ -5,7 +5,7 @@ import * as utils from './utils.js';
 let currentConversationId = null;
 const msgCountByConvo = {};
 let activeProfileData = {}; // Stores the full profile details
-let availableProfiles = []; // Stores the list of profile names
+let availableProfiles = []; // Stores the list of profile objects {key, name}
 
 async function checkLoginStatus() {
     try {
@@ -15,11 +15,12 @@ async function checkLoginStatus() {
         ui.updateUIForAuthState(user, handleLogout, handleProfileChange);
         
         if (user) {
-            activeProfileData = user.active_profile_details || {};
-            
             const profilesResponse = await api.fetchAvailableProfiles();
             availableProfiles = profilesResponse.available || [];
-            const currentProfileKey = user.active_profile || availableProfiles[0];
+            
+            const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
+            
+            activeProfileData = profilesResponse.active_details || {};
             
             ui.populateProfileSelector(availableProfiles, currentProfileKey);
             
@@ -37,7 +38,8 @@ async function handleProfileChange(event) {
     const newProfileName = event.target.value;
     try {
         await api.updateUserProfile(newProfileName);
-        ui.showToast(`Profile switched to ${newProfileName}`, 'success');
+        const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
+        ui.showToast(`Profile switched to ${selectedProfile.name}`, 'success');
         
         await checkLoginStatus();
 
@@ -49,10 +51,12 @@ async function handleProfileChange(event) {
 }
 
 
-async function loadConversations() {
+async function loadConversations(switchToId = null) {
     try {
         const conversations = await api.fetchConversations();
         const convoList = document.getElementById('convo-list');
+        if (!convoList) return;
+        
         convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
 
         if (conversations?.length > 0) {
@@ -61,15 +65,20 @@ async function loadConversations() {
                 renameHandler: handleRename,
                 deleteHandler: handleDelete
             };
-            conversations.forEach(convo => ui.renderConversationLink(convo, handlers));
+            conversations.forEach(convo => {
+                const link = ui.renderConversationLink(convo, handlers);
+                convoList.appendChild(link);
+            });
 
-            const currentConvoExists = conversations.some(c => c.id === currentConversationId);
-            const targetConvoId = (currentConversationId && currentConvoExists) ? currentConversationId : conversations[0].id;
+            const targetConvoId = switchToId 
+                ? switchToId
+                : (currentConversationId && conversations.some(c => c.id === currentConversationId))
+                    ? currentConversationId
+                    : conversations[0].id;
             
             await switchConversation(targetConvoId);
         } else {
-            // --- FIXED: If there are no conversations, just start a new one. ---
-            await startNewConversation(true); // Pass flag to prevent recursion
+            await startNewConversation(true);
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
@@ -80,23 +89,22 @@ async function loadConversations() {
 async function startNewConversation(isInitialLoad = false) {
     try {
         const newConvo = await api.createNewConversation();
-        // --- FIXED: Only reload the conversation list if it's not the initial load ---
-        // This prevents the infinite loop.
-        if (!isInitialLoad) {
-            await loadConversations();
-        } else {
-            // If it is the initial load, just switch to the new conversation
-            await switchConversation(newConvo.id);
-            // And manually add the link to the list
+        
+        if (isInitialLoad) {
+            const convoList = document.getElementById('convo-list');
             const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
-            ui.renderConversationLink(newConvo, handlers);
-            ui.setActiveConvoLink(newConvo.id);
+            const link = ui.renderConversationLink(newConvo, handlers);
+            convoList.appendChild(link);
+            await switchConversation(newConvo.id);
+        } else {
+            await loadConversations(newConvo.id);
         }
     } catch (error) {
         console.error('Failed to create new conversation:', error);
         ui.showToast('Could not start a new chat.', 'error');
     }
 }
+
 
 async function switchConversation(id) {
     currentConversationId = id;
@@ -228,7 +236,6 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         attempts++;
 
         if (result && result.status === 'complete') {
-            // --- FIXED: Parse ledger and values if they are strings ---
             const ledger = typeof result.ledger === 'string' ? JSON.parse(result.ledger) : result.ledger;
             const values = typeof result.values === 'string' ? JSON.parse(result.values) : result.values;
 
@@ -367,3 +374,4 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
+

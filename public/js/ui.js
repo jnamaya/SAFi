@@ -136,15 +136,15 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
   }
 }
 
-export function populateProfileSelector(profiles, selectedProfile) {
+export function populateProfileSelector(profiles, selectedProfileKey) {
     const selector = document.getElementById('profile-selector');
     if (!selector) return;
     selector.innerHTML = '';
     profiles.forEach(profile => {
         const option = document.createElement('option');
-        option.value = profile;
-        option.textContent = profile.charAt(0).toUpperCase() + profile.slice(1);
-        option.selected = profile === selectedProfile;
+        option.value = profile.key;
+        option.textContent = profile.name;
+        option.selected = profile.key === selectedProfileKey;
         selector.appendChild(option);
     });
 }
@@ -167,7 +167,7 @@ export function renderConversationLink(convo, handlers) {
     else if (action === 'delete') deleteHandler(convo.id);
     else switchHandler(convo.id);
   });
-  document.getElementById('convo-list').appendChild(link);
+  return link;
 }
 
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null) {
@@ -242,7 +242,6 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         whyButton.textContent = 'Why this answer?';
         whyButton.addEventListener('click', () => whyHandler(payload));
         
-        // --- FIXED: Insert the button into the correct part of the meta div ---
         const leftMeta = metaDiv.querySelector('div:first-child');
         if (leftMeta) {
             leftMeta.appendChild(whyButton);
@@ -379,11 +378,16 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
   if (activeProfile && elements.activeProfileDisplay) {
     const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
     const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
+    const descriptionHtml = activeProfile.description 
+      ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-md mx-auto">${activeProfile.description}</p>`
+      : '';
+
     elements.activeProfileDisplay.innerHTML = `<div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">ethical profile, which includes these values:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
+        ${descriptionHtml}
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
             To choose a different ethical profile, click the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> settings gear and select from the dropdown.
         </div>
