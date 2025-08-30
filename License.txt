@@ -21,7 +21,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ### Attribution Requirement:
 
-This software includes and implements concepts from the **Self-Alignment Framework (SAF)**,
+SAFi is the implementation of the **Self-Alignment Framework (SAF)**,
 originally structured by **Nelson Amaya**, and released under an MIT License with attribution requirement.
 
 Any public use, modification, or extension of SAFI must include the following credit:
