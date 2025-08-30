@@ -26,7 +26,7 @@ originally structured by **Nelson Amaya**, and released under an MIT License wit
 
 Any public use, modification, or extension of SAFI must include the following credit:
 
-> "Self-Alignment Framework (SAF), originally discovered by Nelson Amaya."
+> "Self-Alignment Framework (SAF), originally structured by Nelson Amaya."
 
 This applies regardless of whether the SAF terminology is changed or abstracted.
 
