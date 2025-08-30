@@ -31,16 +31,17 @@ class Config:
     # Logging configuration
     LOG_FILE = os.environ.get("SAFI_LOG", "saf-spirit-log.jsonl")
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
-    LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-spirit-%Y-%m-%d.jsonl")
+    LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-sonnet-4-20250514")
     WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "gpt-4o")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gpt-4o-mini")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gpt-4o")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "gpt-4o-mini")
 
     # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
     # Default profile to use when none is specified
-    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "secular").strip().lower()
+    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "virtue_ethics").strip().lower()
+

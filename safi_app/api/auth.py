@@ -1,5 +1,6 @@
 from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app
 import secrets
+import logging
 from .. import oauth
 from ..persistence import database as db
 from ..config import Config
@@ -30,7 +31,6 @@ def callback():
         
         user_info = oauth.google.get('userinfo').json()
 
-        # --- FIXED: Removed DATABASE_NAME argument ---
         db.upsert_user(user_info)
         
         user_id = user_info.get('sub') or user_info.get('id')
@@ -66,7 +66,6 @@ def get_me():
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
 
-    # --- FIXED: Removed DATABASE_NAME argument ---
     user_details = db.get_user_details(user_id)
     if not user_details:
         return jsonify({"ok": False, "error": "User not found"}), 404
@@ -76,7 +75,21 @@ def get_me():
     try:
         user_details['active_profile_details'] = get_profile(active_profile_name)
     except KeyError:
-        user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
+        logging.warning(f"User {user_id} had invalid profile '{active_profile_name}'. Falling back to default.")
+        
+        try:
+            db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
+            
+            user_details['active_profile'] = Config.DEFAULT_PROFILE
+            user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
+            
+            user_session = session.get('user', {})
+            user_session['active_profile'] = Config.DEFAULT_PROFILE
+            session['user'] = user_session
+
+        except Exception as e:
+            logging.error(f"CRITICAL: Default profile '{Config.DEFAULT_PROFILE}' is invalid. Server may be misconfigured. Error: {e}")
+            return jsonify({'ok': False, 'error': 'Server configuration error'}), 500
 
     return jsonify({"ok": True, "user": user_details})
 
@@ -93,10 +106,10 @@ def set_user_profile():
     data = request.json
     profile_name = data.get('profile')
     
-    if not profile_name or profile_name not in list_profiles():
+    available_keys = [p['key'] for p in list_profiles()]
+    if not profile_name or profile_name not in available_keys:
         return jsonify({"error": "Invalid profile name provided."}), 400
 
-    # --- FIXED: Removed DATABASE_NAME argument ---
     db.update_user_profile(user_id, profile_name)
     
     user_session = session.get('user', {})
@@ -115,7 +128,7 @@ def delete_me():
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
     
-    # --- FIXED: Removed DATABASE_NAME argument ---
     db.delete_user(user_id)
     session.clear()
     return jsonify({"status": "success"})
+
