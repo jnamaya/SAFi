@@ -127,6 +127,5 @@ For the full mathematical and architectural definition of SAFi v1.0, see: **SAFi
 * **SAFi code**: GNU GPL v3
 * **SAF protocol (theory)**: MIT License
 
----
 
 SAFi is the first bridge between philosophy and machine logic—making values explicit, enforceable, and auditable.
