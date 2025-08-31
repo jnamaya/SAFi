@@ -2,9 +2,7 @@
 // Contains DOM element selectors and functions for direct DOM manipulation.
 
 export const elements = {
-  loginView: () => document.getElementById('login-view'),
   chatView: () => document.getElementById('chat-view'),
-  loginButton: () => document.getElementById('login-button'),
   sidebarContainer: () => document.getElementById('sidebar-container'),
   chatWindow: () => document.getElementById('chat-window'),
   messageInput: () => document.getElementById('message-input'),
@@ -16,7 +14,8 @@ export const elements = {
   modalBackdrop: () => document.getElementById('modal-backdrop'),
   conscienceModal: () => document.getElementById('conscience-modal'),
   deleteAccountModal: () => document.getElementById('delete-account-modal'),
-  composerFooter: () => document.getElementById('composer-footer'),
+  composerFooterUser: () => document.getElementById('composer-footer-user'),
+  composerFooterGuest: () => document.getElementById('composer-footer-guest'),
   closeConscienceModalBtn: () => document.getElementById('close-conscience-modal'),
   cancelDeleteBtn: () => document.getElementById('cancel-delete-btn'),
   confirmDeleteBtn: () => document.getElementById('confirm-delete-btn'),
@@ -41,6 +40,7 @@ export function resetChatView() {
   const chatWindow = elements.chatWindow();
   if (!chatWindow) return;
   
+  // Clear everything except the empty state template
   Array.from(chatWindow.children).forEach(child => {
     if (child.id !== 'empty-state') child.remove();
   });
@@ -66,3 +66,4 @@ export function setActiveConvoLink(id) {
 export function scrollToBottom() {
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
+
