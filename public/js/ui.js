@@ -17,6 +17,7 @@ export const elements = {
   deleteAccountModal: document.getElementById('delete-account-modal'),
   composerFooter: document.getElementById('composer-footer'),
   conscienceDetails: document.getElementById('conscience-details'),
+  closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
 };
 
 let activeToast = null;
@@ -166,7 +167,7 @@ export function renderConversationLink(convo, handlers) {
   return link;
 }
 
-export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null) {
+export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
   elements.emptyState.classList.add('hidden');
   maybeInsertDayDivider(date);
 
@@ -179,15 +180,34 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
 
-  const html = DOMPurify.sanitize(marked.parse(text ?? ''));
-
-  const contentDiv = document.createElement('div');
-  contentDiv.className = 'chat-bubble';
-  contentDiv.innerHTML = html;
-
-  const metaDiv = document.createElement('div');
-  metaDiv.className = 'meta';
-
+  if (sender === 'ai') {
+    messageDiv.innerHTML = `
+      <div class="ai-avatar">
+        <img src="assets/logo.png" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+      </div>
+      <div class="ai-content-wrapper">
+        <p class="ai-name">SAFi</p>
+        <div class="chat-bubble"></div>
+        <div class="meta"></div>
+      </div>
+    `;
+    const bubble = messageDiv.querySelector('.chat-bubble');
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text ?? ''));
+  } else {
+    const bubbleHtml = DOMPurify.sanitize(marked.parse(text ?? ''));
+    const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+    messageDiv.innerHTML = `
+        <div class="user-content-wrapper">
+           <div class="chat-bubble">${bubbleHtml}</div>
+           <div class="meta"></div>
+        </div>
+        <div class="user-avatar">
+            <img src="${avatarUrl}" alt="User Avatar" class="w-full h-full rounded-full">
+        </div>
+    `;
+  }
+  
+  const metaDiv = messageDiv.querySelector('.meta');
   const leftMeta = document.createElement('div');
   const rightMeta = document.createElement('div');
   rightMeta.className = 'flex items-baseline gap-3 ml-auto';
@@ -209,14 +229,11 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 
   const stampDiv = document.createElement('div');
   stampDiv.className = 'stamp';
-  stampDiv.style.marginLeft = '0';
   stampDiv.textContent = formatTime(date);
   
   rightMeta.appendChild(stampDiv);
   metaDiv.appendChild(rightMeta);
-
-  messageDiv.appendChild(contentDiv);
-  messageDiv.appendChild(metaDiv);
+  
   messageContainer.appendChild(messageDiv);
 
   elements.chatWindow.appendChild(messageContainer);
@@ -235,14 +252,16 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     if (metaDiv && !metaDiv.querySelector('.why-btn')) {
         const whyButton = document.createElement('button');
         whyButton.className = 'why-btn';
-        whyButton.textContent = 'Why this answer?';
+        whyButton.textContent = 'View Ethical Reasoning';
         whyButton.addEventListener('click', () => whyHandler(payload));
         
         const leftMeta = metaDiv.querySelector('div:first-child');
         if (leftMeta) {
             leftMeta.appendChild(whyButton);
         } else {
-            metaDiv.insertBefore(whyButton, metaDiv.firstChild);
+            const newLeftMeta = document.createElement('div');
+            newLeftMeta.appendChild(whyButton);
+            metaDiv.insertBefore(newLeftMeta, metaDiv.firstChild);
         }
     }
 }
@@ -254,9 +273,15 @@ export function showLoadingIndicator() {
   loadingContainer.className = 'message-container';
   loadingContainer.innerHTML = `
     <div class="message ai">
-        <div class="flex items-center gap-3">
-          <div class="thinking-spinner"></div>
-          <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic">Thinking...</span>
+        <div class="ai-avatar">
+            <img src="assets/logo.png" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+        </div>
+        <div class="ai-content-wrapper">
+             <p class="ai-name">SAFi</p>
+            <div class="flex items-center gap-3">
+              <div class="thinking-spinner"></div>
+              <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic">Thinking...</span>
+            </div>
         </div>
     </div>`;
   elements.chatWindow.appendChild(loadingContainer);
@@ -280,23 +305,15 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
-// --- MODAL LOGIC --- //
-
 function setupModal(payload) {
     const container = elements.conscienceDetails;
     if (!container) return;
-    container.innerHTML = ''; // Clear previous content
+    container.innerHTML = ''; 
 
-    // 1. Intro
     container.insertAdjacentHTML('beforeend', renderIntro(payload));
-    
-    // 2. Score and Trend
     container.insertAdjacentHTML('beforeend', renderScoreAndTrend(payload));
-
-    // 3. Ledger Details
     container.insertAdjacentHTML('beforeend', renderLedger(payload.ledger));
     
-    // 4. Add event listeners for expandable text
     container.querySelectorAll('.expand-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const reason = btn.parentElement.querySelector('.reason-text');
@@ -306,12 +323,12 @@ function setupModal(payload) {
         });
     });
 
-    // 5. Setup Copy Button
     const copyBtn = document.getElementById('copy-audit-btn');
-    // Clone and replace to remove old event listeners
-    const newCopyBtn = copyBtn.cloneNode(true);
-    copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
-    newCopyBtn.addEventListener('click', () => copyAuditToClipboard(payload));
+    if (copyBtn) {
+        const newCopyBtn = copyBtn.cloneNode(true);
+        copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+        newCopyBtn.addEventListener('click', () => copyAuditToClipboard(payload));
+    }
 }
 
 export function showModal(kind, data) {
@@ -321,7 +338,7 @@ export function showModal(kind, data) {
     elements.conscienceModal.classList.remove('hidden');
     elements.modalBackdrop.classList.remove('hidden');
   } else if (kind === 'delete') {
-    elements.deleteAccountModal.classList.remove('hidden');
+    document.getElementById('delete-account-modal').classList.remove('hidden');
     elements.modalBackdrop.classList.remove('hidden');
   }
 }
@@ -329,7 +346,7 @@ export function showModal(kind, data) {
 export function closeModal() {
   elements.modalBackdrop.classList.add('hidden');
   elements.conscienceModal.classList.add('hidden');
-  elements.deleteAccountModal.classList.add('hidden');
+  document.getElementById('delete-account-modal').classList.add('hidden');
 }
 
 function renderIntro(payload) {
@@ -341,9 +358,8 @@ function renderScoreAndTrend(payload) {
     if (payload.spirit_score === null || payload.spirit_score === undefined) return '';
 
     const score = Math.max(0, Math.min(10, payload.spirit_score));
-    const scorePercentage = score * 10;
-    const circumference = 30 * 2 * Math.PI;
-    const offset = circumference - scorePercentage / 100 * circumference;
+    const circumference = 50 * 2 * Math.PI;
+    const offset = circumference - (score / 10) * circumference;
 
     const getScoreColor = (s) => {
         if (s >= 8) return 'text-green-500';
@@ -368,8 +384,7 @@ function renderScoreAndTrend(payload) {
         <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1 text-center max-w-[180px]">Reflects alignment with the active value set.</p>
     `;
 
-    // Trend Chart (Sparkline)
-    const scores = (payload.spirit_scores_history || []).filter(s => s !== null && s !== undefined).slice(-10); // last 10 scores
+    const scores = (payload.spirit_scores_history || []).filter(s => s !== null && s !== undefined).slice(-10);
     let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-neutral-400">Not enough data for trend.</div>';
 
     if (scores.length > 1) {
@@ -382,12 +397,13 @@ function renderScoreAndTrend(payload) {
             return `${x},${y}`;
         }).join(' ');
 
+        const lastPoint = points.split(' ').pop().split(',');
         sparkline = `
             <div class="flex-1 pl-4">
                 <h4 class="font-semibold mb-2 text-center">Alignment Trend</h4>
                 <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto">
                     <polyline fill="none" class="stroke-green-500" stroke-width="2" points="${points}" />
-                    <circle fill="${getScoreColor(scores[scores.length-1]).replace('text-','fill-')}" class="stroke-white dark:stroke-neutral-800" r="3" cx="${points.split(' ').pop().split(',')[0]}" cy="${points.split(' ').pop().split(',')[1]}"></circle>
+                    <circle fill="${getScoreColor(scores[scores.length-1]).replace('text-','fill-')}" class="stroke-white dark:stroke-neutral-800" r="3" cx="${lastPoint[0]}" cy="${lastPoint[1]}"></circle>
                 </svg>
                 <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1 text-center">Recent score history</p>
             </div>
@@ -408,7 +424,6 @@ function renderLedger(ledger) {
         neutral: ledger.filter(r => r.score === 0),
     };
 
-    // Sort by confidence descending
     for (const key in groups) {
         groups[key].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     }
@@ -503,8 +518,6 @@ function copyAuditToClipboard(payload) {
     });
 }
 
-// --- UTILITY FUNCTIONS --- //
-
 export function scrollToBottom() {
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
@@ -588,3 +601,4 @@ export function setActiveConvoLink(id) {
     link.classList.toggle('font-medium', isActive);
   });
 }
+
