@@ -14,7 +14,6 @@ body {
   }
 }
 
-/* REMOVED overflow: hidden to allow the page to scroll */
 html, body { 
   height: 100%;
   max-width: 100%; 
@@ -206,6 +205,43 @@ html, body {
   color: #a3a3a3; 
 }
 
+/* --- MODAL IMPROVEMENTS --- */
+.reason-text.truncated {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.expand-btn {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 4px 0 0 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.prose {
+    line-height: 1.6;
+}
+/* Tailwind typography plugin styles */
+.prose :where(p):not(:where([class~="not-prose"] *)) {
+    margin-top: 0.8em;
+    margin-bottom: 0.8em;
+}
+
+.dark .stroke-green-500 { stroke: #22c55e; }
+.dark .stroke-yellow-500 { stroke: #eab308; }
+.dark .stroke-red-500 { stroke: #ef4444; }
+.dark .fill-green-500 { fill: #22c55e; }
+.dark .fill-yellow-500 { fill: #eab308; }
+.dark .fill-red-500 { fill: #ef4444; }
+/* --- END MODAL IMPROVEMENTS --- */
+
+
 .msg { 
   max-width: min(72ch, 100%); 
   word-break: break-word; 
@@ -300,4 +336,3 @@ html, body {
   height: 8.5rem; /* 72px */
   width: 8.5rem;  /* 72px */
 }
-
