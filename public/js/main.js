@@ -359,8 +359,9 @@ function attachEventListeners() {
     if(sidebarOverlay) {
         sidebarOverlay.addEventListener('click', ui.closeSidebar);
     }
-
+    
     document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
+    document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);

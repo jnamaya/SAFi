@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="/css/styles.css">
 
  <script>
     tailwind.config = { darkMode: 'class' };
@@ -130,29 +130,27 @@
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
   <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-2xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
-    <header class="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+    <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <div class="flex items-center gap-3">
-        <svg class="w-6 h-6 text-green-600 dark:text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+        <span class="p-2 bg-green-100 dark:bg-green-900/40 rounded-full">
+            <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </span>
         <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
       </div>
-      <button id="close-conscience-modal" type="button" aria-label="Close modal" class="p-1 rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      <button id="close-conscience-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
-    </header>
-    
-    <div id="conscience-details" class="flex-1 overflow-y-auto custom-scrollbar p-5">
-      <!-- Content will be dynamically inserted here -->
     </div>
-
-    <footer class="flex items-center justify-end gap-3 p-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0 bg-neutral-50 dark:bg-neutral-900/50 rounded-b-xl">
-        <button id="copy-audit-btn" type="button" class="px-4 py-2 rounded-lg font-semibold text-sm flex items-center gap-2 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">
+    <div id="conscience-details" class="flex-1 overflow-y-auto custom-scrollbar p-6">
+        <!-- Details will be rendered here -->
+    </div>
+    <div class="flex justify-between items-center p-4 bg-neutral-50 dark:bg-neutral-900/50 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
+        <button id="copy-audit-btn" type="button" class="flex items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             Copy Audit
         </button>
-        <button id="close-conscience-modal-footer" type="button" class="px-5 py-2 rounded-lg font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors">
-            Got it
-        </button>
-    </footer>
+        <button id="got-it-conscience-modal" type="button" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm">Got It</button>
+    </div>
   </div>
 
   <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
@@ -167,3 +165,4 @@
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
+
