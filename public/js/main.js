@@ -3,7 +3,7 @@ import * as ui from './ui.js';
 import * as utils from './utils.js';
 
 let currentConversationId = null;
-const msgCountByConvo = {};
+let conversationHistory = []; // NEW: Store full turn data for the active conversation
 let activeProfileData = {}; // Stores the full profile details
 let availableProfiles = []; // Stores the list of profile objects {key, name}
 
@@ -113,19 +113,30 @@ async function switchConversation(id) {
 
     try {
         const history = await api.fetchHistory(id);
+        conversationHistory = history; // Cache history
+        
+        const spiritScoresHistory = [];
         
         if (history?.length > 0) {
             history.forEach((turn, i) => {
                 const date = turn.timestamp ? new Date(turn.timestamp) : new Date();
                 
+                if (turn.spirit_score !== null && turn.spirit_score !== undefined) {
+                    spiritScoresHistory.push(turn.spirit_score);
+                }
+
                 const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
                 const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
+
+                // Create a snapshot of the score history up to the current turn
+                const historyForThisTurn = [...spiritScoresHistory];
 
                 const payload = {
                     ledger: ledger || [],
                     profile: turn.profile_name,
                     values: values || [],
-                    spirit_score: turn.spirit_score 
+                    spirit_score: turn.spirit_score,
+                    spirit_scores_history: historyForThisTurn
                 };
 
                 ui.displayMessage(
@@ -238,15 +249,32 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         if (result && result.status === 'complete') {
             const ledger = typeof result.ledger === 'string' ? JSON.parse(result.ledger) : result.ledger;
             const values = typeof result.values === 'string' ? JSON.parse(result.values) : result.values;
+            
+            // Get historical scores from the cached history
+            const priorScores = conversationHistory
+                .map(turn => turn.spirit_score)
+                .filter(score => score !== null && score !== undefined);
 
             const payload = {
                 ledger: ledger || [],
                 profile: result.profile || null,
                 values: values || [],
-                spirit_score: result.spirit_score
+                spirit_score: result.spirit_score,
+                spirit_scores_history: [...priorScores, result.spirit_score] // Add new score to history for the modal
             };
             
             ui.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
+            
+            // Add the new turn to the local history cache for future messages
+            conversationHistory.push({
+                 conscience_ledger: result.ledger,
+                 profile_values: result.values,
+                 profile_name: result.profile,
+                 spirit_score: result.spirit_score,
+                 role: 'ai',
+                 // Add other fields if needed, though they aren't used for the trend chart
+            });
+
             resolve(result);
         } else if (attempts >= maxAttempts) {
             reject(new Error('Polling timed out.'));
@@ -292,6 +320,7 @@ async function handleDelete(id) {
             ui.showToast('Conversation deleted.', 'success');
             if (id === currentConversationId) {
                 currentConversationId = null;
+                conversationHistory = [];
             }
             await loadConversations();
         } catch (error) {
@@ -349,6 +378,7 @@ function attachEventListeners() {
     }
 
     document.getElementById('close-conscience-modal').addEventListener('click', ui.closeModal);
+    document.getElementById('close-conscience-modal-footer').addEventListener('click', ui.closeModal);
     document.getElementById('cancel-delete-btn').addEventListener('click', ui.closeModal);
     document.getElementById('modal-backdrop').addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn').addEventListener('click', handleDeleteAccount);
@@ -374,4 +404,3 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
-

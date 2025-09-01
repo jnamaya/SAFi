@@ -16,11 +16,7 @@ export const elements = {
   conscienceModal: document.getElementById('conscience-modal'),
   deleteAccountModal: document.getElementById('delete-account-modal'),
   composerFooter: document.getElementById('composer-footer'),
-  closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-  cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
-  confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
   conscienceDetails: document.getElementById('conscience-details'),
-  menuToggle: document.getElementById('menu-toggle'),
 };
 
 let activeToast = null;
@@ -200,7 +196,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   if (hasLedger && whyHandler) {
       const whyButton = document.createElement('button');
       whyButton.className = 'why-btn';
-      whyButton.textContent = 'Why this answer?';
+      whyButton.textContent = 'View Ethical Reasoning';
       whyButton.addEventListener('click', () => whyHandler(payload));
       leftMeta.appendChild(whyButton);
   }
@@ -284,60 +280,230 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
+// --- MODAL LOGIC --- //
+
+function setupModal(payload) {
+    const container = elements.conscienceDetails;
+    if (!container) return;
+    container.innerHTML = ''; // Clear previous content
+
+    // 1. Intro
+    container.insertAdjacentHTML('beforeend', renderIntro(payload));
+    
+    // 2. Score and Trend
+    container.insertAdjacentHTML('beforeend', renderScoreAndTrend(payload));
+
+    // 3. Ledger Details
+    container.insertAdjacentHTML('beforeend', renderLedger(payload.ledger));
+    
+    // 4. Add event listeners for expandable text
+    container.querySelectorAll('.expand-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const reason = btn.parentElement.querySelector('.reason-text');
+            const isTruncated = reason.classList.contains('truncated');
+            reason.classList.toggle('truncated');
+            btn.textContent = isTruncated ? 'Show Less' : 'Show More';
+        });
+    });
+
+    // 5. Setup Copy Button
+    const copyBtn = document.getElementById('copy-audit-btn');
+    // Clone and replace to remove old event listeners
+    const newCopyBtn = copyBtn.cloneNode(true);
+    copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+    newCopyBtn.addEventListener('click', () => copyAuditToClipboard(payload));
+}
+
 export function showModal(kind, data) {
   if (kind === 'conscience') {
-    const payload = data || { ledger: [], profile: null, values: [], spirit_score: null };
-    const box = document.getElementById('conscience-details');
-    if (!box) return;
-    box.innerHTML = '';
-    renderConscienceHeader(box, payload);
-    renderConscienceLedger(box, payload.ledger);
-    document.getElementById('conscience-modal').classList.remove('hidden');
-    document.getElementById('modal-backdrop').classList.remove('hidden');
+    const payload = data || { ledger: [], profile: null, values: [], spirit_score: null, spirit_scores_history: [] };
+    setupModal(payload);
+    elements.conscienceModal.classList.remove('hidden');
+    elements.modalBackdrop.classList.remove('hidden');
   } else if (kind === 'delete') {
-    document.getElementById('delete-account-modal').classList.remove('hidden');
-    document.getElementById('modal-backdrop').classList.remove('hidden');
+    elements.deleteAccountModal.classList.remove('hidden');
+    elements.modalBackdrop.classList.remove('hidden');
   }
-}
-
-function renderConscienceHeader(container, payload) {
-  const name = payload.profile || 'Current value set';
-  const chips = (payload.values || []).map(v => `<span class="px-2 py-1 rounded-full border border-neutral-300 dark:border-neutral-700 text-sm">${v.value} <span class="text-neutral-500">(${Math.round((v.weight || 0) * 100)}%)</span></span>`).join(' ');
-  let scoreHtml = '';
-  if (payload.spirit_score !== null && payload.spirit_score !== undefined) {
-    const score = Math.max(1, Math.min(10, payload.spirit_score));
-    const scorePercentage = (score - 1) / 9 * 100;
-    scoreHtml = `<div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 my-4">
-        <div class="flex items-center justify-between mb-1"><div class="text-sm font-semibold">Alignment Score</div><div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${score}/10</div></div>
-        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5"><div class="bg-emerald-500 h-2.5 rounded-full" style="width: ${scorePercentage}%"></div></div>
-        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">This score reflects alignment with the active value set.</p>
-      </div>`;
-  }
-  container.innerHTML = `<div class="mb-4"><div class="text-xs uppercase tracking-wide text-neutral-500">Value Set:</div><div class="text-base font-semibold">${name}</div><div class="mt-2 flex flex-wrap gap-2">${chips || '—'}</div></div>${scoreHtml}`;
-}
-
-function renderConscienceLedger(container, ledger) {
-  const html = (ledger || []).map(row => {
-    const s = Number(row.score ?? 0);
-    const bucket = s > 0 ? 'uphold' : s < 0 ? 'conflict' : 'neutral';
-    const tone = {
-      uphold: { icon: '▲', pill: 'text-green-700 bg-green-50 dark:text-green-300 dark:bg-green-900/30', title: 'text-green-700 dark:text-green-300', label: 'Upholds' },
-      conflict: { icon: '▼', pill: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-900/30', title: 'text-red-700 dark:text-red-300', label: 'Conflicts with' },
-      neutral: { icon: '•', pill: 'text-neutral-600 bg-neutral-100 dark:text-neutral-300 dark:bg-neutral-800', title: 'text-neutral-800 dark:text-neutral-200', label: 'Neutral on' }
-    }[bucket];
-    return `<div class="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3 mb-3">
-        <div class="flex items-center gap-2 mb-1"><span class="inline-flex items-center justify-center w-5 h-5 rounded-full ${tone.pill} text-xs">${tone.icon}</span><div class="font-semibold ${tone.title}">${tone.label} ${row.value}</div></div>
-        <div class="text-sm text-neutral-600 dark:text-neutral-400">${DOMPurify.sanitize(String(row.reason || ''))}</div>
-      </div>`;
-  }).join('');
-  container.insertAdjacentHTML('beforeend', html || '<div class="text-sm text-neutral-500">No ledger available.</div>');
 }
 
 export function closeModal() {
-  document.getElementById('modal-backdrop').classList.add('hidden');
-  document.getElementById('conscience-modal').classList.add('hidden');
-  document.getElementById('delete-account-modal').classList.add('hidden');
+  elements.modalBackdrop.classList.add('hidden');
+  elements.conscienceModal.classList.add('hidden');
+  elements.deleteAccountModal.classList.add('hidden');
 }
+
+function renderIntro(payload) {
+    const profileName = payload.profile ? `the <strong>${payload.profile}</strong>` : 'the current';
+    return `<p class="text-base text-neutral-600 dark:text-neutral-300 mb-6">This response was shaped by ${profileName} ethical profile. Here’s a breakdown of the reasoning:</p>`;
+}
+
+function renderScoreAndTrend(payload) {
+    if (payload.spirit_score === null || payload.spirit_score === undefined) return '';
+
+    const score = Math.max(0, Math.min(10, payload.spirit_score));
+    const scorePercentage = score * 10;
+    const circumference = 30 * 2 * Math.PI;
+    const offset = circumference - scorePercentage / 100 * circumference;
+
+    const getScoreColor = (s) => {
+        if (s >= 8) return 'text-green-500';
+        if (s >= 5) return 'text-yellow-500';
+        return 'text-red-500';
+    };
+    
+    const colorClass = getScoreColor(score);
+
+    const radialGauge = `
+        <div class="relative flex flex-col items-center justify-center">
+            <svg class="w-32 h-32 transform -rotate-90">
+                <circle class="text-neutral-200 dark:text-neutral-700" stroke-width="8" stroke="currentColor" fill="transparent" r="50" cx="64" cy="64" />
+                <circle class="${colorClass.replace('text-', 'stroke-')}" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" stroke="currentColor" fill="transparent" r="50" cx="64" cy="64" />
+            </svg>
+            <div class="absolute flex flex-col items-center">
+                 <span class="text-3xl font-bold ${colorClass}">${score.toFixed(1)}</span>
+                 <span class="text-xs text-neutral-500 dark:text-neutral-400">/ 10</span>
+            </div>
+        </div>
+        <h4 class="font-semibold mt-2 text-center">Alignment Score</h4>
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1 text-center max-w-[180px]">Reflects alignment with the active value set.</p>
+    `;
+
+    // Trend Chart (Sparkline)
+    const scores = (payload.spirit_scores_history || []).filter(s => s !== null && s !== undefined).slice(-10); // last 10 scores
+    let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-neutral-400">Not enough data for trend.</div>';
+
+    if (scores.length > 1) {
+        const width = 200, height = 60, padding = 5;
+        const maxScore = 10, minScore = 0;
+        const range = maxScore - minScore;
+        const points = scores.map((s, i) => {
+            const x = (i / (scores.length - 1)) * (width - 2 * padding) + padding;
+            const y = height - padding - ((s - minScore) / range) * (height - 2 * padding);
+            return `${x},${y}`;
+        }).join(' ');
+
+        sparkline = `
+            <div class="flex-1 pl-4">
+                <h4 class="font-semibold mb-2 text-center">Alignment Trend</h4>
+                <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto">
+                    <polyline fill="none" class="stroke-green-500" stroke-width="2" points="${points}" />
+                    <circle fill="${getScoreColor(scores[scores.length-1]).replace('text-','fill-')}" class="stroke-white dark:stroke-neutral-800" r="3" cx="${points.split(' ').pop().split(',')[0]}" cy="${points.split(' ').pop().split(',')[1]}"></circle>
+                </svg>
+                <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1 text-center">Recent score history</p>
+            </div>
+        `;
+    }
+
+    return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-4 mb-6">${radialGauge}${sparkline}</div>`;
+}
+
+function renderLedger(ledger) {
+    if (!ledger || ledger.length === 0) {
+        return '<div class="text-sm text-center text-neutral-500 py-4">No specific values were engaged for this response.</div>';
+    }
+
+    const groups = {
+        upholds: ledger.filter(r => r.score > 0),
+        conflicts: ledger.filter(r => r.score < 0),
+        neutral: ledger.filter(r => r.score === 0),
+    };
+
+    // Sort by confidence descending
+    for (const key in groups) {
+        groups[key].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    }
+
+    const groupConfig = {
+        upholds: { title: 'Upholds', icon: 'M5 13l4 4L19 7', color: 'green' },
+        conflicts: { title: 'Conflicts', icon: 'M6 18L18 6M6 6l12 12', color: 'red' },
+        neutral: { title: 'Neutral', icon: 'M18 12H6', color: 'neutral' },
+    };
+
+    let html = '';
+    for (const key of ['upholds', 'conflicts', 'neutral']) {
+        if (groups[key].length > 0) {
+            const config = groupConfig[key];
+            html += `
+                <div class="flex items-center gap-3 my-4">
+                    <span class="p-1.5 bg-${config.color}-100 dark:bg-${config.color}-900/40 rounded-full">
+                        <svg class="w-5 h-5 text-${config.color}-600 dark:text-${config.color}-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${config.icon}"></path></svg>
+                    </span>
+                    <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${config.title} (${groups[key].length})</h4>
+                    <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-700"></div>
+                </div>
+                <div class="space-y-3">
+                    ${groups[key].map(renderLedgerItem).join('')}
+                </div>
+            `;
+        }
+    }
+    return html;
+}
+
+function renderLedgerItem(item) {
+    const reasonHtml = DOMPurify.sanitize(String(item.reason || ''));
+    const maxLength = 120;
+    const isLong = reasonHtml.length > maxLength;
+    
+    const confidenceHtml = item.confidence ? `<div class="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">CONFIDENCE: ${Math.round(item.confidence * 100)}%</div>` : '';
+
+    return `
+        <div class="bg-white dark:bg-neutral-800/60 p-4 rounded-lg border border-neutral-200 dark:border-neutral-700/80">
+            <div class="flex items-center justify-between gap-4 mb-2">
+                <div class="font-semibold text-neutral-800 dark:text-neutral-200">${item.value}</div>
+                ${confidenceHtml}
+            </div>
+            <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-600 dark:text-neutral-400">
+                <div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>
+                ${isLong ? '<button class="expand-btn">Show More</button>' : ''}
+            </div>
+        </div>
+    `;
+}
+
+function copyAuditToClipboard(payload) {
+    let text = `SAFi Ethical Reasoning Audit\n`;
+    text += `Profile: ${payload.profile || 'N/A'}\n`;
+    text += `Alignment Score: ${payload.spirit_score !== null ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
+    text += `------------------------------------\n\n`;
+    
+    if (payload.ledger && payload.ledger.length > 0) {
+        const upholds = payload.ledger.filter(r => r.score > 0);
+        const conflicts = payload.ledger.filter(r => r.score < 0);
+        const neutral = payload.ledger.filter(r => r.score === 0);
+
+        if (upholds.length > 0) {
+            text += 'UPHOLDS:\n';
+            upholds.forEach(item => {
+                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+            });
+            text += '\n';
+        }
+        if (conflicts.length > 0) {
+            text += 'CONFLICTS:\n';
+            conflicts.forEach(item => {
+                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+            });
+            text += '\n';
+        }
+        if (neutral.length > 0) {
+            text += 'NEUTRAL:\n';
+            neutral.forEach(item => {
+                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+            });
+        }
+    } else {
+        text += 'No specific values were engaged for this response.';
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Audit copied to clipboard', 'success');
+    }, () => {
+        showToast('Failed to copy audit', 'error');
+    });
+}
+
+// --- UTILITY FUNCTIONS --- //
 
 export function scrollToBottom() {
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -422,4 +588,3 @@ export function setActiveConvoLink(id) {
     link.classList.toggle('font-medium', isActive);
   });
 }
-
