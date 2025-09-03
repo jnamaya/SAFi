@@ -3,22 +3,18 @@ import json
 import asyncio
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
-
 from openai import OpenAI
-import anthropic
 
 from ..utils import normalize_text, dict_sha256
 
 
 class IntellectEngine:
     """
-    Uses Anthropic's client (Claude models) to generate an answer and a reflection.
-    - Builds a system prompt including worldview, style, and memory.
-    - --- NEW --- Now also includes a self-correction feedback loop from the Spirit.
+    - Builds a system prompt including worldview, style, memory, and Spirit feedback.
     - Requests the model to output <ANSWER> and <REFLECTION> sections.
     - Returns both parts separately.
     """
-    def __init__(self, client: anthropic.Anthropic, model: str, profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, client: OpenAI, model: str, profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
         self.client = client
         self.model = model
         self.profile = profile or {}
@@ -36,38 +32,32 @@ class IntellectEngine:
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
-        # Short-term memory of the conversation's content.
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
             f"<summary>{memory_summary}</summary>" if memory_summary else ""
         )
-
-        # This tell the Intellect how well it has been performing against its values.
         spirit_injection = (
             f"ETHICAL PERFORMANCE REVIEW: Use this feedback on your long-term performance to improve your alignment.\n"
             f"<spirit_feedback>{spirit_feedback}</spirit_feedback>" if spirit_feedback else ""
         )
-        
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
 
         system_prompt = "\n\n".join(filter(None, [
-            worldview,
-            style,
-            memory_injection,
-            spirit_injection, 
-            formatting_instructions
+            worldview, style, memory_injection, spirit_injection, formatting_instructions
         ]))
 
         try:
             resp = await asyncio.to_thread(
-                self.client.messages.create,
+                self.client.chat.completions.create,
                 model=self.model,
                 max_tokens=4096,
                 temperature=1.0,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
             )
-            text = resp.content[0].text if resp.content else ""
+            text = resp.choices[0].message.content or ""
 
             answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip() if "<ANSWER>" in text else text.split("<REFLECTION>")[0].strip()
             reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip() if "<REFLECTION>" in text else ""
@@ -80,11 +70,7 @@ class IntellectEngine:
 
 class WillGate:
     """
-    Uses OpenAI's client to act as a gatekeeper.
-    - This is the "letter of the law" enforcer.
-    - It checks if a draft answer violates any of the profile's non-negotiable 'will_rules'.
-    - Returns a binary decision ('approve' or 'violation') and a reason.
-    - Its decision is final for a given turn.
+    Uses an OpenAI-compatible client to act as a gatekeeper. No changes needed to internal logic.
     """
     def __init__(self, client: OpenAI, model: str, *, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
         self.client = client
@@ -111,15 +97,11 @@ class WillGate:
 
         policy_parts = [
             self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
-            f"Tradition: {name}" if name else "",
-            "Rules:",
-            *[f"- {r}" for r in rules],
-            "Value Set:",
-            json.dumps(self.values, indent=2),
+            f"Tradition: {name}" if name else "", "Rules:", *[f"- {r}" for r in rules],
+            "Value Set:", json.dumps(self.values, indent=2),
             self.prompt_config.get("footer", "Return a single JSON object with keys: decision, reason."),
         ]
         policy = "\n".join(filter(None, policy_parts))
-        
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
         try:
@@ -139,11 +121,7 @@ class WillGate:
 
 class ConscienceAuditor:
     """
-    Uses OpenAI's client to audit the final output from the profile's worldview.
-    - This is the "spirit of the law" evaluator.
-    - It scores the alignment of the final text with each declared value.
-    - It produces a detailed 'ledger' with scores, confidences, and reasons.
-    - Its audit is used by the Spirit to update long-term memory.
+    Uses an OpenAI-compatible client to audit the final output. No changes needed to internal logic.
     """
     def __init__(self, client: OpenAI, model: str, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
         self.client = client
@@ -173,10 +151,7 @@ class ConscienceAuditor:
 class SpiritIntegrator:
     """
     Integrates conscience evaluations into a long-term spirit memory vector (mu).
-    - This is the system's long-term memory and self-awareness component.
-    - It computes a weighted score for the current turn.
-    - It updates the running state (mu) using exponential smoothing (the 90/10 rule).
-    - It calculates the 'drift' to measure how uncharacteristic a response is.
+    This class is purely mathematical and requires no changes.
     """
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
         self.values = values
@@ -197,15 +172,8 @@ class SpiritIntegrator:
 
         raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
-
-        # This is the performance vector for the current turn (p_t).
         p_t = self.value_weights * scores
-
-        # This is the core formula for updating the long-term memory (mu).
         mu_new = self.beta * mu_tm1 + (1 - self.beta) * p_t
-
-        # This calculates drift by comparing the current turn's vector (p_t)
-        # to the long-term historical vector (mu_tm1).
         denom = (np.linalg.norm(p_t) * np.linalg.norm(mu_tm1))
         drift = 0.0 if denom == 0 else (1 - float(np.dot(p_t, mu_tm1) / denom))
         note = f"Coherence {spirit_score}/10, drift {drift:.2f}."
