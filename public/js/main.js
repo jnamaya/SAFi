@@ -183,22 +183,14 @@ async function sendMessage() {
     const loadingIndicator = ui.showLoadingIndicator();
     const thinkingStatus = loadingIndicator.querySelector('#thinking-status');
 
-    const safiLoop = [
-        "Intellect: Generating draft...",
-        "Will: Checking rules...",
-        "Conscience: Auditing values...",
-        "Spirit: Calculating score...",
-        "Finalizing..."
-    ];
-    let loopIndex = 0;
-    const loopInterval = setInterval(() => {
-        if (thinkingStatus && loopIndex < safiLoop.length) {
-            thinkingStatus.textContent = safiLoop[loopIndex];
-            loopIndex++;
-        } else {
-            clearInterval(loopInterval);
+    // --- CHANGE: Removed the long safiLoop array and setInterval ---
+
+    // --- CHANGE: Added a simple timeout to change text if response is slow ---
+    const thinkingTimeout = setTimeout(() => {
+        if (thinkingStatus) {
+            thinkingStatus.textContent = 'Still thinking...';
         }
-    }, 1800);
+    }, 4000); // 4 seconds
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
@@ -227,7 +219,8 @@ async function sendMessage() {
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
-        clearInterval(loopInterval);
+        // --- CHANGE: Clear the new timeout instead of the old interval ---
+        clearTimeout(thinkingTimeout);
         if(loadingIndicator) loadingIndicator.remove();
         buttonIcon.classList.remove('hidden');
         buttonLoader.classList.add('hidden');
@@ -387,4 +380,3 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
-
