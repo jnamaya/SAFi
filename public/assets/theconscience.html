@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How SAFi's Conscience Works</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .flow-arrow {
+            position: relative;
+            padding-bottom: 3.5rem; /* Space for arrow */
+        }
+        .flow-arrow::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: 1rem;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 2rem;
+            background-color: #60a5fa; /* blue-400 */
+        }
+        .flow-arrow::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: 1rem;
+            transform: translateX(-50%) translateY(100%);
+            width: 0; 
+            height: 0; 
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #60a5fa; /* blue-400 */
+        }
+    </style>
+</head>
+<body class="bg-white text-gray-800 min-h-screen flex items-center justify-center p-4 md:p-8">
+
+    <div class="w-full max-w-6xl mx-auto">
+    
+
+        <main class="space-y-8">
+            <!-- Inputs Section -->
+            <div class="text-center">
+                <h2 class="text-xl font-semibold text-gray-700 mb-2">1. The Audit Begins After the Will's Approval</h2>
+                <p class="text-gray-500 mb-6">(This process runs in the background and does not delay the user's response)</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+                    
+                    <!-- Approved Answer (at) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Approved Answer (a_t)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The approved draft sent by the Will.</p>
+                    </div>
+
+                    <!-- User Prompt (xt) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">User Prompt (x_t)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The original context of the conversation.</p>
+                    </div>
+
+                    <!-- Values (V) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Values (V)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The active set of ethical values and their weights.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arrow Down -->
+            <div class="h-16 flex justify-center items-center">
+                <div class="w-px h-full bg-blue-300"></div>
+            </div>
+            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
+
+            <!-- The Conscience Engine Section -->
+            <div class="text-center">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">2. The Conscience Evaluates the Interaction</h2>
+                <div class="bg-white p-8 rounded-xl border-2 border-blue-500 shadow-xl max-w-3xl mx-auto">
+                    <div class="flex items-center justify-center mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M16 20h4a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2h4"></path><path d="M12 11h4"></path><path d="M12 15h2"></path><path d="M7 11h2"></path></svg>
+                        <h3 class="text-2xl font-bold ml-3 text-gray-900">The Conscience (C)</h3>
+                    </div>
+                    <p class="text-gray-600 mb-6">Acting as the "judicial branch," the Conscience audits the response against every value in the ethical profile to determine how well it aligned.</p>
+                    <div class="bg-gray-100 p-4 rounded-md text-center text-sm border border-gray-200">
+                        <p class="font-mono text-base text-gray-800">L_t = C(a_t, x_t, V)</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Arrow Down -->
+            <div class="h-16 flex justify-center items-center">
+                <div class="w-px h-full bg-blue-300"></div>
+            </div>
+            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
+
+            <!-- The Ledger Output Section -->
+            <div class="text-center">
+                 <h2 class="text-xl font-semibold text-gray-700 mb-6">3. The Output: A Detailed Ethical Ledger</h2>
+                 <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md max-w-4xl mx-auto">
+                    <div class="flex items-center justify-center mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+                        <h3 class="text-xl font-semibold ml-2 text-gray-900">The Ledger (L_t)</h3>
+                    </div>
+                     <p class="text-gray-600 text-sm mb-6">For each value, the ledger provides a score, a confidence level, and a rationale.</p>
+                    
+                    <!-- Example Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-600">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-200">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3">Value (v_i)</th>
+                                    <th scope="col" class="px-6 py-3 text-center">Score (s_{i,t})</th>
+                                    <th scope="col" class="px-6 py-3 text-center">Confidence (c_{i,t})</th>
+                                    <th scope="col" class="px-6 py-3">Rationale (q_{i,t})</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="bg-white border-b">
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Honesty</th>
+                                    <td class="px-6 py-4 text-center font-mono">0</td>
+                                    <td class="px-6 py-4 text-center font-mono">0.9</td>
+                                    <td class="px-6 py-4">"Acknowledges honesty but frames it as one of several competing values."</td>
+                                </tr>
+                                <tr class="bg-white">
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">Compassion</th>
+                                    <td class="px-6 py-4 text-center font-mono">+1</td>
+                                    <td class="px-6 py-4 text-center font-mono">1.0</td>
+                                    <td class="px-6 py-4">"Strongly affirms compassion as a primary ethical consideration."</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+             <!-- Final Step -->
+            <div class="text-center pt-12">
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-r-lg max-w-md mx-auto text-left">
+                    <p class="font-semibold">Next Step:</p>
+                    <p class="text-sm">The Ledger is passed to the <strong>Spirit</strong> to update SAFi's long-term memory.</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+        <!-- In safi-infographic.html -->
+<script>
+    function sendHeight() {
+        const height = document.body.scrollHeight;
+        // **Correction:** Specify the exact domain of the parent website
+        parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
+    }
+    window.onload = sendHeight;
+    const resizeObserver = new ResizeObserver(sendHeight);
+    resizeObserver.observe(document.body);
+</script>
+</body>
+</html>
