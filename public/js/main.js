@@ -41,13 +41,7 @@ async function handleProfileChange(event) {
         const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
         ui.showToast(`Profile switched to ${selectedProfile.name}`, 'success');
         
-        // --- CHANGE ---
-        // Instead of partially updating the state with checkLoginStatus(),
-        // we perform a full page reload. This is a more robust way to ensure
-        // the frontend, backend session, and database are all perfectly
-        // synchronized after a profile change, preventing the state mismatch
-        // that was causing the profile to unexpectedly reset.
-        window.location.reload();
+        await checkLoginStatus();
 
     } catch (error) {
         console.error('Failed to switch profile:', error);
