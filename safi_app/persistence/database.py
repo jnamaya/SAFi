@@ -219,8 +219,7 @@ def delete_user(user_id: str):
         if conn and conn.is_connected():
             conn.close()
 
-# --- CHANGE: Renamed save_spirit_memory to reflect its use within a transaction ---
-# This makes it clear that this function should not be called on its own.
+
 def save_spirit_memory_in_transaction(cursor, profile_name: str, memory: Dict[str, Any]):
     mu_list = memory.get('mu', np.array([])).tolist()
     mu_json = json.dumps(mu_list)
@@ -234,25 +233,42 @@ def save_spirit_memory_in_transaction(cursor, profile_name: str, memory: Dict[st
     """
     cursor.execute(sql, (profile_name, turn, mu_json))
 
-# --- CHANGE: Renamed load_spirit_memory and added locking ---
-# This new function now initiates a transaction and applies a row-level lock
-# (`FOR UPDATE`) to prevent the concurrency race condition. It now requires
-# an active connection to be passed in, so the transaction can be managed
-# by the calling function in the orchestrator.
+
 def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dict[str, Any]]:
-    # Start a transaction
     cursor.execute("START TRANSACTION")
-    # Select the row and lock it so no other process can read or write to it
     cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = %s FOR UPDATE", (profile_name,))
     row = cursor.fetchone()
     if row:
         turn, mu_json = row
         mu_list = json.loads(mu_json) if mu_json else []
         return {"turn": turn, "mu": np.array(mu_list)}
-    
-    # If no memory exists, we still need to hold the lock until the new
-    # memory is inserted later in the transaction.
     return None
+
+# --- FIX: Re-added the non-locking spirit memory load function ---
+# This function is required by the orchestrator to fetch a read-only copy of
+# the spirit memory for constructing the initial prompt. It was accidentally
+# removed when the transactional locking version was created.
+def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Loads spirit memory without a database lock. Used for read-only operations.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = %s", (profile_name,))
+        row = cursor.fetchone()
+        if row:
+            turn, mu_json = row
+            mu_list = json.loads(mu_json) if mu_json else []
+            return {"turn": turn, "mu": np.array(mu_list)}
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def record_prompt_usage(user_id: str):
@@ -319,10 +335,7 @@ def create_conversation(user_id: str) -> Dict[str, str]:
         if conn and conn.is_connected():
             conn.close()
 
-# --- CHANGE: Added pagination to the history fetch ---
-# This function now accepts 'limit' and 'offset' parameters to fetch the chat
-# history in chunks. This prevents loading the entire history of a long
-# conversation at once, which is a key optimization for the frontend.
+
 def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     conn = None
     cursor = None
@@ -337,9 +350,6 @@ def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, o
             LIMIT %s OFFSET %s
         """
         cursor.execute(query, (conversation_id, limit, offset))
-        # --- CHANGE: Reverse the results before returning ---
-        # We fetch in descending order to get the *latest* messages first,
-        # but the UI needs to display them in ascending (chronological) order.
         results = cursor.fetchall()
         return list(reversed(results))
     finally:
@@ -485,3 +495,4 @@ def set_conversation_title_from_first_message(conversation_id: str, message: str
     new_title = (message[:50] + '...') if len(message) > 50 else message
     rename_conversation(conversation_id, new_title)
     return new_title
+
