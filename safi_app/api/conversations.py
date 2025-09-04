@@ -8,18 +8,30 @@ from ..core.orchestrator import SAFi
 from ..core.values import get_profile, list_profiles
 from ..config import Config
 
-# Conversations API blueprint
 conversations_bp = Blueprint('conversations', __name__)
 
-# This helper function ensures the SAFi orchestrator is created
-# only when needed, using the correct user profile.
+# --- CHANGE: Added a cache for SAFi instances ---
+# This dictionary will store initialized SAFi orchestrators, keyed by their
+# profile name. This is a major optimization that prevents re-creating the
+# SAFi object and its faculties on every single request.
+safi_instances = {}
+
 def _load_safi(profile_name: str) -> SAFi:
     """
-    Build and return a SAFi orchestrator bound to a specific profile.
+    Build and return a SAFi orchestrator, using a cache to avoid re-creation.
     """
+    # --- CHANGE: Check the cache first ---
+    # If an instance for this profile already exists, return it immediately.
+    if profile_name in safi_instances:
+        return safi_instances[profile_name]
+
+    # If not in the cache, create a new instance
     prof = get_profile(profile_name)
-    # The SAFi object is created here, inside a function call, not at the global scope.
-    return SAFi(config=Config, value_profile_or_list=prof)
+    instance = SAFi(config=Config, value_profile_or_list=prof)
+    
+    # --- CHANGE: Store the new instance in the cache ---
+    safi_instances[profile_name] = instance
+    return instance
 
 def get_user_id():
     """
@@ -59,8 +71,7 @@ def process_prompt_endpoint():
     
     if limit > 0:
         db.record_prompt_usage(user_id)
-
-    # The SAFi system is loaded here, during the request, which is correct.
+    
     user_profile = get_user_profile_name()
     saf_system = _load_safi(user_profile)
     
@@ -171,7 +182,14 @@ def get_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    history = db.fetch_chat_history_for_conversation(conversation_id)
+    
+    # --- CHANGE: Support for pagination ---
+    # The endpoint now checks for 'limit' and 'offset' query parameters
+    # to pass to the updated database function.
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=limit, offset=offset)
     return jsonify(history)
 
 
@@ -183,7 +201,10 @@ def export_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    history = db.fetch_chat_history_for_conversation(conversation_id)
+    
+    # Note: Export still fetches the full history, ignoring pagination.
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0)
+    
     convos = db.fetch_user_conversations(user_id)
     convo_title = next((c['title'] for c in convos if c['id'] == conversation_id), "Untitled")
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()

@@ -41,7 +41,7 @@ async function handleProfileChange(event) {
         const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
         ui.showToast(`Profile switched to ${selectedProfile.name}`, 'success');
         
-        await checkLoginStatus();
+        window.location.reload();
 
     } catch (error) {
         console.error('Failed to switch profile:', error);
@@ -112,7 +112,11 @@ async function switchConversation(id) {
     ui.resetChatView();
 
     try {
-        const history = await api.fetchHistory(id);
+        // --- CHANGE: Implement pagination ---
+        // Instead of fetching the entire history, we now only fetch the first
+        // page of messages. The 'fetchHistory' function in api.js will need to
+        // be updated to support this.
+        const history = await api.fetchHistory(id, 50, 0); // Fetch first 50 messages
         
         if (history?.length > 0) {
             history.forEach((turn, i) => {
@@ -183,14 +187,11 @@ async function sendMessage() {
     const loadingIndicator = ui.showLoadingIndicator();
     const thinkingStatus = loadingIndicator.querySelector('#thinking-status');
 
-    // --- CHANGE: Removed the long safiLoop array and setInterval ---
-
-    // --- CHANGE: Added a simple timeout to change text if response is slow ---
     const thinkingTimeout = setTimeout(() => {
         if (thinkingStatus) {
             thinkingStatus.textContent = 'Still thinking...';
         }
-    }, 4000); // 4 seconds
+    }, 4000);
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
@@ -210,7 +211,10 @@ async function sendMessage() {
         }
         
         if (initialResponse.messageId) {
-            pollForAuditResults(initialResponse.messageId);
+            // --- CHANGE: Pass the correct conversation ID to the poller ---
+            // This fixes the race condition where switching conversations could
+            // cause the poller to fetch data for the wrong chat.
+            pollForAuditResults(initialResponse.messageId, currentConversationId);
         }
         
     } catch (error) {
@@ -219,7 +223,6 @@ async function sendMessage() {
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
-        // --- CHANGE: Clear the new timeout instead of the old interval ---
         clearTimeout(thinkingTimeout);
         if(loadingIndicator) loadingIndicator.remove();
         buttonIcon.classList.remove('hidden');
@@ -229,7 +232,8 @@ async function sendMessage() {
     }
 }
 
-function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
+// --- CHANGE: The poller now accepts the conversationId as a parameter ---
+function pollForAuditResults(messageId, conversationId, maxAttempts = 10, interval = 2000) {
     let attempts = 0;
 
     const executePoll = async (resolve, reject) => {
@@ -240,7 +244,9 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             const ledger = typeof result.ledger === 'string' ? JSON.parse(result.ledger) : result.ledger;
             const values = typeof result.values === 'string' ? JSON.parse(result.values) : result.values;
 
-            const history = await api.fetchHistory(currentConversationId);
+            // --- CHANGE: Use the passed-in conversationId for the history fetch ---
+            // This ensures we always get the history for the correct conversation.
+            const history = await api.fetchHistory(conversationId, 9999, 0); // Fetch full history for trend
             const currentTurnIndex = history.findIndex(t => t.message_id === messageId);
 
             const payload = {

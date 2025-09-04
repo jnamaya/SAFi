@@ -31,7 +31,15 @@ export const fetchConversations = () => fetchWithHandling(urls.CONVERSATIONS);
 export const createNewConversation = () => fetchWithHandling(urls.CONVERSATIONS, { method: 'POST' });
 export const renameConversation = (id, title) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}`, { method: 'PUT', body: JSON.stringify({ title }) });
 export const deleteConversation = (id) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}`, { method: 'DELETE' });
-export const fetchHistory = (id) => fetchWithHandling(`${urls.CONVERSATIONS}/${id}/history`);
+
+// --- CHANGE: Updated fetchHistory to support pagination ---
+// This function now takes limit and offset parameters and appends them
+// to the URL as query strings for the backend to use.
+export const fetchHistory = (id, limit = 50, offset = 0) => {
+    const url = `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`;
+    return fetchWithHandling(url);
+};
+
 export const processUserMessage = (message, conversation_id) => fetchWithHandling(urls.PROCESS, { method: 'POST', body: JSON.stringify({ message, conversation_id }) });
 export const fetchAuditResult = (messageId) => fetchWithHandling(`${urls.AUDIT}/${messageId}`);
 export const checkConnection = () => fetch('/api/health').then(res => res.ok).catch(() => false);

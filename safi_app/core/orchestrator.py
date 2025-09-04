@@ -78,13 +78,11 @@ class SAFi:
         self.log_template = getattr(config, "LOG_FILE_TEMPLATE", None)
         self.active_profile_name = (self.profile or {}).get("name", "custom").lower()
 
-        dim = max(len(self.values), 1)
-        loaded_memory = db.load_spirit_memory(self.active_profile_name)
-        self.memory = loaded_memory or {"turn": 0, "mu": np.zeros(dim)}
-        if len(self.memory.get("mu", [])) != dim: self.memory["mu"] = np.zeros(dim)
+        # --- CHANGE: Spirit memory is no longer loaded on initialization ---
+        # It will be loaded within a database transaction during the audit process
+        # to prevent race conditions.
         self.last_drift = 0.0
 
-        # --- MODIFIED: All faculties now use the single groq_client ---
         self.intellect_engine = IntellectEngine(
             self.groq_client, model=getattr(config, "INTELLECT_MODEL"), profile=self.profile, prompt_config=self.prompts["intellect_engine"]
         )
@@ -100,12 +98,25 @@ class SAFi:
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         memory_summary = db.fetch_conversation_summary(conversation_id)
-        history = db.fetch_chat_history_for_conversation(conversation_id)
-        new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history else None
-        spirit_feedback = _construct_spirit_feedback(self.memory.get("mu"), self.values, self.last_drift)
+        
+        # --- CHANGE: We can't construct spirit feedback here anymore ---
+        # Since spirit memory is loaded inside the audit thread's transaction,
+        # we'll fetch it from a non-locking read just for the initial feedback.
+        # This is a read-only operation, so it's safe from race conditions.
+        temp_spirit_memory = db.load_spirit_memory(self.active_profile_name) # Assuming you create a non-locking version
+        if temp_spirit_memory is None:
+             dim = max(len(self.values), 1)
+             temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)}
+
+        spirit_feedback = _construct_spirit_feedback(temp_spirit_memory.get("mu"), self.values, self.last_drift)
 
         a_t, r_t = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
         message_id = str(uuid.uuid4())
+        
+        # Determine if this is the first message to create a title
+        history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
+        new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
+
         db.insert_memory_entry(conversation_id, "user", user_prompt)
 
         if not a_t:
@@ -127,27 +138,40 @@ class SAFi:
                 "willDecision": D_t,
                 "willReason": E_t,
                 "conscienceLedger": [],
-                "mu_t_vector": self.memory.get("mu", np.zeros(len(self.values))).tolist()
             })
             return { "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
-        snapshot = { "t": int(self.memory["turn"]) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary }
+        snapshot = { "t": int(temp_spirit_memory["turn"]) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary }
         threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
+        # --- CHANGE: Implemented transaction handling for spirit memory ---
+        # This entire block now runs within a database transaction to prevent
+        # the spirit memory update race condition.
+        conn = None
         try:
+            conn = db.get_db_connection()
+            cursor = conn.cursor()
+
+            # Load and lock the spirit memory for the current profile
+            memory = db.load_and_lock_spirit_memory(conn, cursor, self.active_profile_name)
+            dim = max(len(self.values), 1)
+            if memory is None:
+                memory = {"turn": 0, "mu": np.zeros(dim)}
+
+            # Perform the audit (CPU-bound, safe within transaction)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             ledger = loop.run_until_complete(self.conscience.evaluate(final_output=snapshot["a_t"], user_prompt=snapshot["x_t"], reflection=snapshot["r_t"]))
             loop.close()
 
-            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, self.memory.get("mu", np.zeros(len(self.values))))
+            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
             self.last_drift = drift_val if drift_val is not None else 0.0
-
+            
             log_entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "t": snapshot["t"],
@@ -168,12 +192,26 @@ class SAFi:
             }
             self._append_log(log_entry)
 
-            self.memory["turn"] += 1
-            self.memory["mu"] = np.array(mu_new)
-            db.save_spirit_memory(self.active_profile_name, self.memory)
+            # Update memory state and save it within the transaction
+            memory["turn"] += 1
+            memory["mu"] = np.array(mu_new)
+            db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
+            
+            # The audit results update can also happen inside the transaction
             db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values)
+
+            # Commit the transaction to release the lock and save changes
+            conn.commit()
+
         except Exception as e:
+            # If anything fails, roll back the entire transaction
+            if conn:
+                conn.rollback()
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr); import traceback; traceback.print_exc(file=sys.stderr)
+        finally:
+            # Always ensure the connection is closed
+            if conn and conn.is_connected():
+                conn.close()
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         try:
