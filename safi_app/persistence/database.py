@@ -219,50 +219,40 @@ def delete_user(user_id: str):
         if conn and conn.is_connected():
             conn.close()
 
+# --- CHANGE: Renamed save_spirit_memory to reflect its use within a transaction ---
+# This makes it clear that this function should not be called on its own.
+def save_spirit_memory_in_transaction(cursor, profile_name: str, memory: Dict[str, Any]):
+    mu_list = memory.get('mu', np.array([])).tolist()
+    mu_json = json.dumps(mu_list)
+    turn = memory.get('turn', 0)
+    sql = """
+        INSERT INTO spirit_memory (profile_name, turn, mu)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            turn = VALUES(turn),
+            mu = VALUES(mu)
+    """
+    cursor.execute(sql, (profile_name, turn, mu_json))
 
-def save_spirit_memory(profile_name: str, memory: Dict[str, Any]):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        mu_list = memory.get('mu', np.array([])).tolist()
-        mu_json = json.dumps(mu_list)
-        turn = memory.get('turn', 0)
-        sql = """
-            INSERT INTO spirit_memory (profile_name, turn, mu)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                turn = VALUES(turn),
-                mu = VALUES(mu)
-        """
-        cursor.execute(sql, (profile_name, turn, mu_json))
-        conn.commit()
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
-
-
-def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = %s", (profile_name,))
-        row = cursor.fetchone()
-        if row:
-            turn, mu_json = row
-            mu_list = json.loads(mu_json) if mu_json else []
-            return {"turn": turn, "mu": np.array(mu_list)}
-        return None
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+# --- CHANGE: Renamed load_spirit_memory and added locking ---
+# This new function now initiates a transaction and applies a row-level lock
+# (`FOR UPDATE`) to prevent the concurrency race condition. It now requires
+# an active connection to be passed in, so the transaction can be managed
+# by the calling function in the orchestrator.
+def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dict[str, Any]]:
+    # Start a transaction
+    cursor.execute("START TRANSACTION")
+    # Select the row and lock it so no other process can read or write to it
+    cursor.execute("SELECT turn, mu FROM spirit_memory WHERE profile_name = %s FOR UPDATE", (profile_name,))
+    row = cursor.fetchone()
+    if row:
+        turn, mu_json = row
+        mu_list = json.loads(mu_json) if mu_json else []
+        return {"turn": turn, "mu": np.array(mu_list)}
+    
+    # If no memory exists, we still need to hold the lock until the new
+    # memory is inserted later in the transaction.
+    return None
 
 
 def record_prompt_usage(user_id: str):
@@ -329,22 +319,29 @@ def create_conversation(user_id: str) -> Dict[str, str]:
         if conn and conn.is_connected():
             conn.close()
 
-
-def fetch_chat_history_for_conversation(conversation_id: str) -> List[Dict[str, Any]]:
+# --- CHANGE: Added pagination to the history fetch ---
+# This function now accepts 'limit' and 'offset' parameters to fetch the chat
+# history in chunks. This prevents loading the entire history of a long
+# conversation at once, which is a key optimization for the frontend.
+def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
+        query = """
             SELECT role, content, timestamp, message_id, conscience_ledger, 
                    spirit_score, spirit_note, profile_name, profile_values 
-            FROM chat_history WHERE conversation_id = %s ORDER BY timestamp ASC
-            """,
-            (conversation_id,)
-        )
-        return cursor.fetchall()
+            FROM chat_history WHERE conversation_id = %s 
+            ORDER BY timestamp DESC
+            LIMIT %s OFFSET %s
+        """
+        cursor.execute(query, (conversation_id, limit, offset))
+        # --- CHANGE: Reverse the results before returning ---
+        # We fetch in descending order to get the *latest* messages first,
+        # but the UI needs to display them in ascending (chronological) order.
+        results = cursor.fetchall()
+        return list(reversed(results))
     finally:
         if cursor:
             cursor.close()
@@ -398,7 +395,6 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
     cursor = None
     try:
         conn = get_db_connection()
-        # --- FIXED: Use dictionary=True to get column names ---
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             """
@@ -410,15 +406,13 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
         )
         row = cursor.fetchone()
         if row:
-            # --- FIXED: Standardize the keys to match the frontend expectations ---
-            # This ensures consistency between historical and polled data.
             return {
                 "status": row.get('audit_status'),
                 "ledger": row.get('conscience_ledger'),
                 "spirit_score": row.get('spirit_score'),
                 "spirit_note": row.get('spirit_note'),
-                "profile": row.get('profile_name'), # Frontend expects 'profile'
-                "values": row.get('profile_values') # Frontend expects 'values'
+                "profile": row.get('profile_name'), 
+                "values": row.get('profile_values') 
             }
         return None
     finally:
