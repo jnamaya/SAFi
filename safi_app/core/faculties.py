@@ -7,6 +7,21 @@ from openai import OpenAI
 
 from ..utils import normalize_text, dict_sha256
 
+# --- Robust label normalization to prevent first-run ledger mismatches ---
+import re
+import unicodedata
+DASHES = ["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"]  # hyphen, nb-hyphen, figure dash, en, em, minus
+
+def _norm_label(s: str) -> str:
+    """Normalize labels for safe matching across Unicode variants and spacing."""
+    if s is None:
+        return ""
+    s = unicodedata.normalize("NFKC", str(s))
+    for d in DASHES:
+        s = s.replace(d, "-")
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
 
 class IntellectEngine:
     """
@@ -151,30 +166,64 @@ class ConscienceAuditor:
 class SpiritIntegrator:
     """
     Integrates conscience evaluations into a long-term spirit memory vector (mu).
-    This class is purely mathematical and requires no changes.
+    Pure math, with robust label handling and safer drift calculation.
     """
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
         self.values = values
         self.beta = beta
         self.value_weights = np.array([v['weight'] for v in self.values]) if self.values else np.array([1.0])
+        # Normalized label index (prevents Unicode hyphen and spacing mismatches)
+        self._norm_values = [_norm_label(v['value']) for v in self.values] if self.values else []
+        self._norm_index = {name: i for i, name in enumerate(self._norm_values)}
 
     def compute(self, ledger: List[Dict[str, Any]], mu_tm1: np.ndarray):
-        if not self.values or not ledger or len(ledger) != len(self.values):
+        # Basic guard
+        if not self.values or not ledger:
             return 1, "Incomplete ledger", mu_tm1, np.zeros_like(mu_tm1), None
 
-        lmap = {row['value']: row for row in ledger}
-        sorted_rows = [lmap.get(v['value']) for v in self.values]
+        # Normalize ledger labels and build a map
+        lmap: Dict[str, Dict[str, Any]] = {}
+        for row in ledger:
+            key = _norm_label(row.get('value'))
+            if key:  # keep last occurrence if duplicates
+                lmap[key] = row
+
+        # Reorder to the configured values; collect missing
+        sorted_rows: List[Optional[Dict[str, Any]]] = []
+        missing_human: List[str] = []
+        for i, nkey in enumerate(self._norm_values):
+            row = lmap.get(nkey)
+            if row is None:
+                missing_human.append(self.values[i]['value'])
+                sorted_rows.append(None)
+            else:
+                sorted_rows.append(row)
+
         if any(r is None for r in sorted_rows):
-            return 1, "Ledger missing values", mu_tm1, np.zeros_like(mu_tm1), None
+            note = f"Ledger missing values: {', '.join(missing_human)}"
+            return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
 
-        scores = np.array([float(r.get('score', 0)) for r in sorted_rows])
-        confidences = np.array([float(r.get('confidence', 0)) for r in sorted_rows])
+        # Build vectors in canonical order
+        scores = np.array([float(r.get('score', 0.0)) for r in sorted_rows], dtype=float)
+        confidences = np.array([float(r.get('confidence', 0.0)) for r in sorted_rows], dtype=float)
 
+        # Weighted sum with clipping → 1..10 score
         raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
+
+        # Directional vector for memory update (kept parity with existing behavior)
         p_t = self.value_weights * scores
+
+        # Exponential moving average (mu update)
         mu_new = self.beta * mu_tm1 + (1 - self.beta) * p_t
-        denom = (np.linalg.norm(p_t) * np.linalg.norm(mu_tm1))
-        drift = 0.0 if denom == 0 else (1 - float(np.dot(p_t, mu_tm1) / denom))
-        note = f"Coherence {spirit_score}/10, drift {drift:.2f}."
+
+        # Cosine drift with epsilon guard against near-zero norms
+        eps = 1e-8
+        denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1))
+        if denom < eps:
+            drift = None
+        else:
+            drift = 1.0 - float(np.dot(p_t, mu_tm1) / denom)
+
+        note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
