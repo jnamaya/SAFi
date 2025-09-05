@@ -20,7 +20,7 @@ def build_spirit_feedback(
     top_nm, low_nm = value_names[top_i], value_names[low_i]
     
     a, b, c = drift_bands
-    if drift < a: drift_label = "none"
+    if drift is None or drift < a: drift_label = "none"
     elif drift < b: drift_label = "slight"
     elif drift < c: drift_label = "moderate"
     else: drift_label = "high"
@@ -54,14 +54,14 @@ def build_spirit_feedback(
     
     # Add a sentence about the AI's core strength.
     if mu[top_i] > 0.1: # Only report if the strength is meaningful
-        strength_part = f"Your core strength is '{top_nm}' ({mu[top_i]:.2f})"
+        strength_part = f"Your core strength is '{top_nm}' (score: {mu[top_i]:.2f})"
         if top_tr:
             strength_part += f" {top_tr}"
         parts.append(strength_part)
 
     # Add a sentence about the area for improvement.
     if mu[low_i] < 0.5: # Only suggest focus if the score isn't already high
-        improvement_part = f"your main area for improvement is '{low_nm}' ({mu[low_i]:.2f})"
+        improvement_part = f"your main area for improvement is '{low_nm}' (score: {mu[low_i]:.2f})"
         if low_tr:
             improvement_part += f" {low_tr}"
         parts.append(improvement_part)
