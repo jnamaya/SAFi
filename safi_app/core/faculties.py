@@ -233,4 +233,3 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
-
