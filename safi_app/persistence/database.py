@@ -244,10 +244,6 @@ def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dic
         return {"turn": turn, "mu": np.array(mu_list)}
     return None
 
-# --- FIX: Re-added the non-locking spirit memory load function ---
-# This function is required by the orchestrator to fetch a read-only copy of
-# the spirit memory for constructing the initial prompt. It was accidentally
-# removed when the transactional locking version was created.
 def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
     """
     Loads spirit memory without a database lock. Used for read-only operations.
@@ -342,11 +338,14 @@ def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, o
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
+        # --- FIX: Sort by the auto-incrementing `id` column ---
+        # Sorting by `id` instead of `timestamp` guarantees correct message order
+        # and is immune to clock skew issues between server processes.
         query = """
             SELECT role, content, timestamp, message_id, conscience_ledger, 
                    spirit_score, spirit_note, profile_name, profile_values 
             FROM chat_history WHERE conversation_id = %s 
-            ORDER BY timestamp DESC
+            ORDER BY id DESC
             LIMIT %s OFFSET %s
         """
         cursor.execute(query, (conversation_id, limit, offset))

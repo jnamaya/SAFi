@@ -9,29 +9,11 @@ from typing import List, Dict, Any, Union, Optional
 import sys
 from pathlib import Path
 from openai import OpenAI
-
-# SAFi faculties and helpers
-from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
+from collections import deque
+from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from ..utils import dict_sha256
-
-def _construct_spirit_feedback(mu_vector: np.ndarray, values: List[Dict[str, str]], last_drift: float) -> str:
-    """
-    Generates a natural-language feedback string from the spirit memory.
-    """
-    if mu_vector is None or len(mu_vector) == 0 or np.all(mu_vector == 0):
-        return "No performance history yet. Strive to align with all declared values."
-    strongest_value_index = np.argmax(mu_vector)
-    weakest_value_index = np.argmin(mu_vector)
-    strongest_value_name = values[strongest_value_index]['value']
-    weakest_value_name = values[weakest_value_index]['value']
-    feedback_parts = [f"Your long-term performance shows strong alignment with '{strongest_value_name}'."]
-    if mu_vector[weakest_value_index] < 0.5:
-        feedback_parts.append(f"Focus on improving your alignment with the value of '{weakest_value_name}' in your next response.")
-    if last_drift > 0.2:
-        feedback_parts.append("Note: Your most recent response showed a significant drift from your established baseline.")
-    return " ".join(feedback_parts)
-
+from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
 
 class SAFi:
     """
@@ -77,11 +59,14 @@ class SAFi:
         self.log_dir = getattr(config, "LOG_DIR", "logs")
         self.log_template = getattr(config, "LOG_FILE_TEMPLATE", None)
         self.active_profile_name = (self.profile or {}).get("name", "custom").lower()
-
-        # --- CHANGE: Spirit memory is no longer loaded on initialization ---
-        # It will be loaded within a database transaction during the audit process
-        # to prevent race conditions.
+        
         self.last_drift = 0.0
+        
+        # --- CHANGE: Added a deque to store recent mu vectors for trend analysis ---
+        # A deque is a highly efficient list-like object for adding and removing
+        # items from either end. We'll keep a rolling history of the last 5 mu vectors.
+        self.mu_history = deque(maxlen=5)
+
 
         self.intellect_engine = IntellectEngine(
             self.groq_client, model=getattr(config, "INTELLECT_MODEL"), profile=self.profile, prompt_config=self.prompts["intellect_engine"]
@@ -99,21 +84,23 @@ class SAFi:
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         memory_summary = db.fetch_conversation_summary(conversation_id)
         
-        # --- CHANGE: We can't construct spirit feedback here anymore ---
-        # Since spirit memory is loaded inside the audit thread's transaction,
-        # we'll fetch it from a non-locking read just for the initial feedback.
-        # This is a read-only operation, so it's safe from race conditions.
-        temp_spirit_memory = db.load_spirit_memory(self.active_profile_name) # Assuming you create a non-locking version
+        temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              dim = max(len(self.values), 1)
              temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)}
 
-        spirit_feedback = _construct_spirit_feedback(temp_spirit_memory.get("mu"), self.values, self.last_drift)
+        # --- CHANGE: Call the new, more sophisticated feedback function ---
+        # We pass the current memory state and the history we've been tracking.
+        spirit_feedback = build_spirit_feedback(
+            mu=temp_spirit_memory.get("mu", np.zeros(len(self.values))),
+            value_names=[v['value'] for v in self.values],
+            drift=self.last_drift,
+            recent_mu=list(self.mu_history)
+        )
 
         a_t, r_t = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
         message_id = str(uuid.uuid4())
         
-        # Determine if this is the first message to create a title
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
         new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
 
@@ -149,21 +136,16 @@ class SAFi:
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
-        # --- CHANGE: Implemented transaction handling for spirit memory ---
-        # This entire block now runs within a database transaction to prevent
-        # the spirit memory update race condition.
         conn = None
         try:
             conn = db.get_db_connection()
             cursor = conn.cursor()
 
-            # Load and lock the spirit memory for the current profile
             memory = db.load_and_lock_spirit_memory(conn, cursor, self.active_profile_name)
             dim = max(len(self.values), 1)
             if memory is None:
                 memory = {"turn": 0, "mu": np.zeros(dim)}
 
-            # Perform the audit (CPU-bound, safe within transaction)
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             ledger = loop.run_until_complete(self.conscience.evaluate(final_output=snapshot["a_t"], user_prompt=snapshot["x_t"], reflection=snapshot["r_t"]))
@@ -192,24 +174,24 @@ class SAFi:
             }
             self._append_log(log_entry)
 
-            # Update memory state and save it within the transaction
             memory["turn"] += 1
             memory["mu"] = np.array(mu_new)
             db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
             
-            # The audit results update can also happen inside the transaction
+            # --- CHANGE: Update the mu_history after a successful audit ---
+            # We add the newly computed mu vector to our history deque so it
+            # can be used in the next turn's trend analysis.
+            self.mu_history.append(mu_new)
+            
             db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values)
 
-            # Commit the transaction to release the lock and save changes
             conn.commit()
 
         except Exception as e:
-            # If anything fails, roll back the entire transaction
             if conn:
                 conn.rollback()
             print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr); import traceback; traceback.print_exc(file=sys.stderr)
         finally:
-            # Always ensure the connection is closed
             if conn and conn.is_connected():
                 conn.close()
 
@@ -239,3 +221,4 @@ class SAFi:
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e: print(f"Log write error to {log_path}: {e}", file=sys.stderr)
+
