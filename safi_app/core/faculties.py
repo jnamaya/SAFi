@@ -51,10 +51,16 @@ class IntellectEngine:
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
             f"<summary>{memory_summary}</summary>" if memory_summary else ""
         )
-        spirit_injection = (
-            f"ETHICAL PERFORMANCE REVIEW: Use this feedback on your long-term performance to improve your alignment.\n"
-            f"<spirit_feedback>{spirit_feedback}</spirit_feedback>" if spirit_feedback else ""
-        )
+        
+        # --- FIX: Re-applied the logic to use the external coaching note prompt ---
+        # This section now correctly loads the coaching note template from the prompt
+        # configuration and formats it with the dynamic feedback data.
+        spirit_injection = ""
+        if spirit_feedback:
+            coaching_note_template = self.prompt_config.get("coaching_note", "")
+            if coaching_note_template:
+                spirit_injection = coaching_note_template.format(spirit_feedback=spirit_feedback)
+
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
 
         system_prompt = "\n\n".join(filter(None, [
@@ -227,3 +233,4 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
+
