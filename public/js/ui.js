@@ -87,7 +87,7 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler) 
           </button>
           <div id="settings-dropdown" class="absolute bottom-full right-0 mb-2 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 hidden z-10">
             <div class="p-2">
-              <label for="profile-selector" class="block text-xs font-medium text-neutral-500 dark:text-neutral-400 px-2 mb-1">Active Ethical profile</label>
+              <label for="profile-selector" class="block text-xs font-medium text-neutral-500 dark:text-neutral-400 px-2 mb-1">Active Persona</label>
               <select id="profile-selector" class="w-full text-sm bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-md py-1.5 px-2 focus:ring-green-500 focus:border-green-500"></select>
             </div>
             <div class="border-t border-neutral-200 dark:border-neutral-700 my-1"></div>
@@ -351,7 +351,7 @@ export function closeModal() {
 
 function renderIntro(payload) {
     const profileName = payload.profile ? `the <strong>${payload.profile}</strong>` : 'the current';
-    return `<p class="text-base text-neutral-600 dark:text-neutral-300 mb-6">This response was shaped by ${profileName} ethical profile. Here’s a breakdown of the reasoning:</p>`;
+    return `<p class="text-base text-neutral-600 dark:text-neutral-300 mb-6">This response was shaped by ${profileName} persona. Here’s a breakdown of the reasoning:</p>`;
 }
 
 function renderScoreAndTrend(payload) {
@@ -564,11 +564,11 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
     elements.activeProfileDisplay.innerHTML = `<div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
-        <p class="text-sm text-neutral-500 dark:text-neutral-400">ethical profile, which includes these values:</p>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400">persona, which includes these values:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
         ${descriptionHtml}
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different ethical profile, click the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> settings gear and select from the dropdown.
+            To choose a different persona, click the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> settings gear and select from the dropdown.
         </div>
 
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
