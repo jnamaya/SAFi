@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="description" content="SAFi - The Ethical Reasoning Engine" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>SAFi - Ethical Reasoning Engine</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <link rel="stylesheet" href="/css/styles.css">
+
+ <script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <script>
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  </script>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-NBYEV6VJGX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-NBYEV6VJGX');
+</script>
+  
+</head>
+<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300">
+
+  <main id="app-container" class="w-full">
+    <div id="sidebar-container">
+        <!-- Sidebar will be dynamically inserted here -->
+    </div>
+
+    <div class="md:ml-80 flex flex-col min-h-screen">
+      <section class="w-full max-w-4xl mx-auto flex flex-col flex-1 px-3 sm:px-0">
+        
+        <!-- Login View -->
+        <div id="login-view" class="w-full flex-1 flex flex-col items-center bg-white dark:bg-black p-6 pt-16">
+          <div class="app-logo mb-6">
+            <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
+          </div>
+          <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
+          <p class="text-neutral-500 dark:text-neutral-400 mt-2">The Ethical Reasoning Engine</p>
+          <div class="max-w-2xl mx-auto text-left text-sm mt-8 space-y-6">
+            <div>
+              <h2 class="font-semibold text-base mb-2">How SAFi Works</h2>
+              <p class="text-neutral-600 dark:text-neutral-300">SAFi processes every prompt through a multi-agent system designed for ethical reasoning:</p>
+              <ul class="list-disc list-inside mt-2 space-y-1 text-neutral-600 dark:text-neutral-300">
+                <li><strong class="font-medium text-black dark:text-white">Values, Intellect, Will, Conscience, Spirit</strong></li>
+              </ul>
+              <p class="text-neutral-600 dark:text-neutral-300 mt-3">
+                For details, visit: <a href="https://selfalignmentframework.com" target="_blank" rel="noopener noreferrer" class="text-green-600 dark:text-green-500 hover:underline font-medium">selfalignmentframework.com/safi</a>
+              </p>
+            </div>
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 dark:border-yellow-500 p-4 rounded-r-lg">
+              <h3 class="font-bold text-yellow-800 dark:text-yellow-200">Important Notice</h3>
+              <p class="text-yellow-700 dark:text-yellow-300 mt-1">
+                SAFi logs all reasoning processes. Do not use personal or sensitive information.
+              </p>
+            </div>
+          </div>
+          <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
+            <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+            Sign in with Google
+          </button>
+        </div>
+
+        <!-- Chat View (Hidden by default) -->
+        <div id="chat-view" class="w-full hidden flex-1 flex-col bg-white dark:bg-black">
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20 md:hidden sticky top-0">
+            <div class="flex items-center gap-3">
+              <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </div>
+            <div class="text-center">
+                <h1 id="chat-title" class="text-[28px] font-semibold leading-tight truncate">SAFi</h1>
+                <p class="text-xs text-gray-500 dark:text-gray-400">The Ethical Reasoning Engine</p>
+            </div>
+            <div class="w-10"></div> <!-- Placeholder for balance -->
+          </header>
+
+          <div id="chat-window" class="flex-1 p-4 sm:p-6 flex flex-col justify-start gap-5">
+            <div id="empty-state" class="text-center pt-8">
+              <div id="active-profile-display"></div>
+            </div>
+          </div>
+
+          <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 sticky bottom-0">
+            <textarea 
+              id="message-input" 
+              rows="1" 
+              class="flex-1 resize-none bg-transparent py-3 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-lg" 
+              placeholder="Ask something..."
+            ></textarea>
+            <button 
+              id="send-button" 
+              type="submit" 
+              aria-label="Send message" 
+              class="shrink-0 bg-green-600 text-white font-semibold w-8 h-8 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center mb-1"
+              disabled
+            >
+              <div id="button-icon">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" transform="rotate(45) translate(0.5, -0.5)">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                  </svg>
+              </div>
+              <div id="button-loader" class="loader hidden"></div>
+            </button>
+          </footer>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
+  <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
+  
+  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-2xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+    <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+      <div class="flex items-center gap-3">
+        <span class="p-2 bg-green-100 dark:bg-green-900/40 rounded-full">
+            <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </span>
+        <h3 id="conscience-modal-title" class="text-lg font-semibold">Ethical Reasoning</h3>
+      </div>
+      <button id="close-conscience-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <div id="conscience-details" class="flex-1 overflow-y-auto custom-scrollbar p-6">
+        <!-- Details will be rendered here -->
+    </div>
+    <div class="flex justify-between items-center p-4 bg-neutral-50 dark:bg-neutral-900/50 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
+        <button id="copy-audit-btn" type="button" class="flex items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            Copy Audit
+        </button>
+        <button id="got-it-conscience-modal" type="button" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm">Got It</button>
+    </div>
+  </div>
+
+  <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+    <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
+    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure? This action is permanent.</p>
+    <div class="flex justify-end gap-3 mt-6">
+      <button id="cancel-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
+      <button id="confirm-delete-btn" type="button" class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
+
