@@ -43,6 +43,8 @@ Thumbs.db
 .vscode/
 # a simple dashboard created in streamit
 dashboard/
+vector_store/
+rag/
 
 
 #test file

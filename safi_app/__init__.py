@@ -20,7 +20,7 @@ def create_app():
 
     # Configure extensions with the app instance
     oauth.init_app(app)
-    cors.init_app(app, supports_credentials=True)
+    cors.init_app(app, supports_credentials=True, origins=["https://emergentphysics.com", "https://www.emergentphysics.com"])
 
     # --- ADDED: Initialize the database within the app context ---
     # This is the correct place to ensure it runs once on startup.
