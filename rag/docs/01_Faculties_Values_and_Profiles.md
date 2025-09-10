@@ -8,42 +8,28 @@ version: 1.0
 
 # SAFi Explained: Values
 
-### **Core Concept: The Role of Values in SAFi**
+## Core concept: the role of values
+Faculties define the how, the fixed repeatable process of alignment. Values define the what, the ethical content and principles the process works on. Values act as the setpoint for the system.
 
-**Q: What is the difference between SAFi's faculties and its values?**
+## Who defines the values
+The responsibility lies with the human or institution implementing the system. SAFi is a tool for alignment. The user provides the core principles that set its direction.
 
-A: In the Self-Alignment Framework Interface (SAFi), the faculties (Intellect, Will, Conscience, and Spirit) define the **"How"**—the fixed, repeatable process of alignment. The Values define the **"What"**—the subjective ethical content and principles that the process operates on. Values are the ethical setpoint for the entire system.
+## The SAFi profile
+SAFi turns abstract principles into a machine readable object called a profile. The profile is the master blueprint for the system’s ethical character and behavior. In practice it is a dictionary found in values.py with several components.
 
-**Q: Who is responsible for deciding the values a SAFi system uses?**
+### Profile components
+- Worldview: a short constitution that defines purpose, goals, and principles. It guides the Intellect.
+- Style: the persona and tone, for example “empathetic, clear, educational.” It instructs the Intellect on voice.
+- Will rules: a list of non negotiable rules enforced by the Will. These are hard guardrails.
+- Values: a list of ethical principles, each with a weight. The Conscience uses them for audits. The Spirit uses them for long term scoring.
 
-A: The responsibility lies with the human individual or institution that implements the system. SAFi is a tool designed for alignment; the user provides the core principles for the system to align with.
+## How profiles guide faculties
+Each profile component instructs one of the faculties.
 
-### **The SAFi Profile: Making Values Operational**
+1. Intellect reads worldview and style to draft a response.
+2. Will applies the will rules to block or approve.
+3. Conscience checks the response against weighted values and produces its audit.
+4. Spirit uses the weights to calculate memory updates and long term performance.
 
-**Q: How does SAFi translate abstract principles into machine instructions?**
-
-A: SAFi transforms abstract values into a structured, machine-readable object called a **profile**. This profile serves as the master blueprint for the AI’s ethical character and behavior. Each profile is a code dictionary (found in values.py) containing several key components.
-
-**Q: What are the key components of a SAFi profile?**
-
-A: A SAFi profile contains the following components:
-
-- **worldview**: The AI's "constitution." It is a detailed narrative that defines the AI’s core purpose, goals, and the fundamental principles from which it should reason. It is the primary directive for the **Intellect** faculty.
-- **style**: Defines the AI’s persona and tone (e.g., “Empathetic, clear, and educational”). It instructs the **Intellect** on how to communicate.
-- **will_rules**: The "Letter of the Law." This is a list of clear, non-negotiable rules and hard-coded guardrails that the **Will** faculty enforces to prevent forbidden actions.
-- **values (list)**: The "Spirit of the Law." This is a list of broader ethical principles, each assigned a numerical weight. This list is used by the **Conscience** for its nuanced audit and by the **Spirit** to calculate long-term performance.
-
-### **How the Profile Instructs the SAFi Faculties**
-
-**Q: How does each part of a profile correspond to a specific SAFi faculty?**
-
-A: Each component of a profile is a static piece of data that directly instructs a faculty in the SAFi loop:
-
-1. The **Intellect** reads the worldview and style to generate its initial response.
-2. The **Will** uses the will_rules as its strict, unchanging checklist to approve or block the response.
-3. The **Conscience** evaluates the final output against the weighted values list to create its audit.
-4. The **Spirit** uses the weights from the values list in its mathematical formulas to update the AI’s long-term memory.
-
-
-## Cross refs
+## Cross references
 - 07 Concepts Personas

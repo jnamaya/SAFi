@@ -2,59 +2,47 @@
 title: SAFi Explained: The End-to-End Technical Workflow
 slug: safi-technical-workflow
 tags: ["safi", "technical", "workflow", "architecture"]
-summary: A step-by-step explanation of the full SAFi loop, detailing the synchronous and asynchronous phases from user prompt to the closed-loop feedback mechanism.
+summary: Step-by-step explanation of the SAFi loop, with synchronous and asynchronous phases from user prompt to closed-loop feedback.
 version: 1.0
 ---
 
 # SAFi Explained: The End-to-End Technical Workflow
 
-### **Q: What is SAFi and how does the system work technically?**
+## Overview
+SAFi is the software implementation of the Self Alignment Framework. It runs as a closed loop with two phases. The synchronous phase handles real time interaction. The asynchronous phase runs in the background to audit and integrate learning.
 
-A: SAFi (Self-Alignment Framework Interface) is the specific software implementation of the SAF theory, designed to align AI systems. It operates as a continuous, closed-loop process with two distinct phases: a **Synchronous Phase** for real-time interaction and an **Asynchronous Phase** for background auditing and learning.
+## Part 1: synchronous phase
+### Step 1: user prompt (x_t)
+The loop begins when a user sends a message.
 
-Here is the step-by-step technical workflow:
+### Step 2: the Intellect proposes
+The Intellect faculty receives the prompt and memory. It produces two outputs.  
+- a_t: the draft answer  
+- r_t: a private reflection on its reasoning  
 
+### Step 3: the Will decides
+The Will faculty checks the draft against the non negotiable rules in the active profile.  
+- If violated, the draft is blocked.  
+- If compliant, the draft is approved.  
 
+### Step 4: user receives answer
+If approved, the draft a_t is sent to the user. The synchronous phase ends here.
 
----
+## Part 2: asynchronous phase
+### Step 5: the Conscience audits
+The approved answer goes to the Conscience. It scores the draft against the weighted values in the profile, creating the ethical ledger L_t.
 
-### **Part 1: The Synchronous Phase (Real-Time)**
+### Step 6: the Spirit integrates
+The ledger goes to the Spirit. It performs three tasks.  
+1. Calculates the Spirit score S_t for coherence  
+2. Measures drift d_t for character alignment  
+3. Updates the memory vector μ_t  
 
-**Step 1: User Prompt (`x_t`)**
-A user sends a message, initiating the loop.
+### Step 7: the loop closes
+The Spirit generates coaching feedback for the Intellect. This feedback conditions the next draft, keeping the loop dynamic and adaptive.
 
-**Step 2: The Intellect Proposes**
-The **Intellect** faculty (a generative AI model) receives the prompt and contextual memory. It generates two outputs:
-* **`a_t` (Draft Answer):** The proposed response.
-* **`r_t` (Reflection):** An internal note on its reasoning.
-
-**Step 3: The Will Decides**
-The draft is sent to the **Will** faculty, a rule-based AI gatekeeper. It checks the draft against the non-negotiable `will_rules` in the AI's Profile.
-* If a rule is violated, the Will **blocks** the draft, and the process stops.
-* If compliant, the Will **approves** it.
-
-**Step 4: User Receives Answer**
-The approved draft (`a_t`) is sent to the user. The real-time interaction is now complete.
-
----
-
-### **Part 2: The Asynchronous Phase (Background)**
-
-**Step 5: The Conscience Audits**
-The approved answer is sent to the **Conscience** faculty. This AI auditor scores the response against the nuanced `values` in the Profile, creating a detailed **Ethical Ledger (`L_t`)**.
-
-**Step 6: The Spirit Integrates**
-The Ledger is sent to the purely mathematical **Spirit** faculty. The Spirit integrates this data by:
-1.  Calculating the **Spirit Score (`S_t`)** for overall coherence.
-2.  Measuring **Drift (`d_t`)** to check for "out of character" behavior.
-3.  Updating the long-term **memory vector (`μ_t`)**.
-
-**Step 7: The Loop Closes**
-The **Spirit** generates natural-language coaching feedback based on its analysis and sends it to the **Intellect**. This feedback informs the Intellect's next generation, making alignment a dynamic, continuous learning process.
-
----
-## Cross refs
-- 02_Faculties_Intellect
-- 03 Faculties_Will
-- 04_Faculties_Conscience
-- 05_Faculties_Spirit
+## Cross references
+- 02 Faculties Intellect  
+- 03 Faculties Will  
+- 04 Faculties Conscience  
+- 05 Faculties Spirit
