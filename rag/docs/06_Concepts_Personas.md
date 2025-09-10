@@ -8,45 +8,30 @@ version: 1.0
 
 # SAFi Explained: Personas (Ethical Profiles)
 
-### **Core Concept: The Purpose of Personas**
+## Core concept: purpose of personas
+Personas solve the problem of an AI lacking a clear compass. Values alone are complex and rules are not enough. A persona provides a guiding purpose by defining a coherent ethical character for the AI to embody. This ensures actions are consistent and aligned.
 
-**Q: What problem do Personas solve in SAFi?**
+## What is a persona
+A persona in SAFi is the practical application of an ethical profile. This profile is a structured, machine readable blueprint defined in configuration files such as values.py. It turns abstract values into operational guidance.
 
-A: Personas solve the problem of an AI lacking a clear direction or "compass." Values can be complex, and simply giving an AI rules is not enough. A Persona provides a guiding purpose (a _teleology_) by defining a complete and coherent ethical character for the AI to embody, ensuring its actions are consistent and aligned.
+## Components of a persona profile
+Each profile contains four key parts.
 
-**Q: What is a Persona in SAFi?**
+1. Worldview: the foundational perspective and core principles.  
+2. Style: the voice, tone, and character for communication.  
+3. Rules (will_rules): non negotiable guardrails that must never be broken.  
+4. Values: a weighted list of nuanced principles used for judgment and audits.
 
-A: A Persona in SAFi is the practical application of an **Ethical Profile**. This profile is a structured, machine-readable blueprint for the AI's character, defined in a configuration file (like values.py). It makes abstract values operational.
+## How personas guide the faculties
+Each component maps to one faculty in the SAFi loop.
 
-### **The Four Components of a Persona Profile**
+- Intellect uses the worldview and style to draft its response.  
+- Will enforces the rules as strict boundaries.  
+- Conscience audits the final output against the values list.  
+- Spirit integrates the audit to track long term alignment and give coaching feedback.
 
-**Q: What are the four key parts of a Persona or Ethical Profile?**
+## Benefits of personas
+Personas make SAFi flexible and auditable. Instead of one fixed ethic, SAFi can embody context specific roles such as a fiduciary, a health navigator, or a jurist. This approach turns values into operational roles and allows SAFi to function as a transparent moral actor.
 
-A: Each profile contains four key components that shape the AI's behavior:
-
-1. **Worldview:** The AI's foundational perspective and the core principles from which it reasons.
-2. **Style:** The specific voice, tone, and character for communication.
-3. **Rules (will_rules):** Non-negotiable, hard-coded boundaries that must never be violated.
-4. **Values (values list):** A weighted list of nuanced ethical principles that guide judgment and auditing.
-
-### **How Personas Interact with SAFi Faculties**
-
-**Q: How does a Persona profile direct the SAFi faculties?**
-
-A: Each part of the profile directly instructs a specific faculty in the SAFi loop:
-
-- The **Intellect** uses the Worldview and Style to generate its initial draft response.
-- The **Will** acts as a gatekeeper, strictly enforcing the Rules.
-- The **Conscience** audits the final output against the nuanced Values list.
-- The **Spirit** integrates the Conscience's audit to track long-term alignment and provides coaching feedback to the Intellect, closing the loop.
-
-### **Benefits of the Persona-Driven Approach**
-
-**Q: Why are Personas important for SAFi?**
-
-A: Personas make SAFi both **flexible and auditable**. Instead of hard-wiring a single, universal ethic, SAFi can embody different, context-appropriate roles like a "Fiduciary," "Health Navigator," or "Jurist." This approach turns abstract values into concrete, operational roles, allowing SAFi to function as a faithful and transparent moral actor.
-
----
-
-## Cross refs
+## Cross references
 - 02 Faculties Values and Profiles

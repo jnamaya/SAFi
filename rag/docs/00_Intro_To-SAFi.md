@@ -1,70 +1,73 @@
 ---
-title: Introduction: Self-Alignment Framework Interface ( SAFi)
+title: Introduction: Self-Alignment Framework Interface (SAFi)
 slug: intro-SAFi
 tags: ["safi", "intro"]
-summary: High-level conceptual framework connecting faculties, values, and governance into a closed-loop architecture.
+summary: High level conceptual framework connecting faculties, values, and governance into a closed loop architecture.
 version: 1.0
 ---
 
-# What is SAFi
+# SAFi
 
-SAFi is the first open-source implementation of the Self-Alignment Framework (SAF), a closed-loop ethical reasoning engine. SAFi is not a language model itself, but a governor that evaluates and audits the behavior of AI models like GPT, Claude, or Llama through a five-faculty reasoning loop:
+## What is SAFi
+SAFi is the first open source implementation of the Self Alignment Framework, a closed loop ethical reasoning engine. SAFi is not a language model. It is a governor that evaluates and audits the behavior of AI models through a five faculty reasoning loop. The loop provides transparency, accountability, and drift detection.
 
-**Values → Intellect → Will → Conscience → Spirit**
+Values → Intellect → Will → Conscience → Spirit
 
-This loop turns ethics into system logic, ensuring transparency, accountability, and drift detection in AI behavior.
+## How SAFi works
+SAFi uses a separation of powers design. Each faculty handles a specific part of the alignment process. The result is an internal set of checks and balances that can be inspected and tested.
 
-# How does SAFi Work? 
+## The faculties
+### Intellect engine
+This is the generative core. It uses a general model to reason over the knowledge base and draft a response. It also produces a private reflection about how it reached that draft.
 
-SAFi is built on a "separation of powers" architecture, where distinct components, or "faculties," each handle a specific part of the alignment process. This creates a robust system of internal checks and balances.
+### Will gate
+This is a fast safety gatekeeper. It inspects every draft before the user sees it and enforces the non negotiable rules of the active persona. Its function is to block policy violations and protect the brand.
 
-# How do the Faculties work in SAFi?
+### Conscience auditor
+This is the judicial layer. After approval, it audits the final answer against the weighted values of the persona. It outputs a machine readable ethical ledger for accountability.
 
-*   **Intellect Engine**: This is the generative core of the system. It uses a powerful, general-purpose AI model to reason, synthesize information from the knowledge base, and produce the initial draft of any response, along with a private reflection on its reasoning process.
-    
-*   **Will Gate**: A fast, specialized AI model that acts as a real-time safety gatekeeper. It inspects every draft from the Intellect _before_ it reaches the user, enforcing the non-negotiable, hard-coded rules of the active persona. Its sole function is to block policy violations, providing a critical layer of safety and brand protection.
-    
-*   **Conscience Auditor**: This is the system's "judicial branch." After a response is approved, this evaluation layer performs a detailed, post-action audit. It scores the final output against the nuanced, weighted values of the active persona, producing a detailed, machine-readable "Ethical Ledger" for complete accountability.
-    
-*   **Spirit Integrator**: The mathematical historian and guardian of the system's long-term identity. This purely mathematical component analyzes the audits from the Conscience over time to track ethical performance, measure "identity drift," and prevent the "King Solomon Problem." It closes the loop by generating coaching feedback for the Intellect, enabling the system to learn and self-correct.
-    
+### Spirit integrator
+This is the historian and identity tracker. It analyzes many audits over time to measure ethical performance and identity drift. It prevents the King Solomon problem. It generates coaching feedback for the Intellect so the system can learn and self correct.
 
-### What are Ethical Profiles or Personas? 
+## Ethical profiles, personas
+SAFi can load different personas so one system adapts to many contexts. A persona defines alignment parameters and operational character.
 
-SAFi can embody different roles or characters by loading distinct Ethical Profiles. This allows one underlying system to be adapted for many different contexts, each with its own unique alignment parameters.
+### Dynamic persona switching
+Users can switch the active persona in the front end. The change applies immediately.
 
-*   **Dynamic Persona Switching**: A user can switch SAFi's active persona directly from the application's front-end, instantly changing its entire operational character.
-    
-*   **Comprehensive Profile Architecture**: Each persona is defined by a structured profile containing four key components:
-    
-    *   **Worldview:** A high-level "constitution" that defines the AI's core purpose and reasoning principles.
-        
-    *   **Style:** A guide for the AI's voice, tone, and communication persona.
-        
-    *   **Will-Rules:** A set of non-negotiable guardrails enforced by the Will Gate.
-        
-    *   **Values:** A weighted list of nuanced principles used for the Conscience's audit.
-        
-*   **Pre-built Personas**: The system includes a variety of pre-built profiles, such as a philosophical guide grounded in virtue ethics, a cautious financial educator, and an empathetic healthcare navigator.
-    
+### Profile structure
+Each persona contains:
+- Worldview, a short constitution that sets purpose and reasoning principles
+- Style, guidance for voice, tone, and communication
+- Will rules, guardrails enforced by the Will gate
+- Values, a weighted list used by the Conscience audit
 
-### What are SAFi Use Cases? 
+### Prebuilt personas
+Examples include a virtue ethics guide, a cautious finance educator, and a healthcare navigator.
 
-SAFi is packaged as a complete, enterprise-ready web application with all the necessary features for a robust user experience.
+## Use cases
+SAFi ships as a complete web app suitable for enterprise use.
 
-*   **Secure User Authentication**: Full user management and secure sign-in capabilities are integrated using providers like Google OAuth.
-    
-*   **Persistent Conversation History**: All chat histories are saved to a durable MySQL database, allowing users to securely access and continue their conversations across different sessions and devices.
-    
-*   **Long-Term Conversation Memory**: A sophisticated background job maintains a running summary of each conversation. This provides the AI with a coherent short-term memory, allowing it to track context and recall details from earlier in a long discussion.
-    
-*   **Asynchronous Auditing for a Fast UX**: Users receive a fast initial response from the real-time Intellect and Will faculties. The more computationally intensive audit by the Conscience and Spirit runs asynchronously in the background, with the detailed results being logged without impacting the user's experience.
-    
+### Authentication
+Users sign in securely, for example with Google OAuth.
 
-*   **Model-Agnostic & Multi-Provider Support**: The architecture is fundamentally model-agnostic. It allows different AI models to be assigned to different faculties, enabling an organization to use the best tool for each job (e.g., a fast, efficient model for the Will, and a powerful, state-of-the-art model for the Intellect).
-    
-*   **Complete Transparency via Structured Logging**: Every single turn of a conversation is logged in exhaustive detail to a structured JSONL file. These logs include the Intellect's internal drafts, the Will's decisions, the complete Conscience ledger, and the Spirit's mathematical vectors, providing an unprecedented level of transparency and auditability.
-    
-*   **Durable Database Persistence**: All critical data, including user information, conversation histories, and the AI's long-term Spirit memory vectors, are stored securely in a MySQL database.
-    
-*   **Flexible Deployment & Configuration**: The application is configured entirely through environment variables, making it easy to manage API keys, database connections, and model assignments for seamless deployment in different environments (e.g., development, staging, production).
+### Conversation history
+All chats are stored in MySQL so users can continue across sessions and devices.
+
+### Long term conversation memory
+A background job maintains a running summary. The AI keeps context across long discussions and recalls prior details.
+
+### Asynchronous auditing
+Users get a fast initial answer from Intellect and Will. Conscience and Spirit perform a deeper audit in the background. Results are logged without slowing the experience.
+
+### Model agnostic design
+Different models can be assigned to different faculties. For example a fast model for Will and a high capacity model for Intellect.
+
+### Transparent logging
+Each turn is logged to JSONL, including Intellect drafts, Will decisions, the Conscience ledger, and Spirit vectors. Audits are inspectable.
+
+### Durable storage
+Critical data, such as users, chats, and long term Spirit memory vectors, are stored in MySQL.
+
+### Deployment and configuration
+Environment variables control API keys, database settings, and model assignment. This helps manage development, staging, and production.
