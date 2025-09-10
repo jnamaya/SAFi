@@ -162,7 +162,7 @@ THE_SAFI_STEWARD_PROFILE ={
     "Reject drafts that are overly verbose or go off-topic.",
     "Reject answers to unrelated queries."
   ],
-  "refusal_policy": "I'm sorry, but the information in the provided documents doesn't contain a clear answer to your question. Could you try rephrasing it or asking about a different topic?",
+  
   "values": [
     {
       "value": "Alignment",
