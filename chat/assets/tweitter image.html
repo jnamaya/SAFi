@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Alignment Framework Cover Image</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #020617; /* Dark Navy Blue */
+        }
+        .cover-container {
+            width: 100%;
+            max-width: 1500px; /* Standard Twitter header width */
+            aspect-ratio: 3 / 1;
+            background-color: #020617;
+        }
+        .saf-text {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            fill: #e2e8f0; /* slate-200 */
+            text-anchor: middle;
+            font-size: 10px;
+        }
+        .values-text {
+            font-family: 'Inter', sans-serif;
+            text-anchor: middle;
+            font-size: 14px;
+            font-weight: 800;
+            fill: #67e8f9; /* cyan-300 */
+            letter-spacing: 0.05em;
+        }
+        .glow {
+            filter: drop-shadow(0 0 10px rgba(103, 232, 249, 0.8));
+        }
+        .soft-glow {
+             filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.4));
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.03); opacity: 0.95; }
+        }
+        .pulse-animation {
+            animation: pulse 4s ease-in-out infinite;
+            transform-origin: center;
+        }
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -1000; /* Negative value moves dashes forward */
+            }
+        }
+        .flow-line {
+            stroke-dasharray: 7 5;
+            animation: dash 20s linear infinite;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="cover-container shadow-2xl">
+        <svg viewBox="0 0 600 200" class="w-full h-full">
+            <defs>
+                <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto" markerUnits="strokeWidth">
+                    <polygon points="0 0, 6 2, 0 4" fill="#0ea5e9" />
+                </marker>
+            </defs>
+
+            <!-- Animated Closed-Loop Flow Lines -->
+            <g class="soft-glow">
+                <!-- Intellect -> Will -->
+                <path class="flow-line" d="M 325 45 A 95 55 0 0 1 500 90" stroke="#0ea5e9" stroke-width="0.75" fill="none" marker-end="url(#arrowhead)"/>
+                <!-- Will -> Conscience -->
+                <path class="flow-line" d="M 500 110 A 95 55 0 0 1 325 155" stroke="#0ea5e9" stroke-width="0.75" fill="none" marker-end="url(#arrowhead)"/>
+                <!-- Conscience -> Spirit -->
+                <path class="flow-line" d="M 275 155 A 95 55 0 0 1 100 110" stroke="#0ea5e9" stroke-width="0.75" fill="none" marker-end="url(#arrowhead)"/>
+                <!-- Spirit -> Intellect -->
+                <path class="flow-line" d="M 100 90 A 95 55 0 0 1 275 45" stroke="#0ea5e9" stroke-width="0.75" fill="none" marker-end="url(#arrowhead)"/>
+            </g>
+
+            <!-- Static Connectors from Values -->
+             <g class="soft-glow">
+                <line x1="300" y1="70" x2="300" y2="60" stroke="#67e8f9" stroke-width="1" stroke-dasharray="3 3"/>
+                <line x1="330" y1="100" x2="480" y2="100" stroke="#67e8f9" stroke-width="1" stroke-dasharray="3 3"/>
+                <line x1="300" y1="130" x2="300" y2="140" stroke="#67e8f9" stroke-width="1" stroke-dasharray="3 3"/>
+                <line x1="270" y1="100" x2="120" y2="100" stroke="#67e8f9" stroke-width="1" stroke-dasharray="3 3"/>
+            </g>
+
+            <!-- Central Node: Values -->
+            <g transform="translate(300, 100)">
+                <circle cx="0" cy="0" r="30" fill="#083344" stroke="#67e8f9" stroke-width="1.5" class="glow" />
+                <!-- The circle radius and font-size have been reduced -->
+                <text y="3" style="font-family: 'Inter', sans-serif; text-anchor: middle; font-size: 12px; font-weight: 800; fill: #67e8f9; letter-spacing: 0.05em;">VALUES</text>
+            </g>
+
+            <!-- Top Node: Intellect -->
+            <g transform="translate(300, 40)">
+                <circle cx="0" cy="0" r="20" fill="#0c4a6e" />
+                <text class="saf-text" y="3">INTELLECT</text>
+            </g>
+            
+            <!-- Right Node: Will -->
+            <g transform="translate(500, 100)">
+                 <circle cx="0" cy="0" r="20" fill="#0c4a6e" />
+                 <text class="saf-text" y="3">WILL</text>
+            </g>
+
+            <!-- Bottom Node: Conscience -->
+            <g transform="translate(300, 160)">
+                 <circle cx="0" cy="0" r="20" fill="#0c4a6e" />
+                 <text class="saf-text" y="3">CONSCIENCE</text>
+            </g>
+
+            <!-- Left Node: Spirit -->
+            <g transform="translate(100, 100)">
+                 <circle cx="0" cy="0" r="20" fill="#0c4a6e" />
+                 <text class="saf-text" y="3">SPIRIT</text>
+            </g>
+
+        </svg>
+    </div>
+</body>
+</html>
+
