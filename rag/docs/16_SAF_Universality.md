@@ -45,7 +45,7 @@ This closed-loop process makes SAF universal not by imposing content but by stru
 ## Universality clarified
 SAF’s universality does not rest on dictating beliefs. It rests on providing a common architecture, a repeatable loop, for aligning actions with chosen values.  
 
-It is a grammar of the soul—a shared human process for coherence. SAF doesn’t tell you what to believe. It helps you live more consistently with the values you already hold.
+It is a grammar of the mind—a shared human process for coherence. SAF doesn’t tell you what to believe. It helps you live more consistently with the values you already hold.
 
 ## Cross references
 - 02_Faculties_Intellect.md  
