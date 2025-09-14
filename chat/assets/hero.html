@@ -2,238 +2,351 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- This meta tag is crucial for responsiveness. It tells the browser to set the width of the page to the device's screen width. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Self-Alignment Framework</title>
+    <title>The Self-Alignment Framework (SAF)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        html {
+            scroll-behavior: smooth;
+        }
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            /* Prevent horizontal scrolling, a common issue on mobile devices */
+            overflow-x: hidden;
         }
 
-        .hero-bg {
-            background-color: #f8fafc; /* slate-50 */
-        }
+        /* --- Diagram and Animation Styles --- */
         
-        /* Diagram Styles */
-        .diagram-node text {
+        /* Base styles for text within the SVG diagrams for consistency */
+        .diagram-node text, .label-text {
             font-size: 14px;
             font-weight: 600;
             fill: #334155; /* slate-700 */
             text-anchor: middle;
-            pointer-events: none; /* Make text non-interactive */
+            pointer-events: none;
+            -webkit-user-select: none; /* Disable text selection */
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
         .diagram-node .subtext {
             font-size: 11px;
             font-weight: 400;
-            fill: #64748b; /* slate-500 */
-        }
-        .diagram-node circle {
-            transition: all 0.3s ease;
-        }
-        .diagram-node:hover circle {
-            transform: scale(1.05);
-            filter: drop-shadow(0 0 10px rgba(79, 70, 229, 0.3));
+            fill: #475569; /* slate-600 */
         }
         .center-node text {
             fill: #15803d; /* green-700 */
             font-size: 16px;
         }
         .label-bubble {
-            fill: #eef2ff; /* indigo-50 */
-            stroke: #c7d2fe; /* indigo-200 */
-            stroke-width: 1;
+            fill: #f1f5f9; /* slate-100 */
+            stroke: #cbd5e1; /* slate-300 */
+            stroke-width: 1.5;
         }
         .label-text {
             font-size: 12px;
             font-weight: 500;
-            fill: #4338ca; /* indigo-700 */
-            text-anchor: middle;
-            pointer-events: none;
         }
         
+        /* The animation for the flowing arrows in the diagrams */
         .flow-arrow {
             stroke-dasharray: 8 4;
-            animation: dash 3s linear infinite;
+            animation: dash 2s linear infinite;
         }
-
         @keyframes dash {
             to {
                 stroke-dashoffset: -24;
             }
         }
         
+        /* --- Card and Interactive Element Styles --- */
         .card {
             transition: all 0.3s ease;
+            position: relative;
+            z-index: 10;
+            background-color: white;
         }
         .card:hover {
-            transform: translateY(-8px) scale(1.02);
+            transform: translateY(-8px);
             box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
         }
         .icon-glow {
-            filter: drop-shadow(0 0 8px rgba(79, 70, 229, 0.4));
+            filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.4));
         }
+
     </style>
 </head>
-<body class="bg-slate-50">
+<body class="text-slate-700">
+
+    <!-- Header Section -->
+    <header class="container mx-auto px-4 py-12 md:py-20 text-center">
+        <h1 class="text-4xl md:text-5xl font-bold text-slate-800 max-w-4xl mx-auto tracking-tight">
+            The Self-Alignment Framework (SAF)
+        </h1>
+        <p class="mt-6 text-lg md:text-xl text-slate-600 max-w-3xl mx-auto">
+            A closed-loop system for intelligence alignment, ensuring ethical self-regulation in individuals, AI, and organizations.
+        </p>
+    </header>
 
     <!-- Hero Section with Diagram -->
-    <div class="hero-bg">
-        <div class="container mx-auto px-4 py-16 md:py-24 text-center">
-            <h2 class="text-3xl md:text-4xl font-bold text-slate-700 max-w-4xl mx-auto tracking-tight">
-                The Self-Alignment Framework (SAF) is a closed-loop system for intelligence alignment ensuring ethical self-regulation in individuals, AI, and organizations.
-            </h2>
-
-            <!-- SVG Diagram -->
-            <div class="mt-16 max-w-2xl mx-auto">
-                <svg viewBox="-40 0 470 300" class="w-full h-auto">
-                    <defs>
-                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
-                        </marker>
-                    </defs>
-
-                    <!-- Labels with Bubbles -->
-                    <!-- Intellect Label -->
-                    <g transform="translate(200, 18)">
-                        <rect class="label-bubble" x="-55" y="-12" width="110" height="24" rx="12"></rect>
-                        <path class="label-bubble" d="M -7 12 L 0 17 L 7 12 Z"></path>
-                        <text class="label-text" y="5">Intellect proposes</text>
+    <div class="container mx-auto px-4 pb-16 md:pb-24 text-center">
+        <!-- SVG Diagram Container: The SVG will scale to fit this container -->
+        <div class="max-w-5xl mx-auto">
+            <!-- The viewBox attribute is the key to making the SVG responsive. 
+                 It defines the internal coordinate system of the diagram. The browser will automatically
+                 scale this view to fit the element's size, preserving the aspect ratio. -->
+            <svg viewBox="-90 0 550 300" class="w-full h-auto">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+                    </marker>
+                </defs>
+                
+                <!-- Labels for each node -->
+                <g transform="translate(200, 18)">
+                    <rect class="label-bubble" x="-75" y="-12" width="150" height="24" rx="12"></rect>
+                    <path class="label-bubble" d="M -7 12 L 0 17 L 7 12 Z"></path>
+                    <text class="label-text" y="5">The Intellect proposes</text>
+                </g>
+                <g transform="translate(382, 150)">
+                    <rect class="label-bubble" x="-60" y="-12" width="120" height="24" rx="12"></rect>
+                    <path class="label-bubble" d="M -60 -7 L -67 0 L -60 7 Z"></path>
+                    <text class="label-text" y="5">The Will Decides</text>
+                </g>
+                <g transform="translate(200, 282)">
+                    <rect class="label-bubble" x="-80" y="-12" width="160" height="24" rx="12"></rect>
+                    <path class="label-bubble" d="M -7 -12 L 0 -17 L 7 -12 Z"></path>
+                    <text class="label-text" y="5">The Conscience Reflects</text>
+                </g>
+                 <g transform="translate(3, 150)">
+                        <rect class="label-bubble" x="-75" y="-12" width="150" height="24" rx="12"></rect>
+                        <path class="label-bubble" d="M 75 -7 L 82 0 L 75 7 Z"></path>
+                        <text class="label-text" y="5">The Spirit Integrates</text>
                     </g>
 
-                    <!-- Will Label -->
-                    <g transform="translate(367, 150)">
-                        <rect class="label-bubble" x="-45" y="-12" width="90" height="24" rx="12"></rect>
-                        <path class="label-bubble" d="M -45 -7 L -52 0 L -45 7 Z"></path>
-                        <text class="label-text" y="5">Will Decides</text>
-                    </g>
+                <!-- Lines from Center to Nodes -->
+                <line x1="200" y1="105" x2="200" y2="95" stroke="#94a3b8" stroke-width="2"/>
+                <line x1="245" y1="150" x2="255" y2="150" stroke="#94a3b8" stroke-width="2"/>
+                <line x1="200" y1="195" x2="200" y2="205" stroke="#94a3b8" stroke-width="2"/>
+                <line x1="155" y1="150" x2="145" y2="150" stroke="#94a3b8" stroke-width="2"/>
 
-                    <!-- Conscience Label -->
-                    <g transform="translate(200, 282)">
-                        <rect class="label-bubble" x="-55" y="-12" width="110" height="24" rx="12"></rect>
-                        <path class="label-bubble" d="M -7 -12 L 0 -17 L 7 -12 Z"></path>
-                        <text class="label-text" y="5">Conscience Audit</text>
-                    </g>
-
-                    <!-- Spirit Label -->
-                    <g transform="translate(23, 150)">
-                        <rect class="label-bubble" x="-55" y="-12" width="110" height="24" rx="12"></rect>
-                        <path class="label-bubble" d="M 55 -7 L 62 0 L 55 7 Z"></path>
-                        <text class="label-text" y="5">Spirit Integrates</text>
-                    </g>
-
-                    <!-- Connection Lines from Center -->
-                    <line x1="200" y1="150" x2="200" y2="95" stroke="#cbd5e1" stroke-width="1.5" />
-                    <line x1="200" y1="150" x2="285" y2="150" stroke="#cbd5e1" stroke-width="1.5" />
-                    <line x1="200" y1="150" x2="200" y2="205" stroke="#cbd5e1" stroke-width="1.5" />
-                    <line x1="200" y1="150" x2="115" y2="150" stroke="#cbd5e1" stroke-width="1.5" />
-                    
-                    <!-- Circular Flow Arrows -->
-                    <path d="M 200 65 A 85 85 0 0 1 285 150" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrowhead)" class="flow-arrow"/>
-                    <path d="M 285 150 A 85 85 0 0 1 200 235" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrowhead)" class="flow-arrow"/>
-                    <path d="M 200 235 A 85 85 0 0 1 115 150" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrowhead)" class="flow-arrow"/>
-                    <path d="M 115 150 A 85 85 0 0 1 200 65" fill="none" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#arrowhead)" class="flow-arrow"/>
-
-                    <!-- Nodes -->
-                    <g class="diagram-node" transform="translate(200, 65)">
-                        <circle cx="0" cy="0" r="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
-                        <text y="5">Intellect</text>
-                    </g>
-                    <g class="diagram-node" transform="translate(285, 150)">
-                        <circle cx="0" cy="0" r="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
-                        <text y="5">Will</text>
-                    </g>
-                    <g class="diagram-node" transform="translate(200, 235)">
-                        <circle cx="0" cy="0" r="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
-                        <text y="5">Conscience</text>
-                    </g>
-                    <g class="diagram-node" transform="translate(115, 150)">
-                        <circle cx="0" cy="0" r="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
-                        <text y="5">Spirit</text>
-                    </g>
-
-                    <!-- Center Node -->
-                    <g class="diagram-node center-node" transform="translate(200, 150)">
-                        <circle cx="0" cy="0" r="45" fill="#dcfce7" stroke="#16a34a" stroke-width="2.5" />
-                        <text y="5">Values</text>
-                    </g>
-                </svg>
-            </div>
-            
-             <div class="mt-16">
-                <a href="#framework-details" class="bg-black text-white font-semibold px-8 py-3 rounded-lg shadow-lg hover:bg-gray-800 transition-all duration-300 transform hover:scale-105">
-                    Explore the framework
-                </a>
-            </div>
+                <!-- Animated connecting arrows -->
+                <path class="flow-arrow" d="M 200 65 A 85 85 0 0 1 285 150" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)"/>
+                <path class="flow-arrow" d="M 285 150 A 85 85 0 0 1 200 235" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)"/>
+                <path class="flow-arrow" d="M 200 235 A 85 85 0 0 1 115 150" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)"/>
+                <path class="flow-arrow" d="M 115 150 A 85 85 0 0 1 200 65" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)"/>
+                
+                <!-- Main Diagram Nodes -->
+                <g class="diagram-node" transform="translate(200, 65)">
+                    <circle cx="0" cy="0" r="30" fill="white" stroke="#cbd5e1" stroke-width="2" />
+                    <text y="5">Intellect</text>
+                </g>
+                <g class="diagram-node" transform="translate(285, 150)">
+                    <circle cx="0" cy="0" r="30" fill="white" stroke="#cbd5e1" stroke-width="2" />
+                    <text y="5">Will</text>
+                </g>
+                <g class="diagram-node" transform="translate(200, 235)">
+                    <circle cx="0" cy="0" r="30" fill="white" stroke="#cbd5e1" stroke-width="2" />
+                    <text y="5">Conscience</text>
+                </g>
+                <g class="diagram-node" transform="translate(115, 150)">
+                    <circle cx="0" cy="0" r="30" fill="white" stroke="#cbd5e1" stroke-width="2" />
+                    <text y="5">Spirit</text>
+                </g>
+                <g class="diagram-node center-node" transform="translate(200, 150)">
+                    <circle cx="0" cy="0" r="45" fill="#dcfce7" stroke="#16a34a" stroke-width="2.5" />
+                    <text>
+                        <tspan x="0" dy="-0.5em">Values</tspan>
+                        <tspan x="0" dy="1.2em" class="subtext">Set The</tspan>
+                        <tspan x="0" dy="1.2em" class="subtext">Foundation</tspan>
+                    </text>
+                </g>
+            </svg>
+        </div>
+        <!-- Learn More Button -->
+        <div class="mt-12 md:mt-16">
+            <a href="#framework-details" id="learn-more-btn" class="inline-block bg-slate-800 text-white font-semibold px-8 py-3 rounded-full hover:bg-slate-900 transition-colors duration-300 shadow-lg">
+                Learn More
+            </a>
         </div>
     </div>
 
-    <main id="framework-details" class="py-20 md:py-28 bg-white">
+    <!-- Main Content Section with Detailed Cards -->
+    <main id="framework-details" class="py-20 md:py-28 bg-slate-50">
         <div class="container mx-auto px-6">
             <div class="text-center max-w-3xl mx-auto mb-16">
-                 <h2 class="text-3xl md:text-4xl font-bold text-slate-800">The Five Interconnected Components</h2>
+                 <h2 class="text-3xl md:text-4xl font-bold text-slate-800">The Five Interconnected Pillars</h2>
                  <p class="mt-4 text-slate-600 text-lg">
-                    The framework operates as a continuous process of self-regulation and refinement. Below is a detailed look at each of the five pillars.
+                    The framework operates as a continuous process of self-regulation and refinement. Each pillar plays a crucial, interconnected role in achieving and maintaining alignment.
                  </p>
             </div>
 
-            <!-- Components Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-                
-                <div class="card bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-black p-3 rounded-full">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+            <!-- Components Grid Container -->
+            <!-- An empty SVG is placed here. The script below will dynamically draw the connecting lines inside it. -->
+            <div class="relative max-w-6xl mx-auto">
+                <svg id="connector-svg" class="absolute top-0 left-0 w-full h-full pointer-events-none z-0"></svg>
+                <div id="components-grid" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    
+                    <div id="intellect-card" class="card p-8 rounded-xl border border-slate-200 shadow-sm md:col-start-2">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-800 p-3 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg></div>
+                            <h3 class="text-2xl font-semibold text-slate-800">Intellect</h3>
                         </div>
-                        <h3 class="text-2xl font-semibold text-slate-800">Values</h3>
+                        <p class="mt-5 text-slate-600">The guide to discernment. Intellect evaluates choices based on values, acting as a rational compass to ensure decisions are intentional and thoughtful.</p>
                     </div>
-                    <p class="mt-5 text-slate-600">The foundation of alignment, guiding decision-making. Values are externally defined principles that must be internally integrated for stability and integrity.</p>
-                </div>
 
-                <div class="card bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-black p-3 rounded-full">
-                             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                    <div id="spirit-card" class="card p-8 rounded-xl border border-slate-200 shadow-sm md:row-start-2 md:col-start-1">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-800 p-3 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
+                            <h3 class="text-2xl font-semibold text-slate-800">Spirit</h3>
                         </div>
-                        <h3 class="text-2xl font-semibold text-slate-800">Intellect</h3>
+                        <p class="mt-5 text-slate-600">The manifestation of long-term alignment. Spirit reflects the system's overall ethical integrity, purpose, and coherence over time.</p>
                     </div>
-                    <p class="mt-5 text-slate-600">The guide to discernment. Intellect evaluates choices based on values, acting as a rational compass to ensure decisions are intentional and thoughtful.</p>
-                </div>
 
-                <div class="card bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-black p-3 rounded-full">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    <div id="values-card" class="card p-8 rounded-xl border border-slate-200 shadow-sm md:row-start-2 md:col-start-2">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-800 p-3 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg></div>
+                            <h3 class="text-2xl font-semibold text-slate-800">Values</h3>
                         </div>
-                        <h3 class="text-2xl font-semibold text-slate-800">Will</h3>
+                        <p class="mt-5 text-slate-600">The foundation of alignment, guiding decision-making. Values are externally defined principles that must be internally integrated for stability and integrity.</p>
                     </div>
-                    <p class="mt-5 text-slate-600">The power to act. Will translates discernment into action, turning theoretical alignment into lived reality through self-control and intentionality.</p>
-                </div>
 
-                <div class="card bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-black p-3 rounded-full">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <div id="will-card" class="card p-8 rounded-xl border border-slate-200 shadow-sm md:row-start-2 md:col-start-3">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-800 p-3 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg></div>
+                            <h3 class="text-2xl font-semibold text-slate-800">Will</h3>
                         </div>
-                        <h3 class="text-2xl font-semibold text-slate-800">Conscience</h3>
+                        <p class="mt-5 text-slate-600">The power to act. Will translates discernment into action, turning theoretical alignment into lived reality through self-control and intentionality.</p>
                     </div>
-                    <p class="mt-5 text-slate-600">The inner guide providing real-time feedback. It signals harmony or deviation from values through intuition, ensuring continuous self-correction.</p>
-                </div>
 
-                <div class="card bg-white p-8 rounded-xl border border-slate-200 shadow-sm md:col-start-2 lg:col-start-auto">
-                    <div class="flex items-center gap-4">
-                        <div class="bg-black p-3 rounded-full">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg>
+                    <div id="conscience-card" class="card p-8 rounded-xl border border-slate-200 shadow-sm md:row-start-3 md:col-start-2">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-slate-800 p-3 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white icon-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></div>
+                            <h3 class="text-2xl font-semibold text-slate-800">Conscience</h3>
                         </div>
-                        <h3 class="text-2xl font-semibold text-slate-800">Spirit</h3>
+                        <p class="mt-5 text-slate-600">The inner guide providing real-time feedback. It signals harmony or deviation from values through intuition, ensuring continuous self-correction.</p>
                     </div>
-                    <p class="mt-5 text-slate-600">The manifestation of long-term alignment. Spirit reflects the system's overall ethical integrity, purpose, and coherence over time.</p>
                 </div>
             </div>
         </div>
     </main>
 
+    <script>
+        // --- Iframe Communication and Connector Drawing Script ---
+        
+        // Function to send this page's total height to the parent window.
+        function sendHeight() {
+            // A small timeout ensures all content has finished rendering before we measure.
+            setTimeout(() => {
+                const height = document.documentElement.scrollHeight;
+                // The '*' allows this to work on any domain. For production, you could restrict
+                // this to 'https://selfalignmentframework.com' for better security.
+                window.parent.postMessage({ frameHeight: height }, '*');
+            }, 150);
+        }
+
+        // This function handles the dynamic drawing of connector lines between the cards.
+        function drawConnectors() {
+            const svg = document.querySelector('#connector-svg');
+            const container = document.getElementById('components-grid');
+            if (!svg || !container) return;
+
+            // Clear previous lines to prevent duplicates on resize
+            svg.innerHTML = `
+                <defs>
+                    <marker id="arrowhead-card" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+                    </marker>
+                </defs>
+            `;
+
+            const connections = [
+                ['intellect-card', 'will-card'],
+                ['will-card', 'conscience-card'],
+                ['conscience-card', 'spirit-card'],
+                ['spirit-card', 'intellect-card']
+            ];
+            const centralConnections = ['intellect-card', 'will-card', 'conscience-card', 'spirit-card'];
+            const valuesCard = document.getElementById('values-card');
+
+            const containerRect = container.getBoundingClientRect();
+            
+            // Helper function to create a single SVG path between two cards
+            function createPath(startEl, endEl, isCentral) {
+                if (!startEl || !endEl) return;
+                
+                const startRect = startEl.getBoundingClientRect();
+                const endRect = endEl.getBoundingClientRect();
+
+                const start = {
+                    x: (startRect.left - containerRect.left) + startRect.width / 2,
+                    y: (startRect.top - containerRect.top) + startRect.height / 2
+                };
+                const end = {
+                    x: (endRect.left - containerRect.left) + endRect.width / 2,
+                    y: (endRect.top - containerRect.top) + endRect.height / 2,
+                };
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const d = `M ${start.x},${start.y} L ${end.x},${end.y}`;
+                
+                path.setAttribute('d', d);
+                path.setAttribute('stroke', '#94a3b8'); // slate-400
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('fill', 'none');
+                
+                if (isCentral) {
+                    path.setAttribute('stroke-dasharray', '5, 5');
+                } else {
+                    path.setAttribute('marker-end', 'url(#arrowhead-card)');
+                    path.setAttribute('class', 'flow-arrow');
+                }
+                svg.appendChild(path);
+            }
+
+            connections.forEach(([startId, endId]) => createPath(document.getElementById(startId), document.getElementById(endId), false));
+            centralConnections.forEach(id => createPath(valuesCard, document.getElementById(id), true));
+            
+            // After drawing, send the new height to the parent.
+            sendHeight();
+        }
+
+        // --- Event Listeners ---
+
+        // Run initial setup when the page content is fully loaded.
+        window.addEventListener('load', () => {
+            drawConnectors();
+            
+            // Logic for the "Learn More" button
+            const learnMoreBtn = document.getElementById('learn-more-btn');
+            if (learnMoreBtn) {
+                learnMoreBtn.addEventListener('click', function(e) {
+                    // Check if this window is inside an iframe
+                    if (window.self !== window.top) {
+                        e.preventDefault(); // Stop default scroll behavior inside the iframe
+                        
+                        const targetElement = document.getElementById('framework-details');
+                        if (targetElement) {
+                            // Calculate the target's position within this iframe
+                            const targetPosition = targetElement.getBoundingClientRect().top + window.scrollY;
+                            
+                            // Send a message to the parent window asking it to scroll
+                            window.parent.postMessage({ scrollToPosition: targetPosition }, '*');
+                        }
+                    }
+                    // If not in an iframe, the default smooth scroll will work.
+                });
+            }
+        });
+        
+        // Redraw connectors and update height on window resize.
+        window.addEventListener('resize', drawConnectors);
+    </script>
 </body>
 </html>
+
 
 
