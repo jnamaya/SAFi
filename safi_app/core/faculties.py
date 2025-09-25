@@ -73,25 +73,21 @@ class IntellectEngine:
         """
         self.last_error = None
         
-        # Perform a RAG search if the retriever is available (for the Steward profile).
         context_injection = ""
         if self.retriever:
             print(f"Performing RAG search for prompt: '{user_prompt[:50]}...'")
             retrieved_context = self.retriever.search(user_prompt)
             
-            # If relevant context is found, format it using the template from prompt_config.
             if retrieved_context:
                 rag_template = self.prompt_config.get("rag_context_injection", "")
                 if rag_template:
                     context_injection = rag_template.format(retrieved_context=retrieved_context)
                     print("Successfully injected context from RAG index.")
                 else:
-                    # Fallback in case the template is missing from the config.
                     print("Warning: RAG context injection template not found in prompt config.")
             else:
                 print("No relevant context found in RAG index.")
 
-        # Assemble the final system prompt from various components.
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
@@ -108,30 +104,29 @@ class IntellectEngine:
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
 
-        # Combine all parts into a single system prompt, prioritizing the RAG context.
         system_prompt = "\n\n".join(filter(None, [
             context_injection, worldview, style, memory_injection, spirit_injection, formatting_instructions
         ]))
 
         try:
-            # Request completion from the language model.
             resp = await asyncio.to_thread(
                 self.client.chat.completions.create,
                 model=self.model,
                 max_tokens=4096,
                 temperature=1.0,
+                response_format={"type": "json_object"}, # Use JSON mode for reliable output
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
             )
-            text = resp.choices[0].message.content or ""
+            content = resp.choices[0].message.content or "{}"
+            obj = json.loads(content)
+            
+            answer = obj.get("answer")
+            reflection = obj.get("reflection", "")
 
-            # Parse the response to separate the answer and reflection.
-            answer = text.split("<ANSWER>", 1)[1].split("</ANSWER>", 1)[0].strip() if "<ANSWER>" in text else text.split("<REFLECTION>")[0].strip()
-            reflection = text.split("<REFLECTION>", 1)[1].split("</REFLECTION>", 1)[0].strip() if "<REFLECTION>" in text else ""
-
-            return (answer or None), (reflection or "")
+            return answer, reflection
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e} (model={self.model})"
             return None, None
@@ -177,7 +172,6 @@ class WillGate:
             joined = ", ".join(v["value"] for v in self.values)
             rules = [f"Do not approve drafts that reduce alignment with the declared values: {joined}."]
 
-        # Construct the policy prompt for the gatekeeper model.
         policy_parts = [
             self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
             f"Tradition: {name}" if name else "", "Rules:", *[f"- {r}" for r in rules],
@@ -188,12 +182,10 @@ class WillGate:
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
         try:
-            # Request a decision from the model.
             resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.0, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": policy}, {"role": "user", "content": prompt}, ], )
             content = resp.choices[0].message.content or "{}"
             obj = json.loads(content) if content else {}
             
-            # Parse and standardize the response.
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
             if decision not in {"approve", "violation"}: decision = "violation"
@@ -240,7 +232,6 @@ class ConscienceAuditor:
         body = ( f"VALUES:\n{values_str}\n\nPROMPT:\n{user_prompt}\n\nFINAL OUTPUT:\n{final_output}\n\nREFLECTION:\n{reflection}" )
         
         try:
-            # Request the audit from the model.
             resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.2, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": sys_prompt}, {"role": "user", "content": body}, ], )
             content = resp.choices[0].message.content or "{}"
             obj = json.loads(content) if content else {}
@@ -283,7 +274,6 @@ class SpiritIntegrator:
         if not self.values or not ledger:
             return 1, "Incomplete ledger", mu_tm1, np.zeros_like(mu_tm1), None
 
-        # Reorder ledger entries to match the canonical value order.
         lmap: Dict[str, Dict[str, Any]] = { _norm_label(row.get('value')): row for row in ledger if row.get('value') }
         sorted_rows: List[Optional[Dict[str, Any]]] = [lmap.get(nkey) for nkey in self._norm_values]
 
@@ -292,24 +282,19 @@ class SpiritIntegrator:
             note = f"Ledger missing values: {', '.join(missing)}"
             return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
 
-        # Create vectors for scores and confidences from the sorted ledger.
         scores = np.array([float(r.get('score', 0.0)) for r in sorted_rows], dtype=float)
         confidences = np.array([float(r.get('confidence', 0.0)) for r in sorted_rows], dtype=float)
 
-        # Calculate a 1-10 spirit score based on weighted, confidence-adjusted scores.
         raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
 
-        # Calculate the performance vector for the current turn.
         p_t = self.value_weights * scores
-
-        # Update the long-term memory vector using an exponential moving average.
         mu_new = self.beta * mu_tm1 + (1 - self.beta) * p_t
 
-        # Calculate cosine drift to measure how much the current turn deviates from memory.
         eps = 1e-8
         denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1))
         drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1) / denom)
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
+
