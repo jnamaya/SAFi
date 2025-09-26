@@ -125,6 +125,9 @@ class IntellectEngine:
             
             answer = obj.get("answer")
             reflection = obj.get("reflection", "")
+            # Clean escaped newlines
+            answer = answer.replace("\\n", "\n").strip()
+            reflection = reflection.replace("\\n", "\n").strip()
 
             return answer, reflection
         except Exception as e:
