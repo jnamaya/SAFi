@@ -93,10 +93,9 @@
             <div class="w-10"></div> <!-- Placeholder for balance -->
           </header>
 
+          <!-- Chat window where messages and the new empty state will be dynamically added -->
           <div id="chat-window" class="flex-1 p-4 sm:p-6 flex flex-col justify-start gap-5">
-            <div id="empty-state" class="text-center pt-8">
-              <div id="active-profile-display"></div>
-            </div>
+            <!-- The static empty-state div has been removed from here -->
           </div>
 
           <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 sticky bottom-0">
@@ -165,4 +164,3 @@
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
-
