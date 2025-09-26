@@ -1,5 +1,19 @@
 import { formatTime } from './utils.js';
 
+// ADDED: Enhanced marked.js configuration
+marked.setOptions({
+  breaks: true, // Render <br> on a single line break
+  gfm: true,    // Use GitHub Flavored Markdown for tables, etc.
+  mangle: false,
+  headerIds: false,
+  highlight: function(code, lang) {
+    // Use highlight.js for syntax highlighting
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  }
+});
+
+
 export const elements = {
   loginView: document.getElementById('login-view'),
   chatView: document.getElementById('chat-view'),
@@ -628,4 +642,3 @@ export function setActiveConvoLink(id) {
     link.classList.toggle('font-medium', isActive);
   });
 }
-

@@ -238,8 +238,8 @@ html, body {
 }
 
 .chat-bubble pre { 
-  background: #0b1220; 
-  color: #e5e7eb; 
+  background: #282c34; /* Atom One Dark background for consistency */
+  color: #abb2bf; /* Atom One Dark foreground */
   padding: 1rem; 
   border-radius: 0.75rem; 
   overflow-x: auto; 
@@ -258,6 +258,52 @@ html, body {
 .dark .chat-bubble blockquote { 
   border-color: #22c55e;
   color: #a3a3a3; 
+}
+
+/* ADDED: Styles for more markdown elements */
+.chat-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+.dark .chat-bubble table {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.chat-bubble th, .chat-bubble td {
+  padding: 0.75rem;
+  border: 1px solid rgba(0,0,0,0.1);
+  text-align: left;
+}
+.dark .chat-bubble th, .dark .chat-bubble td {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.chat-bubble th {
+  font-weight: 600;
+  background-color: rgba(0,0,0,0.03);
+}
+.dark .chat-bubble th {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.chat-bubble hr {
+  border: none;
+  height: 2px;
+  background-color: rgba(0,0,0,0.1);
+  margin: 2em 0;
+}
+.dark .chat-bubble hr {
+  background-color: rgba(255,255,255,0.2);
+}
+
+.chat-bubble del {
+  text-decoration: line-through;
+  color: #6b7280;
+}
+.dark .chat-bubble del {
+  color: #9ca3af;
 }
 
 /* --- MODAL IMPROVEMENTS --- */
@@ -391,4 +437,3 @@ html, body {
   height: 8.5rem; /* 72px */
   width: 8.5rem;  /* 72px */
 }
-
