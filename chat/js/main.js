@@ -41,12 +41,6 @@ async function handleProfileChange(event) {
         const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
         ui.showToast(`Profile switched to ${selectedProfile.name}`, 'success');
         
-        // --- CHANGE ---
-        // Instead of partially updating the state with checkLoginStatus(),
-        // we perform a full page reload. This is a more robust way to ensure
-        // the frontend, backend session, and database are all perfectly
-        // synchronized after a profile change, preventing the state mismatch
-        // that was causing the profile to unexpectedly reset.
         window.location.reload();
 
     } catch (error) {
@@ -151,7 +145,19 @@ async function switchConversation(id) {
                 );
             });
         } else {
+            // --- START: MODIFIED CODE ---
+            // This is the updated logic for an empty chat.
+
+            // Get the user's first name, with a fallback
+            const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
+            
+            // Call the new function to display the simple, large-text greeting
+            ui.displaySimpleGreeting(firstName);
+            
+            // Then, display the standard empty state with persona info and prompts below it
             ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
+
+            // --- END: MODIFIED CODE ---
         }
         
         ui.scrollToBottom();
@@ -189,14 +195,11 @@ async function sendMessage() {
     const loadingIndicator = ui.showLoadingIndicator();
     const thinkingStatus = loadingIndicator.querySelector('#thinking-status');
 
-    // --- CHANGE: Removed the long safiLoop array and setInterval ---
-
-    // --- CHANGE: Added a simple timeout to change text if response is slow ---
     const thinkingTimeout = setTimeout(() => {
         if (thinkingStatus) {
             thinkingStatus.textContent = 'Still thinking...';
         }
-    }, 4000); // 4 seconds
+    }, 4000);
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
@@ -225,7 +228,6 @@ async function sendMessage() {
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
-        // --- CHANGE: Clear the new timeout instead of the old interval ---
         clearTimeout(thinkingTimeout);
         if(loadingIndicator) loadingIndicator.remove();
         buttonIcon.classList.remove('hidden');
@@ -386,3 +388,4 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
+

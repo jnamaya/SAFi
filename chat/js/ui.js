@@ -9,8 +9,6 @@ export const elements = {
   messageInput: document.getElementById('message-input'),
   sendButton: document.getElementById('send-button'),
   chatTitle: document.getElementById('chat-title'),
-  emptyState: document.getElementById('empty-state'),
-  activeProfileDisplay: document.getElementById('active-profile-display'),
   toastContainer: document.getElementById('toast-container'),
   modalBackdrop: document.getElementById('modal-backdrop'),
   conscienceModal: document.getElementById('conscience-modal'),
@@ -167,8 +165,28 @@ export function renderConversationLink(convo, handlers) {
   return link;
 }
 
+// --- START: NEW FUNCTION ---
+// This function creates the simple, large-text greeting.
+export function displaySimpleGreeting(firstName) {
+  // Ensure no other greeting exists to avoid duplicates
+  const existingGreeting = elements.chatWindow.querySelector('.simple-greeting');
+  if (existingGreeting) existingGreeting.remove();
+
+  const greetingDiv = document.createElement('div');
+  // Added a class for targeting and styling with Tailwind CSS
+  greetingDiv.className = 'simple-greeting text-4xl font-bold text-center py-8 text-neutral-800 dark:text-neutral-200';
+  greetingDiv.textContent = `Hi ${firstName}`;
+  elements.chatWindow.appendChild(greetingDiv);
+}
+// --- END: NEW FUNCTION ---
+
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
-  elements.emptyState.classList.add('hidden');
+  // When a real message is displayed, remove both the empty state and the simple greeting
+  const emptyState = elements.chatWindow.querySelector('.empty-state-container');
+  if (emptyState) emptyState.remove();
+  const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
+  if (simpleGreeting) simpleGreeting.remove();
+
   maybeInsertDayDivider(date);
 
   const messageContainer = document.createElement('div');
@@ -267,7 +285,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 }
 
 export function showLoadingIndicator() {
-  elements.emptyState.classList.add('hidden');
+  const emptyState = elements.chatWindow.querySelector('.empty-state-container');
+  if (emptyState) emptyState.remove();
+  const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
+  if (simpleGreeting) simpleGreeting.remove();
+  
   maybeInsertDayDivider(new Date());
   const loadingContainer = document.createElement('div');
   loadingContainer.className = 'message-container';
@@ -554,14 +576,21 @@ function makeCopyButton(text) {
 }
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
-  if (activeProfile && elements.activeProfileDisplay) {
+  const existingEmptyState = document.querySelector('.empty-state-container');
+  if (existingEmptyState) {
+    existingEmptyState.remove();
+  }
+
+  if (activeProfile && elements.chatWindow) {
     const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
     const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
     const descriptionHtml = activeProfile.description 
       ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-md mx-auto">${activeProfile.description}</p>`
       : '';
 
-    elements.activeProfileDisplay.innerHTML = `<div class="text-center pt-8">
+    const emptyStateContainer = document.createElement('div');
+    emptyStateContainer.className = 'empty-state-container';
+    emptyStateContainer.innerHTML = `<div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <p class="text-sm text-neutral-500 dark:text-neutral-400">persona, which includes these values:</p>
@@ -570,25 +599,23 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
             To choose a different persona, click the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> settings gear and select from the dropdown.
         </div>
-
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">${promptsHtml}</div>
-       
       </div>`;
-    document.querySelectorAll('.example-prompt-btn').forEach(btn => {
+    
+    elements.chatWindow.appendChild(emptyStateContainer);
+
+    emptyStateContainer.querySelectorAll('.example-prompt-btn').forEach(btn => {
         btn.addEventListener('click', () => promptClickHandler(btn.textContent.replace(/"/g, '')));
     });
   }
-  elements.emptyState.classList.remove('hidden');
 }
 
 export function resetChatView() {
   lastRenderedDay = '';
-  Array.from(elements.chatWindow.children).forEach(child => {
-    if (child.id !== 'empty-state') child.remove();
-  });
-  if(elements.activeProfileDisplay) elements.activeProfileDisplay.innerHTML = '';
-  elements.emptyState.classList.add('hidden');
+  while (elements.chatWindow.firstChild) {
+    elements.chatWindow.removeChild(elements.chatWindow.firstChild);
+  }
 }
 
 export function setActiveConvoLink(id) {
