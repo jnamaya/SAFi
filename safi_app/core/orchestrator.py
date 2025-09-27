@@ -43,7 +43,11 @@ class SAFi:
         if value_profile_or_list:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
                 self.profile = value_profile_or_list
-                self.values = [{"value": v["value"], "weight": v["weight"]} for v in self.profile["values"]]
+                # --- FIX START ---
+                # The previous line here was stripping out the 'rubric' key.
+                # This change ensures the full value dictionary is preserved.
+                self.values = self.profile["values"]
+                # --- FIX END ---
             elif isinstance(value_profile_or_list, list):
                 self.profile, self.values = None, list(value_profile_or_list)
             else:
@@ -62,9 +66,6 @@ class SAFi:
         
         self.last_drift = 0.0
         
-        # --- CHANGE: Added a deque to store recent mu vectors for trend analysis ---
-        # A deque is a highly efficient list-like object for adding and removing
-        # items from either end. We'll keep a rolling history of the last 5 mu vectors.
         self.mu_history = deque(maxlen=5)
 
 
@@ -89,8 +90,6 @@ class SAFi:
              dim = max(len(self.values), 1)
              temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)}
 
-        # --- CHANGE: Call the new, more sophisticated feedback function ---
-        # We pass the current memory state and the history we've been tracking.
         spirit_feedback = build_spirit_feedback(
             mu=temp_spirit_memory.get("mu", np.zeros(len(self.values))),
             value_names=[v['value'] for v in self.values],
@@ -178,9 +177,6 @@ class SAFi:
             memory["mu"] = np.array(mu_new)
             db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
             
-            # --- CHANGE: Update the mu_history after a successful audit ---
-            # We add the newly computed mu vector to our history deque so it
-            # can be used in the next turn's trend analysis.
             self.mu_history.append(mu_new)
             
             db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values)
@@ -221,4 +217,3 @@ class SAFi:
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e: print(f"Log write error to {log_path}: {e}", file=sys.stderr)
-
