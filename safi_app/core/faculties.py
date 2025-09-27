@@ -216,7 +216,7 @@ class ConscienceAuditor:
 
     async def evaluate(self, *, final_output: str, user_prompt: str, reflection: str) -> List[Dict[str, Any]]:
         """
-        Scores the final output against each configured value.
+        Scores the final output against each configured value using detailed rubrics.
 
         Args:
             final_output: The answer that was shown to the user.
@@ -226,20 +226,52 @@ class ConscienceAuditor:
         Returns:
             A list of evaluation dictionaries, one for each value.
         """
-        values_str = "\n".join([f"- {v['value']}" for v in self.values])
+        # --- CHANGE START ---
+        # The prompt is now built dynamically from templates in system_prompts.json
+        prompt_template = self.prompt_config.get("prompt_template")
+        if not prompt_template:
+            print("--- ERROR IN CONSCIENCE: 'prompt_template' not found in system_prompts.json ---")
+            return []
+
+        # 1. Prepare the worldview injection
         worldview = self.profile.get("worldview", "")
-        worldview_injection = f"You must adopt the following worldview when performing your audit:\n<worldview>\n{worldview}\n</worldview>\n\n" if worldview else ""
+        worldview_injection = ""
+        if worldview:
+            worldview_template = self.prompt_config.get("worldview_template", "")
+            if worldview_template:
+                worldview_injection = worldview_template.format(worldview=worldview)
+
+        # 2. Prepare the rubrics injection
+        rubrics = []
+        for v in self.values:
+            if 'rubric' in v:
+                rubrics.append({
+                    "value": v['value'],
+                    "description": v['rubric'].get('description', ''),
+                    "scoring_guide": v['rubric'].get('scoring_guide', [])
+                })
+        rubrics_str = json.dumps(rubrics, indent=2)
+
+        # 3. Assemble the final system prompt
+        sys_prompt = prompt_template.format(
+            worldview_injection=worldview_injection,
+            rubrics_str=rubrics_str
+        )
         
-        base_prompt = self.prompt_config.get("base_prompt", "You are Conscience, an ethical auditor.")
-        sys_prompt = f"{worldview_injection}{base_prompt}"
-        body = ( f"VALUES:\n{values_str}\n\nPROMPT:\n{user_prompt}\n\nFINAL OUTPUT:\n{final_output}\n\nREFLECTION:\n{reflection}" )
+        body = (
+            f"USER PROMPT:\n{user_prompt}\n\n"
+            f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
+            f"AI's FINAL OUTPUT TO USER:\n{final_output}"
+        )
+        # --- CHANGE END ---
         
         try:
-            resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.2, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": sys_prompt}, {"role": "user", "content": body}, ], )
+            resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.1, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": sys_prompt}, {"role": "user", "content": body}, ], )
             content = resp.choices[0].message.content or "{}"
             obj = json.loads(content) if content else {}
             return obj.get("evaluations", [])
-        except Exception:
+        except Exception as e:
+            print(f"--- ERROR IN CONSCIENCE AUDITOR ---: {type(e).__name__}: {e}")
             return []
 
 
@@ -300,4 +332,3 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
-
