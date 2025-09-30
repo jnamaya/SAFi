@@ -11,15 +11,15 @@ version: 1.0
 ## Origins in Ancient Philosophy
 The Self-Alignment Framework (SAF) is not an invention born in isolation. Its lineage stretches back over two thousand years to the thinkers of ancient Greece.  
 
-Aristotle and Plato laid the foundation by asking the first systematic questions about the human mind. They observed the internal struggle between reason (what we know is right) and desire (what feels good). From this tension emerged the concepts of the **Intellect (Reason)** and the pursuit of a virtuous character. This was the earliest sketch of the framework’s family tree.
+Aristotle and Plato laid the foundation by asking the first systematic questions about the human mind. They observed the internal struggle between reason (what we know is right) and desire (what feels good). From this tension emerged the concepts of the Intellect (Reason) and the pursuit of a virtuous character. This was the earliest sketch of the framework’s family tree.
 
 ## Augustine and the Will
-Several centuries later, St. Augustine expanded the model. He raised the central puzzle: how can someone know the right thing yet still choose the wrong one? His answer was the discovery of a third faculty—**the Will**.  
+Several centuries later, St. Augustine expanded this two-part model of Intellect and Desire. He raised the central puzzle: how can someone know the right thing yet still choose the wrong one? His answer was the discovery of a third faculty—the Will.
 
 The Will was the ultimate decider, the independent capacity to choose a path. With this addition, the family tree gained a crucial new member and a clearer picture of human agency.
 
 ## The Classical Core
-For the next 1,500 years, this triad of **Intellect, Will, and Conscience** defined the core structure. The Conscience, understood as the inner voice of right and wrong, was often treated as a function of the Intellect. Thinkers such as Thomas Aquinas and Immanuel Kant debated their roles, but the basic family tree was stable.
+For the next 1,500 years, this triad of Intellect, Will, and Conscience defined the core structure. The Conscience, understood as the inner voice of right and wrong, was often treated as a function of the Intellect. Thinkers such as Thomas Aquinas and later Immanuel Kant debated their roles, but the basic family tree was stable.
 
 ## SAF’s Rearrangement
 SAF builds directly on this heritage but introduces a deliberate reordering. In SAF the sequence is:  
@@ -39,7 +39,7 @@ Choosing the term *Spirit* was not easy. The word is abstract and carries metaph
 When values and actions harmonize, a sense of meaning emerges. Scripture alludes to this in Luke 1:47: *“My soul magnifies the Lord, and my spirit rejoices in God my Savior.”* For me, this describes a spirit in perfect alignment.
 
 ## Standing on the Shoulders of Giants
-SAF did not appear out of nowhere. It stands in continuity with a long tradition, rearranging established faculties and introducing a new one. From the rational struggles of Greece, to Augustine’s Will, to Aquinas and Kant’s refinements, the lineage of SAF is a philosophical family tree. Its modern contribution is the integration of these faculties into a closed-loop system, with the **Spirit** as its newest member.
+SAF did not appear out of nowhere. It stands in continuity with a long tradition, rearranging established faculties and introducing a new one. From the rational struggles of Greece, to Augustine’s Will, to the refinements of Aquinas and Kant, the lineage of SAF is a philosophical family tree. Its modern contribution is the integration of these faculties into a closed-loop system, with the Spirit as its newest member.
 
 ## Cross references
 - 02_Faculties_Intellect.md  
