@@ -65,8 +65,21 @@ class Retriever:
         # 2. Search the FAISS index for the 'k' nearest neighbors.
         distances, indices = self.index.search(query_embedding, k)
         
-        # 3. Retrieve the actual text chunks using the indices.
-        results = [self.chunks[i] for i in indices[0]]
-        
-        # 4. Join the chunks into a single string to be used as context.
-        return "\n\n---\n\n".join(results)
+        # 3. Retrieve the chunks using the indices.
+        retrieved_items = [self.chunks[i] for i in indices[0]]
+
+        # --- ROBUSTNESS FIX ---
+        # Check if the chunks contain source metadata. This prevents errors.
+        if retrieved_items and isinstance(retrieved_items[0], tuple) and len(retrieved_items[0]) == 2:
+            # New path: Chunks are (text, source) tuples. Apply contextual labeling.
+            formatted_chunks = []
+            for text_chunk, source in retrieved_items:
+                formatted_chunks.append(
+                    f"[BEGIN DOCUMENT: '{source}']\n{text_chunk}\n[END DOCUMENT: '{source}']"
+                )
+            return "\n\n---\n\n".join(formatted_chunks)
+        else:
+            # Fallback path: Chunks are simple strings. Join them directly.
+            # This ensures backward compatibility if the index was created without source metadata.
+            return "\n\n---\n\n".join(str(item) for item in retrieved_items)
+
