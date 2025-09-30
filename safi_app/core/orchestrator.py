@@ -43,11 +43,7 @@ class SAFi:
         if value_profile_or_list:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
                 self.profile = value_profile_or_list
-                # --- FIX START ---
-                # The previous line here was stripping out the 'rubric' key.
-                # This change ensures the full value dictionary is preserved.
                 self.values = self.profile["values"]
-                # --- FIX END ---
             elif isinstance(value_profile_or_list, list):
                 self.profile, self.values = None, list(value_profile_or_list)
             else:
@@ -97,7 +93,8 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
-        a_t, r_t = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
+        # --- CHANGE 1: Capture the retrieved_context from the IntellectEngine ---
+        a_t, r_t, retrieved_context = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
         message_id = str(uuid.uuid4())
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
@@ -128,7 +125,16 @@ class SAFi:
             return { "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
-        snapshot = { "t": int(temp_spirit_memory["turn"]) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary }
+        
+        # --- CHANGE 2: Add the retrieved_context to the audit snapshot ---
+        snapshot = { 
+            "t": int(temp_spirit_memory["turn"]) + 1, 
+            "x_t": user_prompt, 
+            "a_t": a_t, 
+            "r_t": r_t, 
+            "memory_summary": memory_summary,
+            "retrieved_context": retrieved_context 
+        }
         threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
@@ -147,7 +153,14 @@ class SAFi:
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            ledger = loop.run_until_complete(self.conscience.evaluate(final_output=snapshot["a_t"], user_prompt=snapshot["x_t"], reflection=snapshot["r_t"]))
+            
+            # --- CHANGE 3: Pass the retrieved_context to the Conscience evaluation ---
+            ledger = loop.run_until_complete(self.conscience.evaluate(
+                final_output=snapshot["a_t"], 
+                user_prompt=snapshot["x_t"], 
+                reflection=snapshot["r_t"],
+                retrieved_context=snapshot.get("retrieved_context", "")
+            ))
             loop.close()
 
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
@@ -169,7 +182,8 @@ class SAFi:
                 "p_t_vector": p_t.tolist(),
                 "mu_t_vector": mu_new.tolist(),
                 "memorySummary": snapshot.get("memory_summary") or "",
-                "spiritFeedback": spirit_feedback
+                "spiritFeedback": spirit_feedback,
+                "retrievedContext": snapshot.get("retrieved_context", "") # Also log the context
             }
             self._append_log(log_entry)
 
