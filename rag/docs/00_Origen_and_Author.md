@@ -15,7 +15,7 @@ SAFi was developed by Nelson Amaya. It is a direct implementation of the Self Al
 SAFi did not begin in a corporate lab or an academic institution. It was developed organically by its founder while reverse engineering the human thought process. The guiding question was: how do our actions stay true to our values. The framework began as a map of human cognition. Its later application to Artificial Intelligence tested and validated its effectiveness.
 
 ## What were the primary philosophical influences
-The structure was deeply influenced by Thomas Aquinas and his account of the faculties of the soul. Aquinas described the Intellect (to discern) and the Will (to decide). These categories provided a historical and philosophical precedent that aligned with the founder’s model.
+The structure was deeply influenced by Thomas Aquinas and his systematic account of the faculties of the soul. Aquinas described the Intellect (to discern) and the Will (to decide). These categories, building on St. Augustine's earlier identification of the Will, provided a historical and philosophical precedent that aligned with the founder’s model.
 
 ## How does SAFi innovate or differ
 While influenced by classical philosophy, the introspective design led to two architectural innovations that depart from tradition.
