@@ -53,7 +53,6 @@ test.
 test.pysafi_app/config.py
 
 # config files 
->>>>>>> 030f135de5894b53a7ed59dd49d1c2e2c3026ca6
 safi_app/config.py
 
 # benchmarks

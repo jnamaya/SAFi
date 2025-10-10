@@ -2,84 +2,90 @@ import faiss
 import pickle
 import os
 import numpy as np
+import re
 from sentence_transformers import SentenceTransformer
 
 # --- CONFIGURATION ---
-# These constants should match the ones used in your index.py script.
 VECTOR_STORE_PATH = "/var/www/safi/vector_store"
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 
 class Retriever:
     """
-    Handles loading the FAISS index and performing vector searches.
-    This component finds the most relevant document chunks for a given query.
+    Handles loading a FAISS index and performing HYBRID searches.
+    It uses a keyword search for citations and a vector search for semantic queries.
     """
-    def __init__(self):
-        """
-        Initializes the Retriever by loading the embedding model,
-        the FAISS index, and the document chunks from disk.
-        """
-        print("Loading retriever resources...")
+    def __init__(self, knowledge_base_name: str):
+        print(f"\n--- INITIALIZING RETRIEVER FOR KB: '{knowledge_base_name}' ---")
+        self.model = None
+        self.index = None
+        self.metadata = []
         try:
-            # Load the same sentence transformer model used for indexing.
-            self.model = SentenceTransformer(EMBEDDING_MODEL)
-            
-            # Load the FAISS index from the vector_store directory.
-            index_path = os.path.join(VECTOR_STORE_PATH, "safi.index")
+            index_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}.index")
+            metadata_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.pkl")
+            if not os.path.exists(index_path) or not os.path.exists(metadata_path):
+                print(f"--- FATAL ERROR: Index or metadata file not found. ---")
+                return
             self.index = faiss.read_index(index_path)
-            
-            # Load the corresponding text chunks.
-            chunks_path = os.path.join(VECTOR_STORE_PATH, "chunks.pkl")
-            with open(chunks_path, "rb") as f:
-                self.chunks = pickle.load(f)
-                
-            print(f"Retriever loaded successfully. Index contains {self.index.ntotal} vectors.")
-        
-        except FileNotFoundError as e:
-            print(f"Error loading retriever: {e}")
-            print("Please make sure you have run the index.py script successfully and that the 'vector_store' directory is in the correct location.")
-            # Set to None to prevent errors if the index is missing.
-            self.model = None
-            self.index = None
-            self.chunks = None
+            with open(metadata_path, "rb") as f:
+                self.metadata = pickle.load(f)
+            self.model = SentenceTransformer(EMBEDDING_MODEL)
+            print(f"--- Retriever initialized successfully. Found {len(self.metadata)} documents. ---")
+        except Exception as e:
+            print(f"--- FATAL ERROR during retriever initialization: {e} ---")
 
-    def search(self, query: str, k: int = 3) -> str:
+    def _is_citation_query(self, query: str):
         """
-        Finds the top 'k' most relevant document chunks for a given query.
+        Checks if a query looks like a Bible citation.
+        Handles both direct "Genesis 1:1" and natural language "text of Genesis chapter 1".
+        """
+        # This new, more robust regex looks for both patterns.
+        pattern = re.compile(r'\b(\d?\s*[A-Za-z]+)\s+(?:chapter\s+)?(\d+)(?::(\d+))?\b', re.IGNORECASE)
+        return pattern.search(query)
+
+    def _keyword_search(self, query: str, k: int = 20): # Increased k to get whole chapters
+        """Performs a direct keyword search on the metadata for citations."""
+        print(f"--- Performing KEYWORD search for citation: '{query}' ---")
         
-        Args:
-            query: The user's question or prompt.
-            k: The number of relevant chunks to retrieve.
+        matches = list(re.finditer(r'\b(\d?\s*[A-Za-z]+)\s+(?:chapter\s+)?(\d+)\b', query, re.IGNORECASE))
+        if not matches: return []
+
+        all_indices = set()
+        for match in matches:
+            book = match.group(1).strip().lower()
+            chapter = int(match.group(2).strip())
             
-        Returns:
-            A single string containing the concatenated relevant chunks,
-            or an empty string if the retriever is not properly initialized.
-        """
-        # If the index failed to load, return an empty context.
-        if not self.index or not self.model:
+            print(f"Found citation in prompt: Book='{book}', Chapter='{chapter}'")
+
+            candidate_indices = [
+                i for i, meta in enumerate(self.metadata)
+                if meta.get('book', '').lower() == book and meta.get('chapter') == chapter
+            ]
+            all_indices.update(candidate_indices)
+        
+        # Sort the indices to return the verses in the correct order.
+        return sorted(list(all_indices))
+
+    def search(self, query: str, k: int = 5) -> str:
+        if not self.index or not self.model or not self.metadata:
             return ""
-            
-        # 1. Encode the user's query into a vector.
-        query_embedding = self.model.encode([query]).astype('float32')
-        
-        # 2. Search the FAISS index for the 'k' nearest neighbors.
-        distances, indices = self.index.search(query_embedding, k)
-        
-        # 3. Retrieve the chunks using the indices.
-        retrieved_items = [self.chunks[i] for i in indices[0]]
 
-        # --- ROBUSTNESS FIX ---
-        # Check if the chunks contain source metadata. This prevents errors.
-        if retrieved_items and isinstance(retrieved_items[0], tuple) and len(retrieved_items[0]) == 2:
-            # New path: Chunks are (text, source) tuples. Apply contextual labeling.
-            formatted_chunks = []
-            for text_chunk, source in retrieved_items:
-                formatted_chunks.append(
-                    f"[BEGIN DOCUMENT: '{source}']\n{text_chunk}\n[END DOCUMENT: '{source}']"
-                )
-            return "\n\n---\n\n".join(formatted_chunks)
-        else:
-            # Fallback path: Chunks are simple strings. Join them directly.
-            # This ensures backward compatibility if the index was created without source metadata.
-            return "\n\n---\n\n".join(str(item) for item in retrieved_items)
+        indices_to_return = []
+        if self._is_citation_query(query):
+            # For chapter lookups, we might need many more than 5 chunks.
+            indices_to_return = self._keyword_search(query, k=50) 
+        
+        if not indices_to_return:
+            print(f"\n--- Performing VECTOR search for query: '{query[:80]}...' ---")
+            query_embedding = self.model.encode([query]).astype('float32')
+            distances, indices = self.index.search(query_embedding, k)
+            indices_to_return = indices[0]
+            print(f"Top vector search hit (distance: {distances[0][0]}): {self.metadata[indices_to_return[0]] if indices_to_return.size > 0 else 'None'}")
 
+        results = []
+        for i in indices_to_return:
+            if 0 <= i < len(self.metadata):
+                meta = self.metadata[i]
+                text_chunk = meta.get('text_chunk', '')
+                results.append(f"REFERENCE: {meta.get('book')} {meta.get('chapter')}:{meta.get('start_verse')}-{meta.get('end_verse')}\nCONTENT:\n{text_chunk}\n---")
+        
+        return "\n".join(results)

@@ -49,8 +49,13 @@ class IntellectEngine:
         self.last_error: Optional[str] = None
         
         self.retriever = None
-        if self.profile.get("name") == "SAFi":
-            self.retriever = Retriever()
+        # --- DYNAMIC RAG INITIALIZATION ---
+        # Checks the persona profile for a 'rag_knowledge_base' key.
+        # If found, it initializes a Retriever for that specific knowledge base.
+        kb_name = self.profile.get("rag_knowledge_base")
+        if kb_name:
+            self.retriever = Retriever(knowledge_base_name=kb_name)
+        # ----------------------------------
 
     async def generate(
         self, *,
@@ -71,7 +76,9 @@ class IntellectEngine:
         """
         self.last_error = None
         
+        retrieved_context = "" # Default to empty string
         context_injection = ""
+
         if self.retriever:
             print(f"Performing RAG search for prompt: '{user_prompt[:50]}...'")
             retrieved_context = self.retriever.search(user_prompt)
@@ -85,6 +92,10 @@ class IntellectEngine:
                     print("Warning: RAG context injection template not found in prompt config.")
             else:
                 print("No relevant context found in RAG index.")
+                # If RAG was used but found nothing, inform the prompt.
+                rag_template = self.prompt_config.get("rag_context_injection", "")
+                context_injection = rag_template.format(retrieved_context="[NO DOCUMENTS FOUND]")
+
 
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
@@ -102,6 +113,9 @@ class IntellectEngine:
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
 
+        # --- LOGICAL PROMPT ORDERING ---
+        # The RAG context must come first so the model can adhere to the worldview's
+        # primary instruction, which is to check for provided documents.
         system_prompt = "\n\n".join(filter(None, [
             context_injection, worldview, style, memory_injection, spirit_injection, formatting_instructions
         ]))
@@ -121,12 +135,10 @@ class IntellectEngine:
             content = resp.choices[0].message.content or "{}"
             obj = json.loads(content)
             
-            answer = obj.get("answer")
-            reflection = obj.get("reflection", "")
-            answer = answer.replace("\\n", "\n").strip()
-            reflection = reflection.replace("\\n", "\n").strip()
+            answer = obj.get("answer", "").replace("\\n", "\n").strip()
+            reflection = obj.get("reflection", "").replace("\\n", "\n").strip()
 
-            return answer, reflection, context_injection
+            return answer, reflection, retrieved_context
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e} (model={self.model})"
             return None, None, None
@@ -239,11 +251,8 @@ class ConscienceAuditor:
         body = (
             f"USER PROMPT:\n{user_prompt}\n\n"
             f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
-            f"AI's FINAL OUTPUT TO USER:\n{final_output}\n\n"
-            f"--- GROUND TRUTH CONTEXT ---\n"
-            f"The AI was provided with the following documents to answer the prompt. "
-            f"Your 'Strict Factual Grounding' evaluation must ONLY use this context.\n"
-            f"{retrieved_context}"
+            f"DOCUMENTS RETRIEVED BY RAG:\n{retrieved_context if retrieved_context else 'None'}\n\n"
+            f"AI's FINAL OUTPUT TO USER:\n{final_output}"
         )
         
         try:
@@ -299,3 +308,4 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
+
