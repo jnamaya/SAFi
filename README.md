@@ -69,8 +69,6 @@ SAFi implements a five-faculty ethical reasoning engine that operationalizes cen
 
 This closed-loop system ensures every AI interaction is governed by your principles, creating a verifiably trustworthy system.
 
----
-
 ## Key Features
 
 ### 🏗️ Enterprise-Grade Architecture
@@ -89,8 +87,6 @@ This closed-loop system ensures every AI interaction is governed by your princip
 - **Drift Detection**: Automatic alerts when behavior deviates from norms
 - **Performance Analytics**: Track Spirit scores and value adherence over time
 
----
-
 ## Live Demos
 
 ### 🚀 Try SAFi Yourself
@@ -102,8 +98,6 @@ This closed-loop system ensures every AI interaction is governed by your princip
   *View real-time audit logs and alignment metrics*
 
 > **Note:** The public demo is rate-limited to 10 prompts per user per day to ensure fair access for all visitors.
-
----
 
 ## Get Started
 
