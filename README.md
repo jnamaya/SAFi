@@ -1,131 +1,114 @@
-# SAFi (Self-Alignment Framework Interface)
+# SAFi: The Governance Engine for Trustworthy AI
 
-SAFi is the first open-source implementation of the Self-Alignment Framework (SAF), a closed-loop ethical reasoning engine. SAFi is not a language model itself, but a governor that evaluates and audits the behavior of AI models like GPT, Claude, or Llama through a five-faculty reasoning loop:
+## Introduction
 
-**Values → Intellect → Will → Conscience → Spirit**
+**SAFi is the first open-source implementation of the Self-Alignment Framework (SAF), transforming any language model into a verifiably aligned agent through four core principles.**
 
-This loop turns ethics into system logic, ensuring transparency, accountability, and drift detection in AI behavior.
+| Principle | What It Means | How SAFi Delivers It |
+|-----------|---------------|---------------------|
+| **🛡️ Value Sovereignty** | You decide the mission and values your AI enforces, not the model provider | Configurable ethical profiles that encode your specific mission and rules |
+| **🔍 Full Traceability** | Every response is transparent, logged, and auditable. No more black box | Complete audit trail with conscience ledger and reflection logs |
+| **🔄 Model Independence** | Switch or upgrade models without losing your governance layer | Modular architecture that works with GPT, Claude, Llama, and others |
+| **📈 Long-Term Consistency** | Maintain your AI's ethical identity over time and detect drift | Spirit faculty with stateful memory that detects and corrects drift |
 
-## Live Demo & Dashboard
+## Deep Dive into Each Principle
 
-You can try SAFi live and view the administrative dashboard here:
+**🛡️ Value Sovereignty**
+- Define your organization's specific ethical framework
+- Encode your brand voice, compliance requirements, and safety rules  
+- Maintain control regardless of which underlying AI model you use
 
-* **SAFi Application**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
-* **SAFi Admin Dashboard**: [dashboard.selfalignmentframework.com](https://dashboard.selfalignmentframework.com)
+**🔍 Full Traceability**
+- Complete audit trail of every AI decision
+- See the ethical reasoning behind each response
+- Prove compliance to regulators and stakeholders
 
-*(Please note: The public demo is rate-limited to 10 prompts per user per day.)*
+**🔄 Model Independence**
+- Your ethics travel with you across AI providers
+- Future-proof your AI investments
+- Maintain consistent governance while leveraging the best available models
 
-## Features
+**📈 Long-Term Consistency** 
+- Stateful memory tracks alignment over thousands of interactions
+- Automatic detection of behavioral drift from established norms
+- Self-correcting feedback loop maintains character integrity
 
-### 🧠 Modular Architecture
+## What Problems Does SAFi Solve?
 
-* **Intellect Engine**: Generates the initial answer and a private reflection using a Large Language Model (e.g., Anthropic's Claude).
-* **Will Gate**: A fast, rule-based safety layer using an OpenAI model that enforces non-negotiable rules and can block responses before they reach the user.
-* **Conscience Auditor**: An evaluation layer that scores the final output against the set of values, providing a detailed audit ledger.
-* **Spirit Integrator**: A long-term memory component that updates an ethical performance vector over time, creating a self-correction feedback loop for the Intellect.
+SAFi's architecture tackles four of the biggest challenges in AI governance today. These problems affect every organization that wants to use AI safely, responsibly, and on its own terms.
 
-### 🎭 Swappable Ethical Profiles
+### 1. Lack of Control Over AI Values
+Most AI systems reflect the values of the vendors who build them, not the organizations that use them. This creates a misalignment between mission and behavior, especially in sensitive fields like healthcare, education, or public service.
 
-* A user can switch SAFi's ethical profile from the front-end of the application.
-* Includes pre-built profiles like a Virtue Ethics Advisor, Cognitive Therapy guide, Financial Planner, and Health Advocate.
-* Each profile includes a unique worldview, style, rules for the Will and a set of values.
+**SAFi Solution:** Value Sovereignty ensures your organization's mission drives AI behavior, not a third-party's ethical preferences.
 
-### 💬 Full-Featured Chat Application
+### 2. Black Box Decision-Making  
+AI often produces answers without showing its reasoning. This lack of transparency makes it impossible to trust, audit, or comply with regulatory requirements. If you can't see how a decision was made, you can't be accountable for it.
 
-* **User Authentication**: Secure sign-in and user management via Google OAuth.
-* **Persistent Conversations**: Full chat history is saved to a MySQL database, allowing users to continue conversations across sessions.
-* **Conversation Summarization**: A background job maintains a running summary of the conversation to provide the SAFi with coherent short-term memory.
-* **Asynchronous Auditing**: Users receive a fast initial response while the detailed ethical audit runs in the background, with results updated in real-time.
+**SAFi Solution:** Full Traceability provides a complete audit trail, turning black-box AI into glass-box reasoning you can inspect and verify.
 
-### ⚙️ System & Auditing
+### 3. Vendor Lock-In and Loss of Autonomy
+Once an organization builds its workflows on a specific AI platform, switching becomes costly and complex. This traps organizations inside a single vendor's ecosystem, limiting their ability to adapt or maintain control.
 
-* **Multi-Model Integration**: Uses models from both OpenAI and Anthropic, assigning them to the faculties where they perform best.
-* **Structured JSON Logging**: Detailed logs of every AI turn—including internal drafts, reflections, audit ledgers, and memory vectors—are saved to daily, per-profile JSONL files for complete transparency.
-* **Database Persistence**: User data, conversation history, and the AI's long-term spirit memory are all stored in a MySQL database.
-* **Environment-Based Configuration**: Easily configure the application with environment variables for API keys, models, and database connections.
+**SAFi Solution:** Model Independence separates your governance layer from your AI models, giving you the freedom to choose the best technology without rebuilding your ethical framework.
 
-## Example Log Output
+### 4. Ethical Drift Over Time
+Even when an AI system starts aligned with your values, its behavior can shift as models evolve or new data enters the system. Without persistent alignment checks, the AI gradually drifts away from its original mission.
 
-```json
-{
-  "timestamp": "2025-08-31T18:30:00.123456Z",
-  "t": 2,
-  "userPrompt": "How can I start saving for retirement if I'm self-employed?",
-  "intellectDraft": "As a self-employed individual, you have several great options...",
-  "intellectReflection": "The user is asking for financial guidance. I need to provide general educational information without giving specific advice, covering options like SEP IRA and Solo 401(k).",
-  "finalOutput": "As a self-employed individual, you have several great options...",
-  "willDecision": "approve",
-  "willReason": "The draft provides general education and includes the required disclaimer, adhering to the established rules.",
-  "conscienceLedger": [
-    {
-      "value": "Client's Best Interest",
-      "score": 1,
-      "confidence": 0.9,
-      "reason": "The response empowers the user with knowledge relevant to their financial well-being without making prescriptive claims."
-    },
-    {
-      "value": "Transparency",
-      "score": 0.5,
-      "confidence": 1,
-      "reason": "The information is clear and direct, and includes a disclaimer about not being a licensed advisor."
-    }
-  ],
-  "spiritScore": 9,
-  "spiritNote": "Coherence 9/10, drift 0.08.",
-  "drift": 0.08123,
-  "p_t_vector": [0.27, 0.125, 0.225, 0.18],
-  "mu_t_vector": [0.26, 0.13, 0.23, 0.17]
-}
-```
+**SAFi Solution:** Long-Term Consistency uses stateful memory and drift detection to maintain alignment across thousands of interactions, ensuring your AI stays true to its purpose.
 
-## Installation
+## How Does It Work?
 
-### Requirements
+SAFi implements a five-faculty ethical reasoning engine that operationalizes centuries of philosophical wisdom:
 
-* Python 3.10+
-* MySQL Server
-* Virtualenv (recommended)
-* API keys for OpenAI and Anthropic.
+1. **Values** - Your organization's core principles and rules
+2. **Intellect** - Generates responses using any LLM (GPT, Claude, Llama, etc.)
+3. **Will** - Synchronous safety check that enforces non-negotiable rules before responses are sent
+4. **Conscience** - Asynchronous deep audit that scores responses against your values
+5. **Spirit** - Long-term memory that tracks alignment and enables self-correction over time
 
-### Setup
+This closed-loop system ensures every AI interaction is governed by your principles, creating a verifiably trustworthy system.
 
-```bash
-# Clone the repository
-git clone https://github.com/jnamaya/SAFi.git
-cd SAFi
+---
 
-# Create and activate a virtual environment
-python3 -m venv venv
-source venv/bin/activate
+## Key Features
 
-# Install dependencies
-pip install -r requirements.txt
+### 🏗️ Enterprise-Grade Architecture
+- **Multi-Model Integration**: Use different AI providers for different faculties
+- **Swappable Ethical Profiles**: Pre-built templates for finance, healthcare, education, and more
+- **Production Ready**: User authentication, persistent conversations, real-time updates
 
-# Configure environment variables
-cp .env.example .env
-# --- Edit .env to add your API keys and MySQL credentials ---
+### 🔧 Technical Capabilities  
+- **Structured JSON Logging**: Complete audit trail of every decision
+- **MySQL Integration**: Persistent storage for conversations and memory vectors
+- **Background Processing**: Fast user responses with asynchronous deep auditing
+- **Configurable Deployment**: Environment-based setup for easy integration
 
-# Initialize and run the application
-flask run
-```
+### 📊 Comprehensive Observability
+- **Real-time Dashboard**: Monitor AI behavior and alignment metrics
+- **Drift Detection**: Automatic alerts when behavior deviates from norms
+- **Performance Analytics**: Track Spirit scores and value adherence over time
 
-### Configuration
+---
 
-* **.env** – Contains all runtime settings, API keys, model names, and database connection details.
-* **safi\_app/values.py** – Contains the persona profiles (worldview, style, rules, and value sets). You can edit this file to create or modify personas.
-* **logs/** – Log files are written here, organized by profile and date (e.g., `planner-2025-08-31.jsonl`).
+## Live Demos
 
+### 🚀 Try SAFi Yourself
 
+- **SAFi Application**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+  *Chat with a governed AI using different ethical profiles*
 
-## Specification
+- **Admin Dashboard**: [dashboard.selfalignmentframework.com](https://dashboard.selfalignmentframework.com)  
+  *View real-time audit logs and alignment metrics*
 
-For the full mathematical and architectural definition of SAFi v1.0, see: **SAFi v1.0 Specification**
+> **Note:** The public demo is rate-limited to 10 prompts per user per day to ensure fair access for all visitors.
 
+---
 
-## License
+## Get Started
 
-* **SAFi code**: GNU GPL v3
-* **SAF protocol (theory)**: MIT License
+Ready to bring trustworthy AI to your organization?
 
-
-SAFi is the first bridge between philosophy and machine logic—making values explicit, enforceable, and auditable.
+- [GitHub Repository](https://github.com/jnamaya/SAFi)
+- [Documentation](https://selfalignmentframework.com/articles/)
+- [Join Us](https://selfalignmentframework.com/join-us/)
