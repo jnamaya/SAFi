@@ -50,6 +50,25 @@ def init_db():
         
         logging.info("Initializing database schema...")
         
+        # --- MODIFICATION ---
+        # Added new fields to the users table for per-user model selection.
+        # We check if columns exist before adding to be idempotent.
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'intellect_model'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN intellect_model VARCHAR(255) DEFAULT NULL")
+            logging.info("Added 'intellect_model' column to 'users' table.")
+            
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'will_model'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN will_model VARCHAR(255) DEFAULT NULL")
+            logging.info("Added 'will_model' column to 'users' table.")
+
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'conscience_model'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN conscience_model VARCHAR(255) DEFAULT NULL")
+            logging.info("Added 'conscience_model' column to 'users' table.")
+        # --- END MODIFICATION ---
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
@@ -58,7 +77,10 @@ def init_db():
                 picture TEXT,
                 active_profile VARCHAR(50),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP NULL
+                last_login TIMESTAMP NULL,
+                intellect_model VARCHAR(255) DEFAULT NULL,
+                will_model VARCHAR(255) DEFAULT NULL,
+                conscience_model VARCHAR(255) DEFAULT NULL
             )
         ''')
 
@@ -181,7 +203,14 @@ def get_user_details(user_id: str) -> Optional[Dict[str, Any]]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, email, name, picture, active_profile FROM users WHERE id = %s", (user_id,))
+        # --- MODIFICATION ---
+        # Updated select to include the new per-user model fields.
+        cursor.execute("""
+            SELECT id, email, name, picture, active_profile, 
+                   intellect_model, will_model, conscience_model 
+            FROM users 
+            WHERE id = %s
+        """, (user_id,))
         return cursor.fetchone()
     finally:
         if cursor:
@@ -203,6 +232,26 @@ def update_user_profile(user_id: str, profile_name: str):
         if conn and conn.is_connected():
             conn.close()
 
+# --- MODIFICATION ---
+# Added a new function to update the user's chosen models in the database.
+def update_user_models(user_id: str, intellect_model: str, will_model: str, conscience_model: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users 
+            SET intellect_model = %s, will_model = %s, conscience_model = %s 
+            WHERE id = %s
+        """, (intellect_model, will_model, conscience_model, user_id))
+        conn.commit()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+# --- END MODIFICATION ---
 
 def delete_user(user_id: str):
     conn = None
@@ -494,4 +543,3 @@ def set_conversation_title_from_first_message(conversation_id: str, message: str
     new_title = (message[:50] + '...') if len(message) > 50 else message
     rename_conversation(conversation_id, new_title)
     return new_title
-

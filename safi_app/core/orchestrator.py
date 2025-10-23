@@ -25,6 +25,11 @@ class SAFi:
         config,
         value_profile_or_list: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         value_set: Optional[List[Dict[str, Any]]] = None,
+        # --- MODIFICATION ---
+        # Added model overrides to the constructor.
+        intellect_model: Optional[str] = None,
+        will_model: Optional[str] = None,
+        conscience_model: Optional[str] = None
     ):
         self.config = config
         groq_api_key = getattr(config, "GROQ_API_KEY", None)
@@ -64,19 +69,32 @@ class SAFi:
         
         self.mu_history = deque(maxlen=5)
 
+        # --- MODIFICATION ---
+        # Use the provided model arguments, falling back to Config defaults.
+        intellect_model_to_use = intellect_model or getattr(config, "INTELLECT_MODEL")
+        will_model_to_use = will_model or getattr(config, "WILL_MODEL")
+        conscience_model_to_use = conscience_model or getattr(config, "CONSCIENCE_MODEL")
+        # --- END MODIFICATION ---
+
 
         self.intellect_engine = IntellectEngine(
-            self.groq_client, model=getattr(config, "INTELLECT_MODEL"), profile=self.profile, prompt_config=self.prompts["intellect_engine"]
+            self.groq_client, model=intellect_model_to_use, profile=self.profile, prompt_config=self.prompts["intellect_engine"]
         )
         self.will_gate = WillGate(
-            self.groq_client, model=getattr(config, "WILL_MODEL"), values=self.values, profile=self.profile, prompt_config=self.prompts["will_gate"]
+            self.groq_client, model=will_model_to_use, values=self.values, profile=self.profile, prompt_config=self.prompts["will_gate"]
         )
         self.conscience = ConscienceAuditor(
-            self.groq_client, model=getattr(config, "CONSCIENCE_MODEL"), values=self.values, profile=self.profile, prompt_config=self.prompts["conscience_auditor"]
+            self.groq_client, model=conscience_model_to_use, values=self.values, profile=self.profile, prompt_config=self.prompts["conscience_auditor"]
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
         print(f"SAFi: profile '{self.active_profile_name}' active, running on Groq.")
+        # --- MODIFICATION ---
+        # Log if custom models are in use for this instance
+        if any([intellect_model, will_model, conscience_model]):
+            print(f"  > Using user-defined models: [Intellect: {intellect_model_to_use}, Will: {will_model_to_use}, Conscience: {conscience_model_to_use}]")
+        # --- END MODIFICATION ---
+
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         memory_summary = db.fetch_conversation_summary(conversation_id)

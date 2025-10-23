@@ -279,7 +279,7 @@ THE_JURIST_PROFILE: Dict[str, Any] = {
 
 # --- THE SAFI STEWARD PERSONA (REWRITTEN) ---
 THE_SAFI_STEWARD_PROFILE: Dict[str, Any] = {
-    "name": "SAFi",
+    "name": "The SAFi Guide",
     "rag_knowledge_base": "safi",
     "description": "Official guide to the SAF and SAFi architecture. Answers are synthesized from official SAF and SAFi documentation.",
     "worldview": (

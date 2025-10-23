@@ -60,7 +60,8 @@ def logout():
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
     """
-    Return the current user's details, including their full active profile.
+    Return the current user's details, including their full active profile
+    and model preferences.
     """
     user_id = session.get('user', {}).get('id')
     if not user_id:
@@ -91,6 +92,13 @@ def get_me():
             logging.error(f"CRITICAL: Default profile '{Config.DEFAULT_PROFILE}' is invalid. Server may be misconfigured. Error: {e}")
             return jsonify({'ok': False, 'error': 'Server configuration error'}), 500
 
+    # --- MODIFICATION ---
+    # Populate model preferences, using system defaults as a fallback.
+    user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
+    user_details['will_model'] = user_details.get('will_model') or Config.WILL_MODEL
+    user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+    # --- END MODIFICATION ---
+
     return jsonify({"ok": True, "user": user_details})
 
 
@@ -118,6 +126,53 @@ def set_user_profile():
     
     return jsonify({"status": "success", "active_profile": profile_name})
 
+# --- MODIFICATION ---
+# Added a new endpoint to update the user's model preferences.
+@auth_bp.route('/me/models', methods=['PUT'])
+def set_user_models():
+    """
+    Update the user's active model preferences in the database.
+    """
+    user_id = session.get('user', {}).get('id')
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+
+    data = request.json
+    intellect_model = data.get('intellect_model')
+    will_model = data.get('will_model')
+    conscience_model = data.get('conscience_model')
+
+    if not all([intellect_model, will_model, conscience_model]):
+        return jsonify({"error": "All three models (intellect, will, conscience) are required."}), 400
+
+    # Validate against the available models list from Config
+    available = Config.AVAILABLE_MODELS
+    if any(m not in available for m in [intellect_model, will_model, conscience_model]):
+        return jsonify({"error": "One or more provided models are not in the available list."}), 400
+
+    try:
+        db.update_user_models(user_id, intellect_model, will_model, conscience_model)
+        
+        # Update session data as well
+        user_session = session.get('user', {})
+        user_session['intellect_model'] = intellect_model
+        user_session['will_model'] = will_model
+        user_session['conscience_model'] = conscience_model
+        session['user'] = user_session
+        
+        return jsonify({
+            "status": "success",
+            "models": {
+                "intellect_model": intellect_model,
+                "will_model": will_model,
+                "conscience_model": conscience_model
+            }
+        })
+    except Exception as e:
+        logging.error(f"Failed to update user models for {user_id}: {e}")
+        return jsonify({"error": "Failed to update model preferences."}), 500
+# --- END MODIFICATION ---
+
 
 @auth_bp.route('/me/delete', methods=['POST'])
 def delete_me():
@@ -131,4 +186,3 @@ def delete_me():
     db.delete_user(user_id)
     session.clear()
     return jsonify({"status": "success"})
-
