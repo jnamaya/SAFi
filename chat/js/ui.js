@@ -73,7 +73,7 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
               </div>
               <div>
                 <h1 class="text-lg font-bold">SAFi</h1>
-                <p class="text-xs text-gray-500 dark:text-gray-400">The Governance Layer for AI</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">The Governance Engine For AI</p>
               </div>
             </div>
             <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
