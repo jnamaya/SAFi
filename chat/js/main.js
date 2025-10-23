@@ -5,24 +5,34 @@ import * as utils from './utils.js';
 let currentConversationId = null;
 let user = null; // Store user object
 let activeProfileData = {}; // Stores the full profile details
-let availableProfiles = []; // Stores the list of profile objects {key, name}
+let availableProfiles = []; // Stores the list of *full profile objects*
+let availableModels = []; // --- MODIFICATION: Store available models
 
 async function checkLoginStatus() {
     try {
         const me = await api.getMe();
         user = (me && me.ok) ? me.user : null;
         
-        ui.updateUIForAuthState(user, handleLogout, handleProfileChange);
+        // --- MODIFICATION: Pass settings modal handler
+        ui.updateUIForAuthState(user, handleLogout, null, handleOpenSettingsModal);
         
         if (user) {
-            const profilesResponse = await api.fetchAvailableProfiles();
+            // --- MODIFICATION: Fetch profiles and models
+            const [profilesResponse, modelsResponse] = await Promise.all([
+                api.fetchAvailableProfiles(),
+                api.fetchAvailableModels()
+            ]);
+            
             availableProfiles = profilesResponse.available || [];
+            availableModels = modelsResponse.models || [];
             
             const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
             
-            activeProfileData = profilesResponse.active_details || {};
+            activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
-            ui.populateProfileSelector(availableProfiles, currentProfileKey);
+            // --- MODIFICATION: This is no longer needed as dropdown is gone
+            // ui.populateProfileSelector(availableProfiles, currentProfileKey);
+            // --- END MODIFICATION
             
             await loadConversations();
         }
@@ -34,21 +44,83 @@ async function checkLoginStatus() {
     }
 }
 
-async function handleProfileChange(event) {
-    const newProfileName = event.target.value;
+// --- MODIFICATION: This is now called from the settings modal
+async function handleProfileChange(newProfileName) {
     try {
         await api.updateUserProfile(newProfileName);
         const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
-        ui.showToast(`Profile switched to ${selectedProfile.name}`, 'success');
+        ui.showToast(`Profile switched to ${selectedProfile.name}. Reloading...`, 'success');
         
-        window.location.reload();
+        // Reload to apply changes
+        setTimeout(() => window.location.reload(), 1000);
 
     } catch (error) {
         console.error('Failed to switch profile:', error);
         ui.showToast('Could not switch profile.', 'error');
-        event.target.value = activeProfileData.name ? activeProfileData.name.toLowerCase() : '';
     }
 }
+// --- END MODIFICATION ---
+
+// --- MODIFICATION: New handler for opening the settings modal ---
+function handleOpenSettingsModal() {
+    ui.showModal('settings', {
+        user: user,
+        profiles: {
+            available: availableProfiles,
+            active_profile_key: activeProfileData.key
+        },
+        models: availableModels,
+        handlers: {
+            profile: handleProfileChange,
+            models: handleModelsSave,
+            theme: handleThemeToggle,
+            logout: handleLogout,
+            delete: () => ui.showModal('delete')
+        }
+    });
+}
+// --- END MODIFICATION ---
+
+// --- MODIFICATION: New handler for saving models ---
+async function handleModelsSave(newModels) {
+    try {
+        await api.updateUserModels(newModels);
+        ui.showToast('Model preferences saved. Reloading...', 'success');
+        
+        // Reload to apply changes
+        setTimeout(() => window.location.reload(), 1000);
+    } catch (error) {
+         console.error('Failed to save models:', error);
+        ui.showToast('Could not save model preferences.', 'error');
+    }
+}
+// --- END MODIFICATION ---
+
+// --- MODIFICATION: New handler for theme toggle (passed to modal) ---
+function handleThemeToggle() {
+    document.documentElement.classList.toggle('dark');
+    localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    
+    // Update theme button in user dropdown (if it's still rendered)
+    const updateThemeUI = (scope) => {
+        const isDark = document.documentElement.classList.contains('dark');
+        const lightIcon = scope.querySelector('#theme-icon-light, #modal-theme-icon-light');
+        const darkIcon = scope.querySelector('#theme-icon-dark, #modal-theme-icon-dark');
+        const label = scope.querySelector('#modal-theme-label');
+
+        if(lightIcon && darkIcon) {
+            lightIcon.style.display = isDark ? 'block' : 'none';
+            darkIcon.style.display = isDark ? 'none' : 'block';
+        }
+        if (label) {
+            label.textContent = isDark ? 'Dark Mode' : 'Light Mode';
+        }
+    };
+    
+    const dropdown = document.getElementById('settings-dropdown');
+    if (dropdown) updateThemeUI(dropdown);
+}
+// --- END MODIFICATION ---
 
 
 async function loadConversations(switchToId = null) {
@@ -361,12 +433,18 @@ function attachEventListeners() {
         sidebarOverlay.addEventListener('click', ui.closeSidebar);
     }
     
+    // --- MODIFICATION: Added listeners for new settings modal ---
+    ui.elements.closeSettingsModal?.addEventListener('click', ui.closeModal);
+    ui.setupSettingsTabs();
+    // --- END MODIFICATION ---
+    
     document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
     
+    // --- MODIFICATION: Updated settings menu logic ---
     const settingsMenu = document.getElementById('settings-menu');
     if (settingsMenu) {
         settingsMenu.addEventListener('click', (event) => {
@@ -377,6 +455,7 @@ function attachEventListeners() {
             }
         });
     }
+    // --- END MODIFICATION ---
 
     document.addEventListener('click', (event) => {
         const settingsMenu = document.getElementById('settings-menu');
@@ -388,4 +467,3 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
-

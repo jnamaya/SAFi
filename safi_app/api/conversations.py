@@ -13,11 +13,24 @@ conversations_bp = Blueprint('conversations', __name__)
 safi_instances = {}
 
 def _load_safi(profile_name: str) -> SAFi:
+    """
+    Loads or creates a cached SAFi instance for a given profile.
+    NOTE: This is now only used for non-user-specific instances,
+    like the public anonymous endpoint.
+    """
     if profile_name in safi_instances:
         return safi_instances[profile_name]
 
     prof = get_profile(profile_name)
-    instance = SAFi(config=Config, value_profile_or_list=prof)
+    # --- MODIFICATION ---
+    # When creating a cached instance, it always uses the default models from Config.
+    instance = SAFi(
+        config=Config, 
+        value_profile_or_list=prof,
+        intellect_model=Config.INTELLECT_MODEL,
+        will_model=Config.WILL_MODEL,
+        conscience_model=Config.CONSCIENCE_MODEL
+    )
     
     safi_instances[profile_name] = instance
     return instance
@@ -29,6 +42,9 @@ def get_user_id():
     return user.get('sub') or user.get('id')
 
 def get_user_profile_name():
+    # --- MODIFICATION ---
+    # Now fetches from session['user']['active_profile'] which is more robust
+    # after the changes to auth.py
     user = session.get('user', {})
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
@@ -39,6 +55,7 @@ def public_process_prompt_endpoint():
     """
     Process a user prompt from the public WordPress chatbot.
     This endpoint is anonymous and does not require authentication.
+    It uses the cached _load_safi() function.
     """
     data = request.json
     if 'message' not in data or 'conversation_id' not in data:
@@ -66,7 +83,7 @@ def public_process_prompt_endpoint():
     # --- CHANGE: Set the public persona to "safi" ---
     # This overrides the system default for the WordPress chatbot only.
     public_profile_name = "safi"
-    saf_system = _load_safi(public_profile_name)
+    saf_system = _load_safi(public_profile_name) # Uses the cached instance
     # --- END OF CHANGE ---
     
     # Use the ID from the newly created conversation record.
@@ -79,7 +96,7 @@ def public_process_prompt_endpoint():
 @conversations_bp.route('/process_prompt', methods=['POST'])
 def process_prompt_endpoint():
     """
-    Process a user prompt using their selected profile.
+    Process a user prompt using their selected profile AND selected models.
     """
     user_id = get_user_id()
     if not user_id:
@@ -98,8 +115,31 @@ def process_prompt_endpoint():
     if limit > 0:
         db.record_prompt_usage(user_id)
     
-    user_profile = get_user_profile_name()
-    saf_system = _load_safi(user_profile)
+    # --- MODIFICATION ---
+    # Create a user-specific SAFi instance instead of using the cache.
+    # 1. Get user's full details
+    user_details = db.get_user_details(user_id)
+    if not user_details:
+         return jsonify({"error": "User not found."}), 404
+
+    # 2. Get their profile
+    user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
+    prof = get_profile(user_profile_name)
+
+    # 3. Get their model preferences, falling back to Config defaults
+    intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
+    will_model = user_details.get('will_model') or Config.WILL_MODEL
+    conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+    
+    # 4. Create a new SAFi instance with these specific settings
+    saf_system = SAFi(
+        config=Config,
+        value_profile_or_list=prof,
+        intellect_model=intellect_model,
+        will_model=will_model,
+        conscience_model=conscience_model
+    )
+    # --- END MODIFICATION ---
     
     result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
     return jsonify(result)
@@ -120,15 +160,53 @@ def get_audit_result_endpoint(message_id):
 def health_check():
     return jsonify({"status": "ok"})
 
+# --- MODIFICATION ---
+# Added a new endpoint to provide the list of available models from Config.
+@conversations_bp.route('/models', methods=['GET'])
+def get_available_models():
+    """
+    Returns the list of available AI models from the config.
+    """
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    
+    return jsonify({"models": Config.AVAILABLE_MODELS})
+# --- END MODIFICATION ---
+
+# --- MODIFICATION ---
+# This endpoint now returns the *full details* for all available profiles,
+# not just the names, to populate the new settings panel.
 @conversations_bp.route('/profiles', methods=['GET'])
 def profiles_list():
+    """
+    Returns a list of all available profile configurations and the key
+    of the user's currently active profile.
+    """
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+
     user_profile_name = get_user_profile_name()
-    active_profile_details = {}
-    try:
-        active_profile_details = get_profile(user_profile_name)
-    except KeyError:
-        active_profile_details = get_profile(Config.DEFAULT_PROFILE)
-    return jsonify({"available": list_profiles(), "active_details": active_profile_details})
+    
+    all_profiles = []
+    for p in list_profiles():
+        try:
+            # We add the 'key' to the profile dict for the frontend
+            profile_details = get_profile(p['key'])
+            profile_details['key'] = p['key'] 
+            all_profiles.append(profile_details)
+        except KeyError:
+            continue # Skip any broken profiles
+            
+    sorted_profiles = sorted(all_profiles, key=lambda x: x['name'])
+    
+    return jsonify({
+        "available": sorted_profiles, 
+        "active_profile_key": user_profile_name
+    })
+# --- END MODIFICATION ---
+
 
 @conversations_bp.route('/conversations', methods=['GET'])
 def get_conversations():
@@ -196,4 +274,3 @@ def export_chat_history(conversation_id):
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment;filename=SAFi-Export-{filename_title}.json'}
     )
-

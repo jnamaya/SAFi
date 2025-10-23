@@ -3,6 +3,9 @@ export const urls = {
     LOGOUT: '/api/logout',
     ME: '/api/me',
     PROFILES: '/api/profiles',
+    MODELS: '/api/models', // --- MODIFICATION: Added new models endpoint
+    UPDATE_MODELS: '/api/me/models', // --- MODIFICATION: Added new update models endpoint
+    UPDATE_PROFILE: '/api/me/profile', // --- MODIFICATION: Added new update profile endpoint
     CONVERSATIONS: '/api/conversations',
     PROCESS: '/api/process_prompt',
     AUDIT: '/api/audit_result',
@@ -48,8 +51,19 @@ export const deleteAccount = () => fetchWithHandling(urls.DELETE_ACCOUNT, { meth
 export const fetchAvailableProfiles = () => fetchWithHandling(urls.PROFILES);
 
 export const updateUserProfile = (profileName) => {
-    return fetchWithHandling('/api/me/profile', {
+    return fetchWithHandling(urls.UPDATE_PROFILE, {
         method: 'PUT',
         body: JSON.stringify({ profile: profileName })
     });
 };
+
+// --- MODIFICATION: Added new functions for model management ---
+export const fetchAvailableModels = () => fetchWithHandling(urls.MODELS);
+
+export const updateUserModels = (models) => {
+    return fetchWithHandling(urls.UPDATE_MODELS, {
+        method: 'PUT',
+        body: JSON.stringify(models)
+    });
+};
+// --- END MODIFICATION ---
