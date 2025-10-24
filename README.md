@@ -91,12 +91,8 @@ This closed-loop system ensures every AI interaction is governed by your princip
 
 ### 🚀 Try SAFi Yourself
 
-- **SAFi Application**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
-  *Chat with a governed AI using different ethical profiles*
-
-- **Admin Dashboard**: [dashboard.selfalignmentframework.com](https://dashboard.selfalignmentframework.com)  
-  *View real-time audit logs and alignment metrics*
-
+- **DEMO URL**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+  
 > **Note:** The public demo is rate-limited to 10 prompts per user per day to ensure fair access for all visitors.
 
 ## Get Started
