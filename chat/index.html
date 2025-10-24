@@ -43,7 +43,8 @@
 
   <main id="app-container" class="w-full">
     <div id="sidebar-container">
-        </div>
+        <!-- Sidebar dynamically generated -->
+    </div>
 
     <div class="md:ml-80 flex flex-col min-h-screen">
       <section class="w-full max-w-4xl mx-auto flex flex-col flex-1 px-3 sm:px-0">
@@ -86,10 +87,12 @@
                 <h1 id="chat-title" class="text-[28px] font-semibold leading-tight truncate">SAFi</h1>
                 <p class="text-xs text-gray-500 dark:text-gray-400">The Governance Engine For AI</p>
             </div>
-            <div class="w-10"></div> </header>
+            <div class="w-10"> <!-- Spacer --> </div>
+          </header>
 
           <div id="chat-window" class="flex-1 p-4 sm:p-6 flex flex-col justify-start gap-5">
-            </div>
+            <!-- Chat messages dynamically generated -->
+          </div>
 
           <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 sticky bottom-0">
             <textarea 
@@ -121,6 +124,7 @@
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
+  <!-- Ethical Reasoning Modal -->
   <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-2xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
     <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <div class="flex items-center gap-3">
@@ -134,7 +138,8 @@
       </button>
     </div>
     <div id="conscience-details" class="flex-1 overflow-y-auto custom-scrollbar p-6">
-        </div>
+        <!-- Content dynamically generated -->
+    </div>
     <div class="flex justify-between items-center p-4 bg-neutral-50 dark:bg-neutral-900/50 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
         <button id="copy-audit-btn" type="button" class="flex items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
@@ -144,6 +149,7 @@
     </div>
   </div>
 
+  <!-- Delete Account Modal -->
   <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
     <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
     <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure? This action is permanent.</p>
@@ -153,7 +159,8 @@
     </div>
   </div>
 
-  <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full max-w-3xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[90vh]">
+  <!-- Settings Modal -->
+  <div id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full max-w-3xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-in-out">
     <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <h3 id="settings-modal-title" class="text-lg font-semibold">Settings</h3>
       <button id="close-settings-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
@@ -161,8 +168,8 @@
       </button>
     </div>
     
-    <div class="flex flex-col md:flex-row flex-1 min-h-0">
-      <nav class="md:w-1/3 p-4 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 shrink-0">
+    <div class="flex flex-col md:flex-row flex-1 min-h-0 relative"> <!-- Added relative positioning -->
+      <nav class="md:w-1/3 p-4 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 shrink-0 transition-all duration-300 ease-in-out">
         <div class="space-y-1" role="tablist" aria-orientation="vertical">
           <button id="settings-nav-profile" role="tab" aria-selected="true" class="modal-tab-button active">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.25278C12 6.25278 6.72222 3 3 3C3 3 3 10.875 3 13.5C3 19.5 12 21 12 21C12 21 21 19.5 21 13.5C21 10.875 21 3 21 3C17.2778 3 12 6.25278 12 6.25278Z"></path></svg>
@@ -172,6 +179,10 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
             <span>AI Models</span>
           </button>
+           <button id="settings-nav-dashboard" role="tab" aria-selected="false" class="modal-tab-button">
+             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+            <span>Dashboard</span>
+          </button>
           <button id="settings-nav-user" role="tab" aria-selected="false" class="modal-tab-button">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
             <span>Profile</span>
@@ -179,18 +190,50 @@
         </div>
       </nav>
       
-      <div class="flex-1 overflow-y-auto custom-scrollbar">
+      <!-- Content Area -->
+      <div class="flex-1 overflow-y-auto custom-scrollbar transition-all duration-300 ease-in-out">
+         <!-- REMOVED: Back Button Container -->
+         <!-- <div id="dashboard-back-button-container" class="absolute top-4 left-4 z-10 hidden"> ... </div> -->
+         <!-- END REMOVED -->
+
         <div id="settings-tab-profile" role="tabpanel" class="modal-tab-content p-6">
-          </div>
+          <!-- Content dynamically generated -->
+        </div>
         
         <div id="settings-tab-models" role="tabpanel" class="modal-tab-content p-6 hidden">
-          </div>
+          <!-- Content dynamically generated -->
+        </div>
         
+        <!-- MODIFICATION: This block is cleaned up to remove duplicate IDs -->
+        <div id="settings-tab-dashboard" role="tabpanel" class="modal-tab-content h-full hidden"> 
+          <!-- This panel is now just a placeholder. -->
+          <!-- The real dashboard is in #dashboard-view -->
+        </div>
+        <!-- END MODIFICATION -->
+
         <div id="settings-tab-user" role="tabpanel" class="modal-tab-content p-6 hidden">
-          </div>
+          <!-- Content dynamically generated -->
+        </div>
       </div>
     </div>
   </div>
+
+  <!-- NEW: Fullscreen Dashboard View -->
+  <div id="dashboard-view" class="fixed inset-0 w-full h-full bg-white dark:bg-black z-50 hidden flex flex-col">
+    <div class="p-4 shrink-0 flex items-center gap-4 border-b border-neutral-200 dark:border-neutral-800">
+      <button id="dashboard-back-button" type="button" class="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm font-medium transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        Back to Settings
+      </button>
+      <h3 class="text-lg font-semibold">Dashboard</h3>
+    </div>
+    <div id="dashboard-iframe-container" class="flex-1 min-h-0">
+      <!-- Iframe will be generated here by ui.js -->
+    </div>
+  </div>
+  <!-- END NEW -->
+
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
+

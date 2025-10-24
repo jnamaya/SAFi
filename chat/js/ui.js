@@ -13,52 +13,94 @@ marked.setOptions({
   }
 });
 
+// MODIFICATION: Initialize as empty, will be populated by _initElements
+export let elements = {};
 
-export const elements = {
-  loginView: document.getElementById('login-view'),
-  chatView: document.getElementById('chat-view'),
-  loginButton: document.getElementById('login-button'),
-  sidebarContainer: document.getElementById('sidebar-container'),
-  chatWindow: document.getElementById('chat-window'),
-  messageInput: document.getElementById('message-input'),
-  sendButton: document.getElementById('send-button'),
-  chatTitle: document.getElementById('chat-title'),
-  toastContainer: document.getElementById('toast-container'),
-  modalBackdrop: document.getElementById('modal-backdrop'),
-  conscienceModal: document.getElementById('conscience-modal'),
-  deleteAccountModal: document.getElementById('delete-account-modal'),
-  composerFooter: document.getElementById('composer-footer'),
-  conscienceDetails: document.getElementById('conscience-details'),
-  closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-  
-  // --- MODIFICATION: Added new settings modal elements ---
-  settingsModal: document.getElementById('settings-modal'),
-  closeSettingsModal: document.getElementById('close-settings-modal'),
-  
-  settingsNavProfile: document.getElementById('settings-nav-profile'),
-  settingsNavModels: document.getElementById('settings-nav-models'),
-  settingsNavUser: document.getElementById('settings-nav-user'),
+// NEW: Initialization function to run after DOM is loaded
+function _initElements() {
+  elements = {
+    loginView: document.getElementById('login-view'),
+    chatView: document.getElementById('chat-view'),
+    loginButton: document.getElementById('login-button'),
+    sidebarContainer: document.getElementById('sidebar-container'),
+    chatWindow: document.getElementById('chat-window'),
+    messageInput: document.getElementById('message-input'),
+    sendButton: document.getElementById('send-button'),
+    chatTitle: document.getElementById('chat-title'),
+    toastContainer: document.getElementById('toast-container'),
+    modalBackdrop: document.getElementById('modal-backdrop'),
+    conscienceModal: document.getElementById('conscience-modal'),
+    deleteAccountModal: document.getElementById('delete-account-modal'),
+    composerFooter: document.getElementById('composer-footer'),
+    conscienceDetails: document.getElementById('conscience-details'),
+    closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
+    
+    settingsModal: document.getElementById('settings-modal'),
+    closeSettingsModal: document.getElementById('close-settings-modal'),
+    
+    settingsNavProfile: document.getElementById('settings-nav-profile'),
+    settingsNavModels: document.getElementById('settings-nav-models'),
+    settingsNavDashboard: document.getElementById('settings-nav-dashboard'),
+    settingsTabDashboard: document.getElementById('settings-tab-dashboard'),
+    settingsNavUser: document.getElementById('settings-nav-user'),
 
-  settingsTabProfile: document.getElementById('settings-tab-profile'),
-  settingsTabModels: document.getElementById('settings-tab-models'),
-  settingsTabUser: document.getElementById('settings-tab-user'),
-  // --- END MODIFICATION ---
-};
+    settingsTabProfile: document.getElementById('settings-tab-profile'),
+    settingsTabModels: document.getElementById('settings-tab-models'),
+    settingsTabUser: document.getElementById('settings-tab-user'),
+
+    // NEW: Dashboard Back Button
+    dashboardBackButton: document.getElementById('dashboard-back-button'),
+    // END NEW
+
+    // NEW: Fullscreen Dashboard elements
+    dashboardView: document.getElementById('dashboard-view'),
+    dashboardIframeContainer: document.getElementById('dashboard-iframe-container')
+  };
+
+  // NEW: Add event listener for the back button
+  if (elements.dashboardBackButton) {
+    elements.dashboardBackButton.addEventListener('click', () => {
+      // NEW: Hide dashboard, show settings
+      if (elements.dashboardView) {
+        elements.dashboardView.classList.add('hidden');
+      }
+      if (elements.settingsModal) {
+        elements.settingsModal.classList.remove('hidden');
+      }
+      // MODIFICATION: Show backdrop again
+      if (elements.modalBackdrop) { 
+        elements.modalBackdrop.classList.remove('hidden');
+      }
+    });
+  }
+}
+
 
 let activeToast = null;
 let lastRenderedDay = '';
 
+// NEW: Helper to lazily initialize elements
+function _ensureElements() {
+  // Check if elements is uninitialized (checking for a known key)
+  if (!elements.loginView) {
+    _initElements();
+  }
+}
+
 export function openSidebar() {
+  _ensureElements(); // ADDED
   document.getElementById('sidebar')?.classList.remove('-translate-x-full');
   document.getElementById('sidebar-overlay')?.classList.remove('hidden');
 }
 
 export function closeSidebar() {
+  _ensureElements(); // ADDED
   document.getElementById('sidebar')?.classList.add('-translate-x-full');
   document.getElementById('sidebar-overlay')?.classList.add('hidden');
 }
 
 export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, settingsModalHandler) {
+  _ensureElements(); // ADDED - This is the most important one
   if (user) {
     elements.loginView.classList.add('hidden');
     elements.chatView.classList.remove('hidden');
@@ -97,7 +139,6 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
     const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
     const name = user.name || user.email || 'User';
     
-    // --- MODIFICATION: Added "Help & Guides" link with a divider ---
     document.getElementById('user-profile-container').innerHTML = `
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3 min-w-0">
@@ -143,6 +184,7 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
 }
 
 export function renderConversationLink(convo, handlers) {
+  // This function doesn't use `elements`, so no init check needed
   const { switchHandler, renameHandler, deleteHandler } = handlers;
   const link = document.createElement('a');
   link.href = '#';
@@ -164,6 +206,7 @@ export function renderConversationLink(convo, handlers) {
 }
 
 export function displaySimpleGreeting(firstName) {
+  _ensureElements(); // ADDED
   // Ensure no other greeting exists to avoid duplicates
   const existingGreeting = elements.chatWindow.querySelector('.simple-greeting');
   if (existingGreeting) existingGreeting.remove();
@@ -175,6 +218,7 @@ export function displaySimpleGreeting(firstName) {
 }
 
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
+  _ensureElements(); // ADDED
   // When a real message is displayed, remove both the empty state and the simple greeting
   const emptyState = elements.chatWindow.querySelector('.empty-state-container');
   if (emptyState) emptyState.remove();
@@ -254,6 +298,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 }
 
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
+    _ensureElements(); // ADDED
     const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageContainer) return;
 
@@ -279,6 +324,7 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 }
 
 export function showLoadingIndicator() {
+  _ensureElements(); // ADDED
   const emptyState = elements.chatWindow.querySelector('.empty-state-container');
   if (emptyState) emptyState.remove();
   const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
@@ -306,6 +352,7 @@ export function showLoadingIndicator() {
 }
 
 export function showToast(message, type = 'info', duration = 3000) {
+  _ensureElements(); // ADDED
   if (activeToast) activeToast.remove();
   const toast = document.createElement('div');
   const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600' };
@@ -322,6 +369,7 @@ export function showToast(message, type = 'info', duration = 3000) {
 }
 
 function setupModal(payload) {
+    _ensureElements(); // ADDED
     const container = elements.conscienceDetails;
     if (!container) return;
     container.innerHTML = ''; 
@@ -348,6 +396,7 @@ function setupModal(payload) {
 }
 
 export function showModal(kind, data) {
+  _ensureElements(); // ADDED
   if (kind === 'conscience') {
     const payload = data || { ledger: [], profile: null, values: [], spirit_score: null, spirit_scores_history: [] };
     setupModal(payload);
@@ -358,6 +407,7 @@ export function showModal(kind, data) {
     // data = { user, profiles, models, handlers }
     renderSettingsProfileTab(data.profiles.available, data.profiles.active_profile_key, data.handlers.profile);
     renderSettingsModelsTab(data.models, data.user, data.handlers.models); // Pass available models array directly
+    renderSettingsDashboardTab();
     renderSettingsUserTab(data.handlers.theme, data.handlers.logout, data.handlers.delete);
     elements.settingsModal.classList.remove('hidden');
   }
@@ -366,10 +416,33 @@ export function showModal(kind, data) {
 }
 
 export function closeModal() {
+  _ensureElements(); // ADDED
   elements.modalBackdrop.classList.add('hidden');
   elements.conscienceModal.classList.add('hidden');
   elements.deleteAccountModal.classList.add('hidden');
   elements.settingsModal.classList.add('hidden');
+  elements.dashboardView.classList.add('hidden'); // NEW: Also hide dashboard view
+
+    // MODIFICATION: Reset modal size, overflow, nav visibility, and back button when closed
+  if (elements.settingsModal) {
+    // Re-add defaults, ensure specific height is removed
+    elements.settingsModal.classList.add('max-w-3xl'); 
+    
+    // Remove dashboard-specific sizes
+    elements.settingsModal.classList.remove('max-w-5xl'); // This is the old class
+    elements.settingsModal.classList.remove('w-[1024px]'); // This is the new class
+    elements.settingsModal.classList.remove('h-[760px]'); // This is the new class
+    
+    // Ensure nav is visible and content area is reset on close
+    const modalNav = elements.settingsModal.querySelector('nav');
+    const modalContentArea = elements.settingsModal.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
+    // modalNav?.classList.remove('md:hidden'); // MOD: No longer hidden
+    // modalContentArea?.classList.remove('md:w-full'); // MOD: No longer full-width
+    modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
+    modalContentArea?.classList.remove('overflow-y-visible'); 
+    // elements.settingsTabDashboard?.classList.remove('w-full'); // No longer needed
+    // elements.dashboardBackButton?.classList.add('hidden'); // Button is no longer in modal
+  }
 }
 
 function renderIntro(payload) {
@@ -542,10 +615,12 @@ function copyAuditToClipboard(payload) {
 }
 
 export function scrollToBottom() {
+  _ensureElements(); // ADDED
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 
 function maybeInsertDayDivider(date) {
+  _ensureElements(); // ADDED
   const key = date.toLocaleDateString();
   if (key !== lastRenderedDay) {
     lastRenderedDay = key;
@@ -577,6 +652,7 @@ function makeCopyButton(text) {
 }
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
+  _ensureElements(); // ADDED
   const existingEmptyState = document.querySelector('.empty-state-container');
   if (existingEmptyState) {
     existingEmptyState.remove();
@@ -613,6 +689,7 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
 }
 
 export function resetChatView() {
+  _ensureElements(); // ADDED
   lastRenderedDay = '';
   while (elements.chatWindow.firstChild) {
     elements.chatWindow.removeChild(elements.chatWindow.firstChild);
@@ -620,6 +697,7 @@ export function resetChatView() {
 }
 
 export function setActiveConvoLink(id) {
+  _ensureElements(); // ADDED
   document.querySelectorAll('#convo-list > a').forEach(link => {
     const isActive = link.dataset.id === String(id);
     link.classList.toggle('bg-green-100', isActive);
@@ -630,12 +708,16 @@ export function setActiveConvoLink(id) {
   });
 }
 
-// --- MODIFICATION: New functions for settings modal ---
 
 // Handles switching tabs in the settings modal
 export function setupSettingsTabs() {
+    _ensureElements(); // ADDED
+    // MODIFICATION: Removed dashboard from standard tab/panel arrays
     const tabs = [elements.settingsNavProfile, elements.settingsNavModels, elements.settingsNavUser];
     const panels = [elements.settingsTabProfile, elements.settingsTabModels, elements.settingsTabUser];
+    
+    const settingsModal = elements.settingsModal;
+    const modalContentArea = settingsModal?.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
 
     tabs.forEach((tab, index) => {
         if (!tab) return; // Add guard clause
@@ -644,16 +726,45 @@ export function setupSettingsTabs() {
             tab.classList.add('active');
             
             panels.forEach(p => p?.classList.add('hidden'));
-            panels[index]?.classList.remove('hidden');
+            if (panels[index]) {
+                panels[index].classList.remove('hidden');
+            }
+
+            // MODIFICATION: All resizing logic is REMOVED from here
+            // Reset modal to default size (in case it was changed, though it shouldn't be)
+            settingsModal.classList.remove('max-w-5xl'); 
+            settingsModal.classList.remove('w-[1024px]');
+            settingsModal.classList.remove('h-[760px]'); 
+            settingsModal.classList.add('max-w-3xl'); 
+            
+            // Make overflow scroll
+            modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
+            modalContentArea?.classList.remove('overflow-y-visible'); 
         });
     });
+
+    // NEW: Add separate click handler for the Dashboard "tab"
+    if (elements.settingsNavDashboard) {
+        elements.settingsNavDashboard.addEventListener('click', () => {
+            // Don't treat it like a tab, treat it like a modal swap
+            elements.settingsModal.classList.add('hidden');
+            elements.modalBackdrop.classList.add('hidden'); // MODIFICATION: Hide backdrop
+            elements.dashboardView.classList.remove('hidden');
+            
+            // Ensure iframe is loaded
+            renderSettingsDashboardTab(); 
+        });
+    }
     
     // Reset to the first tab by default
-    tabs[0]?.click();
+    if (tabs[0]) {
+      tabs[0].click();
+    }
 }
 
 // Renders the "Ethical Profile" tab
 export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange) {
+  _ensureElements(); // ADDED
     const container = elements.settingsTabProfile;
     if (!container) return;
     container.innerHTML = `
@@ -686,8 +797,10 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     });
 }
 
+
 // Renders the "AI Models" tab
 export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
+    _ensureElements(); // ADDED
     const container = elements.settingsTabModels;
     if (!container) return;
     
@@ -727,8 +840,29 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
     });
 }
 
+// Renders the Dashboard tab content
+export function renderSettingsDashboardTab() {
+    _ensureElements(); // ADDED
+    // MODIFICATION: Target the new fullscreen container
+    const container = elements.dashboardIframeContainer;
+    if (!container) return;
+
+    // MODIFICATION: Only add the iframe if it doesn't already exist
+    if (container.querySelector('iframe')) return;
+
+    // MODIFICATION: Create and append iframe instead of using innerHTML
+    const iframe = document.createElement('iframe');
+    iframe.src = "https://dash.selfalignmentframework.com/?embed=true";
+    iframe.className = "w-full h-full border-0";
+    iframe.title = "SAFi Dashboard";
+    iframe.sandbox = "allow-scripts allow-same-origin allow-forms";
+    
+    container.appendChild(iframe);
+}
+
 // Renders the "Profile" tab
 export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
+    _ensureElements(); // ADDED
     const container = elements.settingsTabUser;
     if (!container) return;
     container.innerHTML = `
@@ -781,4 +915,4 @@ export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
         showModal('delete'); // Open delete confirmation
     });
 }
-// --- END MODIFICATION ---
+
