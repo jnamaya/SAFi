@@ -3,9 +3,15 @@ import json
 import asyncio
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
-from openai import OpenAI
 import re
 import unicodedata
+import sys
+
+# --- MODIFICATION: Import new clients/types ---
+from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
+import google.generativeai as genai
+# --- END MODIFICATION ---
 
 from ..utils import normalize_text, dict_sha256
 from .retriever import Retriever
@@ -32,26 +38,43 @@ class IntellectEngine:
     retrieved context) into a single system prompt, queries the language model,
     and parses the response into separate answer and reflection components.
     """
-    def __init__(self, client: OpenAI, model: str, profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        client: Any, # Client can be any type now
+        provider_name: str, # We'll use this to know *what* client is
+        model: str, 
+        profile: Optional[Dict[str, Any]] = None, 
+        prompt_config: Optional[Dict[str, Any]] = None
+    ):
         """
         Initializes the IntellectEngine.
 
         Args:
-            client: The OpenAI API client.
+            client: The API client (e.g., AsyncOpenAI, AsyncAnthropic) or model name (for Gemini).
+            provider_name: The name of the provider (e.g., "groq", "openai", "anthropic", "gemini").
             model: The name of the model to use for generation.
             profile: The persona profile configuration.
             prompt_config: The configuration for system prompts and instructions.
         """
         self.client = client
+        self.provider = provider_name
         self.model = model
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.last_error: Optional[str] = None
         
+        # --- MODIFICATION: Handle Gemini client init ---
+        if self.provider == "gemini":
+            try:
+                # client is actually the model name string
+                self.gemini_model = genai.GenerativeModel(self.model)
+            except Exception as e:
+                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
+                self.gemini_model = None
+        # --- END MODIFICATION ---
+
         self.retriever = None
         # --- DYNAMIC RAG INITIALIZATION ---
-        # Checks the persona profile for a 'rag_knowledge_base' key.
-        # If found, it initializes a Retriever for that specific knowledge base.
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
             self.retriever = Retriever(knowledge_base_name=kb_name)
@@ -65,14 +88,6 @@ class IntellectEngine:
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Generates a response based on the user prompt and contextual information.
-
-        Args:
-            user_prompt: The user's input.
-            memory_summary: A summary of the conversation history.
-            spirit_feedback: Coaching notes based on ethical performance.
-
-        Returns:
-            A tuple containing the answer, reflection, and the retrieved_context, or (None, None, None) on error.
         """
         self.last_error = None
         
@@ -92,7 +107,6 @@ class IntellectEngine:
                     print("Warning: RAG context injection template not found in prompt config.")
             else:
                 print("No relevant context found in RAG index.")
-                # If RAG was used but found nothing, inform the prompt.
                 rag_template = self.prompt_config.get("rag_context_injection", "")
                 context_injection = rag_template.format(retrieved_context="[NO DOCUMENTS FOUND]")
 
@@ -113,34 +127,107 @@ class IntellectEngine:
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
 
-        # --- LOGICAL PROMPT ORDERING ---
-        # The RAG context must come first so the model can adhere to the worldview's
-        # primary instruction, which is to check for provided documents.
         system_prompt = "\n\n".join(filter(None, [
             context_injection, worldview, style, memory_injection, spirit_injection, formatting_instructions
         ]))
 
+        obj = {}
+        content = "{}"
+
         try:
-            resp = await asyncio.to_thread(
-                self.client.chat.completions.create,
-                model=self.model,
-                max_tokens=4096,
-                temperature=1.0,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-            )
-            content = resp.choices[0].message.content or "{}"
-            obj = json.loads(content)
+            # --- MODIFICATION: The "Adapter" logic ---
+            # This is the core change. We branch based on the provider.
             
+            if self.provider == "groq" or self.provider == "openai":
+                if not isinstance(self.client, AsyncOpenAI):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
+                
+                # --- FIX: Handle different parameter names ---
+                params = {
+                    "model": self.model,
+                    "temperature": 1.0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                }
+                
+                # --- FIX 2: Changed '==' to 'startswith' ---
+                # This catches 'gpt-5', 'gpt-5-nano', 'gpt-5-turbo', etc.
+                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
+                    params["max_completion_tokens"] = 4096
+                else:
+                    # Groq and older OpenAI models use 'max_tokens'
+                    params["max_tokens"] = 4096
+                
+                resp = await self.client.chat.completions.create(**params)
+                # --- END FIX ---
+
+                content = resp.choices[0].message.content or "{}"
+            
+            elif self.provider == "anthropic":
+                if not isinstance(self.client, AsyncAnthropic):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
+
+                # Anthropic uses `system` param and needs JSON instruction in prompt
+                system_prompt_with_json = system_prompt + \
+                    "\n\n" + \
+                    "You MUST respond in JSON format, with keys 'answer' and 'reflection'."
+                
+                resp = await self.client.messages.create(
+                    model=self.model,
+                    system=system_prompt_with_json,
+                    max_tokens=4096,
+                    temperature=1.0,
+                    messages=[
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                content = resp.content[0].text or "{}"
+
+            elif self.provider == "gemini":
+                if not self.gemini_model:
+                     raise ValueError("Gemini model was not initialized correctly.")
+
+                # Gemini needs JSON instruction
+                system_prompt_with_json = system_prompt + \
+                    "\n\n" + \
+                    "You MUST respond in JSON format, with keys 'answer' and 'reflection'."
+
+                generation_config = genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=1.0
+                )
+                
+                # Gemini doesn't have a separate system prompt API for async generate
+                full_prompt = system_prompt_with_json + "\n\nUSER_PROMPT:\n" + user_prompt
+                
+                resp = await self.gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                content = resp.text or "{}"
+                
+            else:
+                raise ValueError(f"Unknown provider '{self.provider}' in IntellectEngine")
+
+            # --- END MODIFICATION ---
+            
+            # Universal JSON parsing logic
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
+            obj = json.loads(content)
+
             answer = obj.get("answer", "").replace("\\n", "\n").strip()
             reflection = obj.get("reflection", "").replace("\\n", "\n").strip()
 
             return answer, reflection, retrieved_context
+            
         except Exception as e:
-            self.last_error = f"{type(e).__name__}: {e} (model={self.model})"
+            self.last_error = f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            print(f"--- ERROR IN INTELLECT ---: {self.last_error}", file=sys.stderr)
             return None, None, None
 
 
@@ -149,14 +236,32 @@ class WillGate:
     An ethical gatekeeper that evaluates a draft response against a set of values.
     It decides whether to 'approve' or declare a 'violation'.
     """
-    def __init__(self, client: OpenAI, model: str, *, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        client: Any, # Client can be any type
+        provider_name: str, # We'll use this to know *what* client is
+        model: str, 
+        *, 
+        values: List[Dict[str, Any]], 
+        profile: Optional[Dict[str, Any]] = None, 
+        prompt_config: Optional[Dict[str, Any]] = None
+    ):
         """Initializes the WillGate."""
         self.client = client
+        self.provider = provider_name
         self.model = model
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.cache: Dict[str, Tuple[str, str]] = {}
+        
+        if self.provider == "gemini":
+            try:
+                self.gemini_model = genai.GenerativeModel(self.model)
+            except Exception as e:
+                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
+                self.gemini_model = None
+
 
     def _key(self, x_t: str, a_t: str) -> str:
         """Creates a unique cache key for a given prompt and answer."""
@@ -186,11 +291,78 @@ class WillGate:
         policy = "\n".join(filter(None, policy_parts))
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
+        obj = {}
+        content = "{}"
+        
         try:
-            resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.0, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": policy}, {"role": "user", "content": prompt}, ], )
-            content = resp.choices[0].message.content or "{}"
-            obj = json.loads(content) if content else {}
-            
+            # --- MODIFICATION: Apply the "Adapter" pattern ---
+            if self.provider == "groq" or self.provider == "openai":
+                if not isinstance(self.client, AsyncOpenAI):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
+                
+                # --- FIX: Handle different parameter names ---
+                params = {
+                    "model": self.model,
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": policy},
+                        {"role": "user", "content": prompt}
+                    ]
+                }
+                
+                # --- FIX 2: Changed '==' to 'startswith' ---
+                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
+                    params["max_completion_tokens"] = 1024 # WillGate can be smaller
+                else:
+                    params["max_tokens"] = 1024
+                
+                resp = await self.client.chat.completions.create(**params)
+                # --- END FIX ---
+                
+                content = resp.choices[0].message.content or "{}"
+
+            elif self.provider == "anthropic":
+                if not isinstance(self.client, AsyncAnthropic):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
+                
+                resp = await self.client.messages.create(
+                    model=self.model,
+                    system=policy, # Policy already includes JSON instruction
+                    max_tokens=1024,
+                    temperature=0.0,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                content = resp.content[0].text or "{}"
+
+            elif self.provider == "gemini":
+                if not self.gemini_model:
+                     raise ValueError("Gemini model was not initialized correctly.")
+
+                generation_config = genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
+                full_prompt = policy + "\n\nUSER_PROMPT_AND_DRAFT:\n" + prompt
+                
+                resp = await self.gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                content = resp.text or "{}"
+
+            else:
+                raise ValueError(f"Unknown provider '{self.provider}' in WillGate")
+
+            # Universal JSON parsing
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
+            obj = json.loads(content)
+            # --- END MODIFICATION ---
+
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
             if decision not in {"approve", "violation"}: decision = "violation"
@@ -200,7 +372,9 @@ class WillGate:
             self.cache[key] = tup
             return tup
         except Exception as e:
-            return ("violation", f"Will exception: {type(e).__name__}: {e}")
+            error_msg = f"Will exception: {type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            print(f"--- ERROR IN WILL ---: {error_msg}", file=sys.stderr)
+            return ("violation", error_msg)
 
 
 class ConscienceAuditor:
@@ -208,13 +382,29 @@ class ConscienceAuditor:
     Audits the final, user-facing output for alignment with a set of values.
     This provides the data used for long-term ethical steering (Spirit).
     """
-    def __init__(self, client: OpenAI, model: str, values: List[Dict[str, Any]], profile: Optional[Dict[str, Any]] = None, prompt_config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, 
+        client: Any, # Client can be any type
+        provider_name: str, # We'll use this to know *what* client is
+        model: str, 
+        values: List[Dict[str, Any]], 
+        profile: Optional[Dict[str, Any]] = None, 
+        prompt_config: Optional[Dict[str, Any]] = None
+    ):
         """Initializes the ConscienceAuditor."""
         self.client = client
+        self.provider = provider_name
         self.model = model
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
+        
+        if self.provider == "gemini":
+            try:
+                self.gemini_model = genai.GenerativeModel(self.model)
+            except Exception as e:
+                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
+                self.gemini_model = None
 
     async def evaluate(self, *, final_output: str, user_prompt: str, reflection: str, retrieved_context: str) -> List[Dict[str, Any]]:
         """
@@ -222,7 +412,7 @@ class ConscienceAuditor:
         """
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
-            print("--- ERROR IN CONSCIENCE: 'prompt_template' not found in system_prompts.json ---")
+            print("--- ERROR IN CONSCIENCE: 'prompt_template' not found in system_prompts.json ---", file=sys.stderr)
             return []
 
         worldview = self.profile.get("worldview", "")
@@ -247,7 +437,6 @@ class ConscienceAuditor:
             rubrics_str=rubrics_str
         )
         
-        # --- CHANGE: Include the retrieved_context in the body for auditing ---
         body = (
             f"USER PROMPT:\n{user_prompt}\n\n"
             f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
@@ -255,13 +444,82 @@ class ConscienceAuditor:
             f"AI's FINAL OUTPUT TO USER:\n{final_output}"
         )
         
+        obj = {}
+        content = "{}"
+        
         try:
-            resp = await asyncio.to_thread( self.client.chat.completions.create, model=self.model, temperature=0.1, response_format={"type": "json_object"}, messages=[ {"role": "system", "content": sys_prompt}, {"role": "user", "content": body}, ], )
-            content = resp.choices[0].message.content or "{}"
-            obj = json.loads(content) if content else {}
+            # --- MODIFICATION: Apply the "Adapter" pattern ---
+            if self.provider == "groq" or self.provider == "openai":
+                if not isinstance(self.client, AsyncOpenAI):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
+                
+                # --- FIX: Handle different parameter names ---
+                params = {
+                    "model": self.model,
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": body}
+                    ]
+                }
+                
+                # --- FIX 2: Changed '==' to 'startswith' ---
+                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
+                    params["max_completion_tokens"] = 4096
+                else:
+                    params["max_tokens"] = 4096
+                
+                resp = await self.client.chat.completions.create(**params)
+                # --- END FIX ---
+
+                content = resp.choices[0].message.content or "{}"
+            
+            elif self.provider == "anthropic":
+                if not isinstance(self.client, AsyncAnthropic):
+                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
+                
+                resp = await self.client.messages.create(
+                    model=self.model,
+                    system=sys_prompt, # Prompt already includes JSON instruction
+                    max_tokens=4096,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "user", "content": body}
+                    ]
+                )
+                content = resp.content[0].text or "{}"
+
+            elif self.provider == "gemini":
+                if not self.gemini_model:
+                     raise ValueError("Gemini model was not initialized correctly.")
+
+                generation_config = genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1
+                )
+                full_prompt = sys_prompt + "\n\nUSER_PROMPT_AND_RESPONSE:\n" + body
+                
+                resp = await self.gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                content = resp.text or "{}"
+                
+            else:
+                raise ValueError(f"Unknown provider '{self.provider}' in ConscienceAuditor")
+
+            # Universal JSON parsing
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
+            obj = json.loads(content)
+            # --- END MODIFICATION ---
+            
             return obj.get("evaluations", [])
         except Exception as e:
-            print(f"--- ERROR IN CONSCIENCE AUDITOR ---: {type(e).__name__}: {e}")
+            error_msg = f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            print(f"--- ERROR IN CONSCIENCE AUDITOR ---: {error_msg}", file=sys.stderr)
             return []
 
 

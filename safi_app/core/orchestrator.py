@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 import sys
 from pathlib import Path
-from openai import OpenAI
+
+# --- MODIFICATION: Import all necessary clients ---
+from openai import OpenAI, AsyncOpenAI
+from anthropic import Anthropic, AsyncAnthropic
+import google.generativeai as genai
+# --- END MODIFICATION ---
+
 from collections import deque
 from .feedback import build_spirit_feedback
 from ..persistence import database as db
@@ -17,7 +23,8 @@ from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritInteg
 
 class SAFi:
     """
-    Orchestrates Intellect, Will, Conscience, and Spirit using open-source models via Groq.
+    Orchestrates Intellect, Will, Conscience, and Spirit
+    using multiple model providers.
     """
 
     def __init__(
@@ -25,21 +32,43 @@ class SAFi:
         config,
         value_profile_or_list: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         value_set: Optional[List[Dict[str, Any]]] = None,
-        # --- MODIFICATION ---
-        # Added model overrides to the constructor.
         intellect_model: Optional[str] = None,
         will_model: Optional[str] = None,
         conscience_model: Optional[str] = None
     ):
         self.config = config
-        groq_api_key = getattr(config, "GROQ_API_KEY", None)
-        if not groq_api_key:
-            raise ValueError("GROQ_API_KEY must be set in the configuration.")
-
-        self.groq_client = OpenAI(
-            api_key=groq_api_key,
-            base_url="https://api.groq.com/openai/v1",
-        )
+        
+        # --- MODIFICATION: Initialize all clients ---
+        # We will use the async versions for faculties where possible
+        self.clients = {}
+        
+        if config.GROQ_API_KEY:
+            self.clients["groq"] = AsyncOpenAI(
+                api_key=config.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+            )
+            # This one client is synchronous and only for summarization
+            self.groq_client_sync = OpenAI(
+                api_key=config.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+            )
+        
+        if config.OPENAI_API_KEY:
+            self.clients["openai"] = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        
+        if config.ANTHROPIC_API_KEY:
+            self.clients["anthropic"] = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+            
+        if config.GEMINI_API_KEY:
+            try:
+                genai.configure(api_key=config.GEMINI_API_KEY)
+                # We'll create the GenerativeModel instances on-the-fly in the faculty
+                # since they are model-specific, but we store the client type.
+                self.clients["gemini"] = "configured"
+            except Exception as e:
+                print(f"Warning: Failed to configure Gemini API: {e}", file=sys.stderr)
+        
+        # --- END MODIFICATION ---
 
         prompts_path = Path(__file__).parent / "system_prompts.json"
         with prompts_path.open("r", encoding="utf-8") as f:
@@ -69,31 +98,69 @@ class SAFi:
         
         self.mu_history = deque(maxlen=5)
 
-        # --- MODIFICATION ---
-        # Use the provided model arguments, falling back to Config defaults.
         intellect_model_to_use = intellect_model or getattr(config, "INTELLECT_MODEL")
         will_model_to_use = will_model or getattr(config, "WILL_MODEL")
         conscience_model_to_use = conscience_model or getattr(config, "CONSCIENCE_MODEL")
+
+        # --- MODIFICATION: Get the correct client for each faculty ---
+        intellect_client, intellect_provider = self._get_client_and_provider(intellect_model_to_use)
+        will_client, will_provider = self._get_client_and_provider(will_model_to_use)
+        conscience_client, conscience_provider = self._get_client_and_provider(conscience_model_to_use)
         # --- END MODIFICATION ---
 
-
         self.intellect_engine = IntellectEngine(
-            self.groq_client, model=intellect_model_to_use, profile=self.profile, prompt_config=self.prompts["intellect_engine"]
+            intellect_client,
+            provider_name=intellect_provider, # Pass provider name
+            model=intellect_model_to_use, 
+            profile=self.profile, 
+            prompt_config=self.prompts["intellect_engine"]
         )
         self.will_gate = WillGate(
-            self.groq_client, model=will_model_to_use, values=self.values, profile=self.profile, prompt_config=self.prompts["will_gate"]
+            will_client, 
+            provider_name=will_provider, # Pass provider name
+            model=will_model_to_use, 
+            values=self.values, 
+            profile=self.profile, 
+            prompt_config=self.prompts["will_gate"]
         )
         self.conscience = ConscienceAuditor(
-            self.groq_client, model=conscience_model_to_use, values=self.values, profile=self.profile, prompt_config=self.prompts["conscience_auditor"]
+            conscience_client, 
+            provider_name=conscience_provider, # Pass provider name
+            model=conscience_model_to_use, 
+            values=self.values, 
+            profile=self.profile, 
+            prompt_config=self.prompts["conscience_auditor"]
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
-        print(f"SAFi: profile '{self.active_profile_name}' active, running on Groq.")
-        # --- MODIFICATION ---
-        # Log if custom models are in use for this instance
-        if any([intellect_model, will_model, conscience_model]):
-            print(f"  > Using user-defined models: [Intellect: {intellect_model_to_use}, Will: {will_model_to_use}, Conscience: {conscience_model_to_use}]")
-        # --- END MODIFICATION ---
+        print(f"SAFi: profile '{self.active_profile_name}' active.")
+        print(f"  > Intellect: {intellect_model_to_use} (via {intellect_provider})")
+        print(f"  > Will: {will_model_to_use} (via {will_provider})")
+        print(f"  > Conscience: {conscience_model_to_use} (via {conscience_provider})")
+
+
+    # --- NEW HELPER METHOD ---
+    def _get_client_and_provider(self, model_name: str) -> (Any, str):
+        """
+        Returns the correct client instance and provider name based on the model name.
+        """
+        if model_name.startswith("gpt-"):
+            if "openai" in self.clients:
+                return self.clients["openai"], "openai"
+        elif model_name.startswith("claude-"):
+            if "anthropic" in self.clients:
+                return self.clients["anthropic"], "anthropic"
+        elif model_name.startswith("gemini-"):
+            if "gemini" in self.clients:
+                # For Gemini, we pass the model name itself to be instantiated
+                return model_name, "gemini" 
+        
+        # Default to Groq for all other models (e.g., llama, gpt-oss, etc.)
+        if "groq" in self.clients:
+            return self.clients["groq"], "groq"
+            
+        raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
+    # --- END NEW HELPER METHOD ---
 
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
@@ -111,7 +178,6 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
-        # --- CHANGE 1: Capture the retrieved_context from the IntellectEngine ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
         message_id = str(uuid.uuid4())
         
@@ -144,7 +210,6 @@ class SAFi:
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
         
-        # --- CHANGE 2: Add the retrieved_context to the audit snapshot ---
         snapshot = { 
             "t": int(temp_spirit_memory["turn"]) + 1, 
             "x_t": user_prompt, 
@@ -154,7 +219,10 @@ class SAFi:
             "retrieved_context": retrieved_context 
         }
         threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
-        threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
+        
+        # Only start summarization if the groq sync client exists
+        if hasattr(self, 'groq_client_sync'):
+            threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
@@ -169,17 +237,18 @@ class SAFi:
             if memory is None:
                 memory = {"turn": 0, "mu": np.zeros(dim)}
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # --- CHANGE 3: Pass the retrieved_context to the Conscience evaluation ---
-            ledger = loop.run_until_complete(self.conscience.evaluate(
-                final_output=snapshot["a_t"], 
-                user_prompt=snapshot["x_t"], 
-                reflection=snapshot["r_t"],
-                retrieved_context=snapshot.get("retrieved_context", "")
-            ))
-            loop.close()
+            # --- MODIFICATION: Use asyncio.run for the async evaluate call ---
+            try:
+                ledger = asyncio.run(self.conscience.evaluate(
+                    final_output=snapshot["a_t"], 
+                    user_prompt=snapshot["x_t"], 
+                    reflection=snapshot["r_t"],
+                    retrieved_context=snapshot.get("retrieved_context", "")
+                ))
+            except Exception as e:
+                print(f"--- ERROR in Conscience.evaluate (asyncio.run) ---: {e}", file=sys.stderr)
+                ledger = []
+            # --- END MODIFICATION ---
 
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
             self.last_drift = drift_val if drift_val is not None else 0.0
@@ -201,7 +270,7 @@ class SAFi:
                 "mu_t_vector": mu_new.tolist(),
                 "memorySummary": snapshot.get("memory_summary") or "",
                 "spiritFeedback": spirit_feedback,
-                "retrievedContext": snapshot.get("retrieved_context", "") # Also log the context
+                "retrievedContext": snapshot.get("retrieved_context", "")
             }
             self._append_log(log_entry)
 
@@ -224,14 +293,23 @@ class SAFi:
                 conn.close()
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
+        # --- MODIFICATION: Check for sync client ---
+        if not hasattr(self, 'groq_client_sync'):
+            print("Summarization thread skipped: Groq sync client not initialized.", file=sys.stderr)
+            return
+        
         try:
             system_prompt = self.prompts["summarizer"]["system_prompt"]
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
-            response = self.groq_client.chat.completions.create(
+            
+            # --- MODIFICATION: Use the synchronous Groq client ---
+            response = self.groq_client_sync.chat.completions.create(
                 model=getattr(self.config, "SUMMARIZER_MODEL"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
             )
+            # --- END MODIFICATION ---
+
             new_summary = response.choices[0].message.content.strip()
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
@@ -249,3 +327,4 @@ class SAFi:
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e: print(f"Log write error to {log_path}: {e}", file=sys.stderr)
+
