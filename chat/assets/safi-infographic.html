@@ -12,7 +12,6 @@
         body {
             font-family: 'Inter', sans-serif;
         }
-        /* Simple animation for cards */
         .flow-card {
             opacity: 0;
             transform: translateY(20px);
@@ -24,7 +23,6 @@
                 transform: translateY(0);
             }
         }
-        /* Stagger animations */
         .flow-card:nth-child(1) { animation-delay: 0.1s; }
         .flow-card:nth-child(2) { animation-delay: 0.2s; }
         .flow-card:nth-child(3) { animation-delay: 0.3s; }
@@ -173,51 +171,65 @@
 
         </div>
 
-        <!-- What Problems SAFi Solves Section -->
+        <!-- UPDATED What Problems SAFi Solves Section -->
         <div class="mt-20 pt-12 border-t border-slate-200">
             <header class="text-center mb-12">
                 <h2 class="text-3xl md:text-4xl font-bold text-slate-900">What Problems Does SAFi Solve?</h2>
                 <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">SAFi’s architecture tackles four of the biggest challenges in AI governance today. These problems affect every organization that wants to use AI safely, responsibly, and on its own terms.</p>
             </header>
 
-            <div class="max-w-4xl mx-auto grid md:grid-cols-3 gap-8">
-                <!-- Problem 1: Black Box -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                    <h3 class="font-bold text-xl text-slate-900">1. Opaque AI Reasoning</h3>
-                    <p class="mt-2 text-slate-600 font-semibold text-indigo-600">(The Black Box Problem)</p>
-                    <p class="mt-4 text-slate-600">Most AI models can generate responses, but they don’t show their moral logic. There’s no ethical trace to audit.</p>
-                    <p class="mt-4 text-slate-800 font-semibold">SAFi makes every decision explainable. It logs how the system interpreted a prompt, whether it approved the action, how each value was upheld or violated, and whether the system is drifting from its declared values.</p>
+            <div class="max-w-6xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+                
+                <!-- Pillar 1: Value Sovereignty -->
+                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
+                    <div class="flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                        <h3 class="mt-4 font-bold text-xl text-slate-900">Lack of Control Over AI Values</h3>
+                    </div>
+                    <p class="mt-2 text-slate-600 text-sm">Most AI systems reflect the values of the vendors who build them, not the organizations that use them. This creates a misalignment between mission and behavior, especially in sensitive fields like healthcare, education, or public service.</p>
                 </div>
 
-                <!-- Problem 2: Value Drift -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                    <h3 class="font-bold text-xl text-slate-900">2. Value Drift</h3>
-                    <p class="mt-4 text-slate-600">Over time, intelligent systems and institutions tend to drift from their stated values—slowly, invisibly, and often irreversibly.</p>
-                    <p class="mt-4 text-slate-800 font-semibold">SAFi detects and reflects on that drift in real time. It monitors which values are upheld, which are ignored, and synthesizes this into a measurable moral alignment score.</p>
+                <!-- Pillar 2: Full Traceability -->
+                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
+                    <div class="flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 10.5 2 2 2-2"/><path d="m12 12.5 v -2"/><path d="M16 16.5H8"/><path d="M16 12.5H8"/></svg>
+                        <h3 class="mt-4 font-bold text-xl text-slate-900">Black Box Decision-Making</h3>
+                    </div>
+                    <p class="mt-2 text-slate-600 text-sm">AI often produces answers without showing its reasoning. This lack of transparency makes it impossible to trust, audit, or comply with regulatory requirements. If you can’t see how a decision was made, you can’t be accountable for it.</p>
                 </div>
 
-                <!-- Problem 3: Lack of Alignment -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                    <h3 class="font-bold text-xl text-slate-900">3. Lack of Ethical Alignment</h3>
-                    <p class="mt-4 text-slate-600">Most AI systems react to ethical problems through filters, but they lack an internal structure for deliberate ethical reasoning.</p>
-                    <p class="mt-4 text-slate-800 font-semibold">SAFi embeds conscience at the system level. It evaluates outputs against declared values, reflects on its decisions, and self-corrects over time. This is structured, moral intelligence.</p>
+                <!-- Pillar 3: Model Independence -->
+                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
+                    <div class="flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8"/><path d="M10 20v-1a2 2 0 1 1 4 0v1"/><path d="M12 16a2 2 0 0 0-2 2v1h4v-1a2 2 0 0 0-2-2Z"/><path d="M18 12.5V10H6v2.5"/><path d="m18 16 4-4"/><path d="m22 16-4-4"/></svg>
+                        <h3 class="mt-4 font-bold text-xl text-slate-900">Vendor Lock-In and Loss of Autonomy</h3>
+                    </div>
+                    <p class="mt-2 text-slate-600 text-sm">Once an organization builds its workflows on a specific AI platform, switching becomes costly and complex. This traps organizations inside a single vendor’s ecosystem, limiting their ability to adapt or maintain control.</p>
                 </div>
+
+                <!-- Pillar 4: Long-Term Consistency -->
+                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
+                    <div class="flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m16 8-8 8"/><path d="M12 16v-4h4"/></svg>
+                        <h3 class="mt-4 font-bold text-xl text-slate-900">Ethical Drift Over Time</h3>
+                    </div>
+                    <p class="mt-2 text-slate-600 text-sm">Even when an AI system starts aligned with your values, its behavior can shift as models evolve or new data enters the system. Without persistent alignment checks, the AI gradually drifts away from its original mission.</p>
+                </div>
+
             </div>
         </div>
 
     </div>
 
-    <!-- In safi-infographic.html -->
-<script>
-    function sendHeight() {
-        const height = document.body.scrollHeight;
-        // **Correction:** Specify the exact domain of the parent website
-        parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
-    }
-    window.onload = sendHeight;
-    const resizeObserver = new ResizeObserver(sendHeight);
-    resizeObserver.observe(document.body);
-</script>
+    <script>
+        function sendHeight() {
+            const height = document.body.scrollHeight;
+            parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
+        }
+        window.onload = sendHeight;
+        const resizeObserver = new ResizeObserver(sendHeight);
+        resizeObserver.observe(document.body);
+    </script>
 
 </body>
 </html>

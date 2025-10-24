@@ -77,6 +77,46 @@
             filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.4));
         }
 
+        /* --- Custom Audio Player Styles --- */
+        .custom-audio-player {
+            --player-theme: #16a34a; /* green-600 */
+            --track-bg: #e5e7eb; /* gray-200 */
+        }
+        /* Style controls in Webkit browsers (Chrome, Safari, Edge) */
+        .custom-audio-player::-webkit-media-controls-panel {
+            background-color: #f9fafb; /* gray-50 */
+            border-radius: 8px;
+            padding: 8px;
+        }
+        .custom-audio-player::-webkit-media-controls-play-button {
+            color: var(--player-theme);
+            background-color: rgba(22, 163, 74, 0.1);
+            border-radius: 50%;
+        }
+        .custom-audio-player::-webkit-media-controls-play-button:hover {
+            background-color: rgba(22, 163, 74, 0.2);
+        }
+        .custom-audio-player::-webkit-media-controls-timeline {
+            background-color: var(--track-bg);
+            border-radius: 4px;
+            height: 8px;
+            margin: 0 10px;
+        }
+        .custom-audio-player::-webkit-media-controls-current-time-display,
+        .custom-audio-player::-webkit-media-controls-time-remaining-display {
+            color: #4b5563; /* gray-600 */
+            font-weight: 500;
+        }
+        .custom-audio-player::-webkit-media-controls-volume-slider {
+            background-color: var(--track-bg);
+            border-radius: 4px;
+            padding: 0;
+            margin-right: 8px;
+        }
+        .custom-audio-player::-webkit-media-controls-mute-button {
+            margin-left: -5px; /* Adjust spacing */
+        }
+
     </style>
 </head>
 <body class="text-slate-700">
@@ -95,9 +135,7 @@
     <div class="container mx-auto px-4 pb-16 md:pb-24 text-center">
         <!-- SVG Diagram Container: The SVG will scale to fit this container -->
         <div class="max-w-5xl mx-auto">
-            <!-- The viewBox attribute is the key to making the SVG responsive. 
-                 It defines the internal coordinate system of the diagram. The browser will automatically
-                 scale this view to fit the element's size, preserving the aspect ratio. -->
+            <!-- The viewBox attribute is the key to making the SVG responsive. -->
             <svg viewBox="-90 0 550 300" class="w-full h-auto">
                 <defs>
                     <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -171,6 +209,25 @@
             <a href="#framework-details" id="learn-more-btn" class="inline-block bg-slate-800 text-white font-semibold px-8 py-3 rounded-full hover:bg-slate-900 transition-colors duration-300 shadow-lg">
                 Learn More
             </a>
+        </div>
+
+        <!-- Podcast Player Section -->
+        <div class="mt-16 w-full max-w-2xl mx-auto text-left">
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden p-6 md:p-8 border border-slate-200">
+                <h3 class="text-xl font-bold text-slate-800">Ep:01: An Introduction to the Self-Alignment Framework</h3>
+                <p class="mt-2 text-slate-600 text-base">
+                    In this episode we introduced the self-alignment framework, the theoretical framework. We explored its five core components: Values, Intellect, Will, Conscience, and Spirit. We trace its philosophical roots from Plato to its modern application as a practical, verifiable path to sustained integrity.
+                </p>
+                <p class="mt-4 text-slate-500 text-sm">
+                    For more episodes, visit our podcast page: <a href="https://self-alignment.podbean.com/" target="_blank" rel="noopener noreferrer" class="text-green-600 hover:text-green-700 font-semibold hover:underline">https://self-alignment.podbean.com/</a>
+                </p>
+                <div class="mt-6">
+                    <audio controls class="w-full custom-audio-player">
+                        <source src="https://safi.selfalignmentframework.com/assets/saf.mp3" type="audio/mpeg">
+                        Your browser does not support the audio element.
+                    </audio>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -347,6 +404,4 @@
     </script>
 </body>
 </html>
-
-
 

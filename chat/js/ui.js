@@ -852,7 +852,7 @@ export function renderSettingsDashboardTab() {
 
     // MODIFICATION: Create and append iframe instead of using innerHTML
     const iframe = document.createElement('iframe');
-    iframe.src = "https://dash.selfalignmentframework.com/?embed=true";
+    iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
     iframe.className = "w-full h-full border-0";
     iframe.title = "SAFi Dashboard";
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms";
