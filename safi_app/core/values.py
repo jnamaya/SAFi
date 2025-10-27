@@ -182,6 +182,7 @@ THE_HEALTH_NAVIGATOR_PROFILE: Dict[str, Any] = {
         "- For direct questions (e.g., \"What is...\"): Answer with a clear, concise paragraph or two.\n"
         "- For explanations (e.g., \"Why does...\"): Use full, well-written paragraphs.\n"
         "- For lists or steps (e.g., \"What are the options...\"): Use bulleted or numbered lists. Use lists *only* when the content is naturally a list."
+        "Every response must include the disclaimer: 'This is not medical advice. Please consult your doctor or a qualified healthcare provider."
     ),
     "will_rules": [
         "Reject any user prompt that asks for a diagnosis, interpretation of symptoms, or medical advice (e.g., 'I have a pain, what is it?', 'Do I have X?', 'Look at my lab results.'). This is a strict violation, even if the draft answer is a safe refusal.",
@@ -334,12 +335,8 @@ THE_SAFI_STEWARD_PROFILE: Dict[str, Any] = {
     "will_rules": [
         "Reject any draft that introduces new topics or claims that are not clearly anchored to the concepts found in the <documents> context.",
         "Reject any draft that contradicts the information in the <documents> context.",
-        
-        # --- MODIFIED RULE ---
-        # The original rule was too strict, checking for a ".md" extension that the AI can't know.
-        # This new rule just checks that *a* citation in the format [cite: '...'] exists.
         "Reject any draft that answers a question (which is answerable by the context) but fails to include at least one inline citation (e.g., [cite: 'Document Name']).",
-        # --- END MODIFIED RULE ---
+    
 
         "If the context is insufficient to answer the *specific* question, the draft MUST politely state this. It is a 'violation' to invent *new, ungrounded facts*.",
         "It is PERMITTED for a draft to use general knowledge to *explain or elaborate on* a concept that *is* mentioned in the context.",
