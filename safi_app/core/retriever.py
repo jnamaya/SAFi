@@ -4,6 +4,7 @@ import os
 import numpy as np
 import re
 from sentence_transformers import SentenceTransformer
+from typing import List, Dict, Any # Import List, Dict, Any
 
 # --- CONFIGURATION ---
 VECTOR_STORE_PATH = "/var/www/safi/vector_store"
@@ -13,9 +14,11 @@ class Retriever:
     """
     Handles loading a FAISS index and performing HYBRID searches.
     It uses a keyword search for citations and a vector search for semantic queries.
+    Its search() method returns a list of metadata dictionaries, not a formatted string.
     """
     def __init__(self, knowledge_base_name: str):
         print(f"\n--- INITIALIZING RETRIEVER FOR KB: '{knowledge_base_name}' ---")
+        self.kb_name = knowledge_base_name  # Store the knowledge base name
         self.model = None
         self.index = None
         self.metadata = []
@@ -65,12 +68,13 @@ class Retriever:
         # Sort the indices to return the verses in the correct order.
         return sorted(list(all_indices))
 
-    def search(self, query: str, k: int = 5) -> str:
+    def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]: # <-- CHANGE: Return type is List[Dict]
         if not self.index or not self.model or not self.metadata:
-            return ""
+            return [] # <-- CHANGE: Return empty list
 
         indices_to_return = []
-        if self._is_citation_query(query):
+        # --- MODIFICATION: Only do keyword search for the Bible KB ---
+        if self.kb_name == "CPDV_study_kb" and self._is_citation_query(query):
             # For chapter lookups, we might need many more than 5 chunks.
             indices_to_return = self._keyword_search(query, k=50) 
         
@@ -81,11 +85,12 @@ class Retriever:
             indices_to_return = indices[0]
             print(f"Top vector search hit (distance: {distances[0][0]}): {self.metadata[indices_to_return[0]] if indices_to_return.size > 0 else 'None'}")
 
-        results = []
+        results: List[Dict[str, Any]] = [] # <-- CHANGE: Initialize as empty list
         for i in indices_to_return:
             if 0 <= i < len(self.metadata):
-                meta = self.metadata[i]
-                text_chunk = meta.get('text_chunk', '')
-                results.append(f"REFERENCE: {meta.get('book')} {meta.get('chapter')}:{meta.get('start_verse')}-{meta.get('end_verse')}\nCONTENT:\n{text_chunk}\n---")
+                # --- CHANGE: Just append the raw metadata dictionary ---
+                results.append(self.metadata[i])
+                # --- END CHANGE ---
         
-        return "\n".join(results)
+        return results # <-- CHANGE: Return the list of metadata dicts
+

@@ -91,28 +91,47 @@ class IntellectEngine:
         """
         self.last_error = None
         
-        retrieved_context = "" # Default to empty string
-        context_injection = ""
-
+        # --- MODIFICATION: RAG context is formatted and injected into the worldview ---
+        retrieved_context_string = ""
         if self.retriever:
             print(f"Performing RAG search for prompt: '{user_prompt[:50]}...'")
-            retrieved_context = self.retriever.search(user_prompt)
+            retrieved_docs = self.retriever.search(user_prompt) # <-- Get the List[Dict]
             
-            if retrieved_context:
-                rag_template = self.prompt_config.get("rag_context_injection", "")
-                if rag_template:
-                    context_injection = rag_template.format(retrieved_context=retrieved_context)
-                    print("Successfully injected context from RAG index.")
-                else:
-                    print("Warning: RAG context injection template not found in prompt config.")
+            if not retrieved_docs:
+                retrieved_context_string = "[NO DOCUMENTS FOUND]"
             else:
-                print("No relevant context found in RAG index.")
-                rag_template = self.prompt_config.get("rag_context_injection", "")
-                context_injection = rag_template.format(retrieved_context="[NO DOCUMENTS FOUND]")
+                # Get the formatting string from the persona profile
+                format_string = self.profile.get("rag_format_string")
+                if not format_string:
+                    # Fallback if no format string is defined
+                    print("--- WARNING: No 'rag_format_string' in profile. Defaulting to raw text_chunk. ---")
+                    format_string = "{text_chunk}"
 
-
+                # Format each doc and join them
+                formatted_chunks = []
+                for doc in retrieved_docs:
+                    try:
+                        # Use **doc to unpack the metadata dictionary into the format string
+                        formatted_chunks.append(format_string.format(**doc))
+                    except KeyError as e:
+                        # --- THIS IS THE FIX ---
+                        # Fallback: if format fails (e.g., missing key), just use the text_chunk
+                        print(f"--- WARNING: RAG metadata missing key {e} for format string. Using fallback. Doc: {doc} ---")
+                        if 'text_chunk' in doc:
+                            formatted_chunks.append(doc['text_chunk'])
+                        # --- END FIX ---
+                
+                retrieved_context_string = "\n\n".join(formatted_chunks)
+                
+            print(f"RAG search complete. Context length: {len(retrieved_context_string)}")
+        
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
+
+        # Inject RAG context into worldview if placeholder exists
+        if "{retrieved_context}" in worldview:
+            worldview = worldview.format(retrieved_context=retrieved_context_string) # <-- Inject the formatted string
+        # --- END MODIFICATION ---
 
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
@@ -126,9 +145,15 @@ class IntellectEngine:
                 spirit_injection = coaching_note_template.format(spirit_feedback=spirit_feedback)
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
+        # The {persona_style_rules} placeholder is in formatting_instructions
+        # We fill it with the persona's style.
+        if "{persona_style_rules}" in formatting_instructions:
+            formatting_instructions = formatting_instructions.format(persona_style_rules=style)
 
+
+        # Build system prompt
         system_prompt = "\n\n".join(filter(None, [
-            context_injection, worldview, style, memory_injection, spirit_injection, formatting_instructions
+            worldview, memory_injection, spirit_injection, formatting_instructions
         ]))
 
         obj = {}
@@ -223,12 +248,14 @@ class IntellectEngine:
             answer = obj.get("answer", "").replace("\\n", "\n").strip()
             reflection = obj.get("reflection", "").replace("\\n", "\n").strip()
 
-            return answer, reflection, retrieved_context
+            # --- MODIFICATION: Pass back the *formatted string* context for auditing ---
+            return answer, reflection, retrieved_context_string if self.retriever else ""
             
         except Exception as e:
             self.last_error = f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
             print(f"--- ERROR IN INTELLECT ---: {self.last_error}", file=sys.stderr)
-            return None, None, None
+            # --- MODIFICATION: Pass back the *formatted string* context even on failure ---
+            return None, None, retrieved_context_string if self.retriever else ""
 
 
 class WillGate:
@@ -409,6 +436,13 @@ class ConscienceAuditor:
     async def evaluate(self, *, final_output: str, user_prompt: str, reflection: str, retrieved_context: str) -> List[Dict[str, Any]]:
         """
         Scores the final output against each configured value using detailed rubrics.
+        
+        Args:
+            final_output: The final AI answer shown to the user.
+            user_prompt: The user's original prompt.
+            reflection: The AI's internal 'thought' from the Intellect step.
+            retrieved_context: The raw RAG context that was retrieved (if any). 
+                                (This is now the formatted string)
         """
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
@@ -416,6 +450,13 @@ class ConscienceAuditor:
             return []
 
         worldview = self.profile.get("worldview", "")
+        
+        # --- CHANGE: Inject context into worldview for the audit ---
+        # This lets the auditor see the same worldview as the intellect.
+        if "{retrieved_context}" in worldview:
+            worldview = worldview.format(retrieved_context=retrieved_context if retrieved_context else "[NO DOCUMENTS FOUND]")
+        # --- END CHANGE ---
+
         worldview_injection = ""
         if worldview:
             worldview_template = self.prompt_config.get("worldview_template", "")
@@ -437,12 +478,14 @@ class ConscienceAuditor:
             rubrics_str=rubrics_str
         )
         
+        # --- CHANGE: Pass retrieved_context to the auditor ---
         body = (
             f"USER PROMPT:\n{user_prompt}\n\n"
             f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
             f"DOCUMENTS RETRIEVED BY RAG:\n{retrieved_context if retrieved_context else 'None'}\n\n"
             f"AI's FINAL OUTPUT TO USER:\n{final_output}"
         )
+        # --- END CHANGE ---
         
         obj = {}
         content = "{}"
