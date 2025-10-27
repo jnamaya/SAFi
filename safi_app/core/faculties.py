@@ -33,8 +33,9 @@ class IntellectEngine:
     """
     Core cognitive faculty for generating responses.
     
-    This class now parses robust XML-style tags (<reflection> and <answer>)
-    to avoid JSON escaping errors from the model.
+    This class now uses a HYBRID parsing strategy:
+    - Groq/OpenAI: Uses reliable forced JSON mode.
+    - Gemini/Anthropic: Uses robust XML-in-text-mode.
     """
 
     def __init__(
@@ -81,60 +82,76 @@ class IntellectEngine:
         Generates a response based on the user prompt and contextual information.
         """
         self.last_error = None
-
-        retrieved_context_string = ""
-        if self.retriever:
-            retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
-
-            if not retrieved_docs:
-                retrieved_context_string = "[NO DOCUMENTS FOUND]"
-            else:
-                format_string = self.profile.get("rag_format_string", "{text_chunk}")
-
-                formatted_chunks = []
-                for doc in retrieved_docs:
-                    try:
-                        formatted_chunks.append(format_string.format(**doc))
-                    except KeyError:
-                        if "text_chunk" in doc:
-                            formatted_chunks.append(doc["text_chunk"])
-
-                retrieved_context_string = "\n\n".join(formatted_chunks)
-
-        worldview = self.profile.get("worldview", "")
-        style = self.profile.get("style", "")
-
-        if "{retrieved_context}" in worldview:
-            worldview = worldview.format(
-                retrieved_context=retrieved_context_string
-            ) 
-
-        memory_injection = (
-            f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
-            f"<summary>{memory_summary}</summary>" if memory_summary else ""
-        )
-
-        spirit_injection = ""
-        if spirit_feedback:
-            coaching_note_template = self.prompt_config.get("coaching_note", "")
-            if coaching_note_template:
-                spirit_injection = coaching_note_template.format(
-                    spirit_feedback=spirit_feedback
-                )
-
-        formatting_instructions = self.prompt_config.get("formatting_instructions", "")
-        if "{persona_style_rules}" in formatting_instructions:
-            formatting_instructions = formatting_instructions.format(
-                persona_style_rules=style
-            )
-
-        system_prompt = "\n\n".join(
-            filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
-        )
-
-        content = "" # Default to empty string
+        retrieved_context_string = "" # Default to empty string
 
         try:
+            # All logic, including RAG, is now inside the main try/except block.
+            if self.retriever:
+                retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
+
+                if not retrieved_docs:
+                    retrieved_context_string = "[NO DOCUMENTS FOUND]"
+                else:
+                    format_string = self.profile.get("rag_format_string", "{text_chunk}")
+
+                    formatted_chunks = []
+                    for doc in retrieved_docs:
+                        try:
+                            formatted_chunks.append(format_string.format(**doc))
+                        except KeyError:
+                            if "text_chunk" in doc:
+                                formatted_chunks.append(doc["text_chunk"])
+
+                    retrieved_context_string = "\n\n".join(formatted_chunks)
+
+            worldview = self.profile.get("worldview", "")
+            style = self.profile.get("style", "")
+
+            if "{retrieved_context}" in worldview:
+                worldview = worldview.format(
+                    retrieved_context=retrieved_context_string
+                ) 
+
+            memory_injection = (
+                f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
+                f"<summary>{memory_summary}</summary>" if memory_summary else ""
+            )
+
+            spirit_injection = ""
+            if spirit_feedback:
+                coaching_note_template = self.prompt_config.get("coaching_note", "")
+                if coaching_note_template:
+                    spirit_injection = coaching_note_template.format(
+                        spirit_feedback=spirit_feedback
+                    )
+
+            # --- HYBRID PROMPT STRATEGY ---
+            # We now hard-code the format for *all* providers to ensure stability
+            # and ignore the (potentially out of sync) system_prompts.json file.
+            
+            if self.provider == "groq" or self.provider == "openai":
+                # These providers use JSON.
+                formatting_instructions = (
+                    'You MUST format your entire response as a single, valid JSON object '
+                    'with exactly two top-level keys: "answer" and "reflection".\n\n'
+                    '<persona_style_rules>\n{persona_style_rules}\n</persona_style_rules>'
+                ).format(persona_style_rules=style)
+            else:
+                # Gemini and Anthropic use robust XML tags.
+                formatting_instructions = (
+                    'You MUST format your entire response using XML-style tags. '
+                    'Wrap your internal reasoning in <reflection>...</reflection> '
+                    'and your final, user-facing answer in <answer>...</answer>.\n\n'
+                    '<persona_style_rules>\n{persona_style_rules}\n</persona_style_rules>'
+                ).format(persona_style_rules=style)
+            # --- END HYBRID STRATEGY ---
+
+            system_prompt = "\n\n".join(
+                filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
+            )
+
+            content = "" # Default to empty string
+
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
                     raise TypeError(
@@ -144,8 +161,8 @@ class IntellectEngine:
                 params = {
                     "model": self.model,
                     "temperature": 1.0,
-                    # We are in TEXT mode to support XML tags
-                    # "response_format": {"type": "json_object"}, 
+                    # --- RE-ENABLING JSON MODE ---
+                    "response_format": {"type": "json_object"}, 
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -203,42 +220,76 @@ class IntellectEngine:
                 )
 
             # -----------------------------------------------------------------
-            # Robust XML-style Tag Parsing
-            # -----------------------------------------------------------------
-            # This is the new, robust parsing logic that avoids JSON.
-            # It finds the content *inside* the <reflection> and <answer> tags.
+            # HYBRID PARSING LOGIC
             # -----------------------------------------------------------------
             
             answer = ""
             reflection = ""
-            
-            # Use re.DOTALL so '.' matches newlines
-            reflection_match = re.search(r'<reflection>(.*?)</reflection>', content, re.DOTALL)
-            if reflection_match:
-                reflection = reflection_match.group(1).strip()
-            
-            answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
-            if answer_match:
-                answer = answer_match.group(1).strip()
-            
-            if not answer and not reflection:
-                # Fallback: if no tags were found, assume the *entire* output
-                # is the answer, BUT log a warning.
-                if '<answer>' not in content and '<reflection>' not in content and content:
+
+            if self.provider == "groq" or self.provider == "openai":
+                # --- JSON PARSING LOGIC (for Groq/OpenAI) ---
+                start = content.find('{')
+                end = content.rfind('}')
+                
+                if start == -1 or end == -1 or end < start:
+                    self.last_error = f"No valid JSON object found. (provider={self.provider})"
+                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
+                    return None, None, retrieved_context_string
+
+                try:
+                    obj = json.loads(content[start:end+1])
+                except json.JSONDecodeError:
+                    # Run the sanitizer
+                    sanitized = content[start:end+1].replace("\r", " ").replace("\n", " ")
+                    sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
+                    sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
+                    try:
+                        obj = json.loads(sanitized)
+                    except json.JSONDecodeError as e2:
+                        self.last_error = f"JSONDecodeError: {e2} (provider={self.provider})"
+                        self.log.error(f"{self.last_error} | Content: {sanitized[:500]}")
+                        return None, None, retrieved_context_string
+                
+                # Use str() to gracefully handle if model returns dict/list
+                answer = str(obj.get("answer", "")).strip()
+                reflection = str(obj.get("reflection", "")).strip()
+
+            else:
+                # --- XML PARSING LOGIC (for Gemini/Anthropic) ---
+                reflection_match = re.search(r'<reflection>(.*?)</reflection>', content, re.DOTALL)
+                if reflection_match:
+                    reflection = reflection_match.group(1).strip()
+                
+                answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
+                if answer_match:
+                    answer = answer_match.group(1).strip()
+
+            # --- UNIVERSAL ANSWER CHECK ---
+            if not answer:
+                if reflection and (self.provider == "gemini" or self.provider == "anthropic"):
+                    # Case 1: XML Model generated <reflection> but forgot <answer>
+                    self.last_error = f"Model compliance error: Missing <answer> tag. (provider={self.provider})"
+                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
+                elif reflection and (self.provider == "groq" or self.provider == "openai"):
+                     # Case 2: JSON Model returned reflection but no answer
+                    self.last_error = f"Model compliance error: Missing 'answer' key in JSON. (provider={self.provider})"
+                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
+                elif content:
+                    # Case 3: Model generated *no* tags/JSON, just raw text. Use as answer.
                     answer = content.strip()
-                    self.log.warning(f"No XML tags found in Intellect output. Using raw content. (provider={self.provider})")
+                    self.log.warning(f"No structured output (XML/JSON) found. Using raw content. (provider={self.provider})")
                 else:
-                    # If tags *are* present but regex failed, it's a real error
-                    self.last_error = f"Failed to parse XML-style tags from model output. Content: {content[:500]}"
+                    # Case 4: Model returned nothing at all.
+                    self.last_error = f"Model returned empty content. (provider={self.provider})"
                     self.log.error(self.last_error)
-                    return None, None, (
-                        retrieved_context_string if self.retriever else ""
-                    )
+
+                if self.last_error:
+                    return None, None, retrieved_context_string
 
             return (
                 answer,
                 reflection,
-                retrieved_context_string if self.retriever else "",
+                retrieved_context_string,
             )
 
         except Exception as e:
@@ -246,7 +297,7 @@ class IntellectEngine:
                 f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
             )
             self.log.exception(f"Intellect generation failed (provider={self.provider}, model={self.model})")
-            return None, None, retrieved_context_string if self.retriever else ""
+            return None, None, retrieved_context_string
 
 
 class WillGate:
@@ -286,7 +337,7 @@ class WillGate:
 
     def _key(self, x_t: str, a_t: str) -> str:
         """Creates a unique cache key for a given prompt and answer."""
-        return dict_sha256( # *** SYNTAX FIX: Was dict_sha266 ***
+        return dict_sha256(
             {"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values}
         )
 
@@ -336,7 +387,9 @@ class WillGate:
                 params = {
                     "model": self.model,
                     "temperature": 0.0,
+                    # --- RE-ENABLING JSON MODE ---
                     "response_format": {"type": "json_object"},
+                    # --- END FIX ---
                     "messages": [
                         {"role": "system", "content": policy},
                         {"role": "user", "content": prompt},
@@ -402,7 +455,6 @@ class WillGate:
                 self.log.error(error_msg)
                 return ("violation", "Internal evaluation error")
                 
-            # *** INDENTATION FIX: This block was unindented ***
             try:
                 obj = json.loads(content)
             except json.JSONDecodeError:
@@ -418,7 +470,6 @@ class WillGate:
                     )
                     self.log.error(error_msg) 
                     return ("violation", "Internal evaluation error")
-            # *** END INDENTATION FIX ***
 
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
@@ -534,7 +585,9 @@ class ConscienceAuditor:
                 params = {
                     "model": self.model,
                     "temperature": 0.1,
+                    # --- RE-ENABLING JSON MODE ---
                     "response_format": {"type": "json_object"},
+                    # --- END FIX ---
                     "messages": [
                         {"role": "system", "content": sys_prompt},
                         {"role": "user", "content": body},
@@ -559,7 +612,7 @@ class ConscienceAuditor:
 
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=sys_prompt,  # *** SYNTAX FIX: Was _prompt ***
+                    system=sys_prompt,
                     max_tokens=4096,
                     temperature=0.1,
                     messages=[{"role": "user", "content": body}],
@@ -648,15 +701,11 @@ class SpiritIntegrator:
             lmap.get(nkey) for nkey in self._norm_values
         ]
 
-        # --- SYNTAX ERROR FIX ---
-        # The f-string was broken and contained the entire rest of the function.
-        # This is now corrected.
         if any(r is None for r in sorted_rows):
             missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
             note = f"Ledger missing values: {', '.join(missing)}"
             return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
         
-        # The rest of the function was part of the broken f-string
         scores = np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
         confidences = np.array(
             [float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float
@@ -674,5 +723,5 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
-        # --- END SYNTAX ERROR FIX ---
+
 
