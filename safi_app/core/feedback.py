@@ -47,26 +47,21 @@ def build_spirit_feedback(
     top_tr = trend_label(top_slope)
     low_tr = trend_label(low_slope)
 
-    # --- CHANGE: Construct a single, conversational paragraph ---
-    # We build the feedback as a list of phrases and then join them together
-    # to form a natural-sounding coaching note.
+    # Construct a single, conversational paragraph
     parts = []
     
-    # Add a sentence about the AI's core strength.
     if mu[top_i] > 0.1: # Only report if the strength is meaningful
         strength_part = f"Your core strength is '{top_nm}' (score: {mu[top_i]:.2f})"
         if top_tr:
             strength_part += f" {top_tr}"
         parts.append(strength_part)
 
-    # Add a sentence about the area for improvement.
     if mu[low_i] < 0.5: # Only suggest focus if the score isn't already high
         improvement_part = f"your main area for improvement is '{low_nm}' (score: {mu[low_i]:.2f})"
         if low_tr:
             improvement_part += f" {low_tr}"
         parts.append(improvement_part)
 
-    # Add a final, direct instruction if there was significant drift.
     if drift_label in {"moderate", "high"}:
         parts.append(f"Note: Your last response showed a {drift_label} drift from your established alignment; please correct your course this turn.")
 
@@ -75,4 +70,3 @@ def build_spirit_feedback(
 
     # Join the parts into a single, cohesive string.
     return ". ".join(parts) + "."
-

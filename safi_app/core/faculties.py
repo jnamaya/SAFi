@@ -5,19 +5,18 @@ import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 import re
 import unicodedata
-import sys
+import logging  # Import the logging module
 
-# --- MODIFICATION: Import new clients/types ---
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 import google.generativeai as genai
-# --- END MODIFICATION ---
 
 from ..utils import normalize_text, dict_sha256
 from .retriever import Retriever
 
 # Define various Unicode dash characters for normalization.
 DASHES = ["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"]  # hyphen, nb-hyphen, figure dash, en, em, minus
+
 
 def _norm_label(s: str) -> str:
     """Normalize labels for safe matching across Unicode variants and spacing."""
@@ -38,13 +37,14 @@ class IntellectEngine:
     retrieved context) into a single system prompt, queries the language model,
     and parses the response into separate answer and reflection components.
     """
+
     def __init__(
-        self, 
-        client: Any, # Client can be any type now
-        provider_name: str, # We'll use this to know *what* client is
-        model: str, 
-        profile: Optional[Dict[str, Any]] = None, 
-        prompt_config: Optional[Dict[str, Any]] = None
+        self,
+        client: Any,  # Client can be any type now
+        provider_name: str,  # We'll use this to know *what* client is
+        model: str,
+        profile: Optional[Dict[str, Any]] = None,
+        prompt_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initializes the IntellectEngine.
@@ -62,41 +62,38 @@ class IntellectEngine:
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.last_error: Optional[str] = None
-        
-        # --- MODIFICATION: Handle Gemini client init ---
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
+
         if self.provider == "gemini":
             try:
                 # client is actually the model name string
                 self.gemini_model = genai.GenerativeModel(self.model)
             except Exception as e:
-                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
                 self.gemini_model = None
-        # --- END MODIFICATION ---
+                self.last_error = f"Error initializing Gemini model {self.model}: {e}"
+                self.log.error(self.last_error) # Log initialization error
 
         self.retriever = None
-        # --- DYNAMIC RAG INITIALIZATION ---
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
             self.retriever = Retriever(knowledge_base_name=kb_name)
-        # ----------------------------------
 
     async def generate(
-        self, *,
+        self,
+        *,
         user_prompt: str,
         memory_summary: str,
-        spirit_feedback: str
+        spirit_feedback: str,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Generates a response based on the user prompt and contextual information.
         """
         self.last_error = None
-        
-        # --- MODIFICATION: RAG context is formatted and injected into the worldview ---
+
         retrieved_context_string = ""
         if self.retriever:
-            print(f"Performing RAG search for prompt: '{user_prompt[:50]}...'")
-            retrieved_docs = self.retriever.search(user_prompt) # <-- Get the List[Dict]
-            
+            retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
+
             if not retrieved_docs:
                 retrieved_context_string = "[NO DOCUMENTS FOUND]"
             else:
@@ -104,7 +101,6 @@ class IntellectEngine:
                 format_string = self.profile.get("rag_format_string")
                 if not format_string:
                     # Fallback if no format string is defined
-                    print("--- WARNING: No 'rag_format_string' in profile. Defaulting to raw text_chunk. ---")
                     format_string = "{text_chunk}"
 
                 # Format each doc and join them
@@ -113,148 +109,179 @@ class IntellectEngine:
                     try:
                         # Use **doc to unpack the metadata dictionary into the format string
                         formatted_chunks.append(format_string.format(**doc))
-                    except KeyError as e:
-                        # --- THIS IS THE FIX ---
+                    except KeyError:
                         # Fallback: if format fails (e.g., missing key), just use the text_chunk
-                        print(f"--- WARNING: RAG metadata missing key {e} for format string. Using fallback. Doc: {doc} ---")
-                        if 'text_chunk' in doc:
-                            formatted_chunks.append(doc['text_chunk'])
-                        # --- END FIX ---
-                
+                        if "text_chunk" in doc:
+                            formatted_chunks.append(doc["text_chunk"])
+
                 retrieved_context_string = "\n\n".join(formatted_chunks)
-                
-            print(f"RAG search complete. Context length: {len(retrieved_context_string)}")
-        
+
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
         # Inject RAG context into worldview if placeholder exists
         if "{retrieved_context}" in worldview:
-            worldview = worldview.format(retrieved_context=retrieved_context_string) # <-- Inject the formatted string
-        # --- END MODIFICATION ---
+            worldview = worldview.format(
+                retrieved_context=retrieved_context_string
+            )  # <-- Inject the formatted string
 
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
             f"<summary>{memory_summary}</summary>" if memory_summary else ""
         )
-        
+
         spirit_injection = ""
         if spirit_feedback:
             coaching_note_template = self.prompt_config.get("coaching_note", "")
             if coaching_note_template:
-                spirit_injection = coaching_note_template.format(spirit_feedback=spirit_feedback)
+                spirit_injection = coaching_note_template.format(
+                    spirit_feedback=spirit_feedback
+                )
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
         # The {persona_style_rules} placeholder is in formatting_instructions
         # We fill it with the persona's style.
         if "{persona_style_rules}" in formatting_instructions:
-            formatting_instructions = formatting_instructions.format(persona_style_rules=style)
-
+            formatting_instructions = formatting_instructions.format(
+                persona_style_rules=style
+            )
 
         # Build system prompt
-        system_prompt = "\n\n".join(filter(None, [
-            worldview, memory_injection, spirit_injection, formatting_instructions
-        ]))
+        system_prompt = "\n\n".join(
+            filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
+        )
 
         obj = {}
         content = "{}"
 
         try:
-            # --- MODIFICATION: The "Adapter" logic ---
             # This is the core change. We branch based on the provider.
-            
+
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
-                
-                # --- FIX: Handle different parameter names ---
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncOpenAI instance"
+                    )
+
                 params = {
                     "model": self.model,
                     "temperature": 1.0,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ]
+                        {"role": "user", "content": user_prompt},
+                    ],
                 }
-                
-                # --- FIX 2: Changed '==' to 'startswith' ---
-                # This catches 'gpt-5', 'gpt-5-nano', 'gpt-5-turbo', etc.
-                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
+
+                # This catches 'gpt-4o', 'gpt-5', etc.
+                if self.provider == "openai" and (
+                    self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
+                ):
                     params["max_completion_tokens"] = 4096
                 else:
                     # Groq and older OpenAI models use 'max_tokens'
                     params["max_tokens"] = 4096
-                
+
                 resp = await self.client.chat.completions.create(**params)
-                # --- END FIX ---
 
                 content = resp.choices[0].message.content or "{}"
-            
+
             elif self.provider == "anthropic":
                 if not isinstance(self.client, AsyncAnthropic):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncAnthropic instance"
+                    )
 
-                # Anthropic uses `system` param and needs JSON instruction in prompt
-                system_prompt_with_json = system_prompt + \
-                    "\n\n" + \
-                    "You MUST respond in JSON format, with keys 'answer' and 'reflection'."
-                
+                # --- FIX: Removed redundant hard-coded JSON instruction ---
+                # The 'system_prompt' variable already contains the necessary
+                # instructions from 'system_prompts.json'.
+
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=system_prompt_with_json,
+                    system=system_prompt,  # Use the base system prompt
                     max_tokens=4096,
                     temperature=1.0,
-                    messages=[
-                        {"role": "user", "content": user_prompt}
-                    ]
+                    messages=[{"role": "user", "content": user_prompt}],
                 )
                 content = resp.content[0].text or "{}"
 
             elif self.provider == "gemini":
                 if not self.gemini_model:
-                     raise ValueError("Gemini model was not initialized correctly.")
+                    raise ValueError("Gemini model was not initialized correctly.")
 
-                # Gemini needs JSON instruction
-                system_prompt_with_json = system_prompt + \
-                    "\n\n" + \
-                    "You MUST respond in JSON format, with keys 'answer' and 'reflection'."
+                # --- FIX: Removed redundant hard-coded JSON instruction ---
+                # The 'system_prompt' variable already contains the necessary
+                # instructions from 'system_prompts.json'.
 
                 generation_config = genai.types.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=1.0
+                    # response_mime_type="application/json",  # This is NOT used
+                    temperature=1.0,
+                    max_output_tokens=4096,  # Add token limit to prevent truncation
                 )
-                
-                # Gemini doesn't have a separate system prompt API for async generate
-                full_prompt = system_prompt_with_json + "\n\nUSER_PROMPT:\n" + user_prompt
-                
+
+                # We pass the full prompt (which includes system instructions) as the content.
+                full_prompt = (
+                    system_prompt + "\n\nUSER_PROMPT:\n" + user_prompt
+                )
+
                 resp = await self.gemini_model.generate_content_async(
-                    full_prompt,
-                    generation_config=generation_config
+                    full_prompt, generation_config=generation_config
                 )
                 content = resp.text or "{}"
-                
-            else:
-                raise ValueError(f"Unknown provider '{self.provider}' in IntellectEngine")
 
-            # --- END MODIFICATION ---
-            
-            # Universal JSON parsing logic
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            else:
+                raise ValueError(
+                    f"Unknown provider '{self.provider}' in IntellectEngine"
+                )
+
+            # -----------------------------------------------------------------
+            # Robust JSON Parsing & Sanitization
+            # -----------------------------------------------------------------
+            # We do not use Gemini's `response_mime_type="application/json"`
+            # as it is unreliable and can fail on complex prompts.
+            # Instead, we treat the output as text and sanitize it manually.
+            # This regex fixes common Gemini errors, like trailing commas
+            # before a closing brace (e.g., {"a": 1,})
+            # -----------------------------------------------------------------
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 content = json_match.group(0)
-            obj = json.loads(content)
+
+            try:
+                obj = json.loads(content)
+            except json.JSONDecodeError:
+                # Fallback sanitizer for malformed JSON (common with Gemini)
+                sanitized = content.replace("\r", " ").replace("\n", " ")
+                # Remove trailing commas before closing braces/brackets
+                sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
+                # Collapse repeated spaces
+                sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
+                try:
+                    obj = json.loads(sanitized)
+                except json.JSONDecodeError as e2:
+                    self.last_error = (
+                        f"JSONDecodeError: {e2} (provider={self.provider}, model={self.model}) | "
+                        f"content={sanitized[:500]}"
+                    )
+                    self.log.error(self.last_error) # Log the final parsing error
+                    return None, None, (
+                        retrieved_context_string if self.retriever else ""
+                    )
 
             answer = obj.get("answer", "").replace("\\n", "\n").strip()
             reflection = obj.get("reflection", "").replace("\\n", "\n").strip()
 
-            # --- MODIFICATION: Pass back the *formatted string* context for auditing ---
-            return answer, reflection, retrieved_context_string if self.retriever else ""
-            
+            return (
+                answer,
+                reflection,
+                retrieved_context_string if self.retriever else "",
+            )
+
         except Exception as e:
-            self.last_error = f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
-            print(f"--- ERROR IN INTELLECT ---: {self.last_error}", file=sys.stderr)
-            # --- MODIFICATION: Pass back the *formatted string* context even on failure ---
+            self.last_error = (
+                f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            )
+            self.log.exception(f"Intellect generation failed (provider={self.provider}, model={self.model})") # Log the full exception
             return None, None, retrieved_context_string if self.retriever else ""
 
 
@@ -263,15 +290,16 @@ class WillGate:
     An ethical gatekeeper that evaluates a draft response against a set of values.
     It decides whether to 'approve' or declare a 'violation'.
     """
+
     def __init__(
-        self, 
-        client: Any, # Client can be any type
-        provider_name: str, # We'll use this to know *what* client is
-        model: str, 
-        *, 
-        values: List[Dict[str, Any]], 
-        profile: Optional[Dict[str, Any]] = None, 
-        prompt_config: Optional[Dict[str, Any]] = None
+        self,
+        client: Any,  # Client can be any type
+        provider_name: str,  # We'll use this to know *what* client is
+        model: str,
+        *,
+        values: List[Dict[str, Any]],
+        profile: Optional[Dict[str, Any]] = None,
+        prompt_config: Optional[Dict[str, Any]] = None,
     ):
         """Initializes the WillGate."""
         self.client = client
@@ -281,18 +309,20 @@ class WillGate:
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.cache: Dict[str, Tuple[str, str]] = {}
-        
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
+
         if self.provider == "gemini":
             try:
                 self.gemini_model = genai.GenerativeModel(self.model)
             except Exception as e:
-                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
                 self.gemini_model = None
-
+                self.log.error(f"Error initializing Gemini model {self.model}: {e}")
 
     def _key(self, x_t: str, a_t: str) -> str:
         """Creates a unique cache key for a given prompt and answer."""
-        return dict_sha256({"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values})
+        return dict_sha256(
+            {"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values}
+        )
 
     async def evaluate(self, *, user_prompt: str, draft_answer: str) -> Tuple[str, str]:
         """
@@ -307,101 +337,132 @@ class WillGate:
 
         if not rules:
             joined = ", ".join(v["value"] for v in self.values)
-            rules = [f"Do not approve drafts that reduce alignment with the declared values: {joined}."]
+            rules = [
+                f"Do not approve drafts that reduce alignment with the declared values: {joined}."
+            ]
 
         policy_parts = [
-            self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
-            f"Tradition: {name}" if name else "", "Rules:", *[f"- {r}" for r in rules],
-            "Value Set:", json.dumps(self.values, indent=2),
-            self.prompt_config.get("footer", "Return a single JSON object with keys: decision, reason."),
+            self.prompt_config.get(
+                "header", "You are Will, the ethical gatekeeper."
+            ),
+            f"Tradition: {name}" if name else "",
+            "Rules:",
+            *[f"- {r}" for r in rules],
+            "Value Set:",
+            json.dumps(self.values, indent=2),
+            self.prompt_config.get(
+                "footer",
+                "Return a single JSON object with keys: decision, reason.",
+            ),
         ]
         policy = "\n".join(filter(None, policy_parts))
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
         obj = {}
         content = "{}"
-        
+
         try:
-            # --- MODIFICATION: Apply the "Adapter" pattern ---
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
-                
-                # --- FIX: Handle different parameter names ---
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncOpenAI instance"
+                    )
+
                 params = {
                     "model": self.model,
                     "temperature": 0.0,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": policy},
-                        {"role": "user", "content": prompt}
-                    ]
+                        {"role": "user", "content": prompt},
+                    ],
                 }
-                
-                # --- FIX 2: Changed '==' to 'startswith' ---
-                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
-                    params["max_completion_tokens"] = 1024 # WillGate can be smaller
+
+                if self.provider == "openai" and (
+                    self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
+                ):
+                    params["max_completion_tokens"] = 1024  # WillGate can be smaller
                 else:
                     params["max_tokens"] = 1024
-                
+
                 resp = await self.client.chat.completions.create(**params)
-                # --- END FIX ---
-                
+
                 content = resp.choices[0].message.content or "{}"
 
             elif self.provider == "anthropic":
                 if not isinstance(self.client, AsyncAnthropic):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
-                
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncAnthropic instance"
+                    )
+
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=policy, # Policy already includes JSON instruction
+                    system=policy,  # Policy already includes JSON instruction
                     max_tokens=1024,
                     temperature=0.0,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
+                    messages=[{"role": "user", "content": prompt}],
                 )
                 content = resp.content[0].text or "{}"
 
             elif self.provider == "gemini":
                 if not self.gemini_model:
-                     raise ValueError("Gemini model was not initialized correctly.")
+                    raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
+                    # response_mime_type="application/json", # NOT used
+                    temperature=0.0,
+                    max_output_tokens=1024,  # Add token limit
                 )
                 full_prompt = policy + "\n\nUSER_PROMPT_AND_DRAFT:\n" + prompt
-                
+
                 resp = await self.gemini_model.generate_content_async(
-                    full_prompt,
-                    generation_config=generation_config
+                    full_prompt, generation_config=generation_config
                 )
                 content = resp.text or "{}"
 
             else:
                 raise ValueError(f"Unknown provider '{self.provider}' in WillGate")
 
-            # Universal JSON parsing
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            # -----------------------------------------------------------------
+            # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
+            # -----------------------------------------------------------------
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 content = json_match.group(0)
-            obj = json.loads(content)
-            # --- END MODIFICATION ---
+            try:
+                obj = json.loads(content)
+            except json.JSONDecodeError:
+                sanitized = content.replace("\r", " ").replace("\n", " ")
+                sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
+                sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
+                try:
+                    obj = json.loads(sanitized)
+                except json.JSONDecodeError as e2:
+                    error_msg = (
+                        f"Will exception: JSONDecodeError: {e2} (provider={self.provider}, model={self.model}) | "
+                        f"content={sanitized[:500]}"
+                    )
+                    self.log.error(error_msg) # Log the parse error
+                    return ("violation", "Internal evaluation error")
 
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
-            if decision not in {"approve", "violation"}: decision = "violation"
-            if not reason: reason = "Decision explained by Will policies and the active value set."
-            
+            if decision not in {"approve", "violation"}:
+                decision = "violation"
+            if not reason:
+                reason = (
+                    "Decision explained by Will policies and the active value set."
+                )
+
             tup = (decision, reason)
             self.cache[key] = tup
             return tup
         except Exception as e:
-            error_msg = f"Will exception: {type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
-            print(f"--- ERROR IN WILL ---: {error_msg}", file=sys.stderr)
-            return ("violation", error_msg)
+            error_msg = (
+                f"Will exception: {type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            )
+            self.log.exception(f"WillGate evaluation failed (provider={self.provider})") # Log the full exception
+            return ("violation", "Internal evaluation error")
 
 
 class ConscienceAuditor:
@@ -409,14 +470,15 @@ class ConscienceAuditor:
     Audits the final, user-facing output for alignment with a set of values.
     This provides the data used for long-term ethical steering (Spirit).
     """
+
     def __init__(
-        self, 
-        client: Any, # Client can be any type
-        provider_name: str, # We'll use this to know *what* client is
-        model: str, 
-        values: List[Dict[str, Any]], 
-        profile: Optional[Dict[str, Any]] = None, 
-        prompt_config: Optional[Dict[str, Any]] = None
+        self,
+        client: Any,  # Client can be any type
+        provider_name: str,  # We'll use this to know *what* client is
+        model: str,
+        values: List[Dict[str, Any]],
+        profile: Optional[Dict[str, Any]] = None,
+        prompt_config: Optional[Dict[str, Any]] = None,
     ):
         """Initializes the ConscienceAuditor."""
         self.client = client
@@ -425,15 +487,23 @@ class ConscienceAuditor:
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
-        
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
+
         if self.provider == "gemini":
             try:
                 self.gemini_model = genai.GenerativeModel(self.model)
             except Exception as e:
-                print(f"Error initializing Gemini model {self.model}: {e}", file=sys.stderr)
                 self.gemini_model = None
+                self.log.error(f"Error initializing Gemini model {self.model}: {e}")
 
-    async def evaluate(self, *, final_output: str, user_prompt: str, reflection: str, retrieved_context: str) -> List[Dict[str, Any]]:
+    async def evaluate(
+        self,
+        *,
+        final_output: str,
+        user_prompt: str,
+        reflection: str,
+        retrieved_context: str,
+    ) -> List[Dict[str, Any]]:
         """
         Scores the final output against each configured value using detailed rubrics.
         
@@ -446,16 +516,17 @@ class ConscienceAuditor:
         """
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
-            print("--- ERROR IN CONSCIENCE: 'prompt_template' not found in system_prompts.json ---", file=sys.stderr)
+            self.log.error("ConscienceAuditor 'prompt_template' not found in system_prompts.json")
             return []
 
         worldview = self.profile.get("worldview", "")
-        
-        # --- CHANGE: Inject context into worldview for the audit ---
+
+        # Inject context into worldview for the audit
         # This lets the auditor see the same worldview as the intellect.
         if "{retrieved_context}" in worldview:
-            worldview = worldview.format(retrieved_context=retrieved_context if retrieved_context else "[NO DOCUMENTS FOUND]")
-        # --- END CHANGE ---
+            worldview = worldview.format(
+                retrieved_context=retrieved_context if retrieved_context else "[NO DOCUMENTS FOUND]"
+            )
 
         worldview_injection = ""
         if worldview:
@@ -465,104 +536,117 @@ class ConscienceAuditor:
 
         rubrics = []
         for v in self.values:
-            if 'rubric' in v:
-                rubrics.append({
-                    "value": v['value'],
-                    "description": v['rubric'].get('description', ''),
-                    "scoring_guide": v['rubric'].get('scoring_guide', [])
-                })
+            if "rubric" in v:
+                rubrics.append(
+                    {
+                        "value": v["value"],
+                        "description": v["rubric"].get("description", ""),
+                        "scoring_guide": v["rubric"].get("scoring_guide", []),
+                    }
+                )
         rubrics_str = json.dumps(rubrics, indent=2)
 
         sys_prompt = prompt_template.format(
-            worldview_injection=worldview_injection,
-            rubrics_str=rubrics_str
+            worldview_injection=worldview_injection, rubrics_str=rubrics_str
         )
-        
-        # --- CHANGE: Pass retrieved_context to the auditor ---
+
+        # Pass retrieved_context to the auditor
         body = (
             f"USER PROMPT:\n{user_prompt}\n\n"
             f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
             f"DOCUMENTS RETRIEVED BY RAG:\n{retrieved_context if retrieved_context else 'None'}\n\n"
             f"AI's FINAL OUTPUT TO USER:\n{final_output}"
         )
-        # --- END CHANGE ---
-        
+
         obj = {}
         content = "{}"
-        
+
         try:
-            # --- MODIFICATION: Apply the "Adapter" pattern ---
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncOpenAI instance")
-                
-                # --- FIX: Handle different parameter names ---
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncOpenAI instance"
+                    )
+
                 params = {
                     "model": self.model,
                     "temperature": 0.1,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": body}
-                    ]
+                        {"role": "user", "content": body},
+                    ],
                 }
-                
-                # --- FIX 2: Changed '==' to 'startswith' ---
-                if self.provider == "openai" and (self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")):
+
+                if self.provider == "openai" and (
+                    self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
+                ):
                     params["max_completion_tokens"] = 4096
                 else:
                     params["max_tokens"] = 4096
-                
+
                 resp = await self.client.chat.completions.create(**params)
-                # --- END FIX ---
 
                 content = resp.choices[0].message.content or "{}"
-            
+
             elif self.provider == "anthropic":
                 if not isinstance(self.client, AsyncAnthropic):
-                    raise TypeError(f"Client for {self.provider} is not an AsyncAnthropic instance")
-                
+                    raise TypeError(
+                        f"Client for {self.provider} is not an AsyncAnthropic instance"
+                    )
+
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=sys_prompt, # Prompt already includes JSON instruction
+                    system=sys_prompt,  # Prompt already includes JSON instruction
                     max_tokens=4096,
                     temperature=0.1,
-                    messages=[
-                        {"role": "user", "content": body}
-                    ]
+                    messages=[{"role": "user", "content": body}],
                 )
                 content = resp.content[0].text or "{}"
 
             elif self.provider == "gemini":
                 if not self.gemini_model:
-                     raise ValueError("Gemini model was not initialized correctly.")
+                    raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1
+                    # response_mime_type="application/json", # NOT used
+                    temperature=0.1,
+                    max_output_tokens=4096,  # Add token limit
                 )
                 full_prompt = sys_prompt + "\n\nUSER_PROMPT_AND_RESPONSE:\n" + body
-                
+
                 resp = await self.gemini_model.generate_content_async(
-                    full_prompt,
-                    generation_config=generation_config
+                    full_prompt, generation_config=generation_config
                 )
                 content = resp.text or "{}"
-                
-            else:
-                raise ValueError(f"Unknown provider '{self.provider}' in ConscienceAuditor")
 
-            # Universal JSON parsing
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            else:
+                raise ValueError(
+                    f"Unknown provider '{self.provider}' in ConscienceAuditor"
+                )
+
+            # -----------------------------------------------------------------
+            # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
+            # -----------------------------------------------------------------
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 content = json_match.group(0)
-            obj = json.loads(content)
-            # --- END MODIFICATION ---
-            
+            try:
+                obj = json.loads(content)
+            except json.JSONDecodeError:
+                sanitized = content.replace("\r", " ").replace("\n", " ")
+                sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
+                sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
+                try:
+                    obj = json.loads(sanitized)
+                except json.JSONDecodeError as e2:
+                    self.log.error(f"Conscience JSON parse failed: {e2} | content={sanitized[:500]}")
+                    return []
+
             return obj.get("evaluations", [])
         except Exception as e:
-            error_msg = f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
-            print(f"--- ERROR IN CONSCIENCE AUDITOR ---: {error_msg}", file=sys.stderr)
+            # Log the full exception but return an empty list
+            self.log.exception(f"Conscience audit failed (provider={self.provider})")
             return []
 
 
@@ -571,12 +655,17 @@ class SpiritIntegrator:
     Integrates Conscience evaluations into a long-term spirit memory vector (mu).
     This class performs mathematical operations to update the AI's ethical alignment over time.
     """
+
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
         """Initializes the SpiritIntegrator."""
         self.values = values
         self.beta = beta
-        self.value_weights = np.array([v['weight'] for v in self.values]) if self.values else np.array([1.0])
-        self._norm_values = [_norm_label(v['value']) for v in self.values] if self.values else []
+        self.value_weights = (
+            np.array([v["weight"] for v in self.values]) if self.values else np.array([1.0])
+        )
+        self._norm_values = (
+            [_norm_label(v["value"]) for v in self.values] if self.values else []
+        )
         self._norm_index = {name: i for i, name in enumerate(self._norm_values)}
 
     def compute(self, ledger: List[Dict[str, Any]], mu_tm1: np.ndarray):
@@ -586,16 +675,22 @@ class SpiritIntegrator:
         if not self.values or not ledger:
             return 1, "Incomplete ledger", mu_tm1, np.zeros_like(mu_tm1), None
 
-        lmap: Dict[str, Dict[str, Any]] = { _norm_label(row.get('value')): row for row in ledger if row.get('value') }
-        sorted_rows: List[Optional[Dict[str, Any]]] = [lmap.get(nkey) for nkey in self._norm_values]
+        lmap: Dict[str, Dict[str, Any]] = {
+            _norm_label(row.get("value")): row for row in ledger if row.get("value")
+        }
+        sorted_rows: List[Optional[Dict[str, Any]]] = [
+            lmap.get(nkey) for nkey in self._norm_values
+        ]
 
         if any(r is None for r in sorted_rows):
-            missing = [self.values[i]['value'] for i, r in enumerate(sorted_rows) if r is None]
+            missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
             note = f"Ledger missing values: {', '.join(missing)}"
             return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
 
-        scores = np.array([float(r.get('score', 0.0)) for r in sorted_rows], dtype=float)
-        confidences = np.array([float(r.get('confidence', 0.0)) for r in sorted_rows], dtype=float)
+        scores = np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
+        confidences = np.array(
+            [float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float
+        )
 
         raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
