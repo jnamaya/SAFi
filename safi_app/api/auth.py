@@ -1,6 +1,5 @@
 from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app
 import secrets
-import logging
 from .. import oauth
 from ..persistence import database as db
 from ..config import Config
@@ -44,7 +43,8 @@ def callback():
         session['user'] = user_details
         return redirect('/')
     except Exception as e:
-        current_app.logger.error(f"Authentication failed: {e}")
+        # In a production environment, this would be logged.
+        # For the MVP, we redirect with a generic error.
         return redirect('/?error=auth_failed')
 
 
@@ -76,8 +76,7 @@ def get_me():
     try:
         user_details['active_profile_details'] = get_profile(active_profile_name)
     except KeyError:
-        logging.warning(f"User {user_id} had invalid profile '{active_profile_name}'. Falling back to default.")
-        
+        # User had an invalid profile, fall back to default
         try:
             db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
             
@@ -89,15 +88,13 @@ def get_me():
             session['user'] = user_session
 
         except Exception as e:
-            logging.error(f"CRITICAL: Default profile '{Config.DEFAULT_PROFILE}' is invalid. Server may be misconfigured. Error: {e}")
+            # This is a critical server misconfiguration
             return jsonify({'ok': False, 'error': 'Server configuration error'}), 500
 
-    # --- MODIFICATION ---
     # Populate model preferences, using system defaults as a fallback.
     user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
     user_details['will_model'] = user_details.get('will_model') or Config.WILL_MODEL
     user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
-    # --- END MODIFICATION ---
 
     return jsonify({"ok": True, "user": user_details})
 
@@ -126,8 +123,6 @@ def set_user_profile():
     
     return jsonify({"status": "success", "active_profile": profile_name})
 
-# --- MODIFICATION ---
-# Added a new endpoint to update the user's model preferences.
 @auth_bp.route('/me/models', methods=['PUT'])
 def set_user_models():
     """
@@ -169,9 +164,7 @@ def set_user_models():
             }
         })
     except Exception as e:
-        logging.error(f"Failed to update user models for {user_id}: {e}")
         return jsonify({"error": "Failed to update model preferences."}), 500
-# --- END MODIFICATION ---
 
 
 @auth_bp.route('/me/delete', methods=['POST'])

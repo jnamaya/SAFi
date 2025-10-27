@@ -22,7 +22,6 @@ def _load_safi(profile_name: str) -> SAFi:
         return safi_instances[profile_name]
 
     prof = get_profile(profile_name)
-    # --- MODIFICATION ---
     # When creating a cached instance, it always uses the default models from Config.
     instance = SAFi(
         config=Config, 
@@ -36,20 +35,22 @@ def _load_safi(profile_name: str) -> SAFi:
     return instance
 
 def get_user_id():
+    """
+    Retrieves the authenticated user's ID from the session.
+    """
     user = session.get('user')
     if not user:
         return None
     return user.get('sub') or user.get('id')
 
 def get_user_profile_name():
-    # --- MODIFICATION ---
-    # Now fetches from session['user']['active_profile'] which is more robust
-    # after the changes to auth.py
+    """
+    Retrieves the user's currently active profile name from the session.
+    Falls back to the system default profile.
+    """
     user = session.get('user', {})
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
-# --- NEW PUBLIC ENDPOINT FOR WORDPRESS ---
-# This new route does not check for a user login session.
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
 def public_process_prompt_endpoint():
     """
@@ -63,7 +64,7 @@ def public_process_prompt_endpoint():
 
     anonymous_user_id = data['conversation_id']
     
-    # --- FIX 1: Ensure a user record exists for the anonymous session ---
+    # Ensure a user record exists for the anonymous session
     if not db.get_user_details(anonymous_user_id):
         placeholder_user_info = {
             "sub": anonymous_user_id,
@@ -73,26 +74,19 @@ def public_process_prompt_endpoint():
         }
         db.upsert_user(placeholder_user_info)
     
-    # --- FIX 2: Create a new conversation for each public prompt ---
+    # Create a new conversation for each public prompt
     # The orchestrator must have a valid conversation ID to save message history.
-    # For the anonymous public chat, we create a new, temporary conversation
-    # for every message to prevent database integrity errors.
     new_convo = db.create_conversation(anonymous_user_id)
-    # --- END OF FIX ---
 
-    # --- CHANGE: Set the public persona to "safi" ---
-    # This overrides the system default for the WordPress chatbot only.
+    # Set the public persona to "safi"
     public_profile_name = "safi"
     saf_system = _load_safi(public_profile_name) # Uses the cached instance
-    # --- END OF CHANGE ---
     
     # Use the ID from the newly created conversation record.
     result = asyncio.run(saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id']))
     return jsonify(result)
-# --- END OF NEW PUBLIC ENDPOINT ---
 
 
-# This is the original, secure endpoint for logged-in users.
 @conversations_bp.route('/process_prompt', methods=['POST'])
 def process_prompt_endpoint():
     """
@@ -115,7 +109,6 @@ def process_prompt_endpoint():
     if limit > 0:
         db.record_prompt_usage(user_id)
     
-    # --- MODIFICATION ---
     # Create a user-specific SAFi instance instead of using the cache.
     # 1. Get user's full details
     user_details = db.get_user_details(user_id)
@@ -139,7 +132,6 @@ def process_prompt_endpoint():
         will_model=will_model,
         conscience_model=conscience_model
     )
-    # --- END MODIFICATION ---
     
     result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
     return jsonify(result)
@@ -160,8 +152,6 @@ def get_audit_result_endpoint(message_id):
 def health_check():
     return jsonify({"status": "ok"})
 
-# --- MODIFICATION ---
-# Added a new endpoint to provide the list of available models from Config.
 @conversations_bp.route('/models', methods=['GET'])
 def get_available_models():
     """
@@ -172,11 +162,7 @@ def get_available_models():
         return jsonify({"error": "Authentication required."}), 401
     
     return jsonify({"models": Config.AVAILABLE_MODELS})
-# --- END MODIFICATION ---
 
-# --- MODIFICATION ---
-# This endpoint now returns the *full details* for all available profiles,
-# not just the names, to populate the new settings panel.
 @conversations_bp.route('/profiles', methods=['GET'])
 def profiles_list():
     """
@@ -205,7 +191,6 @@ def profiles_list():
         "available": sorted_profiles, 
         "active_profile_key": user_profile_name
     })
-# --- END MODIFICATION ---
 
 
 @conversations_bp.route('/conversations', methods=['GET'])

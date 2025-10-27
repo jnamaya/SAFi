@@ -6,20 +6,22 @@ import asyncio
 import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
-import sys
 from pathlib import Path
+import logging  # Import the logging module
 
-# --- MODIFICATION: Import all necessary clients ---
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
 import google.generativeai as genai
-# --- END MODIFICATION ---
 
 from collections import deque
 from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from ..utils import dict_sha256
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
+
+# Configure basic logging
+# In a real production app, this would be configured in the main app entry point.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class SAFi:
     """
@@ -37,9 +39,9 @@ class SAFi:
         conscience_model: Optional[str] = None
     ):
         self.config = config
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
         
-        # --- MODIFICATION: Initialize all clients ---
-        # We will use the async versions for faculties where possible
+        # Initialize all clients
         self.clients = {}
         
         if config.GROQ_API_KEY:
@@ -63,13 +65,10 @@ class SAFi:
             try:
                 genai.configure(api_key=config.GEMINI_API_KEY)
                 # We'll create the GenerativeModel instances on-the-fly in the faculty
-                # since they are model-specific, but we store the client type.
                 self.clients["gemini"] = "configured"
             except Exception as e:
-                print(f"Warning: Failed to configure Gemini API: {e}", file=sys.stderr)
+                self.log.warning(f"Gemini API key configuration failed: {e}. Gemini models will be unavailable.")
         
-        # --- END MODIFICATION ---
-
         prompts_path = Path(__file__).parent / "system_prompts.json"
         with prompts_path.open("r", encoding="utf-8") as f:
             self.prompts = json.load(f)
@@ -102,11 +101,9 @@ class SAFi:
         will_model_to_use = will_model or getattr(config, "WILL_MODEL")
         conscience_model_to_use = conscience_model or getattr(config, "CONSCIENCE_MODEL")
 
-        # --- MODIFICATION: Get the correct client for each faculty ---
         intellect_client, intellect_provider = self._get_client_and_provider(intellect_model_to_use)
         will_client, will_provider = self._get_client_and_provider(will_model_to_use)
         conscience_client, conscience_provider = self._get_client_and_provider(conscience_model_to_use)
-        # --- END MODIFICATION ---
 
         self.intellect_engine = IntellectEngine(
             intellect_client,
@@ -133,16 +130,19 @@ class SAFi:
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
-        print(f"SAFi: profile '{self.active_profile_name}' active.")
-        print(f"  > Intellect: {intellect_model_to_use} (via {intellect_provider})")
-        print(f"  > Will: {will_model_to_use} (via {will_provider})")
-        print(f"  > Conscience: {conscience_model_to_use} (via {conscience_provider})")
-
-
-    # --- NEW HELPER METHOD ---
     def _get_client_and_provider(self, model_name: str) -> (Any, str):
         """
         Returns the correct client instance and provider name based on the model name.
+        
+        Args:
+            model_name: The name of the model (e.g., "gpt-4o", "claude-sonnet-4...", "gemini-2.5-flash").
+            
+        Returns:
+            A tuple of (client_instance, provider_name_string).
+            For Gemini, client_instance is the model_name string itself.
+            
+        Raises:
+            ValueError: If no valid client is configured for the requested model.
         """
         if model_name.startswith("gpt-"):
             if "openai" in self.clients:
@@ -160,8 +160,6 @@ class SAFi:
             return self.clients["groq"], "groq"
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
-    # --- END NEW HELPER METHOD ---
-
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         memory_summary = db.fetch_conversation_summary(conversation_id)
@@ -189,6 +187,7 @@ class SAFi:
         if not a_t:
             err = self.intellect_engine.last_error or "Unknown model/API error"
             msg = f"Intellect failed: {err}"
+            self.log.error(msg) # Log the Intellect failure
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
@@ -196,6 +195,7 @@ class SAFi:
 
         if D_t == "violation":
             safe_response = f"This response was suppressed. Reason: {E_t}"
+            self.log.warning(f"WillGate suppressed response. Reason: {E_t}") # Log the suppression
             db.insert_memory_entry(conversation_id, "ai", safe_response, message_id=message_id, audit_status="complete")
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -227,6 +227,11 @@ class SAFi:
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
+        """
+        Runs the Conscience and Spirit faculties in a background thread.
+        This performs the ethical audit, updates the spirit memory vector,
+        and saves the full results to the database.
+        """
         conn = None
         try:
             conn = db.get_db_connection()
@@ -237,7 +242,6 @@ class SAFi:
             if memory is None:
                 memory = {"turn": 0, "mu": np.zeros(dim)}
 
-            # --- MODIFICATION: Use asyncio.run for the async evaluate call ---
             try:
                 ledger = asyncio.run(self.conscience.evaluate(
                     final_output=snapshot["a_t"], 
@@ -246,10 +250,9 @@ class SAFi:
                     retrieved_context=snapshot.get("retrieved_context", "")
                 ))
             except Exception as e:
-                print(f"--- ERROR in Conscience.evaluate (asyncio.run) ---: {e}", file=sys.stderr)
+                self.log.exception("ConscienceAuditor.evaluate() failed in audit thread") # Log the failure
                 ledger = []
-            # --- END MODIFICATION ---
-
+            
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
             self.last_drift = drift_val if drift_val is not None else 0.0
             
@@ -285,46 +288,49 @@ class SAFi:
             conn.commit()
 
         except Exception as e:
+            self.log.exception("Unhandled exception in _run_audit_thread") # Log the full thread exception
             if conn:
                 conn.rollback()
-            print(f"--- ERROR IN AUDIT THREAD ---", file=sys.stderr); import traceback; traceback.print_exc(file=sys.stderr)
         finally:
             if conn and conn.is_connected():
                 conn.close()
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        # --- MODIFICATION: Check for sync client ---
+        """
+        Runs the summarization logic in a background thread to keep the
+        conversation memory concise.
+        """
         if not hasattr(self, 'groq_client_sync'):
-            print("Summarization thread skipped: Groq sync client not initialized.", file=sys.stderr)
             return
         
         try:
             system_prompt = self.prompts["summarizer"]["system_prompt"]
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
             
-            # --- MODIFICATION: Use the synchronous Groq client ---
             response = self.groq_client_sync.chat.completions.create(
                 model=getattr(self.config, "SUMMARIZER_MODEL"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
             )
-            # --- END MODIFICATION ---
 
             new_summary = response.choices[0].message.content.strip()
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
-            print(f"--- ERROR IN SUMMARIZATION THREAD ---", file=sys.stderr); import traceback; traceback.print_exc(file=sys.stderr)
+            self.log.warning(f"Summarization thread failed: {e}") # Log instead of pass
 
     def _append_log(self, log_entry: Dict[str, Any]):
+        """
+        Appends a JSON log entry to the configured log file.
+        """
         log_path = Path(self.log_dir)
         if self.log_template:
             try:
                 ts = datetime.fromisoformat(log_entry.get("timestamp").replace("Z", "+00:00"))
                 fname = ts.strftime(self.log_template.format(profile=self.active_profile_name))
                 log_path = log_path / fname
-            except Exception: pass
+            except Exception: pass # Keep this silent, as it's just for filename
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-        except Exception as e: print(f"Log write error to {log_path}: {e}", file=sys.stderr)
-
+        except Exception as e: 
+            self.log.error(f"Failed to write to log file {log_path}: {e}") # Log instead of pass
