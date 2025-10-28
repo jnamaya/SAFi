@@ -1,8 +1,9 @@
 import { formatTime } from './utils.js';
 
-// ADDED: Enhanced marked.js configuration
+// --- THIS IS THE FIX ---
+// Change breaks: true to breaks: false
 marked.setOptions({
-  breaks: true, // Render <br> on a single line break
+  breaks: false, // Render <br> ONLY on double line breaks (standard Markdown)
   gfm: true,    // Use GitHub Flavored Markdown for tables, etc.
   mangle: false,
   headerIds: false,
@@ -12,6 +13,8 @@ marked.setOptions({
     return hljs.highlight(code, { language }).value;
   }
 });
+// --- END FIX ---
+
 
 // MODIFICATION: Initialize as empty, will be populated by _initElements
 export let elements = {};
@@ -248,9 +251,11 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       </div>
     `;
     const bubble = messageDiv.querySelector('.chat-bubble');
-    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text ?? ''));
+    // Ensure text is treated as a string before parsing
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(String(text ?? '')));
   } else {
-    const bubbleHtml = DOMPurify.sanitize(marked.parse(text ?? ''));
+    // Ensure text is treated as a string before parsing
+    const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
     const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
@@ -633,10 +638,10 @@ function maybeInsertDayDivider(date) {
 
 function makeCopyButton(text) {
   const btn = document.createElement('button');
-  btn.className = 'meta-btn';
+  btn.className = 'meta-btn p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md'; // Added some padding/styling
   btn.title = 'Copy Text';
   
-  const icon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+  const icon = `<svg class="w-4 h-4 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
   btn.innerHTML = icon;
 
   btn.addEventListener('click', async (e) => {
@@ -915,4 +920,3 @@ export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
         showModal('delete'); // Open delete confirmation
     });
 }
-
