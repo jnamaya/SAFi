@@ -4,10 +4,11 @@ import threading
 import uuid
 import asyncio
 import numpy as np
+# import html # <-- REMOVED this import
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
-import logging  # Import the logging module
+import logging
 
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
@@ -39,7 +40,7 @@ class SAFi:
         conscience_model: Optional[str] = None
     ):
         self.config = config
-        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
+        self.log = logging.getLogger(self.__class__.__name__)
         
         # Initialize all clients
         self.clients = {}
@@ -133,16 +134,6 @@ class SAFi:
     def _get_client_and_provider(self, model_name: str) -> (Any, str):
         """
         Returns the correct client instance and provider name based on the model name.
-        
-        Args:
-            model_name: The name of the model (e.g., "gpt-4o", "claude-sonnet-4...", "gemini-2.5-flash").
-            
-        Returns:
-            A tuple of (client_instance, provider_name_string).
-            For Gemini, client_instance is the model_name string itself.
-            
-        Raises:
-            ValueError: If no valid client is configured for the requested model.
         """
         if model_name.startswith("gpt-"):
             if "openai" in self.clients:
@@ -152,14 +143,14 @@ class SAFi:
                 return self.clients["anthropic"], "anthropic"
         elif model_name.startswith("gemini-"):
             if "gemini" in self.clients:
-                # For Gemini, we pass the model name itself to be instantiated
                 return model_name, "gemini" 
         
-        # Default to Groq for all other models (e.g., llama, gpt-oss, etc.)
         if "groq" in self.clients:
             return self.clients["groq"], "groq"
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
+
+    # --- REMOVED _generate_dynamic_suggestion METHOD ---
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         memory_summary = db.fetch_conversation_summary(conversation_id)
@@ -187,26 +178,48 @@ class SAFi:
         if not a_t:
             err = self.intellect_engine.last_error or "Unknown model/API error"
             msg = f"Intellect failed: {err}"
-            self.log.error(msg) # Log the Intellect failure
+            self.log.error(msg)
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
         if D_t == "violation":
-            safe_response = f"This response was suppressed. Reason: {E_t}"
-            self.log.warning(f"WillGate suppressed response. Reason: {E_t}") # Log the suppression
-            db.insert_memory_entry(conversation_id, "ai", safe_response, message_id=message_id, audit_status="complete")
+            # --- THIS IS THE UPDATED BLOCK ---
+            
+            # 1. Log the suppression
+            self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
+
+            # 2. Define the static parts of the message
+            static_header = "⚠️ **Response Canceled**"
+            static_body = "The generated response was withheld because it did not meet quality and safety standards."
+            static_suggestion = "Try: Rephrasing your question or asking about a different aspect of the topic."
+            
+            # 3. Build the new user-friendly Markdown message
+            # E_t will now be a third-person sentence like:
+            # "The response presented inaccurate biblical text..."
+            suppression_message = f"""{static_header}
+---
+{static_body}
+
+**Reason:** {E_t.strip()}
+
+**{static_suggestion}**"""
+
+            # 4. Log and return the plain text/Markdown response
+            db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete")
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "userPrompt": user_prompt,
-                "finalOutput": safe_response,
+                "finalOutput": suppression_message, # Log the plain text
                 "intellectDraft": a_t,
                 "willDecision": D_t,
                 "willReason": E_t,
                 "conscienceLedger": [],
             })
-            return { "finalOutput": safe_response, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
+            return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
+
+        # --- END OF UPDATED BLOCK ---
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
         
@@ -220,7 +233,6 @@ class SAFi:
         }
         threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         
-        # Only start summarization if the groq sync client exists
         if hasattr(self, 'groq_client_sync'):
             threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
@@ -229,8 +241,6 @@ class SAFi:
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
         """
         Runs the Conscience and Spirit faculties in a background thread.
-        This performs the ethical audit, updates the spirit memory vector,
-        and saves the full results to the database.
         """
         conn = None
         try:
@@ -250,7 +260,7 @@ class SAFi:
                     retrieved_context=snapshot.get("retrieved_context", "")
                 ))
             except Exception as e:
-                self.log.exception("ConscienceAuditor.evaluate() failed in audit thread") # Log the failure
+                self.log.exception("ConscienceAuditor.evaluate() failed in audit thread")
                 ledger = []
             
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
@@ -288,7 +298,7 @@ class SAFi:
             conn.commit()
 
         except Exception as e:
-            self.log.exception("Unhandled exception in _run_audit_thread") # Log the full thread exception
+            self.log.exception("Unhandled exception in _run_audit_thread")
             if conn:
                 conn.rollback()
         finally:
@@ -297,8 +307,7 @@ class SAFi:
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         """
-        Runs the summarization logic in a background thread to keep the
-        conversation memory concise.
+        Runs the summarization logic in a background thread.
         """
         if not hasattr(self, 'groq_client_sync'):
             return
@@ -316,7 +325,7 @@ class SAFi:
             new_summary = response.choices[0].message.content.strip()
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
-            self.log.warning(f"Summarization thread failed: {e}") # Log instead of pass
+            self.log.warning(f"Summarization thread failed: {e}")
 
     def _append_log(self, log_entry: Dict[str, Any]):
         """
@@ -328,9 +337,10 @@ class SAFi:
                 ts = datetime.fromisoformat(log_entry.get("timestamp").replace("Z", "+00:00"))
                 fname = ts.strftime(self.log_template.format(profile=self.active_profile_name))
                 log_path = log_path / fname
-            except Exception: pass # Keep this silent, as it's just for filename
+            except Exception: pass
         log_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e: 
-            self.log.error(f"Failed to write to log file {log_path}: {e}") # Log instead of pass
+            self.log.error(f"Failed to write to log file {log_path}: {e}")
+
