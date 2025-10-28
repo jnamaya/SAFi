@@ -79,7 +79,7 @@ html, body {
   gap: 12px;
   align-items: flex-start;
   margin-left: auto;
-  max-width: 90%;
+  max-width: 95%; /* --- EDIT: Was 90% --- */
 }
 
 .message.ai {
@@ -87,7 +87,7 @@ html, body {
   gap: 12px;
   align-items: flex-start;
   color: var(--ai-fg);
-  max-width: 90%;
+  max-width: 95%; /* --- EDIT: Was 90% --- */
 }
 
 .ai-avatar, .user-avatar {
@@ -180,6 +180,7 @@ html, body {
 /* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
+  word-break: break-word; /* --- THIS IS THE FIX --- */
 }
 
 .chat-bubble h1, .chat-bubble h2, .chat-bubble h3 { 
@@ -267,13 +268,19 @@ html, body {
   color: #a3a3a3; 
 }
 
-/* ADDED: Styles for more markdown elements */
+/* --- START EDIT: Styles for wide tables --- */
 .chat-bubble table {
+  /* This display: block is the key fix */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto; /* This makes the table scroll horizontally */
+  
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 1em;
   border: 1px solid rgba(0,0,0,0.1);
 }
+/* --- END EDIT --- */
 .dark .chat-bubble table {
   border-color: rgba(255,255,255,0.2);
 }
@@ -388,7 +395,7 @@ html, body {
 }
 
 .dark .value-chip {
-    background-color: #374151;
+    background-color: #37415Setting up ethical AI involves defining clear values and implementing mechanisms for oversight and adjustment. This ensures the AI operates within desired ethical boundaries.s1;
     color: #d1d5db;
 }
 
@@ -552,3 +559,4 @@ html, body {
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.3); /* green-600 with opacity */
 }
 /* --- END MODIFICATION --- */
+
