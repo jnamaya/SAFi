@@ -399,8 +399,8 @@ html, body {
 }
 
 .dark .value-chip {
-    background-color: #37415Setting up ethical AI involves defining clear values and implementing mechanisms for oversight and adjustment. This ensures the AI operates within desired ethical boundaries.s1;
-    color: #d1d5db;
+    background-color: #dddddd;
+    color: #000000;
 }
 
 .example-prompt-btn {
