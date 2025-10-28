@@ -33,9 +33,9 @@ class IntellectEngine:
     """
     Core cognitive faculty for generating responses.
     
-    This class now uses a HYBRID parsing strategy:
-    - Groq/OpenAI: Uses reliable forced JSON mode.
-    - Gemini/Anthropic: Uses robust XML-in-text-mode.
+    This class integrates various inputs (user prompt, memory, ethical feedback, and
+    retrieved context) into a single system prompt, queries the language model,
+    and parses the response into separate answer and reflection components.
     """
 
     def __init__(
@@ -48,6 +48,13 @@ class IntellectEngine:
     ):
         """
         Initializes the IntellectEngine.
+
+        Args:
+            client: The API client (e.g., AsyncOpenAI, AsyncAnthropic) or model name (for Gemini).
+            provider_name: The name of the provider (e.g., "groq", "openai", "anthropic", "gemini").
+            model: The name of the model to use for generation.
+            profile: The persona profile configuration.
+            prompt_config: The configuration for system prompts and instructions.
         """
         self.client = client
         self.provider = provider_name
@@ -82,75 +89,73 @@ class IntellectEngine:
         Generates a response based on the user prompt and contextual information.
         """
         self.last_error = None
-        retrieved_context_string = "" # Default to empty string
+
+        retrieved_context_string = ""
+        if self.retriever:
+            retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
+
+            if not retrieved_docs:
+                retrieved_context_string = "[NO DOCUMENTS FOUND]"
+            else:
+                # Get the formatting string from the persona profile
+                format_string = self.profile.get("rag_format_string")
+                if not format_string:
+                    # Fallback if no format string is defined
+                    format_string = "{text_chunk}"
+
+                # Format each doc and join them
+                formatted_chunks = []
+                for doc in retrieved_docs:
+                    try:
+                        # Use **doc to unpack the metadata dictionary into the format string
+                        formatted_chunks.append(format_string.format(**doc))
+                    except KeyError:
+                        # Fallback: if format fails (e.g., missing key), just use the text_chunk
+                        if "text_chunk" in doc:
+                            formatted_chunks.append(doc["text_chunk"])
+
+                retrieved_context_string = "\n\n".join(formatted_chunks)
+
+        worldview = self.profile.get("worldview", "")
+        style = self.profile.get("style", "")
+
+        # Inject RAG context into worldview if placeholder exists
+        if "{retrieved_context}" in worldview:
+            worldview = worldview.format(
+                retrieved_context=retrieved_context_string
+            )  # <-- Inject the formatted string
+
+        memory_injection = (
+            f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
+            f"<summary>{memory_summary}</summary>" if memory_summary else ""
+        )
+
+        spirit_injection = ""
+        if spirit_feedback:
+            coaching_note_template = self.prompt_config.get("coaching_note", "")
+            if coaching_note_template:
+                spirit_injection = coaching_note_template.format(
+                    spirit_feedback=spirit_feedback
+                )
+
+        formatting_instructions = self.prompt_config.get("formatting_instructions", "")
+        # The {persona_style_rules} placeholder is in formatting_instructions
+        # We fill it with the persona's style.
+        if "{persona_style_rules}" in formatting_instructions:
+            formatting_instructions = formatting_instructions.format(
+                persona_style_rules=style
+            )
+
+        # Build system prompt
+        system_prompt = "\n\n".join(
+            filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
+        )
+
+        obj = {}
+        content = "{}"
 
         try:
-            # All logic, including RAG, is now inside the main try/except block.
-            if self.retriever:
-                retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
-
-                if not retrieved_docs:
-                    retrieved_context_string = "[NO DOCUMENTS FOUND]"
-                else:
-                    format_string = self.profile.get("rag_format_string", "{text_chunk}")
-
-                    formatted_chunks = []
-                    for doc in retrieved_docs:
-                        try:
-                            formatted_chunks.append(format_string.format(**doc))
-                        except KeyError:
-                            if "text_chunk" in doc:
-                                formatted_chunks.append(doc["text_chunk"])
-
-                    retrieved_context_string = "\n\n".join(formatted_chunks)
-
-            worldview = self.profile.get("worldview", "")
-            style = self.profile.get("style", "")
-
-            if "{retrieved_context}" in worldview:
-                worldview = worldview.format(
-                    retrieved_context=retrieved_context_string
-                ) 
-
-            memory_injection = (
-                f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
-                f"<summary>{memory_summary}</summary>" if memory_summary else ""
-            )
-
-            spirit_injection = ""
-            if spirit_feedback:
-                coaching_note_template = self.prompt_config.get("coaching_note", "")
-                if coaching_note_template:
-                    spirit_injection = coaching_note_template.format(
-                        spirit_feedback=spirit_feedback
-                    )
-
-            # --- HYBRID PROMPT STRATEGY ---
-            # We now hard-code the format for *all* providers to ensure stability
-            # and ignore the (potentially out of sync) system_prompts.json file.
-            
-            if self.provider == "groq" or self.provider == "openai":
-                # These providers use JSON.
-                formatting_instructions = (
-                    'You MUST format your entire response as a single, valid JSON object '
-                    'with exactly two top-level keys: "answer" and "reflection".\n\n'
-                    '<persona_style_rules>\n{persona_style_rules}\n</persona_style_rules>'
-                ).format(persona_style_rules=style)
-            else:
-                # Gemini and Anthropic use robust XML tags.
-                formatting_instructions = (
-                    'You MUST format your entire response using XML-style tags. '
-                    'Wrap your internal reasoning in <reflection>...</reflection> '
-                    'and your final, user-facing answer in <answer>...</answer>.\n\n'
-                    '<persona_style_rules>\n{persona_style_rules}\n</persona_style_rules>'
-                ).format(persona_style_rules=style)
-            # --- END HYBRID STRATEGY ---
-
-            system_prompt = "\n\n".join(
-                filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
-            )
-
-            content = "" # Default to empty string
+            # This is the core change. We branch based on the provider.
 
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
@@ -161,23 +166,25 @@ class IntellectEngine:
                 params = {
                     "model": self.model,
                     "temperature": 1.0,
-                    # --- RE-ENABLING JSON MODE ---
-                    "response_format": {"type": "json_object"}, 
+                    # --- FIX: "response_format" line is REMOVED ---
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                 }
 
+                # This catches 'gpt-4o', 'gpt-5', etc.
                 if self.provider == "openai" and (
                     self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
                 ):
-                    params["max_completion_tokens"] = 4096
+                    params["max_completion_tokens"] = 8192
                 else:
-                    params["max_tokens"] = 4096
+                    # Groq and older OpenAI models use 'max_tokens'
+                    params["max_tokens"] = 8192
 
                 resp = await self.client.chat.completions.create(**params)
-                content = resp.choices[0].message.content or ""
+
+                content = resp.choices[0].message.content or "{}"
 
             elif self.provider == "anthropic":
                 if not isinstance(self.client, AsyncAnthropic):
@@ -187,24 +194,24 @@ class IntellectEngine:
 
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=system_prompt,  # Use the base system prompt with XML instructions
-                    max_tokens=4096,
+                    system=system_prompt,  # Use the base system prompt
+                    max_tokens=8192,
                     temperature=1.0,
                     messages=[{"role": "user", "content": user_prompt}],
                 )
-                content = resp.content[0].text or ""
+                content = resp.content[0].text or "{}"
 
             elif self.provider == "gemini":
                 if not self.gemini_model:
                     raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    # We are in TEXT mode to support XML tags.
-                    # response_mime_type="application/json",
+                    # response_mime_type="application/json",  # This is NOT used
                     temperature=1.0,
-                    max_output_tokens=4096, 
+                    max_output_tokens=8192,  # Add token limit to prevent truncation
                 )
 
+                # We pass the full prompt (which includes system instructions) as the content.
                 full_prompt = (
                     system_prompt + "\n\nUSER_PROMPT:\n" + user_prompt
                 )
@@ -212,7 +219,7 @@ class IntellectEngine:
                 resp = await self.gemini_model.generate_content_async(
                     full_prompt, generation_config=generation_config
                 )
-                content = resp.text or ""
+                content = resp.text or "{}"
 
             else:
                 raise ValueError(
@@ -220,98 +227,97 @@ class IntellectEngine:
                 )
 
             # -----------------------------------------------------------------
-            # HYBRID PARSING LOGIC
+            # NEW Robust Parsing & Sanitization Block
             # -----------------------------------------------------------------
             
             answer = ""
             reflection = ""
+            delimiter_text = "---REFLECTION---" # Check for the text only
 
-            if self.provider == "groq" or self.provider == "openai":
-                # --- JSON PARSING LOGIC (for Groq/OpenAI) ---
-                start = content.find('{')
-                end = content.rfind('}')
+            if delimiter_text in content:
+                # --- Priority 1: Model used the delimiter text ---
+                parts = content.split(delimiter_text)
+                answer = parts[0].strip()
                 
-                if start == -1 or end == -1 or end < start:
-                    self.last_error = f"No valid JSON object found. (provider={self.provider})"
-                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
-                    return None, None, retrieved_context_string
+                # Find the JSON part in the *last* segment
+                json_part = ""
+                json_part_raw = parts[-1]
+                json_match = re.search(r"\{[\s\S]*\}", json_part_raw)
+                
+                if json_match:
+                    json_part = json_match.group(0).strip()
+                else:
+                    # Maybe the last part *is* the JSON but regex failed?
+                    json_part = json_part_raw.strip()
 
                 try:
-                    obj = json.loads(content[start:end+1])
-                except json.JSONDecodeError:
-                    # Run the sanitizer
-                    sanitized = content[start:end+1].replace("\r", " ").replace("\n", " ")
-                    sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
-                    sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
-                    try:
-                        obj = json.loads(sanitized)
-                    except json.JSONDecodeError as e2:
-                        self.last_error = f"JSONDecodeError: {e2} (provider={self.provider})"
-                        self.log.error(f"{self.last_error} | Content: {sanitized[:500]}")
-                        return None, None, retrieved_context_string
-                
-                # Use str() to gracefully handle if model returns dict/list
-                answer = str(obj.get("answer", "")).strip()
-                reflection = str(obj.get("reflection", "")).strip()
+                    # Sanitize and parse the JSON part
+                    json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_part.replace("\n", " "))
+                    obj = json.loads(json_part_sanitized)
+                    reflection = obj.get("reflection", "Parsed reflection from delimiter.").strip()
+                except json.JSONDecodeError as e:
+                    self.log.warning(f"Failed to parse JSON after delimiter: {e} | content={json_part[:100]}")
+                    reflection = "Failed to parse reflection JSON."
+                    # The answer is still good, so we keep it.
 
             else:
-                # --- XML PARSING LOGIC (for Gemini/Anthropic) ---
-                reflection_match = re.search(r'<reflection>(.*?)</reflection>', content, re.DOTALL)
-                if reflection_match:
-                    reflection = reflection_match.group(1).strip()
-                
-                answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL)
-                if answer_match:
-                    answer = answer_match.group(1).strip()
+                # --- Priority 2: Model "forgot" delimiter but still sent JSON ---
+                self.log.warning(f"Model did not use delimiter. (provider={self.provider})")
+                json_match = re.search(r"\{[\s\S]*\}", content) # Use [\s\S] for multiline
 
-            # --- UNIVERSAL ANSWER CHECK ---
-            if not answer:
-                if reflection and (self.provider == "gemini" or self.provider == "anthropic"):
-                    # Case 1: XML Model generated <reflection> but forgot <answer>
-                    self.last_error = f"Model compliance error: Missing <answer> tag. (provider={self.provider})"
-                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
-                elif reflection and (self.provider == "groq" or self.provider == "openai"):
-                     # Case 2: JSON Model returned reflection but no answer
-                    self.last_error = f"Model compliance error: Missing 'answer' key in JSON. (provider={self.provider})"
-                    self.log.error(f"{self.last_error} | Content: {content[:500]}")
-                elif content:
-                    # Case 3: Model generated *no* tags/JSON, just raw text. Use as answer.
-                    answer = content.strip()
-                    self.log.warning(f"No structured output (XML/JSON) found. Using raw content. (provider={self.provider})")
+                if json_match:
+                    json_part = json_match.group(0).strip()
+                    answer = content[:json_match.start()].strip() # Everything BEFORE the JSON
+                    
+                    if not answer:
+                        answer = f"[Answer missing, model only sent JSON: {json_part}]"
+
+                    try:
+                        # Sanitize and parse
+                        json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_part.replace("\n", " "))
+                        obj = json.loads(json_part_sanitized)
+                        reflection = obj.get("reflection", "Parsed reflection from regex search.").strip()
+                    except json.JSONDecodeError as e:
+                        self.log.warning(f"Regex JSON parse failed: {e} | content={json_part[:100]}")
+                        # Fallthrough to Priority 3...
+                        answer = content.strip() # The parse failed, treat all text as answer
+                        reflection = "Failed to parse salvaged JSON."
+
                 else:
-                    # Case 4: Model returned nothing at all.
-                    self.last_error = f"Model returned empty content. (provider={self.provider})"
-                    self.log.error(self.last_error)
+                    # --- Priority 3: Model sent raw text (Psalm 51 case) ---
+                    self.log.warning(f"No JSON found. Salvaging raw text. (provider={self.provider})")
+                    answer = content.strip()
+                    reflection = "Salvaged raw output; model failed to format as JSON."
 
-                if self.last_error:
-                    return None, None, retrieved_context_string
+            # Final check to prevent empty answers
+            if not answer.strip():
+                answer = "[Model returned an empty answer]"
+                reflection = "Model returned empty answer."
 
             return (
-                answer,
-                reflection,
-                retrieved_context_string,
+                answer.replace("\\n", "\n"),
+                reflection.replace("\\n", "\n"),
+                retrieved_context_string if self.retriever else "",
             )
 
         except Exception as e:
             self.last_error = (
                 f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
             )
-            self.log.exception(f"Intellect generation failed (provider={self.provider}, model={self.model})")
-            return None, None, retrieved_context_string
+            self.log.exception(f"Intellect generation failed (provider={self.provider}, model={self.model})") 
+            return None, None, retrieved_context_string if self.retriever else ""
 
 
 class WillGate:
     """
     An ethical gatekeeper that evaluates a draft response against a set of values.
     It decides whether to 'approve' or declare a 'violation'.
-    
-    *** This class correctly uses JSON, as its task is simple. ***
     """
 
     def __init__(
         self,
-        client: Any, 
-        provider_name: str, 
+        client: Any,  # Client can be any type
+        provider_name: str,  # We'll use this to know *what* client is
         model: str,
         *,
         values: List[Dict[str, Any]],
@@ -326,7 +332,7 @@ class WillGate:
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.cache: Dict[str, Tuple[str, str]] = {}
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
 
         if self.provider == "gemini":
             try:
@@ -375,6 +381,7 @@ class WillGate:
         policy = "\n".join(filter(None, policy_parts))
         prompt = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
 
+        obj = {}
         content = "{}"
 
         try:
@@ -387,9 +394,7 @@ class WillGate:
                 params = {
                     "model": self.model,
                     "temperature": 0.0,
-                    # --- RE-ENABLING JSON MODE ---
                     "response_format": {"type": "json_object"},
-                    # --- END FIX ---
                     "messages": [
                         {"role": "system", "content": policy},
                         {"role": "user", "content": prompt},
@@ -399,11 +404,12 @@ class WillGate:
                 if self.provider == "openai" and (
                     self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
                 ):
-                    params["max_completion_tokens"] = 1024 
+                    params["max_completion_tokens"] = 1024  # WillGate can be smaller
                 else:
                     params["max_tokens"] = 1024
 
                 resp = await self.client.chat.completions.create(**params)
+
                 content = resp.choices[0].message.content or "{}"
 
             elif self.provider == "anthropic":
@@ -426,8 +432,9 @@ class WillGate:
                     raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    response_mime_type="application/json", # JSON mode is fine for Will
-                    temperature=0.0
+                    # response_mime_type="application/json", # NOT used
+                    temperature=0.0,
+                    max_output_tokens=1024,  # Add token limit
                 )
                 full_prompt = policy + "\n\nUSER_PROMPT_AND_DRAFT:\n" + prompt
 
@@ -440,21 +447,11 @@ class WillGate:
                 raise ValueError(f"Unknown provider '{self.provider}' in WillGate")
 
             # -----------------------------------------------------------------
-            # Robust JSON Parsing & Sanitization
+            # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
             # -----------------------------------------------------------------
-            start = content.find('{')
-            end = content.rfind('}')
-            
-            if start != -1 and end != -1 and end > start:
-                content = content[start:end+1]
-            else:
-                error_msg = (
-                    f"No valid JSON object found in response (provider={self.provider}, model={self.model}) | "
-                    f"content={content[:500]}"
-                )
-                self.log.error(error_msg)
-                return ("violation", "Internal evaluation error")
-                
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
             try:
                 obj = json.loads(content)
             except json.JSONDecodeError:
@@ -468,7 +465,7 @@ class WillGate:
                         f"Will exception: JSONDecodeError: {e2} (provider={self.provider}, model={self.model}) | "
                         f"content={sanitized[:500]}"
                     )
-                    self.log.error(error_msg) 
+                    self.log.error(error_msg) # Log the parse error
                     return ("violation", "Internal evaluation error")
 
             decision = str(obj.get("decision") or "").strip().lower()
@@ -483,23 +480,24 @@ class WillGate:
             tup = (decision, reason)
             self.cache[key] = tup
             return tup
-            
         except Exception as e:
-            self.log.exception(f"WillGate evaluation failed (provider={self.provider})") 
+            error_msg = (
+                f"Will exception: {type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
+            )
+            self.log.exception(f"WillGate evaluation failed (provider={self.provider})") # Log the full exception
             return ("violation", "Internal evaluation error")
 
 
 class ConscienceAuditor:
     """
     Audits the final, user-facing output for alignment with a set of values.
-    
-    *** This class correctly uses JSON, as its task is simple. ***
+    This provides the data used for long-term ethical steering (Spirit).
     """
 
     def __init__(
         self,
-        client: Any, 
-        provider_name: str, 
+        client: Any,  # Client can be any type
+        provider_name: str,  # We'll use this to know *what* client is
         model: str,
         values: List[Dict[str, Any]],
         profile: Optional[Dict[str, Any]] = None,
@@ -512,7 +510,7 @@ class ConscienceAuditor:
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger(self.__class__.__name__)  # Add logger
 
         if self.provider == "gemini":
             try:
@@ -531,14 +529,23 @@ class ConscienceAuditor:
     ) -> List[Dict[str, Any]]:
         """
         Scores the final output against each configured value using detailed rubrics.
+        
+        Args:
+            final_output: The final AI answer shown to the user.
+            user_prompt: The user's original prompt.
+            reflection: The AI's internal 'thought' from the Intellect step.
+            retrieved_context: The raw RAG context that was retrieved (if any). 
+                                (This is now the formatted string)
         """
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
             self.log.error("ConscienceAuditor 'prompt_template' not found in system_prompts.json")
             return []
 
-        worldview = self.profile.get("worldview", "") 
+        worldview = self.profile.get("worldview", "")
 
+        # Inject context into worldview for the audit
+        # This lets the auditor see the same worldview as the intellect.
         if "{retrieved_context}" in worldview:
             worldview = worldview.format(
                 retrieved_context=retrieved_context if retrieved_context else "[NO DOCUMENTS FOUND]"
@@ -566,6 +573,7 @@ class ConscienceAuditor:
             worldview_injection=worldview_injection, rubrics_str=rubrics_str
         )
 
+        # Pass retrieved_context to the auditor
         body = (
             f"USER PROMPT:\n{user_prompt}\n\n"
             f"AI's INTERNAL REFLECTION:\n{reflection}\n\n"
@@ -573,6 +581,7 @@ class ConscienceAuditor:
             f"AI's FINAL OUTPUT TO USER:\n{final_output}"
         )
 
+        obj = {}
         content = "{}"
 
         try:
@@ -585,9 +594,7 @@ class ConscienceAuditor:
                 params = {
                     "model": self.model,
                     "temperature": 0.1,
-                    # --- RE-ENABLING JSON MODE ---
                     "response_format": {"type": "json_object"},
-                    # --- END FIX ---
                     "messages": [
                         {"role": "system", "content": sys_prompt},
                         {"role": "user", "content": body},
@@ -602,6 +609,7 @@ class ConscienceAuditor:
                     params["max_tokens"] = 4096
 
                 resp = await self.client.chat.completions.create(**params)
+
                 content = resp.choices[0].message.content or "{}"
 
             elif self.provider == "anthropic":
@@ -612,7 +620,7 @@ class ConscienceAuditor:
 
                 resp = await self.client.messages.create(
                     model=self.model,
-                    system=sys_prompt,
+                    system=sys_prompt,  # Prompt already includes JSON instruction
                     max_tokens=4096,
                     temperature=0.1,
                     messages=[{"role": "user", "content": body}],
@@ -624,8 +632,9 @@ class ConscienceAuditor:
                     raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    response_mime_type="application/json", # JSON mode is fine for Conscience
-                    temperature=0.1
+                    # response_mime_type="application/json", # NOT used
+                    temperature=0.1,
+                    max_output_tokens=4096,  # Add token limit
                 )
                 full_prompt = sys_prompt + "\n\nUSER_PROMPT_AND_RESPONSE:\n" + body
 
@@ -640,17 +649,11 @@ class ConscienceAuditor:
                 )
 
             # -----------------------------------------------------------------
-            # Robust JSON Parsing & Sanitization
+            # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
             # -----------------------------------------------------------------
-            start = content.find('{')
-            end = content.rfind('}')
-            
-            if start != -1 and end != -1 and end > start:
-                content = content[start:end+1]
-            else:
-                self.log.error(f"Conscience audit: No valid JSON object found in response | content={content[:500]}")
-                return []
-
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
+            if json_match:
+                content = json_match.group(0)
             try:
                 obj = json.loads(content)
             except json.JSONDecodeError:
@@ -664,8 +667,8 @@ class ConscienceAuditor:
                     return []
 
             return obj.get("evaluations", [])
-            
         except Exception as e:
+            # Log the full exception but return an empty list
             self.log.exception(f"Conscience audit failed (provider={self.provider})")
             return []
 
@@ -673,6 +676,7 @@ class ConscienceAuditor:
 class SpiritIntegrator:
     """
     Integrates Conscience evaluations into a long-term spirit memory vector (mu).
+    This class performs mathematical operations to update the AI's ethical alignment over time.
     """
 
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
@@ -705,7 +709,7 @@ class SpiritIntegrator:
             missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
             note = f"Ledger missing values: {', '.join(missing)}"
             return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
-        
+
         scores = np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
         confidences = np.array(
             [float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float
@@ -723,5 +727,4 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
-
 

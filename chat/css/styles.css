@@ -207,7 +207,14 @@ html, body {
   margin-bottom: 1em; 
 }
 .chat-bubble ul { list-style-type: disc; }
-.chat-bubble ol { list-style-type: decimal; }
+/* --- THIS IS THE FIX --- */
+/* Ensure ordered lists display correctly */
+.chat-bubble ol { 
+  list-style-type: decimal; 
+  list-style-position: outside; /* Ensure numbers are outside the text flow */
+}
+/* --- END FIX --- */
+
 .chat-bubble li { 
   margin-bottom: 0.5em; 
   padding-left: 0.25rem;
