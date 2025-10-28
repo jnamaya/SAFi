@@ -191,7 +191,7 @@ class SAFi:
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
 
             # 2. Define the static parts of the message
-            static_header = "⚠️ **Response Canceled**"
+            static_header = "❌ **Response Canceled**"
             static_body = "The generated response was withheld because it did not meet quality and safety standards."
             static_suggestion = "Try: Rephrasing your question or asking about a different aspect of the topic."
             

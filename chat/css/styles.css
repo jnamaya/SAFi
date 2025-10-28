@@ -3,14 +3,18 @@ body {
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
   /* CHANGE: Increased base font size for mobile */
   font-size: 18px; 
+   font-weight: 400; 
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
 }
 
 /* CHANGE: Media query to adjust font size on larger screens */
 @media (min-width: 768px) {
   body {
-    font-size: 17px;
+    font-size: 19px;
+    line-height: 1.6;
   }
 }
 
