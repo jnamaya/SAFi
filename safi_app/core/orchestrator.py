@@ -191,8 +191,8 @@ class SAFi:
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
 
             # 2. Define the static parts of the message
-            static_header = "⚠️ **Response Blocked**"
-            static_suggestion = "Try rephrasing your question or exploring a different aspect of this topic."
+            static_header = "⚠️ **This response was blocked**"
+            static_suggestion = "Try rephrasing your question or exploring a different topic."
             
             # 3. Build the new user-friendly Markdown message
             # E_t will now be a third-person sentence like:
