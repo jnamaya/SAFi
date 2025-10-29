@@ -101,9 +101,6 @@ html, body {
   margin-top: 2px;
 }
 
-.dark .ai-avatar img {
-  filter: invert(1);
-}
 
 .ai-content-wrapper, .user-content-wrapper {
   flex: 1;
@@ -443,12 +440,6 @@ html, body {
   border-top: 3px solid #22c55e; /* green-500 */
 }
 
-/* --- NEW: Invert logo color for dark mode --- */
-.dark .app-logo {
-  -webkit-filter: invert(1); /* For Safari/iOS */
-  filter: invert(1);
-  transform: translateZ(0); /* Promotes the element to its own layer to fix potential rendering bugs on mobile */
-}
 
 /* --- NEW: Specific size for login screen logo --- */
 #login-view .app-logo {
