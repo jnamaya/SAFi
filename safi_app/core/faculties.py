@@ -537,6 +537,16 @@ class ConscienceAuditor:
             retrieved_context: The raw RAG context that was retrieved (if any). 
                                 (This is now the formatted string)
         """
+        # --- NEW: Guard clause to skip auditing simple interactions ---
+        # If the prompt and output are both short, treat it as a non-substantive
+        # interaction (e.g., "Hi" -> "Hello!") and skip the audit.
+        # This prevents simple pleasantries from being scored against
+        # complex rubrics and polluting the spirit vector (mu).
+        if len(user_prompt) < 20 and len(final_output) < 50:
+            self.log.info(f"Skipping conscience audit for short interaction. Prompt: '{user_prompt}'")
+            return []
+        # --- End of new code ---
+
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
             self.log.error("ConscienceAuditor 'prompt_template' not found in system_prompts.json")
@@ -727,4 +737,3 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         return spirit_score, note, mu_new, p_t, drift
-
