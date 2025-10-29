@@ -343,7 +343,6 @@ export function showLoadingIndicator() {
             <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
         </div>
         <div class="ai-content-wrapper">
-             <p class="ai-name">SAFi</p>
             <div class="flex items-center gap-3">
               <div class="thinking-spinner"></div>
               <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic">Thinking...</span>
