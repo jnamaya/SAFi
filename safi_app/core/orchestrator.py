@@ -192,7 +192,6 @@ class SAFi:
 
             # 2. Define the static parts of the message
             static_header = "⚠️ **Response Blocked**"
-            static_body = "This response was blocked because it violated one or more rules in the ethical profile."
             static_suggestion = "Try rephrasing your question or exploring a different aspect of this topic."
             
             # 3. Build the new user-friendly Markdown message
@@ -200,11 +199,10 @@ class SAFi:
             # "The response presented inaccurate biblical text..."
             suppression_message = f"""{static_header}
 ---
-{static_body}
 
 **Reason:** {E_t.strip()}
 
-**{static_suggestion}**"""
+*{static_suggestion}*"""
 
             # 4. Log and return the plain text/Markdown response
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete")

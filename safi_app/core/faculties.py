@@ -542,7 +542,7 @@ class ConscienceAuditor:
         # interaction (e.g., "Hi" -> "Hello!") and skip the audit.
         # This prevents simple pleasantries from being scored against
         # complex rubrics and polluting the spirit vector (mu).
-        if len(user_prompt) < 20 and len(final_output) < 50:
+        if len(user_prompt) < 20 and len(final_output) < 100:
             self.log.info(f"Skipping conscience audit for short interaction. Prompt: '{user_prompt}'")
             return []
         # --- End of new code ---

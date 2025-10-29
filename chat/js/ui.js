@@ -242,10 +242,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   if (sender === 'ai') {
     messageDiv.innerHTML = `
       <div class="ai-avatar">
-        <img src="assets/logo.png" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+        <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
       </div>
       <div class="ai-content-wrapper">
-        <p class="ai-name">SAFi</p>
         <div class="chat-bubble"></div>
         <div class="meta"></div>
       </div>
@@ -341,7 +340,7 @@ export function showLoadingIndicator() {
   loadingContainer.innerHTML = `
     <div class="message ai">
         <div class="ai-avatar">
-            <img src="assets/logo.png" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+            <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
         </div>
         <div class="ai-content-wrapper">
              <p class="ai-name">SAFi</p>
