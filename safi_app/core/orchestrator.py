@@ -185,24 +185,19 @@ class SAFi:
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
         if D_t == "violation":
-            # --- THIS IS THE UPDATED BLOCK ---
-            
+
             # 1. Log the suppression
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
 
             # 2. Define the static parts of the message
             static_header = "⚠️ **This response was blocked**"
-            static_suggestion = "Try rephrasing your question or exploring a different topic."
-            
             # 3. Build the new user-friendly Markdown message
             # E_t will now be a third-person sentence like:
             # "The response presented inaccurate biblical text..."
             suppression_message = f"""{static_header}
 ---
 
-**Reason:** {E_t.strip()}
-
-*{static_suggestion}*"""
+**Reason:** {E_t.strip()} """
 
             # 4. Log and return the plain text/Markdown response
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete")
