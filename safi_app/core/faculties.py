@@ -177,10 +177,10 @@ class IntellectEngine:
                 if self.provider == "openai" and (
                     self.model.startswith("gpt-4o") or self.model.startswith("gpt-5")
                 ):
-                    params["max_completion_tokens"] = 8192
+                    params["max_completion_tokens"] = 4096
                 else:
                     # Groq and older OpenAI models use 'max_tokens'
-                    params["max_tokens"] = 8192
+                    params["max_tokens"] = 4096
 
                 resp = await self.client.chat.completions.create(**params)
 
@@ -195,7 +195,7 @@ class IntellectEngine:
                 resp = await self.client.messages.create(
                     model=self.model,
                     system=system_prompt,  # Use the base system prompt
-                    max_tokens=8192,
+                    max_tokens=4096,
                     temperature=1.0,
                     messages=[{"role": "user", "content": user_prompt}],
                 )
@@ -208,7 +208,7 @@ class IntellectEngine:
                 generation_config = genai.types.GenerationConfig(
                     # response_mime_type="application/json",  # This is NOT used
                     temperature=1.0,
-                    max_output_tokens=8192,  # Add token limit to prevent truncation
+                    max_output_tokens=4096,  # Add token limit to prevent truncation
                 )
 
                 # We pass the full prompt (which includes system instructions) as the content.
