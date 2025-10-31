@@ -272,8 +272,85 @@ export function renderConversationLink(convo, handlers) {
   `;
   // --- END MODIFICATION ---
   
+  // --- START: New Mobile Long-Press Logic ---
+  let longPressTimer = null;
+  let isLongPress = false;
+  const longPressDuration = 500; // 500ms for a long press
+
+  const handleTouchStart = (e) => {
+    isLongPress = false; // Reset on new touch
+    
+    // Start the timer
+    longPressTimer = setTimeout(() => {
+      isLongPress = true; // Flag as a long press
+      
+      const actionButton = link.querySelector('button[data-action="menu"]');
+      if (!actionButton) return;
+
+      // Prevent context menu from opening
+      e.preventDefault(); 
+      e.stopPropagation(); // Stop link click
+      
+      // Vibrate for haptic feedback if available
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50); // 50ms vibration
+      }
+      
+      // If a menu is open, close it.
+      if (openDropdown) {
+        closeAllConvoMenus();
+        return; // This was a click to close
+      }
+
+      // Create and show a new menu
+      const menu = createDropdownMenu(convo.id, handlers);
+      positionDropdown(menu, actionButton); // Use existing position logic
+      document.body.appendChild(menu);
+      openDropdown = menu;
+
+    }, longPressDuration);
+  };
+
+  const handleTouchEnd = (e) => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+    
+    if (isLongPress) {
+      e.preventDefault(); // Prevent the 'click' event from firing after a long press
+      e.stopPropagation();
+    }
+  };
+
+  const handleTouchMove = () => {
+    // If finger moves, cancel the long press
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+
+  link.addEventListener('touchstart', handleTouchStart, { passive: false }); // Need passive:false to preventDefault
+  link.addEventListener('touchend', handleTouchEnd);
+  link.addEventListener('touchcancel', handleTouchMove); // Also cancel on touchcancel
+  link.addEventListener('touchmove', handleTouchMove); // Also cancel on move
+
+  // Prevent default context menu (right-click) which can interfere
+  link.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+  });
+  // --- END: New Mobile Long-Press Logic ---
+  
   // --- MODIFICATION: Updated event listener logic ---
   link.addEventListener('click', (e) => {
+    if (isLongPress) {
+        // If it was a long press, don't do *anything* on the click event
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
+
     const actionButton = e.target.closest('button[data-action="menu"]');
 
     if (actionButton) {
