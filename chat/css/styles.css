@@ -179,10 +179,20 @@ html, body {
 .meta {
   display: flex;
   gap: 8px;
-  margin-top: 10px;
+  /* MODIFICATION: Increased top margin for better spacing inside the bubble */
+  margin-top: 16px; 
   align-items: baseline;
   width: 100%;
+  /* MODIFICATION: Add a faint border to separate it from the content */
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
+
+/* MODIFICATION: Add a dark mode version for the border */
+.dark .meta {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
 
 .message.user .meta {
     justify-content: flex-end;
