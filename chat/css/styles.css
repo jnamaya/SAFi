@@ -61,7 +61,7 @@ html, body {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  --user-bg: #e5e7eb;
+  --user-bg: #dddddd;
   --user-fg: #1f2937;
   --ai-fg: #111827;
   /* --- NEW: AI bubble background for tail to work --- */
