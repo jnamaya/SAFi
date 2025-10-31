@@ -240,26 +240,33 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageDiv.className = `message ${sender}`;
 
   if (sender === 'ai') {
+    // --- MODIFICATION: Moved .meta inside .chat-bubble ---
     messageDiv.innerHTML = `
       <div class="ai-avatar">
         <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
       </div>
       <div class="ai-content-wrapper">
-        <div class="chat-bubble"></div>
-        <div class="meta"></div>
+        <div class="chat-bubble">
+          <!-- Content will be injected here -->
+          <div class="meta"></div>
+        </div>
       </div>
     `;
     const bubble = messageDiv.querySelector('.chat-bubble');
     // Ensure text is treated as a string before parsing
-    bubble.innerHTML = DOMPurify.sanitize(marked.parse(String(text ?? '')));
+    // Insert content *before* the meta div
+    bubble.insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(String(text ?? ''))));
   } else {
     // Ensure text is treated as a string before parsing
     const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
     const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+    // --- MODIFICATION: Moved .meta inside .chat-bubble ---
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
-           <div class="chat-bubble">${bubbleHtml}</div>
-           <div class="meta"></div>
+           <div class="chat-bubble">
+             ${bubbleHtml}
+             <div class="meta"></div>
+           </div>
         </div>
         <div class="user-avatar">
             <img src="${avatarUrl}" alt="User Avatar" class="w-full h-full rounded-full">
@@ -918,3 +925,4 @@ export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
         showModal('delete'); // Open delete confirmation
     });
 }
+
