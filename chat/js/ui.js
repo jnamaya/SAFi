@@ -81,12 +81,26 @@ function _initElements() {
 
 let activeToast = null;
 let lastRenderedDay = '';
+// --- NEW: Keep track of the open menu ---
+let openDropdown = null;
 
+// --- THIS IS THE FIX ---
 // NEW: Helper to lazily initialize elements
+// Moved this function to the top-level scope
 function _ensureElements() {
   // Check if elements is uninitialized (checking for a known key)
   if (!elements.loginView) {
     _initElements();
+  }
+}
+// --- END FIX ---
+
+// --- NEW: Helper to close all conversation menus ---
+export function closeAllConvoMenus() {
+  // --- MODIFICATION: Find and remove the dynamically created menu ---
+  if (openDropdown) {
+    openDropdown.remove();
+    openDropdown = null;
   }
 }
 
@@ -108,9 +122,10 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
     elements.loginView.classList.add('hidden');
     elements.chatView.classList.remove('hidden');
     
+    // --- MODIFICATION: Added bg-neutral-100 dark:bg-neutral-900 for sidebar theme ---
     elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
-        <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-white dark:bg-black text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
+        <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
               <div class="app-logo h-10 w-10">
@@ -186,24 +201,105 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
   }
 }
 
+// --- NEW: Function to dynamically create the dropdown menu ---
+function createDropdownMenu(convoId, handlers) {
+  const menu = document.createElement('div');
+  menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
+  menu.dataset.menuId = convoId; // For tracking
+  
+  // Create Rename Button
+  const renameButton = document.createElement('button');
+  renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
+  renameButton.innerHTML = `
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
+    <span>Rename</span>
+  `;
+  renameButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllConvoMenus();
+    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] span`).textContent);
+  });
+  
+  // Create Delete Button
+  const deleteButton = document.createElement('button');
+  deleteButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
+  deleteButton.innerHTML = `
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+    <span>Delete</span>
+  `;
+  deleteButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllConvoMenus();
+    handlers.deleteHandler(convoId);
+  });
+
+  menu.appendChild(renameButton);
+  menu.appendChild(deleteButton);
+  
+  // Prevent menu from closing when clicked inside
+  menu.addEventListener('click', (e) => e.stopPropagation());
+
+  return menu;
+}
+
+// --- NEW: Function to position the menu ---
+function positionDropdown(menu, button) {
+  const rect = button.getBoundingClientRect();
+  menu.style.top = 'auto';
+  menu.style.bottom = `${window.innerHeight - rect.top + 4}px`; // 4px above button
+  menu.style.left = 'auto';
+  menu.style.right = `${window.innerWidth - rect.right}px`; // Align right edges
+}
+
+
 export function renderConversationLink(convo, handlers) {
-  // This function doesn't use `elements`, so no init check needed
+  _ensureElements(); // ADDED - This call is now safe
   const { switchHandler, renameHandler, deleteHandler } = handlers;
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
-  link.className = 'group flex items-center justify-between px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg';
-  link.innerHTML = `<span class="truncate">${convo.title || 'Untitled'}</span>
-    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-      <button data-action="rename" class="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-md" aria-label="Rename"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg></button>
-      <button data-action="delete" class="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-md" aria-label="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
-    </div>`;
+  link.className = 'group relative flex items-center justify-between px-3 py-2 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg';
+  
+  // --- MODIFICATION: Simplified innerHTML, removed menu div ---
+  link.innerHTML = `
+    <span class="truncate pr-8">${convo.title || 'Untitled'}</span>
+    <button data-action="menu" class="convo-menu-button opacity-0 group-hover:opacity-100 focus:opacity-100 
+                   absolute right-2 top-1/2 -translate-y-1/2 
+                   p-1.5 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700" 
+            aria-label="Conversation options">
+       <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+    </button>
+  `;
+  // --- END MODIFICATION ---
+  
+  // --- MODIFICATION: Updated event listener logic ---
   link.addEventListener('click', (e) => {
-    e.preventDefault();
-    const action = e.target.closest('button')?.dataset.action;
-    if (action === 'rename') renameHandler(convo.id, convo.title || 'Untitled');
-    else if (action === 'delete') deleteHandler(convo.id);
-    else switchHandler(convo.id);
+    const actionButton = e.target.closest('button[data-action="menu"]');
+
+    if (actionButton) {
+      // Clicked the ... button
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // If a menu is open, close it.
+      if (openDropdown) {
+        closeAllConvoMenus();
+        return; // This was a click to close
+      }
+
+      // Create and show a new menu
+      const menu = createDropdownMenu(convo.id, handlers);
+      positionDropdown(menu, actionButton);
+      document.body.appendChild(menu);
+      openDropdown = menu;
+      
+    } else {
+      // Clicked the link itself, not the menu button
+      e.preventDefault();
+      closeAllConvoMenus();
+      if (window.innerWidth < 768) closeSidebar(); // Close sidebar on mobile nav
+      switchHandler(convo.id);
+    }
   });
   return link;
 }
@@ -259,7 +355,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   } else {
     // Ensure text is treated as a string before parsing
     const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
-    const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+    const avatarUrl = options.avatarUrl || `https'://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     // --- MODIFICATION: Moved .meta inside .chat-bubble ---
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
@@ -710,11 +806,16 @@ export function setActiveConvoLink(id) {
   _ensureElements(); // ADDED
   document.querySelectorAll('#convo-list > a').forEach(link => {
     const isActive = link.dataset.id === String(id);
+    // --- MODIFICATION: Updated active link colors for new sidebar theme ---
     link.classList.toggle('bg-green-100', isActive);
     link.classList.toggle('dark:bg-green-900/50', isActive);
     link.classList.toggle('text-green-800', isActive);
     link.classList.toggle('dark:text-green-300', isActive);
     link.classList.toggle('font-medium', isActive);
+
+    // Use non-active colors that contrast with new sidebar bg
+    link.classList.toggle('hover:bg-neutral-200', !isActive);
+    link.classList.toggle('dark:hover:bg-neutral-800', !isActive);
   });
 }
 

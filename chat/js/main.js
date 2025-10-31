@@ -457,13 +457,21 @@ function attachEventListeners() {
     }
     // --- END MODIFICATION ---
 
+    // --- MODIFICATION: Global click listener to close all dropdowns ---
     document.addEventListener('click', (event) => {
+        // Close settings dropdown
         const settingsMenu = document.getElementById('settings-menu');
-        const settingsDropdown = document.getElementById('settings-dropdown');
         if (settingsMenu && !settingsMenu.contains(event.target)) {
-            settingsDropdown?.classList.add('hidden');
+            document.getElementById('settings-dropdown')?.classList.add('hidden');
+        }
+        
+        // Close conversation menus
+        const convoMenuButton = event.target.closest('.convo-menu-button');
+        if (!convoMenuButton) {
+            ui.closeAllConvoMenus();
         }
     });
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
+

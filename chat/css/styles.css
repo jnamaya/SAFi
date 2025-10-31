@@ -623,3 +623,20 @@ html, body {
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.3); /* green-600 with opacity */
 }
 /* --- END MODIFICATION --- */
+
+/* convo-menu-fix.css: optional polish */
+.convo-menu-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.35rem;
+  border-radius: 9999px;
+}
+.convo-menu-button:hover {
+  background: rgba(120, 120, 120, 0.12);
+}
+/* If your convo rows don't already have relative positioning, add this */
+.convo-item {
+  position: relative;
+}
