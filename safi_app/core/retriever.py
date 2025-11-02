@@ -73,7 +73,7 @@ class Retriever:
 
         indices_to_return = []
         # Only do keyword search for the Bible KB
-        if self.kb_name == "CPDV_study_kb" and self._is_citation_query(query):
+        if self.kb_name == "bible_asv" and self._is_citation_query(query):
             # For chapter lookups, we might need many more than 5 chunks.
             indices_to_return = self._keyword_search(query, k=50) 
         
