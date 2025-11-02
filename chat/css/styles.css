@@ -61,8 +61,9 @@ html, body {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  --user-bg: #dddddd;
-  --user-fg: #1f2937;
+  /* --- CHANGE: Branded user bubble in light mode --- */
+  --user-bg: #16a34a;
+  --user-fg: #ffffff;
   --ai-fg: #111827;
   /* --- NEW: AI bubble background for tail to work --- */
   --ai-bg: #F9FAFB;
@@ -93,7 +94,8 @@ html, body {
   gap: 12px;
   align-items: flex-start;
   margin-left: auto;
-  max-width: 95%; /* --- EDIT: Was 90% --- */
+  /* --- CHANGE: Reduced max-width --- */
+  max-width: 96%;
 }
 
 .message.ai {
@@ -101,7 +103,8 @@ html, body {
   gap: 12px;
   align-items: flex-start;
   color: var(--ai-fg);
-  max-width: 95%; /* --- EDIT: Was 90% --- */
+  /* --- CHANGE: Reduced max-width --- */
+  max-width: 96%;
 }
 
 .ai-avatar, .user-avatar {
@@ -179,18 +182,18 @@ html, body {
 .meta {
   display: flex;
   gap: 8px;
-  /* MODIFICATION: Increased top margin for better spacing inside the bubble */
-  margin-top: 16px; 
+  /* --- CHANGE: Refined spacing --- */
+  margin-top: 12px; 
   align-items: baseline;
   width: 100%;
-  /* MODIFICATION: Add a faint border to separate it from the content */
-  padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 8px;
+  /* --- CHANGE: Softened border --- */
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-/* MODIFICATION: Add a dark mode version for the border */
+/* --- CHANGE: Softened border --- */
 .dark .meta {
-  border-top-color: rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(255, 255, 255, 0.08);
 }
 
 
@@ -210,6 +213,14 @@ html, body {
   cursor: pointer;
 }
 
+/* --- NEW: Branded why-btn for user bubble --- */
+.message.user .why-btn {
+  color: #f0fdf4; /* Light green */
+}
+.dark .message.user .why-btn {
+  color: #bbf7d0; /* Lighter green */
+}
+
 .why-btn:hover {
   opacity: 0.8;
 }
@@ -217,6 +228,13 @@ html, body {
 .stamp {
   font-size: 12px;
   color: var(--muted);
+}
+/* --- NEW: Branded stamp for user bubble --- */
+.message.user .stamp {
+  color: rgba(255, 255, 255, 0.7);
+}
+.dark .message.user .stamp {
+  color: rgba(240, 253, 244, 0.7); /* dark:text-green-100/70 */
 }
 /* --- End of new chat styles --- */
 
@@ -302,6 +320,17 @@ html, body {
 }
 .dark .chat-bubble a { color: #22c55e; }
 
+/* --- NEW: Branded link for user bubble --- */
+.message.user .chat-bubble a {
+  color: #ffffff;
+  font-weight: 500;
+  text-underline-offset: 3px;
+}
+.dark .message.user .chat-bubble a {
+  color: #bbf7d0;
+}
+
+
 .chat-bubble code { 
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; 
   font-size: 0.9em; 
@@ -314,6 +343,19 @@ html, body {
   background: rgba(255,255,255,.1); 
   border-color: rgba(255,255,255,0.15);
 }
+
+/* --- NEW: Branded code for user bubble --- */
+.message.user .chat-bubble code {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #f0fdf4;
+}
+.dark .message.user .chat-bubble code {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(0, 0, 0, 0.3);
+  color: #dcfce7;
+}
+
 
 .chat-bubble pre { 
   background: #282c34; /* Atom One Dark background for consistency */
@@ -337,6 +379,17 @@ html, body {
   border-color: #22c55e;
   color: #a3a3a3; 
 }
+
+/* --- NEW: Branded blockquote for user bubble --- */
+.message.user .chat-bubble blockquote {
+  border-left-color: #f0fdf4;
+  color: #f0fdf4;
+}
+.dark .message.user .chat-bubble blockquote {
+  border-left-color: #bbf7d0;
+  color: #dcfce7;
+}
+
 
 /* --- START EDIT: Styles for wide tables --- */
 .chat-bubble table {
@@ -372,6 +425,19 @@ html, body {
   background-color: rgba(255,255,255,0.1);
 }
 
+/* --- NEW: Branded table for user bubble --- */
+.message.user .chat-bubble table {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.message.user .chat-bubble th,
+.message.user .chat-bubble td {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.message.user .chat-bubble th {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+
 .chat-bubble hr {
   border: none;
   height: 2px;
@@ -381,6 +447,12 @@ html, body {
 .dark .chat-bubble hr {
   background-color: rgba(255,255,255,0.2);
 }
+
+/* --- NEW: Branded hr for user bubble --- */
+.message.user .chat-bubble hr {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
 
 .chat-bubble del {
   text-decoration: line-through;

@@ -458,7 +458,7 @@ THE_BIBLE_SCHOLAR_PROFILE: Dict[str, Any] = {
                     "2. FOR GENERAL QUESTIONS (e.g., 'Who was Paul?'): The response MUST provide a general, academically sound historical and cultural context for the *topic* being discussed."
                 ),
                 "scoring_guide": [
-                    {"score": 1.0, "descriptor": "Excellent: (Specific Exegesis) The response accurately explains the context of the RAG passage. OR (General Question) The response provides the correct historical/cultural context for the general topic."},
+                    {"score": 1.0, "descriptor": "Excellent: (Specific Exegesis) The response accurately explains the context of the local passage. OR (General Question) The response provides the correct historical/cultural context for the general topic."},
                     {"score": 0.0, "descriptor": "Neutral: The response is correct but lacks contextual depth."},
                     {"score": -1.0, "descriptor": "Violation: The response provides factually incorrect context, misinterprets the context, or applies an anachronistic analysis."}
                 ]
@@ -472,7 +472,7 @@ THE_BIBLE_SCHOLAR_PROFILE: Dict[str, Any] = {
                     "AUDITOR INSTRUCTION: First, determine if this is a 'Specific Exegesis' (analyzing a provided passage from the local documents) "
                     "or a 'General Question' (e.g., 'Who wrote the Gospel of John?').\n"
                     "1. FOR SPECIFIC EXEGESIS: The analysis (Parts 2-5) MUST be strictly grounded in the provided local context (Part 1). All claims must illuminate *that* text.\n"
-                    "2. FOR GENERAL QUESTIONS: The response is NOT required to use the local context and MAY use general scholarly knowledge. Fidelity is to academic consensus, not a RAG document."
+                    "2. FOR GENERAL QUESTIONS: The response is NOT required to use the local context and MAY use general scholarly knowledge. Fidelity is to academic consensus, not a local document."
                 ),
                 "scoring_guide": [
                     {"score": 1.0, "descriptor": "Excellent: (Specific Exegesis) All claims (Parts 2-5) are directly tethered to the local context from Part 1. OR (General Question) The answer is a correct and neutral summary of general biblical scholarship."},
