@@ -266,6 +266,20 @@ function positionDropdown(menu, button) {
   menu.style.right = `${window.innerWidth - rect.right}px`; // Align right edges
 }
 
+export function prependConversationLink(convo, handlers) {
+  _ensureElements();
+  const convoList = document.getElementById('convo-list');
+  if (!convoList) return;
+
+  const link = renderConversationLink(convo, handlers);
+  const listHeading = convoList.querySelector('h3');
+  
+  if (listHeading) {
+    listHeading.after(link); // Insert after the "Conversations" heading
+  } else {
+    convoList.prepend(link); // Fallback if no heading
+  }
+}
 
 export function renderConversationLink(convo, handlers) {
   _ensureElements(); // ADDED - This call is now safe
