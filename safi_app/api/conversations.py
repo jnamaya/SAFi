@@ -198,8 +198,33 @@ def get_conversations():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
+    
     conversations = db.fetch_user_conversations(user_id)
-    return jsonify(conversations)
+    
+    # --- MODIFICATION: Add 'last_updated' timestamp to each conversation ---
+    # This loops through each conversation and finds the timestamp of the
+    # most recent message. This is what the frontend needs for sorting.
+    conversations_with_timestamps = []
+    for convo in conversations:
+        # Fetch all history for the conversation
+        # Note: This is an N+1 query and can be slow if a user has
+        # many conversations. A better long-term fix is to modify
+        # `db.fetch_user_conversations` to do this in one SQL query.
+        history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0)
+        
+        if history:
+            # Assuming history is sorted oldest-to-newest, get the last message
+            last_message = history[-1]
+            convo['last_updated'] = last_message.get('timestamp')
+        else:
+            # If no messages, fall back to the conversation's creation time
+            # (Assuming the convo object has 'created_at' from the DB)
+            convo['last_updated'] = convo.get('created_at')
+
+        conversations_with_timestamps.append(convo)
+    
+    return jsonify(conversations_with_timestamps)
+    # --- END MODIFICATION ---
 
 @conversations_bp.route('/conversations', methods=['POST'])
 def handle_create_conversation():
@@ -207,6 +232,19 @@ def handle_create_conversation():
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     new_convo = db.create_conversation(user_id)
+    
+    # --- MODIFICATION: Ensure new convo has 'last_updated' field ---
+    # When a new convo is created, it has no messages.
+    # We'll set 'last_updated' to its 'created_at' time.
+    # This assumes `db.create_conversation` returns an object
+    # that includes a 'created_at' timestamp.
+    if 'created_at' in new_convo:
+        new_convo['last_updated'] = new_convo['created_at']
+    else:
+        # As a fallback, set it to the current time.
+        new_convo['last_updated'] = datetime.now(timezone.utc).isoformat()
+    # --- END MODIFICATION ---
+
     return jsonify(new_convo), 201
 
 @conversations_bp.route('/conversations/<conversation_id>', methods=['PUT'])

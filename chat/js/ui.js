@@ -1,4 +1,4 @@
-import { formatTime } from './utils.js';
+import { formatTime, formatRelativeTime } from './utils.js';
 
 // --- THIS IS THE FIX ---
 // Change breaks: true to breaks: false
@@ -57,7 +57,18 @@ function _initElements() {
 
     // NEW: Fullscreen Dashboard elements
     dashboardView: document.getElementById('dashboard-view'),
-    dashboardIframeContainer: document.getElementById('dashboard-iframe-container')
+    dashboardIframeContainer: document.getElementById('dashboard-iframe-container'),
+
+    // --- NEW: Rename/Delete Convo Modals ---
+    renameModal: document.getElementById('rename-modal'),
+    renameInput: document.getElementById('rename-input'),
+    confirmRenameBtn: document.getElementById('confirm-rename-btn'),
+    cancelRenameBtn: document.getElementById('cancel-rename-btn'),
+
+    deleteConvoModal: document.getElementById('delete-convo-modal'),
+    confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
+    cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
+    // --- END NEW ---
   };
 
   // NEW: Add event listener for the back button
@@ -146,8 +157,10 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
               New Chat
             </button>
           </div>
-          <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar min-h-0">
-            <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>
+          <!-- --- CHANGE: Tighter spacing with space-y-0.5 --- -->
+          <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar min-h-0">
+            <!-- --- CHANGE: Renamed "History" to "Conversations" --- -->
+            <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>
           </nav>
           <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
           </div>
@@ -217,7 +230,8 @@ function createDropdownMenu(convoId, handlers) {
   renameButton.addEventListener('click', (e) => {
     e.stopPropagation();
     closeAllConvoMenus();
-    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] span`).textContent);
+    // --- CHANGE: Call modal handler instead of prompt ---
+    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] .convo-title`).textContent);
   });
   
   // Create Delete Button
@@ -230,6 +244,7 @@ function createDropdownMenu(convoId, handlers) {
   deleteButton.addEventListener('click', (e) => {
     e.stopPropagation();
     closeAllConvoMenus();
+    // --- CHANGE: Call modal handler instead of confirm ---
     handlers.deleteHandler(convoId);
   });
 
@@ -258,11 +273,19 @@ export function renderConversationLink(convo, handlers) {
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
-  link.className = 'group relative flex items-center justify-between px-3 py-2 text-sm hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg';
   
-  // --- MODIFICATION: Simplified innerHTML, removed menu div ---
+  // --- CHANGE: Reduced padding from py-3 to py-2 ---
+  link.className = 'group relative flex items-start justify-between px-3 py-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
+  
+  // --- CHANGE: Updated innerHTML for title and timestamp ---
   link.innerHTML = `
-    <span class="truncate pr-8">${convo.title || 'Untitled'}</span>
+    <div class="flex-1 min-w-0 pr-8">
+        <!-- --- CHANGE: Use font-medium instead of font-normal --- -->
+        <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
+        <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
+            ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
+        </span>
+    </div>
     <button data-action="menu" class="convo-menu-button opacity-0 group-hover:opacity-100 focus:opacity-100 
                    absolute right-2 top-1/2 -translate-y-1/2 
                    p-1.5 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700" 
@@ -593,6 +616,20 @@ export function showModal(kind, data) {
     renderSettingsDashboardTab();
     renderSettingsUserTab(data.handlers.theme, data.handlers.logout, data.handlers.delete);
     elements.settingsModal.classList.remove('hidden');
+  // --- NEW: Cases for new modals ---
+  } else if (kind === 'rename') {
+    // data = { oldTitle }
+    if (elements.renameInput) {
+        elements.renameInput.value = data.oldTitle;
+    }
+    elements.renameModal.classList.remove('hidden');
+    if (elements.renameInput) {
+        elements.renameInput.focus();
+        elements.renameInput.select();
+    }
+  } else if (kind === 'delete-convo') {
+    elements.deleteConvoModal.classList.remove('hidden');
+  // --- END NEW ---
   }
   
   elements.modalBackdrop.classList.remove('hidden');
@@ -605,6 +642,10 @@ export function closeModal() {
   elements.deleteAccountModal.classList.add('hidden');
   elements.settingsModal.classList.add('hidden');
   elements.dashboardView.classList.add('hidden'); // NEW: Also hide dashboard view
+  // --- NEW: Hide new modals ---
+  elements.renameModal.classList.add('hidden');
+  elements.deleteConvoModal.classList.add('hidden');
+  // --- END NEW ---
 
     // MODIFICATION: Reset modal size, overflow, nav visibility, and back button when closed
   if (elements.settingsModal) {
@@ -879,22 +920,53 @@ export function resetChatView() {
   }
 }
 
+// --- 
+// --- THIS IS THE MODIFIED FUNCTION ---
+// ---
 export function setActiveConvoLink(id) {
-  _ensureElements(); // ADDED
+  _ensureElements();
   document.querySelectorAll('#convo-list > a').forEach(link => {
     const isActive = link.dataset.id === String(id);
-    // --- MODIFICATION: Updated active link colors for new sidebar theme ---
-    link.classList.toggle('bg-green-100', isActive);
-    link.classList.toggle('dark:bg-green-900/50', isActive);
-    link.classList.toggle('text-green-800', isActive);
-    link.classList.toggle('dark:text-green-300', isActive);
-    link.classList.toggle('font-medium', isActive);
+    const title = link.querySelector('.convo-title');
+    const timestamp = link.querySelector('.convo-timestamp');
 
-    // Use non-active colors that contrast with new sidebar bg
+    // --- NEW BOLDER THEME ---
+    // Active classes
+    link.classList.toggle('bg-green-600', isActive); // Strong green bg
+    link.classList.toggle('text-white', isActive); // White text
+
+    // Dark mode active classes (same, but explicit)
+    link.classList.toggle('dark:bg-green-600', isActive);
+    link.classList.toggle('dark:text-white', isActive);
+
+    // Inactive classes (default text color)
+    link.classList.toggle('text-neutral-900', !isActive);
+    link.classList.toggle('dark:text-white', !isActive);
+
+    // Hover classes (only for inactive)
     link.classList.toggle('hover:bg-neutral-200', !isActive);
     link.classList.toggle('dark:hover:bg-neutral-800', !isActive);
+    
+    // --- CHANGE: Make inactive bold (medium) and active bolder (semibold) ---
+    title?.classList.toggle('font-semibold', isActive); // Use semibold for active
+    title?.classList.toggle('font-medium', !isActive); // Use medium for inactive
+    // --- END CHANGE ---
+
+    // Timestamp color
+    if (timestamp) {
+      // Active timestamp color (light green)
+      timestamp.classList.toggle('text-green-100', isActive);
+      timestamp.classList.toggle('dark:text-green-100', isActive);
+      
+      // Inactive timestamp color (default gray)
+      timestamp.classList.toggle('text-neutral-500', !isActive);
+      timestamp.classList.toggle('dark:text-neutral-400', !isActive);
+    }
   });
 }
+// --- 
+// --- END OF MODIFIED FUNCTION ---
+// ---
 
 
 // Handles switching tabs in the settings modal

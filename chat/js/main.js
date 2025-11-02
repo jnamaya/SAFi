@@ -8,6 +8,11 @@ let activeProfileData = {}; // Stores the full profile details
 let availableProfiles = []; // Stores the list of *full profile objects*
 let availableModels = []; // --- MODIFICATION: Store available models
 
+// --- NEW: State for custom modals ---
+let convoToRename = { id: null, oldTitle: null };
+let convoToDelete = null;
+// --- END NEW ---
+
 async function checkLoginStatus() {
     try {
         const me = await api.getMe();
@@ -129,7 +134,8 @@ async function loadConversations(switchToId = null) {
         const convoList = document.getElementById('convo-list');
         if (!convoList) return;
         
-        convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">History</h3>`;
+        // --- CHANGE: Renamed "History" to "Conversations" ---
+        convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>`;
 
         if (conversations?.length > 0) {
             const handlers = {
@@ -137,6 +143,15 @@ async function loadConversations(switchToId = null) {
                 renameHandler: handleRename,
                 deleteHandler: handleDelete
             };
+            
+            // --- CHANGE: Sort conversations by date, newest first ---
+            // Assumes 'convo' object has 'last_updated' field from the API
+            conversations.sort((a, b) => {
+                const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
+                const dateB = b.last_updated ? new Date(b.last_updated) : new Date(0);
+                return dateB - dateA;
+            });
+
             conversations.forEach(convo => {
                 const link = ui.renderConversationLink(convo, handlers);
                 convoList.appendChild(link);
@@ -150,7 +165,7 @@ async function loadConversations(switchToId = null) {
             
             await switchConversation(targetConvoId);
         } else {
-            await startNewConversation(true);
+            await startNewConversation(true); // Pass true for initial load
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
@@ -158,24 +173,42 @@ async function loadConversations(switchToId = null) {
     }
 }
 
+// ---
+// --- MODIFIED FUNCTION ---
+// ---
 async function startNewConversation(isInitialLoad = false) {
-    try {
-        const newConvo = await api.createNewConversation();
-        
-        if (isInitialLoad) {
+    // If this is the first time the app is loading AND there are no convos,
+    // we MUST create one to start with.
+    if (isInitialLoad) {
+        try {
+            const newConvo = await api.createNewConversation();
             const convoList = document.getElementById('convo-list');
             const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
             const link = ui.renderConversationLink(newConvo, handlers);
             convoList.appendChild(link);
             await switchConversation(newConvo.id);
-        } else {
-            await loadConversations(newConvo.id);
+        } catch (error) {
+            console.error('Failed to create new conversation:', error);
+            ui.showToast('Could not start a new chat.', 'error');
         }
-    } catch (error) {
-        console.error('Failed to create new conversation:', error);
-        ui.showToast('Could not start a new chat.', 'error');
+    } else {
+        // --- NEW LOGIC for user clicking "New Chat" ---
+        // Don't create a conversation, just reset the UI state.
+        // The conversation will be created *when the user sends a message*.
+        currentConversationId = null;
+        ui.setActiveConvoLink(null); // Deselect all conversations
+        ui.resetChatView();
+
+        // Show the empty state greeting
+        const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
+        ui.displaySimpleGreeting(firstName);
+        ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
+        // --- END NEW LOGIC ---
     }
 }
+// ---
+// --- END MODIFIED FUNCTION ---
+// ---
 
 
 async function switchConversation(id) {
@@ -245,9 +278,34 @@ function handleExamplePromptClick(promptText) {
     autoSize();
 }
 
+// ---
+// --- MODIFIED FUNCTION ---
+// ---
 async function sendMessage() {
     const userMessage = ui.elements.messageInput.value.trim();
-    if (!userMessage || !currentConversationId) return;
+    
+    // --- NEW: Check if this is the first message ---
+    let isNewConversation = false;
+    if (!currentConversationId) {
+        // If no ID, this is a new chat. Block if no message.
+        if (!userMessage) return; 
+        
+        try {
+            // Create the conversation *now*, before sending the message
+            const newConvo = await api.createNewConversation();
+            currentConversationId = newConvo.id;
+            isNewConversation = true;
+        } catch (error) {
+            console.error('Failed to create new conversation on send:', error);
+            ui.showToast('Could not start a new chat.', 'error');
+            return; // Stop if creation fails
+        }
+    }
+    // --- END NEW ---
+
+    // Original logic resumes, but we check userMessage again
+    // in case currentConversationId *was* set but the message is now empty.
+    if (!userMessage) return;
 
     const buttonIcon = document.getElementById('button-icon');
     const buttonLoader = document.getElementById('button-loader');
@@ -285,12 +343,13 @@ async function sendMessage() {
           (payload) => ui.showModal('conscience', payload)
         );
 
-        if (initialResponse.newTitle) {
-            const link = document.querySelector(`#convo-list a[data-id="${currentConversationId}"] span`);
-            if (link) link.textContent = initialResponse.newTitle;
-        }
-        
-        if (initialResponse.messageId) {
+        // --- CHANGE: Update conversation list if it's new OR titled ---
+        if (isNewConversation || initialResponse.newTitle) {
+            // A new title OR a new convo means the list needs refreshing.
+            // Reload the whole list to get new order and timestamp.
+            await loadConversations(currentConversationId);
+        } else if (initialResponse.messageId) {
+            // If just a message, poll for audit
             pollForAuditResults(initialResponse.messageId);
         }
         
@@ -308,6 +367,9 @@ async function sendMessage() {
         ui.elements.messageInput.focus();
     }
 }
+// ---
+// --- END MODIFIED FUNCTION ---
+// ---
 
 function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
     let attempts = 0;
@@ -357,33 +419,55 @@ function autoSize() {
     input.style.height = `${newHeight}px`;
 }
 
-async function handleRename(id, oldTitle) {
-    const newTitle = prompt('Enter new name for the conversation:', oldTitle);
-    if (newTitle && newTitle.trim() !== oldTitle) {
+// --- NEW: Refactored Rename function ---
+function handleRename(id, oldTitle) {
+    convoToRename = { id, oldTitle };
+    ui.showModal('rename', { oldTitle });
+}
+
+async function handleConfirmRename() {
+    const { id, oldTitle } = convoToRename;
+    const newTitle = ui.elements.renameInput.value.trim();
+    
+    if (newTitle && newTitle !== oldTitle) {
         try {
             await api.renameConversation(id, newTitle);
             ui.showToast('Conversation renamed.', 'success');
-            await loadConversations();
+            await loadConversations(id); // Pass ID to stay on it
         } catch (error) {
             ui.showToast('Could not rename conversation.', 'error');
         }
     }
+    ui.closeModal();
+    convoToRename = { id: null, oldTitle: null };
+}
+// --- END NEW ---
+
+// --- NEW: Refactored Delete function ---
+function handleDelete(id) {
+    convoToDelete = id;
+    ui.showModal('delete-convo');
 }
 
-async function handleDelete(id) {
-    if (confirm('Are you sure you want to delete this conversation?')) {
-        try {
-            await api.deleteConversation(id);
-            ui.showToast('Conversation deleted.', 'success');
-            if (id === currentConversationId) {
-                currentConversationId = null;
-            }
-            await loadConversations();
-        } catch (error) {
-            ui.showToast('Could not delete conversation.', 'error');
+async function handleConfirmDelete() {
+    const id = convoToDelete;
+    if (!id) return;
+    
+    try {
+        await api.deleteConversation(id);
+        ui.showToast('Conversation deleted.', 'success');
+        if (id === currentConversationId) {
+            currentConversationId = null;
         }
+        await loadConversations();
+    } catch (error) {
+        ui.showToast('Could not delete conversation.', 'error');
     }
+    
+    ui.closeModal();
+    convoToDelete = null;
 }
+// --- END NEW ---
 
 async function handleLogout() {
     await fetch(api.urls.LOGOUT, { method: 'POST', credentials: 'include' });
@@ -443,6 +527,21 @@ function attachEventListeners() {
     document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
+    
+    // --- NEW: Event listeners for new modals ---
+    ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
+    ui.elements.confirmRenameBtn?.addEventListener('click', handleConfirmRename);
+    // Also trigger rename on Enter key in the input
+    ui.elements.renameInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleConfirmRename();
+        }
+    });
+
+    ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
+    ui.elements.confirmDeleteConvoBtn?.addEventListener('click', handleConfirmDelete);
+    // --- END NEW ---
     
     // --- MODIFICATION: Updated settings menu logic ---
     const settingsMenu = document.getElementById('settings-menu');

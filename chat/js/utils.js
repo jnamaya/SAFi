@@ -40,6 +40,59 @@ export function formatTime(date) {
 }
 
 /**
+ * --- NEW: Formats a timestamp into a relative time string. ---
+ * @param {string | Date} timestamp The date to format.
+ * @returns {string} The formatted relative time string (e.g., "5m ago", "Yesterday").
+ */
+export function formatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+
+    const date = (timestamp instanceof Date) ? timestamp : new Date(timestamp);
+    if (isNaN(date.getTime())) {
+        return ''; // Invalid date
+    }
+
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    // More than 1 week ago: show date "Oct 28"
+    if (seconds > 60 * 60 * 24 * 7) {
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    
+    // More than 2 days ago: show "X days ago"
+    const days = Math.floor(seconds / 86400); // 60*60*24
+    if (days > 1) {
+        return `${days} days ago`;
+    }
+
+    // Yesterday
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const isYesterday = date.getFullYear() === yesterday.getFullYear() &&
+                        date.getMonth() === yesterday.getMonth() &&
+                        date.getDate() === yesterday.getDate();
+    if (isYesterday) {
+        return 'Yesterday';
+    }
+
+    // More than 1 hour ago: show "Xh ago"
+    const hours = Math.floor(seconds / 3600); // 60*60
+    if (hours >= 1) {
+        return `${hours}h ago`;
+    }
+
+    // More than 1 minute ago: show "Xm ago"
+    const minutes = Math.floor(seconds / 60);
+    if (minutes >= 1) {
+        return `${minutes}m ago`;
+    }
+
+    // Less than 1 minute
+    return 'Just now';
+}
+
+
+/**
  * A utility function for escaping HTML to prevent XSS attacks.
  * @param {string} str The string to escape.
  * @returns {string} The escaped string.
