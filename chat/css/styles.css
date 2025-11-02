@@ -252,7 +252,7 @@ html, body {
 .chat-bubble h1,
 .chat-bubble h2,
 .chat-bubble h3 {
-  font-weight: 600; /* Good, this can be shared */
+  font-weight: 400; /* Good, this can be shared */
   line-height: 1.3;   /* Good, this can be shared */
 }
 

@@ -6,23 +6,19 @@ let currentConversationId = null;
 let user = null; // Store user object
 let activeProfileData = {}; // Stores the full profile details
 let availableProfiles = []; // Stores the list of *full profile objects*
-let availableModels = []; // --- MODIFICATION: Store available models
+let availableModels = []; 
 
-// --- NEW: State for custom modals ---
 let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
-// --- END NEW ---
 
 async function checkLoginStatus() {
     try {
         const me = await api.getMe();
         user = (me && me.ok) ? me.user : null;
         
-        // --- MODIFICATION: Pass settings modal handler
         ui.updateUIForAuthState(user, handleLogout, null, handleOpenSettingsModal);
         
         if (user) {
-            // --- MODIFICATION: Fetch profiles and models
             const [profilesResponse, modelsResponse] = await Promise.all([
                 api.fetchAvailableProfiles(),
                 api.fetchAvailableModels()
@@ -35,10 +31,6 @@ async function checkLoginStatus() {
             
             activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
-            // --- MODIFICATION: This is no longer needed as dropdown is gone
-            // ui.populateProfileSelector(availableProfiles, currentProfileKey);
-            // --- END MODIFICATION
-            
             await loadConversations();
         }
         attachEventListeners();
@@ -49,14 +41,12 @@ async function checkLoginStatus() {
     }
 }
 
-// --- MODIFICATION: This is now called from the settings modal
 async function handleProfileChange(newProfileName) {
     try {
         await api.updateUserProfile(newProfileName);
         const selectedProfile = availableProfiles.find(p => p.key === newProfileName);
         ui.showToast(`Profile switched to ${selectedProfile.name}. Reloading...`, 'success');
         
-        // Reload to apply changes
         setTimeout(() => window.location.reload(), 1000);
 
     } catch (error) {
@@ -64,9 +54,7 @@ async function handleProfileChange(newProfileName) {
         ui.showToast('Could not switch profile.', 'error');
     }
 }
-// --- END MODIFICATION ---
 
-// --- MODIFICATION: New handler for opening the settings modal ---
 function handleOpenSettingsModal() {
     ui.showModal('settings', {
         user: user,
@@ -84,29 +72,23 @@ function handleOpenSettingsModal() {
         }
     });
 }
-// --- END MODIFICATION ---
 
-// --- MODIFICATION: New handler for saving models ---
 async function handleModelsSave(newModels) {
     try {
         await api.updateUserModels(newModels);
         ui.showToast('Model preferences saved. Reloading...', 'success');
         
-        // Reload to apply changes
         setTimeout(() => window.location.reload(), 1000);
     } catch (error) {
          console.error('Failed to save models:', error);
         ui.showToast('Could not save model preferences.', 'error');
     }
 }
-// --- END MODIFICATION ---
 
-// --- MODIFICATION: New handler for theme toggle (passed to modal) ---
 function handleThemeToggle() {
     document.documentElement.classList.toggle('dark');
     localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
     
-    // Update theme button in user dropdown (if it's still rendered)
     const updateThemeUI = (scope) => {
         const isDark = document.documentElement.classList.contains('dark');
         const lightIcon = scope.querySelector('#theme-icon-light, #modal-theme-icon-light');
@@ -125,8 +107,6 @@ function handleThemeToggle() {
     const dropdown = document.getElementById('settings-dropdown');
     if (dropdown) updateThemeUI(dropdown);
 }
-// --- END MODIFICATION ---
-
 
 async function loadConversations(switchToId = null) {
     try {
@@ -134,7 +114,6 @@ async function loadConversations(switchToId = null) {
         const convoList = document.getElementById('convo-list');
         if (!convoList) return;
         
-        // --- CHANGE: Renamed "History" to "Conversations" ---
         convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>`;
 
         if (conversations?.length > 0) {
@@ -144,8 +123,6 @@ async function loadConversations(switchToId = null) {
                 deleteHandler: handleDelete
             };
             
-            // --- CHANGE: Sort conversations by date, newest first ---
-            // Assumes 'convo' object has 'last_updated' field from the API
             conversations.sort((a, b) => {
                 const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
                 const dateB = b.last_updated ? new Date(b.last_updated) : new Date(0);
@@ -173,43 +150,26 @@ async function loadConversations(switchToId = null) {
     }
 }
 
-// ---
-// --- MODIFIED FUNCTION ---
-// ---
-async function startNewConversation(isInitialLoad = false) {
-    // If this is the first time the app is loading AND there are no convos,
-    // we MUST create one to start with.
-    if (isInitialLoad) {
-        try {
-            const newConvo = await api.createNewConversation();
-            const convoList = document.getElementById('convo-list');
-            const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
-            const link = ui.renderConversationLink(newConvo, handlers);
-            convoList.appendChild(link);
-            await switchConversation(newConvo.id);
-        } catch (error) {
-            console.error('Failed to create new conversation:', error);
-            ui.showToast('Could not start a new chat.', 'error');
+async function startNewConversation(isInitialLoad = false) { 
+    try {
+        const newConvo = await api.createNewConversation();
+        const convoList = document.getElementById('convo-list');
+        const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
+        
+        const link = ui.renderConversationLink(newConvo, handlers);
+        const listHeading = convoList.querySelector('h3');
+        if (listHeading) {
+            listHeading.after(link); // Insert after the "Conversations" heading
+        } else {
+            convoList.appendChild(link); // Fallback
         }
-    } else {
-        // --- NEW LOGIC for user clicking "New Chat" ---
-        // Don't create a conversation, just reset the UI state.
-        // The conversation will be created *when the user sends a message*.
-        currentConversationId = null;
-        ui.setActiveConvoLink(null); // Deselect all conversations
-        ui.resetChatView();
 
-        // Show the empty state greeting
-        const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-        ui.displaySimpleGreeting(firstName);
-        ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
-        // --- END NEW LOGIC ---
+        await switchConversation(newConvo.id);
+    } catch (error) {
+        console.error('Failed to create new conversation:', error);
+        ui.showToast('Could not start a new chat.', 'error');
     }
 }
-// ---
-// --- END MODIFIED FUNCTION ---
-// ---
-
 
 async function switchConversation(id) {
     currentConversationId = id;
@@ -250,19 +210,9 @@ async function switchConversation(id) {
                 );
             });
         } else {
-            // --- START: MODIFIED CODE ---
-            // This is the updated logic for an empty chat.
-
-            // Get the user's first name, with a fallback
             const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-            
-            // Call the new function to display the simple, large-text greeting
             ui.displaySimpleGreeting(firstName);
-            
-            // Then, display the standard empty state with persona info and prompts below it
             ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
-
-            // --- END: MODIFIED CODE ---
         }
         
         ui.scrollToBottom();
@@ -278,33 +228,23 @@ function handleExamplePromptClick(promptText) {
     autoSize();
 }
 
-// ---
-// --- MODIFIED FUNCTION ---
-// ---
 async function sendMessage() {
     const userMessage = ui.elements.messageInput.value.trim();
     
-    // --- NEW: Check if this is the first message ---
-    let isNewConversation = false;
     if (!currentConversationId) {
-        // If no ID, this is a new chat. Block if no message.
-        if (!userMessage) return; 
+        console.error("No currentConversationId set before sending message.");
+        if (!userMessage) return; // Don't proceed if no message
         
+        // As a fallback, try to create one now. This shouldn't be hit with the new logic.
         try {
-            // Create the conversation *now*, before sending the message
-            const newConvo = await api.createNewConversation();
-            currentConversationId = newConvo.id;
-            isNewConversation = true;
+            await startNewConversation(); 
         } catch (error) {
-            console.error('Failed to create new conversation on send:', error);
+            console.error('Failed to create fallback conversation on send:', error);
             ui.showToast('Could not start a new chat.', 'error');
-            return; // Stop if creation fails
+            return;
         }
     }
-    // --- END NEW ---
 
-    // Original logic resumes, but we check userMessage again
-    // in case currentConversationId *was* set but the message is now empty.
     if (!userMessage) return;
 
     const buttonIcon = document.getElementById('button-icon');
@@ -334,22 +274,66 @@ async function sendMessage() {
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
         
+        const ledger = typeof initialResponse.ledger === 'string' 
+            ? JSON.parse(initialResponse.ledger) 
+            : initialResponse.ledger;
+            
+        const values = typeof initialResponse.values === 'string' 
+            ? JSON.parse(initialResponse.values) 
+            : initialResponse.values;
+
+        const initialPayload = {
+            ledger: ledger || [],
+            profile: initialResponse.profile || null,
+            values: values || [],
+            spirit_score: initialResponse.spirit_score,
+            spirit_scores_history: [initialResponse.spirit_score] 
+        };
+
+        const hasInitialPayload = initialPayload.ledger && initialPayload.ledger.length > 0;
+        
         ui.displayMessage(
           'ai',
           initialResponse.finalOutput,
           new Date(),
           initialResponse.messageId,
-          null, 
+          hasInitialPayload ? initialPayload : null, 
           (payload) => ui.showModal('conscience', payload)
         );
 
-        // --- CHANGE: Update conversation list if it's new OR titled ---
-        if (isNewConversation || initialResponse.newTitle) {
-            // A new title OR a new convo means the list needs refreshing.
-            // Reload the whole list to get new order and timestamp.
-            await loadConversations(currentConversationId);
-        } else if (initialResponse.messageId) {
-            // If just a message, poll for audit
+        if (initialResponse.newTitle) {
+            // A new title means the list needs refreshing.
+            try {
+                const conversations = await api.fetchConversations();
+                const convoList = document.getElementById('convo-list');
+                if (convoList) {
+                    const handlers = {
+                        switchHandler: switchConversation,
+                        renameHandler: handleRename,
+                        deleteHandler: handleDelete
+                    };
+                    
+                    convoList.innerHTML = `<h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>`;
+        
+                    conversations.sort((a, b) => {
+                        const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
+                        const dateB = b.last_updated ? new Date(b.last_updated) : new Date(0);
+                        return dateB - dateA;
+                    });
+        
+                    conversations.forEach(convo => {
+                        const link = ui.renderConversationLink(convo, handlers);
+                        convoList.appendChild(link);
+                    });
+                    
+                    ui.setActiveConvoLink(currentConversationId);
+                }
+            } catch (listError) {
+                console.error("Failed to refresh conversation list:", listError);
+            }
+        }
+
+        if (initialResponse.messageId && !hasInitialPayload) {
             pollForAuditResults(initialResponse.messageId);
         }
         
@@ -367,14 +351,16 @@ async function sendMessage() {
         ui.elements.messageInput.focus();
     }
 }
-// ---
-// --- END MODIFIED FUNCTION ---
-// ---
 
 function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
     let attempts = 0;
 
     const executePoll = async (resolve, reject) => {
+        if (!currentConversationId) {
+            reject(new Error('Polling stopped, conversation changed.'));
+            return;
+        }
+        
         const result = await api.fetchAuditResult(messageId);
         attempts++;
 
@@ -396,6 +382,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             ui.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
             resolve(result);
         } else if (attempts >= maxAttempts) {
+            console.warn(`Polling timed out for message ${messageId}.`);
             reject(new Error('Polling timed out.'));
         } else {
             setTimeout(() => executePoll(resolve, reject), interval);
@@ -404,6 +391,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
 
     return new Promise(executePoll);
 }
+
 
 function autoSize() {
     const input = ui.elements.messageInput;
@@ -419,7 +407,6 @@ function autoSize() {
     input.style.height = `${newHeight}px`;
 }
 
-// --- NEW: Refactored Rename function ---
 function handleRename(id, oldTitle) {
     convoToRename = { id, oldTitle };
     ui.showModal('rename', { oldTitle });
@@ -433,7 +420,7 @@ async function handleConfirmRename() {
         try {
             await api.renameConversation(id, newTitle);
             ui.showToast('Conversation renamed.', 'success');
-            await loadConversations(id); // Pass ID to stay on it
+            await loadConversations(id); 
         } catch (error) {
             ui.showToast('Could not rename conversation.', 'error');
         }
@@ -441,9 +428,7 @@ async function handleConfirmRename() {
     ui.closeModal();
     convoToRename = { id: null, oldTitle: null };
 }
-// --- END NEW ---
 
-// --- NEW: Refactored Delete function ---
 function handleDelete(id) {
     convoToDelete = id;
     ui.showModal('delete-convo');
@@ -467,7 +452,6 @@ async function handleConfirmDelete() {
     ui.closeModal();
     convoToDelete = null;
 }
-// --- END NEW ---
 
 async function handleLogout() {
     await fetch(api.urls.LOGOUT, { method: 'POST', credentials: 'include' });
@@ -517,21 +501,17 @@ function attachEventListeners() {
         sidebarOverlay.addEventListener('click', ui.closeSidebar);
     }
     
-    // --- MODIFICATION: Added listeners for new settings modal ---
     ui.elements.closeSettingsModal?.addEventListener('click', ui.closeModal);
     ui.setupSettingsTabs();
-    // --- END MODIFICATION ---
     
     document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
-    
-    // --- NEW: Event listeners for new modals ---
+
     ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
     ui.elements.confirmRenameBtn?.addEventListener('click', handleConfirmRename);
-    // Also trigger rename on Enter key in the input
     ui.elements.renameInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -541,9 +521,7 @@ function attachEventListeners() {
 
     ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
     ui.elements.confirmDeleteConvoBtn?.addEventListener('click', handleConfirmDelete);
-    // --- END NEW ---
     
-    // --- MODIFICATION: Updated settings menu logic ---
     const settingsMenu = document.getElementById('settings-menu');
     if (settingsMenu) {
         settingsMenu.addEventListener('click', (event) => {
@@ -554,17 +532,13 @@ function attachEventListeners() {
             }
         });
     }
-    // --- END MODIFICATION ---
 
-    // --- MODIFICATION: Global click listener to close all dropdowns ---
     document.addEventListener('click', (event) => {
-        // Close settings dropdown
         const settingsMenu = document.getElementById('settings-menu');
         if (settingsMenu && !settingsMenu.contains(event.target)) {
             document.getElementById('settings-dropdown')?.classList.add('hidden');
         }
         
-        // Close conversation menus
         const convoMenuButton = event.target.closest('.convo-menu-button');
         if (!convoMenuButton) {
             ui.closeAllConvoMenus();
