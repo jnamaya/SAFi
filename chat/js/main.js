@@ -151,25 +151,39 @@ async function loadConversations(switchToId = null) {
 }
 
 async function startNewConversation(isInitialLoad = false) { 
-    try {
-        const newConvo = await api.createNewConversation();
-        const convoList = document.getElementById('convo-list');
-        const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
-        
-        const link = ui.renderConversationLink(newConvo, handlers);
-        const listHeading = convoList.querySelector('h3');
-        if (listHeading) {
-            listHeading.after(link); // Insert after the "Conversations" heading
-        } else {
-            convoList.appendChild(link); // Fallback
+    if (isInitialLoad) {
+        // This is the first-ever load and there are no convos.
+        // We MUST create one to start with.
+        try {
+            const newConvo = await api.createNewConversation();
+            const convoList = document.getElementById('convo-list');
+            const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
+            
+            const link = ui.renderConversationLink(newConvo, handlers);
+            const listHeading = convoList.querySelector('h3');
+            if (listHeading) {
+                listHeading.after(link); // Insert after the "Conversations" heading
+            } else {
+                convoList.appendChild(link); // Fallback
+            }
+            await switchConversation(newConvo.id);
+        } catch (error) {
+            console.error('Failed to create initial conversation:', error);
+            ui.showToast('Could not start a new chat.', 'error');
         }
+    } else {
+        // This is a user clicking "New Chat"
+        currentConversationId = null;
+        ui.setActiveConvoLink(null); // Deselect all conversations
+        ui.resetChatView();
 
-        await switchConversation(newConvo.id);
-    } catch (error) {
-        console.error('Failed to create new conversation:', error);
-        ui.showToast('Could not start a new chat.', 'error');
+        // Show the empty state greeting
+        const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
+        ui.displaySimpleGreeting(firstName);
+        ui.displayEmptyState(activeProfileData, handleExamplePromptClick);
     }
 }
+
 
 async function switchConversation(id) {
     currentConversationId = id;
@@ -230,22 +244,28 @@ function handleExamplePromptClick(promptText) {
 
 async function sendMessage() {
     const userMessage = ui.elements.messageInput.value.trim();
-    
+    if (!userMessage) return; // Don't send empty messages
+
+    let isNewConversation = false;
+
     if (!currentConversationId) {
-        console.error("No currentConversationId set before sending message.");
-        if (!userMessage) return; // Don't proceed if no message
-        
-        // As a fallback, try to create one now. This shouldn't be hit with the new logic.
+        // This is the first message of a new chat. Create it now.
+        isNewConversation = true;
         try {
-            await startNewConversation(); 
+            const newConvo = await api.createNewConversation();
+            currentConversationId = newConvo.id; // Set the ID for the rest of the function
+
+            // Manually add this new chat to the sidebar
+            const handlers = { switchHandler: switchConversation, renameHandler: handleRename, deleteHandler: handleDelete };
+            ui.prependConversationLink(newConvo, handlers);
+            ui.setActiveConvoLink(currentConversationId);
+
         } catch (error) {
-            console.error('Failed to create fallback conversation on send:', error);
+            console.error('Failed to create new conversation on send:', error);
             ui.showToast('Could not start a new chat.', 'error');
-            return;
+            return; // Stop if creation fails
         }
     }
-
-    if (!userMessage) return;
 
     const buttonIcon = document.getElementById('button-icon');
     const buttonLoader = document.getElementById('button-loader');
@@ -302,7 +322,9 @@ async function sendMessage() {
         );
 
         if (initialResponse.newTitle) {
-            // A new title means the list needs refreshing.
+            // A new title was generated (either on message 1 or later).
+            // We must refresh the list to show the new title.
+            // This is now safe because the message is already on-screen.
             try {
                 const conversations = await api.fetchConversations();
                 const convoList = document.getElementById('convo-list');
@@ -483,7 +505,7 @@ function attachEventListeners() {
     
     const newChatButton = document.getElementById('new-chat-button');
     if (newChatButton) {
-        newChatButton.addEventListener('click', () => { startNewConversation(); if (window.innerWidth < 768) ui.closeSidebar(); });
+        newChatButton.addEventListener('click', () => { startNewConversation(false); if (window.innerWidth < 768) ui.closeSidebar(); });
     }
 
     const menuToggle = document.getElementById('menu-toggle');
