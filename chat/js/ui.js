@@ -1,7 +1,5 @@
 import { formatTime, formatRelativeTime } from './utils.js';
 
-// --- THIS IS THE FIX ---
-// Change breaks: true to breaks: false
 marked.setOptions({
   breaks: false, // Render <br> ONLY on double line breaks (standard Markdown)
   gfm: true,    // Use GitHub Flavored Markdown for tables, etc.
@@ -13,13 +11,10 @@ marked.setOptions({
     return hljs.highlight(code, { language }).value;
   }
 });
-// --- END FIX ---
 
-
-// MODIFICATION: Initialize as empty, will be populated by _initElements
 export let elements = {};
 
-// NEW: Initialization function to run after DOM is loaded
+// Initialization function to run after DOM is loaded
 function _initElements() {
   elements = {
     loginView: document.getElementById('login-view'),
@@ -51,15 +46,11 @@ function _initElements() {
     settingsTabModels: document.getElementById('settings-tab-models'),
     settingsTabUser: document.getElementById('settings-tab-user'),
 
-    // NEW: Dashboard Back Button
     dashboardBackButton: document.getElementById('dashboard-back-button'),
-    // END NEW
 
-    // NEW: Fullscreen Dashboard elements
     dashboardView: document.getElementById('dashboard-view'),
     dashboardIframeContainer: document.getElementById('dashboard-iframe-container'),
 
-    // --- NEW: Rename/Delete Convo Modals ---
     renameModal: document.getElementById('rename-modal'),
     renameInput: document.getElementById('rename-input'),
     confirmRenameBtn: document.getElementById('confirm-rename-btn'),
@@ -68,20 +59,16 @@ function _initElements() {
     deleteConvoModal: document.getElementById('delete-convo-modal'),
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
     cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
-    // --- END NEW ---
   };
 
-  // NEW: Add event listener for the back button
   if (elements.dashboardBackButton) {
     elements.dashboardBackButton.addEventListener('click', () => {
-      // NEW: Hide dashboard, show settings
       if (elements.dashboardView) {
         elements.dashboardView.classList.add('hidden');
       }
       if (elements.settingsModal) {
         elements.settingsModal.classList.remove('hidden');
       }
-      // MODIFICATION: Show backdrop again
       if (elements.modalBackdrop) { 
         elements.modalBackdrop.classList.remove('hidden');
       }
@@ -92,23 +79,17 @@ function _initElements() {
 
 let activeToast = null;
 let lastRenderedDay = '';
-// --- NEW: Keep track of the open menu ---
 let openDropdown = null;
 
-// --- THIS IS THE FIX ---
-// NEW: Helper to lazily initialize elements
-// Moved this function to the top-level scope
+// Helper to lazily initialize elements
 function _ensureElements() {
-  // Check if elements is uninitialized (checking for a known key)
   if (!elements.loginView) {
     _initElements();
   }
 }
-// --- END FIX ---
 
-// --- NEW: Helper to close all conversation menus ---
+// Helper to close all conversation menus
 export function closeAllConvoMenus() {
-  // --- MODIFICATION: Find and remove the dynamically created menu ---
   if (openDropdown) {
     openDropdown.remove();
     openDropdown = null;
@@ -116,24 +97,23 @@ export function closeAllConvoMenus() {
 }
 
 export function openSidebar() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   document.getElementById('sidebar')?.classList.remove('-translate-x-full');
   document.getElementById('sidebar-overlay')?.classList.remove('hidden');
 }
 
 export function closeSidebar() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   document.getElementById('sidebar')?.classList.add('-translate-x-full');
   document.getElementById('sidebar-overlay')?.classList.add('hidden');
 }
 
 export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, settingsModalHandler) {
-  _ensureElements(); // ADDED - This is the most important one
+  _ensureElements();
   if (user) {
     elements.loginView.classList.add('hidden');
     elements.chatView.classList.remove('hidden');
     
-    // --- MODIFICATION: Added bg-neutral-100 dark:bg-neutral-900 for sidebar theme ---
     elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
         <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
@@ -157,9 +137,7 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
               New Chat
             </button>
           </div>
-          <!-- --- CHANGE: Tighter spacing with space-y-0.5 --- -->
           <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar min-h-0">
-            <!-- --- CHANGE: Renamed "History" to "Conversations" --- -->
             <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>
           </nav>
           <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
@@ -214,13 +192,11 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
   }
 }
 
-// --- NEW: Function to dynamically create the dropdown menu ---
 function createDropdownMenu(convoId, handlers) {
   const menu = document.createElement('div');
   menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
-  menu.dataset.menuId = convoId; // For tracking
+  menu.dataset.menuId = convoId;
   
-  // Create Rename Button
   const renameButton = document.createElement('button');
   renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
   renameButton.innerHTML = `
@@ -230,11 +206,9 @@ function createDropdownMenu(convoId, handlers) {
   renameButton.addEventListener('click', (e) => {
     e.stopPropagation();
     closeAllConvoMenus();
-    // --- CHANGE: Call modal handler instead of prompt ---
     handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] .convo-title`).textContent);
   });
   
-  // Create Delete Button
   const deleteButton = document.createElement('button');
   deleteButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
   deleteButton.innerHTML = `
@@ -244,20 +218,17 @@ function createDropdownMenu(convoId, handlers) {
   deleteButton.addEventListener('click', (e) => {
     e.stopPropagation();
     closeAllConvoMenus();
-    // --- CHANGE: Call modal handler instead of confirm ---
     handlers.deleteHandler(convoId);
   });
 
   menu.appendChild(renameButton);
   menu.appendChild(deleteButton);
   
-  // Prevent menu from closing when clicked inside
   menu.addEventListener('click', (e) => e.stopPropagation());
 
   return menu;
 }
 
-// --- NEW: Function to position the menu ---
 function positionDropdown(menu, button) {
   const rect = button.getBoundingClientRect();
   menu.style.top = 'auto';
@@ -282,19 +253,16 @@ export function prependConversationLink(convo, handlers) {
 }
 
 export function renderConversationLink(convo, handlers) {
-  _ensureElements(); // ADDED - This call is now safe
+  _ensureElements();
   const { switchHandler, renameHandler, deleteHandler } = handlers;
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
   
-  // --- CHANGE: Reduced padding from py-3 to py-2 ---
   link.className = 'group relative flex items-start justify-between px-3 py-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
   
-  // --- CHANGE: Updated innerHTML for title and timestamp ---
   link.innerHTML = `
     <div class="flex-1 min-w-0 pr-8">
-        <!-- --- CHANGE: Use font-medium instead of font-normal --- -->
         <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
         <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
             ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
@@ -307,41 +275,34 @@ export function renderConversationLink(convo, handlers) {
        <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
     </button>
   `;
-  // --- END MODIFICATION ---
   
-  // --- START: New Mobile Long-Press Logic ---
   let longPressTimer = null;
   let isLongPress = false;
   const longPressDuration = 500; // 500ms for a long press
 
   const handleTouchStart = (e) => {
-    isLongPress = false; // Reset on new touch
+    isLongPress = false;
     
-    // Start the timer
     longPressTimer = setTimeout(() => {
-      isLongPress = true; // Flag as a long press
+      isLongPress = true;
       
       const actionButton = link.querySelector('button[data-action="menu"]');
       if (!actionButton) return;
 
-      // Prevent context menu from opening
       e.preventDefault(); 
-      e.stopPropagation(); // Stop link click
+      e.stopPropagation();
       
-      // Vibrate for haptic feedback if available
       if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(50); // 50ms vibration
+        window.navigator.vibrate(50);
       }
       
-      // If a menu is open, close it.
       if (openDropdown) {
         closeAllConvoMenus();
-        return; // This was a click to close
+        return;
       }
 
-      // Create and show a new menu
       const menu = createDropdownMenu(convo.id, handlers);
-      positionDropdown(menu, actionButton); // Use existing position logic
+      positionDropdown(menu, actionButton);
       document.body.appendChild(menu);
       openDropdown = menu;
 
@@ -355,34 +316,29 @@ export function renderConversationLink(convo, handlers) {
     }
     
     if (isLongPress) {
-      e.preventDefault(); // Prevent the 'click' event from firing after a long press
+      e.preventDefault();
       e.stopPropagation();
     }
   };
 
   const handleTouchMove = () => {
-    // If finger moves, cancel the long press
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
   };
 
-  link.addEventListener('touchstart', handleTouchStart, { passive: false }); // Need passive:false to preventDefault
+  link.addEventListener('touchstart', handleTouchStart, { passive: false });
   link.addEventListener('touchend', handleTouchEnd);
-  link.addEventListener('touchcancel', handleTouchMove); // Also cancel on touchcancel
-  link.addEventListener('touchmove', handleTouchMove); // Also cancel on move
+  link.addEventListener('touchcancel', handleTouchMove);
+  link.addEventListener('touchmove', handleTouchMove);
 
-  // Prevent default context menu (right-click) which can interfere
   link.addEventListener('contextmenu', (e) => {
       e.preventDefault();
   });
-  // --- END: New Mobile Long-Press Logic ---
   
-  // --- MODIFICATION: Updated event listener logic ---
   link.addEventListener('click', (e) => {
     if (isLongPress) {
-        // If it was a long press, don't do *anything* on the click event
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -391,27 +347,23 @@ export function renderConversationLink(convo, handlers) {
     const actionButton = e.target.closest('button[data-action="menu"]');
 
     if (actionButton) {
-      // Clicked the ... button
       e.preventDefault();
       e.stopPropagation();
       
-      // If a menu is open, close it.
       if (openDropdown) {
         closeAllConvoMenus();
-        return; // This was a click to close
+        return;
       }
 
-      // Create and show a new menu
       const menu = createDropdownMenu(convo.id, handlers);
       positionDropdown(menu, actionButton);
       document.body.appendChild(menu);
       openDropdown = menu;
       
     } else {
-      // Clicked the link itself, not the menu button
       e.preventDefault();
       closeAllConvoMenus();
-      if (window.innerWidth < 768) closeSidebar(); // Close sidebar on mobile nav
+      if (window.innerWidth < 768) closeSidebar();
       switchHandler(convo.id);
     }
   });
@@ -419,8 +371,7 @@ export function renderConversationLink(convo, handlers) {
 }
 
 export function displaySimpleGreeting(firstName) {
-  _ensureElements(); // ADDED
-  // Ensure no other greeting exists to avoid duplicates
+  _ensureElements();
   const existingGreeting = elements.chatWindow.querySelector('.simple-greeting');
   if (existingGreeting) existingGreeting.remove();
 
@@ -431,8 +382,7 @@ export function displaySimpleGreeting(firstName) {
 }
 
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
-  _ensureElements(); // ADDED
-  // When a real message is displayed, remove both the empty state and the simple greeting
+  _ensureElements();
   const emptyState = elements.chatWindow.querySelector('.empty-state-container');
   if (emptyState) emptyState.remove();
   const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
@@ -450,7 +400,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageDiv.className = `message ${sender}`;
 
   if (sender === 'ai') {
-    // --- MODIFICATION: Moved .meta inside .chat-bubble ---
     messageDiv.innerHTML = `
       <div class="ai-avatar">
         <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
@@ -463,14 +412,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       </div>
     `;
     const bubble = messageDiv.querySelector('.chat-bubble');
-    // Ensure text is treated as a string before parsing
-    // Insert content *before* the meta div
     bubble.insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(String(text ?? ''))));
   } else {
-    // Ensure text is treated as a string before parsing
     const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
     const avatarUrl = options.avatarUrl || `https'://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
-    // --- MODIFICATION: Moved .meta inside .chat-bubble ---
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
            <div class="chat-bubble">
@@ -519,7 +464,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 }
 
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
-    _ensureElements(); // ADDED
+    _ensureElements();
     const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageContainer) return;
 
@@ -545,7 +490,7 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 }
 
 export function showLoadingIndicator() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   const emptyState = elements.chatWindow.querySelector('.empty-state-container');
   if (emptyState) emptyState.remove();
   const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
@@ -572,7 +517,7 @@ export function showLoadingIndicator() {
 }
 
 export function showToast(message, type = 'info', duration = 3000) {
-  _ensureElements(); // ADDED
+  _ensureElements();
   if (activeToast) activeToast.remove();
   const toast = document.createElement('div');
   const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600' };
@@ -589,7 +534,7 @@ export function showToast(message, type = 'info', duration = 3000) {
 }
 
 function setupModal(payload) {
-    _ensureElements(); // ADDED
+    _ensureElements();
     const container = elements.conscienceDetails;
     if (!container) return;
     container.innerHTML = ''; 
@@ -616,7 +561,7 @@ function setupModal(payload) {
 }
 
 export function showModal(kind, data) {
-  _ensureElements(); // ADDED
+  _ensureElements();
   if (kind === 'conscience') {
     const payload = data || { ledger: [], profile: null, values: [], spirit_score: null, spirit_scores_history: [] };
     setupModal(payload);
@@ -626,11 +571,10 @@ export function showModal(kind, data) {
   } else if (kind === 'settings') {
     // data = { user, profiles, models, handlers }
     renderSettingsProfileTab(data.profiles.available, data.profiles.active_profile_key, data.handlers.profile);
-    renderSettingsModelsTab(data.models, data.user, data.handlers.models); // Pass available models array directly
+    renderSettingsModelsTab(data.models, data.user, data.handlers.models);
     renderSettingsDashboardTab();
     renderSettingsUserTab(data.handlers.theme, data.handlers.logout, data.handlers.delete);
     elements.settingsModal.classList.remove('hidden');
-  // --- NEW: Cases for new modals ---
   } else if (kind === 'rename') {
     // data = { oldTitle }
     if (elements.renameInput) {
@@ -643,43 +587,30 @@ export function showModal(kind, data) {
     }
   } else if (kind === 'delete-convo') {
     elements.deleteConvoModal.classList.remove('hidden');
-  // --- END NEW ---
   }
   
   elements.modalBackdrop.classList.remove('hidden');
 }
 
 export function closeModal() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   elements.modalBackdrop.classList.add('hidden');
   elements.conscienceModal.classList.add('hidden');
   elements.deleteAccountModal.classList.add('hidden');
   elements.settingsModal.classList.add('hidden');
-  elements.dashboardView.classList.add('hidden'); // NEW: Also hide dashboard view
-  // --- NEW: Hide new modals ---
+  elements.dashboardView.classList.add('hidden');
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
-  // --- END NEW ---
 
-    // MODIFICATION: Reset modal size, overflow, nav visibility, and back button when closed
   if (elements.settingsModal) {
-    // Re-add defaults, ensure specific height is removed
     elements.settingsModal.classList.add('max-w-3xl'); 
+    elements.settingsModal.classList.remove('max-w-5xl');
+    elements.settingsModal.classList.remove('w-[1024px]');
+    elements.settingsModal.classList.remove('h-[760px]');
     
-    // Remove dashboard-specific sizes
-    elements.settingsModal.classList.remove('max-w-5xl'); // This is the old class
-    elements.settingsModal.classList.remove('w-[1024px]'); // This is the new class
-    elements.settingsModal.classList.remove('h-[760px]'); // This is the new class
-    
-    // Ensure nav is visible and content area is reset on close
-    const modalNav = elements.settingsModal.querySelector('nav');
     const modalContentArea = elements.settingsModal.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
-    // modalNav?.classList.remove('md:hidden'); // MOD: No longer hidden
-    // modalContentArea?.classList.remove('md:w-full'); // MOD: No longer full-width
     modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
     modalContentArea?.classList.remove('overflow-y-visible'); 
-    // elements.settingsTabDashboard?.classList.remove('w-full'); // No longer needed
-    // elements.dashboardBackButton?.classList.add('hidden'); // Button is no longer in modal
   }
 }
 
@@ -853,12 +784,12 @@ function copyAuditToClipboard(payload) {
 }
 
 export function scrollToBottom() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 
 function maybeInsertDayDivider(date) {
-  _ensureElements(); // ADDED
+  _ensureElements();
   const key = date.toLocaleDateString();
   if (key !== lastRenderedDay) {
     lastRenderedDay = key;
@@ -871,7 +802,7 @@ function maybeInsertDayDivider(date) {
 
 function makeCopyButton(text) {
   const btn = document.createElement('button');
-  btn.className = 'meta-btn p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md'; // Added some padding/styling
+  btn.className = 'meta-btn p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md';
   btn.title = 'Copy Text';
   
   const icon = `<svg class="w-4 h-4 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
@@ -890,7 +821,7 @@ function makeCopyButton(text) {
 }
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
-  _ensureElements(); // ADDED
+  _ensureElements();
   const existingEmptyState = document.querySelector('.empty-state-container');
   if (existingEmptyState) {
     existingEmptyState.remove();
@@ -927,16 +858,13 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
 }
 
 export function resetChatView() {
-  _ensureElements(); // ADDED
+  _ensureElements();
   lastRenderedDay = '';
   while (elements.chatWindow.firstChild) {
     elements.chatWindow.removeChild(elements.chatWindow.firstChild);
   }
 }
 
-// --- 
-// --- THIS IS THE MODIFIED FUNCTION ---
-// ---
 export function setActiveConvoLink(id) {
   _ensureElements();
   document.querySelectorAll('#convo-list > a').forEach(link => {
@@ -944,49 +872,32 @@ export function setActiveConvoLink(id) {
     const title = link.querySelector('.convo-title');
     const timestamp = link.querySelector('.convo-timestamp');
 
-    // --- NEW BOLDER THEME ---
-    // Active classes
-    link.classList.toggle('bg-green-600', isActive); // Strong green bg
-    link.classList.toggle('text-white', isActive); // White text
-
-    // Dark mode active classes (same, but explicit)
+    link.classList.toggle('bg-green-600', isActive);
+    link.classList.toggle('text-white', isActive);
     link.classList.toggle('dark:bg-green-600', isActive);
     link.classList.toggle('dark:text-white', isActive);
-
-    // Inactive classes (default text color)
     link.classList.toggle('text-neutral-900', !isActive);
     link.classList.toggle('dark:text-white', !isActive);
-
-    // Hover classes (only for inactive)
     link.classList.toggle('hover:bg-neutral-200', !isActive);
     link.classList.toggle('dark:hover:bg-neutral-800', !isActive);
     
-    // --- CHANGE: Make inactive bold (medium) and active bolder (semibold) ---
-    title?.classList.toggle('font-semibold', isActive); // Use semibold for active
-    title?.classList.toggle('font-medium', !isActive); // Use medium for inactive
-    // --- END CHANGE ---
+    title?.classList.toggle('font-semibold', isActive);
+    title?.classList.toggle('font-medium', !isActive);
 
-    // Timestamp color
     if (timestamp) {
-      // Active timestamp color (light green)
       timestamp.classList.toggle('text-green-100', isActive);
       timestamp.classList.toggle('dark:text-green-100', isActive);
       
-      // Inactive timestamp color (default gray)
       timestamp.classList.toggle('text-neutral-500', !isActive);
       timestamp.classList.toggle('dark:text-neutral-400', !isActive);
     }
   });
 }
-// --- 
-// --- END OF MODIFIED FUNCTION ---
-// ---
 
 
 // Handles switching tabs in the settings modal
 export function setupSettingsTabs() {
-    _ensureElements(); // ADDED
-    // MODIFICATION: Removed dashboard from standard tab/panel arrays
+    _ensureElements();
     const tabs = [elements.settingsNavProfile, elements.settingsNavModels, elements.settingsNavUser];
     const panels = [elements.settingsTabProfile, elements.settingsTabModels, elements.settingsTabUser];
     
@@ -994,7 +905,7 @@ export function setupSettingsTabs() {
     const modalContentArea = settingsModal?.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
 
     tabs.forEach((tab, index) => {
-        if (!tab) return; // Add guard clause
+        if (!tab) return;
         tab.addEventListener('click', () => {
             tabs.forEach(t => t?.classList.remove('active'));
             tab.classList.add('active');
@@ -1004,33 +915,26 @@ export function setupSettingsTabs() {
                 panels[index].classList.remove('hidden');
             }
 
-            // MODIFICATION: All resizing logic is REMOVED from here
-            // Reset modal to default size (in case it was changed, though it shouldn't be)
             settingsModal.classList.remove('max-w-5xl'); 
             settingsModal.classList.remove('w-[1024px]');
             settingsModal.classList.remove('h-[760px]'); 
             settingsModal.classList.add('max-w-3xl'); 
             
-            // Make overflow scroll
             modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
             modalContentArea?.classList.remove('overflow-y-visible'); 
         });
     });
 
-    // NEW: Add separate click handler for the Dashboard "tab"
     if (elements.settingsNavDashboard) {
         elements.settingsNavDashboard.addEventListener('click', () => {
-            // Don't treat it like a tab, treat it like a modal swap
             elements.settingsModal.classList.add('hidden');
-            elements.modalBackdrop.classList.add('hidden'); // MODIFICATION: Hide backdrop
+            elements.modalBackdrop.classList.add('hidden');
             elements.dashboardView.classList.remove('hidden');
             
-            // Ensure iframe is loaded
             renderSettingsDashboardTab(); 
         });
     }
     
-    // Reset to the first tab by default
     if (tabs[0]) {
       tabs[0].click();
     }
@@ -1038,7 +942,7 @@ export function setupSettingsTabs() {
 
 // Renders the "Ethical Profile" tab
 export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange) {
-  _ensureElements(); // ADDED
+  _ensureElements();
     const container = elements.settingsTabProfile;
     if (!container) return;
     container.innerHTML = `
@@ -1060,7 +964,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     container.querySelectorAll('input[name="ethical-profile"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             onProfileChange(e.target.value);
-            // Visually update selection immediately
             container.querySelectorAll('label').forEach(label => {
                 label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
                 label.classList.add('border-neutral-300', 'dark:border-neutral-700');
@@ -1074,7 +977,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
 
 // Renders the "AI Models" tab
 export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
-    _ensureElements(); // ADDED
+    _ensureElements();
     const container = elements.settingsTabModels;
     if (!container) return;
     
@@ -1116,15 +1019,12 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
 
 // Renders the Dashboard tab content
 export function renderSettingsDashboardTab() {
-    _ensureElements(); // ADDED
-    // MODIFICATION: Target the new fullscreen container
+    _ensureElements();
     const container = elements.dashboardIframeContainer;
     if (!container) return;
 
-    // MODIFICATION: Only add the iframe if it doesn't already exist
     if (container.querySelector('iframe')) return;
 
-    // MODIFICATION: Create and append iframe instead of using innerHTML
     const iframe = document.createElement('iframe');
     iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
     iframe.className = "w-full h-full border-0";
@@ -1136,7 +1036,7 @@ export function renderSettingsDashboardTab() {
 
 // Renders the "Profile" tab
 export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
-    _ensureElements(); // ADDED
+    _ensureElements();
     const container = elements.settingsTabUser;
     if (!container) return;
     container.innerHTML = `
