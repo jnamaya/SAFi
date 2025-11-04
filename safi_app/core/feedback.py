@@ -63,7 +63,7 @@ def build_spirit_feedback(
     # Construct a single, conversational paragraph
     parts = []
     
-    if top_score > 0.1: # Only report if the strength is meaningful
+    if top_score >= 0.65: # Only report if the strength is actually 'good' or better
         # --- MODIFIED LINE ---
         strength_part = f"Your core strength is '{top_nm}' (score: {top_score:.2f} - {top_label})"
         if top_tr:
