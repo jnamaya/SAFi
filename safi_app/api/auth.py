@@ -14,7 +14,6 @@ auth_bp = Blueprint('auth', __name__)
 # UPDATED: Using the correct 'safi.selfalignmentframework.com' subdomain and HTTPS.
 # ENSURE THIS EXACT STRING IS REGISTERED IN GOOGLE CLOUD CONSOLE.
 WEB_REDIRECT_URI = "https://safi.selfalignmentframework.com/api/callback"
-WEB_REDIRECT_URI = "https://chat.selfalignmentframework.com/api/callback"
 # -------------------------------------------------------
 
 
