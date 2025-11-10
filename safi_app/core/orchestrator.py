@@ -4,17 +4,13 @@ import threading
 import uuid
 import asyncio
 import numpy as np
-# import html # <-- REMOVED this import
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
-import httpx  # <-- Already installed
-import re  # <-- NEW: For cleaning text
-from bs4 import BeautifulSoup  # <-- NEW: For parsing HTML
-
-# --- REMOVED: ET, catholic_mass_readings ---
-
+import httpx
+import re
+from bs4 import BeautifulSoup
 
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
@@ -25,13 +21,9 @@ from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from ..utils import dict_sha256
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
-# --- ADDED: Import for the new plugins ---
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 from .plugins.fiduciary_data import handle_fiduciary_commands
 
-
-# Configure basic logging
-# In a real production app, this would be configured in the main app entry point.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class SAFi:
@@ -52,7 +44,6 @@ class SAFi:
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
         
-        # Initialize all clients
         self.clients = {}
         
         if config.GROQ_API_KEY:
@@ -60,7 +51,6 @@ class SAFi:
                 api_key=config.GROQ_API_KEY,
                 base_url="https://api.groq.com/openai/v1",
             )
-            # This one client is synchronous and only for summarization
             self.groq_client_sync = OpenAI(
                 api_key=config.GROQ_API_KEY,
                 base_url="https://api.groq.com/openai/v1",
@@ -75,7 +65,6 @@ class SAFi:
         if config.GEMINI_API_KEY:
             try:
                 genai.configure(api_key=config.GEMINI_API_KEY)
-                # We'll create the GenerativeModel instances on-the-fly in the faculty
                 self.clients["gemini"] = "configured"
             except Exception as e:
                 self.log.warning(f"Gemini API key configuration failed: {e}. Gemini models will be unavailable.")
@@ -118,14 +107,14 @@ class SAFi:
 
         self.intellect_engine = IntellectEngine(
             intellect_client,
-            provider_name=intellect_provider, # Pass provider name
+            provider_name=intellect_provider,
             model=intellect_model_to_use, 
             profile=self.profile, 
             prompt_config=self.prompts["intellect_engine"]
         )
         self.will_gate = WillGate(
             will_client, 
-            provider_name=will_provider, # Pass provider name
+            provider_name=will_provider,
             model=will_model_to_use, 
             values=self.values, 
             profile=self.profile, 
@@ -133,7 +122,7 @@ class SAFi:
         )
         self.conscience = ConscienceAuditor(
             conscience_client, 
-            provider_name=conscience_provider, # Pass provider name
+            provider_name=conscience_provider,
             model=conscience_model_to_use, 
             values=self.values, 
             profile=self.profile, 
@@ -160,11 +149,8 @@ class SAFi:
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
 
-    # --- REMOVED _generate_dynamic_suggestion METHOD ---
-
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         
-        # This will hold all data gathered from plugins
         plugin_context_data = {}
 
         # -----------------------------------------------------------------
@@ -172,7 +158,6 @@ class SAFi:
         # -----------------------------------------------------------------
         
         # 1. Check for Bible Scholar commands
-        # We only care about the data. The prompt returned is the original.
         _, readings_data = await handle_bible_scholar_commands(
             user_prompt, 
             self.active_profile_name, 
@@ -182,24 +167,144 @@ class SAFi:
             plugin_context_data.update(readings_data)
             
         # 2. Check for Fiduciary commands
-        # --- THIS IS THE FIX ---
-        # Get the specific 'groq' client for the plugin's helper LLM
         groq_client = self.clients.get("groq")
         
-        # Call with the correct 4 arguments
         _, fiduciary_data = await handle_fiduciary_commands(
             user_prompt,
             self.active_profile_name,
             self.log,
-            groq_client # Pass the groq client, not the intellect's client
+            groq_client
         )
         if fiduciary_data:
             plugin_context_data.update(fiduciary_data)
         
-        # The 'user_prompt' variable is the original, unmodified prompt.
-        # 'plugin_context_data' holds all retrieved data.
+        # -----------------------------------------------------------------
+        # --- NEW: Handle Stock Data with Hybrid Display ---
+        # -----------------------------------------------------------------
+        message_id = str(uuid.uuid4())
+        
+        if "stock_data" in plugin_context_data:
+            stock_data = plugin_context_data["stock_data"]
             
-        # --- END OF COMMANDS BLOCK ---
+            # Helper to format values
+            def format_stock_value(key, value):
+                if value is None: return "N/A"
+                try:
+                    if key == "Dividend Yield":
+                        return f"{float(value) * 100:.2f}%"
+                    if key in ["P/E Ratio (TTM)", "Beta (5Y Monthly)"]:
+                        return f"{float(value):.2f}"
+                    if key in ["Market Cap", "Volume", "Average Volume"]:
+                         num = int(value)
+                         if num > 1_000_000_000_000: return f"{num / 1_000_000_000_000:.2f}T"
+                         if num > 1_000_000_000: return f"{num / 1_000_000_000:.2f}B"
+                         if num > 1_000_000: return f"{num / 1_000_000:.2f}M"
+                         return f"{num:,}"
+                    if key == "Current Price":
+                        return f"{float(value):,.2f}"
+                    if key == "Price Change":
+                        change = float(value)
+                        sign = "+" if change > 0 else ""
+                        return f"{sign}{change:,.2f}"
+                except (ValueError, TypeError):
+                    pass # Fallback to string
+                return str(value)
+            
+            # --- New Text-Based Formatting ---
+            
+            company = stock_data.get('Company Name', 'N/A')
+            ticker = stock_data.get('Ticker Symbol', 'N/A')
+            price_val = stock_data.get('Current Price')
+            prev_close_val = stock_data.get('Previous Close') # Key for "yesterday's price"
+            volume_val = stock_data.get('Volume')
+            avg_volume_val = stock_data.get('Average Volume')
+            beta_val = stock_data.get('Beta (5Y Monthly)')
+            
+            price_str = format_stock_value('Current Price', price_val)
+            prev_close_str = format_stock_value('Current Price', prev_close_val) # Use same formatting as price
+            volume_str = format_stock_value('Volume', volume_val)
+            avg_volume_str = format_stock_value('Average Volume', avg_volume_val)
+            beta_str = format_stock_value('Beta (5Y Monthly)', beta_val)
+            
+            output_lines = [f"Here is the stock information for {company} ({ticker}):"]
+            
+            if price_str != "N/A":
+                output_lines.append(f"- **Today's Price:** ${price_str}")
+            
+            if prev_close_str != "N/A":
+                output_lines.append(f"- **Yesterday's Close:** ${prev_close_str}")
+
+            if volume_str != "N/A":
+                output_lines.append(f"- **Volume:** {volume_str}")
+            
+            if avg_volume_str != "N/A":
+                output_lines.append(f"- **Average Volume:** {avg_volume_str}")
+            
+            if beta_str != "N/A":
+                output_lines.append(f"- **Beta (5Y Monthly):** {beta_str}")
+            
+            disclaimer = "\n\n*This is not financial advice. For investment decisions, please consult with a licensed financial advisor.*"
+
+            data_text = "\n".join(output_lines) + disclaimer
+            
+            # Get memory for audit/summarization
+            memory_summary = db.fetch_conversation_summary(conversation_id)
+            temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
+            if temp_spirit_memory is None:
+                dim = max(len(self.values), 1)
+                temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)}
+
+            # Set final output to just the data table
+            final_output = data_text
+            
+            # Define variables for audit thread
+            r_t = "Stock data display."
+            retrieved_context = ""
+            spirit_feedback = None # Set to None as it's no longer generated
+            
+            # Save to database
+            history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
+            new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
+            
+            db.insert_memory_entry(conversation_id, "user", user_prompt)
+            db.insert_memory_entry(conversation_id, "ai", final_output, message_id=message_id, audit_status="pending")
+            
+            # Run audit in background
+            snapshot = {
+                "t": int(temp_spirit_memory["turn"]) + 1,
+                "x_t": user_prompt,
+                "a_t": final_output,
+                "r_t": r_t,
+                "memory_summary": memory_summary,
+                "retrieved_context": retrieved_context
+            }
+            threading.Thread(
+                target=self._run_audit_thread,
+                args=(snapshot, "approve", "Stock data display", message_id, spirit_feedback),
+                daemon=True
+            ).start()
+            
+            if hasattr(self, 'groq_client_sync'):
+                threading.Thread(
+                    target=self._run_summarization_thread,
+                    args=(conversation_id, memory_summary, user_prompt, final_output),
+                    daemon=True
+                ).start()
+            
+            return {
+                "finalOutput": final_output,
+                "newTitle": new_title,
+                "willDecision": "approve",
+                "willReason": "Stock data display",
+                "activeProfile": self.active_profile_name,
+                "activeValues": self.values,
+                "conscienceLedger": [],
+                "messageId": message_id
+            }
+        
+        # -----------------------------------------------------------------
+        # --- END OF STOCK DATA HANDLING ---
+        # --- Continue with normal processing for non-stock queries ---
         # -----------------------------------------------------------------
         
         memory_summary = db.fetch_conversation_summary(conversation_id)
@@ -216,15 +321,12 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
-        # --- MODIFIED CALL ---
-        # Pass the merged plugin_context_data to the Intellect Engine
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=user_prompt, 
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
-            plugin_context=plugin_context_data # <-- Pass collected data
+            plugin_context=plugin_context_data
         )
-        message_id = str(uuid.uuid4())
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
         new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
@@ -241,34 +343,24 @@ class SAFi:
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
         if D_t == "violation":
-
-            # 1. Log the suppression
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
-
-            # 2. Define the static parts of the message
             static_header = "🛑 **The answer was blocked**"
-            # 3. Build the new user-friendly Markdown message
-            # E_t will now be a third-person sentence like:
-            # "The response presented inaccurate biblical text..."
             suppression_message = f"""{static_header}
 ---
 
 **Reason:** {E_t.strip()} """
 
-            # 4. Log and return the plain text/Markdown response
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete")
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "userPrompt": user_prompt,
-                "finalOutput": suppression_message, # Log the plain text
+                "finalOutput": suppression_message,
                 "intellectDraft": a_t,
                 "willDecision": D_t,
                 "willReason": E_t,
                 "conscienceLedger": [],
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
-
-        # --- END OF UPDATED BLOCK ---
 
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
         
@@ -363,7 +455,7 @@ class SAFi:
         
         try:
             system_prompt = self.prompts["summarizer"]["system_prompt"]
-            content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\\nUser: {user_prompt}\\nAI: {ai_response}\\n\\nUPDATED MEMORY:")
+            content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
             
             response = self.groq_client_sync.chat.completions.create(
                 model=getattr(self.config, "SUMMARIZER_MODEL"),
