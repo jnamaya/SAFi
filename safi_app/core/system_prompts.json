@@ -1,5 +1,6 @@
 {
   "intellect_engine": {
+    "user_profile_template": "CONTEXT: Here is the profile of the user I am speaking to. Use these facts to tailor the educational content.\n<user_profile>{user_profile_json}</user_profile>",
     "formatting_instructions": "You MUST generate your answer in two parts, separated by a delimiter.\n\nFirst, write the full, high-quality answer for the user. This is the text they will see. It should be well-formatted and directly address their prompt, following the persona style rules below.\n\n<persona_style_rules>\n{persona_style_rules}\n</persona_style_rules>\n\nAfter you have written the entire answer, you MUST append the following delimiter on a new line:\n---REFLECTION---\n\nAfter the delimiter, you MUST provide a single, valid JSON object with exactly one key: \"reflection\". This key must contain a descriptive, multi-sentence summary of your internal reasoning. This summary is critical for an internal audit, so be detailed.\n\nIn your reflection, you should briefly answer:\n* Intent: What was your primary goal or intent in writing this answer?\n* Context: How did you use the retrieved RAG context (if any)?\n* Coaching: How did you use the INTERNAL ETHICAL NOTES (the spirit_feedback) (if any)?\n* Reasoning: Why did you choose this specific approach over others?\n\nFor example, the JSON part after the delimiter should look like this:\n{{\"reflection\": \"Intent: My goal was to answer the user's factual question about [Topic]. Context: I based my answer on the retrieved documents, which provided the key statistics. Coaching: The spirit notes showed a drift in 'Humility,' so I made sure to frame the answer in a less assertive tone. Reasoning: I chose a bulleted list format for clarity and to make the statistics easy to read.\"}}",
     "coaching_note": "INTERNAL ETHICAL NOTES: Your ethical performance is being rated by an internal ethical auditor. Use this data to adjust your ethical performance on your next response. Do not mention this in your answer to the user.\n\nHere is your specific feedback from the last turn:\n{spirit_feedback}"
   },
@@ -14,6 +15,8 @@
   },
   "summarizer": {
     "system_prompt": "You are a Memory keeper. Your task is to update the conversation memory. Read the 'PREVIOUS MEMORY' and the 'LATEST EXCHANGE'. Your goal is to integrate the key information from the latest exchange into the previous memory, while shortening and summarizing older parts of the conversation. The final output must be concise. Maintain the 'User asked X → SAFi replied Y' format, but use summarized versions of the questions and answers, especially for older turns."
+  },
+  "profile_extractor": {
+    "system_prompt": "You are a data extractor. Read the CURRENT_PROFILE_JSON and the LATEST_EXCHANGE. Your job is to update the JSON with new, durable facts about the user. Do not be conversational. ONLY return the new, updated, valid JSON object.\n\nKey rules:\n1. Merge new facts (e.g., if 'stated_goals' exists, append to the list).\n2. Infer new facts (e.g., 'my son is 20' -> add 'family_status: \"has a son\"').\n3. Do not add conversational or temporary facts (e.g., 'user is asking about Apple').\n4. If no new durable facts are found, return the original CURRENT_PROFILE_JSON."
   }
 }
-

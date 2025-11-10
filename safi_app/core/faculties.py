@@ -82,6 +82,7 @@ class IntellectEngine:
         self,
         *,
         user_prompt: str,
+        user_profile_json: str, # --- THIS IS THE FIX ---
         memory_summary: str,
         spirit_feedback: str,
         plugin_context: Optional[Dict[str, Any]] = None, # <-- Accept plugin data
@@ -183,10 +184,19 @@ class IntellectEngine:
                 retrieved_context=full_context_injection if full_context_injection else "[NO DOCUMENTS FOUND]"
             )
 
-        memory_injection = (
-            f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
-            f"<summary>{memory_summary}</summary>" if memory_summary else ""
-        )
+        # --- ADDED: Inject the UserProfile (Long-Term Memory) ---
+        profile_injection = ""
+        if user_profile_json and user_profile_json.strip() and user_profile_json.strip() != "{}":
+            profile_template = self.prompt_config.get("user_profile_template", "")
+            if profile_template:
+                profile_injection = profile_template.format(user_profile_json=user_profile_json)
+
+        # --- Inject the ConversationSummary (Short-Term Memory) ---
+        memory_injection = ""
+        if memory_summary:
+            memory_template = self.prompt_config.get("conversation_summary_template", "")
+            if memory_template:
+                memory_injection = memory_template.format(memory_summary=memory_summary)
 
         spirit_injection = ""
         if spirit_feedback:
@@ -206,7 +216,7 @@ class IntellectEngine:
 
         # Build system prompt
         system_prompt = "\n\n".join(
-            filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
+            filter(None, [worldview, profile_injection, memory_injection, spirit_injection, formatting_instructions])
         )
         
         # This will be passed to the Conscience for auditing

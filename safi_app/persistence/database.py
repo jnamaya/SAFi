@@ -140,6 +140,19 @@ def init_db():
             )
         ''')
         
+        # --- ADDED: Create the user_profiles table for long-term memory ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id VARCHAR(255) NOT NULL,
+                profile_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id)
+            )
+        ''')
+        logging.info("Checked/Created 'user_profiles' table.")
+        # --- END ADDITION ---
+        
         logging.info("MySQL database schema checked/initialized successfully.")
         conn.commit()
     except mysql.connector.Error as err:
@@ -219,6 +232,10 @@ def get_user_details(user_id: str) -> Optional[Dict[str, Any]]:
             conn.close()
 
 def update_user_profile(user_id: str, profile_name: str):
+    """
+    Updates the user's ACTIVE PROFILE (e.g., 'fiduciary', 'philosopher').
+    This is separate from their profile_memory.
+    """
     conn = None
     cursor = None
     try:
@@ -543,3 +560,71 @@ def set_conversation_title_from_first_message(conversation_id: str, message: str
     new_title = (message[:50] + '...') if len(message) > 50 else message
     rename_conversation(conversation_id, new_title)
     return new_title
+
+# --- ADDED: New functions for persistent User Profile Memory ---
+
+def fetch_user_profile_memory(user_id: str) -> str:
+    """
+    Fetches the persistent user profile JSON string for a given user_id.
+    Returns an empty JSON string ("{}") if not found or on error.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        # Assuming a dictionary cursor to get 'profile_json' by name
+        cursor = conn.cursor(dictionary=True) 
+        
+        query = "SELECT profile_json FROM user_profiles WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        
+        row = cursor.fetchone()
+        
+        if row and row.get('profile_json'):
+            return row['profile_json']
+        else:
+            # No profile found, return empty JSON
+            return "{}"
+            
+    except Exception as e:
+        # Log the error if possible, but return safely
+        print(f"ERROR: Failed to fetch user profile for {user_id}: {e}", flush=True)
+        return "{}" # Always return a valid JSON string
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+def upsert_user_profile_memory(user_id: str, profile_json: str):
+    """
+    Inserts or updates the persistent user profile JSON string for a given user_id.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Use INSERT ... ON DUPLICATE KEY UPDATE to handle both cases
+        # This is for MySQL.
+        query = """
+            INSERT INTO user_profiles (user_id, profile_json)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE profile_json = VALUES(profile_json)
+        """
+        
+        cursor.execute(query, (user_id, profile_json))
+        conn.commit()
+            
+    except Exception as e:
+        # Log the error
+        print(f"ERROR: Failed to update user profile for {user_id}: {e}", flush=True)
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+# --- END ADDITION ---

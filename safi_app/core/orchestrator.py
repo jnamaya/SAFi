@@ -152,6 +152,14 @@ class SAFi:
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         
         plugin_context_data = {}
+        message_id = str(uuid.uuid4())
+
+        # --- Fetch long-term user profile memory ---
+        try:
+            current_profile_json = db.fetch_user_profile_memory(user_id)
+        except Exception as e:
+            self.log.error(f"Failed to fetch user profile memory for {user_id}: {e}")
+            current_profile_json = "{}" # Default to empty on error
 
         # -----------------------------------------------------------------
         # --- Handle Profile-Specific Commands (Plugin Chain) ---
@@ -179,132 +187,9 @@ class SAFi:
             plugin_context_data.update(fiduciary_data)
         
         # -----------------------------------------------------------------
-        # --- NEW: Handle Stock Data with Hybrid Display ---
-        # -----------------------------------------------------------------
-        message_id = str(uuid.uuid4())
-        
-        if "stock_data" in plugin_context_data:
-            stock_data = plugin_context_data["stock_data"]
-            
-            # Helper to format values
-            def format_stock_value(key, value):
-                if value is None: return "N/A"
-                try:
-                    if key == "Dividend Yield":
-                        return f"{float(value) * 100:.2f}%"
-                    if key in ["P/E Ratio (TTM)", "Beta (5Y Monthly)"]:
-                        return f"{float(value):.2f}"
-                    if key in ["Market Cap", "Volume", "Average Volume"]:
-                         num = int(value)
-                         if num > 1_000_000_000_000: return f"{num / 1_000_000_000_000:.2f}T"
-                         if num > 1_000_000_000: return f"{num / 1_000_000_000:.2f}B"
-                         if num > 1_000_000: return f"{num / 1_000_000:.2f}M"
-                         return f"{num:,}"
-                    if key == "Current Price":
-                        return f"{float(value):,.2f}"
-                    if key == "Price Change":
-                        change = float(value)
-                        sign = "+" if change > 0 else ""
-                        return f"{sign}{change:,.2f}"
-                except (ValueError, TypeError):
-                    pass # Fallback to string
-                return str(value)
-            
-            # --- New Text-Based Formatting ---
-            
-            company = stock_data.get('Company Name', 'N/A')
-            ticker = stock_data.get('Ticker Symbol', 'N/A')
-            price_val = stock_data.get('Current Price')
-            prev_close_val = stock_data.get('Previous Close') # Key for "yesterday's price"
-            volume_val = stock_data.get('Volume')
-            avg_volume_val = stock_data.get('Average Volume')
-            beta_val = stock_data.get('Beta (5Y Monthly)')
-            
-            price_str = format_stock_value('Current Price', price_val)
-            prev_close_str = format_stock_value('Current Price', prev_close_val) # Use same formatting as price
-            volume_str = format_stock_value('Volume', volume_val)
-            avg_volume_str = format_stock_value('Average Volume', avg_volume_val)
-            beta_str = format_stock_value('Beta (5Y Monthly)', beta_val)
-            
-            output_lines = [f"Here is the stock information for {company} ({ticker}):"]
-            
-            if price_str != "N/A":
-                output_lines.append(f"- **Today's Price:** ${price_str}")
-            
-            if prev_close_str != "N/A":
-                output_lines.append(f"- **Yesterday's Close:** ${prev_close_str}")
-
-            if volume_str != "N/A":
-                output_lines.append(f"- **Volume:** {volume_str}")
-            
-            if avg_volume_str != "N/A":
-                output_lines.append(f"- **Average Volume:** {avg_volume_str}")
-            
-            if beta_str != "N/A":
-                output_lines.append(f"- **Beta (5Y Monthly):** {beta_str}")
-            
-            disclaimer = "\n\n*This is not financial advice. For investment decisions, please consult with a licensed financial advisor.*"
-
-            data_text = "\n".join(output_lines) + disclaimer
-            
-            # Get memory for audit/summarization
-            memory_summary = db.fetch_conversation_summary(conversation_id)
-            temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
-            if temp_spirit_memory is None:
-                dim = max(len(self.values), 1)
-                temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)}
-
-            # Set final output to just the data table
-            final_output = data_text
-            
-            # Define variables for audit thread
-            r_t = "Stock data display."
-            retrieved_context = ""
-            spirit_feedback = None # Set to None as it's no longer generated
-            
-            # Save to database
-            history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
-            new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
-            
-            db.insert_memory_entry(conversation_id, "user", user_prompt)
-            db.insert_memory_entry(conversation_id, "ai", final_output, message_id=message_id, audit_status="pending")
-            
-            # Run audit in background
-            snapshot = {
-                "t": int(temp_spirit_memory["turn"]) + 1,
-                "x_t": user_prompt,
-                "a_t": final_output,
-                "r_t": r_t,
-                "memory_summary": memory_summary,
-                "retrieved_context": retrieved_context
-            }
-            threading.Thread(
-                target=self._run_audit_thread,
-                args=(snapshot, "approve", "Stock data display", message_id, spirit_feedback),
-                daemon=True
-            ).start()
-            
-            if hasattr(self, 'groq_client_sync'):
-                threading.Thread(
-                    target=self._run_summarization_thread,
-                    args=(conversation_id, memory_summary, user_prompt, final_output),
-                    daemon=True
-                ).start()
-            
-            return {
-                "finalOutput": final_output,
-                "newTitle": new_title,
-                "willDecision": "approve",
-                "willReason": "Stock data display",
-                "activeProfile": self.active_profile_name,
-                "activeValues": self.values,
-                "conscienceLedger": [],
-                "messageId": message_id
-            }
-        
-        # -----------------------------------------------------------------
-        # --- END OF STOCK DATA HANDLING ---
-        # --- Continue with normal processing for non-stock queries ---
+        # --- NOTE: The special `if "stock_data" in plugin_context_data:`
+        # --- block has been REMOVED.
+        # --- All plugin data now flows directly to the IntellectEngine.
         # -----------------------------------------------------------------
         
         memory_summary = db.fetch_conversation_summary(conversation_id)
@@ -325,7 +210,8 @@ class SAFi:
             user_prompt=user_prompt, 
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
-            plugin_context=plugin_context_data
+            plugin_context=plugin_context_data,
+            user_profile_json=current_profile_json
         )
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
@@ -372,10 +258,29 @@ class SAFi:
             "memory_summary": memory_summary,
             "retrieved_context": retrieved_context 
         }
-        threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         
+        # Run audit thread
+        threading.Thread(
+            target=self._run_audit_thread, 
+            args=(snapshot, D_t, E_t, message_id, spirit_feedback), 
+            daemon=True
+        ).start()
+        
+        # Run summarization thread
         if hasattr(self, 'groq_client_sync'):
-            threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
+            threading.Thread(
+                target=self._run_summarization_thread, 
+                args=(conversation_id, memory_summary, user_prompt, a_t), 
+                daemon=True
+            ).start()
+
+        # --- Run profile update thread ---
+        if hasattr(self, 'groq_client_sync'):
+            threading.Thread(
+                target=self._run_profile_update_thread,
+                args=(user_id, current_profile_json, user_prompt, a_t),
+                daemon=True
+            ).start()
 
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
@@ -423,7 +328,7 @@ class SAFi:
                 "p_t_vector": p_t.tolist(),
                 "mu_t_vector": mu_new.tolist(),
                 "memorySummary": snapshot.get("memory_summary") or "",
-                "spiritFeedback": spirit_feedback,
+                "spiritFeedback": spirit_feedback or "", # Ensure not None
                 "retrievedContext": snapshot.get("retrieved_context", "")
             }
             self._append_log(log_entry)
@@ -467,6 +372,46 @@ class SAFi:
             db.update_conversation_summary(conversation_id, new_summary)
         except Exception as e:
             self.log.warning(f"Summarization thread failed: {e}")
+
+    # --- New thread for updating user profile memory ---
+    def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
+        """
+        Runs the user profile extraction logic in a background thread.
+        """
+        if not hasattr(self, 'groq_client_sync'):
+            return
+        
+        try:
+            system_prompt = self.prompts.get("profile_extractor", {}).get("system_prompt")
+            if not system_prompt:
+                self.log.warning("No 'profile_extractor' prompt found. Skipping profile update.")
+                return
+
+            content = (
+                f"CURRENT_PROFILE_JSON:\n{current_profile_json}\n\n"
+                f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
+                f"UPDATED_PROFILE_JSON:"
+            )
+            
+            response = self.groq_client_sync.chat.completions.create(
+                model=getattr(self.config, "SUMMARIZER_MODEL"), # Re-use summarizer model
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
+                temperature=0.0,
+                response_format={"type": "json_object"},
+            )
+
+            new_profile_json = response.choices[0].message.content.strip()
+            
+            # Basic validation
+            try:
+                json.loads(new_profile_json)
+                db.upsert_user_profile_memory(user_id, new_profile_json)
+            except json.JSONDecodeError:
+                self.log.warning(f"Profile extractor did not return valid JSON: {new_profile_json}")
+
+        except Exception as e:
+            self.log.warning(f"Profile update thread failed: {e}")
+    # --- END ADDITION ---
 
     def _append_log(self, log_entry: Dict[str, Any]):
         """
