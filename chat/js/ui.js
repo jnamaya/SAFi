@@ -12,19 +12,65 @@ marked.setOptions({
   }
 });
 
+/**
+ * Maps a profile name to a static avatar image path.
+ * All paths are relative to the 'assets/' folder.
+ * @param {string | null} profileName The name of the ethical profile
+ * @returns {string} The path to the avatar image
+ */
+function getAvatarForProfile(profileName) {
+  // Use a simple name-to-file mapping
+  // These names MUST match the "name" field in your values.py
+  
+  // MODIFICATION: Trim and convert to lower case for a robust, case-insensitive check
+  const cleanName = profileName ? profileName.trim().toLowerCase() : null;
+
+  switch (cleanName) {
+    case 'the philosopher':
+      return 'assets/philosopher.svg';
+    case 'the fiduciary':
+      return 'assets/fiduciary.svg';
+    case 'the health navigator':
+      return 'assets/health_navigator.svg';
+    case 'the jurist':
+      return 'assets/jurist.svg';
+    case 'the bible scholar':
+      return 'assets/bible_scholar.svg';
+    case 'the safi guide':
+    default:
+      // Fallback for "The SAFi Guide", null, or unmatched profiles
+      return 'assets/safi.svg';
+  }
+}
+
 export let elements = {};
+let currentLoadingInterval = null; // (Task 1)
 
 // Initialization function to run after DOM is loaded
 function _initElements() {
   elements = {
     loginView: document.getElementById('login-view'),
     chatView: document.getElementById('chat-view'),
+    // MODIFICATION: 1.1. Added Control Panel View
+    controlPanelView: document.getElementById('control-panel-view'),
+    controlPanelBackButton: document.getElementById('control-panel-back-btn'),
+    cpNavProfile: document.getElementById('cp-nav-profile'),
+    cpNavModels: document.getElementById('cp-nav-models'),
+    cpNavDashboard: document.getElementById('cp-nav-dashboard'),
+    cpTabProfile: document.getElementById('cp-tab-profile'),
+    cpTabModels: document.getElementById('cp-tab-models'),
+    cpTabDashboard: document.getElementById('cp-tab-dashboard'),
+    // MODIFICATION: 3.1. Added App Settings tab elements
+    cpNavAppSettings: document.getElementById('cp-nav-app-settings'),
+    cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
+    // END MODIFICATION
+
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),
     chatWindow: document.getElementById('chat-window'),
     messageInput: document.getElementById('message-input'),
     sendButton: document.getElementById('send-button'),
-    chatTitle: document.getElementById('chat-title'),
+    // chatTitle element removed from here, it's fetched in updateChatTitle
     toastContainer: document.getElementById('toast-container'),
     modalBackdrop: document.getElementById('modal-backdrop'),
     conscienceModal: document.getElementById('conscience-modal'),
@@ -33,23 +79,10 @@ function _initElements() {
     conscienceDetails: document.getElementById('conscience-details'),
     closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
     
-    settingsModal: document.getElementById('settings-modal'),
-    closeSettingsModal: document.getElementById('close-settings-modal'),
-    
-    settingsNavProfile: document.getElementById('settings-nav-profile'),
-    settingsNavModels: document.getElementById('settings-nav-models'),
-    settingsNavDashboard: document.getElementById('settings-nav-dashboard'),
-    settingsTabDashboard: document.getElementById('settings-tab-dashboard'),
-    settingsNavUser: document.getElementById('settings-nav-user'),
+    // MODIFICATION: 1.1. Removed Settings Modal elements
+    // MODIFICATION: 1.2. Removed App Settings Modal elements (now part of CP)
 
-    settingsTabProfile: document.getElementById('settings-tab-profile'),
-    settingsTabModels: document.getElementById('settings-tab-models'),
-    settingsTabUser: document.getElementById('settings-tab-user'),
-
-    dashboardBackButton: document.getElementById('dashboard-back-button'),
-
-    dashboardView: document.getElementById('dashboard-view'),
-    dashboardIframeContainer: document.getElementById('dashboard-iframe-container'),
+    dashboardIframeContainer: document.getElementById('dashboard-iframe-container'), // This is inside cp-tab-dashboard now
 
     renameModal: document.getElementById('rename-modal'),
     renameInput: document.getElementById('rename-input'),
@@ -59,21 +92,14 @@ function _initElements() {
     deleteConvoModal: document.getElementById('delete-convo-modal'),
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
     cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
+
+    // MODIFICATION: 1.3. Added Active Profile Chip elements
+    activeProfileChip: document.getElementById('active-profile-chip'),
+    activeProfileChipMobile: document.getElementById('active-profile-chip-mobile'),
+    // END MODIFICATION
   };
 
-  if (elements.dashboardBackButton) {
-    elements.dashboardBackButton.addEventListener('click', () => {
-      if (elements.dashboardView) {
-        elements.dashboardView.classList.add('hidden');
-      }
-      if (elements.settingsModal) {
-        elements.settingsModal.classList.remove('hidden');
-      }
-      if (elements.modalBackdrop) { 
-        elements.modalBackdrop.classList.remove('hidden');
-      }
-    });
-  }
+  // MODIFICATION: 1.1. Removed dashboard back button listener (it's the main CP back button now)
 }
 
 
@@ -108,11 +134,27 @@ export function closeSidebar() {
   document.getElementById('sidebar-overlay')?.classList.add('hidden');
 }
 
-export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, settingsModalHandler) {
+// *** (Task 1) This function is correct and unchanged ***
+export function clearLoadingInterval() {
+  if (currentLoadingInterval) {
+    clearInterval(currentLoadingInterval);
+    currentLoadingInterval = null;
+  }
+}
+
+// MODIFICATION: 1.1/1.2. Changed signature, settingsModalHandler is no longer needed
+// MODIFICATION: 3.1. Changed signature, added themeHandler
+export function updateUIForAuthState(user, logoutHandler, deleteAccountHandler, themeHandler) {
   _ensureElements();
   if (user) {
+    // BUGFIX: 5.1. Add view toggling logic back
     elements.loginView.classList.add('hidden');
     elements.chatView.classList.remove('hidden');
+    if (elements.controlPanelView) elements.controlPanelView.classList.add('hidden');
+
+    // MODIFICATION: 3.2. Re-ordered sidebar template
+    const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
+    const name = user.name || user.email || 'User';
     
     elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
@@ -131,64 +173,53 @@ export function updateUIForAuthState(user, logoutHandler, profileChangeHandler, 
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>
+          
+          <!-- MODIFICATION: 3.2. New Chat button at top -->
           <div class="p-4 shrink-0">
             <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2.5 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
               New Chat
             </button>
           </div>
+           
           <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar min-h-0">
             <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>
           </nav>
+          
+          <!-- MODIFICATION: 3.2. User Profile and Control Panel at bottom -->
+          <!-- MODIFICATION: 4.1. Combined Profile and Settings Button -->
           <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
+            <!-- User Profile & Settings Button -->
+            <div class="flex items-center justify-between gap-3 min-w-0">
+              
+              <!-- Left Side: Avatar + Name -->
+              <div class="flex items-center gap-3 min-w-0 flex-1">
+                <img src="${pic}" alt="User Avatar" class="w-10 h-10 rounded-full">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold truncate">${name}</p>
+                  <p class="text-xs text-neutral-500 dark:text-neutral-400 truncate">${user.email}</p>
+                </div>
+              </div>
+
+              <!-- Right Side: Settings Icon Button -->
+              <button id="control-panel-btn" type="button" class="shrink-0 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors" aria-label="Open Control Panel">
+                <svg class="w-6 h-6 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </button>
+            </div>
+            
+            <!-- The original button is now removed -->
           </div>
         </aside>
     `;
-
-    const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
-    const name = user.name || user.email || 'User';
-    
-    document.getElementById('user-profile-container').innerHTML = `
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3 min-w-0">
-          <img src="${pic}" alt="User Avatar" class="w-10 h-10 rounded-full">
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold truncate">${name}</p>
-            <p class="text-xs text-neutral-500 dark:text-neutral-400 truncate">${user.email}</p>
-          </div>
-        </div>
-        <div class="relative" id="settings-menu">
-          <button id="settings-button" class="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-700">
-            <svg class="w-5 h-5 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-          </button>
-          <div id="settings-dropdown" class="absolute bottom-full right-0 mb-2 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 hidden z-10">
-            <div class="p-1">
-              <button id="open-settings-modal-btn" class="flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                <span>Settings</span>
-              </button>
-            </div>
-            <div class="border-t border-neutral-200 dark:border-neutral-700 my-1 mx-1"></div>
-            <div class="p-1">
-              <a href="https://selfalignmentframework.com/safi/" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.79 4 4 0 1.104-.448 2.104-1.172 2.828a5.967 5.967 0 01-2.228 1.5A5.967 5.967 0 0012 18v.01h.01M12 21a9 9 0 110-18 9 9 0 010 18z"></path></svg>
-                <span>Help & Guides</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-      `;
-      
-    document.getElementById('open-settings-modal-btn').addEventListener('click', () => {
-        settingsModalHandler();
-        document.getElementById('settings-dropdown').classList.add('hidden');
-    });
+    // MODIFICATION: 3.1. Removed all the old user-profile-container logic
+    // ... no logic needed, markup is self-contained
 
   } else {
     elements.sidebarContainer.innerHTML = '';
     elements.loginView.classList.remove('hidden');
     elements.chatView.classList.add('hidden');
+    // MODIFICATION: 1.1. Hide Control Panel view on logout
+    if (elements.controlPanelView) elements.controlPanelView.classList.add('hidden');
   }
 }
 
@@ -400,11 +431,36 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageDiv.className = `message ${sender}`;
 
   if (sender === 'ai') {
+    // MODIFICATION: Add profile name if available
+    const profileName = (payload && payload.profile) ? payload.profile : null;
+    
+    // *** THIS IS THE NEW CREATIVE THEME ***
+    // This is the new tag without background, which will get a tail from styles.css
+const toTitleCase = str => 
+  str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+/*
+// MODIFICATION: Removed the profile name HTML from the chat bubble
+const profileNameHtml = profileName 
+  ? `<div class="ai-name ai-profile-name-tag relative inline-flex items-center gap-1.5 text-green-700 dark:text-green-500 text-xl font-bold mb-2">
+      <!-- REMOVED SHIELD ICON -->
+      <span class="font-bold">${toTitleCase(profileName)}</span>
+     </div>` 
+  : '';
+*/
+const profileNameHtml = ''; // <-- This removes the name from the bubble
+
+    // *** NEW: Call the Avatar Map ***
+    const avatarUrl = getAvatarForProfile(profileName);
+
     messageDiv.innerHTML = `
+      <!-- NEW: AI Avatar Column -->
       <div class="ai-avatar">
-        <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+        <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-full h-full rounded-lg">
       </div>
+      <!-- END NEW -->
       <div class="ai-content-wrapper">
+        ${profileNameHtml} <!-- MODIFICATION: Added Profile Name -->
         <div class="chat-bubble">
           <!-- Content will be injected here -->
           <div class="meta"></div>
@@ -415,7 +471,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     bubble.insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(String(text ?? ''))));
   } else {
     const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
-    const avatarUrl = options.avatarUrl || `https'://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+    const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
            <div class="chat-bubble">
@@ -446,7 +502,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   metaDiv.appendChild(leftMeta);
 
   if (sender === 'ai') {
-      rightMeta.appendChild(makeCopyButton(text));
+      // rightMeta.appendChild(makeCopyButton(text)); // <-- REMOVE THIS LINE
   }
 
   const stampDiv = document.createElement('div');
@@ -489,21 +545,34 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     }
 }
 
-export function showLoadingIndicator() {
+// *** (Task 2) Rewrite this function ***
+// MODIFICATION: Accept profileName
+export function showLoadingIndicator(profileName) {
   _ensureElements();
+  clearLoadingInterval(); // Clear any previous timer
+
   const emptyState = elements.chatWindow.querySelector('.empty-state-container');
   if (emptyState) emptyState.remove();
   const simpleGreeting = elements.chatWindow.querySelector('.simple-greeting');
   if (simpleGreeting) simpleGreeting.remove();
   
   maybeInsertDayDivider(new Date());
+
   const loadingContainer = document.createElement('div');
   loadingContainer.className = 'message-container';
+  
+  // *** NEW: Call Avatar Map for default avatar ***
+  // MODIFICATION: Use profileName if available, otherwise fallback to null
+  const avatarUrl = getAvatarForProfile(profileName || null); 
+  const altText = (profileName || 'SAFi') + ' Avatar';
+
   loadingContainer.innerHTML = `
     <div class="message ai">
+        <!-- NEW: AI Avatar Column -->
         <div class="ai-avatar">
-            <img src="assets/chat-logo.svg" alt="SAFi Avatar" class="w-full h-full rounded-full app-logo">
+            <img src="${avatarUrl}" alt="${altText}" class="w-full h-full rounded-lg">
         </div>
+        <!-- END NEW -->
         <div class="ai-content-wrapper">
             <div class="flex items-center gap-3">
               <div class="thinking-spinner"></div>
@@ -513,8 +582,74 @@ export function showLoadingIndicator() {
     </div>`;
   elements.chatWindow.appendChild(loadingContainer);
   scrollToBottom();
+
+  const statusSpan = loadingContainer.querySelector('#thinking-status');
+
+  // *** DEFINE NEW 3-STAGE MESSAGE POOLS ***
+  
+  // Stage 1: Intellect (Fires immediately)
+  const stage1IntellectMessages = [
+    "Consulting with the Intellect...",
+    "Packaging the prompt for the AI model...",
+    "Drafting response..."
+  ];
+  
+  // Stage 2: Will (Fires after 3-4 seconds)
+  const stage2WillMessages = [
+    "Intellect draft received. Consulting Will faculty...",
+    "Analyzing draft against non-negotiable rules...",
+    "Running gatekeeper check..."
+  ];
+
+  // Stage 3: Delayed (Fires after 6-8+ seconds)
+  // This new pool acknowledges the delay is due to a complex
+  // prompt for the LLM (Gemini, Claude, GPT).
+  const stage3DelayedMessages = [
+    "This is a complex prompt, so generation is taking longer than usual...",
+    "If you are using claude,Gemini or GTP for the Intellect, those models take longer, sorry..",
+    "Ensuring a high-quality draft, please wait...",
+    "Almost done hang on...",
+    "Just a few more moments..."
+  ];
+  // *** END OF NEW MESSAGE POOLS ***
+
+  let stage = 0;
+
+  const updateStatus = () => {
+    stage++;
+    let messagePool;
+
+    if (stage === 1) {
+      // Stage 1: Intellect
+      messagePool = stage1IntellectMessages;
+    } else if (stage === 2) {
+      // Stage 2: Will
+      messagePool = stage2WillMessages;
+    } else {
+      // Stage 3: Delayed (and all subsequent ticks)
+      // The simulation now loops indefinitely in the "Delayed" stage
+      // until it is stopped by main.js.
+      messagePool = stage3DelayedMessages;
+    }
+    
+    // Pick a random message from the current stage's pool
+    const message = messagePool[Math.floor(Math.random() * messagePool.length)];
+    if (statusSpan) {
+      statusSpan.textContent = message;
+    }
+  };
+
+  // Show the first message (from Stage 1) immediately
+  updateStatus();
+
+  // Set an interval with a randomized delay to feel more "real"
+  // A slightly longer, more varied delay feels more natural
+  const randomDelay = 3000 + (Math.random() * 1500); // 3-4.5 seconds
+  currentLoadingInterval = setInterval(updateStatus, randomDelay);
+
   return loadingContainer;
 }
+
 
 export function showToast(message, type = 'info', duration = 3000) {
   _ensureElements();
@@ -568,14 +703,10 @@ export function showModal(kind, data) {
     elements.conscienceModal.classList.remove('hidden');
   } else if (kind === 'delete') {
     elements.deleteAccountModal.classList.remove('hidden');
-  } else if (kind === 'settings') {
-    // data = { user, profiles, models, handlers }
-    renderSettingsProfileTab(data.profiles.available, data.profiles.active_profile_key, data.handlers.profile);
-    renderSettingsModelsTab(data.models, data.user, data.handlers.models);
-    renderSettingsDashboardTab();
-    renderSettingsUserTab(data.handlers.theme, data.handlers.logout, data.handlers.delete);
-    elements.settingsModal.classList.remove('hidden');
-  } else if (kind === 'rename') {
+  } 
+  // MODIFICATION: 1.1. Removed 'settings' modal kind
+  // MODIFICATION: 1.2. Removed 'app-settings' modal kind (now in CP)
+  else if (kind === 'rename') {
     // data = { oldTitle }
     if (elements.renameInput) {
         elements.renameInput.value = data.oldTitle;
@@ -597,21 +728,12 @@ export function closeModal() {
   elements.modalBackdrop.classList.add('hidden');
   elements.conscienceModal.classList.add('hidden');
   elements.deleteAccountModal.classList.add('hidden');
-  elements.settingsModal.classList.add('hidden');
-  elements.dashboardView.classList.add('hidden');
+  // MODIFICATION: 1.1. Removed settingsModal
+  // MODIFICATION: 1.2. Removed appSettingsModal
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
 
-  if (elements.settingsModal) {
-    elements.settingsModal.classList.add('max-w-3xl'); 
-    elements.settingsModal.classList.remove('max-w-5xl');
-    elements.settingsModal.classList.remove('w-[1024px]');
-    elements.settingsModal.classList.remove('h-[760px]');
-    
-    const modalContentArea = elements.settingsModal.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
-    modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
-    modalContentArea?.classList.remove('overflow-y-visible'); 
-  }
+  // MODIFICATION: 1.1. Removed old modal reset logic
 }
 
 function renderIntro(payload) {
@@ -725,13 +847,24 @@ function renderLedgerItem(item) {
     const maxLength = 120;
     const isLong = reasonHtml.length > maxLength;
     
-    const confidenceHtml = item.confidence ? `<div class="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">CONFIDENCE: ${Math.round(item.confidence * 100)}%</div>` : '';
+    // MODIFICATION: 1.4. Visual Confidence Bars
+    // FIX: Changed responsive classes for consistency
+    const confidenceDisplayHtml = item.confidence ? `
+        <div class="flex items-center gap-2 w-full sm:w-auto sm:min-w-[160px]">
+            <span class="text-xs font-medium text-neutral-500 dark:text-neutral-400 hidden sm:inline">Confidence</span>
+            <div class="h-1.5 flex-1 rounded-full bg-neutral-200 dark:bg-neutral-700">
+                <div class="h-full rounded-full bg-green-500" style="width: ${item.confidence * 100}%"></div>
+            </div>
+            <span class="text-xs font-semibold text-neutral-600 dark:text-neutral-300 w-9 text-right">${Math.round(item.confidence * 100)}%</span>
+        </div>
+    ` : '';
+    // END MODIFICATION
 
     return `
         <div class="bg-white dark:bg-neutral-800/60 p-4 rounded-lg border border-neutral-200 dark:border-neutral-700/80">
-            <div class="flex items-center justify-between gap-4 mb-2">
+            <div class="flex items-start sm:items-center justify-between gap-4 mb-2 flex-col sm:flex-row">
                 <div class="font-semibold text-neutral-800 dark:text-neutral-200">${item.value}</div>
-                ${confidenceHtml}
+                ${confidenceDisplayHtml}
             </div>
             <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-600 dark:text-neutral-400">
                 <div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>
@@ -800,6 +933,7 @@ function maybeInsertDayDivider(date) {
   }
 }
 
+/* REMOVE THIS ENTIRE FUNCTION
 function makeCopyButton(text) {
   const btn = document.createElement('button');
   btn.className = 'meta-btn p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md';
@@ -819,6 +953,7 @@ function makeCopyButton(text) {
   });
   return btn;
 }
+*/
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
   _ensureElements();
@@ -831,22 +966,31 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
     const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
     const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
     const descriptionHtml = activeProfile.description 
-      ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-md mx-auto">${activeProfile.description}</p>`
+      ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${activeProfile.description}</p>` // MODIFIED: max-w-md to max-w-2xl
       : '';
+    
+    // *** NEW: Call Avatar Map ***
+    const avatarUrl = getAvatarForProfile(activeProfile.name);
 
     const emptyStateContainer = document.createElement('div');
     emptyStateContainer.className = 'empty-state-container';
+    // MODIFICATION: 1.1. Updated help text for Control Panel
+    // MODIFICATION: Added Avatar
     emptyStateContainer.innerHTML = `<div class="text-center pt-8">
+        <!-- MODIFICATION: Moved avatar to appear AFTER the name -->
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
+        <!-- NEW: Profile Avatar -->
+        <img src="${avatarUrl}" alt="${activeProfile.name || 'SAFi'} Avatar" class="w-20 h-20 rounded-lg mx-auto mt-4"> <!-- Changed margin to mt-4 -->
+        <!-- END NEW -->
         <p class="text-sm text-neutral-500 dark:text-neutral-400">persona, which includes these values:</p>
-        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-md mx-auto">${valuesHtml}</div>
+        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div> <!-- MODIFIED: max-w-md to max-w-2xl -->
         ${descriptionHtml}
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different persona, click the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg> settings button and select 'Settings'.
+            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
         </div>
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">${promptsHtml}</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-6xl mx-auto">${promptsHtml}</div> <!-- MODIFIED: max-w-4xl to max-w-6xl -->
       </div>`;
     
     elements.chatWindow.appendChild(emptyStateContainer);
@@ -894,16 +1038,62 @@ export function setActiveConvoLink(id) {
   });
 }
 
+// *** THIS IS THE NEW/FIXED FUNCTION ***
+// It updates both mobile and desktop titles.
+export function updateChatTitle(title) {
+  const mobileTitle = document.getElementById('chat-title');
+  const desktopTitle = document.getElementById('chat-title-desktop'); // New ID
+  const newTitle = title || 'SAFi';
 
-// Handles switching tabs in the settings modal
-export function setupSettingsTabs() {
+  if (mobileTitle) {
+    mobileTitle.textContent = newTitle;
+  }
+  if (desktopTitle) {
+    desktopTitle.textContent = newTitle;
+  }
+}
+// *** END OF NEW FUNCTION ***
+
+// MODIFICATION: Updated function to include avatar thumbnails
+export function updateActiveProfileChip(profileName) {
+  _ensureElements();
+  
+  const avatarUrl = getAvatarForProfile(profileName);
+  // MODIFICATION: Split text label and profile name
+  const textLabel = "Profile:";
+  const profileNameText = profileName || 'Default';
+
+  if (elements.activeProfileChip) {
+    // This is the chip by the composer
+    elements.activeProfileChip.classList.add('flex', 'items-center', 'gap-2'); // Ensure flex layout
+    // MODIFICATION: Re-ordered to Text -> Image -> Name
+    elements.activeProfileChip.innerHTML = `
+      <span class="truncate flex-shrink-0">${textLabel}</span>
+      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-5 h-5 rounded-md flex-shrink-0">
+      <span class="truncate">${profileNameText}</span>
+    `;
+  }
+  if (elements.activeProfileChipMobile) {
+    // This is the chip in the top bar
+    // MODIFICATION: Added mx-auto to center the chip
+    elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto'); // Ensure flex layout
+    // MODIFICATION: Re-ordered to Text -> Image -> Name
+    elements.activeProfileChipMobile.innerHTML = `
+      <span class="font-semibold truncate flex-shrink-0">${textLabel}</span>
+      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-6 h-6 rounded-lg flex-shrink-0">
+      <span class="font-semibold truncate">${profileNameText}</span>
+    `;
+  }
+}
+
+
+// MODIFICATION: 1.1. Repurposed for Control Panel
+// MODIFICATION: 3.1. Added App Settings tab
+export function setupControlPanelTabs() {
     _ensureElements();
-    const tabs = [elements.settingsNavProfile, elements.settingsNavModels, elements.settingsNavUser];
-    const panels = [elements.settingsTabProfile, elements.settingsTabModels, elements.settingsTabUser];
+    const tabs = [elements.cpNavProfile, elements.cpNavModels, elements.cpNavDashboard, elements.cpNavAppSettings];
+    const panels = [elements.cpTabProfile, elements.cpTabModels, elements.cpTabDashboard, elements.cpTabAppSettings];
     
-    const settingsModal = elements.settingsModal;
-    const modalContentArea = settingsModal?.querySelector('.flex-1.overflow-y-auto, .flex-1.overflow-y-visible');
-
     tabs.forEach((tab, index) => {
         if (!tab) return;
         tab.addEventListener('click', () => {
@@ -915,25 +1105,12 @@ export function setupSettingsTabs() {
                 panels[index].classList.remove('hidden');
             }
 
-            settingsModal.classList.remove('max-w-5xl'); 
-            settingsModal.classList.remove('w-[1024px]');
-            settingsModal.classList.remove('h-[760px]'); 
-            settingsModal.classList.add('max-w-3xl'); 
-            
-            modalContentArea?.classList.add('overflow-y-auto', 'custom-scrollbar'); 
-            modalContentArea?.classList.remove('overflow-y-visible'); 
+            // Special handling for dashboard iframe
+            if (tab === elements.cpNavDashboard) {
+                renderSettingsDashboardTab(); // Lazy-load iframe
+            }
         });
     });
-
-    if (elements.settingsNavDashboard) {
-        elements.settingsNavDashboard.addEventListener('click', () => {
-            elements.settingsModal.classList.add('hidden');
-            elements.modalBackdrop.classList.add('hidden');
-            elements.dashboardView.classList.remove('hidden');
-            
-            renderSettingsDashboardTab(); 
-        });
-    }
     
     if (tabs[0]) {
       tabs[0].click();
@@ -941,23 +1118,33 @@ export function setupSettingsTabs() {
 }
 
 // Renders the "Ethical Profile" tab
+// MODIFICATION: 1.1. Renders into Control Panel
+// MODIFICATION: Added Profile Avatar
 export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange) {
   _ensureElements();
-    const container = elements.settingsTabProfile;
+    const container = elements.cpTabProfile;
     if (!container) return;
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">Choose Ethical Profile</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
         <div class="space-y-4" role="radiogroup">
-            ${profiles.map(profile => `
+            ${profiles.map(profile => {
+                // *** NEW: Call Avatar Map ***
+                const avatarUrl = getAvatarForProfile(profile.name);
+                return `
                 <label class="block p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg cursor-pointer hover:border-green-500 dark:hover:border-green-400 transition-colors">
                     <div class="flex items-center justify-between">
-                        <span class="font-semibold text-base text-neutral-800 dark:text-neutral-200">${profile.name}</span>
+                        <!-- NEW: Avatar + Name Flexbox -->
+                        <div class="flex items-center gap-3">
+                            <img src="${avatarUrl}" alt="${profile.name} Avatar" class="w-8 h-8 rounded-lg">
+                            <span class="font-semibold text-base text-neutral-800 dark:text-neutral-200">${profile.name}</span>
+                        </div>
+                        <!-- END NEW -->
                         <input type="radio" name="ethical-profile" value="${profile.key}" class="form-radio text-green-600 focus:ring-green-500" ${profile.key === activeProfileKey ? 'checked' : ''}>
                     </div>
                     <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2">${profile.description || ''}</p>
                 </label>
-            `).join('')}
+            `}).join('')}
         </div>
     `;
 
@@ -976,9 +1163,10 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
 
 
 // Renders the "AI Models" tab
+// MODIFICATION: 1.1. Renders into Control Panel
 export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
     _ensureElements();
-    const container = elements.settingsTabModels;
+    const container = elements.cpTabModels;
     if (!container) return;
     
     const createSelect = (id, label, selectedValue) => `
@@ -1018,75 +1206,102 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
 }
 
 // Renders the Dashboard tab content
+// MODIFICATION: 1.1. Renders into Control Panel, lazy-loads iframe
+// MODIFICATION: Refactored to add padding to header and make iframe fill space
 export function renderSettingsDashboardTab() {
     _ensureElements();
-    const container = elements.dashboardIframeContainer;
+    const container = elements.cpTabDashboard; // This container is 'flex-1 flex flex-col' from index.html
     if (!container) return;
 
+    // Only add iframe if it's not already there
     if (container.querySelector('iframe')) return;
 
+    // This function clears the container
+    container.innerHTML = ''; 
+
+    // 1. Create Header Div with padding
+    const headerDiv = document.createElement('div');
+    headerDiv.className = "p-6 shrink-0"; // Add padding here. 'shrink-0' is important.
+    headerDiv.innerHTML = `
+        <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
+        <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze ethical alignment and trace decisions across all conversations.</p>
+    `;
+    
+    // 2. Create Iframe Container Div
+    const iframeContainer = document.createElement('div');
+    // 'flex-1' makes it take remaining space. Added padding for the frame.
+        iframeContainer.className = "w-full h-[1024px] overflow-hidden";
+
+    
     const iframe = document.createElement('iframe');
     iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
-    iframe.className = "w-full h-full border-0";
+    // Make iframe fill the container.
+    iframe.className = "w-full h-full rounded-lg"; 
     iframe.title = "SAFi Dashboard";
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms";
     
-    container.appendChild(iframe);
+    iframeContainer.appendChild(iframe);
+
+    // 3. Append both to the main container
+    container.appendChild(headerDiv);
+    container.appendChild(iframeContainer);
 }
 
-// Renders the "Profile" tab
-export function renderSettingsUserTab(onThemeToggle, onLogout, onDelete) {
+// MODIFICATION: 1.2. New function for App Settings modal
+// MODIFICATION: 3.1. Re-purposed for App Settings *Tab*
+export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDelete) {
     _ensureElements();
-    const container = elements.settingsTabUser;
+    const container = elements.cpTabAppSettings;
     if (!container) return;
+
+    const themes = [
+        { key: 'light', name: 'Light' },
+        { key: 'dark', name: 'Dark' },
+        { key: 'system', name: 'System Default' }
+    ];
+
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-6">Profile & App Settings</h3>
-        <div class="space-y-3">
-            <button id="modal-theme-toggle" class="flex items-center justify-between w-full text-left px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
-                <span class="flex items-center gap-3">
-                    <svg id="modal-theme-icon-dark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-                    <svg id="modal-theme-icon-light" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                    <span>Toggle Theme</span>
-                </span>
-                <span class="text-neutral-500 dark:text-neutral-400" id="modal-theme-label"></span>
-            </button>
+        <h3 class="text-xl font-semibold mb-4">App Settings</h3>
+        
+        <div class_="space-y-4">
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Theme</h4>
+            <div class="space-y-2" role="radiogroup">
+                ${themes.map(theme => `
+                    <label class="flex items-center gap-3 p-3 border ${theme.key === currentTheme ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg cursor-pointer hover:border-green-500 dark:hover:border-green-400 transition-colors">
+                        <input type="radio" name="theme-select" value="${theme.key}" class="form-radio text-green-600 focus:ring-green-500" ${theme.key === currentTheme ? 'checked' : ''}>
+                        <span class="text-sm font-medium text-neutral-800 dark:text-neutral-200">${theme.name}</span>
+                    </label>
+                `).join('')}
+            </div>
             
-            <button id="modal-logout-button" class="flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                <span>Sign Out</span>
-            </button>
-            
-            <button id="modal-delete-account-btn" class="flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg border border-red-300 dark:border-red-700/50 transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                <span>Delete Account...</span>
-            </button>
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mt-8 mb-2">Account</h4>
+            <div class="space-y-3">
+                <button id="cp-logout-btn" class="w-full text-left px-4 py-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
+                    Sign Out
+                </button>
+                <button id="cp-delete-account-btn" class="w-full text-left px-4 py-3 text-sm font-medium text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg border border-red-300 dark:border-red-700 transition-colors">
+                    Delete Account...
+                </button>
+            </div>
         </div>
     `;
-    
-    // Wire up theme toggle
-    const themeToggle = document.getElementById('modal-theme-toggle');
-    const updateThemeUI = () => {
-        const isDark = document.documentElement.classList.contains('dark');
-        const lightIcon = document.getElementById('modal-theme-icon-light');
-        const darkIcon = document.getElementById('modal-theme-icon-dark');
-        const label = document.getElementById('modal-theme-label');
-        if(lightIcon && darkIcon && label) {
-            lightIcon.style.display = isDark ? 'block' : 'none';
-            darkIcon.style.display = isDark ? 'none' : 'block';
-            label.textContent = isDark ? 'Dark Mode' : 'Light Mode';
-        }
-    };
-    themeToggle.addEventListener('click', () => {
-        onThemeToggle(); // Call the handler from main.js
-        updateThemeUI();
-    });
-    updateThemeUI(); // Set initial state
-    
-    // Wire up other buttons
-    document.getElementById('modal-logout-button').addEventListener('click', onLogout);
-    document.getElementById('modal-delete-account-btn').addEventListener('click', () => {
-        closeModal(); // Close settings modal
-        showModal('delete'); // Open delete confirmation
-    });
-}
 
+    // Add event listeners
+    container.querySelectorAll('input[name="theme-select"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const newTheme = e.target.value;
+            onThemeChange(newTheme); // This will call applyTheme in main.js
+            
+            // Manually update UI for radio buttons
+            container.querySelectorAll('label').forEach(label => {
+                label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
+                label.classList.add('border-neutral-300', 'dark:border-neutral-700');
+            });
+            radio.closest('label').classList.add('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
+            radio.closest('label').classList.remove('border-neutral-300', 'dark:border-neutral-700');
+        });
+    });
+
+    document.getElementById('cp-logout-btn').addEventListener('click', onLogout);
+    document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
+}

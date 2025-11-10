@@ -11,12 +11,21 @@ let availableModels = [];
 let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
 
+// MODIFICATION: Removed old thinkingTimeouts array
+// let thinkingTimeouts = [];
+
 async function checkLoginStatus() {
     try {
         const me = await api.getMe();
         user = (me && me.ok) ? me.user : null;
         
-        ui.updateUIForAuthState(user, handleLogout, null, handleOpenSettingsModal);
+        // MODIFICATION: 3.1. Updated auth UI call with theme handler
+        ui.updateUIForAuthState(
+            user, 
+            handleLogout, 
+            () => ui.showModal('delete'),
+            applyTheme // Pass the new theme handler
+        );
         
         if (user) {
             const [profilesResponse, modelsResponse] = await Promise.all([
@@ -31,12 +40,15 @@ async function checkLoginStatus() {
             
             activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
+            // MODIFICATION: 1.1. Render control panel content on load
+            renderControlPanel();
+            
             await loadConversations();
         }
         attachEventListeners();
     } catch (error) {
         console.error("Failed to check login status:", error);
-        ui.updateUIForAuthState(null);
+        ui.updateUIForAuthState(null, handleLogout, () => ui.showModal('delete'), applyTheme);
         attachEventListeners();
     }
 }
@@ -55,23 +67,38 @@ async function handleProfileChange(newProfileName) {
     }
 }
 
-function handleOpenSettingsModal() {
-    ui.showModal('settings', {
-        user: user,
-        profiles: {
-            available: availableProfiles,
-            active_profile_key: activeProfileData.key
-        },
-        models: availableModels,
-        handlers: {
-            profile: handleProfileChange,
-            models: handleModelsSave,
-            theme: handleThemeToggle,
-            logout: handleLogout,
-            delete: () => ui.showModal('delete')
-        }
-    });
+// MODIFICATION: 1.1. New function to render CP content
+function renderControlPanel() {
+    if (!user) return;
+    
+    ui.renderSettingsProfileTab(
+        availableProfiles, 
+        activeProfileData.key, 
+        handleProfileChange
+    );
+    
+    ui.renderSettingsModelsTab(
+        availableModels, 
+        user, 
+        handleModelsSave
+    );
+
+    // MODIFICATION: 3.1. Render new App Settings tab
+    ui.renderSettingsAppTab(
+        localStorage.theme || 'system',
+        applyTheme,
+        handleLogout,
+        () => ui.showModal('delete') // Open delete account modal
+    );
+    
+    // Dashboard tab is lazy-loaded on click
 }
+
+// MODIFICATION: 1.2. New handler for App Settings modal
+// MODIFICATION: 3.1. This is now removed
+// function handleOpenAppSettingsModal() { ... }
+
+// MODIFICATION: 1.1. handleOpenSettingsModal is GONE
 
 async function handleModelsSave(newModels) {
     try {
@@ -85,27 +112,39 @@ async function handleModelsSave(newModels) {
     }
 }
 
-function handleThemeToggle() {
-    document.documentElement.classList.toggle('dark');
-    localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-    
-    const updateThemeUI = (scope) => {
-        const isDark = document.documentElement.classList.contains('dark');
-        const lightIcon = scope.querySelector('#theme-icon-light, #modal-theme-icon-light');
-        const darkIcon = scope.querySelector('#theme-icon-dark, #modal-theme-icon-dark');
-        const label = scope.querySelector('#modal-theme-label');
+// MODIFICATION: 3.1. Replaced handleThemeToggle with applyTheme
+/**
+ * Applies the selected theme and saves it to localStorage.
+ * @param {'light' | 'dark' | 'system'} theme 
+ */
+function applyTheme(theme) {
+    if (theme === 'system') {
+        localStorage.removeItem('theme');
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    } else if (theme === 'dark') {
+        localStorage.theme = 'dark';
+        document.documentElement.classList.add('dark');
+    } else {
+        localStorage.theme = 'light';
+        document.documentElement.classList.remove('dark');
+    }
 
-        if(lightIcon && darkIcon) {
-            lightIcon.style.display = isDark ? 'block' : 'none';
-            darkIcon.style.display = isDark ? 'none' : 'block';
+    // Re-render the settings tab if it's open to update the radio buttons
+    if (ui.elements.controlPanelView && !ui.elements.controlPanelView.classList.contains('hidden')) {
+        const currentActiveTab = document.querySelector('.modal-tab-button.active');
+        if (currentActiveTab && currentActiveTab.id === 'cp-nav-app-settings') {
+            ui.renderSettingsAppTab(
+                theme,
+                applyTheme,
+                handleLogout,
+                () => ui.showModal('delete')
+            );
         }
-        if (label) {
-            label.textContent = isDark ? 'Dark Mode' : 'Light Mode';
-        }
-    };
-    
-    const dropdown = document.getElementById('settings-dropdown');
-    if (dropdown) updateThemeUI(dropdown);
+    }
 }
 
 async function loadConversations(switchToId = null) {
@@ -151,6 +190,11 @@ async function loadConversations(switchToId = null) {
 }
 
 async function startNewConversation(isInitialLoad = false) { 
+    // MODIFICATION: 1.1. Hide Control Panel when starting new chat
+    if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
+    if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
+    // END MODIFICATION
+
     if (isInitialLoad) {
         // This is the first-ever load and there are no convos.
         // We MUST create one to start with.
@@ -176,6 +220,7 @@ async function startNewConversation(isInitialLoad = false) {
         currentConversationId = null;
         ui.setActiveConvoLink(null); // Deselect all conversations
         ui.resetChatView();
+        ui.updateChatTitle('New Chat'); // <-- MODIFICATION: Update title
 
         // Show the empty state greeting
         const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
@@ -186,9 +231,26 @@ async function startNewConversation(isInitialLoad = false) {
 
 
 async function switchConversation(id) {
+    // MODIFICATION: 2.7. Hide Control Panel on conversation switch
+    if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
+    if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
+    
     currentConversationId = id;
     ui.setActiveConvoLink(id);
     ui.resetChatView();
+    // MODIFICATION: 1.3. Update profile chip on switch
+    ui.updateActiveProfileChip(activeProfileData.name || 'Default');
+
+    // MODIFICATION: Update chat title
+    try {
+        const activeLink = document.querySelector(`#convo-list a[data-id="${id}"]`);
+        const title = activeLink ? activeLink.querySelector('.convo-title').textContent : 'SAFi';
+        ui.updateChatTitle(title);
+    } catch (e) {
+        console.warn('Could not set chat title', e);
+        ui.updateChatTitle('SAFi'); // Fallback
+    }
+    // END MODIFICATION
 
     try {
         const history = await api.fetchHistory(id);
@@ -242,6 +304,9 @@ function handleExamplePromptClick(promptText) {
     autoSize();
 }
 
+// MODIFICATION: 2.1. Helper to clear timeouts - REMOVED
+// function clearThinkingTimeouts() { ... }
+
 async function sendMessage() {
     const userMessage = ui.elements.messageInput.value.trim();
     if (!userMessage) return; // Don't send empty messages
@@ -282,14 +347,11 @@ async function sendMessage() {
     ui.elements.messageInput.value = '';
     autoSize();
     
-    const loadingIndicator = ui.showLoadingIndicator();
-    const thinkingStatus = loadingIndicator.querySelector('#thinking-status');
-
-    const thinkingTimeout = setTimeout(() => {
-        if (thinkingStatus) {
-            thinkingStatus.textContent = 'Still thinking...';
-        }
-    }, 4000);
+    // *** 1. START SIMULATION ***
+    // MODIFICATION: Pass active profile name to loading indicator
+    const loadingIndicator = ui.showLoadingIndicator(activeProfileData.name);
+    
+    // MODIFICATION: Removed all old static setTimeout logic
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
@@ -304,7 +366,8 @@ async function sendMessage() {
 
         const initialPayload = {
             ledger: ledger || [],
-            profile: initialResponse.profile || null,
+            // *** 3. PROVIDE FALLBACK ***
+            profile: initialResponse.profile || activeProfileData.name || null,
             values: values || [],
             spirit_score: initialResponse.spirit_score,
             spirit_scores_history: [initialResponse.spirit_score] 
@@ -317,7 +380,7 @@ async function sendMessage() {
           initialResponse.finalOutput,
           new Date(),
           initialResponse.messageId,
-          hasInitialPayload ? initialPayload : null, 
+          initialPayload, // Pass the payload
           (payload) => ui.showModal('conscience', payload)
         );
 
@@ -345,10 +408,12 @@ async function sendMessage() {
         
                     conversations.forEach(convo => {
                         const link = ui.renderConversationLink(convo, handlers);
-                        convoList.appendChild(link);
+convoList.appendChild(link);
                     });
                     
                     ui.setActiveConvoLink(currentConversationId);
+                    // MODIFICATION: Update title after list refresh
+                    ui.updateChatTitle(initialResponse.newTitle);
                 }
             } catch (listError) {
                 console.error("Failed to refresh conversation list:", listError);
@@ -365,7 +430,9 @@ async function sendMessage() {
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
-        clearTimeout(thinkingTimeout);
+        // *** 2. STOP SIMULATION ***
+        ui.clearLoadingInterval();
+        
         if(loadingIndicator) loadingIndicator.remove();
         buttonIcon.classList.remove('hidden');
         buttonLoader.classList.add('hidden');
@@ -443,6 +510,9 @@ async function handleConfirmRename() {
             await api.renameConversation(id, newTitle);
             ui.showToast('Conversation renamed.', 'success');
             await loadConversations(id); 
+            if (id === currentConversationId) {
+                ui.updateChatTitle(newTitle); // MODIFICATION: Update title if active
+            }
         } catch (error) {
             ui.showToast('Could not rename conversation.', 'error');
         }
@@ -508,6 +578,40 @@ function attachEventListeners() {
         newChatButton.addEventListener('click', () => { startNewConversation(false); if (window.innerWidth < 768) ui.closeSidebar(); });
     }
 
+    // MODIFICATION: 1.1. Added Control Panel button listener
+    const controlPanelButton = document.getElementById('control-panel-btn');
+    if (controlPanelButton) {
+        controlPanelButton.addEventListener('click', () => {
+            ui.elements.chatView.classList.add('hidden');
+            ui.elements.controlPanelView.classList.remove('hidden');
+            if (window.innerWidth < 768) ui.closeSidebar();
+        });
+    }
+    if (ui.elements.controlPanelBackButton) {
+        ui.elements.controlPanelBackButton.addEventListener('click', () => {
+            ui.elements.controlPanelView.classList.add('hidden');
+            ui.elements.chatView.classList.remove('hidden');
+        });
+    }
+    // MODIFICATION: 1.3. Added Active Profile Chip listeners
+    if (ui.elements.activeProfileChip) {
+        ui.elements.activeProfileChip.addEventListener('click', () => {
+            ui.elements.chatView.classList.add('hidden');
+            ui.elements.controlPanelView.classList.remove('hidden');
+            // Programmatically click profile tab
+            if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click();
+        });
+    }
+    if (ui.elements.activeProfileChipMobile) {
+        ui.elements.activeProfileChipMobile.addEventListener('click', () => {
+            ui.elements.chatView.classList.add('hidden');
+            ui.elements.controlPanelView.classList.remove('hidden');
+            // Programmatically click profile tab
+            if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click();
+        });
+    }
+    // END MODIFICATION
+
     const menuToggle = document.getElementById('menu-toggle');
     if (menuToggle) {
         menuToggle.addEventListener('click', ui.openSidebar);
@@ -523,8 +627,9 @@ function attachEventListeners() {
         sidebarOverlay.addEventListener('click', ui.closeSidebar);
     }
     
-    ui.elements.closeSettingsModal?.addEventListener('click', ui.closeModal);
-    ui.setupSettingsTabs();
+    // MODIFICATION: 1.1. Removed settings modal listener
+    // MODIFICATION: 3.1. Removed appSettingsModal listener
+    ui.setupControlPanelTabs(); // Replaced setupSettingsTabs
     
     document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
@@ -544,22 +649,10 @@ function attachEventListeners() {
     ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
     ui.elements.confirmDeleteConvoBtn?.addEventListener('click', handleConfirmDelete);
     
-    const settingsMenu = document.getElementById('settings-menu');
-    if (settingsMenu) {
-        settingsMenu.addEventListener('click', (event) => {
-            const settingsButton = event.target.closest('#settings-button');
-            if (settingsButton) {
-                const settingsDropdown = document.getElementById('settings-dropdown');
-                settingsDropdown?.classList.toggle('hidden');
-            }
-        });
-    }
-
+    // MODIFICATION: 3.1. Removed settingsMenu listener
+    
     document.addEventListener('click', (event) => {
-        const settingsMenu = document.getElementById('settings-menu');
-        if (settingsMenu && !settingsMenu.contains(event.target)) {
-            document.getElementById('settings-dropdown')?.classList.add('hidden');
-        }
+        // MODIFICATION: 3.1. Removed settingsMenu click-away
         
         const convoMenuButton = event.target.closest('.convo-menu-button');
         if (!convoMenuButton) {
@@ -569,4 +662,3 @@ function attachEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
-

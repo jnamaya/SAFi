@@ -84,9 +84,16 @@ html, body {
 }
 
 .message-container {
-    width: min(72ch, 100%);
-    margin-inline: auto;
+    width: 100%;
+    margin: 0;
+    padding: 0 8px; /* small side padding for breathing room */
 }
+
+.message-container {
+    max-width: none !important;
+}
+
+
 
 .message.user {
   display: flex;
@@ -95,7 +102,7 @@ html, body {
   align-items: flex-start;
   margin-left: auto;
   /* --- CHANGE: Reduced max-width --- */
-  max-width: 96%;
+  max-width: 94%;
 }
 
 .message.ai {
@@ -104,7 +111,7 @@ html, body {
   align-items: flex-start;
   color: var(--ai-fg);
   /* --- CHANGE: Reduced max-width --- */
-  max-width: 96%;
+  max-width: 100%;
 }
 
 .ai-avatar, .user-avatar {
@@ -160,19 +167,19 @@ html, body {
   border-color: transparent transparent transparent var(--user-bg);
 }
 
-/* --- NEW: Add the chat bubble tail for AI --- */
+/* --- MODIFICATION: Restored the chat bubble tail for AI --- */
 .message.ai .chat-bubble::after {
   content: '';
   position: absolute;
-  left: -8px; /* Position on the left */
+  left: -8px; 
   top: 14px;
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 8px 10px 8px 0; /* Flipped border */
+  border-width: 8px 10px 8px 0;
   border-color: transparent var(--ai-bg) transparent transparent;
 }
-/* --- END NEW --- */
+/* --- END MODIFICATION --- */
 
 
 .message .chat-bubble {
@@ -500,7 +507,7 @@ html, body {
 
 
 .msg { 
-  max-width: min(72ch, 100%); 
+  max-width: min(120ch, 100%); 
   word-break: break-word; 
 }
 

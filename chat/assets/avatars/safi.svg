@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <!-- Dark background circle. You can change the fill color to any hex code. -->
+    <circle cx="50" cy="50" r="50" fill="#333333" /> 
+    
+    <!-- White text. Font is bold, sans-serif, and centered. -->
+    <text 
+        x="50%" 
+        y="50%" 
+        dominant-baseline="central" 
+        text-anchor="middle" 
+        fill="white" 
+        font-size="30" 
+        font-family="Arial, sans-serif" 
+        font-weight="400">
+        SAFi
+    </text>
+</svg>

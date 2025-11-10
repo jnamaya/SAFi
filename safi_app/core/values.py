@@ -495,9 +495,10 @@ THE_BIBLE_SCHOLAR_PROFILE: Dict[str, Any] = {
         }
     ],
     "example_prompts": [
-       "What is John 3:16?",
-    "Provide a full exegesis of John 1:1.",
-    "Tell me the story of David and Goliath."
+    "First Reading",
+     "Second Reading" ,
+    "Gospel Reading",
+    "Daily Readings Synthesis"
     ]
 }
 

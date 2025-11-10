@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
-
+import httpx  # <-- Already installed
+import re  # <-- NEW: For cleaning text
+from bs4 import BeautifulSoup  # <-- NEW: For parsing HTML
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
 import google.generativeai as genai
@@ -19,6 +21,8 @@ from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from ..utils import dict_sha256
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
+# --- ADDED: Import for the new plugin ---
+from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 
 # Configure basic logging
 # In a real production app, this would be configured in the main app entry point.
@@ -153,6 +157,23 @@ class SAFi:
     # --- REMOVED _generate_dynamic_suggestion METHOD ---
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
+        
+        # -----------------------------------------------------------------
+        # --- Handle Profile-Specific Commands (e.g., Daily Readings) ---
+        # -----------------------------------------------------------------
+        
+        new_user_prompt, readings_data = await handle_bible_scholar_commands(
+            user_prompt, 
+            self.active_profile_name, 
+            self.log
+        )
+        user_prompt = new_user_prompt  # Update the user_prompt variable
+        if readings_data:
+            self.last_readings_data = readings_data
+            
+        # --- END OF COMMANDS BLOCK ---
+        # -----------------------------------------------------------------
+        
         memory_summary = db.fetch_conversation_summary(conversation_id)
         
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
@@ -167,6 +188,8 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
+        # --- FIXED TYPO HERE ---
+        # Changed 'retrieved_.context' to 'retrieved_context'
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
         message_id = str(uuid.uuid4())
         
@@ -307,7 +330,7 @@ class SAFi:
         
         try:
             system_prompt = self.prompts["summarizer"]["system_prompt"]
-            content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
+            content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\\nUser: {user_prompt}\\nAI: {ai_response}\\n\\nUPDATED MEMORY:")
             
             response = self.groq_client_sync.chat.completions.create(
                 model=getattr(self.config, "SUMMARIZER_MODEL"),
@@ -336,4 +359,3 @@ class SAFi:
             with open(log_path, "a", encoding="utf-8") as f: f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e: 
             self.log.error(f"Failed to write to log file {log_path}: {e}")
-

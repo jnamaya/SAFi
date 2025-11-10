@@ -1,14 +1,14 @@
 import os
-from flask import Flask, send_from_directory
-from flask_cors import CORS
-from authlib.integrations.flask_client import OAuth
+from flask import Flask, send_from_directory, jsonify
+# REMOVED: from flask_cors import CORS
+# REMOVED: from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
-from .persistence import database as db # Import the database module
+from .persistence import database as db
+from .extensions import oauth, cors  # <-- IMPORT FROM NEW EXTENSIONS FILE
 
-# Initialize extensions here, but don't configure them with the app yet
-oauth = OAuth()
-cors = CORS()
+# REMOVED: oauth = OAuth()
+# REMOVED: cors = CORS()
 
 def create_app():
     """Application factory function."""
@@ -18,16 +18,34 @@ def create_app():
     # Apply middleware
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-    # Configure extensions with the app instance
-    oauth.init_app(app)
-    cors.init_app(app, supports_credentials=True, origins=["https://emergentphysics.com", "https://www.emergentphysics.com"])
+    # --- FIXED CORS CONFIGURATION ---
+    # Allowed origins for web and all Capacitor platforms
+    allowed_origins = [
+        "https://safi.selfalignmentframework.com",
+        "https://selfalignmentframework.com",
+        "capacitor://localhost",  # iOS Capacitor
+        "http://localhost",       # Android Capacitor
+        "ionic://localhost"       # Alternative Capacitor scheme
+    ]
+    
+    # CRITICAL: Configure CORS to explicitly allow the Authorization header for JWT tokens
+    cors.init_app(  # This now configures the imported 'cors' object
+        app, 
+        supports_credentials=True, 
+        origins=allowed_origins,
+        allow_headers=["Content-Type", "Authorization"], 
+        expose_headers=["Content-Type"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    )
 
-    # --- ADDED: Initialize the database within the app context ---
-    # This is the correct place to ensure it runs once on startup.
+    # Configure the oauth object imported from extensions.py
+    oauth.init_app(app)
+
+    # Initialize the database within the app context
     with app.app_context():
         db.init_db()
 
-    # Register the Google OAuth client
+    # Register the Google OAuth client on the imported object
     oauth.register(
         name='google',
         client_id=app.config['GOOGLE_CLIENT_ID'],
@@ -41,6 +59,7 @@ def create_app():
     )
 
     # Import and register blueprints
+    # This is no longer a circular import
     from .api.auth import auth_bp
     from .api.conversations import conversations_bp
     
@@ -51,9 +70,16 @@ def create_app():
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve(path):
+        
+        # Prevent catch-all route from serving HTML for API calls
+        if path.startswith('api/'):
+            return jsonify({"error": "Not Found", "message": f"API endpoint '{path}' not found."}), 404
+            
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            # Serve the static file (e.g., main.js, styles.css)
             return send_from_directory(app.static_folder, path)
         else:
+            # For all other paths, serve index.html
             return send_from_directory(app.static_folder, 'index.html')
 
     return app
