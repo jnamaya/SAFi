@@ -1060,7 +1060,7 @@ export function updateActiveProfileChip(profileName) {
   
   const avatarUrl = getAvatarForProfile(profileName);
   // MODIFICATION: Split text label and profile name
-  const textLabel = "Profile:";
+  const textLabel = "Persona:";
   const profileNameText = profileName || 'Default';
 
   if (elements.activeProfileChip) {
@@ -1125,7 +1125,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     const container = elements.cpTabProfile;
     if (!container) return;
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">Choose Ethical Profile</h3>
+        <h3 class="text-xl font-semibold mb-4">Choose a Persona</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
         <div class="space-y-4" role="radiogroup">
             ${profiles.map(profile => {
