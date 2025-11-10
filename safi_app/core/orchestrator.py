@@ -12,6 +12,10 @@ import logging
 import httpx  # <-- Already installed
 import re  # <-- NEW: For cleaning text
 from bs4 import BeautifulSoup  # <-- NEW: For parsing HTML
+
+# --- REMOVED: ET, catholic_mass_readings ---
+
+
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
 import google.generativeai as genai
@@ -21,8 +25,10 @@ from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from ..utils import dict_sha256
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
-# --- ADDED: Import for the new plugin ---
+# --- ADDED: Import for the new plugins ---
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
+from .plugins.fiduciary_data import handle_fiduciary_commands
+
 
 # Configure basic logging
 # In a real production app, this would be configured in the main app entry point.
@@ -158,18 +164,40 @@ class SAFi:
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         
+        # This will hold all data gathered from plugins
+        plugin_context_data = {}
+
         # -----------------------------------------------------------------
-        # --- Handle Profile-Specific Commands (e.g., Daily Readings) ---
+        # --- Handle Profile-Specific Commands (Plugin Chain) ---
         # -----------------------------------------------------------------
         
-        new_user_prompt, readings_data = await handle_bible_scholar_commands(
+        # 1. Check for Bible Scholar commands
+        # We only care about the data. The prompt returned is the original.
+        _, readings_data = await handle_bible_scholar_commands(
             user_prompt, 
             self.active_profile_name, 
             self.log
         )
-        user_prompt = new_user_prompt  # Update the user_prompt variable
         if readings_data:
-            self.last_readings_data = readings_data
+            plugin_context_data.update(readings_data)
+            
+        # 2. Check for Fiduciary commands
+        # --- THIS IS THE FIX ---
+        # Get the specific 'groq' client for the plugin's helper LLM
+        groq_client = self.clients.get("groq")
+        
+        # Call with the correct 4 arguments
+        _, fiduciary_data = await handle_fiduciary_commands(
+            user_prompt,
+            self.active_profile_name,
+            self.log,
+            groq_client # Pass the groq client, not the intellect's client
+        )
+        if fiduciary_data:
+            plugin_context_data.update(fiduciary_data)
+        
+        # The 'user_prompt' variable is the original, unmodified prompt.
+        # 'plugin_context_data' holds all retrieved data.
             
         # --- END OF COMMANDS BLOCK ---
         # -----------------------------------------------------------------
@@ -188,9 +216,14 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
-        # --- FIXED TYPO HERE ---
-        # Changed 'retrieved_.context' to 'retrieved_context'
-        a_t, r_t, retrieved_context = await self.intellect_engine.generate(user_prompt=user_prompt, memory_summary=memory_summary, spirit_feedback=spirit_feedback)
+        # --- MODIFIED CALL ---
+        # Pass the merged plugin_context_data to the Intellect Engine
+        a_t, r_t, retrieved_context = await self.intellect_engine.generate(
+            user_prompt=user_prompt, 
+            memory_summary=memory_summary, 
+            spirit_feedback=spirit_feedback,
+            plugin_context=plugin_context_data # <-- Pass collected data
+        )
         message_id = str(uuid.uuid4())
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)

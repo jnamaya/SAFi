@@ -84,12 +84,14 @@ class IntellectEngine:
         user_prompt: str,
         memory_summary: str,
         spirit_feedback: str,
+        plugin_context: Optional[Dict[str, Any]] = None, # <-- Accept plugin data
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Generates a response based on the user prompt and contextual information.
         """
         self.last_error = None
 
+        # 1. Get RAG context (from files)
         retrieved_context_string = ""
         if self.retriever:
             retrieved_docs = self.retriever.search(user_prompt)  # <-- Get the List[Dict]
@@ -115,15 +117,71 @@ class IntellectEngine:
                             formatted_chunks.append(doc["text_chunk"])
 
                 retrieved_context_string = "\n\n".join(formatted_chunks)
+        
+        # 2. Get Plugin context (from APIs, scrapers)
+        plugin_context_string = ""
+        if plugin_context:
+            
+            # --- Format Fiduciary Data ---
+            if "stock_data" in plugin_context:
+                stock_data = plugin_context["stock_data"]
+                
+                stock_table_md = f"CONTEXT: I have fetched the following financial data as requested:\n\n"
+                stock_table_md += f"## {stock_data.get('Company Name', 'N/A')} ({stock_data.get('Ticker Symbol', 'N/A')})\n"
+                stock_table_md += f"| Metric | Value |\n"
+                stock_table_md += f"| --- | --- |\n"
+                
+                for key, value in stock_data.items():
+                    if key not in ["Company Name", "Ticker Symbol"] and value is not None:
+                        # Format numbers nicely
+                        if isinstance(value, (int, float)):
+                            if key == "Dividend Yield":
+                                value = f"{value * 100:.2f}%" if value else "N/A"
+                            elif key == "P/E Ratio (TTM)":
+                                value = f"{value:.2f}" if value else "N/A"
+                            else:
+                                value = f"{value:,}" if value else "N/A"
+                        stock_table_md += f"| {key} | {value} |\n"
+                plugin_context_string += stock_table_md + "\n\n"
+
+            # --- REMOVED "daily_readings" FORMATTING BLOCK ---
+
+            # --- Format Bible Scholar: Individual Reading ---
+            if "individual_reading" in plugin_context:
+                reading = plugin_context["individual_reading"]
+                date = plugin_context.get("date", "Today's Reading")
+                
+                reading_md = f"CONTEXT: The user requested a specific reading. I have fetched the following text for {date}:\n\n"
+                reading_md += f"### {reading.get('title', '')} ({reading.get('citation', '')})\n"
+                reading_md += f"{reading.get('text', 'Reading text not available.')}\n\n"
+                plugin_context_string += reading_md
+
+            # --- Format Plugin Errors ---
+            # This handles both stock_error and plugin_error
+            if "plugin_error" in plugin_context:
+                error_md = f"CONTEXT: I encountered an error trying to fetch data for the user.\n"
+                error_md += f"Error Message: {plugin_context['plugin_error']}\n"
+                error_md += "Please inform the user about this error.\n\n"
+                plugin_context_string += error_md
+            elif "stock_error" in plugin_context: # Keep old key for compatibility
+                error_md = f"CONTEXT: I encountered an error trying to fetch data for the user.\n"
+                error_md += f"Error Message: {plugin_context['stock_error']}\n"
+                error_md += "Please inform the user about this error.\n\n"
+                plugin_context_string += error_md
+
 
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
-        # Inject RAG context into worldview if placeholder exists
+        # 3. Combine ALL context
+        # We prioritize plugin context first, then RAG context
+        full_context_injection = "\n\n".join(filter(None, [plugin_context_string, retrieved_context_string]))
+        
+        # 4. Inject into worldview
         if "{retrieved_context}" in worldview:
             worldview = worldview.format(
-                retrieved_context=retrieved_context_string
-            )  # <-- Inject the formatted string
+                retrieved_context=full_context_injection if full_context_injection else "[NO DOCUMENTS FOUND]"
+            )
 
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
@@ -150,6 +208,9 @@ class IntellectEngine:
         system_prompt = "\n\n".join(
             filter(None, [worldview, memory_injection, spirit_injection, formatting_instructions])
         )
+        
+        # This will be passed to the Conscience for auditing
+        final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
 
         obj = {}
         content = "{}"
@@ -297,7 +358,7 @@ class IntellectEngine:
             return (
                 answer.replace("\\n", "\n"),
                 reflection.replace("\\n", "\n"),
-                retrieved_context_string if self.retriever else "",
+                final_context_for_audit, # Pass all context to be audited
             )
 
         except Exception as e:
@@ -305,7 +366,7 @@ class IntellectEngine:
                 f"{type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
             )
             self.log.exception(f"Intellect generation failed (provider={self.provider}, model={self.model})") 
-            return None, None, retrieved_context_string if self.retriever else ""
+            return None, None, final_context_for_audit
 
 
 class WillGate:
