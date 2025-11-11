@@ -70,8 +70,15 @@ class SAFi:
                 self.log.warning(f"Gemini API key configuration failed: {e}. Gemini models will be unavailable.")
         
         prompts_path = Path(__file__).parent / "system_prompts.json"
-        with prompts_path.open("r", encoding="utf-8") as f:
-            self.prompts = json.load(f)
+        try:
+            with prompts_path.open("r", encoding="utf-8") as f:
+                self.prompts = json.load(f)
+        except FileNotFoundError:
+            self.log.error(f"FATAL: system_prompts.json not found at {prompts_path}")
+            self.prompts = {} # Set empty to avoid crash, but log error
+        except json.JSONDecodeError:
+            self.log.error(f"FATAL: Failed to decode system_prompts.json. Check for syntax errors.")
+            self.prompts = {}
 
         if value_profile_or_list:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
@@ -110,7 +117,7 @@ class SAFi:
             provider_name=intellect_provider,
             model=intellect_model_to_use, 
             profile=self.profile, 
-            prompt_config=self.prompts["intellect_engine"]
+            prompt_config=self.prompts.get("intellect_engine", {})
         )
         self.will_gate = WillGate(
             will_client, 
@@ -118,7 +125,7 @@ class SAFi:
             model=will_model_to_use, 
             values=self.values, 
             profile=self.profile, 
-            prompt_config=self.prompts["will_gate"]
+            prompt_config=self.prompts.get("will_gate", {})
         )
         self.conscience = ConscienceAuditor(
             conscience_client, 
@@ -126,7 +133,7 @@ class SAFi:
             model=conscience_model_to_use, 
             values=self.values, 
             profile=self.profile, 
-            prompt_config=self.prompts["conscience_auditor"]
+            prompt_config=self.prompts.get("conscience_auditor", {})
         )
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
@@ -151,15 +158,8 @@ class SAFi:
 
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         
-        plugin_context_data = {}
         message_id = str(uuid.uuid4())
-
-        # --- Fetch long-term user profile memory ---
-        try:
-            current_profile_json = db.fetch_user_profile_memory(user_id)
-        except Exception as e:
-            self.log.error(f"Failed to fetch user profile memory for {user_id}: {e}")
-            current_profile_json = "{}" # Default to empty on error
+        plugin_context_data = {}
 
         # -----------------------------------------------------------------
         # --- Handle Profile-Specific Commands (Plugin Chain) ---
@@ -187,13 +187,17 @@ class SAFi:
             plugin_context_data.update(fiduciary_data)
         
         # -----------------------------------------------------------------
-        # --- NOTE: The special `if "stock_data" in plugin_context_data:`
-        # --- block has been REMOVED.
-        # --- All plugin data now flows directly to the IntellectEngine.
+        # --- Start of Core SAFi Process ---
         # -----------------------------------------------------------------
         
+        # 1. FETCH MEMORIES
+        # Get short-term (conversation) memory
         memory_summary = db.fetch_conversation_summary(conversation_id)
         
+        # Get long-term (user) memory
+        current_profile_json = db.fetch_user_profile_memory(user_id)
+        
+        # Get spirit (ethical) memory
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              dim = max(len(self.values), 1)
@@ -206,12 +210,13 @@ class SAFi:
             recent_mu=list(self.mu_history)
         )
 
+        # 2. INTELLECT (Generate Draft)
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=user_prompt, 
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
-            user_profile_json=current_profile_json
+            user_profile_json=current_profile_json  # Pass long-term memory to Intellect
         )
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
@@ -226,6 +231,7 @@ class SAFi:
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
+        # 3. WILL (Evaluate Draft)
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
         if D_t == "violation":
@@ -248,6 +254,7 @@ class SAFi:
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
 
+        # 4. STORE & RESPOND (Save draft, run audits in background)
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
         
         snapshot = { 
@@ -259,28 +266,17 @@ class SAFi:
             "retrieved_context": retrieved_context 
         }
         
-        # Run audit thread
-        threading.Thread(
-            target=self._run_audit_thread, 
-            args=(snapshot, D_t, E_t, message_id, spirit_feedback), 
-            daemon=True
-        ).start()
+        # 5. RUN BACKGROUND THREADS
+        # Run Conscience & Spirit audit
+        threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         
-        # Run summarization thread
+        # Run short-term memory (summarizer)
         if hasattr(self, 'groq_client_sync'):
-            threading.Thread(
-                target=self._run_summarization_thread, 
-                args=(conversation_id, memory_summary, user_prompt, a_t), 
-                daemon=True
-            ).start()
+            threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
-        # --- Run profile update thread ---
+        # Run long-term memory (profile extractor)
         if hasattr(self, 'groq_client_sync'):
-            threading.Thread(
-                target=self._run_profile_update_thread,
-                args=(user_id, current_profile_json, user_prompt, a_t),
-                daemon=True
-            ).start()
+            threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
 
         return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
 
@@ -328,7 +324,7 @@ class SAFi:
                 "p_t_vector": p_t.tolist(),
                 "mu_t_vector": mu_new.tolist(),
                 "memorySummary": snapshot.get("memory_summary") or "",
-                "spiritFeedback": spirit_feedback or "", # Ensure not None
+                "spiritFeedback": spirit_feedback,
                 "retrievedContext": snapshot.get("retrieved_context", "")
             }
             self._append_log(log_entry)
@@ -357,9 +353,14 @@ class SAFi:
         """
         if not hasattr(self, 'groq_client_sync'):
             return
-        
+            
+        summarizer_prompt_config = self.prompts.get("summarizer")
+        if not summarizer_prompt_config or "system_prompt" not in summarizer_prompt_config:
+            self.log.warning("No 'summarizer' prompt found. Skipping summarization.")
+            return
+
         try:
-            system_prompt = self.prompts["summarizer"]["system_prompt"]
+            system_prompt = summarizer_prompt_config["system_prompt"]
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
             
             response = self.groq_client_sync.chat.completions.create(
@@ -373,28 +374,30 @@ class SAFi:
         except Exception as e:
             self.log.warning(f"Summarization thread failed: {e}")
 
-    # --- New thread for updating user profile memory ---
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
         """
-        Runs the user profile extraction logic in a background thread.
+        Runs the long-term user profile update logic in a background thread.
         """
         if not hasattr(self, 'groq_client_sync'):
             return
-        
-        try:
-            system_prompt = self.prompts.get("profile_extractor", {}).get("system_prompt")
-            if not system_prompt:
-                self.log.warning("No 'profile_extractor' prompt found. Skipping profile update.")
-                return
+            
+        profile_prompt_config = self.prompts.get("profile_extractor")
+        if not profile_prompt_config or "system_prompt" not in profile_prompt_config:
+            self.log.warning("No 'profile_extractor' prompt found. Skipping profile update.")
+            return
 
+        try:
+            system_prompt = profile_prompt_config["system_prompt"]
+            
+            # Create the prompt for the extractor
             content = (
                 f"CURRENT_PROFILE_JSON:\n{current_profile_json}\n\n"
                 f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
-                f"UPDATED_PROFILE_JSON:"
+                "Return the new, updated JSON object."
             )
             
             response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL"), # Re-use summarizer model
+                model=getattr(self.config, "SUMMARIZER_MODEL"), # Use the fast summarizer model
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
                 response_format={"type": "json_object"},
@@ -402,16 +405,12 @@ class SAFi:
 
             new_profile_json = response.choices[0].message.content.strip()
             
-            # Basic validation
-            try:
-                json.loads(new_profile_json)
-                db.upsert_user_profile_memory(user_id, new_profile_json)
-            except json.JSONDecodeError:
-                self.log.warning(f"Profile extractor did not return valid JSON: {new_profile_json}")
+            # Save the new profile to the database
+            db.upsert_user_profile_memory(user_id, new_profile_json)
+            self.log.info(f"Successfully updated user profile for {user_id}")
 
         except Exception as e:
-            self.log.warning(f"Profile update thread failed: {e}")
-    # --- END ADDITION ---
+            self.log.warning(f"User profile update thread failed: {e}")
 
     def _append_log(self, log_entry: Dict[str, Any]):
         """

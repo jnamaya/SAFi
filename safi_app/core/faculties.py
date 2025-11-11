@@ -82,10 +82,10 @@ class IntellectEngine:
         self,
         *,
         user_prompt: str,
-        user_profile_json: str, # --- THIS IS THE FIX ---
         memory_summary: str,
         spirit_feedback: str,
-        plugin_context: Optional[Dict[str, Any]] = None, # <-- Accept plugin data
+        user_profile_json: str, # <-- ADDED
+        plugin_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Generates a response based on the user prompt and contextual information.
@@ -123,30 +123,47 @@ class IntellectEngine:
         plugin_context_string = ""
         if plugin_context:
             
-            # --- Format Fiduciary Data ---
-            if "stock_data" in plugin_context:
-                stock_data = plugin_context["stock_data"]
-                
-                stock_table_md = f"CONTEXT: I have fetched the following financial data as requested:\n\n"
-                stock_table_md += f"## {stock_data.get('Company Name', 'N/A')} ({stock_data.get('Ticker Symbol', 'N/A')})\n"
+            # --- Helper to format one stock data object ---
+            def format_stock_table(stock_data: Dict[str, Any]) -> str:
+                stock_table_md = f"## {stock_data.get('Company Name', 'N/A')} ({stock_data.get('Ticker Symbol', 'N/A')})\n"
                 stock_table_md += f"| Metric | Value |\n"
                 stock_table_md += f"| --- | --- |\n"
                 
-                for key, value in stock_data.items():
-                    if key not in ["Company Name", "Ticker Symbol"] and value is not None:
+                # Filter to a key set of metrics for context, to avoid overwhelming the prompt
+                metrics_to_show = [
+                    "Current Price", "Previous Close", "Day's Range", "52-Week Range",
+                    "Volume", "Average Volume", "Market Cap", "P/E Ratio (TTM)",
+                    "Dividend Yield", "Beta (5Y Monthly)", "Analyst Target Price",
+                    "Sector", "Industry"
+                ]
+                
+                for key in metrics_to_show:
+                    value = stock_data.get(key)
+                    if value is not None:
                         # Format numbers nicely
                         if isinstance(value, (int, float)):
                             if key == "Dividend Yield":
-                                value = f"{value * 100:.2f}%" if value else "N/A"
-                            elif key == "P/E Ratio (TTM)":
-                                value = f"{value:.2f}" if value else "N/A"
-                            else:
-                                value = f"{value:,}" if value else "N/A"
+                                value = f"{value * 100:.2f}%"
+                            elif key in ["P/E Ratio (TTM)", "Beta (5Y Monthly)"]:
+                                value = f"{value:.2f}"
+                            elif key in ["Volume", "Average Volume", "Market Cap"]:
+                                value = f"{value:,}"
+                            elif key in ["Current Price", "Previous Close", "Analyst Target Price"]:
+                                value = f"${value:,.2f}"
                         stock_table_md += f"| {key} | {value} |\n"
-                plugin_context_string += stock_table_md + "\n\n"
+                return stock_table_md + "\n"
+            
+            # --- Format Fiduciary Data (Single) ---
+            if "stock_data" in plugin_context:
+                plugin_context_string += f"CONTEXT: I have fetched the following financial data as requested:\n\n"
+                plugin_context_string += format_stock_table(plugin_context["stock_data"])
 
-            # --- REMOVED "daily_readings" FORMATTING BLOCK ---
-
+            # --- Format Fiduciary Data (Multiple) ---
+            elif "stock_data_list" in plugin_context:
+                plugin_context_string += f"CONTEXT: I have fetched financial data for multiple companies as requested:\n\n"
+                for stock_data in plugin_context["stock_data_list"]:
+                    plugin_context_string += format_stock_table(stock_data)
+            
             # --- Format Bible Scholar: Individual Reading ---
             if "individual_reading" in plugin_context:
                 reading = plugin_context["individual_reading"]
@@ -158,15 +175,9 @@ class IntellectEngine:
                 plugin_context_string += reading_md
 
             # --- Format Plugin Errors ---
-            # This handles both stock_error and plugin_error
             if "plugin_error" in plugin_context:
                 error_md = f"CONTEXT: I encountered an error trying to fetch data for the user.\n"
                 error_md += f"Error Message: {plugin_context['plugin_error']}\n"
-                error_md += "Please inform the user about this error.\n\n"
-                plugin_context_string += error_md
-            elif "stock_error" in plugin_context: # Keep old key for compatibility
-                error_md = f"CONTEXT: I encountered an error trying to fetch data for the user.\n"
-                error_md += f"Error Message: {plugin_context['stock_error']}\n"
                 error_md += "Please inform the user about this error.\n\n"
                 plugin_context_string += error_md
 
@@ -184,19 +195,10 @@ class IntellectEngine:
                 retrieved_context=full_context_injection if full_context_injection else "[NO DOCUMENTS FOUND]"
             )
 
-        # --- ADDED: Inject the UserProfile (Long-Term Memory) ---
-        profile_injection = ""
-        if user_profile_json and user_profile_json.strip() and user_profile_json.strip() != "{}":
-            profile_template = self.prompt_config.get("user_profile_template", "")
-            if profile_template:
-                profile_injection = profile_template.format(user_profile_json=user_profile_json)
-
-        # --- Inject the ConversationSummary (Short-Term Memory) ---
-        memory_injection = ""
-        if memory_summary:
-            memory_template = self.prompt_config.get("conversation_summary_template", "")
-            if memory_template:
-                memory_injection = memory_template.format(memory_summary=memory_summary)
+        memory_injection = (
+            f"CONTEXT: Here is a summary of our conversation so far. Use it to inform your answer.\n"
+            f"<summary>{memory_summary}</summary>" if memory_summary else ""
+        )
 
         spirit_injection = ""
         if spirit_feedback:
@@ -205,6 +207,19 @@ class IntellectEngine:
                 spirit_injection = coaching_note_template.format(
                     spirit_feedback=spirit_feedback
                 )
+
+        # --- NEW: INJECT THE USER'S LONG-TERM PROFILE ---
+        user_profile_injection = ""
+        if user_profile_json and user_profile_json != "{}":
+            # Find the template in prompt_config, default to a sensible string if not found
+            profile_template = self.prompt_config.get("user_profile_template", 
+                "CONTEXT: Here is the user's profile. Use these facts to tailor your educational examples.\n<user_profile>{user_profile_json}</user_profile>")
+            
+            if profile_template:
+                user_profile_injection = profile_template.format(
+                    user_profile_json=user_profile_json
+                )
+        # --- END NEW ---
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
         # The {persona_style_rules} placeholder is in formatting_instructions
@@ -216,7 +231,13 @@ class IntellectEngine:
 
         # Build system prompt
         system_prompt = "\n\n".join(
-            filter(None, [worldview, profile_injection, memory_injection, spirit_injection, formatting_instructions])
+            filter(None, [
+                worldview, 
+                user_profile_injection, # <-- ADDED
+                memory_injection, 
+                spirit_injection, 
+                formatting_instructions
+            ])
         )
         
         # This will be passed to the Conscience for auditing
@@ -237,7 +258,7 @@ class IntellectEngine:
                 params = {
                     "model": self.model,
                     "temperature": 1.0,
-                    # --- FIX: "response_format" line is REMOVED ---
+                    # --- "response_format" is no longer used here ---
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -277,9 +298,8 @@ class IntellectEngine:
                     raise ValueError("Gemini model was not initialized correctly.")
 
                 generation_config = genai.types.GenerationConfig(
-                    # response_mime_type="application/json",  # This is NOT used
                     temperature=1.0,
-                    max_output_tokens=4096,  # Add token limit to prevent truncation
+                    max_output_tokens=4096,
                 )
 
                 # We pass the full prompt (which includes system instructions) as the content.
