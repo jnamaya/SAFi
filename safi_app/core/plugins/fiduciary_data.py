@@ -150,7 +150,6 @@ async def _get_stock_data(ticker_to_fetch: str, entity_name: str, log: logging.L
             "Average Volume": info.get("averageVolume"),
             "Market Cap": info.get("marketCap"),
             "P/E Ratio (TTM)": info.get("trailingPE"),
-            "Dividend Yield": info.get("dividendYield"),
             "Beta (5Y Monthly)": info.get("beta"),
             "Analyst Target Price": info.get("targetMeanPrice"), # Renamed key
             "Sector": info.get("sector"),
