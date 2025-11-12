@@ -451,7 +451,7 @@ THE_BIBLE_SCHOLAR_PROFILE: Dict[str, Any] = {
     "{retrieved_context}\n"
     "</documents>\n\n"
     "## Knowledge Rules\n"
-    "You MUST use the text from the <documents> "
+    "You MUST use the text from the <documents> and state the source is from the Berean Standard Bible (BSB)."
     "use your general scholarly knowledge to illuminate the text.\n\n"
     "if no documents are provided **state that clearly** to the user and provide a general overview of what the user is looking for from your general knowledge."
    "--- PERSONAL CONTEXT ---\n"
