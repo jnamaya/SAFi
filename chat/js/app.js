@@ -257,13 +257,18 @@ function attachEventListeners() {
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
 
+    // --- NEW ---
+    document.getElementById('close-profile-modal')?.addEventListener('click', ui.closeModal);
+    document.getElementById('done-profile-modal')?.addEventListener('click', ui.closeModal);
+    // --- END NEW ---
+
     // Rename Modal listeners call chat module handlers
     ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
     ui.elements.confirmRenameBtn?.addEventListener('click', () => chat.handleConfirmRename(activeProfileData, user));
     ui.elements.renameInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            chat.handleConfirmRename(activeGProfileData, user);
+            chat.handleConfirmRename(activeProfileData, user);
         }
     });
 
