@@ -156,6 +156,81 @@ class SAFi:
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
 
+    # --- NEW METHOD ---
+    async def _get_prompt_suggestions(self, user_prompt: str, will_rules: List[str]) -> List[str]:
+        """
+        Uses a fast model (Groq) to generate prompt suggestions after a violation.
+        """
+        suggestion_client = self.clients.get("groq")
+        if not suggestion_client:
+            self.log.warning("Groq client not configured. Cannot generate prompt suggestions.")
+            return []
+
+        prompt_config = self.prompts.get("suggestion_engine")
+        if not prompt_config or "system_prompt" not in prompt_config:
+            self.log.warning("No 'suggestion_engine' prompt found. Cannot generate suggestions.")
+            return []
+
+        # Use the model name from the user's request, or a fast default
+        suggestion_model = "llama-3.1-8b-instant" 
+
+        try:
+            system_prompt = prompt_config["system_prompt"]
+            rules_string = "\n".join(f"- {r}" for r in will_rules)
+            
+            content = (
+                f"**Here are the rules the user violated:**\n{rules_string}\n\n"
+                f"**Here is the user's original (blocked) prompt:**\n{user_prompt}\n\n"
+                "Please provide compliant suggestions."
+            )
+
+            # --- ADDED LOGGING ---
+            self.log.info(f"Sending prompt to suggestion engine (model: {suggestion_model}):\nSystem: {system_prompt}\nUser Content: {content}")
+            # --- END ADDED LOGGING ---
+
+            response = await suggestion_client.chat.completions.create(
+                model=suggestion_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": content}
+                ],
+                temperature=0.7, # A bit of creativity
+                max_tokens=512,
+                response_format={"type": "json_object"},
+            )
+            
+            response_json = response.choices[0].message.content or "{}"
+            
+            # --- NEW: Log the raw response ---
+            self.log.info(f"Raw response from suggestion engine: {response_json}")
+            # --- END NEW ---
+
+            # --- FIX: Replace greedy regex with robust find/rfind ---
+            start = response_json.find('{')
+            end = response_json.rfind('}')
+            
+            if start != -1 and end != -1 and end > start:
+                json_text = response_json[start:end+1]
+            else:
+                self.log.warning(f"Suggestion engine returned non-JSON: {response_json}")
+                return []
+            
+            obj = json.loads(json_text)
+            # --- END FIX ---
+            
+            suggestions = obj.get("suggestions", [])
+            
+            if isinstance(suggestions, list) and all(isinstance(s, str) for s in suggestions):
+                return suggestions
+            else:
+                self.log.warning(f"Suggestion engine returned invalid data: {response_json}")
+                return []
+
+        except Exception as e:
+            self.log.error(f"Failed to get prompt suggestions: {e}")
+            return []
+    # --- END NEW METHOD ---
+
     async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
         
         message_id = str(uuid.uuid4())
@@ -229,18 +304,29 @@ class SAFi:
             msg = f"Intellect failed: {err}"
             self.log.error(msg)
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
-            return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
+            # --- MODIFIED: Ensure suggestedPrompts (empty list) is present ---
+            return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id, "suggestedPrompts": [] }
 
         # 3. WILL (Evaluate Draft)
+        # --- MODIFIED: Expect two return values ---
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
+        # S_p (suggested_prompts) is no longer returned here
 
         if D_t == "violation":
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
             static_header = "🛑 **The answer was blocked**"
+            
             suppression_message = f"""{static_header}
 ---
 
 **Reason:** {E_t.strip()} """
+
+            # --- NEW: Call the fast suggestion engine ---
+            S_p = await self._get_prompt_suggestions(
+                user_prompt, 
+                self.profile.get("will_rules", [])
+            )
+            # --- END NEW ---
 
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete")
             self._append_log({
@@ -252,7 +338,18 @@ class SAFi:
                 "willReason": E_t,
                 "conscienceLedger": [],
             })
-            return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id }
+            # --- MODIFIED: Include suggestedPrompts from the new function ---
+            return { 
+                "finalOutput": suppression_message, 
+                "newTitle": new_title, 
+                "willDecision": D_t, 
+                "willReason": E_t, 
+                "activeProfile": self.active_profile_name, 
+                "activeValues": self.values, 
+                "conscienceLedger": [], 
+                "messageId": message_id,
+                "suggestedPrompts": S_p # <-- NEWLY GENERATED FIELD
+            }
 
         # 4. STORE & RESPOND (Save draft, run audits in background)
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
@@ -278,7 +375,17 @@ class SAFi:
         if hasattr(self, 'groq_client_sync'):
             threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
 
-        return { "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id }
+        # --- MODIFIED: Include empty suggestedPrompts list for approved responses ---
+        return { 
+            "finalOutput": a_t, 
+            "newTitle": new_title, 
+            "willDecision": D_t, 
+            "willReason": E_t, 
+            "activeProfile": self.active_profile_name, 
+            "activeValues": self.values, 
+            "messageId": message_id,
+            "suggestedPrompts": [] # <-- FIELD IS PRESENT BUT EMPTY
+        }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
         """

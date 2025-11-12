@@ -133,8 +133,8 @@ class IntellectEngine:
                 metrics_to_show = [
                     "Current Price", "Previous Close", "Day's Range", "52-Week Range",
                     "Volume", "Average Volume", "Market Cap", "P/E Ratio (TTM)",
-                    "Dividend Yield", "Beta (5Y Monthly)", "Analyst Target Price",
-                    "Sector", "Industry"
+                   "Beta (5Y Monthly)", "Analyst Target Price",
+                    "Sector"
                 ]
                 
                 for key in metrics_to_show:
@@ -343,9 +343,18 @@ class IntellectEngine:
 
                 try:
                     # Sanitize and parse the JSON part
-                    json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_part.replace("\n", " "))
-                    obj = json.loads(json_part_sanitized)
-                    reflection = obj.get("reflection", "Parsed reflection from delimiter.").strip()
+                    # --- FIX: Replace faulty regex with robust find/rfind ---
+                    start = json_part.find('{')
+                    end = json_part.rfind('}')
+                    if start != -1 and end != -1 and end > start:
+                        json_text = json_part[start:end+1]
+                        # Still sanitize, as it helps with trailing commas
+                        json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_text.replace("\n", " "))
+                        obj = json.loads(json_part_sanitized)
+                        reflection = obj.get("reflection", "Parsed reflection from delimiter.").strip()
+                    else:
+                        raise json.JSONDecodeError("No valid JSON object found", json_part, 0)
+                    # --- END FIX ---
                 except json.JSONDecodeError as e:
                     self.log.warning(f"Failed to parse JSON after delimiter: {e} | content={json_part[:100]}")
                     reflection = "Failed to parse reflection JSON."
@@ -365,9 +374,17 @@ class IntellectEngine:
 
                     try:
                         # Sanitize and parse
-                        json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_part.replace("\n", " "))
-                        obj = json.loads(json_part_sanitized)
-                        reflection = obj.get("reflection", "Parsed reflection from regex search.").strip()
+                        # --- FIX: Replace faulty regex with robust find/rfind ---
+                        start = json_part.find('{')
+                        end = json_part.rfind('}')
+                        if start != -1 and end != -1 and end > start:
+                            json_text = json_part[start:end+1]
+                            json_part_sanitized = re.sub(r",\s*([}\]])", r"\1", json_text.replace("\n", " "))
+                            obj = json.loads(json_part_sanitized)
+                            reflection = obj.get("reflection", "Parsed reflection from regex search.").strip()
+                        else:
+                            raise json.JSONDecodeError("No valid JSON object found", json_part, 0)
+                        # --- END FIX ---
                     except json.JSONDecodeError as e:
                         self.log.warning(f"Regex JSON parse failed: {e} | content={json_part[:100]}")
                         # Fallthrough to Priority 3...
@@ -438,13 +455,16 @@ class WillGate:
             {"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values}
         )
 
+    # --- MODIFIED: WillGate.evaluate now returns a tuple of 2 values ---
     async def evaluate(self, *, user_prompt: str, draft_answer: str) -> Tuple[str, str]:
         """
         Evaluates a draft answer for alignment with ethical rules and values.
+        Returns: (decision, reason)
         """
         key = self._key(user_prompt, draft_answer)
         if key in self.cache:
-            return self.cache[key]
+            decision, reason = self.cache[key]
+            return decision, reason
 
         rules = self.profile.get("will_rules") or []
         name = self.profile.get("name", "")
@@ -466,6 +486,7 @@ class WillGate:
             json.dumps(self.values, indent=2),
             self.prompt_config.get(
                 "footer",
+                # The footer is now simplified
                 "Return a single JSON object with keys: decision, reason.",
             ),
         ]
@@ -474,7 +495,7 @@ class WillGate:
 
         obj = {}
         content = "{}"
-
+        
         try:
             if self.provider == "groq" or self.provider == "openai":
                 if not isinstance(self.client, AsyncOpenAI):
@@ -540,13 +561,21 @@ class WillGate:
             # -----------------------------------------------------------------
             # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
             # -----------------------------------------------------------------
-            json_match = re.search(r"\{.*\}", content, re.DOTALL)
-            if json_match:
-                content = json_match.group(0)
+            # --- FIX: Replace greedy regex with robust find/rfind ---
+            start = content.find('{')
+            end = content.rfind('}')
+            
+            if start != -1 and end != -1 and end > start:
+                json_text = content[start:end+1]
+            else:
+                json_text = content # Fallback to old content
+            # --- END FIX ---
+
             try:
-                obj = json.loads(content)
+                obj = json.loads(json_text)
             except json.JSONDecodeError:
-                sanitized = content.replace("\r", " ").replace("\n", " ")
+                # Fallback to sanitization if primary parse fails
+                sanitized = json_text.replace("\r", " ").replace("\n", " ")
                 sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
                 sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
                 try:
@@ -557,25 +586,30 @@ class WillGate:
                         f"content={sanitized[:500]}"
                     )
                     self.log.error(error_msg) # Log the parse error
+                    # --- MODIFIED: Return two values on internal error ---
                     return ("violation", "Internal evaluation error")
 
             decision = str(obj.get("decision") or "").strip().lower()
             reason = (obj.get("reason") or "").strip()
+            
             if decision not in {"approve", "violation"}:
                 decision = "violation"
+                
             if not reason:
                 reason = (
                     "Decision explained by Will policies and the active value set."
                 )
 
+            # --- MODIFIED: Return two values now ---
             tup = (decision, reason)
             self.cache[key] = tup
-            return tup
+            return decision, reason
         except Exception as e:
             error_msg = (
                 f"Will exception: {type(e).__name__}: {e} (provider={self.provider}, model={self.model})"
             )
             self.log.exception(f"WillGate evaluation failed (provider={self.provider})") # Log the full exception
+            # --- MODIFIED: Return two values on exception ---
             return ("violation", "Internal evaluation error")
 
 
@@ -751,13 +785,21 @@ class ConscienceAuditor:
             # -----------------------------------------------------------------
             # Robust JSON Parsing & Sanitization (see IntellectEngine for notes)
             # -----------------------------------------------------------------
-            json_match = re.search(r"\{.*\}", content, re.DOTALL)
-            if json_match:
-                content = json_match.group(0)
+            # --- FIX: Replace greedy regex with robust find/rfind ---
+            start = content.find('{')
+            end = content.rfind('}')
+            
+            if start != -1 and end != -1 and end > start:
+                json_text = content[start:end+1]
+            else:
+                json_text = content # Fallback to old content
+            # --- END FIX ---
+            
             try:
-                obj = json.loads(content)
+                obj = json.loads(json_text)
             except json.JSONDecodeError:
-                sanitized = content.replace("\r", " ").replace("\n", " ")
+                # Fallback to sanitization if primary parse fails
+                sanitized = json_text.replace("\r", " ").replace("\n", " ")
                 sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized)
                 sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
                 try:
