@@ -94,7 +94,7 @@ export function updateUIForAuthState(user, logoutHandler, deleteAccountHandler, 
               </div>
 
               <button id="control-panel-btn" type="button" class="shrink-0 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors" aria-label="Open Control Panel">
-                <svg class="w-6 h-6 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <svg class="w-6 h-6 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
               </button>
             </div>
           </div>
@@ -150,9 +150,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageContainer.dataset.messageId = messageId;
   }
   
-  // --- NEW CODE START: Extract suggestedPrompts ---
   const suggestedPrompts = options.suggestedPrompts || [];
-  // --- NEW CODE END ---
 
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
@@ -161,10 +159,8 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     const profileName = (payload && payload.profile) ? payload.profile : null;
     const avatarUrl = getAvatarForProfile(profileName);
     
-    // --- NEW CODE START: Generate Prompt HTML ---
     let promptsHtml = '';
     if (suggestedPrompts.length > 0) {
-        // Create an attractive, distinct block for the suggestions
         const promptsList = suggestedPrompts.map(p => 
             `<button class="ai-prompt-suggestion-btn text-left w-full p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors border border-neutral-200 dark:border-neutral-700 text-sm italic">
                 "${p}"
@@ -178,7 +174,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             </div>
         `;
     }
-    // --- NEW CODE END ---
 
     messageDiv.innerHTML = `
       <div class="ai-avatar">
@@ -189,7 +184,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
           <!-- Content will be injected here -->
           <div class="meta"></div>
         </div>
-        ${promptsHtml} <!-- <-- INJECT PROMPT HTML HERE -->
+        ${promptsHtml}
       </div>
     `;
     const bubble = messageDiv.querySelector('.chat-bubble');
@@ -238,28 +233,21 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   ui.elements.chatWindow.appendChild(messageContainer);
   ui.scrollToBottom();
   
-  // --- NEW CODE START: Attach listener for suggested prompt buttons ---
   messageContainer.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
       btn.addEventListener('click', () => {
           const promptText = btn.textContent.replace(/"/g, '').trim();
           ui.elements.messageInput.value = promptText;
           ui.elements.sendButton.disabled = false;
-          // Manual auto-size logic for immediate feedback on text injection
           ui.elements.messageInput.style.height = 'auto'; 
           ui.elements.messageInput.style.height = `${ui.elements.messageInput.scrollHeight}px`; 
           ui.elements.messageInput.focus();
-
-          // --- ADDED THIS LINE TO AUTO-SEND ---
           ui.elements.sendButton.click();
-
-          // --- NEW: Remove the suggestion box ---
           const suggestionBox = btn.closest('.prompt-suggestions-container');
           if (suggestionBox) {
               suggestionBox.remove();
           }
       });
   });
-  // --- NEW CODE END ---
   
   return messageContainer;
 }
@@ -479,10 +467,7 @@ export function renderConversationLink(convo, handlers) {
       }
       const menu = createDropdownMenu(convo.id, handlers);
       positionDropdown(menu, actionButton);
-      // --- MODIFIED ---
-      // document.body.appendChild(menu);
-      ui.setOpenDropdown(menu); // Use the state manager
-      // --- END MODIFIED ---
+      ui.setOpenDropdown(menu);
     }, longPressDuration);
   };
 
@@ -533,10 +518,7 @@ export function renderConversationLink(convo, handlers) {
 
       const menu = createDropdownMenu(convo.id, handlers);
       positionDropdown(menu, actionButton);
-      // --- MODIFIED ---
-      // document.body.appendChild(menu);
-      ui.setOpenDropdown(menu); // Use the state manager
-      // --- END MODIFIED ---
+      ui.setOpenDropdown(menu);
       
     } else {
       e.preventDefault();
@@ -633,8 +615,11 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
   if (activeProfile && ui.elements.chatWindow) {
     const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
     const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
-    const descriptionHtml = activeProfile.description 
-      ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${activeProfile.description}</p>`
+    
+    // Use description_short if available, fallback to description, then empty
+    const description = activeProfile.description_short || activeProfile.description || '';
+    const descriptionHtml = description
+      ? `<p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${description}</p>`
       : '';
     
     const avatarUrl = getAvatarForProfile(activeProfile.name);
@@ -649,7 +634,7 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         ${descriptionHtml}
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
+            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
         </div>
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-6xl mx-auto">${promptsHtml}</div>
@@ -696,23 +681,39 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
   ui._ensureElements();
     const container = ui.elements.cpTabProfile;
     if (!container) return;
+    
+    const viewDetailsHandler = (key) => {
+        const profile = profiles.find(p => p.key === key);
+        if (profile) {
+            renderProfileDetailsModal(profile); 
+            ui.showModal('profile'); // <-- Corrected to 'profile'
+        }
+    };
+    
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">Choose a Persona</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
         <div class="space-y-4" role="radiogroup">
             ${profiles.map(profile => {
                 const avatarUrl = getAvatarForProfile(profile.name);
+                // Use description_short if available, fallback to description, then empty
+                const description = profile.description_short || profile.description || '';
                 return `
-                <label class="block p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg cursor-pointer hover:border-green-500 dark:hover:border-green-400 transition-colors">
-                    <div class="flex items-center justify-between">
+                <div class="p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg transition-colors">
+                    <label class="flex items-center justify-between cursor-pointer">
                         <div class="flex items-center gap-3">
                             <img src="${avatarUrl}" alt="${profile.name} Avatar" class="w-8 h-8 rounded-lg">
                             <span class="font-semibold text-base text-neutral-800 dark:text-neutral-200">${profile.name}</span>
                         </div>
                         <input type="radio" name="ethical-profile" value="${profile.key}" class="form-radio text-green-600 focus:ring-green-500" ${profile.key === activeProfileKey ? 'checked' : ''}>
+                    </label>
+                    <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2">${description}</p>
+                    <div class="mt-3">
+                        <button data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline">
+                            View Details
+                        </button>
                     </div>
-                    <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2">${profile.description || ''}</p>
-                </label>
+                </div>
             `}).join('')}
         </div>
     `;
@@ -720,12 +721,18 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     container.querySelectorAll('input[name="ethical-profile"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             onProfileChange(e.target.value);
-            container.querySelectorAll('label').forEach(label => {
+            container.querySelectorAll('.p-4.border').forEach(label => {
                 label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
                 label.classList.add('border-neutral-300', 'dark:border-neutral-700');
             });
-            radio.closest('label').classList.add('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
-            radio.closest('label').classList.remove('border-neutral-300', 'dark:border-neutral-700');
+            radio.closest('.p-4.border').classList.add('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
+            radio.closest('.p-4.border').classList.remove('border-neutral-300', 'dark:border-neutral-700');
+        });
+    });
+    
+    container.querySelectorAll('.view-profile-details-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            viewDetailsHandler(btn.dataset.key);
         });
     });
 }
@@ -1062,3 +1069,134 @@ function copyAuditToClipboard(payload) {
         ui.showToast('Failed to copy audit', 'error');
     });
 }
+
+// --- START: PROFILE DETAILS MODAL ---
+
+/**
+ * Helper to create a formatted section for the profile details modal.
+ * @param {string} title - The title of the section (e.g., "Worldview")
+ * @param {string | string[]} content - The content (string for markdown, array for lists)
+ * @returns {string} - The HTML string for the section
+ */
+function createModalSection(title, content) {
+    if (!content) return '';
+    
+    let contentHtml = '';
+    
+    // Check if content is an array (for will_rules)
+    if (Array.isArray(content)) {
+        if (content.length === 0) return '';
+        contentHtml = '<ul class="space-y-1">' + content.map(item => `<li class="flex gap-2"><span class="opacity-60">»</span><span class="flex-1">${item}</span></li>`).join('') + '</ul>';
+    } else {
+        // Render markdown for strings
+        contentHtml = DOMPurify.sanitize(marked.parse(String(content ?? '')));
+    }
+
+    return `
+        <div class="mb-6">
+            <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">${title}</h3>
+            <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300">
+                ${contentHtml}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Creates the HTML for the "Values" section, including rubrics.
+ * @param {Array} values - The array of value objects from the profile
+ * @returns {string} - The HTML string for the values section
+ */
+function renderValuesSection(values) {
+    if (!values || values.length === 0) return '';
+
+    const valuesHtml = values.map(v => {
+        let rubricHtml = '';
+        if (v.rubric) {
+            
+            // --- MODIFICATION: Added color-coding and styling to scoring guide ---
+            const scoringGuideHtml = (v.rubric.scoring_guide || []).map(g => {
+                let scoreClasses = '';
+                let scoreText = String(g.score); // Default text
+
+                if (g.score > 0) {
+                    scoreClasses = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
+                    scoreText = `+${g.score.toFixed(1)}`; // Format to one decimal place
+                } else if (g.score === 0) {
+                    scoreClasses = 'bg-neutral-100 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-300';
+                    scoreText = g.score.toFixed(1); // Format to one decimal place
+                } else { // g.score < 0
+                    scoreClasses = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
+                    scoreText = g.score.toFixed(1); // Format to one decimal place
+                }
+                
+                // Create a styled "chip" for the score
+                const scoreChipHtml = `<span class="inline-block text-xs font-mono font-bold px-1.5 py-0.5 rounded ${scoreClasses}">${scoreText}</span>`;
+                
+                // Use flexbox for alignment
+                return `<li class="mb-1.5 flex items-start gap-2">
+                            <div class="flex-shrink-0 w-12 text-center mt-0.5">${scoreChipHtml}</div>
+                            <div class="flex-1">${g.descriptor}</div>
+                        </li>`;
+            }).join('');
+            // --- END MODIFICATION ---
+            
+            rubricHtml = `
+                <div class="mt-3 pl-4 border-l-2 border-neutral-200 dark:border-neutral-700">
+                    <h6 class="font-semibold text-neutral-700 dark:text-neutral-300">Rubric Description:</h6>
+                    <p class="italic text-sm">${v.rubric.description || 'N/A'}</p>
+                    <h6 class="font-semibold text-neutral-700 dark:text-neutral-300 mt-3">Scoring Guide:</h6>
+                    <ul class="list-none pl-0 mt-2">${scoringGuideHtml}</ul>
+                </div>
+            `;
+        }
+        
+        return `
+            <div classa="mb-3">
+                <h5 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${v.value}</h5>
+                <p class="mb-1 text-sm">${v.definition || 'No definition provided.'}</p>
+                ${rubricHtml}
+            </div>
+        `;
+    }).join('<hr class="my-4 border-neutral-200 dark:border-neutral-700">');
+
+    return `
+        <div class="mb-6">
+            <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">Values</h3>
+            <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300">
+                ${valuesHtml}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Populates the Profile Details modal with the given profile data.
+ * @param {object} profile - The full profile object
+ */
+export function renderProfileDetailsModal(profile) {
+    ui._ensureElements();
+    const container = ui.elements.profileModalContent;
+    if (!container) {
+        console.error("Profile modal content area not found.");
+        return;
+    }
+
+    // Set title
+    const titleEl = document.getElementById('profile-modal-title');
+    if (titleEl) titleEl.textContent = profile.name || 'Profile Details';
+
+    // Clear previous content
+    container.innerHTML = '';
+    
+    // --- RENDER SECTIONS IN THE REQUESTED ORDER ---
+    container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
+    container.insertAdjacentHTML('beforeend', createModalSection('Worldview', profile.worldview));
+    container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
+    container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values));
+    container.insertAdjacentHTML('beforeend', createModalSection('Rules (Non-Negotiable)', profile.will_rules));
+
+    // Reset scroll to top
+    container.scrollTop = 0;
+}
+// --- END: PROFILE DETAILS MODAL ---

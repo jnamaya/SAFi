@@ -43,10 +43,15 @@ export function _initElements() {
 
     deleteConvoModal: document.getElementById('delete-convo-modal'),
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
-    cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'), // <-- This was the typo
+    cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
     
     activeProfileChip: document.getElementById('active-profile-chip'),
     activeProfileChipMobile: document.getElementById('active-profile-chip-mobile'),
+    
+    // --- NEWLY ADDED ---
+    profileModal: document.getElementById('profile-details-modal'),
+    profileModalContent: document.getElementById('profile-details-content'),
+    // --- END NEW ---
   };
 }
 
@@ -147,6 +152,12 @@ export function showModal(kind, data) {
   } else if (kind === 'delete-convo') {
     elements.deleteConvoModal.classList.remove('hidden');
   }
+  // --- NEWLY ADDED ---
+  else if (kind === 'profile') {
+    // Content is already rendered by ui-render.js, just show the modal
+    elements.profileModal.classList.remove('hidden');
+  }
+  // --- END NEW ---
   
   elements.modalBackdrop.classList.remove('hidden');
 }
@@ -158,6 +169,12 @@ export function closeModal() {
   elements.deleteAccountModal.classList.add('hidden');
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
+  
+  // --- NEWLY ADDED ---
+  if (elements.profileModal) {
+    elements.profileModal.classList.add('hidden');
+  }
+  // --- END NEW ---
 }
 
 // Export initial element fetch for use by other modules
