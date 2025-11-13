@@ -4,13 +4,16 @@ import threading
 import uuid
 import asyncio
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone # <-- ADDED datetime import
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
 import httpx
 import re
 from bs4 import BeautifulSoup
+import hashlib # <-- ADDED FOR CACHING
+import os # <-- ADDED FOR CACHING
+import time # <-- ADDED FOR CACHING
 
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
@@ -58,6 +61,10 @@ class SAFi:
         
         if config.OPENAI_API_KEY:
             self.clients["openai"] = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+            self.openai_client_sync = OpenAI(api_key=config.OPENAI_API_KEY) # <-- ADDED SYNC CLIENT FOR TTS
+
+        else:
+            self.openai_client_sync = None
         
         if config.ANTHROPIC_API_KEY:
             self.clients["anthropic"] = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
@@ -156,7 +163,63 @@ class SAFi:
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
 
-    # --- NEW METHOD ---
+    # --- NEW METHOD: TTS Audio Generation with Caching ---
+    def generate_speech_audio(self, text: str) -> Optional[bytes]:
+        """
+        Generates MP3 audio for the given text using OpenAI TTS, with local caching.
+        Returns the audio content as bytes, or None on failure.
+        """
+        if not self.openai_client_sync:
+            self.log.error("OpenAI synchronous client not initialized. Cannot use TTS.")
+            return None
+
+        tts_model = self.config.TTS_MODEL
+        tts_voice = self.config.TTS_VOICE
+        cache_dir = self.config.TTS_CACHE_DIR
+
+        # 1. Create a unique cache key (hash of text + model + voice)
+        cache_key_data = f"{text}|{tts_model}|{tts_voice}"
+        cache_hash = hashlib.sha256(cache_key_data.encode('utf-8')).hexdigest()
+        cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
+        
+        # 2. Check Cache
+        if cache_path.exists():
+            try:
+                with open(cache_path, "rb") as f:
+                    self.log.info(f"TTS Cache hit for text: {text[:30]}...")
+                    return f.read()
+            except IOError as e:
+                self.log.error(f"Failed to read cached MP3 file {cache_path}: {e}")
+                # Continue to re-generate if reading fails
+
+        self.log.info(f"TTS Cache miss for text: {text[:30]}... Calling OpenAI API.")
+
+        # 3. Generate Audio via OpenAI API
+        try:
+            # Ensure the cache directory exists before writing
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
+            
+            response = self.openai_client_sync.audio.speech.create(
+                model=tts_model,
+                voice=tts_voice,
+                input=text,
+                response_format="mp3" # Standard high-quality MP3
+            )
+
+            # 4. Save to Cache and return content
+            audio_content = response.content # The response object has the audio data directly
+            
+            with open(cache_path, "wb") as f:
+                f.write(audio_content)
+            
+            self.log.info(f"TTS audio saved to cache: {cache_path}")
+            return audio_content
+
+        except Exception as e:
+            self.log.error(f"OpenAI TTS API call failed: {e}")
+            return None
+    # --- END NEW METHOD ---
+
     async def _get_prompt_suggestions(self, user_prompt: str, will_rules: List[str]) -> List[str]:
         """
         Uses a fast model (Groq) to generate prompt suggestions after a violation.
@@ -237,6 +300,27 @@ class SAFi:
         plugin_context_data = {}
 
         # -----------------------------------------------------------------
+        # --- NEW: Current Date Injection ---
+        # -----------------------------------------------------------------
+        # Get the current UTC date and time
+        now_utc = datetime.now(timezone.utc)
+        current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. Current UTC Time: %H:%M:%S Z")
+        
+        # We inject this into the spirit feedback string to be processed by IntellectEngine
+        # IntellectEngine.generate expects `spirit_feedback` to be the coaching note, 
+        # so we will prepend the current date string to the *user_prompt* for simplicity,
+        # or update IntellectEngine.generate to accept a dedicated date parameter.
+        # Since IntellectEngine.generate currently only accepts `user_prompt`, `memory_summary`, 
+        # and `spirit_feedback`, we'll modify the `user_prompt` here for the quickest fix, 
+        # assuming the `spirit_feedback` isn't designed to hold real-time data.
+        
+        prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
+        # -----------------------------------------------------------------
+        # --- END NEW: Current Date Injection ---
+        # -----------------------------------------------------------------
+
+
+        # -----------------------------------------------------------------
         # --- Handle Profile-Specific Commands (Plugin Chain) ---
         # -----------------------------------------------------------------
         
@@ -287,11 +371,11 @@ class SAFi:
 
         # 2. INTELLECT (Generate Draft)
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
-            user_prompt=user_prompt, 
+            user_prompt=prompt_with_date, # <-- Use the prompt with the current date
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
-            user_profile_json=current_profile_json  # Pass long-term memory to Intellect
+            user_profile_json=current_profile_json
         )
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
@@ -309,6 +393,7 @@ class SAFi:
 
         # 3. WILL (Evaluate Draft)
         # --- MODIFIED: Expect two return values ---
+        # Note: We must pass the *original* user prompt here, not the one with the date injection.
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
         # S_p (suggested_prompts) is no longer returned here
 

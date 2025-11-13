@@ -177,8 +177,8 @@ export async function switchConversation(id, activeProfileData, user, showModal)
         
         ui.scrollToBottom();
     } catch (error) {
-        console.error('Failed to switch conversation:', error);
-        ui.showToast('Could not load chat history.', 'error');
+        console.error('Failed to switch conversation/load history:', error);
+        ui.showToast(`Could not load chat history. Error: ${error.message}`, 'error'); // <-- IMPROVED TOAST MESSAGE
     }
 }
 

@@ -52,6 +52,10 @@ export function _initElements() {
     profileModal: document.getElementById('profile-details-modal'),
     profileModalContent: document.getElementById('profile-details-content'),
     // --- END NEW ---
+    
+    // --- NEW TTS Element ---
+    ttsButton: document.getElementById('tts-button'),
+    // --- END NEW ---
   };
 }
 

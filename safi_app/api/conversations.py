@@ -51,6 +51,68 @@ def get_user_profile_name():
     user = session.get('user', {})
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
+# --- NEW TTS AUDIO ENDPOINT ---
+@conversations_bp.route('/tts_audio', methods=['POST'])
+def tts_audio_endpoint():
+    """
+    Handles POST request to generate TTS audio and stream the MP3 back.
+    """
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    
+    try:
+        data = request.get_json()
+        text_to_speak = data.get('text')
+        
+        if not text_to_speak:
+            return jsonify({"error": "Missing 'text' in request body."}), 400
+        
+        # --- SAFi Instance Creation Logic (Replicated from process_prompt) ---
+        user_details = db.get_user_details(user_id)
+        if not user_details:
+             return jsonify({"error": "User not found."}), 404
+
+        user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
+        prof = get_profile(user_profile_name)
+
+        # Get their model preferences, falling back to Config defaults
+        intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
+        will_model = user_details.get('will_model') or Config.WILL_MODEL
+        conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+        
+        # Create a new SAFi instance with these specific settings
+        saf_system = SAFi(
+            config=Config,
+            value_profile_or_list=prof,
+            intellect_model=intellect_model,
+            will_model=will_model,
+            conscience_model=conscience_model
+        )
+        # --- End SAFi Instance Creation Logic ---
+
+        # Call the orchestrator's synchronous TTS method
+        audio_content = saf_system.generate_speech_audio(text_to_speak)
+        
+        if audio_content is None:
+            return jsonify({"error": "TTS generation failed on the backend."}), 500
+
+        # Return the audio content as a stream with the correct headers
+        response = Response(audio_content, mimetype='audio/mpeg')
+        response.headers['Content-Disposition'] = 'attachment; filename=speech.mp3'
+        # The 'audio/mpeg' mimetype will tell the browser it's an MP3 file
+        return response
+
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid JSON format."}), 400
+    except Exception as e:
+        # Use a logger if available, otherwise just print to console/log
+        if hasattr(current_app, 'logger'):
+            current_app.logger.error(f"Error processing TTS request: {e}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+# --- END NEW TTS AUDIO ENDPOINT ---
+
+
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
 def public_process_prompt_endpoint():
     """
