@@ -9,7 +9,10 @@ export const urls = {
     CONVERSATIONS: '/api/conversations',
     PROCESS: '/api/process_prompt',
     AUDIT: '/api/audit_result',
-    DELETE_ACCOUNT: '/api/me/delete'
+    DELETE_ACCOUNT: '/api/me/delete',
+    // --- NEW TTS Endpoint ---
+    TTS: '/api/tts_audio' 
+    // --- END NEW ---
 };
 
 async function fetchWithHandling(url, options = {}) {
@@ -67,3 +70,19 @@ export const updateUserModels = (models) => {
     });
 };
 // --- END MODIFICATION ---
+
+// --- NEW API Function for TTS ---
+export const fetchTTSAudio = (text) => {
+    return fetch(urls.TTS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+    }).then(response => {
+        if (!response.ok) {
+            throw new Error('TTS audio generation failed.');
+        }
+        // Return the raw Blob response, not JSON
+        return response.blob(); 
+    });
+};
+// --- END NEW API Function ---

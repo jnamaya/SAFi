@@ -1,5 +1,110 @@
 import { formatTime, formatRelativeTime } from './utils.js';
 import * as ui from './ui.js'; // For access to elements and showToast
+import * as api from './api.js'; // Import API for TTS call
+
+// --- GLOBAL STATE FOR AUDIO ---
+let audio = null;
+let currentPlaybackElement = null; // Stores the button element currently playing
+
+// --- ICON TEMPLATES ---
+// Play icon (Audio waves)
+const iconPlay = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a4.5 4.5 0 010 7.072m2.478-9.431a7.5 7.5 0 010 12.382m-13.04-12.382a7.5 7.5 0 010 12.382m2.478-9.431a4.5 4.5 0 010 7.072M5.5 12h-.01"></path></svg>`;
+// Pause icon (Two vertical lines)
+const iconPause = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10a1 1 0 011 1v4a1 1 0 01-1 1h-2a1 1 0 01-1-1v-4a1 1 0 011-1h2zM9 10a1 1 0 011 1v4a1 1 0 01-1 1H7a1 1 0 01-1-1v-4a1 1 0 011-1h2z"></path></svg>`;
+const iconLoading = `<div class="spinner-border w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>`;
+
+// --- TTS HELPER FUNCTION ---
+async function playSpeech(text, buttonElement) {
+    // Case A: A different message's audio is currently active (playing or paused). Stop and reset it.
+    if (currentPlaybackElement && currentPlaybackElement !== buttonElement) {
+        resetAudioState();
+    }
+    
+    // Set the button element for the current interaction
+    currentPlaybackElement = buttonElement;
+
+    // Case 1: Audio exists AND is playing -> PAUSE
+    if (audio && !audio.paused) {
+        audio.pause();
+        buttonElement.innerHTML = iconPlay; // Change icon to Play (Ready to Resume)
+        buttonElement.classList.remove('text-green-500', 'animate-pulse');
+        return;
+    }
+    
+    // Case 2: Audio exists AND is paused -> RESUME
+    if (audio && audio.paused) {
+        audio.play().catch(e => {
+            console.error("Audio playback failed (resume):", e);
+            ui.showToast('Audio playback blocked by browser.', 'error');
+            resetAudioState();
+        });
+        buttonElement.innerHTML = iconPause; // Change icon to Pause (Currently Playing)
+        buttonElement.classList.add('text-green-500');
+        return;
+    }
+
+    // Case 3: No audio loaded yet -> FETCH AND PLAY
+    
+    // Set loading state
+    buttonElement.innerHTML = iconLoading;
+    buttonElement.classList.add('text-green-500', 'animate-pulse');
+
+    try {
+        ui.showToast('Generating audio...', 'info', 1500);
+        const audioBlob = await api.fetchTTSAudio(text);
+        
+        // Clear any old audio object reference
+        if (audio) {
+             URL.revokeObjectURL(audio.src);
+        }
+        
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audio = new Audio(audioUrl);
+        
+        audio.oncanplaythrough = () => {
+            // Start playback
+            audio.play().catch(e => {
+                console.error("Audio playback failed (initial):", e);
+                ui.showToast('Audio playback blocked by browser.', 'error');
+                resetAudioState();
+            });
+            // Update button to Pause icon
+            currentPlaybackElement.innerHTML = iconPause; 
+            currentPlaybackElement.classList.remove('animate-pulse');
+            currentPlaybackElement.classList.add('text-green-500');
+        };
+
+        audio.onended = () => {
+            // Audio finished playing
+            resetAudioState();
+        };
+
+        audio.onerror = (e) => {
+            console.error("Audio error:", e);
+            ui.showToast('Error playing audio.', 'error');
+            resetAudioState();
+        };
+
+    } catch (error) {
+        console.error('TTS generation failed:', error);
+        ui.showToast('TTS service unavailable.', 'error');
+        resetAudioState();
+    }
+}
+
+function resetAudioState() {
+    if (audio) {
+        audio.pause();
+        URL.revokeObjectURL(audio.src);
+        audio = null;
+    }
+    if (currentPlaybackElement) {
+        // Reset the button to 'Play' icon
+        currentPlaybackElement.innerHTML = iconPlay;
+        currentPlaybackElement.classList.remove('text-green-500', 'animate-pulse');
+        currentPlaybackElement = null;
+    }
+}
 
 // --- MARKDOWN & HIGHLIGHTING SETUP ---
 
@@ -155,6 +260,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
 
+  // This variable will hold the TTS button if needed.
+  let ttsButtonElement = null; 
+  const final_text = String(text ?? ''); // Capture raw text for TTS
+
   if (sender === 'ai') {
     const profileName = (payload && payload.profile) ? payload.profile : null;
     const avatarUrl = getAvatarForProfile(profileName);
@@ -175,6 +284,18 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         `;
     }
 
+    // --- NEW: TTS Button Creation ---
+    ttsButtonElement = document.createElement('button'); // Define the variable here
+    ttsButtonElement.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+    ttsButtonElement.setAttribute('aria-label', 'Play message audio');
+    // Initial speaker icon (waves)
+    ttsButtonElement.innerHTML = iconPlay; // Use the defined iconPlay constant
+    
+    ttsButtonElement.addEventListener('click', () => {
+        playSpeech(final_text, ttsButtonElement); 
+    });
+    // --- END NEW ---
+
     messageDiv.innerHTML = `
       <div class="ai-avatar">
         <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-full h-full rounded-lg">
@@ -188,9 +309,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       </div>
     `;
     const bubble = messageDiv.querySelector('.chat-bubble');
-    bubble.insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(String(text ?? ''))));
+    bubble.insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(final_text)));
+    
   } else {
-    const bubbleHtml = DOMPurify.sanitize(marked.parse(String(text ?? '')));
+    const bubbleHtml = DOMPurify.sanitize(marked.parse(final_text));
     const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
@@ -208,7 +330,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const metaDiv = messageDiv.querySelector('.meta');
   const leftMeta = document.createElement('div');
   const rightMeta = document.createElement('div');
-  rightMeta.className = 'flex items-baseline gap-3 ml-auto';
+  
+  // --- MODIFIED: Align items-center for a cleaner timestamp row ---
+  rightMeta.className = 'flex items-center gap-2 ml-auto';
 
   const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
   if (hasLedger && whyHandler) {
@@ -222,9 +346,15 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   metaDiv.appendChild(leftMeta);
 
   const stampDiv = document.createElement('div');
-  stampDiv.className = 'stamp';
+  stampDiv.className = 'stamp text-xs'; // Ensure text size is small
   stampDiv.textContent = formatTime(date);
   
+  // --- MODIFIED: Prepend TTS button to rightMeta (before stampDiv) for AI messages ---
+  if (sender === 'ai' && ttsButtonElement) {
+      rightMeta.prepend(ttsButtonElement);
+  }
+  // --- END MODIFIED ---
+
   rightMeta.appendChild(stampDiv);
   metaDiv.appendChild(rightMeta);
   
@@ -269,7 +399,17 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         
         const leftMeta = metaDiv.querySelector('div:first-child');
         if (leftMeta) {
-            leftMeta.appendChild(whyButton);
+            // Find TTS button in the rightMeta container (which now holds the date and TTS button)
+            const rightMeta = metaDiv.querySelector('div:last-child');
+
+            // Find an existing button to maintain order if possible
+            const existingButton = leftMeta.querySelector('button');
+
+            if (existingButton) {
+                leftMeta.insertBefore(whyButton, existingButton);
+            } else {
+                 leftMeta.appendChild(whyButton);
+            }
         } else {
             const newLeftMeta = document.createElement('div');
             newLeftMeta.appendChild(whyButton);
