@@ -102,7 +102,7 @@ html, body {
   align-items: flex-start;
   margin-left: auto;
   /* --- CHANGE: Reduced max-width --- */
-  max-width: 94%;
+  max-width: 100%;
 }
 
 .message.ai {
