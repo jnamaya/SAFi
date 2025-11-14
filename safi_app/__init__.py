@@ -26,7 +26,8 @@ def create_app():
         origins=Config.ALLOWED_ORIGINS,  # <-- Use dynamic list from Config
         allow_headers=["Content-Type", "Authorization"], 
         expose_headers=["Content-Type"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        # FIX: Added 'PATCH' to the list of allowed HTTP methods for CORS
+        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] 
     )
 
     # Configure the oauth object imported from extensions.py
