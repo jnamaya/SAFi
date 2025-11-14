@@ -1,6 +1,7 @@
 // This file focuses on element initialization, visibility control,
 // toasts, and other low-level UI helpers.
-import * as uiRender from './ui-render.js'; // <-- FIX: Import uiRender here
+// Updated Imports
+import * as uiSettingsModals from './ui-settings-modals.js'; 
 
 export let elements = {};
 let currentLoadingInterval = null; 
@@ -48,14 +49,10 @@ export function _initElements() {
     activeProfileChip: document.getElementById('active-profile-chip'),
     activeProfileChipMobile: document.getElementById('active-profile-chip-mobile'),
     
-    // --- NEWLY ADDED ---
     profileModal: document.getElementById('profile-details-modal'),
     profileModalContent: document.getElementById('profile-details-content'),
-    // --- END NEW ---
     
-    // --- NEW TTS Element ---
     ttsButton: document.getElementById('tts-button'),
-    // --- END NEW ---
   };
 }
 
@@ -68,7 +65,6 @@ export function _ensureElements() {
 
 // --- VISIBILITY & NAVIGATION HELPERS ---
 
-// --- NEW FUNCTION ---
 // Manages the state of the currently open conversation dropdown menu
 export function setOpenDropdown(menuElement) {
   _ensureElements();
@@ -76,7 +72,6 @@ export function setOpenDropdown(menuElement) {
   openDropdown = menuElement;
   document.body.appendChild(openDropdown);
 }
-// --- END NEW FUNCTION ---
 
 export function closeAllConvoMenus() {
   if (openDropdown) {
@@ -134,12 +129,12 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
-// This function now relies on ui-render.js to build the content
+// This function now relies on ui-settings-modals.js to build the content
 export function showModal(kind, data) {
   _ensureElements();
   if (kind === 'conscience') {
-    // Pass to ui-render to generate content before showing
-    uiRender.setupConscienceModalContent(data);
+    // Pass to ui-settings-modals to generate content before showing
+    uiSettingsModals.setupConscienceModalContent(data);
     elements.conscienceModal.classList.remove('hidden');
   } else if (kind === 'delete') {
     elements.deleteAccountModal.classList.remove('hidden');
@@ -156,12 +151,10 @@ export function showModal(kind, data) {
   } else if (kind === 'delete-convo') {
     elements.deleteConvoModal.classList.remove('hidden');
   }
-  // --- NEWLY ADDED ---
   else if (kind === 'profile') {
-    // Content is already rendered by ui-render.js, just show the modal
+    // Content is already rendered by ui-settings-modals.js, just show the modal
     elements.profileModal.classList.remove('hidden');
   }
-  // --- END NEW ---
   
   elements.modalBackdrop.classList.remove('hidden');
 }
@@ -174,11 +167,9 @@ export function closeModal() {
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
   
-  // --- NEWLY ADDED ---
   if (elements.profileModal) {
     elements.profileModal.classList.add('hidden');
   }
-  // --- END NEW ---
 }
 
 // Export initial element fetch for use by other modules

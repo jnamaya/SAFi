@@ -1,6 +1,9 @@
 import * as api from './api.js';
 import * as ui from './ui.js';
-import * as uiRender from './ui-render.js';
+// Import the new modularized UI files
+import * as uiAuthSidebar from './ui-auth-sidebar.js'; 
+import * as uiMessages from './ui-messages.js';
+import * as uiSettingsModals from './ui-settings-modals.js';
 import * as chat from './chat.js';
 import * as utils from './utils.js';
 
@@ -20,12 +23,12 @@ async function checkLoginStatus() {
         const me = await api.getMe();
         user = (me && me.ok) ? me.user : null;
         
-        // Use uiRender for the complex UI update (sidebar template)
-        uiRender.updateUIForAuthState(
-            user, 
-            handleLogout, 
-            () => ui.showModal('delete'),
-            applyTheme 
+        // Use uiAuthSidebar for the complex UI update (sidebar template)
+        uiAuthSidebar.updateUIForAuthState(
+            user 
+            // handleLogout, // Handlers are attached via attachEventListeners now
+            // () => ui.showModal('delete'),
+            // applyTheme 
         );
         
         if (user) {
@@ -41,9 +44,8 @@ async function checkLoginStatus() {
             
             activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
-            // --- MODIFICATION: Update profile chip as soon as data is loaded ---
-            uiRender.updateActiveProfileChip(activeProfileData.name || 'Default');
-            // --- END MODIFICATION ---
+            // Update profile chip as soon as data is loaded
+            uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
             // Pass necessary data and handlers to the rendering functions
             renderControlPanel();
@@ -58,7 +60,7 @@ async function checkLoginStatus() {
         attachEventListeners();
     } catch (error) {
         console.error("Failed to check login status:", error);
-        uiRender.updateUIForAuthState(null, handleLogout, () => ui.showModal('delete'), applyTheme);
+        uiAuthSidebar.updateUIForAuthState(null);
         attachEventListeners();
     }
 }
@@ -68,19 +70,19 @@ async function checkLoginStatus() {
 function renderControlPanel() {
     if (!user) return;
     
-    uiRender.renderSettingsProfileTab(
+    uiSettingsModals.renderSettingsProfileTab(
         availableProfiles, 
         activeProfileData.key, 
         handleProfileChange
     );
     
-    uiRender.renderSettingsModelsTab(
+    uiSettingsModals.renderSettingsModelsTab(
         availableModels, 
         user, 
         handleModelsSave
     );
 
-    uiRender.renderSettingsAppTab(
+    uiSettingsModals.renderSettingsAppTab(
         localStorage.theme || 'system',
         applyTheme,
         handleLogout,
@@ -135,7 +137,7 @@ function applyTheme(theme) {
     if (ui.elements.controlPanelView && !ui.elements.controlPanelView.classList.contains('hidden')) {
         const currentActiveTab = document.querySelector('.modal-tab-button.active');
         if (currentActiveTab && currentActiveTab.id === 'cp-nav-app-settings') {
-            uiRender.renderSettingsAppTab(
+            uiSettingsModals.renderSettingsAppTab(
                 theme,
                 applyTheme,
                 handleLogout,
@@ -158,7 +160,6 @@ function handleExamplePromptClick(promptText) {
     ui.elements.sendButton.disabled = false;
     
     // 3. Immediately trigger the message send logic, which handles conversation creation
-    // The sendMessage logic is fully self-contained (creating the convo if currentConversationId is null)
     chat.sendMessage(activeProfileData, user);
 }
 
@@ -205,7 +206,6 @@ function attachEventListeners() {
     const newChatButton = document.getElementById('new-chat-button');
     if (newChatButton) {
         newChatButton.addEventListener('click', () => { 
-            // FIX: Pass activeProfileData and user to startNewConversation
             chat.startNewConversation(false, activeProfileData, user, handleExamplePromptClick); 
             if (window.innerWidth < 768) ui.closeSidebar(); 
         });
@@ -257,10 +257,9 @@ function attachEventListeners() {
     document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
     document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
 
-    // --- NEW ---
+    // Profile Modal
     document.getElementById('close-profile-modal')?.addEventListener('click', ui.closeModal);
     document.getElementById('done-profile-modal')?.addEventListener('click', ui.closeModal);
-    // --- END NEW ---
 
     // Rename Modal listeners call chat module handlers
     ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
@@ -285,7 +284,7 @@ function attachEventListeners() {
     });
 
     // Control Panel Tabs Setup (Logic stays here as it ties to modal/view state)
-    uiRender.setupControlPanelTabs();
+    uiSettingsModals.setupControlPanelTabs();
 }
 
 document.addEventListener('DOMContentLoaded', checkLoginStatus);

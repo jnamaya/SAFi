@@ -78,15 +78,18 @@ class IntellectEngine:
         if kb_name:
             self.retriever = Retriever(knowledge_base_name=kb_name)
 
+    # --- MODIFICATION: Added user_name parameter ---
     async def generate(
         self,
         *,
         user_prompt: str,
         memory_summary: str,
         spirit_feedback: str,
-        user_profile_json: str, # <-- ADDED
+        user_profile_json: str,
+        user_name: Optional[str] = None, # <-- ADDED
         plugin_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    # --- END MODIFICATION ---
         """
         Generates a response based on the user prompt and contextual information.
         """
@@ -208,6 +211,19 @@ class IntellectEngine:
                     spirit_feedback=spirit_feedback
                 )
 
+        # --- NEW: INJECT THE USER'S NAME ---
+        user_name_injection = ""
+        if user_name:
+            # Find the template in prompt_config, default to a sensible string if not found
+            name_template = self.prompt_config.get("user_name_template", 
+                "CONTEXT: You are speaking to a user named {user_name}. Use their name when appropriate (e.g., 'Hi {user_name}, ...').")
+            
+            if name_template:
+                user_name_injection = name_template.format(
+                    user_name=user_name
+                )
+        # --- END NEW ---
+
         # --- NEW: INJECT THE USER'S LONG-TERM PROFILE ---
         user_profile_injection = ""
         if user_profile_json and user_profile_json != "{}":
@@ -233,7 +249,8 @@ class IntellectEngine:
         system_prompt = "\n\n".join(
             filter(None, [
                 worldview, 
-                user_profile_injection, # <-- ADDED
+                user_name_injection,    # <-- ADDED
+                user_profile_injection,
                 memory_injection, 
                 spirit_injection, 
                 formatting_instructions

@@ -228,7 +228,10 @@ export async function sendMessage(activeProfileData, user) {
     const loadingIndicator = uiRender.showLoadingIndicator(activeProfileData.name);
 
     try {
-        const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
+        // --- MODIFICATION: Pass user.name to the API call ---
+        const userName = (user && user.name) ? user.name : null;
+        const initialResponse = await api.processUserMessage(userMessage, currentConversationId, userName);
+        // --- END MODIFICATION ---
         
         const ledger = typeof initialResponse.ledger === 'string' ? JSON.parse(initialResponse.ledger) : initialResponse.ledger;
         const values = typeof initialResponse.values === 'string' ? JSON.parse(initialResponse.values) : initialResponse.values;

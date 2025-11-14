@@ -18,6 +18,7 @@ import time # <-- ADDED FOR CACHING
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
 import google.generativeai as genai
+from google.generativeai import types # <-- IMPORTED TYPES
 
 from collections import deque
 from .feedback import build_spirit_feedback
@@ -49,6 +50,7 @@ class SAFi:
         
         self.clients = {}
         
+        # --- Asynchronous clients for faculties ---
         if config.GROQ_API_KEY:
             self.clients["groq"] = AsyncOpenAI(
                 api_key=config.GROQ_API_KEY,
@@ -61,18 +63,22 @@ class SAFi:
         
         if config.OPENAI_API_KEY:
             self.clients["openai"] = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
-            self.openai_client_sync = OpenAI(api_key=config.OPENAI_API_KEY) # <-- ADDED SYNC CLIENT FOR TTS
-
+            self.openai_client_sync = OpenAI(api_key=config.OPENAI_API_KEY) # Sync client for TTS
         else:
             self.openai_client_sync = None
         
         if config.ANTHROPIC_API_KEY:
             self.clients["anthropic"] = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
             
+        # --- Synchronous clients for TTS & Summarization ---
+        self.gemini_client = None # Renamed for clarity
         if config.GEMINI_API_KEY:
             try:
                 genai.configure(api_key=config.GEMINI_API_KEY)
                 self.clients["gemini"] = "configured"
+                
+                # Initialize a synchronous client for Gemini TTS
+                self.gemini_client = genai.GenerativeModel
             except Exception as e:
                 self.log.warning(f"Gemini API key configuration failed: {e}. Gemini models will be unavailable.")
         
@@ -163,19 +169,28 @@ class SAFi:
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
 
-    # --- NEW METHOD: TTS Audio Generation with Caching ---
+    # --- UPDATED METHOD: Provider-Agnostic TTS Audio Generation ---
     def generate_speech_audio(self, text: str) -> Optional[bytes]:
         """
-        Generates MP3 audio for the given text using OpenAI TTS, with local caching.
+        Generates MP3 audio for the given text using the configured TTS provider.
+        Supports OpenAI and Gemini.
         Returns the audio content as bytes, or None on failure.
         """
-        if not self.openai_client_sync:
-            self.log.error("OpenAI synchronous client not initialized. Cannot use TTS.")
-            return None
-
+        
         tts_model = self.config.TTS_MODEL
-        tts_voice = self.config.TTS_VOICE
         cache_dir = self.config.TTS_CACHE_DIR
+        tts_voice = ""
+        
+        # Determine provider and voice
+        if tts_model.startswith("gemini-"):
+            provider = "gemini"
+            tts_voice = self.config.GEMINI_TTS_VOICE
+        elif tts_model.startswith("gpt-"):
+            provider = "openai"
+            tts_voice = self.config.OPENAI_TTS_VOICE
+        else:
+            self.log.error(f"Unsupported TTS_MODEL defined in config: {tts_model}")
+            return None
 
         # 1. Create a unique cache key (hash of text + model + voice)
         cache_key_data = f"{text}|{tts_model}|{tts_voice}"
@@ -192,33 +207,70 @@ class SAFi:
                 self.log.error(f"Failed to read cached MP3 file {cache_path}: {e}")
                 # Continue to re-generate if reading fails
 
-        self.log.info(f"TTS Cache miss for text: {text[:30]}... Calling OpenAI API.")
+        self.log.info(f"TTS Cache miss for text: {text[:30]}... Calling {provider} API.")
 
-        # 3. Generate Audio via OpenAI API
+        # 3. Generate Audio via API
         try:
             # Ensure the cache directory exists before writing
             Path(cache_dir).mkdir(parents=True, exist_ok=True)
             
-            response = self.openai_client_sync.audio.speech.create(
-                model=tts_model,
-                voice=tts_voice,
-                input=text,
-                response_format="mp3" # Standard high-quality MP3
-            )
+            audio_content = None
+
+            if provider == "openai":
+                if not self.openai_client_sync:
+                    self.log.error("OpenAI synchronous client not initialized. Cannot use OpenAI TTS.")
+                    return None
+                
+                response = self.openai_client_sync.audio.speech.create(
+                    model=tts_model,
+                    voice=tts_voice,
+                    input=text,
+                    response_format="mp3"
+                )
+                audio_content = response.content
+
+            elif provider == "gemini":
+                if not self.gemini_client:
+                    self.log.error("Gemini client not initialized. Cannot use Gemini TTS.")
+                    return None
+                
+                # --- NEW: Use the correct API structure from the user's sample ---
+                # Note: This is a synchronous call
+                response = self.gemini_client(model_name=tts_model).generate_content(
+                   contents=f"Speak the following text: {text}", # Or just `text` if preferred
+                   generation_config=types.GenerationConfig(
+                      response_modalities=["AUDIO"],
+                      speech_config=genai.SpeechConfig(
+                         voice_config=genai.VoiceConfig(
+                            prebuilt_voice_config=genai.PrebuiltVoiceConfig(
+                               voice_name=tts_voice,
+                            )
+                         )
+                      ),
+                   )
+                )
+                
+                # Check if audio content is present
+                if not response.candidates[0].content.parts[0].inline_data.data:
+                    raise Exception("Gemini API did not return audio data.")
+                
+                audio_content = response.candidates[0].content.parts[0].inline_data.data
+                # --- END NEW ---
 
             # 4. Save to Cache and return content
-            audio_content = response.content # The response object has the audio data directly
-            
-            with open(cache_path, "wb") as f:
-                f.write(audio_content)
-            
-            self.log.info(f"TTS audio saved to cache: {cache_path}")
-            return audio_content
+            if audio_content:
+                with open(cache_path, "wb") as f:
+                    f.write(audio_content)
+                
+                self.log.info(f"TTS audio saved to cache: {cache_path}")
+                return audio_content
+            else:
+                raise Exception("Audio content was empty after API call.")
 
         except Exception as e:
-            self.log.error(f"OpenAI TTS API call failed: {e}")
+            self.log.error(f"{provider} TTS API call failed: {e}")
             return None
-    # --- END NEW METHOD ---
+    # --- END UPDATED METHOD ---
 
     async def _get_prompt_suggestions(self, user_prompt: str, will_rules: List[str]) -> List[str]:
         """
@@ -294,7 +346,15 @@ class SAFi:
             return []
     # --- END NEW METHOD ---
 
-    async def process_prompt(self, user_prompt: str, user_id: str, conversation_id: str) -> Dict[str, Any]:
+    # --- MODIFICATION: Added user_name parameter ---
+    async def process_prompt(
+        self, 
+        user_prompt: str, 
+        user_id: str, 
+        conversation_id: str,
+        user_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+    # --- END MODIFICATION ---
         
         message_id = str(uuid.uuid4())
         plugin_context_data = {}
@@ -370,13 +430,16 @@ class SAFi:
         )
 
         # 2. INTELLECT (Generate Draft)
+        # --- MODIFICATION: Pass user_name to generate ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date, # <-- Use the prompt with the current date
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
-            user_profile_json=current_profile_json
+            user_profile_json=current_profile_json,
+            user_name=user_name # <-- Pass the user's name
         )
+        # --- END MODIFICATION ---
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
         new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
