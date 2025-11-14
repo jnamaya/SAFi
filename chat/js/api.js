@@ -46,7 +46,19 @@ export const fetchHistory = (id, limit = 50, offset = 0) => {
     return fetchWithHandling(url);
 };
 
-export const processUserMessage = (message, conversation_id) => fetchWithHandling(urls.PROCESS, { method: 'POST', body: JSON.stringify({ message, conversation_id }) });
+// --- MODIFICATION: Added userName parameter ---
+export const processUserMessage = (message, conversation_id, userName) => {
+    return fetchWithHandling(urls.PROCESS, { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+            message, 
+            conversation_id,
+            user_name: userName // Pass the user's name to the backend
+        }) 
+    });
+};
+// --- END MODIFICATION ---
+
 export const fetchAuditResult = (messageId) => fetchWithHandling(`${urls.AUDIT}/${messageId}`);
 export const checkConnection = () => fetch('/api/health').then(res => res.ok).catch(() => false);
 export const deleteAccount = () => fetchWithHandling(urls.DELETE_ACCOUNT, { method: 'POST' });
