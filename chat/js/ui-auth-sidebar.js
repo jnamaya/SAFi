@@ -5,6 +5,10 @@ import * as ui from './ui.js';
 
 // --- ICON TEMPLATES (Need to be imported or defined here for link rendering) ---
 const iconMenuDots = `<svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>`;
+// --- NEW: Pin Icon ---
+const iconPin = `<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1a1 1 0 011 1v4.586l2.707 2.707a1 1 0 01-1.414 1.414L11 9.414V16a1 1 0 11-2 0V9.414l-1.293 1.293a1 1 0 01-1.414-1.414L9 5.586V2a1 1 0 011-1z" clip-rule="evenodd"></path><path d="M8 16a2 2 0 104 0h-4z"></path></svg>`;
+// --- END NEW ---
+
 
 // --- AVATAR HELPERS ---
 /**
@@ -21,7 +25,7 @@ export function getAvatarForProfile(profileName) {
     case 'the fiduciary':
       return 'assets/fiduciary.svg';
     case 'the health navigator':
-      return 'assets/health_navigator.svg';
+      return 'assets.health_navigator.svg';
     case 'the jurist':
       return 'assets/jurist.svg';
     case 'the bible scholar':
@@ -106,17 +110,33 @@ export function updateUIForAuthState(user) {
 
 /**
  * Creates the dropdown menu for conversation actions (Rename/Delete).
- * @param {string} convoId - The ID of the conversation.
- * @param {object} handlers - Rename and Delete handler functions.
+ * @param {object} convo - The full conversation object.
+ * @param {object} handlers - Rename, Delete, and Pin handler functions.
  * @returns {HTMLDivElement} The dropdown menu element.
  */
-function createDropdownMenu(convoId, handlers) {
+function createDropdownMenu(convo, handlers) {
+  // --- NEW: Destructure all handlers ---
+  const { renameHandler, deleteHandler, pinHandler } = handlers;
+  
   const menu = document.createElement('div');
   menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
-  menu.dataset.menuId = convoId;
+  menu.dataset.menuId = convo.id;
   
-  // ... (Rename and Delete button creation logic, listeners, and menu appending) ...
-  
+  // --- NEW: Pin/Unpin Button ---
+  const pinButton = document.createElement('button');
+  pinButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
+  pinButton.innerHTML = `
+    <span class="w-4 h-4">${iconPin}</span>
+    <span>${convo.is_pinned ? 'Unpin' : 'Pin'}</span>
+  `;
+  pinButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    ui.closeAllConvoMenus();
+    // Pass the convo id and its current pinned state
+    pinHandler(convo.id, convo.is_pinned);
+  });
+  // --- END NEW ---
+
   const renameButton = document.createElement('button');
   renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
   renameButton.innerHTML = `
@@ -126,7 +146,7 @@ function createDropdownMenu(convoId, handlers) {
   renameButton.addEventListener('click', (e) => {
     e.stopPropagation();
     ui.closeAllConvoMenus();
-    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] .convo-title`).textContent);
+    renameHandler(convo.id, document.querySelector(`a[data-id="${convo.id}"] .convo-title`).textContent);
   });
   
   const deleteButton = document.createElement('button');
@@ -138,9 +158,10 @@ function createDropdownMenu(convoId, handlers) {
   deleteButton.addEventListener('click', (e) => {
     e.stopPropagation();
     ui.closeAllConvoMenus();
-    handlers.deleteHandler(convoId);
+    deleteHandler(convo.id);
   });
 
+  menu.appendChild(pinButton); // Add pin button first
   menu.appendChild(renameButton);
   menu.appendChild(deleteButton);
   menu.addEventListener('click', (e) => e.stopPropagation());
@@ -191,12 +212,20 @@ export function renderConversationLink(convo, handlers) {
   
   link.className = 'group relative flex items-start justify-between px-3 py-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
   
+  // --- NEW: Add pin icon if convo.is_pinned is true ---
+  const pinIconHtml = convo.is_pinned 
+    ? `<span class="pin-icon shrink-0 text-neutral-500 dark:text-neutral-400">${iconPin}</span>` 
+    : '';
+
   link.innerHTML = `
-    <div class="flex-1 min-w-0 pr-8">
-        <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
-        <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
-            ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
-        </span>
+    <div class="flex-1 min-w-0 pr-8 flex items-center gap-2">
+        ${pinIconHtml}
+        <div class="flex-1 min-w-0">
+            <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
+            <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
+                ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
+            </span>
+        </div>
     </div>
     <button data-action="menu" class="convo-menu-button opacity-0 group-hover:opacity-100 focus:opacity-100 
                    absolute right-2 top-1/2 -translate-y-1/2 
@@ -205,6 +234,7 @@ export function renderConversationLink(convo, handlers) {
        ${iconMenuDots}
     </button>
   `;
+  // --- END NEW ---
   
   let longPressTimer = null;
   let isLongPress = false;
@@ -227,7 +257,8 @@ export function renderConversationLink(convo, handlers) {
         ui.closeAllConvoMenus();
         return;
       }
-      const menu = createDropdownMenu(convo.id, handlers);
+      // --- NEW: Pass the full convo object ---
+      const menu = createDropdownMenu(convo, handlers);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
     }, longPressDuration);
@@ -278,8 +309,9 @@ export function renderConversationLink(convo, handlers) {
         ui.closeAllConvoMenus();
         return;
       }
-
-      const menu = createDropdownMenu(convo.id, handlers);
+      
+      // --- NEW: Pass the full convo object ---
+      const menu = createDropdownMenu(convo, handlers);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
       
@@ -302,6 +334,8 @@ export function setActiveConvoLink(id) {
     const isActive = link.dataset.id === String(id);
     const title = link.querySelector('.convo-title');
     const timestamp = link.querySelector('.convo-timestamp');
+    // --- NEW: Select the pin icon ---
+    const pinIcon = link.querySelector('.pin-icon');
 
     link.classList.toggle('bg-green-600', isActive);
     link.classList.toggle('text-white', isActive);
@@ -322,6 +356,16 @@ export function setActiveConvoLink(id) {
       timestamp.classList.toggle('text-neutral-500', !isActive);
       timestamp.classList.toggle('dark:text-neutral-400', !isActive);
     }
+    
+    // --- NEW: Update pin icon color ---
+    if (pinIcon) {
+      pinIcon.classList.toggle('text-green-100', isActive);
+      pinIcon.classList.toggle('dark:text-green-100', isActive);
+      
+      pinIcon.classList.toggle('text-neutral-500', !isActive);
+      pinIcon.classList.toggle('dark:text-neutral-400', !isActive);
+    }
+    // --- END NEW ---
   });
 }
 

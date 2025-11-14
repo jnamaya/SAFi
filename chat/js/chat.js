@@ -1,6 +1,9 @@
 import * as api from './api.js';
 import * as ui from './ui.js';
-import * as uiRender from './ui-render.js';
+// ui-auth-sidebar contains the sidebar rendering logic
+import * as uiAuthSidebar from './ui-auth-sidebar.js';
+// ui-messages contains the chat bubble rendering logic
+import * as uiMessages from './ui-messages.js';
 
 // --- CONVERSATION STATE ---
 export let currentConversationId = null;
@@ -19,20 +22,30 @@ export async function loadConversations(activeProfileData, user, promptClickHand
 
         if (conversations?.length > 0) {
             const handlers = {
-                // Pass user and activeProfileData down
                 switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal),
                 renameHandler: handleRename,
-                deleteHandler: handleDelete
+                deleteHandler: handleDelete,
+                // --- NEW: Add the pin handler ---
+                pinHandler: (id, currentState) => handleTogglePin(id, currentState, activeProfileData, user)
             };
             
+            // --- NEW: Sort by pin status first, then by date ---
             conversations.sort((a, b) => {
+                const pinA = a.is_pinned ? 1 : 0;
+                const pinB = b.is_pinned ? 1 : 0;
                 const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
                 const dateB = b.last_updated ? new Date(b.last_updated) : new Date(0);
-                return dateB - dateA;
+                
+                if (pinB !== pinA) {
+                    return pinB - pinA; // Pinned items first
+                }
+                return dateB - dateA; // Otherwise, newest first
             });
+            // --- END NEW ---
 
             conversations.forEach(convo => {
-                const link = uiRender.renderConversationLink(convo, handlers);
+                // Pass the full convo object
+                const link = uiAuthSidebar.renderConversationLink(convo, handlers);
                 convoList.appendChild(link);
             });
 
@@ -66,13 +79,14 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
             const newConvo = await api.createNewConversation();
             const convoList = document.getElementById('convo-list');
             const handlers = { 
-                // Pass user and activeProfileData down
                 switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal), 
                 renameHandler: handleRename, 
-                deleteHandler: handleDelete 
+                deleteHandler: handleDelete,
+                // --- NEW: Add the pin handler ---
+                pinHandler: (id, currentState) => handleTogglePin(id, currentState, activeProfileData, user)
             };
             
-            const link = uiRender.renderConversationLink(newConvo, handlers);
+            const link = uiAuthSidebar.renderConversationLink(newConvo, handlers);
             const listHeading = convoList.querySelector('h3');
             if (listHeading) {
                 listHeading.after(link); 
@@ -87,18 +101,18 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
     } else {
         // This is the core logic for starting a *truly* new chat.
         currentConversationId = null;
-        uiRender.setActiveConvoLink(null);
-        uiRender.resetChatView();
-        uiRender.updateChatTitle('New Chat');
+        uiAuthSidebar.setActiveConvoLink(null);
+        uiMessages.resetChatView();
+        uiAuthSidebar.updateChatTitle('New Chat');
 
         // --- MODIFICATION: Ensure profile chip is updated for new chats ---
-        uiRender.updateActiveProfileChip(activeProfileData.name || 'Default');
+        uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
         // --- END MODIFICATION ---
 
         // FIX: Use the passed 'user' object
         const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-        uiRender.displaySimpleGreeting(firstName);
-        uiRender.displayEmptyState(activeProfileData, promptClickHandler);
+        uiMessages.displaySimpleGreeting(firstName);
+        uiMessages.displayEmptyState(activeProfileData, promptClickHandler);
     }
 }
 
@@ -109,17 +123,17 @@ export async function switchConversation(id, activeProfileData, user, showModal)
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
     
     currentConversationId = id;
-    uiRender.setActiveConvoLink(id);
-    uiRender.resetChatView();
-    uiRender.updateActiveProfileChip(activeProfileData.name || 'Default');
+    uiAuthSidebar.setActiveConvoLink(id);
+    uiMessages.resetChatView();
+    uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
     try {
         const activeLink = document.querySelector(`#convo-list a[data-id="${id}"]`);
         const title = activeLink ? activeLink.querySelector('.convo-title').textContent : 'SAFi';
-        uiRender.updateChatTitle(title);
+        uiAuthSidebar.updateChatTitle(title);
     } catch (e) {
         console.warn('Could not set chat title', e);
-        uiRender.updateChatTitle('SAFi');
+        uiAuthSidebar.updateChatTitle('SAFi');
     }
 
     try {
@@ -151,7 +165,7 @@ export async function switchConversation(id, activeProfileData, user, showModal)
                 options.suggestedPrompts = [];
                 // --- END NEW ---
 
-                uiRender.displayMessage(
+                uiMessages.displayMessage(
                     turn.role, 
                     turn.content, 
                     date, 
@@ -164,9 +178,9 @@ export async function switchConversation(id, activeProfileData, user, showModal)
         } else {
             // FIX: Use the passed 'user' object
             const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-            uiRender.displaySimpleGreeting(firstName);
+            uiMessages.displaySimpleGreeting(firstName);
             // If we switch to a conversation that has no history (e.g., just created), display the empty state
-            uiRender.displayEmptyState(activeProfileData, (text) => { 
+            uiMessages.displayEmptyState(activeProfileData, (text) => { 
                 // This handler routes back to sendMessage logic for consistency.
                 ui.elements.messageInput.value = text;
                 ui.elements.sendButton.disabled = false;
@@ -196,10 +210,12 @@ export async function sendMessage(activeProfileData, user) {
             const handlers = { 
                 switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal), 
                 renameHandler: handleRename, 
-                deleteHandler: handleDelete 
+                deleteHandler: handleDelete,
+                // --- NEW: Add the pin handler ---
+                pinHandler: (id, currentState) => handleTogglePin(id, currentState, activeProfileData, user)
             };
-            uiRender.prependConversationLink(newConvo, handlers);
-            uiRender.setActiveConvoLink(currentConversationId);
+            uiAuthSidebar.prependConversationLink(newConvo, handlers);
+            uiAuthSidebar.setActiveConvoLink(currentConversationId);
 
         } catch (error) {
             console.error('Failed to create new conversation on send:', error);
@@ -218,14 +234,14 @@ export async function sendMessage(activeProfileData, user) {
     const now = new Date();
     // FIX: Use the passed 'user' object
     const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
-    uiRender.displayMessage('user', userMessage, now, null, null, null, { avatarUrl: pic });
+    uiMessages.displayMessage('user', userMessage, now, null, null, null, { avatarUrl: pic });
     
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
     autoSize();
     
     // START SIMULATION
-    const loadingIndicator = uiRender.showLoadingIndicator(activeProfileData.name);
+    const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     try {
         // --- MODIFICATION: Pass user.name to the API call ---
@@ -255,7 +271,7 @@ export async function sendMessage(activeProfileData, user) {
 
         const hasInitialPayload = initialPayload.ledger && initialPayload.ledger.length > 0;
         
-        uiRender.displayMessage(
+        uiMessages.displayMessage(
           'ai',
           initialResponse.finalOutput,
           new Date(),
@@ -276,7 +292,7 @@ export async function sendMessage(activeProfileData, user) {
                     if (titleEl) titleEl.textContent = initialResponse.newTitle;
                 }
                 // And update the main chat header title
-                uiRender.updateChatTitle(initialResponse.newTitle);
+                uiAuthSidebar.updateChatTitle(initialResponse.newTitle);
                 // --- END FIX ---
             } catch (titleError) {
                 console.error("Failed to update conversation title:", titleError);
@@ -288,7 +304,7 @@ export async function sendMessage(activeProfileData, user) {
         }
         
     } catch (error) {
-        uiRender.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
+        uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
@@ -331,7 +347,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                 spirit_scores_history: history.slice(0, currentTurnIndex + 1).map(t => t.spirit_score)
             };
             
-            uiRender.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
+            uiMessages.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
             resolve(result);
         } else if (attempts >= maxAttempts) {
             console.warn(`Polling timed out for message ${messageId}.`);
@@ -377,7 +393,7 @@ export async function handleConfirmRename(activeProfileData, user) {
             // Reload conversations to update sidebar titles
             await loadConversations(activeProfileData, user, () => {}, ui.showModal);
             if (id === currentConversationId) {
-                uiRender.updateChatTitle(newTitle);
+                uiAuthSidebar.updateChatTitle(newTitle);
             }
         } catch (error) {
             ui.showToast('Could not rename conversation.', 'error');
@@ -411,3 +427,19 @@ export async function handleConfirmDelete(activeProfileData, user) {
     ui.closeModal();
     convoToDelete = null;
 }
+
+// --- NEW: Handle Pin/Unpin ---
+export async function handleTogglePin(id, currentState, activeProfileData, user) {
+    try {
+        // Call the new API function
+        await api.togglePinConversation(id, !currentState);
+        ui.showToast(currentState ? 'Conversation unpinned.' : 'Conversation pinned.', 'success');
+        
+        // Reload the conversation list to re-sort and update the UI
+        await loadConversations(activeProfileData, user, () => {}, ui.showModal);
+    } catch (error) {
+        console.error('Failed to toggle pin:', error);
+        ui.showToast('Could not update pin status.', 'error');
+    }
+}
+// --- END NEW ---

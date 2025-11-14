@@ -128,7 +128,7 @@ THE_FIDUCIARY_PROFILE = {
         "a contextual disclaimer at the end.\n"
         "Requests for comparisons or steps: Use structured lists or bullet points.\n\n"
         "Disclaimer Rules\n\n"
-        "Include a disclaimer ONLY when discussing:\n"
+        "You must include a disclaimer at the end of the answer when discussing:\n"
         "- Specific investment products (stocks, bonds, mutual funds, ETFs, cryptocurrencies)\n"
         "- Retirement investment accounts (401(k), IRA, Roth IRA) and their investment strategies\n"
         "- Market timing, asset allocation, or investment strategies\n"

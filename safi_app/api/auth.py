@@ -4,31 +4,27 @@ import traceback
 import requests
 from .. import oauth
 from ..persistence import database as db
-from ..config import Config
+from ..config import Config  # Import the central Config object
 from ..core.values import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
 
 auth_bp = Blueprint('auth', __name__)
 
-# --- CRITICAL FIX: Hardcoded Authorized Redirect URI ---
-# UPDATED: Using the correct 'safi.selfalignmentframework.com' subdomain and HTTPS.
-# ENSURE THIS EXACT STRING IS REGISTERED IN GOOGLE CLOUD CONSOLE.
-WEB_REDIRECT_URI = "https://safi.selfalignmentframework.com/api/callback"
-# -------------------------------------------------------
+# --- REMOVED Hardcoded URI ---
+# The redirect URI is now pulled from the Config object
 
 
 @auth_bp.route('/login')
 def login():
     """
     Redirect to Google's OAuth consent screen.
-    Uses the hardcoded WEB_REDIRECT_URI.
+    Uses the redirect_uri from the Config.
     """
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
-
     
-    # Pass the hardcoded constant as the redirect_uri argument
-    return oauth.google.authorize_redirect(WEB_REDIRECT_URI, nonce=nonce)
+    # Pass the redirect_uri from the Config object
+    return oauth.google.authorize_redirect(Config.WEB_CALLBACK_URL, nonce=nonce)
 
 
 @auth_bp.route('/callback')
@@ -38,11 +34,14 @@ def callback():
     """
     try:
         current_app.logger.info("LOG: Web callback initiated.") # NEW LOGGING
-        # --- FIX APPLIED HERE: Removed redundant redirect_uri argument ---
-        # authlib will automatically infer the redirect_uri from the request,
-        # which is now forced to HTTPS by the previous authorize_redirect call.
+        
+        # --- FIX APPLIED HERE ---
+        # Removed the explicit 'redirect_uri' argument.
+        # Now that FLASK_ENV is set and ProxyFix is working,
+        # the library can correctly infer the https URL automatically.
         token = oauth.google.authorize_access_token() 
         # -----------------------------------------------------------------
+        
         nonce = session.pop('nonce', None)
         oauth.google.parse_id_token(token, nonce=nonce)
         
@@ -83,8 +82,8 @@ def mobile_callback():
         return jsonify({"ok": False, "error": "No 'code' provided."}), 400
 
     try:
-        # Use the same authorized redirect_uri for mobile/backend exchange
-        redirect_uri = WEB_REDIRECT_URI
+        # Use the same authorized redirect_uri from Config
+        redirect_uri = Config.WEB_CALLBACK_URL
         
         current_app.logger.info("=" * 50)
         current_app.logger.info("Mobile login attempt")
@@ -93,13 +92,12 @@ def mobile_callback():
         current_app.logger.info(f"OAuth client configured: {oauth.google.client_id}")
         
         # Exchange the authorization code for an access token
-        # This is where we MUST use the correct hardcoded HTTPS URI
         token_url = 'https://oauth2.googleapis.com/token'
         token_data = {
             'code': code,
             'client_id': oauth.google.client_id,
             'client_secret': oauth.google.client_secret,
-            'redirect_uri': redirect_uri, # CRITICAL: Ensure this is the HTTPS URI
+            'redirect_uri': redirect_uri, # CRITICAL: Use the Config-driven URI
             'grant_type': 'authorization_code'
         }
         

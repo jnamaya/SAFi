@@ -50,9 +50,7 @@ def init_db():
         
         logging.info("Initializing database schema...")
         
-        # --- MODIFICATION ---
-        # Added new fields to the users table for per-user model selection.
-        # We check if columns exist before adding to be idempotent.
+        # --- MODEL COLUMNS (from previous work) ---
         cursor.execute("SHOW COLUMNS FROM users LIKE 'intellect_model'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN intellect_model VARCHAR(255) DEFAULT NULL")
@@ -67,7 +65,12 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN conscience_model VARCHAR(255) DEFAULT NULL")
             logging.info("Added 'conscience_model' column to 'users' table.")
-        # --- END MODIFICATION ---
+        # --- PINNED CONVERSATION COLUMN (New for this feature) ---
+        cursor.execute("SHOW COLUMNS FROM conversations LIKE 'is_pinned'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE conversations ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE")
+            logging.info("Added 'is_pinned' column to 'conversations' table.")
+        # --- END NEW COLUMN ---
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -90,6 +93,7 @@ def init_db():
                 user_id VARCHAR(255) NOT NULL,
                 title VARCHAR(255),
                 memory_summary TEXT,
+                is_pinned BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -249,8 +253,7 @@ def update_user_profile(user_id: str, profile_name: str):
         if conn and conn.is_connected():
             conn.close()
 
-# --- MODIFICATION ---
-# Added a new function to update the user's chosen models in the database.
+# --- MODIFICATION: Updated to support per-user model fields ---
 def update_user_models(user_id: str, intellect_model: str, will_model: str, conscience_model: str):
     conn = None
     cursor = None
@@ -365,13 +368,15 @@ def get_todays_prompt_count(user_id: str) -> int:
             conn.close()
 
 
+# --- MODIFICATION: Fetch conversation list including 'is_pinned' ---
 def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, title FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+        # Select the new is_pinned column
+        cursor.execute("SELECT id, title, is_pinned FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
         return cursor.fetchall()
     finally:
         if cursor:
@@ -388,9 +393,10 @@ def create_conversation(user_id: str) -> Dict[str, str]:
         cursor = conn.cursor()
         new_id = str(uuid.uuid4())
         new_title = "New Conversation"
+        # The new is_pinned column defaults to FALSE
         cursor.execute("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, %s)", (new_id, user_id, new_title))
         conn.commit()
-        return {"id": new_id, "title": new_title}
+        return {"id": new_id, "title": new_title, "is_pinned": False}
     finally:
         if cursor:
             cursor.close()
@@ -540,6 +546,27 @@ def rename_conversation(conversation_id: str, new_title: str):
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+# --- NEW FUNCTION: Toggle the is_pinned status ---
+def toggle_conversation_pin(conversation_id: str, is_pinned: bool):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # MySQL uses 1 for True, 0 for False
+        is_pinned_int = 1 if is_pinned else 0
+        cursor.execute("UPDATE conversations SET is_pinned = %s WHERE id = %s", (is_pinned_int, conversation_id))
+        conn.commit()
+        
+        # Optional: return the new state if needed
+        return {"id": conversation_id, "is_pinned": is_pinned}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+# --- END NEW FUNCTION ---
 
 
 def delete_conversation(conversation_id: str):
