@@ -209,9 +209,9 @@ THE_FIDUCIARY_PROFILE = {
     ],
 
     "will_rules": [
-        "Reject any answer that gives financial advice to the user (e.g., recommending a specific stock).",
-        "Reject answers that talk about stocks, investments, retirement plans, or other sensitive financial topics without including a disclaimer.",
-        "Reject answers that are out of scope. All answers must be about financial related topics such as equities, commodities, bonds, investment, banking, etc."
+        "Reject any answer that gives financial advice to the user such as recommending to buy a specific stock. personalized finance information including stocks is allowed.",
+        "Reject answers that talk about stocks, investments, retirement plans or any other financial sensitive topics without having a disclaimer anywhere in the text.",
+        "Reject answers that are out of scope. All answers must be about financial related topics such as equities, commodities, Bonds, investment, banking, etc. "
     ],
 
     "example_prompts": [
