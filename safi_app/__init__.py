@@ -18,21 +18,12 @@ def create_app():
     # Apply middleware
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-    # --- FIXED CORS CONFIGURATION ---
-    # Allowed origins for web and all Capacitor platforms
-    allowed_origins = [
-        "https://safi.selfalignmentframework.com",
-        "https://selfalignmentframework.com",
-        "capacitor://localhost",  # iOS Capacitor
-        "http://localhost",       # Android Capacitor
-        "ionic://localhost"       # Alternative Capacitor scheme
-    ]
     
     # CRITICAL: Configure CORS to explicitly allow the Authorization header for JWT tokens
     cors.init_app(  # This now configures the imported 'cors' object
         app, 
         supports_credentials=True, 
-        origins=allowed_origins,
+        origins=Config.ALLOWED_ORIGINS,  # <-- Use dynamic list from Config
         allow_headers=["Content-Type", "Authorization"], 
         expose_headers=["Content-Type"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
