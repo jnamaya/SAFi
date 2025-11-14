@@ -4,6 +4,27 @@ import yfinance as yf
 from typing import Optional, Dict, Any, Tuple, List
 from openai import AsyncOpenAI
 import json
+import os  # <-- ADD THIS IMPORT
+
+# --- START FIX ---
+# Define a cache location everyone can write to
+cache_dir = "/var/www/safi/cache/py-yfinance-cache"
+
+# Create it if it doesn't exist
+if not os.path.exists(cache_dir):
+    try:
+        os.makedirs(cache_dir)
+    except OSError as e:
+        # Log this, but don't crash the app
+        print(f"Warning: Could not create cache directory '{cache_dir}'. Reason: {e}")
+
+# Tell yfinance to use this location INSTEAD of the default
+try:
+    yf.set_tz_cache_location(cache_dir)
+except Exception as e:
+     print(f"Warning: Failed to set yfinance cache location. Reason: {e}")
+# --- END FIX ---
+
 
 # Regex for simple natural prompts like "price of apple" or "stock info for AAPL"
 TICKER_COMMAND_REGEX = re.compile(
