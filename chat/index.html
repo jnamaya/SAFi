@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="description" content="SAFi - The Governance Engine For AI" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>SAFi - The Governance Engine For AI</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -16,13 +16,17 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 
+  <!--
+    NOTE: In a real Capacitor app, this CSS file would be bundled locally.
+    Using 'css/styles.css' as per the provided file structure.
+  -->
   <link rel="stylesheet" href="css/styles.css">
 
  <script>
     tailwind.config = { darkMode: 'class' };
   </script>
   <script>
-    // MODIFICATION: 3.1. Updated theme script to handle 'system'
+    // Manages light/dark mode persistence
     const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
@@ -42,97 +46,91 @@
   
 </head>
 <body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300">
+  
+  <!-- Offline Banner -->
+  <div id="offline-banner" class="fixed top-0 left-0 right-0 z-50 bg-yellow-500 text-black text-center text-sm p-1.5 hidden">
+    You are currently offline. Actions will be queued.
+  </div>
 
   <main id="app-container" class="w-full">
+    <!-- Sidebar-container is dynamically populated by ui-auth-sidebar.js -->
     <div id="sidebar-container">
         <!-- Sidebar dynamically generated -->
     </div>
 
-    <div class="md:ml-80 flex flex-col min-h-screen">
-      <!-- MODIFICATION: 2.1. Removed max-width from main section wrapper -->
-      <!-- MODIFICATION: Changed px-3 sm:px-0 to px-0 to make it full-width on mobile -->
+    <!-- 
+      Main Content Area
+      CHANGE: Reduced desktop margin from md:ml-80 to md:ml-72 to match the new sidebar width.
+    -->
+    <div class="md:ml-72 flex flex-col min-h-screen">
       <section class="w-full flex flex-col flex-1 px-0">
         
-        <!-- MODIFICATION: 2.1. Added max-width directly to login view -->
+        <!-- Login View -->
         <div id="login-view" class="w-full max-w-4xl mx-auto flex-1 flex flex-col items-center bg-white dark:bg-black p-6 pt-16">
           <div class="app-logo mb-6">
             <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
           </div>
            <h1 class="text-3xl font-bold">Welcome to SAFi</h1>
         <p class="text-neutral-500 dark:text-neutral-400 mt-2">The Governance Engine For AI</p>
-        <div class="max-w-2xl mx-auto text-left text-sm mt-8 space-y-6">
-            <div>
-                <h2 class="font-semibold text-base mb-2">What SAFi Does</h2>
-                <p class="text-neutral-600 dark:text-neutral-300">SAFi gives you control over your AI systems by enforcing four key principles:</p>
-                <ul class="list-disc list-inside mt-2 space-y-2 text-neutral-600 dark:text-neutral-300">
-                    <li><strong class="font-medium text-black dark:text-white">Value Sovereignty</strong> – You decide the values, not the model.</li>
-                    <li><strong class="font-medium text-black dark:text-white">Full Traceability</strong> – Every decision is transparent and auditable.</li>
-                    <li><strong class="font-medium text-black dark:text-white">Model Independence</strong> – Swap AI models without losing your identity.</li>
-                    <li><strong class="font-medium text-black dark:text-white">Long-Term Consistency</strong> – Maintain alignment over time.</li>
-                </ul>
-                <p class="text-neutral-600 dark:text-neutral-300 mt-3">
-                    For more details, visit the <a href="https://selfalignmentframework.com/safi" target="_blank" rel="noopener noreferrer" class="text-green-600 dark:text-green-500 hover:underline font-medium">website</a>.
-                </p>
-            </div>
-          </div>
+        
           <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition">
             <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
             Sign in with Google
           </button>
         </div>
 
-        <!-- MODIFICATION: 2.1. Added max-width directly to chat view -->
-        <!-- Note: The px-0 change above makes this view's children (like the header) full-width on mobile -->
-        <div id="chat-view" class="w-full max-w-4xl mx-auto hidden flex-1 flex-col bg-white dark:bg-black">
-          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white/80 dark:bg-black/80 backdrop-blur z-20 md:hidden sticky top-0">
-            <div class="flex items-center gap-3">
+        <!-- Chat View -->
+        <!-- CHANGE: Added z-45 on mobile (md:hidden) to keep it above the sidebar (z-40) when open -->
+        <div id="chat-view" class="w-full max-w-4xl mx-auto hidden flex-1 flex-col bg-white dark:bg-black relative md:z-auto z-45">
+          
+          <!-- Mobile Header -->
+          <!-- FIX: Removed md:hidden to show on desktop, changed bg to solid color, and removed backdrop-blur -->
+          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-black z-20 sticky top-0">
+            <!-- FIX: Added md:hidden to hide menu button on desktop -->
+            <div class="flex items-center gap-3 md:hidden">
               <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
               </button>
             </div>
-            <!-- MODIFICATION: Added flex-1 and min-w-0 to fix truncation -->
-            <!-- FIX: Reduced font size and added horizontal margin -->
             <div class="text-center flex-1 min-w-0 mx-2">
-                <h1 id="chat-title" class="text-xl font-semibold leading-tight truncate">SAFi</h1>
-                <!-- MODIFICATION: 1.3. Added Active Profile Chip (Mobile) -->
-                <!-- UPDATED PLACEHOLDER TEXT -->
-                <button id="active-profile-chip-mobile" class="text-xs text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 transition-colors">
+                <!-- CHANGE: Updated text-xl to custom style for 13px -->
+                <h1 id="chat-title" class="font-semibold leading-tight truncate" style="font-size: 14px;">SAFi</h1>
+                <!-- 
+                  CHANGE: Increased font size from text-xs to text-sm for better mobile readability.
+                -->
+                <button id="active-profile-chip-mobile" class="text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 transition-colors">
                   Loading Persona...
                 </button>
             </div>
-            <div class="w-10"> <!-- Spacer --> </div>
+            <!-- FIX: The spacer is only needed when the menu toggle is visible, so hide it on desktop -->
+            <div class="w-10 md:hidden"> <!-- Spacer to balance the menu button --> </div>
           </header>
 
-          <!-- MODIFICATION: 1.3. Added Active Profile Chip (Desktop) -->
-          <!-- FIX: Changed justify-end to justify-between and added a desktop title -->
-          <div id="chat-view-header" class="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between hidden md:flex sticky top-0 bg-white/80 dark:bg-black/80 backdrop-blur z-10">
-            
-            <!-- NEW: Desktop Title -->
-            <h1 id="chat-title-desktop" class="text-xl font-semibold leading-tight truncate">SAFi</h1>
-
-            <!-- UPDATED PLACEHOLDER TEXT -->
-            <button id="active-profile-chip" class="flex items-center gap-1.5 text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:text-green-600 dark:hover:text-green-500 transition-colors bg-neutral-100 dark:bg-neutral-800 hover:bg-green-50 dark:hover:bg-green-900/30 px-3 py-1.5 rounded-lg">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.25278C12 6.25278 6.72222 3 3 3C3 3 3 10.875 3 13.5C3 19.5 12 21 12 21C12 21 21 19.5 21 13.5C21 10.875 21 3 21 3C17.2778 3 12 6.25278 12 6.25278Z"></path></svg>
-              <span>Loading Persona...</span>
-            </button>
-          </div>
-
-          <div id="chat-window" class="flex-1 p-4 sm:p-6 flex flex-col justify-start gap-5">
+          <!-- Chat Window -->
+          <!-- CHANGE: Removed horizontal padding (p-4 sm:p-6) and added vertical padding (pt-4 pb-4) -->
+          <div id="chat-window" class="flex-1 pt-4 pb-4 flex flex-col justify-start gap-5">
             <!-- Chat messages dynamically generated -->
           </div>
 
-          <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-2 sticky bottom-0">
+          <!-- Message Composer -->
+          <!-- 
+            CHANGE: 
+            - Increased gap from gap-2 to gap-3.
+            - Changed textarea rounded-lg to rounded-xl and py-3 to py-2.5.
+            - Changed button w-8 h-8 mb-1 to w-10 h-10 for a better touch target.
+          -->
+          <footer id="composer-footer" class="p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-3 sticky bottom-0">
             <textarea 
               id="message-input" 
               rows="1" 
-              class="flex-1 resize-none bg-transparent py-3 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-lg" 
+              class="flex-1 resize-none bg-transparent py-2.5 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-xl" 
               placeholder="Ask something..."
             ></textarea>
             <button 
               id="send-button" 
               type="submit" 
               aria-label="Send message" 
-              class="shrink-0 bg-green-600 text-white font-semibold w-8 h-8 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center mb-1"
+              class="shrink-0 bg-green-600 text-white font-semibold w-10 h-10 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center"
               disabled
             >
               <div id="button-icon">
@@ -145,12 +143,10 @@
           </footer>
         </div>
 
-        <!-- MODIFICATION: 1.1. Added Control Panel View -->
-        <!-- MODIFICATION: 2.1. Added responsive max-width to control panel view -->
-        <div id="control-panel-view" class="w-full max-w-4xl mx-auto md:max-w-none hidden flex-1 flex-col bg-white dark:bg-black">
-          <!-- BUGFIX: 5.2. Removed `sticky` class -->
+        <!-- Control Panel View -->
+        <!-- CHANGE: Added z-50 on mobile (md:hidden) to ensure it's always on top of the sidebar (z-40) -->
+        <div id="control-panel-view" class="w-full max-w-4xl mx-auto md:max-w-none hidden flex-1 flex-col bg-white dark:bg-black relative md:z-auto z-50">
           <header class="p-4 flex items-center gap-4 border-b border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-black/80 backdrop-blur z-10">
-            <!-- MODIFICATION: 2.6. Hide "Back" button on desktop -->
             <button id="control-panel-back-btn" type="button" class="flex md:hidden items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm font-medium transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
               Back to Chat
@@ -158,10 +154,10 @@
             <h1 class="text-xl font-semibold">Control Panel</h1>
           </header>
           
-          <!-- BUGFIX: 6.1. Set this container to have a specific height based on its parent -->
           <div class="flex flex-col md:flex-row flex-1 min-h-0 relative">
-            <!-- MODIFICATION: 2.5. Changed menu to fixed width on desktop -->
-            <!-- BUGFIX: 6.1. Made nav scrollable and full-height -->
+            <!-- 
+              NOTE: This internal nav uses md:w-72, which now matches the main sidebar.
+            -->
             <nav class="md:w-72 p-4 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 shrink-0 md:absolute md:inset-y-0 md:left-0 md:overflow-y-auto custom-scrollbar">
               <div class="space-y-1" role="tablist" aria-orientation="vertical">
                 <button id="cp-nav-profile" role="tab" aria-selected="true" class="modal-tab-button active">
@@ -177,41 +173,29 @@
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                   <span>Trace & Analyze</span>
                 </button>
-                <!-- MODIFICATION: 3.1. Added App Settings tab -->
                 <button id="cp-nav-app-settings" role="tab" aria-selected="false" class="modal-tab-button">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2v13m0-13a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h5a2 2 0 002-2m0-17a2 2 0 012 2h5a2 2 0 012 2v14a2 2 0 01-2 2h-5a2 2 0 01-2-2m0 0V7a2 2 0 012-2h5a2 2 0 012 2v13a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2z"></path></svg>
                   <span>App Settings</span>
                 </button>
               </div>
             </nav>
             
-            <!-- BUGFIX: 6.1. This is now the main scrolling container for tabs -->
             <div class="flex-1 flex flex-col min-h-0 md:ml-72">
-              <!-- MODIFICATION: 2.2. Added max-width and left-align to Profile tab -->
-              <!-- MODIFICATION: 2.4. Added overflow scroll to Profile tab -->
               <div id="cp-tab-profile" role="tabpanel" class="modal-tab-content p-6 max-w-3xl overflow-y-auto custom-scrollbar">
                 <!-- Content dynamically generated by ui.js -->
               </div>
-              <!-- MODIFICATION: 2.2. Added max-width and left-align to Models tab -->
-              <!-- MODIFICATION: 2.4. Added overflow scroll to Models tab -->
               <div id="cp-tab-models" role="tabpanel" class="modal-tab-content p-6 max-w-3xl hidden overflow-y-auto custom-scrollbar">
                 <!-- Content dynamically generated by ui.js -->
               </div>
-              <!-- MODIFICATION: 2.3/2.4. Updated Dashboard tab layout for full height -->
-              <!-- MODIFICATION: 4.2. Removed padding from Dashboard tab container -->
-              <!-- BUGFIX: 6.1. This tab panel itself is now flex-1 -->
               <div id="cp-tab-dashboard" role="tabpanel" class="modal-tab-content flex-1 flex flex-col hidden">
                 <!-- Content dynamically generated by ui.js -->
               </div>
-              <!-- MODIFICATION: 3.1. Added App Settings tab panel -->
               <div id="cp-tab-app-settings" role="tabpanel" class="modal-tab-content p-6 max-w-3xl hidden overflow-y-auto custom-scrollbar">
                 <!-- Content dynamically generated by ui.js -->
               </div>
             </div>
           </div>
         </div>
-        <!-- END MODIFICATION -->
-
       </section>
     </div>
   </main>
@@ -220,7 +204,10 @@
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
   <!-- Ethical Reasoning Modal -->
-  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-2xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+  <!-- 
+    FIX: Altered classes to make this modal full-screen on mobile, and windowed on desktop.
+  -->
+  <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title" class="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-auto sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 hidden flex flex-col sm:max-h-[85vh] h-full">
     <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <div class="flex items-center gap-3">
         <span class="p-2 bg-green-100 dark:bg-green-900/40 rounded-full">
@@ -245,7 +232,10 @@
   </div>
 
   <!-- Delete Account Modal -->
-  <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+  <!-- 
+    CHANGE: Added mx-4 to prevent the modal from touching screen edges on mobile.
+  -->
+  <div id="delete-account-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
     <h3 id="delete-modal-title" class="text-lg font-semibold">Delete Account</h3>
     <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure? This action is permanent and will delete all your data.</p>
     <div class="flex justify-end gap-3 mt-6">
@@ -255,7 +245,10 @@
   </div>
 
   <!-- Rename Conversation Modal -->
-  <div id="rename-modal" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+  <!-- 
+    CHANGE: Added mx-4 to prevent the modal from touching screen edges on mobile.
+  -->
+  <div id="rename-modal" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
     <h3 id="rename-modal-title" class="text-lg font-semibold">Rename Conversation</h3>
     <div class="mt-4">
       <label for="rename-input" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">New title</label>
@@ -268,7 +261,10 @@
   </div>
   
   <!-- Delete Conversation Modal -->
-  <div id="delete-convo-modal" role="dialog" aria-modal="true" aria-labelledby="delete-convo-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden">
+  <!-- 
+    CHANGE: Added mx-4 to prevent the modal from touching screen edges on mobile.
+  -->
+  <div id="delete-convo-modal" role="dialog" aria-modal="true" aria-labelledby="delete-convo-modal-title" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
     <h3 id="delete-convo-modal-title" class="text-lg font-semibold">Delete Conversation</h3>
     <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Are you sure you want to delete this conversation? This action is permanent.</p>
     <div class="flex justify-end gap-3 mt-6">
@@ -277,8 +273,11 @@
     </div>
   </div>
 
-  <!-- NEW: Profile Details Modal -->
-  <div id="profile-details-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" class="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto max-w-2xl bg-white dark:bg-neutral-900 rounded-xl shadow-2xl z-50 hidden flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+  <!-- Profile Details Modal -->
+  <!-- 
+    CHANGE: Made full-screen on mobile (inset-0) and windowed on desktop (sm:inset-auto, etc.)
+  -->
+  <div id="profile-details-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" class="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-auto sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 hidden flex flex-col sm:max-h-[85vh]">
     <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <h3 id="profile-modal-title" class="text-lg font-semibold">Profile Details</h3>
       <button id="close-profile-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
@@ -292,9 +291,11 @@
         <button id="done-profile-modal" type="button" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm">Done</button>
     </div>
   </div>
-  <!-- END NEW MODAL -->
-
   
+  <!-- 
+    NOTE: In a real Capacitor app, these JS files would be bundled.
+    Using 'js/app.js' as per the provided file structure.
+  -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
