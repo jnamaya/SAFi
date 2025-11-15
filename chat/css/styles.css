@@ -2,7 +2,7 @@
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
   /* CHANGE: Increased base font size from 14px to 15px */
-  font-size: 16px; 
+  font-size: 15px; 
   font-weight: 400; 
   /* CHANGE: Reduced line height for a more symmetrical, tighter feel */
   line-height: 1.5;
@@ -22,7 +22,7 @@ body {
 /* CHANGE: Set the base font size for consistency across mobile */
 @media (min-width: 768px) {
   body {
-    font-size: 16px;
+    font-size: 18px;
     line-height: 1.5;
   }
 }
@@ -69,7 +69,7 @@ html, body {
   --user-fg: #ffffff;
   --ai-fg: #111827;
   /* --- NEW: AI bubble background for tail to work --- */
-  --ai-bg: #F9FAFB;
+  --ai-bg: #transparent;
 }
 
 .dark {
@@ -83,7 +83,7 @@ html, body {
   --user-fg: #f0fdf4;
   --ai-fg: #f3f4f6;
   /* --- NEW: AI bubble background for tail to work --- */
-  --ai-bg: #333333;
+  --ai-bg: #transparent;
 }
 
 .message-container {
@@ -171,7 +171,7 @@ html, body {
 }
 
 /* --- MODIFICATION: Restored the chat bubble tail for AI --- */
-.message.ai .chat-bubble::after {
+/* .message.ai .chat-bubble::after {
   content: '';
   position: absolute;
   left: -8px; 
@@ -182,6 +182,7 @@ html, body {
   border-width: 8px 10px 8px 0;
   border-color: transparent var(--ai-bg) transparent transparent;
 }
+--- */
 /* --- END MODIFICATION --- */
 
 
