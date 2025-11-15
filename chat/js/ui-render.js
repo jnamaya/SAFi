@@ -127,15 +127,28 @@ marked.setOptions({
  * @returns {string} The path to the avatar image
  */
 function getAvatarForProfile(profileName) {
-  const cleanName = profileName ? profileName.trim().toLowerCase() : null;
+  // Normalize the profile name to lowercase, trimmed, and replace underscores with spaces for common matching
+  let cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
+  // Check for common internal key format (e.g., 'health_navigator')
+  if (cleanName && cleanName.includes('_')) {
+    // If it's the internal key, use the key itself for matching
+    // and also try the space-separated version for robustness
+    if (cleanName === 'health_navigator') {
+        return 'assets/health_navigator.svg';
+    }
+    // Fall through to switch after primary check
+  }
+  
+  // Standard switch matching the display name (e.g., "The Health Navigator" -> "the health navigator")
   switch (cleanName) {
     case 'the philosopher':
       return 'assets/philosopher.svg';
     case 'the fiduciary':
       return 'assets/fiduciary.svg';
     case 'the health navigator':
-      return 'assets/health_navigator.svg';
+    case 'health navigator': // Handles if "the" is missing in the display name
+      return 'assets/health_navigator.svg'; // Correct path to file
     case 'the jurist':
       return 'assets/jurist.svg';
     case 'the bible scholar':
@@ -1292,7 +1305,7 @@ function renderValuesSection(values) {
         }
         
         return `
-            <div classa="mb-3">
+            <div class="mb-3">
                 <h5 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${v.value}</h5>
                 <p class="mb-1 text-sm">${v.definition || 'No definition provided.'}</p>
                 ${rubricHtml}

@@ -17,7 +17,18 @@ const iconPin = `<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20
  * @returns {string} The path to the avatar image
  */
 export function getAvatarForProfile(profileName) {
-  const cleanName = profileName ? profileName.trim().toLowerCase() : null;
+  // Normalize the profile name to lowercase, trimmed, and replace underscores with spaces for common matching
+  let cleanName = profileName ? profileName.trim().toLowerCase() : null;
+
+  // Check for common internal key format (e.g., 'health_navigator')
+  if (cleanName && cleanName.includes('_')) {
+    // If it's the internal key, use the key itself for matching
+    // and also try the space-separated version for robustness
+    if (cleanName === 'health_navigator') {
+        return 'assets/health_navigator.svg';
+    }
+    // Fall through to switch after primary check
+  }
 
   switch (cleanName) {
     case 'the philosopher':
@@ -25,7 +36,8 @@ export function getAvatarForProfile(profileName) {
     case 'the fiduciary':
       return 'assets/fiduciary.svg';
     case 'the health navigator':
-      return 'assets.health_navigator.svg';
+    case 'health navigator': // Added for robustness
+      return 'assets/health_navigator.svg'; // <-- FIX: Corrected path
     case 'the jurist':
       return 'assets/jurist.svg';
     case 'the bible scholar':
