@@ -173,7 +173,8 @@ export function renderSettingsDashboardTab() {
     iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
     iframe.className = "w-full h-full rounded-lg"; 
     iframe.title = "SAFi Dashboard";
-    iframe.sandbox = "allow-scripts allow-same-origin allow-forms";
+    // FIX: Added 'allow-downloads' to enable file downloads from the iframe source.
+    iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
     
     iframeContainer.appendChild(iframe);
 
