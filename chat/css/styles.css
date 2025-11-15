@@ -1,10 +1,11 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  /* CHANGE: Increased base font size for mobile */
-  font-size: 18px; 
-   font-weight: 400; 
-  line-height: 1.6;
+  /* CHANGE: Increased base font size from 14px to 15px */
+  font-size: 16px; 
+  font-weight: 400; 
+  /* CHANGE: Reduced line height for a more symmetrical, tighter feel */
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
@@ -12,15 +13,17 @@ body {
   font-variant-ligatures: common-ligatures contextual;
   -webkit-font-feature-settings: "calt" on, "liga" on;
   font-feature-settings: "calt" on, "liga" on;
-}
-/* REMOVED: Redundant closing brace */
-/* } */
 
-/* CHANGE: Media query to adjust font size on larger screens */
+  /* NEW: Ensure no horizontal scrolling on the body */
+  overflow-x: hidden;
+}
+
+/* REMOVED: Desktop media query for font size adjustment as this is mobile-only */
+/* CHANGE: Set the base font size for consistency across mobile */
 @media (min-width: 768px) {
   body {
-    font-size: 19px;
-    line-height: 1.6;
+    font-size: 16px;
+    line-height: 1.5;
   }
 }
 
@@ -86,7 +89,7 @@ html, body {
 .message-container {
     width: 100%;
     margin: 0;
-    padding: 0 8px; /* small side padding for breathing room */
+    padding: 0 2%; 
 }
 
 .message-container {
@@ -101,9 +104,9 @@ html, body {
   gap: 12px;
   align-items: flex-start;
   margin-left: auto;
-  /* --- CHANGE: Reduced max-width --- */
-  max-width: 100%;
+  max-width: 94%;
 }
+
 
 .message.ai {
   display: flex;
@@ -190,10 +193,10 @@ html, body {
   display: flex;
   gap: 8px;
   /* --- CHANGE: Refined spacing --- */
-  margin-top: 12px; 
+  margin-top: 8px; 
   align-items: baseline;
   width: 100%;
-  padding-top: 8px;
+  padding-top: 6px;
   /* --- CHANGE: Softened border --- */
   border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
@@ -209,7 +212,8 @@ html, body {
 }
 
 .why-btn {
-  font-size: 13px;
+  /* CHANGE: Made font smaller */
+  font-size: 12px;
   font-weight: 500;
   color: var(--accent);
   text-decoration: underline;
@@ -233,7 +237,8 @@ html, body {
 }
 
 .stamp {
-  font-size: 12px;
+  /* CHANGE: Made font smaller */
+  font-size: 11px;
   color: var(--muted);
 }
 /* --- NEW: Branded stamp for user bubble --- */
@@ -511,12 +516,16 @@ html, body {
   word-break: break-word; 
 }
 
+/* FIX: Toast Positioning for Desktop/Consistency */
 .toast { 
-  transform: translateY(100%); 
+  /* Initial state: start invisible (no transform needed as container is fixed) */
   opacity: 0; 
-  transition: transform 0.3s ease, opacity 0.3s ease; 
+  /* Added a slight offset for visual appeal, but can be removed if prefer pure fade */
+  transform: translateY(10px); 
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out; 
 }
 .toast.show { 
+  /* Final state: visible and in place */
   transform: translateY(0); 
   opacity: 1; 
 }
@@ -589,10 +598,12 @@ html, body {
 }
 
 
-/* --- NEW: Specific size for login screen logo --- */
+/* CHANGE: Reduced login logo size for better mobile proportions.
+  Was 8.5rem (136px), now 6rem (96px).
+*/
 #login-view .app-logo {
-  height: 8.5rem; /* 72px */
-  width: 8.5rem;  /* 72px */
+  height: 6rem; /* 96px */
+  width: 6rem;  /* 96px */
 }
 
 
@@ -711,11 +722,79 @@ html, body {
   transform: translateY(-50%);
   padding: 0.35rem;
   border-radius: 9999px;
+  /* Ensure initial state is hidden on ALL screen sizes for clean look */
+  opacity: 0; 
+  transition: opacity 0.2s ease-in-out;
 }
+
+/* --- NEW: Hide menu icon completely, regardless of hover/focus --- */
+.convo-menu-button.menu-icon-hidden {
+    opacity: 0 !important;
+}
+
 .convo-menu-button:hover {
   background: rgba(120, 120, 120, 0.12);
 }
+
+/* --- FIX: Desktop visibility for conversation menu (md: 768px) --- */
+@media (min-width: 768px) {
+    /* FIX: Corrected selector to target the button when the parent link (.convo-item-inner) is hovered/active */
+    .convo-item-inner:hover .convo-menu-button,
+    .convo-item-inner.active .convo-menu-button {
+        opacity: 1 !important;
+    }
+    
+    .convo-menu-button:hover {
+        background: rgba(120, 120, 120, 0.12);
+    }
+}
+/* --- END FIX: Desktop visibility for conversation menu (md: 768px) --- */
+
 /* If your convo rows don't already have relative positioning, add this */
 .convo-item {
   position: relative;
+}
+
+/* --- NEW: Sidebar Tagline Adjustment --- */
+.app-tagline {
+    font-size: 12px; /* Slightly increased size from 10px */
+    white-space: nowrap; /* Forces text onto a single line */
+    font-weight: bold;
+}
+
+/* --- REMOVED SWIPE CSS --- */
+.convo-swipe-container, .convo-actions, .convo-action-rename, .convo-action-delete {
+    /* Removed all swipe related styles */
+}
+
+.convo-item-inner {
+  /* This is the element that now holds the link content */
+  /* CHANGE: Reset background color for the new white sidebar theme */
+  background-color: white !important; /* Ensure it matches the new sidebar bg */
+  
+  /* CRITICAL: Must be relative for the menu button to position correctly inside */
+  position: relative; 
+}
+.dark .convo-item-inner {
+    background-color: black !important; 
+}
+/* Active state background is handled by JS but adding a fallback active class here just in case */
+.convo-item-inner.bg-green-600 {
+    background-color: #16a34a !important; 
+}
+.dark .convo-item-inner.dark\:bg-green-600 {
+    background-color: #16a34a !important; 
+}
+
+/* --- NEW: Pin Icon Color/Placement --- */
+.convo-pin-icon {
+    color: #f59e0b; /* amber-500 */
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+}
+.dark .convo-pin-icon {
+    color: #fbbf24; /* amber-400 */
+}
+.convo-item-inner.bg-green-600 .convo-pin-icon {
+    color: #fcd34d; /* amber-300 for active state */
 }

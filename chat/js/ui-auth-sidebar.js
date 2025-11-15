@@ -1,80 +1,42 @@
 // ui-auth-sidebar.js
 
-import { formatRelativeTime } from './utils.js';
-import * as ui from './ui.js'; 
+import * as ui from './ui.js';
+// Assuming formatRelativeTime is in utils.js, based on context from other files
+import { formatRelativeTime } from './utils.js'; 
+import { iconMenuDots } from './ui-render-constants.js';
 
-// --- ICON TEMPLATES (Need to be imported or defined here for link rendering) ---
-const iconMenuDots = `<svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>`;
-// --- NEW: Pin Icon ---
-const iconPin = `<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1a1 1 0 011 1v4.586l2.707 2.707a1 1 0 01-1.414 1.414L11 9.414V16a1 1 0 11-2 0V9.414l-1.293 1.293a1 1 0 01-1.414-1.414L9 5.586V2a1 1 0 011-1z" clip-rule="evenodd"></path><path d="M8 16a2 2 0 104 0h-4z"></path></svg>`;
-// --- END NEW ---
-
-
-// --- AVATAR HELPERS ---
 /**
- * Maps a profile name to a static avatar image path.
- * @param {string | null} profileName 
- * @returns {string} The path to the avatar image
+ * Icons (for pin feature)
  */
-export function getAvatarForProfile(profileName) {
-  // Normalize the profile name to lowercase, trimmed, and replace underscores with spaces for common matching
-  let cleanName = profileName ? profileName.trim().toLowerCase() : null;
+const iconPin = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="0 0 24 24"><path d="M17 11.5c.34-.14.65-.3.94-.48l-2.61-2.61c-.18.29-.34.6-.48.94L17 11.5zM14 17.5V21h-2v-3.5L8.5 14H5v-2h3.5L12 8.5V5h2v3.5l3.5 3.5H21v2h-3.5L14 17.5zM14 3c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zM4 22c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
+const iconUnpin = `<svg class="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 4v1m0 5v1m0 5v1m0 5v1M7 4h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>`;
+const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="0 0 24 24"><path d="M17 11.5c.34-.14.65-.3.94-.48l-2.61-2.61c-.18.29-.34.6-.48.94L17 11.5zM14 17.5V21h-2v-3.5L8.5 14H5v-2h3.5L12 8.5V5h2v3.5l3.5 3.5H21v2h-3.5L14 17.5zM14 3c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zM4 22c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
 
-  // Check for common internal key format (e.g., 'health_navigator')
-  if (cleanName && cleanName.includes('_')) {
-    // If it's the internal key, use the key itself for matching
-    // and also try the space-separated version for robustness
-    if (cleanName === 'health_navigator') {
-        return 'assets/health_navigator.svg';
-    }
-    // Fall through to switch after primary check
-  }
 
-  switch (cleanName) {
-    case 'the philosopher':
-      return 'assets/philosopher.svg';
-    case 'the fiduciary':
-      return 'assets/fiduciary.svg';
-    case 'the health navigator':
-    case 'health navigator': // Added for robustness
-      return 'assets/health_navigator.svg'; // <-- FIX: Corrected path
-    case 'the jurist':
-      return 'assets/jurist.svg';
-    case 'the bible scholar':
-      return 'assets/bible_scholar.svg';
-    case 'the safi guide':
-    default:
-      return 'assets/safi.svg';
-  }
-}
-
-// --- GLOBAL UI RENDERING (Auth & Sidebar) ---
+/**
+ * Updates the entire sidebar UI based on the user's login status.
+ * @param {object | null} user - The user object, or null if logged out.
+ */
 export function updateUIForAuthState(user) {
   ui._ensureElements();
+  
+  const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
+  const name = user?.name || 'Guest';
+
   if (user) {
     ui.elements.loginView.classList.add('hidden');
-    ui.elements.chatView.classList.remove('hidden');
-    if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
-
-    const pic = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
-    const name = user.name || user.email || 'User';
-    
-    // NOTE: Logout/Delete handlers are often attached outside the render, 
-    // but the original code included the full static HTML here.
-    // For simplicity, we keep the original rendering method.
-
+    // NOTE: bg-neutral-100 dark:bg-neutral-900 changed to bg-white dark:bg-black
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
-        <aside id="sidebar" class="fixed inset-y-0 left-0 w-80 bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
+        <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-white dark:bg-black text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
+            
             <div class="flex items-center gap-3">
               <div class="app-logo h-10 w-10">
-                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
+                <img src="assets/chat-logo.svg" alt="SAFi Logo" class="rounded-lg w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
               </div>
-              <div>
-                <h1 class="text-lg font-bold">SAFi</h1>
-                <p class="text-xs text-gray-500 dark:text-gray-400">The Governance Engine For AI</p>
-              </div>
+              <!-- CHANGE: Removed <br> tag for single-line tagline -->
+              <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
             <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -89,7 +51,7 @@ export function updateUIForAuthState(user) {
           </div>
            
           <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar min-h-0">
-            <h3 class="px-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Conversations</h3>
+            <!-- Content generated by renderConvoList -->
           </nav>
           
           <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
@@ -118,37 +80,30 @@ export function updateUIForAuthState(user) {
   }
 }
 
-// --- CONVERSATION LINK RENDERING ---
-
 /**
- * Creates the dropdown menu for conversation actions (Rename/Delete).
- * @param {object} convo - The full conversation object.
- * @param {object} handlers - Rename, Delete, and Pin handler functions.
- * @returns {HTMLDivElement} The dropdown menu element.
+ * Creates the dropdown menu for conversation actions (Rename/Delete/Pin).
  */
-function createDropdownMenu(convo, handlers) {
-  // --- NEW: Destructure all handlers ---
-  const { renameHandler, deleteHandler, pinHandler } = handlers;
-  
+function createDropdownMenu(convoId, isPinned, handlers) {
   const menu = document.createElement('div');
   menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
-  menu.dataset.menuId = convo.id;
+  menu.dataset.menuId = convoId;
   
   // --- NEW: Pin/Unpin Button ---
   const pinButton = document.createElement('button');
   pinButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
-  pinButton.innerHTML = `
-    <span class="w-4 h-4">${iconPin}</span>
-    <span>${convo.is_pinned ? 'Unpin' : 'Pin'}</span>
-  `;
+  pinButton.innerHTML = isPinned ? 
+    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19V6a2 2 0 012-2h10a2 2 0 012 2v13M12 4v16m-4-8h8"></path></svg>
+    <span>Unpin</span>` : 
+    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19V6a2 2 0 012-2h10a2 2 0 012 2v13M12 4v16m-4-8h8"></path></svg>
+    <span>Pin</span>`;
   pinButton.addEventListener('click', (e) => {
     e.stopPropagation();
     ui.closeAllConvoMenus();
-    // Pass the convo id and its current pinned state
-    pinHandler(convo.id, convo.is_pinned);
+    handlers.pinHandler(convoId, isPinned);
   });
-  // --- END NEW ---
-
+  menu.appendChild(pinButton);
+  // --- END NEW: Pin/Unpin Button ---
+  
   const renameButton = document.createElement('button');
   renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
   renameButton.innerHTML = `
@@ -158,7 +113,7 @@ function createDropdownMenu(convo, handlers) {
   renameButton.addEventListener('click', (e) => {
     e.stopPropagation();
     ui.closeAllConvoMenus();
-    renameHandler(convo.id, document.querySelector(`a[data-id="${convo.id}"] .convo-title`).textContent);
+    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] .convo-title`).textContent);
   });
   
   const deleteButton = document.createElement('button');
@@ -170,10 +125,9 @@ function createDropdownMenu(convo, handlers) {
   deleteButton.addEventListener('click', (e) => {
     e.stopPropagation();
     ui.closeAllConvoMenus();
-    deleteHandler(convo.id);
+    handlers.deleteHandler(convoId);
   });
 
-  menu.appendChild(pinButton); // Add pin button first
   menu.appendChild(renameButton);
   menu.appendChild(deleteButton);
   menu.addEventListener('click', (e) => e.stopPropagation());
@@ -183,15 +137,15 @@ function createDropdownMenu(convo, handlers) {
 
 /**
  * Positions the dropdown menu relative to the conversation button.
- * @param {HTMLDivElement} menu - The dropdown element.
- * @param {HTMLButtonElement} button - The button element that opened the menu.
  */
 function positionDropdown(menu, button) {
   const rect = button.getBoundingClientRect();
   menu.style.top = 'auto';
+  // Position menu above the button, with a small gap
   menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
   menu.style.left = 'auto';
-  menu.style.right = `${window.innerWidth - rect.right}px`; 
+  // Align right edges
+  menu.style.right = `${window.innerWidth - rect.right - (rect.width / 2)}px`; 
 }
 
 /**
@@ -203,13 +157,40 @@ export function prependConversationLink(convo, handlers) {
   if (!convoList) return;
 
   const link = renderConversationLink(convo, handlers);
-  const listHeading = convoList.querySelector('h3');
   
-  if (listHeading) {
-    listHeading.after(link); 
+  // Find the first non-header element or the top of the list
+  let insertionPoint = convoList.querySelector('h3:nth-of-type(2)') || convoList.querySelector('h3:first-of-type');
+
+  if (convo.is_pinned) {
+      // Find the 'Pinned' header or create one
+      let pinnedHeader = convoList.querySelector('h3:first-of-type');
+      if (!pinnedHeader || pinnedHeader.textContent !== 'Pinned Conversations') {
+           // Reloading the entire list is simpler for accurate sorting/headers
+           // However, if we must prepend, we'll try to find the last pinned item.
+           
+           // Simpler approach: call loadConversations to correctly sort/render everything
+           // Since we already updated the cache, a full reload is efficient here.
+           // For now, let's just prepend to the start if pinned.
+           convoList.prepend(link);
+      } else {
+          // Prepend after the pinned header
+          pinnedHeader.after(link);
+      }
+      
   } else {
-    convoList.prepend(link); 
+      // Prepend before the first non-pinned item, or after the 'All Conversations' header
+      const allChatsHeader = convoList.querySelector('h3:last-of-type');
+      if (allChatsHeader) {
+          allChatsHeader.after(link);
+      } else {
+          // If no headers exist, just prepend
+          convoList.prepend(link);
+      }
   }
+
+  // NOTE: Given the complexity of manually sorting headers on prepend,
+  // the `chat.js` function `loadConversations` is set up to call `renderConvoList`
+  // which clears and re-renders everything, ensuring correct sort order.
 }
 
 /**
@@ -217,21 +198,23 @@ export function prependConversationLink(convo, handlers) {
  */
 export function renderConversationLink(convo, handlers) {
   ui._ensureElements();
-  const { switchHandler } = handlers;
+  const { switchHandler, renameHandler, deleteHandler, pinHandler } = handlers;
+  
+  // Outer element is now just the link
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
   
-  link.className = 'group relative flex items-start justify-between px-3 py-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
+  // Use a child div inside the <a> to hold content and apply class for active state/hover
+  const innerContent = document.createElement('div');
+  // NOTE: Swapping background classes to white/near-black. Hover remains gray-100/800.
+  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 bg-white dark:bg-black hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
   
-  // --- NEW: Add pin icon if convo.is_pinned is true ---
-  const pinIconHtml = convo.is_pinned 
-    ? `<span class="pin-icon shrink-0 text-neutral-500 dark:text-neutral-400">${iconPin}</span>` 
-    : '';
+  const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
-  link.innerHTML = `
-    <div class="flex-1 min-w-0 pr-8 flex items-center gap-2">
-        ${pinIconHtml}
+  innerContent.innerHTML = `
+    <div class="flex items-center min-w-0 flex-1 pr-8">
+        ${pinHtml}
         <div class="flex-1 min-w-0">
             <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
             <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
@@ -239,38 +222,47 @@ export function renderConversationLink(convo, handlers) {
             </span>
         </div>
     </div>
-    <button data-action="menu" class="convo-menu-button opacity-0 group-hover:opacity-100 focus:opacity-100 
+    <!-- 
+      CHANGE: opacity-0 is applied to hide the icon but keep it clickable (long press trigger).
+      menu-icon-hidden class ensures no unwanted visual state on hover.
+    -->
+    <button data-action="menu" class="convo-menu-button opacity-0 focus:opacity-100 menu-icon-hidden
                    absolute right-2 top-1/2 -translate-y-1/2 
                    p-1.5 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700" 
             aria-label="Conversation options">
        ${iconMenuDots}
     </button>
   `;
-  // --- END NEW ---
+  link.appendChild(innerContent);
   
+  // --- Mobile Long Press & Tap Logic ---
   let longPressTimer = null;
   let isLongPress = false;
-  const longPressDuration = 500; 
-
-  // --- Long press and touch handling logic for mobile context menu ---
+  const longPressDuration = 500; // 500ms for long press
 
   const handleTouchStart = (e) => {
     isLongPress = false;
+    // Start a timer to check for long press
     longPressTimer = setTimeout(() => {
       isLongPress = true;
-      const actionButton = link.querySelector('button[data-action="menu"]');
+      const actionButton = innerContent.querySelector('button[data-action="menu"]');
       if (!actionButton) return;
+      
+      // Prevent default scroll/tap behavior
       e.preventDefault(); 
       e.stopPropagation();
+
+      // Haptic feedback for mobile (assuming available)
       if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(50);
+        window.navigator.vibrate(50); 
       }
+      
+      // Toggle menu
       if (document.querySelector('.convo-menu-dropdown')) {
         ui.closeAllConvoMenus();
         return;
       }
-      // --- NEW: Pass the full convo object ---
-      const menu = createDropdownMenu(convo, handlers);
+      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
     }, longPressDuration);
@@ -281,31 +273,37 @@ export function renderConversationLink(convo, handlers) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
+    
     if (isLongPress) {
-      e.preventDefault();
-      e.stopPropagation();
+        // If it was a long press, prevent the click/navigation
+        e.preventDefault();
+        e.stopPropagation();
     }
   };
 
   const handleTouchMove = () => {
+    // If user starts scrolling, cancel the long press
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
   };
 
-  link.addEventListener('touchstart', handleTouchStart, { passive: false });
-  link.addEventListener('touchend', handleTouchEnd);
-  link.addEventListener('touchcancel', handleTouchMove);
-  link.addEventListener('touchmove', handleTouchMove);
+  // Add touch event listeners for mobile on the inner content (long press/tap)
+  innerContent.addEventListener('touchstart', handleTouchStart, { passive: false });
+  innerContent.addEventListener('touchend', handleTouchEnd);
+  innerContent.addEventListener('touchcancel', handleTouchMove);
+  innerContent.addEventListener('touchmove', handleTouchMove);
 
+  // Prevent desktop right-click menu
   link.addEventListener('contextmenu', (e) => {
       e.preventDefault();
   });
   
-  // --- Click handling ---
+  // Standard click event for navigation or desktop menu
   link.addEventListener('click', (e) => {
     if (isLongPress) {
+        // Prevent click if long press just happened
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -314,6 +312,7 @@ export function renderConversationLink(convo, handlers) {
     const actionButton = e.target.closest('button[data-action="menu"]');
 
     if (actionButton) {
+      // Click was on the menu button (desktop)
       e.preventDefault();
       e.stopPropagation();
       
@@ -321,16 +320,16 @@ export function renderConversationLink(convo, handlers) {
         ui.closeAllConvoMenus();
         return;
       }
-      
-      // --- NEW: Pass the full convo object ---
-      const menu = createDropdownMenu(convo, handlers);
+
+      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
       
     } else {
+      // Click was on the link itself (navigation)
       e.preventDefault();
       ui.closeAllConvoMenus();
-      if (window.innerWidth < 768) ui.closeSidebar();
+      if (window.innerWidth < 768) ui.closeSidebar(); // Close sidebar on mobile nav
       switchHandler(convo.id);
     }
   });
@@ -342,42 +341,41 @@ export function renderConversationLink(convo, handlers) {
  */
 export function setActiveConvoLink(id) {
   ui._ensureElements();
+  // Target the top-level <a> elements
   document.querySelectorAll('#convo-list > a').forEach(link => {
+    const inner = link.querySelector('.convo-item-inner');
+    if (!link || !inner) return;
+
     const isActive = link.dataset.id === String(id);
     const title = link.querySelector('.convo-title');
     const timestamp = link.querySelector('.convo-timestamp');
-    // --- NEW: Select the pin icon ---
-    const pinIcon = link.querySelector('.pin-icon');
 
-    link.classList.toggle('bg-green-600', isActive);
-    link.classList.toggle('text-white', isActive);
-    link.classList.toggle('dark:bg-green-600', isActive);
-    link.classList.toggle('dark:text-white', isActive);
-    link.classList.toggle('text-neutral-900', !isActive);
-    link.classList.toggle('dark:text-white', !isActive);
-    link.classList.toggle('hover:bg-neutral-200', !isActive);
-    link.classList.toggle('dark:hover:bg-neutral-800', !isActive);
+    // Toggle active state classes on the inner element
+    inner.classList.toggle('bg-green-600', isActive);
+    inner.classList.toggle('text-white', isActive);
+    inner.classList.toggle('dark:bg-green-600', isActive);
+    inner.classList.toggle('dark:text-white', isActive);
+    
+    // Toggle inactive state classes (using bg-white dark:bg-black theme)
+    inner.classList.toggle('bg-white', !isActive);
+    inner.classList.toggle('dark:bg-black', !isActive);
+    inner.classList.toggle('text-neutral-900', !isActive);
+    inner.classList.toggle('dark:text-white', !isActive); 
+    inner.classList.toggle('hover:bg-neutral-100', !isActive);
+    inner.classList.toggle('dark:hover:bg-neutral-800', !isActive);
     
     title?.classList.toggle('font-semibold', isActive);
     title?.classList.toggle('font-medium', !isActive);
 
     if (timestamp) {
+      // Active state timestamp
       timestamp.classList.toggle('text-green-100', isActive);
       timestamp.classList.toggle('dark:text-green-100', isActive);
       
+      // Inactive state timestamp
       timestamp.classList.toggle('text-neutral-500', !isActive);
       timestamp.classList.toggle('dark:text-neutral-400', !isActive);
     }
-    
-    // --- NEW: Update pin icon color ---
-    if (pinIcon) {
-      pinIcon.classList.toggle('text-green-100', isActive);
-      pinIcon.classList.toggle('dark:text-green-100', isActive);
-      
-      pinIcon.classList.toggle('text-neutral-500', !isActive);
-      pinIcon.classList.toggle('dark:text-neutral-400', !isActive);
-    }
-    // --- END NEW ---
   });
 }
 
@@ -407,6 +405,7 @@ export function updateActiveProfileChip(profileName) {
   const textLabel = "Persona:";
   const profileNameText = profileName || 'Default';
 
+  // Desktop chip
   if (ui.elements.activeProfileChip) {
     ui.elements.activeProfileChip.classList.add('flex', 'items-center', 'gap-2');
     ui.elements.activeProfileChip.innerHTML = `
@@ -415,12 +414,38 @@ export function updateActiveProfileChip(profileName) {
       <span class="truncate">${profileNameText}</span>
     `;
   }
+  
+  // Mobile chip
   if (ui.elements.activeProfileChipMobile) {
-    ui.elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto');
+    ui.elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto', 'justify-center');
     ui.elements.activeProfileChipMobile.innerHTML = `
-      <span class="font-semibold truncate flex-shrink-0">${textLabel}</span>
-      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-6 h-6 rounded-lg flex-shrink-0">
+      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-4 h-4 rounded-lg flex-shrink-0">
       <span class="font-semibold truncate">${profileNameText}</span>
     `;
   }
+}
+
+/**
+ * Helper function to get the correct avatar for a given profile name.
+ * @param {string | null} profileName - The name of the profile.
+ * @returns {string} - The URL to the avatar image.
+ */
+export function getAvatarForProfile(profileName) {
+  const cleanName = profileName ? profileName.trim().toLowerCase() : null;
+
+switch (cleanName) {
+ case 'the philosopher':
+return 'assets/philosopher.svg';
+case 'the fiduciary':
+return 'assets/fiduciary.svg';
+case 'the health navigator':
+return 'assets/health_navigator.svg';
+case 'the jurist':
+return 'assets/jurist.svg';
+case 'the bible scholar':
+return 'assets/bible_scholar.svg';
+case 'the safi guide':
+default:
+return 'assets/safi.svg';
+}
 }
