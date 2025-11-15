@@ -110,7 +110,6 @@ html, body {
 
 .message.ai {
   display: flex;
-  gap: 12px;
   align-items: flex-start;
   color: var(--ai-fg);
   /* --- CHANGE: Reduced max-width --- */
