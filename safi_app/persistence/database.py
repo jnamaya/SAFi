@@ -99,6 +99,13 @@ def init_db():
             )
         ''')
 
+        # --- MODIFICATION: Added suggested_prompts column ---
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'suggested_prompts'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN suggested_prompts JSON DEFAULT NULL")
+            logging.info("Added 'suggested_prompts' column to 'chat_history' table.")
+        # --- END MODIFICATION ---
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -112,6 +119,7 @@ def init_db():
                 spirit_note TEXT,
                 profile_name VARCHAR(50),
                 profile_values JSON,
+                suggested_prompts JSON DEFAULT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
                 INDEX idx_message_id (message_id)
@@ -376,8 +384,38 @@ def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         # Select the new is_pinned column
-        cursor.execute("SELECT id, title, is_pinned FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
-        return cursor.fetchall()
+        cursor.execute("SELECT id, title, is_pinned, created_at FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+        # Renamed variable to avoid clash with built-in
+        user_convos = cursor.fetchall()
+        # --- FIX: We must get the last_updated time from chat_history ---
+        
+        if not user_convos:
+            return []
+
+        # Get the latest timestamp for each conversation
+        convo_ids = [c['id'] for c in user_convos]
+        
+        # Use a placeholder string for the IN clause
+        placeholders = ', '.join(['%s'] * len(convo_ids))
+        
+        # This query finds the MAX(id) for each conversation, which is the last message
+        # It's much faster than sorting by timestamp on a large table
+        timestamp_query = f"""
+            SELECT conversation_id, MAX(timestamp) as last_updated
+            FROM chat_history
+            WHERE conversation_id IN ({placeholders})
+            GROUP BY conversation_id
+        """
+        
+        cursor.execute(timestamp_query, tuple(convo_ids))
+        timestamps = {row['conversation_id']: row['last_updated'] for row in cursor.fetchall()}
+        
+        # Combine the data
+        for convo in user_convos:
+            # Use the latest message timestamp if it exists, otherwise use the convo creation time
+            convo['last_updated'] = timestamps.get(convo['id'], convo['created_at'])
+        
+        return user_convos
     finally:
         if cursor:
             cursor.close()
@@ -415,7 +453,8 @@ def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, o
         # and is immune to clock skew issues between server processes.
         query = """
             SELECT role, content, timestamp, message_id, conscience_ledger, 
-                   spirit_score, spirit_note, profile_name, profile_values 
+                   spirit_score, spirit_note, profile_name, profile_values,
+                   suggested_prompts 
             FROM chat_history WHERE conversation_id = %s 
             ORDER BY id DESC
             LIMIT %s OFFSET %s
@@ -448,7 +487,8 @@ def insert_memory_entry(conversation_id: str, role: str, content: str, message_i
             conn.close()
 
 
-def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]]):
+# --- MODIFICATION: Added suggested_prompts ---
+def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]], suggested_prompts: List[str] = None):
     conn = None
     cursor = None
     try:
@@ -456,13 +496,18 @@ def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_s
         cursor = conn.cursor()
         ledger_json = json.dumps(ledger)
         values_json = json.dumps(profile_values)
+        # Handle null or empty list for suggestions
+        prompts_json = json.dumps(suggested_prompts) if suggested_prompts else None
+        
         sql = """
             UPDATE chat_history 
             SET conscience_ledger = %s, audit_status = 'complete', spirit_score = %s, 
-                spirit_note = %s, profile_name = %s, profile_values = %s 
+                spirit_note = %s, profile_name = %s, profile_values = %s,
+                suggested_prompts = %s
             WHERE message_id = %s
         """
-        cursor.execute(sql, (ledger_json, spirit_score, spirit_note, profile_name, values_json, message_id))
+        cursor.execute(sql, (ledger_json, spirit_score, spirit_note, profile_name, values_json, prompts_json, message_id))
+        # --- END MODIFICATION ---
         conn.commit()
     finally:
         if cursor:
@@ -480,7 +525,7 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
         cursor.execute(
             """
             SELECT audit_status, conscience_ledger, spirit_score, spirit_note, 
-                   profile_name, profile_values 
+                   profile_name, profile_values, suggested_prompts
             FROM chat_history WHERE message_id = %s
             """,
             (message_id,)
@@ -493,7 +538,8 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
                 "spirit_score": row.get('spirit_score'),
                 "spirit_note": row.get('spirit_note'),
                 "profile": row.get('profile_name'), 
-                "values": row.get('profile_values') 
+                "values": row.get('profile_values'),
+                "suggested_prompts": row.get('suggested_prompts') # Add suggestions
             }
         return None
     finally:

@@ -56,6 +56,67 @@ export function displaySimpleGreeting(firstName) {
 }
 
 /**
+ * Attaches click handlers to suggestion buttons.
+ * @param {HTMLElement} container - The element containing the buttons (either .ai-content-wrapper or .message-container)
+ */
+function _attachSuggestionHandlers(container) {
+    if (!container) return;
+    
+    container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
+      // Remove old listener to prevent duplicates, just in case
+      btn.replaceWith(btn.cloneNode(true));
+    });
+
+    // Add new listeners to the new nodes
+    container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const promptText = btn.textContent.replace(/"/g, '').trim();
+            ui.elements.messageInput.value = promptText;
+            ui.elements.sendButton.disabled = false;
+            ui.elements.messageInput.style.height = 'auto'; 
+            ui.elements.messageInput.style.height = `${ui.elements.messageInput.scrollHeight}px`; 
+            ui.elements.messageInput.focus();
+            // --- FIX: Click the send button to send the message ---
+            if (ui.elements.sendButton) {
+                ui.elements.sendButton.click();
+            }
+            // --- END FIX ---
+            const suggestionBox = btn.closest('.prompt-suggestions-container');
+            if (suggestionBox) {
+                suggestionBox.remove();
+            }
+        });
+    });
+}
+
+/**
+ * Renders the HTML for suggestion buttons.
+ * @param {string[]} suggestedPrompts - A list of prompt strings.
+ * @param {boolean} isBlocked - Whether the message was blocked.
+ * @returns {string} - The HTML string for the suggestions block.
+ */
+function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
+    if (!suggestedPrompts || suggestedPrompts.length === 0) {
+        return '';
+    }
+
+    const promptsList = suggestedPrompts.map(p => 
+        `<button class="ai-prompt-suggestion-btn text-left w-full p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors border border-neutral-200 dark:border-neutral-700 text-sm italic">
+            "${p}"
+        </button>`
+    ).join('');
+    
+    const suggestionTitle = isBlocked ? "Try a different prompt:" : "Suggested follow-ups:";
+    
+    return `
+        <div class="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2 prompt-suggestions-container">
+            <p class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">${suggestionTitle}</p>
+            ${promptsList}
+        </div>
+    `;
+}
+
+/**
  * Displays a single chat message (user or AI).
  */
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
@@ -79,27 +140,35 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageDiv.className = `message ${sender}`;
 
   let ttsButtonElement = null; 
-  const final_text = String(text ?? ''); 
+
+  // --- MODIFIED --- (Blank Message Fix)
+  // This is the final safeguard. If 'text' arrives as null or undefined,
+  // it will be replaced with the fallback string, preventing a blank message.
+  const final_text = String(text ?? '[Sorry, the model returned an empty response.]');
+  // --- END MODIFIED ---
 
   if (sender === 'ai') {
     const profileName = (payload && payload.profile) ? payload.profile : null;
     const avatarUrl = getAvatarForProfile(profileName);
     
     let promptsHtml = '';
+    // --- MODIFIED --- (Feature 2)
+    // This block now only renders suggestions for *blocked* answers
+    // Approved-answer suggestions are loaded async by updateMessageWithAudit
     if (suggestedPrompts.length > 0) {
-        const promptsList = suggestedPrompts.map(p => 
-            `<button class="ai-prompt-suggestion-btn text-left w-full p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors border border-neutral-200 dark:border-neutral-700 text-sm italic">
-                "${p}"
-            </button>`
-        ).join('');
+        const isBlocked = final_text.includes("🛑 **The answer was blocked**");
         
-        promptsHtml = `
-            <div class="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2 prompt-suggestions-container">
-                <p class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Try a different prompt:</p>
-                ${promptsList}
-            </div>
-        `;
+        if (isBlocked) {
+            promptsHtml = _renderSuggestionsHtml(suggestedPrompts, true);
+        }
+        // --- ADDED: Render suggestions if they came with an approved answer ---
+        // (This happens when loading history)
+        else {
+            promptsHtml = _renderSuggestionsHtml(suggestedPrompts, false);
+        }
+        // --- END ADDED ---
     }
+    // --- END MODIFIED ---
 
     // --- TTS Button Creation ---
     ttsButtonElement = document.createElement('button'); 
@@ -173,32 +242,19 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   metaDiv.appendChild(rightMeta);
   
   messageContainer.appendChild(messageDiv);
-
+  
+  // This was missing, adding it back to ensure window scrolls
   ui.elements.chatWindow.appendChild(messageContainer);
   ui.scrollToBottom();
   
-  // Attach handlers for suggested prompts
-  messageContainer.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-          const promptText = btn.textContent.replace(/"/g, '').trim();
-          ui.elements.messageInput.value = promptText;
-          ui.elements.sendButton.disabled = false;
-          ui.elements.messageInput.style.height = 'auto'; 
-          ui.elements.messageInput.style.height = `${ui.elements.messageInput.scrollHeight}px`; 
-          ui.elements.messageInput.focus();
-          ui.elements.sendButton.click();
-          const suggestionBox = btn.closest('.prompt-suggestions-container');
-          if (suggestionBox) {
-              suggestionBox.remove();
-          }
-      });
-  });
+  // Attach handlers for any suggestions that were rendered (i.e., blocked or from history)
+  _attachSuggestionHandlers(messageContainer);
   
   return messageContainer;
 }
 
 /**
- * Adds the "View Ethical Reasoning" button to an existing message after the audit data is received.
+ * Adds the "View Ethical Reasoning" button and async suggestions to an existing message.
  */
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
     ui._ensureElements();
@@ -206,30 +262,46 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     if (!messageContainer) return;
 
     const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
-    if (!hasLedger) return;
-
-    const metaDiv = messageContainer.querySelector('.meta');
-    if (metaDiv && !metaDiv.querySelector('.why-btn')) {
-        const whyButton = document.createElement('button');
-        whyButton.className = 'why-btn';
-        whyButton.textContent = 'View Ethical Reasoning';
-        whyButton.addEventListener('click', () => whyHandler(payload));
-        
-        const leftMeta = metaDiv.querySelector('div:first-child');
-        if (leftMeta) {
-            const existingButton = leftMeta.querySelector('button');
-            if (existingButton) {
-                leftMeta.insertBefore(whyButton, existingButton);
+    
+    // --- 1. Add "Why" button if ledger exists ---
+    if (hasLedger) {
+        const metaDiv = messageContainer.querySelector('.meta');
+        if (metaDiv && !metaDiv.querySelector('.why-btn')) {
+            const whyButton = document.createElement('button');
+            whyButton.className = 'why-btn';
+            whyButton.textContent = 'View Ethical Reasoning';
+            whyButton.addEventListener('click', () => whyHandler(payload));
+            
+            const leftMeta = metaDiv.querySelector('div:first-child');
+            if (leftMeta) {
+                // Prepend it to appear before other buttons if any
+                leftMeta.prepend(whyButton);
             } else {
-                 leftMeta.appendChild(whyButton);
+                const newLeftMeta = document.createElement('div');
+                newLeftMeta.appendChild(whyButton);
+                metaDiv.insertBefore(newLeftMeta, metaDiv.firstChild);
             }
-        } else {
-            const newLeftMeta = document.createElement('div');
-            newLeftMeta.appendChild(whyButton);
-            metaDiv.insertBefore(newLeftMeta, metaDiv.firstChild);
+        }
+    }
+
+    // --- 2. Add suggestions if they arrived with the audit ---
+    const existingSuggestions = messageContainer.querySelector('.prompt-suggestions-container');
+    const suggestedPrompts = payload.suggested_prompts || [];
+
+    // Only add if they don't exist and we have new ones
+    if (!existingSuggestions && suggestedPrompts.length > 0) {
+        const aiContentWrapper = messageContainer.querySelector('.ai-content-wrapper');
+        if (aiContentWrapper) {
+            // Render with isBlocked=false (for "Suggested follow-ups:")
+            const promptsHtml = _renderSuggestionsHtml(suggestedPrompts, false); 
+            aiContentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
+            
+            // Re-attach handlers for these *new* buttons
+            _attachSuggestionHandlers(aiContentWrapper);
         }
     }
 }
+
 
 /**
  * Displays the AI thinking indicator with cycling status messages.
@@ -351,6 +423,13 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
 
     const emptyStateContainer = document.createElement('div');
     emptyStateContainer.className = 'empty-state-container';
+    
+    // --- THIS IS THE FIX ---
+    // Add margin and set width to 98%
+    emptyStateContainer.style.width = '98%';
+    emptyStateContainer.style.margin = '0 auto';
+    // --- END FIX ---
+
     emptyStateContainer.innerHTML = `<div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>

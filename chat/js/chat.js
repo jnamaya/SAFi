@@ -74,6 +74,15 @@ export async function handleTogglePin(id, isPinned, activeProfileData, user) {
  * @param {boolean} [shouldSwitchChat=true] - NEW: If false, only the list is refreshed, preserving current chat view.
  */
 export async function loadConversations(activeProfileData, user, promptClickHandler, showModal, shouldSwitchChat = true) {
+    // --- ADDED --- (Feature 1)
+    // Check for the flag set during profile change
+    const forceNewChat = sessionStorage.getItem('forceNewChat') === 'true';
+    if (forceNewChat) {
+        // Clear the flag so it doesn't persist on future reloads
+        sessionStorage.removeItem('forceNewChat');
+    }
+    // --- END ADDED ---
+
     // 1. Load from local cache for immediate display
     const cachedConvos = await cache.loadConvoList();
     if (cachedConvos.length > 0) {
@@ -93,15 +102,22 @@ export async function loadConversations(activeProfileData, user, promptClickHand
         renderConvoList(conversations, activeProfileData, user, showModal);
 
         if (shouldSwitchChat) {
-            if (conversations?.length > 0) {
+            // --- MODIFIED BLOCK --- (Feature 1)
+            if (forceNewChat) {
+                // If the flag is set, always start a new conversation
+                await startNewConversation(false, activeProfileData, user, promptClickHandler);
+            } else if (conversations?.length > 0) {
+                // Original logic: load the last active or most recent convo
                 const targetConvoId = (currentConversationId && conversations.some(c => c.id === currentConversationId))
                         ? currentConversationId
                         : conversations[0].id;
                 
                 await switchConversation(targetConvoId, activeProfileData, user, showModal, true); // Scroll to bottom on full load
             } else {
+                // Original logic: no convos exist, so start a new one
                 await startNewConversation(false, activeProfileData, user, promptClickHandler); 
             }
+            // --- END MODIFIED BLOCK ---
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
@@ -151,7 +167,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         // NOTE: handleRename, handleDelete, handleTogglePin are now defined at the module top level.
         renameHandler: handleRename, 
         deleteHandler: handleDelete,
-        pinHandler: handleTogglePin
+        pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user) // Pass all args
     };
     
     // Separate pinned and unpinned lists
@@ -287,6 +303,18 @@ function renderHistory(history, user, showModal) {
         const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
         const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
         
+        // --- THIS IS THE FIX ---
+        // Parse `suggested_prompts` from a string to an array, just like we do for the ledger.
+        let parsedSuggestions = [];
+        if (turn.suggested_prompts) {
+            if (typeof turn.suggested_prompts === 'string') {
+                try { parsedSuggestions = JSON.parse(turn.suggested_prompts); } catch (e) { parsedSuggestions = []; }
+            } else if (Array.isArray(turn.suggested_prompts)) {
+                parsedSuggestions = turn.suggested_prompts;
+            }
+        }
+        // --- END FIX ---
+        
         // Pass the scores of the previous turns for the trend line calculation
         const scoresHistory = history.slice(0, i + 1).map(t => t.spirit_score);
 
@@ -295,14 +323,17 @@ function renderHistory(history, user, showModal) {
             profile: turn.profile_name,
             values: values || [],
             spirit_score: turn.spirit_score,
-            spirit_scores_history: scoresHistory
+            spirit_scores_history: scoresHistory,
+            // --- MODIFIED: Use the parsed array ---
+            suggested_prompts: parsedSuggestions
         };
 
         const options = {};
         if (turn.role === 'user' && user) {
             options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
         }
-        options.suggestedPrompts = turn.suggested_prompts || [];
+        // --- MODIFIED: Use the parsed array ---
+        options.suggestedPrompts = parsedSuggestions;
 
         uiMessages.displayMessage(
             turn.role,
@@ -315,7 +346,18 @@ function renderHistory(history, user, showModal) {
         );
         
         // If audit data is missing, poll for it
-        if (turn.role === 'ai' && !ledger && turn.message_id) {
+        // --- MODIFIED: Use the parsed array for the check ---
+        const suggestions = parsedSuggestions;
+        const isBlocked = turn.content && turn.content.includes("🛑 **The answer was blocked**");
+        
+        // We poll if:
+        // 1. It's an AI message
+        // 2. We don't have a ledger (audit is pending)
+        // 3. OR it's an *approved* answer (not blocked) AND we don't have suggestions yet
+        const needsPolling = turn.role === 'ai' && turn.message_id &&
+            ( !ledger || ledger.length === 0 || (!isBlocked && suggestions.length === 0) );
+
+        if (needsPolling) {
             pollForAuditResults(turn.message_id);
         }
     });
@@ -354,7 +396,7 @@ export async function sendMessage(activeProfileData, user) {
                 switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true), 
                 renameHandler: handleRename, 
                 deleteHandler: handleDelete,
-                pinHandler: handleTogglePin
+                pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user) // Pass all args
             };
             uiAuthSidebar.prependConversationLink(newConvoMeta, handlers);
             uiAuthSidebar.setActiveConvoLink(currentConversationId);
@@ -409,43 +451,59 @@ export async function sendMessage(activeProfileData, user) {
             return;
         }
 
-        const ledger = typeof initialResponse.ledger === 'string' ? JSON.parse(initialResponse.ledger) : initialResponse.ledger;
-        const values = typeof initialResponse.values === 'string' ? JSON.parse(initialResponse.values) : initialResponse.values;
-
-        // Fetch full history to get correct trend line
+        // --- BUG FIX: Defensively read all values from the API response ---
+        // 1. Get the main answer, with a fallback to prevent blank messages.
+        const mainAnswer = initialResponse.finalOutput; // Let ui-messages.js handle fallback
+        
+        // 2. Get all other optional values, providing defaults.
+        const ledger = (typeof initialResponse.ledger === 'string' ? JSON.parse(initialResponse.ledger) : initialResponse.ledger) || [];
+        const values = (typeof initialResponse.values === 'string' ? JSON.parse(initialResponse.values) : initialResponse.values) || [];
+        const profile = initialResponse.profile || activeProfileData.name || null;
+        const spiritScore = initialResponse.spirit_score; // Can be undefined, that's okay
+        // --- MODIFIED: Suggestions now arrive in initial response for *blocked* answers only ---
+        const suggestions = initialResponse.suggestedPrompts || [];
+        // --- END MODIFIED ---
+        const messageId = initialResponse.messageId || crypto.randomUUID();
+        
+        // 3. Fetch full history to get correct trend line
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
         
+        // 4. Use these safe variables to build the cache object
         const aiMessageObject = {
             role: 'ai',
-            content: initialResponse.finalOutput,
+            content: mainAnswer, // Store the raw value (which might be null)
             timestamp: new Date().toISOString(),
-            message_id: initialResponse.messageId,
-            conscience_ledger: initialResponse.ledger,
-            profile_name: initialResponse.profile,
-            profile_values: initialResponse.values,
-            spirit_score: initialResponse.spirit_score,
-            suggested_prompts: initialResponse.suggestedPrompts || []
+            message_id: messageId,
+            conscience_ledger: ledger,
+            profile_name: profile,
+            profile_values: values,
+            spirit_score: spiritScore,
+            suggested_prompts: suggestions // Store only suggestions for blocked answers
         };
         
         await cache.addMessageToHistory(currentConversationId, aiMessageObject);
 
+        // 5. Use these safe variables to build the payload for the "Why" button
         const initialPayload = {
-            ledger: ledger || [],
-            profile: initialResponse.profile || activeProfileData.name || null,
-            values: values || [],
-            spirit_score: initialResponse.spirit_score,
-            spirit_scores_history: historyForPayload.map(t => t.spirit_score)
+            ledger: ledger,
+            profile: profile,
+            values: values,
+            spirit_score: spiritScore,
+            spirit_scores_history: historyForPayload.map(t => t.spirit_score),
+            suggested_prompts: suggestions // Pass to payload
         };
 
+        // 6. Use these safe variables to display the message
         uiMessages.displayMessage(
           'ai',
-          initialResponse.finalOutput,
+          mainAnswer, // Pass raw value; ui-messages will handle fallback
           new Date(),
-          initialResponse.messageId,
+          messageId,
           initialPayload,
           (payload) => ui.showModal('conscience', payload),
-          { suggestedPrompts: initialResponse.suggestedPrompts || [] } 
+          { suggestedPrompts: suggestions } // Pass suggestions to display
         );
+        // --- END BUG FIX ---
         
         const updateMeta = { last_updated: new Date().toISOString() };
         
@@ -465,11 +523,18 @@ export async function sendMessage(activeProfileData, user) {
         }
         await cache.updateConvoInList(currentConversationId, updateMeta);
 
+        // --- MODIFIED: Check for ledger OR missing suggestions on approved answers ---
+        const hasLedger = initialPayload.ledger && initialPayload.ledger.length > 0;
+        const isBlocked = mainAnswer && mainAnswer.includes("🛑 **The answer was blocked**");
+        const hasSuggestions = suggestions.length > 0;
 
-        const hasInitialLedger = initialPayload.ledger && initialPayload.ledger.length > 0;
-        if (initialResponse.messageId && !hasInitialLedger) {
-            pollForAuditResults(initialResponse.messageId);
+        // Poll if:
+        // 1. We don't have a ledger
+        // 2. OR it was an *approved* answer AND we don't have suggestions yet
+        if (messageId && (!hasLedger || (!isBlocked && !hasSuggestions))) {
+            pollForAuditResults(messageId);
         }
+        // --- END MODIFIED ---
         
     } catch (error) {
         uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
@@ -498,23 +563,54 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
         try {
             const auditResult = await api.fetchAuditResult(messageId);
             
-            const rawLedger = auditResult ? auditResult.ledger : null;
-            let parsedLedger = null;
-    
-            if (rawLedger) {
-                if (typeof rawLedger === 'string') {
-                    try { parsedLedger = JSON.parse(rawLedger); } catch (e) { parsedLedger = []; }
-                } else if (Array.isArray(rawLedger)) {
-                    parsedLedger = rawLedger;
-                }
-            }
+            // --- START FIX: Check for ledger OR suggestions ---
+            
+            // Check if the auditResult is valid and has *something* new
+            const rawLedger = auditResult?.ledger;
+            const rawSuggestions = auditResult?.suggested_prompts;
 
-            if (parsedLedger && parsedLedger.length > 0) {
-                // 1. Update local cache with audit data
+            const hasLedger = rawLedger && (Array.isArray(rawLedger) || typeof rawLedger === 'string');
+            const hasSuggestions = rawSuggestions && (Array.isArray(rawSuggestions) || typeof rawSuggestions === 'string');
+
+            // We update the UI if the audit is complete and has *either* a ledger *or* suggestions
+            if (auditResult && (hasLedger || hasSuggestions)) {
+                
+                // Process Ledger (if it exists)
+                let parsedLedger = []; // Default to empty
+                if (rawLedger) {
+                    if (typeof rawLedger === 'string') {
+                        try { parsedLedger = JSON.parse(rawLedger); } catch (e) { parsedLedger = []; }
+                    } else if (Array.isArray(rawLedger)) {
+                        parsedLedger = rawLedger;
+                    }
+                }
+                
+                // --- THIS IS THE FIX ---
+                // Process Suggestions (if they exist)
+                let parsedSuggestions = []; // Default to empty
+                if (rawSuggestions) {
+                    if (typeof rawSuggestions === 'string') {
+                        try { parsedSuggestions = JSON.parse(rawSuggestions); } catch (e) { parsedSuggestions = []; }
+                    } else if (Array.isArray(rawSuggestions)) {
+                        parsedSuggestions = rawSuggestions;
+                    }
+                }
+                // --- END FIX ---
+
+
+                // 1. Update local cache with *all* audit data
                 const history = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = history.findIndex(m => m.message_id === messageId);
                 if (msgIndex > -1) {
-                    history[msgIndex] = { ...history[msgIndex], ...auditResult, conscience_ledger: parsedLedger };
+                    
+                    history[msgIndex] = {
+                        ...history[msgIndex], // Keeps old `content`
+                        ...auditResult,       // Adds new audit data (ledger, score, etc.)
+                        content: history[msgIndex].content, // EXPLICITLY preserve content
+                        conscience_ledger: parsedLedger, // Save parsed array
+                        suggested_prompts: parsedSuggestions // Save parsed array
+                    };
+
                     await cache.saveConvoHistory(currentConversationId, history);
                 }
                 
@@ -525,12 +621,15 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                      .filter(t => t.spirit_score !== null && t.spirit_score !== undefined)
                      .map(t => t.spirit_score);
     
+                // 3. Build the payload for the UI
                 const payload = { 
-                    ...auditResult, 
-                    ledger: parsedLedger, 
+                    ...auditResult, // This will include spirit_score, note
+                    ledger: parsedLedger, // Pass parsed array
+                    suggested_prompts: parsedSuggestions, // Pass parsed array
                     spirit_scores_history: spiritScoresHistory 
                 };
                 
+                // 4. Update the UI
                 uiMessages.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
                 resolve(auditResult);
             } else if (attempts >= maxAttempts) {
@@ -620,7 +719,19 @@ export async function handleConfirmDelete(activeProfileData, user) {
         
         if (currentConversationId === null) {
              // If deleted chat was the active one, start a fresh view
-             await startNewConversation(false, activeProfileData, user, () => {}); 
+             
+             // --- THIS IS THE FIX ---
+             // Define the click handler locally, since we can't access the one from app.js
+             // This handler does what app.js's handleExamplePromptClick does.
+             const newChatPromptHandler = (promptText) => {
+                ui.elements.messageInput.value = promptText;
+                autoSize(); 
+                ui.elements.sendButton.disabled = false;
+                sendMessage(activeProfileData, user);
+             };
+             // Pass the *real* handler, not the empty dummy function
+             await startNewConversation(false, activeProfileData, user, newChatPromptHandler); 
+             // --- END FIX ---
         }
 
         const response = await api.deleteConversation(id);

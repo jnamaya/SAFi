@@ -423,6 +423,13 @@ export function updateActiveProfileChip(profileName) {
       <span class="font-semibold truncate">${profileNameText}</span>
     `;
   }
+
+  // --- ADDED --- (Feature 3)
+  // Update the main chat input placeholder
+  if (ui.elements.messageInput) {
+      ui.elements.messageInput.placeholder = `Ask ${profileNameText}`;
+  }
+  // --- END ADDED ---
 }
 
 /**

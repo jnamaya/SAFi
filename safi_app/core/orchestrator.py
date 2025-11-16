@@ -286,8 +286,9 @@ class SAFi:
             self.log.warning("No 'suggestion_engine' prompt found. Cannot generate suggestions.")
             return []
 
-        # Use the model name from the user's request, or a fast default
-        suggestion_model = "llama-3.1-8b-instant" 
+        # --- MODIFICATION: Use new config variable ---
+        suggestion_model = self.config.BACKEND_MODEL
+        # --- END MODIFICATION ---
 
         try:
             system_prompt = prompt_config["system_prompt"]
@@ -343,6 +344,72 @@ class SAFi:
 
         except Exception as e:
             self.log.error(f"Failed to get prompt suggestions: {e}")
+            return []
+
+    # --- NEW METHOD --- (Feature 2)
+    async def _get_follow_up_suggestions(self, user_prompt: str, ai_response: str) -> List[str]:
+        """
+        Uses a fast model (Groq) to generate follow-up suggestions for an approved answer.
+        """
+        suggestion_client = self.clients.get("groq")
+        if not suggestion_client:
+            self.log.warning("Groq client not configured. Cannot generate follow-up suggestions.")
+            return []
+
+        prompt_config = self.prompts.get("follow_up_suggester")
+        if not prompt_config or "system_prompt" not in prompt_config:
+            self.log.warning("No 'follow_up_suggester' prompt found. Cannot generate suggestions.")
+            return []
+
+        # --- MODIFICATION: Use new config variable ---
+        suggestion_model = self.config.BACKEND_MODEL
+        # --- END MODIFICATION ---
+
+        try:
+            system_prompt = prompt_config["system_prompt"]
+            
+            content = (
+                f"**Here is the user's prompt:**\n{user_prompt}\n\n"
+                f"**Here is the AI's answer:**\n{ai_response}\n\n"
+                "Please provide relevant follow-up questions."
+            )
+
+            self.log.info(f"Sending prompt to follow-up suggester (model: {suggestion_model})")
+
+            response = await suggestion_client.chat.completions.create(
+                model=suggestion_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": content}
+                ],
+                temperature=0.7,
+                max_tokens=512,
+                response_format={"type": "json_object"},
+            )
+            
+            response_json = response.choices[0].message.content or "{}"
+            self.log.info(f"Raw response from follow-up suggester: {response_json}")
+
+            start = response_json.find('{')
+            end = response_json.rfind('}')
+            
+            if start != -1 and end != -1 and end > start:
+                json_text = response_json[start:end+1]
+            else:
+                self.log.warning(f"Follow-up suggester returned non-JSON: {response_json}")
+                return []
+            
+            obj = json.loads(json_text)
+            suggestions = obj.get("suggestions", [])
+            
+            if isinstance(suggestions, list) and all(isinstance(s, str) for s in suggestions):
+                return suggestions
+            else:
+                self.log.warning(f"Follow-up suggester returned invalid data: {response_json}")
+                return []
+
+        except Exception as e:
+            self.log.error(f"Failed to get follow-up suggestions: {e}")
             return []
     # --- END NEW METHOD ---
 
@@ -523,7 +590,12 @@ class SAFi:
         if hasattr(self, 'groq_client_sync'):
             threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
 
-        # --- MODIFIED: Include empty suggestedPrompts list for approved responses ---
+        # --- REMOVED --- (Feature 2)
+        # S_p is now generated in the background audit thread to prevent lag
+        # S_p = await self._get_follow_up_suggestions(...)
+        # --- END REMOVED ---
+
+        # --- MODIFIED: Remove suggestedPrompts from initial return ---
         return { 
             "finalOutput": a_t, 
             "newTitle": new_title, 
@@ -532,7 +604,7 @@ class SAFi:
             "activeProfile": self.active_profile_name, 
             "activeValues": self.values, 
             "messageId": message_id,
-            "suggestedPrompts": [] # <-- FIELD IS PRESENT BUT EMPTY
+            "suggestedPrompts": [] # Return empty list, will be populated by polling
         }
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
@@ -560,6 +632,17 @@ class SAFi:
                 self.log.exception("ConscienceAuditor.evaluate() failed in audit thread")
                 ledger = []
             
+            # --- NEW: Get follow-up suggestions in background ---
+            S_p = []
+            try:
+                S_p = asyncio.run(self._get_follow_up_suggestions(
+                    user_prompt=snapshot["x_t"],
+                    ai_response=snapshot["a_t"]
+                ))
+            except Exception as e:
+                self.log.exception("Follow-up suggester failed in audit thread")
+            # --- END NEW ---
+
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
             self.last_drift = drift_val if drift_val is not None else 0.0
             
@@ -590,7 +673,10 @@ class SAFi:
             
             self.mu_history.append(mu_new)
             
-            db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values)
+            # --- MODIFIED: Pass S_p to the database ---
+            # This now correctly matches the 7 arguments in your database.py
+            db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
+            # --- END MODIFIED ---
 
             conn.commit()
 

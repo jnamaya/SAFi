@@ -404,8 +404,13 @@ class IntellectEngine:
                         # --- END FIX ---
                     except json.JSONDecodeError as e:
                         self.log.warning(f"Regex JSON parse failed: {e} | content={json_part[:100]}")
-                        # Fallthrough to Priority 3...
-                        answer = content.strip() # The parse failed, treat all text as answer
+                        # --- BUG FIX: DO NOT OVERWRITE THE ANSWER ---
+                        # The 'answer' variable already contains "[Answer missing, model only sent JSON...]"
+                        # or the text before the broken JSON.
+                        # We must NOT overwrite it with the full 'content'.
+                        #
+                        # REMOVED: answer = content.strip() # This was the bug
+                        # --- END BUG FIX ---
                         reflection = "Failed to parse salvaged JSON."
 
                 else:
