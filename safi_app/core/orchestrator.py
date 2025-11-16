@@ -543,13 +543,17 @@ class SAFi:
                 self.profile.get("will_rules", [])
             )
             # --- END NEW ---
-
-            db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="pending") # Set to pending
             
-            # --- TREND LINE FIX: Run an audit for the blocked message ---
-            # This saves a low score so the trend line doesn't break
-            threading.Thread(target=self._run_blocked_audit_thread, args=(message_id, S_p), daemon=True).start()
-            # --- END FIX ---
+            # --- THIS IS THE FIX ---
+            # Set audit_status to 'complete' so the frontend doesn't poll.
+            # No score is saved, so this message will be (correctly)
+            # ignored by the trend line.
+            db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete") 
+            
+            # --- REMOVED ---
+            # The background thread that saved a score of '1' is gone.
+            # threading.Thread(target=self._run_blocked_audit_thread, ...).start()
+            # --- END REMOVED ---
 
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -614,28 +618,10 @@ class SAFi:
             "suggestedPrompts": [] # Return empty list, will be populated by polling
         }
 
-    # --- NEW: Trend Line Fix ---
-    def _run_blocked_audit_thread(self, message_id: str, suggested_prompts: List[str]):
-        """
-        Saves a minimal, low-scoring audit result for a blocked message
-        to ensure the trend line doesn't break.
-        """
-        try:
-            # Save a low score (e.g., 1) to represent a failed/blocked action
-            # This uses the 7-argument version of update_audit_results
-            db.update_audit_results(
-                message_id=message_id,
-                ledger=[],
-                spirit_score=1,
-                spirit_note="Response was blocked by the Will Gate.",
-                profile_name=self.active_profile_name,
-                profile_values=self.values,
-                suggested_prompts=suggested_prompts
-            )
-            self.log.info(f"Saved low-score audit for blocked message: {message_id}")
-        except Exception as e:
-            self.log.exception(f"Failed to save blocked audit for message: {message_id}")
-    # --- END NEW ---
+    # --- REMOVED ---
+    # We are no longer saving a score for blocked messages.
+    # def _run_blocked_audit_thread(self, ...):
+    # --- END REMOVED ---
 
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
         """

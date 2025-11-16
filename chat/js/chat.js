@@ -315,8 +315,12 @@ function renderHistory(history, user, showModal) {
         }
         // --- END FIX ---
         
-        // Pass the scores of the previous turns for the trend line calculation
-        const scoresHistory = history.slice(0, i + 1).map(t => t.spirit_score);
+        // --- THIS IS THE FIX ---
+        // Filter out null/undefined scores *before* passing to the trend line.
+        const scoresHistory = history.slice(0, i + 1)
+            .map(t => t.spirit_score)
+            .filter(s => s !== null && s !== undefined);
+        // --- END FIX ---
 
         const payload = {
             ledger: ledger || [],
@@ -351,15 +355,13 @@ function renderHistory(history, user, showModal) {
         const isBlocked = turn.content && turn.content.includes("🛑 **The answer was blocked**");
         
         // We poll if:
-        // 1. It's an AI message
-        // 2. We don't have a ledger (audit is pending)
-        // 3. OR it's an *approved* answer (not blocked) AND we don't have suggestions yet
-        const needsPolling = turn.role === 'ai' && turn.message_id &&
-            ( !ledger || ledger.length === 0 || (!isBlocked && suggestions.length === 0) );
-
-        if (needsPolling) {
+        // 1. The audit is pending
+        // 2. AND (it's a blocked message OR it's an approved message missing suggestions)
+        if (turn.role === 'ai' && turn.message_id && turn.audit_status === 'pending') {
+            // This logic is now handled inside pollForAuditResults, we just need to call it.
             pollForAuditResults(turn.message_id);
         }
+        // --- END MODIFIED ---
     });
 }
 
@@ -396,7 +398,7 @@ export async function sendMessage(activeProfileData, user) {
                 switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true), 
                 renameHandler: handleRename, 
                 deleteHandler: handleDelete,
-                pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user) // Pass all args
+                pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user)
             };
             uiAuthSidebar.prependConversationLink(newConvoMeta, handlers);
             uiAuthSidebar.setActiveConvoLink(currentConversationId);
@@ -426,7 +428,8 @@ export async function sendMessage(activeProfileData, user) {
         role: 'user',
         content: userMessage,
         timestamp: now.toISOString(),
-        message_id: userMessageId
+        message_id: userMessageId,
+        audit_status: 'n/a' // User messages don't need audit
     };
     await cache.addMessageToHistory(currentConversationId, userMessageObject);
     
@@ -451,57 +454,69 @@ export async function sendMessage(activeProfileData, user) {
             return;
         }
 
-        // --- BUG FIX: Defensively read all values from the API response ---
-        // 1. Get the main answer, with a fallback to prevent blank messages.
-        const mainAnswer = initialResponse.finalOutput; // Let ui-messages.js handle fallback
+        // --- START BUG FIX: Handle empty/missing data from API ---
+        // 1. Get the answer, providing a fallback for the "blank message" bug.
+        const mainAnswer = initialResponse.finalOutput ?? '[Sorry, the model returned an empty response.]';
         
-        // 2. Get all other optional values, providing defaults.
-        const ledger = (typeof initialResponse.ledger === 'string' ? JSON.parse(initialResponse.ledger) : initialResponse.ledger) || [];
-        const values = (typeof initialResponse.values === 'string' ? JSON.parse(initialResponse.values) : initialResponse.values) || [];
-        const profile = initialResponse.profile || activeProfileData.name || null;
-        const spiritScore = initialResponse.spirit_score; // Can be undefined, that's okay
-        // --- MODIFIED: Suggestions now arrive in initial response for *blocked* answers only ---
+        // 2. Get all other data, defaulting to safe values
+        const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
+        const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
-        // --- END MODIFIED ---
-        const messageId = initialResponse.messageId || crypto.randomUUID();
-        
-        // 3. Fetch full history to get correct trend line
+        const messageId = initialResponse.messageId || crypto.randomUUID(); // Fallback messageId
+        const profileName = initialResponse.activeProfile || activeProfileData.name || null;
+        const spiritScore = initialResponse.spirit_score; // Can be null (e.g., for blocked)
+        const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
+        // --- END BUG FIX ---
+
+
+        // Fetch full history *including* the user message we just added
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
         
-        // 4. Use these safe variables to build the cache object
+        // --- THIS IS THE FIX ---
+        // Filter out null/undefined scores *before* passing to the trend line.
+        const scoresHistoryForPayload = historyForPayload
+            .map(t => t.spirit_score)
+            .filter(s => s !== null && s !== undefined);
+        // Add the new score (if it exists) to the history for the trend line
+        if (spiritScore !== null && spiritScore !== undefined) {
+             scoresHistoryForPayload.push(spiritScore);
+        }
+        // --- END FIX ---
+        
         const aiMessageObject = {
             role: 'ai',
-            content: mainAnswer, // Store the raw value (which might be null)
+            content: mainAnswer,
             timestamp: new Date().toISOString(),
             message_id: messageId,
             conscience_ledger: ledger,
-            profile_name: profile,
+            profile_name: profileName,
             profile_values: values,
             spirit_score: spiritScore,
-            suggested_prompts: suggestions // Store only suggestions for blocked answers
+            suggested_prompts: suggestions,
+            // --- FIX: Use status from orchestrator ---
+            // If blocked, it's 'complete', otherwise 'pending'
+            audit_status: isBlocked ? 'complete' : 'pending' 
         };
         
         await cache.addMessageToHistory(currentConversationId, aiMessageObject);
 
-        // 5. Use these safe variables to build the payload for the "Why" button
         const initialPayload = {
             ledger: ledger,
-            profile: profile,
+            profile: profileName,
             values: values,
             spirit_score: spiritScore,
-            spirit_scores_history: historyForPayload.map(t => t.spirit_score),
-            suggested_prompts: suggestions // Pass to payload
+            spirit_scores_history: scoresHistoryForPayload // Pass the filtered list
         };
-
+        
         // 6. Use these safe variables to display the message
         uiMessages.displayMessage(
           'ai',
-          mainAnswer, // Pass raw value; ui-messages will handle fallback
+          mainAnswer,
           new Date(),
           messageId,
           initialPayload,
           (payload) => ui.showModal('conscience', payload),
-          { suggestedPrompts: suggestions } // Pass suggestions to display
+          { suggestedPrompts: suggestions } 
         );
         // --- END BUG FIX ---
         
@@ -523,15 +538,9 @@ export async function sendMessage(activeProfileData, user) {
         }
         await cache.updateConvoInList(currentConversationId, updateMeta);
 
-        // --- MODIFIED: Check for ledger OR missing suggestions on approved answers ---
-        const hasLedger = initialPayload.ledger && initialPayload.ledger.length > 0;
-        const isBlocked = mainAnswer && mainAnswer.includes("🛑 **The answer was blocked**");
-        const hasSuggestions = suggestions.length > 0;
-
-        // Poll if:
-        // 1. We don't have a ledger
-        // 2. OR it was an *approved* answer AND we don't have suggestions yet
-        if (messageId && (!hasLedger || (!isBlocked && !hasSuggestions))) {
+        // --- MODIFIED ---
+        // Only poll if the message was *not* blocked
+        if (messageId && !isBlocked) {
             pollForAuditResults(messageId);
         }
         // --- END MODIFIED ---
@@ -608,7 +617,8 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                         ...auditResult,       // Adds new audit data (ledger, score, etc.)
                         content: history[msgIndex].content, // EXPLICITLY preserve content
                         conscience_ledger: parsedLedger, // Save parsed array
-                        suggested_prompts: parsedSuggestions // Save parsed array
+                        suggested_prompts: parsedSuggestions, // Save parsed array
+                        audit_status: 'complete' // Mark as complete
                     };
 
                     await cache.saveConvoHistory(currentConversationId, history);
@@ -617,9 +627,12 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                 // 2. Load updated history for accurate trend line
                 const updatedHistory = await cache.loadConvoHistory(currentConversationId);
                 
+                // --- THIS IS THE FIX ---
+                // Filter out null/undefined scores *before* passing to the trend line.
                 const spiritScoresHistory = updatedHistory
-                     .filter(t => t.spirit_score !== null && t.spirit_score !== undefined)
-                     .map(t => t.spirit_score);
+                     .map(t => t.spirit_score)
+                     .filter(s => s !== null && s !== undefined);
+                // --- END FIX ---
     
                 // 3. Build the payload for the UI
                 const payload = { 
