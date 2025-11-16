@@ -272,25 +272,24 @@ html, body {
 /* We define size AND margins separately for each level */
 
 .chat-bubble h1 {
-  font-size: 1.8rem;    /* Clearly the largest */
-  margin-top: 1.75em;   /* Most space above */
-  margin-bottom: 0.75em;  /* More space below */
+  font-size: 1.55rem;
+  margin-top: 1.5em;
+  margin-bottom: 0.6em;
   border-bottom: 1px solid rgba(0,0,0,0.1);
-  padding-bottom: 0.3em;
+  padding-bottom: 0.25em;
 }
 
 .chat-bubble h2 {
-  font-size: 1.5rem;    /* Mid-level size */
-  margin-top: 1.5em;    /* Less space above than h1 */
-  margin-bottom: 0.6em;
-}
-
-.chat-bubble h3 {
-  font-size: 1.25rem;   /* Smallest size */
-  margin-top: 1.25em;   /* Least space above */
+  font-size: 1.32rem;
+  margin-top: 1.25em;
   margin-bottom: 0.5em;
 }
 
+.chat-bubble h3 {
+  font-size: 1.15rem;
+  margin-top: 1.1em;
+  margin-bottom: 0.4em;
+}
 /* --- This rule is still perfect --- */
 .chat-bubble > *:first-child {
     margin-top: 0;
