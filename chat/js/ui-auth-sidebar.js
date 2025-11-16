@@ -38,9 +38,12 @@ export function updateUIForAuthState(user) {
               <!-- CHANGE: Removed <br> tag for single-line tagline -->
               <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
-            <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden">
+            <!-- --- THIS IS THE FIX --- -->
+            <!-- Added the "hidden" class to remove the button from view on all screens -->
+            <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden hidden">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
+            <!-- --- END FIX --- -->
           </div>
           
           <div class="p-4 shrink-0">

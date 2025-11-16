@@ -223,6 +223,8 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       const whyButton = document.createElement('button');
       whyButton.className = 'why-btn';
       whyButton.textContent = 'View Ethical Reasoning';
+      // This click handler has the "payload" as it exists when displayMessage is called
+      // It might be stale, which is why updateMessageWithAudit MUST fix it.
       whyButton.addEventListener('click', () => whyHandler(payload));
       leftMeta.appendChild(whyButton);
   }
@@ -263,25 +265,39 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 
     const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
     
-    // --- 1. Add "Why" button if ledger exists ---
+    // --- 1. Add/Update "Why" button ---
     if (hasLedger) {
         const metaDiv = messageContainer.querySelector('.meta');
-        if (metaDiv && !metaDiv.querySelector('.why-btn')) {
-            const whyButton = document.createElement('button');
-            whyButton.className = 'why-btn';
-            whyButton.textContent = 'View Ethical Reasoning';
-            whyButton.addEventListener('click', () => whyHandler(payload));
-            
-            const leftMeta = metaDiv.querySelector('div:first-child');
-            if (leftMeta) {
-                // Prepend it to appear before other buttons if any
-                leftMeta.prepend(whyButton);
-            } else {
-                const newLeftMeta = document.createElement('div');
-                newLeftMeta.appendChild(whyButton);
-                metaDiv.insertBefore(newLeftMeta, metaDiv.firstChild);
-            }
+        if (!metaDiv) return; // Should not happen
+
+        // --- THIS IS THE FIX ---
+        // Find and remove any *existing* "Why" button.
+        // This old button has a "stale closure" with the old, incomplete payload.
+        const oldWhyButton = metaDiv.querySelector('.why-btn');
+        if (oldWhyButton) {
+            oldWhyButton.remove();
         }
+        // --- END FIX ---
+
+        // Create the new button with the new, correct payload
+        const whyButton = document.createElement('button');
+        whyButton.className = 'why-btn';
+        whyButton.textContent = 'View Ethical Reasoning';
+        // This click handler now uses the "payload" passed into updateMessageWithAudit,
+        // which contains the fully updated spirit_scores_history.
+        whyButton.addEventListener('click', () => whyHandler(payload)); 
+
+        // Find the left-side container (or create it)
+        let leftMeta = metaDiv.querySelector('div:first-child');
+        
+        // Ensure leftMeta is the correct container (not the rightMeta)
+        if (!leftMeta || leftMeta.classList.contains('flex')) { 
+            leftMeta = document.createElement('div');
+            metaDiv.prepend(leftMeta);
+        }
+        
+        // Prepend the new button to appear first
+        leftMeta.prepend(whyButton);
     }
 
     // --- 2. Add suggestions if they arrived with the audit ---
