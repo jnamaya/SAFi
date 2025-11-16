@@ -338,7 +338,13 @@ function renderScoreAndTrend(payload) {
     `;
 
     // --- Sparkline ---
-    const scores = (payload.spirit_scores_history || []).filter(s => s !== null && s !== undefined).slice(-10);
+    // --- THIS IS THE FIX ---
+    // Filter out null/undefined scores *before* trying to render the graph.
+    const scores = (payload.spirit_scores_history || [])
+        .filter(s => s !== null && s !== undefined)
+        .slice(-10);
+    // --- END FIX ---
+    
     let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-gray-400">Not enough data for trend.</div>';
 
     if (scores.length > 1) {
