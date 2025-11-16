@@ -188,6 +188,7 @@ async function checkLoginStatus() {
             activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
             // Update the UI with the active profile
+            // THIS WILL ALSO UPDATE THE CHAT INPUT PLACEHOLDER (Feature 3)
             uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
             // Render the content for the control panel tabs
@@ -314,6 +315,12 @@ async function handleProfileChange(newProfileKey) {
 
         const selectedProfile = availableProfiles.find(p => p.key === newProfileKey);
         ui.showToast(`Profile switched to ${selectedProfile.name}. Reloading...`, 'success');
+        
+        // --- ADDED --- (Feature 1)
+        // Set a flag to force a new chat window after the reload
+        sessionStorage.setItem('forceNewChat', 'true');
+        // --- END ADDED ---
+        
         setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
     } catch (error) {
         console.error('Failed to switch profile:', error);
