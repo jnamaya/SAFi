@@ -654,11 +654,13 @@ THE_BIBLE_SCHOLAR_PROFILE = {
         "Reject any answer that is not related to biblical scholarship or church history."
     ],
 
-    "example_prompts": [
-        "First Reading",
-        "Second Reading",
-        "Gospel Reading"
-    ]
+   "example_prompts": [
+    "How should Genesis 1:1 be understood in its ancient Near Eastern context?",
+    "What does Psalm 23 reveal about the shepherd imagery in ancient Israel?",
+    "How would first-century audiences have interpreted John 1:1?",
+    "What is Paul teaching in 1 Corinthians 13 about love within the early Christian communities?"
+]
+
 }
 
 
