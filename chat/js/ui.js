@@ -25,10 +25,16 @@ export function _initElements() {
     cpNavModels: document.getElementById('cp-nav-models'),
     cpNavDashboard: document.getElementById('cp-nav-dashboard'),
     cpNavAppSettings: document.getElementById('cp-nav-app-settings'),
+    // --- NEW ---
+    cpNavMyProfile: document.getElementById('cp-nav-my-profile'),
+    // --- END NEW ---
     cpTabProfile: document.getElementById('cp-tab-profile'),
     cpTabModels: document.getElementById('cp-tab-models'),
     cpTabDashboard: document.getElementById('cp-tab-dashboard'),
     cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
+    // --- NEW ---
+    cpTabMyProfile: document.getElementById('cp-tab-my-profile'),
+    // --- END NEW ---
 
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),

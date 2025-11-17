@@ -191,8 +191,11 @@ async function checkLoginStatus() {
             // THIS WILL ALSO UPDATE THE CHAT INPUT PLACEHOLDER (Feature 3)
             uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
-            // Render the content for the control panel tabs
+            // --- THIS IS THE FIX ---
+            // This function (which now lives in app.js) renders the content 
+            // for all control panel tabs, including the new "My Profile" tab.
             renderControlPanel();
+            // --- END FIX ---
             
             // Load the conversation list and the active chat
             // This call should scroll to the bottom of the active chat
@@ -290,6 +293,11 @@ function renderControlPanel() {
         user, 
         handleModelsSave
     );
+
+    // --- NEW ---
+    // Render "My Profile" Tab. This will fetch the data.
+    uiSettingsModals.renderSettingsMyProfileTab();
+    // --- END NEW ---
 
     // Render App Settings Tab
     uiSettingsModals.renderSettingsAppTab(

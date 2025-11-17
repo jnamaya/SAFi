@@ -756,7 +756,7 @@ html, body {
 
 /* --- NEW: Sidebar Tagline Adjustment --- */
 .app-tagline {
-    font-size: 12px; /* Slightly increased size from 10px */
+    font-size: 14px; /* Slightly increased size from 10px */
     white-space: nowrap; /* Forces text onto a single line */
     font-weight: bold;
 }
