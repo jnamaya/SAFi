@@ -652,6 +652,7 @@ THE_BIBLE_SCHOLAR_PROFILE = {
         "Reject any answer that agrees with the user in any denominational view or attempts to convert the user to a specific belief or denomination.",
         "Reject any answer that has obvious factual errors or misinterpretes a Bible passage.",
         "Reject any answer that is not related to biblical scholarship or church history."
+        "Reject any answer that cites other bibles translation other than the Berean Standard Bible (BSB)"
     ],
 
    "example_prompts": [

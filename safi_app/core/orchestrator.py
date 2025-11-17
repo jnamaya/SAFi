@@ -4,21 +4,21 @@ import threading
 import uuid
 import asyncio
 import numpy as np
-from datetime import datetime, timezone # <-- ADDED datetime import
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
 import httpx
 import re
 from bs4 import BeautifulSoup
-import hashlib # <-- ADDED FOR CACHING
-import os # <-- ADDED FOR CACHING
-import time # <-- ADDED FOR CACHING
+import hashlib # Keep for TTS cache
+import os # Keep for TTS cache
+import time # Keep for TTS cache
 
 from openai import OpenAI, AsyncOpenAI
 from anthropic import Anthropic, AsyncAnthropic
 import google.generativeai as genai
-from google.generativeai import types # <-- IMPORTED TYPES
+from google.generativeai import types # Keep for TTS
 
 from collections import deque
 from .feedback import build_spirit_feedback
@@ -28,9 +28,17 @@ from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritInteg
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 from .plugins.fiduciary_data import handle_fiduciary_commands
 
+# --- NEW: Import the mixins ---
+from .orchestrator_mixins.tts import TtsMixin
+from .orchestrator_mixins.suggestions import SuggestionsMixin
+from .orchestrator_mixins.tasks import BackgroundTasksMixin
+# --- END NEW ---
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-class SAFi:
+# --- NEW: Add Mixins to the class definition ---
+class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
+# --- END NEW ---
     """
     Orchestrates Intellect, Will, Conscience, and Spirit
     using multiple model providers.
@@ -169,252 +177,12 @@ class SAFi:
             
         raise ValueError(f"No valid client found for model '{model_name}'. Check your API keys and model names.")
 
-    # --- UPDATED METHOD: Provider-Agnostic TTS Audio Generation ---
-    def generate_speech_audio(self, text: str) -> Optional[bytes]:
-        """
-        Generates MP3 audio for the given text using the configured TTS provider.
-        Supports OpenAI and Gemini.
-        Returns the audio content as bytes, or None on failure.
-        """
-        
-        tts_model = self.config.TTS_MODEL
-        cache_dir = self.config.TTS_CACHE_DIR
-        tts_voice = ""
-        
-        # Determine provider and voice
-        if tts_model.startswith("gemini-"):
-            provider = "gemini"
-            # This should be config.GEMINI_TTS_VOICE if it exists, or a default
-            tts_voice = getattr(self.config, "GEMINI_TTS_VOICE", "Puck") 
-        elif tts_model.startswith("gpt-"):
-            provider = "openai"
-            tts_voice = self.config.TTS_VOICE # Uses the default "alloy"
-        else:
-            self.log.error(f"Unsupported TTS_MODEL defined in config: {tts_model}")
-            return None
+    # --- REMOVED: generate_speech_audio (now in TtsMixin) ---
 
-        # 1. Create a unique cache key (hash of text + model + voice)
-        cache_key_data = f"{text}|{tts_model}|{tts_voice}"
-        cache_hash = hashlib.sha256(cache_key_data.encode('utf-8')).hexdigest()
-        cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
-        
-        # 2. Check Cache
-        if cache_path.exists():
-            try:
-                with open(cache_path, "rb") as f:
-                    self.log.info(f"TTS Cache hit for text: {text[:30]}...")
-                    return f.read()
-            except IOError as e:
-                self.log.error(f"Failed to read cached MP3 file {cache_path}: {e}")
-                # Continue to re-generate if reading fails
+    # --- REMOVED: _get_prompt_suggestions (now in SuggestionsMixin) ---
+    
+    # --- REMOVED: _get_follow_up_suggestions (now in SuggestionsMixin) ---
 
-        self.log.info(f"TTS Cache miss for text: {text[:30]}... Calling {provider} API.")
-
-        # 3. Generate Audio via API
-        try:
-            # Ensure the cache directory exists before writing
-            Path(cache_dir).mkdir(parents=True, exist_ok=True)
-            
-            audio_content = None
-
-            if provider == "openai":
-                if not self.openai_client_sync:
-                    self.log.error("OpenAI synchronous client not initialized. Cannot use OpenAI TTS.")
-                    return None
-                
-                response = self.openai_client_sync.audio.speech.create(
-                    model=tts_model,
-                    voice=tts_voice,
-                    input=text,
-                    response_format="mp3"
-                )
-                audio_content = response.content
-
-            elif provider == "gemini":
-                if not self.gemini_client:
-                    self.log.error("Gemini client not initialized. Cannot use Gemini TTS.")
-                    return None
-                
-                # --- NEW: Use the correct API structure from the user's sample ---
-                # Note: This is a synchronous call
-                response = self.gemini_client(model_name=tts_model).generate_content(
-                   contents=f"Speak the following text: {text}", # Or just `text` if preferred
-                   generation_config=types.GenerationConfig(
-                      response_modalities=["AUDIO"],
-                      speech_config=genai.SpeechConfig(
-                         voice_config=genai.VoiceConfig(
-                            prebuilt_voice_config=genai.PrebuiltVoiceConfig(
-                               voice_name=tts_voice,
-                            )
-                         )
-                      ),
-                   )
-                )
-                
-                # Check if audio content is present
-                if not response.candidates[0].content.parts[0].inline_data.data:
-                    raise Exception("Gemini API did not return audio data.")
-                
-                audio_content = response.candidates[0].content.parts[0].inline_data.data
-                # --- END NEW ---
-
-            # 4. Save to Cache and return content
-            if audio_content:
-                with open(cache_path, "wb") as f:
-                    f.write(audio_content)
-                
-                self.log.info(f"TTS audio saved to cache: {cache_path}")
-                return audio_content
-            else:
-                raise Exception("Audio content was empty after API call.")
-
-        except Exception as e:
-            self.log.error(f"{provider} TTS API call failed: {e}")
-            return None
-    # --- END UPDATED METHOD ---
-
-    async def _get_prompt_suggestions(self, user_prompt: str, will_rules: List[str]) -> List[str]:
-        """
-        Uses a fast model (Groq) to generate prompt suggestions after a violation.
-        """
-        suggestion_client = self.clients.get("groq")
-        if not suggestion_client:
-            self.log.warning("Groq client not configured. Cannot generate prompt suggestions.")
-            return []
-
-        prompt_config = self.prompts.get("suggestion_engine")
-        if not prompt_config or "system_prompt" not in prompt_config:
-            self.log.warning("No 'suggestion_engine' prompt found. Cannot generate suggestions.")
-            return []
-
-        # --- MODIFICATION: Use new config variable ---
-        suggestion_model = self.config.BACKEND_MODEL
-        # --- END MODIFICATION ---
-
-        try:
-            system_prompt = prompt_config["system_prompt"]
-            rules_string = "\n".join(f"- {r}" for r in will_rules)
-            
-            content = (
-                f"**Here are the rules the user violated:**\n{rules_string}\n\n"
-                f"**Here is the user's original (blocked) prompt:**\n{user_prompt}\n\n"
-                "Please provide compliant suggestions."
-            )
-
-            # --- ADDED LOGGING ---
-            self.log.info(f"Sending prompt to suggestion engine (model: {suggestion_model}):\nSystem: {system_prompt}\nUser Content: {content}")
-            # --- END ADDED LOGGING ---
-
-            response = await suggestion_client.chat.completions.create(
-                model=suggestion_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": content}
-                ],
-                temperature=0.7, # A bit of creativity
-                max_tokens=512,
-                response_format={"type": "json_object"},
-            )
-            
-            response_json = response.choices[0].message.content or "{}"
-            
-            # --- NEW: Log the raw response ---
-            self.log.info(f"Raw response from suggestion engine: {response_json}")
-            # --- END NEW ---
-
-            # --- FIX: Replace greedy regex with robust find/rfind ---
-            start = response_json.find('{')
-            end = response_json.rfind('}')
-            
-            if start != -1 and end != -1 and end > start:
-                json_text = response_json[start:end+1]
-            else:
-                self.log.warning(f"Suggestion engine returned non-JSON: {response_json}")
-                return []
-            
-            obj = json.loads(json_text)
-            # --- END FIX ---
-            
-            suggestions = obj.get("suggestions", [])
-            
-            if isinstance(suggestions, list) and all(isinstance(s, str) for s in suggestions):
-                return suggestions
-            else:
-                self.log.warning(f"Suggestion engine returned invalid data: {response_json}")
-                return []
-
-        except Exception as e:
-            self.log.error(f"Failed to get prompt suggestions: {e}")
-            return []
-
-    # --- NEW METHOD --- (Feature 2)
-    async def _get_follow_up_suggestions(self, user_prompt: str, ai_response: str) -> List[str]:
-        """
-        Uses a fast model (Groq) to generate follow-up suggestions for an approved answer.
-        """
-        suggestion_client = self.clients.get("groq")
-        if not suggestion_client:
-            self.log.warning("Groq client not configured. Cannot generate follow-up suggestions.")
-            return []
-
-        prompt_config = self.prompts.get("follow_up_suggester")
-        if not prompt_config or "system_prompt" not in prompt_config:
-            self.log.warning("No 'follow_up_suggester' prompt found. Cannot generate suggestions.")
-            return []
-
-        # --- MODIFICATION: Use new config variable ---
-        suggestion_model = self.config.BACKEND_MODEL
-        # --- END MODIFICATION ---
-
-        try:
-            system_prompt = prompt_config["system_prompt"]
-            
-            content = (
-                f"**Here is the user's prompt:**\n{user_prompt}\n\n"
-                f"**Here is the AI's answer:**\n{ai_response}\n\n"
-                "Please provide relevant follow-up questions."
-            )
-
-            self.log.info(f"Sending prompt to follow-up suggester (model: {suggestion_model})")
-
-            response = await suggestion_client.chat.completions.create(
-                model=suggestion_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": content}
-                ],
-                temperature=0.7,
-                max_tokens=512,
-                response_format={"type": "json_object"},
-            )
-            
-            response_json = response.choices[0].message.content or "{}"
-            self.log.info(f"Raw response from follow-up suggester: {response_json}")
-
-            start = response_json.find('{')
-            end = response_json.rfind('}')
-            
-            if start != -1 and end != -1 and end > start:
-                json_text = response_json[start:end+1]
-            else:
-                self.log.warning(f"Follow-up suggester returned non-JSON: {response_json}")
-                return []
-            
-            obj = json.loads(json_text)
-            suggestions = obj.get("suggestions", [])
-            
-            if isinstance(suggestions, list) and all(isinstance(s, str) for s in suggestions):
-                return suggestions
-            else:
-                self.log.warning(f"Follow-up suggester returned invalid data: {response_json}")
-                return []
-
-        except Exception as e:
-            self.log.error(f"Failed to get follow-up suggestions: {e}")
-            return []
-    # --- END NEW METHOD ---
-
-    # --- MODIFICATION: Added user_name parameter ---
     async def process_prompt(
         self, 
         user_prompt: str, 
@@ -422,29 +190,19 @@ class SAFi:
         conversation_id: str,
         user_name: Optional[str] = None
     ) -> Dict[str, Any]:
-    # --- END MODIFICATION ---
         
         message_id = str(uuid.uuid4())
         plugin_context_data = {}
 
         # -----------------------------------------------------------------
-        # --- NEW: Current Date Injection ---
+        # --- Current Date Injection ---
         # -----------------------------------------------------------------
-        # Get the current UTC date and time
         now_utc = datetime.now(timezone.utc)
         current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. Current UTC Time: %H:%M:%S Z")
         
-        # We inject this into the spirit feedback string to be processed by IntellectEngine
-        # IntellectEngine.generate expects `spirit_feedback` to be the coaching note, 
-        # so we will prepend the current date string to the *user_prompt* for simplicity,
-        # or update IntellectEngine.generate to accept a dedicated date parameter.
-        # Since IntellectEngine.generate currently only accepts `user_prompt`, `memory_summary`, 
-        # and `spirit_feedback`, we'll modify the `user_prompt` here for the quickest fix, 
-        # assuming the `spirit_feedback` isn't designed to hold real-time data.
-        
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
         # -----------------------------------------------------------------
-        # --- END NEW: Current Date Injection ---
+        # --- END ---
         # -----------------------------------------------------------------
 
 
@@ -452,39 +210,38 @@ class SAFi:
         # --- Handle Profile-Specific Commands (Plugin Chain) ---
         # -----------------------------------------------------------------
         
-        # 1. Check for Bible Scholar commands
-        _, readings_data = await handle_bible_scholar_commands(
-            user_prompt, 
-            self.active_profile_name, 
-            self.log
-        )
-        if readings_data:
-            plugin_context_data.update(readings_data)
-            
-        # 2. Check for Fiduciary commands
+        plugin_context_data = {}
         groq_client = self.clients.get("groq")
         
-        _, fiduciary_data = await handle_fiduciary_commands(
-            user_prompt,
-            self.active_profile_name,
-            self.log,
-            groq_client
-        )
-        if fiduciary_data:
-            plugin_context_data.update(fiduciary_data)
+        plugin_tasks = [
+            handle_bible_scholar_commands(
+                user_prompt, 
+                self.active_profile_name, 
+                self.log
+            ),
+            handle_fiduciary_commands(
+                user_prompt,
+                self.active_profile_name,
+                self.log,
+                groq_client
+            )
+            # Add other future plugins here
+        ]
+        
+        plugin_results = await asyncio.gather(*plugin_tasks)
+        
+        for _prompt, data_payload in plugin_results:
+            if data_payload:
+                plugin_context_data.update(data_payload)
         
         # -----------------------------------------------------------------
         # --- Start of Core SAFi Process ---
         # -----------------------------------------------------------------
         
         # 1. FETCH MEMORIES
-        # Get short-term (conversation) memory
         memory_summary = db.fetch_conversation_summary(conversation_id)
-        
-        # Get long-term (user) memory
         current_profile_json = db.fetch_user_profile_memory(user_id)
         
-        # Get spirit (ethical) memory
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              dim = max(len(self.values), 1)
@@ -498,16 +255,14 @@ class SAFi:
         )
 
         # 2. INTELLECT (Generate Draft)
-        # --- MODIFICATION: Pass user_name to generate ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
-            user_prompt=prompt_with_date, # <-- Use the prompt with the current date
+            user_prompt=prompt_with_date,
             memory_summary=memory_summary, 
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
             user_profile_json=current_profile_json,
-            user_name=user_name # <-- Pass the user's name
+            user_name=user_name
         )
-        # --- END MODIFICATION ---
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
         new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
@@ -519,14 +274,10 @@ class SAFi:
             msg = f"Intellect failed: {err}"
             self.log.error(msg)
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
-            # --- MODIFIED: Ensure suggestedPrompts (empty list) is present ---
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed to produce an answer.", "activeProfile": self.active_profile_name, "activeValues": self.values, "conscienceLedger": [], "messageId": message_id, "suggestedPrompts": [] }
 
         # 3. WILL (Evaluate Draft)
-        # --- MODIFIED: Expect two return values ---
-        # Note: We must pass the *original* user prompt here, not the one with the date injection.
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
-        # S_p (suggested_prompts) is no longer returned here
 
         if D_t == "violation":
             self.log.warning(f"WillGate suppressed response. Reason: {E_t}")
@@ -537,23 +288,14 @@ class SAFi:
 
 **Reason:** {E_t.strip()} """
 
-            # --- NEW: Call the fast suggestion engine ---
+            # --- NEW: Call from SuggestionsMixin ---
             S_p = await self._get_prompt_suggestions(
                 user_prompt, 
                 self.profile.get("will_rules", [])
             )
             # --- END NEW ---
             
-            # --- THIS IS THE FIX ---
-            # Set audit_status to 'complete' so the frontend doesn't poll.
-            # No score is saved, so this message will be (correctly)
-            # ignored by the trend line.
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete") 
-            
-            # --- REMOVED ---
-            # The background thread that saved a score of '1' is gone.
-            # threading.Thread(target=self._run_blocked_audit_thread, ...).start()
-            # --- END REMOVED ---
 
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -564,7 +306,6 @@ class SAFi:
                 "willReason": E_t,
                 "conscienceLedger": [],
             })
-            # --- MODIFIED: Include suggestedPrompts from the new function ---
             return { 
                 "finalOutput": suppression_message, 
                 "newTitle": new_title, 
@@ -574,7 +315,7 @@ class SAFi:
                 "activeValues": self.values, 
                 "conscienceLedger": [], 
                 "messageId": message_id,
-                "suggestedPrompts": S_p # <-- NEWLY GENERATED FIELD
+                "suggestedPrompts": S_p
             }
 
         # 4. STORE & RESPOND (Save draft, run audits in background)
@@ -589,27 +330,16 @@ class SAFi:
             "retrieved_context": retrieved_context 
         }
         
-        # 5. RUN BACKGROUND THREADS
-        # Run Conscience & Spirit audit
+        # 5. RUN BACKGROUND THREADS (Methods from BackgroundTasksMixin)
         threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
         
-        # Run short-term memory (summarizer)
         if hasattr(self, 'groq_client_sync'):
             threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
-        # --- THIS IS THE FIX ---
-        # Run long-term memory (profile extractor) *only if enabled*
-        if self.config.ENABLE_PROFILE_EXTRACTION: # <--- THIS IS THE TOGGLE
-            if hasattr(self, 'groq_client_sync'):
+        if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
+            if hasattr(self.config, "SUMMARIZER_MODEL"): # Check if summarizer is configured
                 threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
-        # --- END FIX ---
 
-        # --- REMOVED --- (Feature 2)
-        # S_p is now generated in the background audit thread to prevent lag
-        # S_p = await self._get_follow_up_suggestions(...)
-        # --- END REMOVED ---
-
-        # --- MODIFIED: Remove suggestedPrompts from initial return ---
         return { 
             "finalOutput": a_t, 
             "newTitle": new_title, 
@@ -618,163 +348,20 @@ class SAFi:
             "activeProfile": self.active_profile_name, 
             "activeValues": self.values, 
             "messageId": message_id,
-            "suggestedPrompts": [] # Return empty list, will be populated by polling
+            "suggestedPrompts": []
         }
 
-    # --- REMOVED ---
-    # We are no longer saving a score for blocked messages.
-    # def _run_blocked_audit_thread(self, ...):
-    # --- END REMOVED ---
-
-    def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
-        """
-        Runs the Conscience and Spirit faculties in a background thread.
-        """
-        conn = None
-        try:
-            conn = db.get_db_connection()
-            cursor = conn.cursor()
-
-            memory = db.load_and_lock_spirit_memory(conn, cursor, self.active_profile_name)
-            dim = max(len(self.values), 1)
-            if memory is None:
-                memory = {"turn": 0, "mu": np.zeros(dim)}
-
-            try:
-                ledger = asyncio.run(self.conscience.evaluate(
-                    final_output=snapshot["a_t"], 
-                    user_prompt=snapshot["x_t"], 
-                    reflection=snapshot["r_t"],
-                    retrieved_context=snapshot.get("retrieved_context", "")
-                ))
-            except Exception as e:
-                self.log.exception("ConscienceAuditor.evaluate() failed in audit thread")
-                ledger = []
-            
-            # --- NEW: Get follow-up suggestions in background ---
-            S_p = []
-            try:
-                S_p = asyncio.run(self._get_follow_up_suggestions(
-                    user_prompt=snapshot["x_t"],
-                    ai_response=snapshot["a_t"]
-                ))
-            except Exception as e:
-                self.log.exception("Follow-up suggester failed in audit thread")
-            # --- END NEW ---
-
-            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
-            self.last_drift = drift_val if drift_val is not None else 0.0
-            
-            log_entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "t": snapshot["t"],
-                "userPrompt": snapshot["x_t"],
-                "intellectDraft": snapshot["a_t"],
-                "intellectReflection": snapshot["r_t"] or "",
-                "finalOutput": snapshot["a_t"],
-                "willDecision": will_decision,
-                "willReason": will_reason,
-                "conscienceLedger": ledger,
-                "spiritScore": S_t,
-                "spiritNote": note,
-                "drift": drift_val,
-                "p_t_vector": p_t.tolist(),
-                "mu_t_vector": mu_new.tolist(),
-                "memorySummary": snapshot.get("memory_summary") or "",
-                "spiritFeedback": spirit_feedback,
-                "retrievedContext": snapshot.get("retrieved_context", "")
-            }
-            self._append_log(log_entry)
-
-            memory["turn"] += 1
-            memory["mu"] = np.array(mu_new)
-            db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
-            
-            self.mu_history.append(mu_new)
-            
-            # --- MODIFIED: Pass S_p to the database ---
-            # This now correctly matches the 7 arguments in your database.py
-            db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
-            # --- END MODIFIED ---
-
-            conn.commit()
-
-        except Exception as e:
-            self.log.exception("Unhandled exception in _run_audit_thread")
-            if conn:
-                conn.rollback()
-        finally:
-            if conn and conn.is_connected():
-                conn.close()
-
-    def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        """
-        Runs the summarization logic in a background thread.
-        """
-        if not hasattr(self, 'groq_client_sync'):
-            return
-            
-        summarizer_prompt_config = self.prompts.get("summarizer")
-        if not summarizer_prompt_config or "system_prompt" not in summarizer_prompt_config:
-            self.log.warning("No 'summarizer' prompt found. Skipping summarization.")
-            return
-
-        try:
-            system_prompt = summarizer_prompt_config["system_prompt"]
-            content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
-            
-            response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL"),
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
-                temperature=0.0,
-            )
-
-            new_summary = response.choices[0].message.content.strip()
-            db.update_conversation_summary(conversation_id, new_summary)
-        except Exception as e:
-            self.log.warning(f"Summarization thread failed: {e}")
-
-    def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
-        """
-        Runs the long-term user profile update logic in a background thread.
-        """
-        if not hasattr(self, 'groq_client_sync'):
-            return
-            
-        profile_prompt_config = self.prompts.get("profile_extractor")
-        if not profile_prompt_config or "system_prompt" not in profile_prompt_config:
-            self.log.warning("No 'profile_extractor' prompt found. Skipping profile update.")
-            return
-
-        try:
-            system_prompt = profile_prompt_config["system_prompt"]
-            
-            # Create the prompt for the extractor
-            content = (
-                f"CURRENT_PROFILE_JSON:\n{current_profile_json}\n\n"
-                f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
-                "Return the new, updated JSON object."
-            )
-            
-            response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL"), # Use the fast summarizer model
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
-                temperature=0.0,
-                response_format={"type": "json_object"},
-            )
-
-            new_profile_json = response.choices[0].message.content.strip()
-            
-            # Save the new profile to the database
-            db.upsert_user_profile_memory(user_id, new_profile_json)
-            self.log.info(f"Successfully updated user profile for {user_id}")
-
-        except Exception as e:
-            self.log.warning(f"User profile update thread failed: {e}")
+    # --- REMOVED: _run_audit_thread (now in BackgroundTasksMixin) ---
+    
+    # --- REMOVED: _run_summarization_thread (now in BackgroundTasksMixin) ---
+    
+    # --- REMOVED: _run_profile_update_thread (now in BackgroundTasksMixin) ---
 
     def _append_log(self, log_entry: Dict[str, Any]):
         """
         Appends a JSON log entry to the configured log file.
+        (This method remains here as it's used by both the main
+         process_prompt and the background threads)
         """
         log_path = Path(self.log_dir)
         if self.log_template:

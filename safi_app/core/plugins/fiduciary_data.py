@@ -4,7 +4,7 @@ import yfinance as yf
 from typing import Optional, Dict, Any, Tuple, List
 from openai import AsyncOpenAI
 import json
-import os  # <-- ADD THIS IMPORT
+import os
 
 # --- START FIX ---
 # Define a cache location everyone can write to
@@ -184,6 +184,41 @@ async def _get_stock_data(ticker_to_fetch: str, entity_name: str, log: logging.L
         log.error(f"--- Fiduciary Plugin: Error fetching data for entity '{entity_name}' (as {ticker_to_fetch}): {e} ---")
         return None
 
+# --- NEW HELPER FUNCTION ---
+def _format_stock_data_as_markdown(stock_data: Dict[str, Any]) -> str:
+    """
+    Turns the yfinance data dictionary into a Markdown table.
+    This logic was moved from faculties.py to be generic.
+    """
+    stock_table_md = f"## {stock_data.get('Company Name', 'N/A')} ({stock_data.get('Ticker Symbol', 'N/A')})\n"
+    stock_table_md += f"| Metric | Value |\n"
+    stock_table_md += f"| --- | --- |\n"
+    
+    # Filter to a key set of metrics for context, to avoid overwhelming the prompt
+    metrics_to_show = [
+        "Current Price", "Previous Close", "Day's Range", "52-Week Range",
+        "Volume", "Average Volume", "Market Cap", "P/E Ratio (TTM)",
+        "Beta (5Y Monthly)", "Analyst Target Price",
+        "Sector"
+    ]
+    
+    for key in metrics_to_show:
+        value = stock_data.get(key)
+        if value is not None:
+            # Format numbers nicely
+            if isinstance(value, (int, float)):
+                if key == "Dividend Yield":
+                    value = f"{value * 100:.2f}%"
+                elif key in ["P/E Ratio (TTM)", "Beta (5Y Monthly)"]:
+                    value = f"{value:.2f}"
+                elif key in ["Volume", "Average Volume", "Market Cap"]:
+                    value = f"{value:,}"
+                elif key in ["Current Price", "Previous Close", "Analyst Target Price"]:
+                    value = f"${value:,.2f}"
+            stock_table_md += f"| {key} | {value} |\n"
+    return stock_table_md + "\n"
+# --- END NEW HELPER FUNCTION ---
+
 
 async def handle_fiduciary_commands(
     user_prompt: str,
@@ -250,16 +285,25 @@ async def handle_fiduciary_commands(
         }
         return user_prompt, error_payload
 
-    # 4. Return the data payload.
-    # If we only have one, return it as `stock_data` (object) for backward compatibility.
-    # If we have multiple, return as `stock_data_list` (array).
+    # --- REFACTORED LOGIC ---
+    # 4. Format all fetched data into a single markdown string
     
-    final_payload = {}
-    if len(all_stock_data) == 1:
-        final_payload["stock_data"] = all_stock_data[0]
-        log.info(f"--- Fiduciary Plugin: Returning 'stock_data' (object) for 1 ticker. ---")
-    else:
-        final_payload["stock_data_list"] = all_stock_data
-        log.info(f"--- Fiduciary Plugin: Returning 'stock_data_list' (array) for {len(all_stock_data)} tickers. ---")
+    context_string_parts = [
+        "CONTEXT: I have fetched the following financial data as requested:\n"
+    ]
+    
+    for stock_data in all_stock_data:
+        context_string_parts.append(
+            _format_stock_data_as_markdown(stock_data)
+        )
+    
+    final_context_string = "\n".join(context_string_parts)
 
+    # 5. Return the generic payload
+    final_payload = {
+        "preformatted_context_string": final_context_string
+    }
+    
+    log.info(f"--- Fiduciary Plugin: Returning 'preformatted_context_string' for {len(all_stock_data)} ticker(s). ---")
     return user_prompt, final_payload
+    # --- END REFACTORED LOGIC ---
