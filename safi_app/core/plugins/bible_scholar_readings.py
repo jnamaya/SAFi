@@ -48,11 +48,13 @@ async def _fetch_readings_from_source(log: logging.Logger) -> Dict[str, Any]:
             
             elif 'tertiary-font' in classes:
                 if current_title in allowed_titles and current_citation:
+                    # We scrape the text but will DISCARD it later,
+                    # as we only want the citation for the RAG.
                     text = el.get_text(separator="\n", strip=True)
                     full_passages.append({
                         "title": current_title,
                         "citation": current_citation,
-                        "text": text
+                        "text": text # This text will be discarded
                     })
                     current_title = ""
                     current_citation = ""
@@ -86,7 +88,8 @@ async def handle_bible_scholar_commands(
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     Checks for 'bible scholar' profile-specific commands.
-    If a command is detected, it fetches data and returns it as a dictionary.
+    If a command is detected, it returns a generic data payload
+    for faculties.py to consume.
     
     Returns the ORIGINAL user_prompt and a dictionary of fetched data (or None).
     """
@@ -98,14 +101,10 @@ async def handle_bible_scholar_commands(
     original_user_prompt = user_prompt
     prompt_command = user_prompt.strip().lower()
 
-    # --- REMOVED "synthesis" COMMANDS ---
     individual_reading_commands = ["first reading", "second reading", "gospel", "gospel reading"]
     
     data_payload = None
 
-    # --- REMOVED "synthesis" BLOCK ---
-
-    # --- Handle individual reading requests ---
     if any(cmd in prompt_command for cmd in individual_reading_commands):
         log.info(f"Individual reading request detected: '{user_prompt}'")
         
@@ -131,9 +130,15 @@ async def handle_bible_scholar_commands(
                         break
             
             if found_passage:
+                # *** THIS IS THE KEY CHANGE ***
+                # We build a GENERIC payload. We do NOT pass the
+                # external 'text' field, forcing the RAG to do the work.
                 data_payload = {
-                    "individual_reading": found_passage,
-                    "date": scraped_data.get("date", "Daily Reading")
+                    # Generic key to override the RAG search query
+                    "rag_query_override": found_passage.get("citation"),
+                    
+                    # Generic key for a string to inject into the prompt
+                    "preformatted_context_string": f"CONTEXT: The user is asking for the '{found_passage.get('title')}' for {scraped_data.get('date', 'today')}, which is {found_passage.get('citation')}. The RAG system has been provided with this text."
                 }
             else:
                 error_msg = f"I found the readings for today, but couldn't find a specific '{requested_reading_key}'."
