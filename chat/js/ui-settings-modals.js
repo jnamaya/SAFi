@@ -2,6 +2,9 @@
 
 import * as ui from './ui.js'; 
 import { getAvatarForProfile } from './ui-auth-sidebar.js'; 
+// --- NEW: Import API to fetch/save profile ---
+import * as api from './api.js';
+// --- END NEW ---
 
 // External libraries (must be available globally or imported)
 // NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
@@ -13,8 +16,22 @@ import { getAvatarForProfile } from './ui-auth-sidebar.js';
  */
 export function setupControlPanelTabs() {
     ui._ensureElements();
-    const tabs = [ui.elements.cpNavProfile, ui.elements.cpNavModels, ui.elements.cpNavDashboard, ui.elements.cpNavAppSettings];
-    const panels = [ui.elements.cpTabProfile, ui.elements.cpTabModels, ui.elements.cpTabDashboard, ui.elements.cpTabAppSettings];
+    // --- NEW: Added 'My Profile' elements ---
+    const tabs = [
+        ui.elements.cpNavProfile, 
+        ui.elements.cpNavModels, 
+        ui.elements.cpNavMyProfile, // New
+        ui.elements.cpNavDashboard, 
+        ui.elements.cpNavAppSettings
+    ];
+    const panels = [
+        ui.elements.cpTabProfile, 
+        ui.elements.cpTabModels, 
+        ui.elements.cpTabMyProfile, // New
+        ui.elements.cpTabDashboard, 
+        ui.elements.cpTabAppSettings
+    ];
+    // --- END NEW ---
     
     tabs.forEach((tab, index) => {
         if (!tab) return;
@@ -30,6 +47,12 @@ export function setupControlPanelTabs() {
             if (tab === ui.elements.cpNavDashboard) {
                 renderSettingsDashboardTab();
             }
+            // --- NEW: Render 'My Profile' tab when clicked ---
+            if (tab === ui.elements.cpNavMyProfile) {
+                // We call render, but it will only fetch if it hasn't already
+                renderSettingsMyProfileTab(); 
+            }
+            // --- END NEW ---
         });
     });
     
@@ -242,7 +265,229 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
     document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
 }
 
-// --- START: NEW CONSCIENCE MODAL RENDERING ---
+// --- START: NEW "MY PROFILE" TAB ---
+
+// Store the profile data in memory to manage state
+let userProfileData = {};
+let isProfileFetched = false;
+
+/**
+ * Renders the "My Profile" tab (What SAFi Knows About Me).
+ */
+export async function renderSettingsMyProfileTab() {
+    ui._ensureElements();
+    const container = ui.elements.cpTabMyProfile;
+    if (!container || isProfileFetched) return; // Don't re-fetch if already loaded
+
+    container.innerHTML = `
+        <div class="flex items-center justify-center h-32">
+            <div class="thinking-spinner"></div>
+        </div>
+    `;
+
+    try {
+        userProfileData = await api.fetchUserProfileMemory();
+        isProfileFetched = true; // Mark as fetched
+        
+        // --- THIS IS THE FIX ---
+        // If userProfileData comes back as null or undefined, 
+        // we must treat it as an empty object.
+        if (!userProfileData) {
+            userProfileData = {};
+        }
+        // --- END FIX ---
+
+        // If profile is empty, initialize with empty arrays
+        if (Object.keys(userProfileData).length === 0) {
+            userProfileData = {
+                stated_values: [],
+                interests: [],
+                family_status: [],
+                stated_goals: []
+            };
+        }
+        
+        // --- THIS IS THE FIX ---
+        // Ensure all common keys exist and are ARRAYS.
+        // This prevents a crash if the db returns a string or null.
+        userProfileData.stated_values = Array.isArray(userProfileData.stated_values) ? userProfileData.stated_values : [];
+        userProfileData.interests = Array.isArray(userProfileData.interests) ? userProfileData.interests : [];
+        userProfileData.family_status = Array.isArray(userProfileData.family_status) ? userProfileData.family_status : [];
+        userProfileData.stated_goals = Array.isArray(userProfileData.stated_goals) ? userProfileData.stated_goals : [];
+        // --- END FIX ---
+
+        _buildProfileUI(container);
+        
+    } catch (error) {
+        container.innerHTML = `<p class="text-red-500">Error loading profile: ${error.message}</p>`;
+    }
+}
+
+/**
+ * Helper to build the actual UI after data is fetched.
+ */
+function _buildProfileUI(container) {
+    container.innerHTML = `
+        <h3 class="text-xl font-semibold mb-4">My Profile</h3>
+        <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">
+            This is what SAFi has learned about you. This profile is used by the AI to personalize its responses. You can add, edit, or delete any item.
+        </p>
+        
+        ${_buildProfileSection('stated_values', 'My Values', 'What you prioritize (e.g., "honesty", "growth")')}
+        ${_buildProfileSection('interests', 'My Interests', 'Topics you like (e.g., "football", "history")')}
+        ${_buildProfileSection('stated_goals', 'My Goals', 'What you want to achieve (e.g., "learn piano")')}
+        ${_buildProfileSection('family_status', 'My Facts', 'Simple facts (e.g., "has a son", "lives in New York")')}
+        
+        <div class="mt-8 pt-4 border-t border-neutral-200 dark:border-neutral-700 text-right">
+            <button id="save-my-profile-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+                Save Changes
+            </button>
+        </div>
+    `;
+    
+    // Attach all event listeners
+    _attachProfileEventListeners(container);
+}
+
+/**
+ * Helper to build one editable section.
+ */
+function _buildProfileSection(key, title, placeholder) {
+    const items = userProfileData[key] || []; // This is now safe because of the check in the parent
+    return `
+        <div class="mb-6">
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">${title}</h4>
+            <div id="profile-list-${key}" class="space-y-2">
+                ${items.map((item, index) => _buildProfileItem(key, item, index)).join('')}
+            </div>
+            <div class="flex gap-2 mt-3">
+                <input type="text" id="profile-input-${key}" class="settings-modal-select flex-1" placeholder="Add a new ${title.toLowerCase().slice(3)}...">
+                <button data-key="${key}" class="add-profile-item-btn shrink-0 px-4 py-2 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm">
+                    Add
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Helper to build a single editable item.
+ */
+function _buildProfileItem(key, item, index) {
+    // Sanitize item for HTML attribute
+    const safeItem = String(item || '').replace(/"/g, '&quot;');
+    return `
+        <div class="flex items-center gap-2" data-index="${index}">
+            <input type="text" value="${safeItem}" data-key="${key}" class="profile-item-input settings-modal-select flex-1">
+            <button data-key="${key}" data-index="${index}" class="delete-profile-item-btn shrink-0 p-2 rounded-full text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/50 hover:text-red-500 dark:hover:text-red-400">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+        </div>
+    `;
+}
+
+/**
+ * Attach listeners for Add, Delete, Edit, and Save
+ */
+function _attachProfileEventListeners(container) {
+    
+    // Handle "Add" button
+    container.querySelectorAll('.add-profile-item-btn').forEach(btn => {
+        // Clone to prevent duplicate listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', () => {
+            const key = newBtn.dataset.key;
+            const input = document.getElementById(`profile-input-${key}`);
+            const value = input.value.trim();
+            
+            if (value) {
+                if (!userProfileData[key]) userProfileData[key] = []; // Ensure array exists
+                userProfileData[key].push(value);
+                const listContainer = document.getElementById(`profile-list-${key}`);
+                const newIndex = userProfileData[key].length - 1;
+                listContainer.insertAdjacentHTML('beforeend', _buildProfileItem(key, value, newIndex));
+                input.value = '';
+                // Re-attach listeners for the new item
+                _attachProfileEventListeners(container);
+            }
+        });
+    });
+
+    // Handle "Delete" button
+    container.querySelectorAll('.delete-profile-item-btn').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        // --- THIS IS THE FIX ---
+        // Removed the extra parentheses that caused the syntax error.
+        newBtn.addEventListener('click', _handleProfileItemDelete);
+        // --- END FIX ---
+    });
+
+    // Handle "Edit" (typing in input)
+    container.querySelectorAll('.profile-item-input').forEach(input => {
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        
+        newInput.addEventListener('change', (e) => {
+            const key = e.target.dataset.key;
+            const index = e.target.parentElement.dataset.index;
+            if (userProfileData[key] && userProfileData[key][index] !== undefined) {
+                userProfileData[key][index] = e.target.value.trim();
+            }
+        });
+    });
+    
+    // Handle "Save" button
+    const saveBtn = document.getElementById('save-my-profile-btn');
+    if (saveBtn) {
+        const newSaveBtn = saveBtn.cloneNode(true);
+        saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+
+        newSaveBtn.addEventListener('click', async () => {
+            newSaveBtn.textContent = 'Saving...';
+            newSaveBtn.disabled = true;
+            try {
+                // Filter out empty strings that may have resulted from edits or deletions
+                for (const key in userProfileData) {
+                    if (Array.isArray(userProfileData[key])) {
+                        userProfileData[key] = userProfileData[key].filter(item => item && String(item).trim() !== '');
+                    }
+                }
+                
+                await api.updateUserProfileMemory(userProfileData);
+                ui.showToast('Profile saved!', 'success');
+                // Re-render the UI to show the cleaned data and re-attach listeners
+                _buildProfileUI(container);
+            } catch (error) {
+                ui.showToast(`Error saving: ${error.message}`, 'error');
+            } finally {
+                // The button is rebuilt, so no need to reset text/disabled
+            }
+        });
+    }
+}
+
+// Separate delete handler
+function _handleProfileItemDelete(e) {
+    const btn = e.currentTarget;
+    const key = btn.dataset.key;
+    const index = btn.dataset.index;
+    
+    // Mark for deletion by setting to null
+    if (userProfileData[key] && userProfileData[key][index] !== undefined) {
+        userProfileData[key][index] = null; 
+    }
+    // Remove from UI
+    btn.parentElement.remove();
+}
+
+
+// --- END: NEW "MY PROFILE" TAB ---
+
+
+// --- CONSCIENCE MODAL RENDERING (NEW DESIGN) ---
 
 /**
  * NEW: Main function to build and inject the new modal design.

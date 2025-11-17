@@ -54,9 +54,15 @@ def create_app():
     # This is no longer a circular import
     from .api.auth import auth_bp
     from .api.conversations import conversations_bp
+    # --- NEW: Import and register the profile API ---
+    from .api.profile_api_routes import profile_bp
+    # --- END NEW ---
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
+    # --- NEW: Register the blueprint ---
+    app.register_blueprint(profile_bp, url_prefix='/api')
+    # --- END NEW ---
 
     # Catch-all route for the frontend
     @app.route('/', defaults={'path': ''})

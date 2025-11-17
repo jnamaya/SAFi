@@ -33,6 +33,9 @@ export const urls = {
     AUDIT: j('/api/audit_result'),
     DELETE_ACCOUNT: j('/api/me/delete'),
     TTS: j('/api/tts_audio'),
+    // --- NEW: API endpoint for the user's learned profile ---
+    MY_PROFILE: j('/api/me/profile'),
+    // --- END NEW ---
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`, 
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
     // NEW URL for Pin Toggle
@@ -58,7 +61,12 @@ async function httpGet(url) {
         credentials: 'include'
     });
     const result = await offlineManager.fetchWithCache(request);
-    return result.data;
+    // The data is nested in the 'data' property by fetchWithCache
+    if (result && result.data) {
+        return result.data;
+    }
+    // Fallback if the structure is flat (e.g., from a direct fetch)
+    return result; 
 }
 
 // POST/PUT/DELETE/PATCH requests use offlineManager.postWithQueue
@@ -100,7 +108,11 @@ export async function mobileLogin(code) {
 }
 
 export async function logout() {
-    try { await httpJSON(urls.LOGOUT, "POST", {}); } finally {
+    try { 
+        await httpJSON(urls.LOGOUT, "POST", {}); 
+    } catch(e) {
+        console.warn("Logout API call failed, clearing token anyway.", e);
+    } finally {
       await clearAuthToken(); // Use clearAuthToken from cache.js
     }
     return { ok: true };
@@ -157,3 +169,23 @@ export const fetchTTSAudio = async (text) => {
     }
     return response.blob(); 
 };
+
+// --- NEW: API functions for "My Profile" tab ---
+
+/**
+ * Fetches the user's learned profile from the backend.
+ * @returns {Promise<Object>} A promise that resolves to the user's profile object.
+ */
+export async function fetchUserProfileMemory() {
+    return httpGet(urls.MY_PROFILE);
+}
+
+/**
+ * Saves the user's (potentially edited) profile to the backend.
+ * @param {Object} profileData - The complete profile object to save.
+ * @returns {Promise<Object>} A promise that resolves to the saved profile.
+ */
+export async function updateUserProfileMemory(profileData) {
+    return httpJSON(urls.MY_PROFILE, 'POST', profileData);
+}
+// --- END NEW ---

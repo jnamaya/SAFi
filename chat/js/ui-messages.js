@@ -6,6 +6,11 @@ import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import { playSpeech } from './tts-audio.js'; 
 import { iconPlay } from './ui-render-constants.js'; 
 
+// --- NEW: Icons for Copy Button ---
+const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
+const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+// --- END NEW ---
+
 // NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
 
 // --- MARKDOWN & HIGHLIGHTING SETUP ---
@@ -19,6 +24,28 @@ marked.setOptions({
     return hljs.highlight(code, { language }).value;
   }
 });
+
+// --- NEW: Markdown-to-Plain-Text Converter ---
+/**
+ * Converts a markdown string to plain text by stripping all tags.
+ * @param {string} markdown - The markdown text.
+ * @returns {string} - The plain text.
+ */
+function _markdownToPlainText(markdown) {
+    try {
+        // 1. Parse markdown to HTML
+        const html = marked.parse(markdown);
+        // 2. Create a temporary element
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        // 3. Get the plain text content
+        return tempDiv.textContent || tempDiv.innerText || '';
+    } catch (e) {
+        console.error("Error converting markdown to plain text", e);
+        return markdown; // Fallback to raw text
+    }
+}
+// --- END NEW ---
 
 // --- MESSAGE RENDERING ---
 
@@ -140,6 +167,8 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageDiv.className = `message ${sender}`;
 
   let ttsButtonElement = null; 
+  // --- NEW: Define copy button ---
+  let copyButtonElement = null;
 
   // --- MODIFIED --- (Blank Message Fix)
   // This is the final safeguard. If 'text' arrives as null or undefined,
@@ -180,6 +209,33 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         playSpeech(final_text, ttsButtonElement); 
     });
     // --- END TTS ---
+
+    // --- NEW: Copy Button Creation ---
+    copyButtonElement = document.createElement('button');
+    copyButtonElement.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+    copyButtonElement.setAttribute('aria-label', 'Copy message text');
+    copyButtonElement.innerHTML = iconCopy;
+
+    copyButtonElement.addEventListener('click', () => {
+        // 1. Convert markdown to plain text
+        const plainText = _markdownToPlainText(final_text);
+        
+        // 2. Copy to clipboard
+        navigator.clipboard.writeText(plainText).then(() => {
+            // 3. Show success feedback
+            ui.showToast('Copied to clipboard', 'success');
+            // 4. Change icon to checkmark
+            copyButtonElement.innerHTML = iconCheck;
+            // 5. Revert icon after 2 seconds
+            setTimeout(() => {
+                copyButtonElement.innerHTML = iconCopy;
+            }, 2000);
+        }, (err) => {
+            console.error('Failed to copy text: ', err);
+            ui.showToast('Failed to copy text', 'error');
+        });
+    });
+    // --- END NEW ---
 
     messageDiv.innerHTML = `
       <div class="ai-avatar">
@@ -235,10 +291,16 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   stampDiv.className = 'stamp text-xs'; 
   stampDiv.textContent = formatTime(date);
   
-  // Prepend TTS button to rightMeta (before stampDiv) for AI messages
-  if (sender === 'ai' && ttsButtonElement) {
-      rightMeta.prepend(ttsButtonElement);
+  // --- NEW: Add Copy and TTS buttons ---
+  if (sender === 'ai') {
+      if (copyButtonElement) {
+          rightMeta.prepend(copyButtonElement);
+      }
+      if (ttsButtonElement) {
+          rightMeta.prepend(ttsButtonElement);
+      }
   }
+  // --- END NEW ---
 
   rightMeta.appendChild(stampDiv);
   metaDiv.appendChild(rightMeta);
