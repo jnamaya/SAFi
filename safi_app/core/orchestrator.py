@@ -597,9 +597,12 @@ class SAFi:
         if hasattr(self, 'groq_client_sync'):
             threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
 
-        # Run long-term memory (profile extractor)
-        if hasattr(self, 'groq_client_sync'):
-            threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
+        # --- THIS IS THE FIX ---
+        # Run long-term memory (profile extractor) *only if enabled*
+        if self.config.ENABLE_PROFILE_EXTRACTION: # <--- THIS IS THE TOGGLE
+            if hasattr(self, 'groq_client_sync'):
+                threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
+        # --- END FIX ---
 
         # --- REMOVED --- (Feature 2)
         # S_p is now generated in the background audit thread to prevent lag
