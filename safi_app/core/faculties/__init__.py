@@ -2,7 +2,7 @@
 This package bundles the core "faculties" of the SAFi agent.
 
 By importing them here, the orchestrator can continue to import them
-from 'faculties' as if it were a single file,
+from 'safi_app.core.faculties' as if it were a single file,
 e.g., `from .faculties import IntellectEngine`.
 """
 from __future__ import annotations
