@@ -2,9 +2,7 @@
 
 import * as ui from './ui.js'; 
 import { getAvatarForProfile } from './ui-auth-sidebar.js'; 
-// --- NEW: Import API to fetch/save profile ---
 import * as api from './api.js';
-// --- END NEW ---
 
 // External libraries (must be available globally or imported)
 // NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
@@ -13,62 +11,102 @@ import * as api from './api.js';
 
 /**
  * Sets up event listeners for the Control Panel navigation tabs.
+ * This function is called once on application load.
  */
 export function setupControlPanelTabs() {
     ui._ensureElements();
-    // --- NEW: Added 'My Profile' elements ---
+    
+    // --- FIX: SET UP MODAL DELEGATED LISTENERS ---
+    // We call this function *once* when the app initializes.
+    // This attaches a single, persistent listener to the modal container
+    // to prevent the "frozen links" bug.
+    setupDelegatedModalListeners();
+    // --- END FIX ---
+
     const tabs = [
         ui.elements.cpNavProfile, 
         ui.elements.cpNavModels, 
-        ui.elements.cpNavMyProfile, // New
+        ui.elements.cpNavMyProfile, // My Profile Tab
         ui.elements.cpNavDashboard, 
         ui.elements.cpNavAppSettings
     ];
     const panels = [
         ui.elements.cpTabProfile, 
         ui.elements.cpTabModels, 
-        ui.elements.cpTabMyProfile, // New
+        ui.elements.cpTabMyProfile, // My Profile Panel
         ui.elements.cpTabDashboard, 
         ui.elements.cpTabAppSettings
     ];
-    // --- END NEW ---
     
     tabs.forEach((tab, index) => {
         if (!tab) return;
         tab.addEventListener('click', () => {
+            // Handle tab highlighting
             tabs.forEach(t => t?.classList.remove('active'));
             tab.classList.add('active');
             
+            // Handle panel visibility
             panels.forEach(p => p?.classList.add('hidden'));
             if (panels[index]) {
                 panels[index].classList.remove('hidden');
             }
 
+            // Lazy-load dashboard
             if (tab === ui.elements.cpNavDashboard) {
                 renderSettingsDashboardTab();
             }
-            // --- NEW: Render 'My Profile' tab when clicked ---
+            // Lazy-load user profile
             if (tab === ui.elements.cpNavMyProfile) {
-                // We call render, but it will only fetch if it hasn't already
                 renderSettingsMyProfileTab(); 
             }
-            // --- END NEW ---
         });
     });
     
+    // Activate the first tab by default
     if (tabs[0]) {
       tabs[0].click();
     }
 }
 
+// --- FIX: NEW FUNCTION FOR ONE-TIME LISTENERS ---
+/**
+ * Attaches persistent, delegated event listeners to modal containers.
+ * This runs ONLY ONCE on app load to prevent duplicate listeners.
+ */
+function setupDelegatedModalListeners() {
+    // --- "Show More" logic for Conscience Modal ---
+    const conscienceContainer = ui.elements.conscienceDetails;
+    if (conscienceContainer) {
+        conscienceContainer.addEventListener('click', function(event) {
+            // This single listener handles all "Show More" clicks inside
+            // the conscience modal, even on dynamic content.
+            if (event.target.classList.contains('expand-btn')) {
+                const reasonText = event.target.previousElementSibling;
+                if (reasonText && reasonText.classList.contains('reason-text')) {
+                    const isTruncated = reasonText.classList.contains('truncated');
+                    reasonText.classList.toggle('truncated');
+                    event.target.textContent = isTruncated ? 'Show Less' : 'Show More';
+                }
+            }
+        });
+    }
+    
+    // You could add other one-time delegated listeners here in the future.
+}
+// --- END FIX ---
+
 /**
  * Renders the Profile selection tab in the Control Panel.
+ * @param {Array} profiles - List of available profile objects
+ * @param {string} activeProfileKey - The key of the currently active profile
+ * @param {Function} onProfileChange - Callback function when a profile is selected
  */
 export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange) {
-  ui._ensureElements();
+    ui._ensureElements();
     const container = ui.elements.cpTabProfile;
     if (!container) return;
     
+    // Handler to open the profile details modal
     const viewDetailsHandler = (key) => {
         const profile = profiles.find(p => p.key === key);
         if (profile) {
@@ -77,7 +115,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         }
     };
     
-    // ... (HTML rendering for profile selection) ...
+    // Generate the HTML for the profile list
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">Choose a Persona</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
@@ -105,10 +143,11 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         </div>
     `;
 
-    // ... (Event listeners for radio buttons and details buttons) ...
+    // Attach event listeners for radio buttons
     container.querySelectorAll('input[name="ethical-profile"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             onProfileChange(e.target.value);
+            // Update styles to show selection
             container.querySelectorAll('.p-4.border').forEach(label => {
                 label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
                 label.classList.add('border-neutral-300', 'dark:border-neutral-700');
@@ -118,6 +157,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         });
     });
     
+    // Attach event listeners for "View Details" buttons
     container.querySelectorAll('.view-profile-details-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             viewDetailsHandler(btn.dataset.key);
@@ -127,12 +167,16 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
 
 /**
  * Renders the AI Model selection tab in the Control Panel.
+ * @param {Array} availableModels - List of model name strings
+ * @param {object} user - The current user object (to get selections)
+ * @param {Function} onModelsSave - Callback function when save is clicked
  */
 export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
     ui._ensureElements();
     const container = ui.elements.cpTabModels;
     if (!container) return;
     
+    // Helper function to create a single <select> dropdown
     const createSelect = (id, label, selectedValue) => `
         <div>
             <label for="${id}" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">${label}</label>
@@ -144,7 +188,7 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
         </div>
     `;
 
-    // ... (HTML rendering for model selection) ...
+    // Generate the HTML for the model selectors
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">Choose AI Models</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Assign a specific AI model to each of the three faculties. Changes will apply on the next page load.</p>
@@ -160,6 +204,7 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
         </div>
     `;
 
+    // Attach event listener for the save button
     document.getElementById('save-models-btn').addEventListener('click', () => {
         const newModels = {
             intellect_model: document.getElementById('model-select-intellect').value,
@@ -178,9 +223,10 @@ export function renderSettingsDashboardTab() {
     const container = ui.elements.cpTabDashboard;
     if (!container) return;
 
+    // Don't re-render if iframe already exists
     if (container.querySelector('iframe')) return;
 
-    container.innerHTML = ''; 
+    container.innerHTML = ''; // Clear any placeholders
 
     const headerDiv = document.createElement('div');
     headerDiv.className = "p-6 shrink-0";
@@ -196,7 +242,6 @@ export function renderSettingsDashboardTab() {
     iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
     iframe.className = "w-full h-full rounded-lg"; 
     iframe.title = "SAFi Dashboard";
-    // FIX: Added 'allow-downloads' to enable file downloads from the iframe source.
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
     
     iframeContainer.appendChild(iframe);
@@ -207,6 +252,10 @@ export function renderSettingsDashboardTab() {
 
 /**
  * Renders the App Settings tab (Theme, Logout, Delete Account).
+ * @param {string} currentTheme - The current theme ('light', 'dark', 'system')
+ * @param {Function} onThemeChange - Callback for theme selection
+ * @param {Function} onLogout - Callback for logout button
+ * @param {Function} onDelete - Callback for delete button
  */
 export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDelete) {
     ui._ensureElements();
@@ -219,11 +268,11 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
         { key: 'system', name: 'System Default' }
     ];
 
-    // ... (HTML rendering for app settings) ...
+    // Generate HTML for the settings
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">App Settings</h3>
         
-        <div class_="space-y-4">
+        <div class="space-y-4">
             <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Theme</h4>
             <div class="space-y-2" role="radiogroup">
                 ${themes.map(theme => `
@@ -246,12 +295,13 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
         </div>
     `;
 
-    // ... (Event listeners) ...
+    // Attach event listeners
     container.querySelectorAll('input[name="theme-select"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             const newTheme = e.target.value;
             onThemeChange(newTheme);
             
+            // Update styles
             container.querySelectorAll('label').forEach(label => {
                 label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
                 label.classList.add('border-neutral-300', 'dark:border-neutral-700');
@@ -265,7 +315,7 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
     document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
 }
 
-// --- START: NEW "MY PROFILE" TAB ---
+// --- START: "MY PROFILE" TAB ---
 
 // Store the profile data in memory to manage state
 let userProfileData = {};
@@ -273,6 +323,7 @@ let isProfileFetched = false;
 
 /**
  * Renders the "My Profile" tab (What SAFi Knows About Me).
+ * Fetches data from the API on first click.
  */
 export async function renderSettingsMyProfileTab() {
     ui._ensureElements();
@@ -289,32 +340,17 @@ export async function renderSettingsMyProfileTab() {
         userProfileData = await api.fetchUserProfileMemory();
         isProfileFetched = true; // Mark as fetched
         
-        // --- THIS IS THE FIX ---
-        // If userProfileData comes back as null or undefined, 
-        // we must treat it as an empty object.
+        // Ensure userProfileData is an object
         if (!userProfileData) {
             userProfileData = {};
         }
-        // --- END FIX ---
 
-        // If profile is empty, initialize with empty arrays
-        if (Object.keys(userProfileData).length === 0) {
-            userProfileData = {
-                stated_values: [],
-                interests: [],
-                family_status: [],
-                stated_goals: []
-            };
-        }
-        
-        // --- THIS IS THE FIX ---
         // Ensure all common keys exist and are ARRAYS.
         // This prevents a crash if the db returns a string or null.
         userProfileData.stated_values = Array.isArray(userProfileData.stated_values) ? userProfileData.stated_values : [];
         userProfileData.interests = Array.isArray(userProfileData.interests) ? userProfileData.interests : [];
         userProfileData.family_status = Array.isArray(userProfileData.family_status) ? userProfileData.family_status : [];
         userProfileData.stated_goals = Array.isArray(userProfileData.stated_goals) ? userProfileData.stated_goals : [];
-        // --- END FIX ---
 
         _buildProfileUI(container);
         
@@ -325,6 +361,7 @@ export async function renderSettingsMyProfileTab() {
 
 /**
  * Helper to build the actual UI after data is fetched.
+ * @param {HTMLElement} container - The panel to render into.
  */
 function _buildProfileUI(container) {
     container.innerHTML = `
@@ -351,9 +388,12 @@ function _buildProfileUI(container) {
 
 /**
  * Helper to build one editable section.
+ * @param {string} key - The key in the userProfileData object
+ * @param {string} title - The section title
+ * @param {string} placeholder - The placeholder text for the input
  */
 function _buildProfileSection(key, title, placeholder) {
-    const items = userProfileData[key] || []; // This is now safe because of the check in the parent
+    const items = userProfileData[key] || [];
     return `
         <div class="mb-6">
             <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">${title}</h4>
@@ -372,6 +412,9 @@ function _buildProfileSection(key, title, placeholder) {
 
 /**
  * Helper to build a single editable item.
+ * @param {string} key 
+ * @param {string} item 
+ * @param {number} index 
  */
 function _buildProfileItem(key, item, index) {
     // Sanitize item for HTML attribute
@@ -388,12 +431,12 @@ function _buildProfileItem(key, item, index) {
 
 /**
  * Attach listeners for Add, Delete, Edit, and Save
+ * @param {HTMLElement} container 
  */
 function _attachProfileEventListeners(container) {
     
     // Handle "Add" button
     container.querySelectorAll('.add-profile-item-btn').forEach(btn => {
-        // Clone to prevent duplicate listeners
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
 
@@ -419,10 +462,7 @@ function _attachProfileEventListeners(container) {
     container.querySelectorAll('.delete-profile-item-btn').forEach(btn => {
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
-        // --- THIS IS THE FIX ---
-        // Removed the extra parentheses that caused the syntax error.
         newBtn.addEventListener('click', _handleProfileItemDelete);
-        // --- END FIX ---
     });
 
     // Handle "Edit" (typing in input)
@@ -449,7 +489,7 @@ function _attachProfileEventListeners(container) {
             newSaveBtn.textContent = 'Saving...';
             newSaveBtn.disabled = true;
             try {
-                // Filter out empty strings that may have resulted from edits or deletions
+                // Filter out empty/null strings that may have resulted from edits or deletions
                 for (const key in userProfileData) {
                     if (Array.isArray(userProfileData[key])) {
                         userProfileData[key] = userProfileData[key].filter(item => item && String(item).trim() !== '');
@@ -462,8 +502,6 @@ function _attachProfileEventListeners(container) {
                 _buildProfileUI(container);
             } catch (error) {
                 ui.showToast(`Error saving: ${error.message}`, 'error');
-            } finally {
-                // The button is rebuilt, so no need to reset text/disabled
             }
         });
     }
@@ -475,7 +513,7 @@ function _handleProfileItemDelete(e) {
     const key = btn.dataset.key;
     const index = btn.dataset.index;
     
-    // Mark for deletion by setting to null
+    // Mark for deletion by setting to null (will be filtered on save)
     if (userProfileData[key] && userProfileData[key][index] !== undefined) {
         userProfileData[key][index] = null; 
     }
@@ -490,7 +528,8 @@ function _handleProfileItemDelete(e) {
 // --- CONSCIENCE MODAL RENDERING (NEW DESIGN) ---
 
 /**
- * NEW: Main function to build and inject the new modal design.
+ * Main function to build and inject the Conscience ("Ethical Reasoning") modal content.
+ * @param {object} payload - The audit payload from the message
  */
 export function setupConscienceModalContent(payload) {
     ui._ensureElements();
@@ -543,7 +582,8 @@ export function setupConscienceModalContent(payload) {
 }
 
 /**
- * NEW: Renders the "Score & Trend" dashboard card.
+ * Renders the "Score & Trend" dashboard card.
+ * @param {object} payload 
  */
 function renderScoreAndTrend(payload) {
     // --- Radial Gauge ---
@@ -559,36 +599,26 @@ function renderScoreAndTrend(payload) {
     const colorClass = getScoreColor(score);
 
     const radialGauge = `
-        <!-- --- THIS IS THE FIX --- -->
-        <!-- 1. Removed flex properties from parent -->
         <div class="flex flex-col items-center justify-center">
-            <!-- 2. Added a new relative wrapper for centering -->
             <div class="relative w-32 h-32">
-                <!-- 3. Made SVG fill the wrapper -->
                 <svg class="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
                     <circle class="text-gray-200 dark:text-gray-700" stroke-width="10" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
                     <circle class="${colorClass}" stroke-width="10" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
                 </svg>
-                <!-- 4. Explicitly centered the text block -->
                 <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                     <span class="text-4xl font-bold ${colorClass}">${score.toFixed(1)}</span>
                     <span class="text-xs text-gray-500 dark:text-gray-400">/ 10</span>
                 </div>
             </div>
-            <!-- These are now correctly positioned below the gauge -->
             <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200">Alignment Score</h4>
             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center max-w-[180px]">Reflects alignment with the active value set.</p>
         </div>
-        <!-- --- END FIX --- -->
     `;
 
     // --- Sparkline ---
-    // --- THIS IS THE FIX ---
-    // Filter out null/undefined scores *before* trying to render the graph.
     const scores = (payload.spirit_scores_history || [])
-        .filter(s => s !== null && s !== undefined)
-        .slice(-10);
-    // --- END FIX ---
+        .filter(s => s !== null && s !== undefined) // Filter out null/undefined
+        .slice(-10); // Get last 10
     
     let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-gray-400">Not enough data for trend.</div>';
 
@@ -596,6 +626,7 @@ function renderScoreAndTrend(payload) {
         const width = 200, height = 60, padding = 5;
         const maxScore = 10, minScore = 0;
         const range = maxScore - minScore;
+        // Map scores to X,Y coordinates
         const points = scores.map((s, i) => {
             const x = (i / (scores.length - 1)) * (width - 2 * padding) + padding;
             const y = height - padding - ((s - minScore) / range) * (height - 2 * padding);
@@ -620,13 +651,11 @@ function renderScoreAndTrend(payload) {
                 </svg>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center md:text-left">Recent score history (${scores.length} turns)</p>
                 
-                <!-- --- THIS IS THE NEW LINK --- -->
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
                     <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-500 hover:underline">
                         View Full Dashboard &rarr;
                     </a>
                 </p>
-                <!-- --- END NEW LINK --- -->
             </div>
         `;
     }
@@ -635,7 +664,11 @@ function renderScoreAndTrend(payload) {
 }
 
 /**
- * NEW: Renders a single tab button.
+ * Renders a single tab button.
+ * @param {string} key - 'upholds', 'conflicts', 'neutral'
+ * @param {string} title - The button text
+ * @param {number} count - The number for the badge
+ * @param {boolean} isActive - Whether this tab is active
  */
 function renderTabButton(key, title, count, isActive) {
     const groupConfig = {
@@ -659,7 +692,10 @@ function renderTabButton(key, title, count, isActive) {
 }
 
 /**
- * NEW: Renders a single tab panel with its ledger items.
+ * Renders a single tab panel with its ledger items.
+ * @param {string} key 
+ * @param {Array} items - The ledger items
+ * @param {boolean} isActive - Whether this panel is visible
  */
 function renderTabPanel(key, items, isActive) {
     let content = '';
@@ -677,7 +713,9 @@ function renderTabPanel(key, items, isActive) {
 }
 
 /**
- * NEW: Renders a single ledger item, fixing the mobile "Confidence" bug.
+ * Renders a single ledger item.
+ * @param {object} item - A single ledger item
+ * @param {string} key - 'upholds', 'conflicts', 'neutral'
  */
 function renderLedgerItem(item, key) {
     const reasonHtml = DOMPurify.sanitize(String(item.reason || ''));
@@ -692,10 +730,7 @@ function renderLedgerItem(item, key) {
 
     const confidenceDisplayHtml = item.confidence ? `
         <div class="flex items-center gap-2 w-full md:w-auto md:min-w-[160px]">
-            <!-- --- THIS IS THE FIX --- -->
-            <!-- Removed 'hidden' and 'sm:inline', now visible on all screens -->
             <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Confidence</span>
-            <!-- --- END FIX --- -->
             <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-gray-600">
                 <div class="h-full rounded-full bg-green-500" style="width: ${item.confidence * 100}%"></div>
             </div>
@@ -718,7 +753,10 @@ function renderLedgerItem(item, key) {
 }
 
 /**
- * NEW: Attaches event listeners for tabs and "Show More" buttons within the modal.
+ * Attaches event listeners for tabs, copy button, and dashboard link.
+ * This function is called *every time* the modal content is rendered.
+ * @param {HTMLElement} container - The conscience modal content container.
+ * @param {object} payload - The audit payload.
  */
 function attachModalEventListeners(container, payload) {
     // --- Tab switching logic ---
@@ -762,18 +800,11 @@ function attachModalEventListeners(container, payload) {
     });
 
     // --- "Show More" logic ---
-    container.addEventListener('click', function(event) {
-        if (event.target.classList.contains('expand-btn')) {
-            const reasonText = event.target.previousElementSibling;
-            const isTruncated = reasonText.classList.contains('truncated');
-            
-            reasonText.classList.toggle('truncated');
-            event.target.textContent = isTruncated ? 'Show Less' : 'Show More';
-        }
-    });
+    // This is now handled by the persistent, delegated listener in
+    // setupDelegatedModalListeners() to prevent the "frozen link" bug.
 
     // --- Copy button logic ---
-    // We must re-attach this to the button inside the modal shell, which is in ui.js
+    // We must re-attach this to the button inside the modal shell (which is in ui.js)
     // This finds the button in the *document* (outside the content container)
     const copyBtn = document.getElementById('copy-audit-btn');
     if (copyBtn) {
@@ -784,7 +815,7 @@ function attachModalEventListeners(container, payload) {
         newCopyBtn.addEventListener('click', () => copyAuditToClipboard(payload));
     }
 
-    // --- NEW: Dashboard Link logic ---
+    // --- Dashboard Link logic ---
     const dashboardLink = container.querySelector('#view-full-dashboard-link');
     if (dashboardLink) {
         dashboardLink.addEventListener('click', (e) => {
@@ -801,11 +832,11 @@ function attachModalEventListeners(container, payload) {
             }
         });
     }
-    // --- END NEW ---
 }
 
 /**
- * NEW: Updated copy-to-clipboard function.
+ * Copies a plain-text summary of the audit to the clipboard.
+ * @param {object} payload - The audit payload
  */
 function copyAuditToClipboard(payload) {
     let text = `SAFi Ethical Reasoning Audit\n`;
@@ -848,12 +879,14 @@ function copyAuditToClipboard(payload) {
         ui.showToast('Failed to copy audit', 'error');
     });
 }
-// --- END: NEW CONSCIENCE MODAL RENDERING ---
+// --- END: CONSCIENCE MODAL RENDERING ---
 
 // --- START: PROFILE DETAILS MODAL ---
 
 /**
- * Helper to create a formatted section for the profile details modal.
+ * Helper to create a formatted HTML section for the profile details modal.
+ * @param {string} title - The section title
+ * @param {string | Array} content - The content (markdown string or list of strings)
  */
 function createModalSection(title, content) {
     if (!content) return '';
@@ -880,6 +913,7 @@ function createModalSection(title, content) {
 
 /**
  * Creates the HTML for the "Values" section, including rubrics.
+ * @param {Array} values - The list of value objects
  */
 function renderValuesSection(values) {
     if (!values || values.length === 0) return '';
@@ -942,6 +976,7 @@ function renderValuesSection(values) {
 
 /**
  * Populates the Profile Details modal with the given profile data.
+ * @param {object} profile - The full profile object
  */
 export function renderProfileDetailsModal(profile) {
     ui._ensureElements();
@@ -958,12 +993,10 @@ export function renderProfileDetailsModal(profile) {
     
     container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
     container.insertAdjacentHTML('beforeend', createModalSection('Worldview', profile.worldview));
-    // --- THIS IS THE FIX ---
-    // Changed "createDOMElem" to "createModalSection"
     container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
-    // --- END FIX ---
     container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values));
     container.insertAdjacentHTML('beforeend', createModalSection('Rules (Non-Negotiable)', profile.will_rules));
 
+    // Scroll to top of modal content
     container.scrollTop = 0;
 }
