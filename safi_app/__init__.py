@@ -1,43 +1,51 @@
+"""
+Application factory for the Flask backend.
+
+This file contains the `create_app` function which initializes and configures
+the Flask application, including middleware, extensions (CORS, OAuth),
+database connections, and API blueprints.
+"""
 import os
 from flask import Flask, send_from_directory, jsonify
-# REMOVED: from flask_cors import CORS
-# REMOVED: from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
-from .extensions import oauth, cors  # <-- IMPORT FROM NEW EXTENSIONS FILE
-
-# REMOVED: oauth = OAuth()
-# REMOVED: cors = CORS()
+from .extensions import oauth, cors  # Import centralized extension instances
 
 def create_app():
-    """Application factory function."""
+    """
+    Application factory function. Creates and configures the Flask app.
+    
+    Returns:
+        The configured Flask app instance.
+    """
+    # Initialize Flask app, pointing static files to the '../public' directory
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
     
-    # Apply middleware
+    # Apply ProxyFix middleware to correctly handle headers from a reverse proxy
+    # (e.g., Nginx, Heroku) for things like HTTPS and client IP.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     
-    # CRITICAL: Configure CORS to explicitly allow the Authorization header for JWT tokens
-    cors.init_app(  # This now configures the imported 'cors' object
+    # Configure CORS (Cross-Origin Resource Sharing)
+    cors.init_app(
         app, 
         supports_credentials=True, 
-        origins=Config.ALLOWED_ORIGINS,  # <-- Use dynamic list from Config
-        allow_headers=["Content-Type", "Authorization"], 
+        origins=Config.ALLOWED_ORIGINS,  # Use dynamic origin list from config
+        allow_headers=["Content-Type", "Authorization"], # Allow auth headers for JWTs
         expose_headers=["Content-Type"],
-        # FIX: Added 'PATCH' to the list of allowed HTTP methods for CORS
-        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] 
+        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] # Ensure all methods are allowed
     )
 
-    # Configure the oauth object imported from extensions.py
+    # Initialize extensions
     oauth.init_app(app)
 
-    # Initialize the database within the app context
+    # Initialize the database connection pool within the app context
     with app.app_context():
         db.init_db()
 
-    # Register the Google OAuth client on the imported object
+    # Register the Google OAuth client with Authlib
     oauth.register(
         name='google',
         client_id=app.config['GOOGLE_CLIENT_ID'],
@@ -50,34 +58,35 @@ def create_app():
         jwks_uri="https://www.googleapis.com/oauth2/v3/certs"
     )
 
-    # Import and register blueprints
-    # This is no longer a circular import
+    # Import and register API blueprints
     from .api.auth import auth_bp
     from .api.conversations import conversations_bp
-    # --- NEW: Import and register the profile API ---
     from .api.profile_api_routes import profile_bp
-    # --- END NEW ---
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
-    # --- NEW: Register the blueprint ---
     app.register_blueprint(profile_bp, url_prefix='/api')
-    # --- END NEW ---
 
-    # Catch-all route for the frontend
+    # Catch-all route to serve the Single Page Application (SPA) frontend
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve(path):
-        
-        # Prevent catch-all route from serving HTML for API calls
+        """
+        Serves static files for the frontend.
+        - If the path is a file (e.g., main.js), it serves the file.
+        - If the path is a route (e.g., /chat), it serves index.html.
+        - It explicitly blocks API calls from being served as HTML.
+        """
+        # Prevent API routes from being handled by the static file server
         if path.startswith('api/'):
             return jsonify({"error": "Not Found", "message": f"API endpoint '{path}' not found."}), 404
             
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            # Serve the static file (e.g., main.js, styles.css)
+            # Serve the requested static file (e.g., main.js, styles.css)
             return send_from_directory(app.static_folder, path)
         else:
-            # For all other paths, serve index.html
+            # Serve the main index.html for all other routes to support
+            # frontend routing (e.g., /login, /chat/123)
             return send_from_directory(app.static_folder, 'index.html')
 
     return app
