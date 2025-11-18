@@ -3,9 +3,6 @@ Defines all robust parsing and sanitization logic.
 
 This file is the ONLY place that knows how to parse the raw, messy,
 and unreliable string/JSON outputs from different LLMs.
-
-By centralizing this logic, we can improve parsing in one place
-and it benefits all faculties.
 """
 from __future__ import annotations
 import json
@@ -21,20 +18,23 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
     """
     Parses the first valid JSON object found in a raw text string.
     
-    This function attempts multiple strategies to extract a valid JSON
-    object from text that may be prefixed or suffixed with garbage.
+    This function is highly resilient to common LLM-generated JSON errors,
+    such as trailing commas, newlines, and non-JSON text surrounding
+    the object.
 
     Args:
-        raw_text: The raw string response from the LLM.
-        log: A logger instance to report failures.
+        raw_text: The raw, potentially messy string from the LLM.
+        log: The logger instance to use for errors.
 
     Returns:
-        A dictionary, or a dictionary with an "error" key on failure.
+        A dictionary, or an error dictionary if parsing fails.
     """
     obj = {}
     json_text = raw_text # Default to raw text
     
     # 1. Find the first '{' and last '}'
+    # This is the most reliable way to extract a JSON blob
+    # from a string that might contain other text.
     start = raw_text.find('{')
     end = raw_text.rfind('}')
     
@@ -46,49 +46,59 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         obj = json.loads(json_text)
         return obj
     except json.JSONDecodeError:
-        pass # If it fails, proceed to sanitization
+        pass # Go to sanitization
+
     # 3. Sanitize and retry
     try:
+        # Sanitize common errors:
+        # - Remove newlines and carriage returns
+        # - Fix trailing commas (e.g., "key": "value",})
+        # - Consolidate excess whitespace
         sanitized = json_text.replace("\r", " ").replace("\n", " ")
         sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized) # Fix trailing commas
         sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
         obj = json.loads(sanitized)
         return obj
     except json.JSONDecodeError as e:
-        log.error(f"Robust JSON parse failed: {e} | content={sanitized[:500]}")
+        log.error(f"Robust JSON parse failed after sanitization: {e} | content={sanitized[:500]}")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
 
 # --- Specific Parsers for Each Faculty ---
+
+# --- FIX: Removed the _strip_thinking_logs helper function. ---
+# It's no longer needed, as we have disabled reasoning flags
+# in the orchestrator.
 
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
     Parses the "Answer---REFLECTION---{...}" format from Intellect.
     
-    This function uses a 3-priority fallback system to be resilient
-    to models that fail to follow formatting instructions.
+    This function uses a 3-priority fallback system.
     """
     answer = ""
     reflection = ""
     delimiter_text = "---REFLECTION---"
 
+    # --- Run the original robust parsing on the raw_text ---
     if delimiter_text in raw_text:
         # --- Priority 1: Model used the delimiter correctly ---
-        log.debug("Parsing Intellect response using delimiter.")
+        log.info("Parsing Intellect response using delimiter.")
         parts = raw_text.split(delimiter_text)
         answer = parts[0].strip()
         
-        json_part_raw = parts[-1] # Get the text *after* the last delimiter
+        json_part_raw = parts[-1]
         json_obj = robust_json_parse(json_part_raw, log)
         reflection = json_obj.get("reflection", "Parsed reflection from delimiter.").strip()
 
     else:
-        # --- Priority 2: Model "forgot" delimiter but still sent JSON ---
-        log.warning(f"Intellect model did not use delimiter. Attempting JSON salvage.")
+        # --- Priority 2: Model "forgot" delimiter but sent JSON ---
+        log.warning(f"Intellect model did not use delimiter. Searching for JSON...")
         
         # Use regex to find JSON
-        json_match = re.search(r"\{[\s\S]*\}", raw_text)
+        json_match = re.search(r"\{[\s\S]*\}", raw_text) # [\s\S] matches newlines
 
         if json_match:
+            log.info("Found salvaged JSON. Parsing.")
             json_part_raw = json_match.group(0).strip()
             answer = raw_text[:json_match.start()].strip() # Everything BEFORE the JSON
             
@@ -99,40 +109,36 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                 answer = f"[Answer missing, model only sent JSON: {json_part_raw}]"
 
         else:
-            # --- Priority 3: Model sent raw text (This is the fallback you saw) ---
-            log.warning(f"No JSON or delimiter found in Intellect response. Salvaging raw text.")
+            # --- Priority 3: Model sent raw text ---
+            log.warning(f"No JSON found in Intellect response. Salvaging raw text.")
             answer = raw_text.strip()
             reflection = "Salvaged raw output; model failed to format."
 
-    # Final check to prevent empty answers
     if not answer.strip():
         answer = "[Model returned an empty answer]"
-        reflection = reflection or "Model returned empty answer."
+        reflection = "Model returned empty answer."
 
     return answer.replace("\\n", "\n"), reflection.replace("\\n", "\n")
 
 def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
     Parses the {"decision": "...", "reason": "..."} format from Will.
-
-    Args:
-        raw_text: The raw string response from the Will model.
-        log: A logger instance.
-
-    Returns:
-        A tuple of (decision, reason). Guarantees a valid decision.
+    
+    This parser is simple: it just finds the first valid JSON in the
+    raw text and extracts the keys.
     """
+    # Find and parse the JSON blob
     obj = robust_json_parse(raw_text, log)
     
     if "error" in obj:
-        # If parsing fails, default to a violation
+        # This happens if robust_json_parse failed
         return ("violation", "Internal evaluation error (JSON parse failed)")
         
     decision = str(obj.get("decision") or "").strip().lower()
     reason = (obj.get("reason") or "").strip()
     
     if decision not in {"approve", "violation"}:
-        decision = "violation"
+        decision = "violation" # Default to violation if decision is invalid
         
     if not reason:
         reason = "Decision explained by Will policies and the active value set."
@@ -142,22 +148,20 @@ def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]
 def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict[str, Any]]:
     """
     Parses the {"evaluations": [...]} format from Conscience.
-
-    Args:
-        raw_text: The raw string response from the Conscience model.
-        log: A logger instance.
-
-    Returns:
-        A list of evaluation dictionaries. Returns an empty list on failure.
+    
+    This parser is simple: it just finds the first valid JSON in the
+    raw text and extracts the 'evaluations' key.
     """
+    # Find and parse the JSON blob
     obj = robust_json_parse(raw_text, log)
     
     if "error" in obj:
-        return [] # Return an empty list if parsing failed
+        # This happens if robust_json_parse failed
+        return [{"error": "Internal evaluation error (JSON parse failed)"}]
     
     evaluations = obj.get("evaluations", [])
     if not isinstance(evaluations, list):
         log.error(f"Conscience 'evaluations' was not a list. Got: {type(evaluations)}")
-        return []
+        return [{"error": f"Conscience 'evaluations' was not a list."}]
 
     return evaluations

@@ -168,26 +168,30 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "conscience": conscience_model_to_use
         }
         
-        # --- UPDATED: Set reasoning_effort to "high" as requested ---
+        # --- THIS IS THE FIX ---
+        # We are KEEPING the fix for qwen/qwen3-32b, as you confirmed it needs
+        # reasoning hidden.
+        # We are REMOVING the parameters for gpt-oss models, as you
+        # correctly pointed out they are less reliable with them.
         self.model_extra_params = {
-            # For Qwen, "none" disables reasoning, which is what we want
-            # for the Conscience and Will models to ensure clean JSON.
-            "qwen/qwen3-32b": {"reasoning_effort": "none"},
+            "qwen/qwen3-32b": {
+                "reasoning_format": "hidden"  # <-- KEEPING this fix for Qwen
+            },
+
+            # --- FIX: Removing all extra params for these models ---
+            # As you noted, they are more reliable without them.
+            "openai/gpt-oss-120b": {},
+            "openai/gpt-oss-20b": {},
+            # --- END FIX ---
             
-            
-            # For GPT-OSS, set reasoning to "high" for the Intellect
-            # faculty to get the best possible reasoning.
-            "openai/gpt-oss-120b": {"reasoning_effort": "high"},
-            "openai/gpt-oss-20b": {"reasoning_effort": "high"},
-            
-            # For models like Llama, we don't need to add anything,
-            # as they don't have this "thinking mode" enabled by default.
+            # Llama models do not support these parameters, so we leave them empty.
             "llama-3.3-70b-versatile": {},
             "llama-3.1-8b-instant": {}
         }
-        # --- END UPDATE ---
+        # --- END OF MODEL PARAMS ---
         
         # --- 6. Initialize Gemini Models for LLMProvider ---
+        # Pre-initialize any Gemini models that will be needed.
         if "gemini" in self.clients:
             for role, model_name in self.model_configs.items():
                 if model_name.startswith("gemini-") and model_name not in self.gemini_models:
