@@ -90,8 +90,6 @@ function setupDelegatedModalListeners() {
             }
         });
     }
-    
-    // You could add other one-time delegated listeners here in the future.
 }
 // --- END FIX ---
 
@@ -551,6 +549,7 @@ export function setupConscienceModalContent(payload) {
     });
 
     // 2. Build the new HTML structure
+    // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
         <p class="text-base text-gray-600 dark:text-gray-300 mb-6">
             This response was shaped by the ${profileName} ethical profile. Here’s a breakdown of the reasoning:
@@ -561,7 +560,7 @@ export function setupConscienceModalContent(payload) {
         <div>
             <!-- Tab Buttons -->
             <div class="border-b border-gray-200 dark:border-gray-700">
-                <nav class="flex -mb-px" aria-label="Tabs" id="conscience-tabs">
+                <nav class="flex -mb-px w-full" aria-label="Tabs" id="conscience-tabs">
                     ${renderTabButton('upholds', 'Upholds', groups.upholds.length, true)}
                     ${renderTabButton('conflicts', 'Conflicts', groups.conflicts.length, false)}
                     ${renderTabButton('neutral', 'Neutral', groups.neutral.length, false)}
@@ -665,6 +664,8 @@ function renderScoreAndTrend(payload) {
 
 /**
  * Renders a single tab button.
+ * Mobile Optimization: Stacks icon above text and uses full width (flex-1).
+ * Desktop: Keeps original side-by-side layout.
  * @param {string} key - 'upholds', 'conflicts', 'neutral'
  * @param {string} title - The button text
  * @param {number} count - The number for the badge
@@ -677,16 +678,33 @@ function renderTabButton(key, title, count, isActive) {
         neutral: { icon: 'M18 12H6', color: 'gray' },
     };
     const config = groupConfig[key];
+    
+    // State Styles (these are toggled by the event listener)
     const activeClasses = `border-${config.color}-500 text-${config.color}-600 dark:border-${config.color}-500 dark:text-${config.color}-500`;
     const inactiveClasses = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600';
     
+    // Responsive Layout Styles
+    // flex-1: makes them equal width
+    // flex-col sm:flex-row: stacked on mobile, inline on desktop
+    const layoutClasses = "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-3 sm:py-4 px-1 sm:px-3 text-center border-b-2 font-medium text-xs sm:text-sm focus:outline-none transition-colors duration-200";
+
     return `
         <button data-tab-target="#tab-${key}" 
-                class="tab-btn ${isActive ? activeClasses : inactiveClasses} flex items-center gap-2 py-4 px-3 text-center border-b-2 font-medium text-sm focus:outline-none" 
+                class="tab-btn ${isActive ? activeClasses : inactiveClasses} ${layoutClasses}" 
                 aria-current="${isActive ? 'page' : 'false'}">
-            <svg class="w-5 h-5 text-${config.color}-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${config.icon}"></path></svg>
-            <span>${title}</span>
-            <span class="bg-${config.color}-100 text-${config.color}-800 dark:bg-${config.color}-900 dark:text-${config.color}-300 ml-1 px-2 py-0.5 rounded-full text-xs font-medium">${count}</span>
+            
+            <!-- Icon: slightly larger on mobile for touch targets -->
+            <svg class="w-5 h-5 sm:w-5 sm:h-5 text-${config.color}-500 mb-0.5 sm:mb-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${config.icon}"></path>
+            </svg>
+            
+            <!-- Text & Badge Wrapper -->
+            <div class="flex items-center gap-1.5">
+                <span>${title}</span>
+                <span class="bg-${config.color}-100 text-${config.color}-800 dark:bg-${config.color}-900 dark:text-${config.color}-300 px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium">
+                    ${count}
+                </span>
+            </div>
         </button>
     `;
 }
