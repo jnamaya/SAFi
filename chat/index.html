@@ -6,26 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>SAFi - The Governance Engine For AI</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-  <!--
-    NOTE: In a real Capacitor app, this CSS file would be bundled locally.
-    Using 'css/styles.css' as per the provided file structure.
-  -->
-  <link rel="stylesheet" href="css/styles.css">
-
- <script>
-    tailwind.config = { darkMode: 'class' };
-  </script>
-  <script>
+  <script src="js/marked.min.js"></script>
+  <script src="js/purify.min.js"></script>
+<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 font-sans">
+<link rel="stylesheet" href="css/highlight-theme.css">
+<script src="js/highlight.min.js"></script>
+<link href="css/main.css" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<script>
     // Manages light/dark mode persistence
     const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -35,7 +23,6 @@
     }
   </script>
 
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-NBYEV6VJGX"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}

@@ -57,3 +57,9 @@ safi_app/config.py
 
 # benchmarks
 /benchmarks
+
+/var/www/safi/chat/node_modules
+/var/www/safi/chat/package.json 
+/var/www/safi/chat/tailwind.config.js
+/var/www/safi/chat/tailwindcss
+/var/www/safi/chat/package-lock.json
