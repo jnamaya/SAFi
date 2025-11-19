@@ -6,15 +6,103 @@ import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import { playSpeech } from './tts-audio.js'; 
 import { iconPlay } from './ui-render-constants.js'; 
 
-// --- NEW: Icons for Copy Button ---
+// --- ICONS ---
 const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
 const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
-// --- END NEW ---
 
-// NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
+// --- CONFIG: Persona-Specific Loading Messages ---
+const LOADING_MESSAGES = {
+    default: [
+        "Consulting with the Intellect...",
+        "Structuring the response...",
+        "Checking against safety guidelines...",
+        "Finalizing output..."
+    ],
+    "The Philosopher": [
+        "Consulting Aristotle's Ethics...",
+        "Applying the Golden Mean...",
+        "Analyzing for Eudaimonia...",
+        "Ensuring practical wisdom (Phronesis)..."
+    ],
+    "The Bible Scholar": [
+        "Consulting the Berean Standard Bible...",
+        "Analyzing historical context...",
+        "Checking cross-references...",
+        "Synthesizing theological consensus..."
+    ],
+    "The Fiduciary": [
+        "Analyzing financial context...",
+        "Checking for fiduciary alignment...",
+        "Ensuring objective, non-advisory tone...",
+        "Verifying disclaimers..."
+    ],
+    "The Jurist": [
+        "Reviewing Constitutional precedents...",
+        "Analyzing via the Bill of Rights...",
+        "Checking separation of powers...",
+        "Ensuring legal neutrality..."
+    ],
+    "The Health Navigator": [
+        "Reviewing medical terminology...",
+        "Checking patient privacy guidelines...",
+        "Ensuring non-diagnostic tone...",
+        "Structuring clear guidance..."
+    ],
+    "The SAFi Guide": [
+        "Searching SAFi documentation...",
+        "Verifying architecture details...",
+        "Checking framework concepts...",
+        "Formatting technical explanation..."
+    ]
+};
 
 // --- MARKDOWN & HIGHLIGHTING SETUP ---
+
+// 1. Create a custom renderer to override specific HTML generation
+const renderer = new marked.Renderer();
+
+// 2. Override the 'table' renderer to wrap it in a scrollable div
+// FIXED for Marked v15+: Accepts a single 'token' object instead of header/body strings
+renderer.table = function(token) {
+    let header = '';
+    let body = '';
+    
+    // Reconstruct the header HTML using the renderer's own cell method
+    // Marked v15 stores header cells in token.header
+    let headerRow = '';
+    if (token.header) {
+        for (const cell of token.header) {
+            headerRow += this.tablecell(cell); 
+        }
+    }
+    header += this.tablerow({ text: headerRow });
+
+    // Reconstruct the body HTML
+    // Marked v15 stores rows in token.rows
+    if (token.rows) {
+        for (const row of token.rows) {
+            let bodyRow = '';
+            for (const cell of row) {
+                 bodyRow += this.tablecell(cell);
+            }
+            body += this.tablerow({ text: bodyRow });
+        }
+    }
+    
+    if (body) body = `<tbody>${body}</tbody>`;
+
+    // Wrap in the scrollable container
+    return `<div class="table-wrapper">
+              <table>
+                <thead>${header}</thead>
+                ${body}
+              </table>
+            </div>`;
+};
+
+// 3. Apply options including the custom renderer
 marked.setOptions({
+  renderer: renderer, 
   breaks: false, 
   gfm: true,
   mangle: false,
@@ -25,36 +113,25 @@ marked.setOptions({
   }
 });
 
-// --- NEW: Markdown-to-Plain-Text Converter ---
 /**
  * Converts a markdown string to plain text by stripping all tags.
- * @param {string} markdown - The markdown text.
- * @returns {string} - The plain text.
  */
 function _markdownToPlainText(markdown) {
     try {
-        // 1. Parse markdown to HTML
         const html = marked.parse(markdown);
-        // 2. Create a temporary element
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
-        // 3. Get the plain text content
         return tempDiv.textContent || tempDiv.innerText || '';
     } catch (e) {
         console.error("Error converting markdown to plain text", e);
-        return markdown; // Fallback to raw text
+        return markdown;
     }
 }
-// --- END NEW ---
 
 // --- MESSAGE RENDERING ---
 
 let lastRenderedDay = '';
 
-/**
- * Inserts a day divider if the date is different from the last rendered message.
- * @param {Date} date - The date of the current message.
- */
 export function maybeInsertDayDivider(date) {
   ui._ensureElements();
   const key = date.toLocaleDateString();
@@ -67,10 +144,6 @@ export function maybeInsertDayDivider(date) {
   }
 }
 
-/**
- * Displays a simple "Hi [Name]" greeting when a new chat starts.
- * @param {string} firstName 
- */
 export function displaySimpleGreeting(firstName) {
   ui._ensureElements();
   const existingGreeting = ui.elements.chatWindow.querySelector('.simple-greeting');
@@ -82,19 +155,11 @@ export function displaySimpleGreeting(firstName) {
   ui.elements.chatWindow.appendChild(greetingDiv);
 }
 
-/**
- * Attaches click handlers to suggestion buttons.
- * @param {HTMLElement} container - The element containing the buttons (either .ai-content-wrapper or .message-container)
- */
 function _attachSuggestionHandlers(container) {
     if (!container) return;
-    
     container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
-      // Remove old listener to prevent duplicates, just in case
       btn.replaceWith(btn.cloneNode(true));
     });
-
-    // Add new listeners to the new nodes
     container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const promptText = btn.textContent.replace(/"/g, '').trim();
@@ -103,11 +168,9 @@ function _attachSuggestionHandlers(container) {
             ui.elements.messageInput.style.height = 'auto'; 
             ui.elements.messageInput.style.height = `${ui.elements.messageInput.scrollHeight}px`; 
             ui.elements.messageInput.focus();
-            // --- FIX: Click the send button to send the message ---
             if (ui.elements.sendButton) {
                 ui.elements.sendButton.click();
             }
-            // --- END FIX ---
             const suggestionBox = btn.closest('.prompt-suggestions-container');
             if (suggestionBox) {
                 suggestionBox.remove();
@@ -116,16 +179,8 @@ function _attachSuggestionHandlers(container) {
     });
 }
 
-/**
- * Renders the HTML for suggestion buttons.
- * @param {string[]} suggestedPrompts - A list of prompt strings.
- * @param {boolean} isBlocked - Whether the message was blocked.
- * @returns {string} - The HTML string for the suggestions block.
- */
 function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
-    if (!suggestedPrompts || suggestedPrompts.length === 0) {
-        return '';
-    }
+    if (!suggestedPrompts || suggestedPrompts.length === 0) return '';
 
     const promptsList = suggestedPrompts.map(p => 
         `<button class="ai-prompt-suggestion-btn text-left w-full p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors border border-neutral-200 dark:border-neutral-700 text-sm italic">
@@ -143,9 +198,6 @@ function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
     `;
 }
 
-/**
- * Displays a single chat message (user or AI).
- */
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
   ui._ensureElements();
   const emptyState = ui.elements.chatWindow.querySelector('.empty-state-container');
@@ -162,71 +214,54 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   }
   
   const suggestedPrompts = options.suggestedPrompts || [];
-
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
 
   let ttsButtonElement = null; 
-  // --- NEW: Define copy button ---
   let copyButtonElement = null;
 
-  // --- MODIFIED --- (Blank Message Fix)
-  // This is the final safeguard. If 'text' arrives as null or undefined,
-  // it will be replaced with the fallback string, preventing a blank message.
-  const final_text = String(text ?? '[Sorry, the model returned an empty response.]');
-  // --- END MODIFIED ---
+  // --- BUG FIX: SAFEGUARD AGAINST RAW OBJECTS ---
+  // If the AI returns a raw object (like stock data) instead of a string,
+  // we convert it to a JSON code block so the user can see it instead of "[object Object]".
+  let final_text;
+  if (typeof text === 'object' && text !== null) {
+      // Pretty print the object as JSON
+      final_text = "```json\n" + JSON.stringify(text, null, 2) + "\n```";
+  } else {
+      final_text = String(text ?? '[Sorry, the model returned an empty response.]');
+  }
+  // --- END FIX ---
 
   if (sender === 'ai') {
     const profileName = (payload && payload.profile) ? payload.profile : null;
     const avatarUrl = getAvatarForProfile(profileName);
     
     let promptsHtml = '';
-    // --- MODIFIED --- (Feature 2)
-    // This block now only renders suggestions for *blocked* answers
-    // Approved-answer suggestions are loaded async by updateMessageWithAudit
     if (suggestedPrompts.length > 0) {
         const isBlocked = final_text.includes("🛑 **The answer was blocked**");
-        
-        if (isBlocked) {
-            promptsHtml = _renderSuggestionsHtml(suggestedPrompts, true);
-        }
-        // --- ADDED: Render suggestions if they came with an approved answer ---
-        // (This happens when loading history)
-        else {
-            promptsHtml = _renderSuggestionsHtml(suggestedPrompts, false);
-        }
-        // --- END ADDED ---
+        promptsHtml = _renderSuggestionsHtml(suggestedPrompts, isBlocked);
     }
-    // --- END MODIFIED ---
 
-    // --- TTS Button Creation ---
+    // --- TTS Button ---
     ttsButtonElement = document.createElement('button'); 
     ttsButtonElement.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
     ttsButtonElement.setAttribute('aria-label', 'Play message audio');
     ttsButtonElement.innerHTML = iconPlay; 
-    
     ttsButtonElement.addEventListener('click', () => {
         playSpeech(final_text, ttsButtonElement); 
     });
-    // --- END TTS ---
 
-    // --- NEW: Copy Button Creation ---
+    // --- Copy Button ---
     copyButtonElement = document.createElement('button');
     copyButtonElement.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
     copyButtonElement.setAttribute('aria-label', 'Copy message text');
     copyButtonElement.innerHTML = iconCopy;
 
     copyButtonElement.addEventListener('click', () => {
-        // 1. Convert markdown to plain text
         const plainText = _markdownToPlainText(final_text);
-        
-        // 2. Copy to clipboard
         navigator.clipboard.writeText(plainText).then(() => {
-            // 3. Show success feedback
             ui.showToast('Copied to clipboard', 'success');
-            // 4. Change icon to checkmark
             copyButtonElement.innerHTML = iconCheck;
-            // 5. Revert icon after 2 seconds
             setTimeout(() => {
                 copyButtonElement.innerHTML = iconCopy;
             }, 2000);
@@ -235,7 +270,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             ui.showToast('Failed to copy text', 'error');
         });
     });
-    // --- END NEW ---
 
     messageDiv.innerHTML = `
       <div class="ai-avatar">
@@ -243,7 +277,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       </div>
       <div class="ai-content-wrapper">
         <div class="chat-bubble">
-          <!-- Content will be injected here -->
           <div class="meta"></div>
         </div>
         ${promptsHtml}
@@ -271,7 +304,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const metaDiv = messageDiv.querySelector('.meta');
   const leftMeta = document.createElement('div');
   const rightMeta = document.createElement('div');
-  
   rightMeta.className = 'flex items-center gap-2 ml-auto';
 
   const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
@@ -279,8 +311,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       const whyButton = document.createElement('button');
       whyButton.className = 'why-btn';
       whyButton.textContent = 'View Ethical Reasoning';
-      // This click handler has the "payload" as it exists when displayMessage is called
-      // It might be stale, which is why updateMessageWithAudit MUST fix it.
       whyButton.addEventListener('click', () => whyHandler(payload));
       leftMeta.appendChild(whyButton);
   }
@@ -291,35 +321,22 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   stampDiv.className = 'stamp text-xs'; 
   stampDiv.textContent = formatTime(date);
   
-  // --- NEW: Add Copy and TTS buttons ---
   if (sender === 'ai') {
-      if (copyButtonElement) {
-          rightMeta.prepend(copyButtonElement);
-      }
-      if (ttsButtonElement) {
-          rightMeta.prepend(ttsButtonElement);
-      }
+      if (copyButtonElement) rightMeta.prepend(copyButtonElement);
+      if (ttsButtonElement) rightMeta.prepend(ttsButtonElement);
   }
-  // --- END NEW ---
 
   rightMeta.appendChild(stampDiv);
   metaDiv.appendChild(rightMeta);
   
   messageContainer.appendChild(messageDiv);
-  
-  // This was missing, adding it back to ensure window scrolls
   ui.elements.chatWindow.appendChild(messageContainer);
   ui.scrollToBottom();
   
-  // Attach handlers for any suggestions that were rendered (i.e., blocked or from history)
   _attachSuggestionHandlers(messageContainer);
-  
   return messageContainer;
 }
 
-/**
- * Adds the "View Ethical Reasoning" button and async suggestions to an existing message.
- */
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
     ui._ensureElements();
     const messageContainer = document.querySelector(`[data-message-id="${messageId}"]`);
@@ -327,63 +344,39 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 
     const hasLedger = payload && Array.isArray(payload.ledger) && payload.ledger.length > 0;
     
-    // --- 1. Add/Update "Why" button ---
     if (hasLedger) {
         const metaDiv = messageContainer.querySelector('.meta');
-        if (!metaDiv) return; // Should not happen
+        if (!metaDiv) return;
 
-        // --- THIS IS THE FIX ---
-        // Find and remove any *existing* "Why" button.
-        // This old button has a "stale closure" with the old, incomplete payload.
         const oldWhyButton = metaDiv.querySelector('.why-btn');
-        if (oldWhyButton) {
-            oldWhyButton.remove();
-        }
-        // --- END FIX ---
+        if (oldWhyButton) oldWhyButton.remove();
 
-        // Create the new button with the new, correct payload
         const whyButton = document.createElement('button');
         whyButton.className = 'why-btn';
         whyButton.textContent = 'View Ethical Reasoning';
-        // This click handler now uses the "payload" passed into updateMessageWithAudit,
-        // which contains the fully updated spirit_scores_history.
         whyButton.addEventListener('click', () => whyHandler(payload)); 
 
-        // Find the left-side container (or create it)
         let leftMeta = metaDiv.querySelector('div:first-child');
-        
-        // Ensure leftMeta is the correct container (not the rightMeta)
         if (!leftMeta || leftMeta.classList.contains('flex')) { 
             leftMeta = document.createElement('div');
             metaDiv.prepend(leftMeta);
         }
-        
-        // Prepend the new button to appear first
         leftMeta.prepend(whyButton);
     }
 
-    // --- 2. Add suggestions if they arrived with the audit ---
     const existingSuggestions = messageContainer.querySelector('.prompt-suggestions-container');
     const suggestedPrompts = payload.suggested_prompts || [];
 
-    // Only add if they don't exist and we have new ones
     if (!existingSuggestions && suggestedPrompts.length > 0) {
         const aiContentWrapper = messageContainer.querySelector('.ai-content-wrapper');
         if (aiContentWrapper) {
-            // Render with isBlocked=false (for "Suggested follow-ups:")
             const promptsHtml = _renderSuggestionsHtml(suggestedPrompts, false); 
             aiContentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
-            
-            // Re-attach handlers for these *new* buttons
             _attachSuggestionHandlers(aiContentWrapper);
         }
     }
 }
 
-
-/**
- * Displays the AI thinking indicator with cycling status messages.
- */
 export function showLoadingIndicator(profileName) {
   ui._ensureElements();
   ui.clearLoadingInterval(); 
@@ -409,7 +402,7 @@ export function showLoadingIndicator(profileName) {
         <div class="ai-content-wrapper">
             <div class="flex items-center gap-3">
               <div class="thinking-spinner"></div>
-              <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic">Thinking...</span>
+              <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic transition-opacity duration-200">Thinking...</span>
             </div>
         </div>
     </div>`;
@@ -418,58 +411,30 @@ export function showLoadingIndicator(profileName) {
 
   const statusSpan = loadingContainer.querySelector('#thinking-status');
 
-  const stage1IntellectMessages = [
-    "Consulting with the Intellect...",
-    "Packaging the prompt for the AI model...",
-    "Drafting response..."
-  ];
-  
-  const stage2WillMessages = [
-    "Intellect draft received. Consulting Will faculty...",
-    "Analyzing draft against non-negotiable rules...",
-    "Running gatekeeper check..."
-  ];
-
-  const stage3DelayedMessages = [
-    "This is a complex prompt, so generation is taking longer than usual...",
-    "If you are using claude,Gemini or GTP for the Intellect, those models take longer, sorry..",
-    "Ensuring a high-quality draft, please wait...",
-    "Almost done hang on...",
-    "Just a few more moments..."
-  ];
-
+  // --- PERSONA-SPECIFIC LOGIC ---
+  const messages = LOADING_MESSAGES[profileName] || LOADING_MESSAGES.default;
   let stage = 0;
+
+  if (statusSpan) statusSpan.textContent = messages[0];
 
   const updateStatus = () => {
     stage++;
-    let messagePool;
-
-    if (stage === 1) {
-      messagePool = stage1IntellectMessages;
-    } else if (stage === 2) {
-      messagePool = stage2WillMessages;
-    } else {
-      messagePool = stage3DelayedMessages;
-    }
-    
-    const message = messagePool[Math.floor(Math.random() * messagePool.length)];
+    const message = messages[stage % messages.length];
     if (statusSpan) {
-      statusSpan.textContent = message;
+        statusSpan.style.opacity = '0';
+        setTimeout(() => {
+            statusSpan.textContent = message;
+            statusSpan.style.opacity = '1';
+        }, 200);
     }
   };
 
-  updateStatus();
-
-  const randomDelay = 3000 + (Math.random() * 1500);
-  const interval = setInterval(updateStatus, randomDelay);
+  const interval = setInterval(updateStatus, 2500);
   ui.setLoadingInterval(interval); 
 
   return loadingContainer;
 }
 
-/**
- * Clears all messages from the chat window and resets the day divider state.
- */
 export function resetChatView() {
   ui._ensureElements();
   lastRenderedDay = '';
@@ -478,15 +443,10 @@ export function resetChatView() {
   }
 }
 
-/**
- * Displays the initial empty state with profile information and example prompts.
- */
 export function displayEmptyState(activeProfile, promptClickHandler) {
   ui._ensureElements();
   const existingEmptyState = document.querySelector('.empty-state-container');
-  if (existingEmptyState) {
-    existingEmptyState.remove();
-  }
+  if (existingEmptyState) existingEmptyState.remove();
 
   if (activeProfile && ui.elements.chatWindow) {
     const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
@@ -502,11 +462,8 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
     const emptyStateContainer = document.createElement('div');
     emptyStateContainer.className = 'empty-state-container';
     
-    // --- THIS IS THE FIX ---
-    // Add margin and set width to 98%
     emptyStateContainer.style.width = '98%';
     emptyStateContainer.style.margin = '0 auto';
-    // --- END FIX ---
 
     emptyStateContainer.innerHTML = `<div class="text-center pt-8">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
@@ -516,7 +473,7 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         ${descriptionHtml}
          <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
+            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
         </div>
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-6xl mx-auto">${promptsHtml}</div>

@@ -28,8 +28,6 @@ class WillGate:
     persona's profile and value set, and then *delegating* the LLM call
     to the LLMProvider to get an "approve" or "violation" decision.
     
-    This faculty is "blinded" to the user's original prompt by default
-    to prevent "Conflicting Instruction Attacks" (jailbreaks).
     """
 
     def __init__(

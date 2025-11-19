@@ -30,33 +30,33 @@ export async function handleTogglePin(id, isPinned, activeProfileData, user) {
     ui.closeAllConvoMenus();
     const newPinState = !isPinned;
     const oldPinState = isPinned; // Store old state for rollback
-    
+
     try {
         // 1. Optimistic UI Update (Update local cache instantly)
         // This is done BEFORE the network call to make the change feel instant
-        await cache.updateConvoInList(id, { is_pinned: newPinState }); 
-        
+        await cache.updateConvoInList(id, { is_pinned: newPinState });
+
         // 2. Refresh list only to update sidebar order/title without scrolling chat
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-        
+
         // 3. API Call (Sync to server)
         const response = await api.togglePinConversation(id, newPinState);
-        
+
         if (response === 'QUEUED') {
             ui.showToast(newPinState ? 'Pin queued.' : 'Unpin queued.', 'info');
         } else {
             ui.showToast(newPinState ? 'Conversation pinned.' : 'Conversation unpinned.', 'success');
         }
-        
+
         // 4. Reload list again to ensure server-side update is reflected
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
     } catch (error) {
         console.error('Failed to toggle pin status:', error);
         ui.showToast('Could not save pin status.', 'error');
-        
+
         // 5. Rollback on failure 
-        await cache.updateConvoInList(id, { is_pinned: oldPinState }); 
+        await cache.updateConvoInList(id, { is_pinned: oldPinState });
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
     }
 }
@@ -92,10 +92,10 @@ export async function loadConversations(activeProfileData, user, promptClickHand
     try {
         // 2. Fetch fresh data (uses offlineManager/cache)
         const response = await api.fetchConversations();
-        
-        const conversations = Array.isArray(response) ? response 
-          : (response && Array.isArray(response.conversations)) ? response.conversations
-          : [];
+
+        const conversations = Array.isArray(response) ? response
+            : (response && Array.isArray(response.conversations)) ? response.conversations
+                : [];
 
         // 3. Save new list and render if different
         await cache.saveConvoList(conversations);
@@ -109,20 +109,20 @@ export async function loadConversations(activeProfileData, user, promptClickHand
             } else if (conversations?.length > 0) {
                 // Original logic: load the last active or most recent convo
                 const targetConvoId = (currentConversationId && conversations.some(c => c.id === currentConversationId))
-                        ? currentConversationId
-                        : conversations[0].id;
-                
+                    ? currentConversationId
+                    : conversations[0].id;
+
                 await switchConversation(targetConvoId, activeProfileData, user, showModal, true); // Scroll to bottom on full load
             } else {
                 // Original logic: no convos exist, so start a new one
-                await startNewConversation(false, activeProfileData, user, promptClickHandler); 
+                await startNewConversation(false, activeProfileData, user, promptClickHandler);
             }
             // --- END MODIFIED BLOCK ---
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
         if (cachedConvos.length === 0) {
-             ui.showToast('Failed to load conversations. Check connectivity.', 'error');
+            ui.showToast('Failed to load conversations. Check connectivity.', 'error');
         }
     }
 }
@@ -134,7 +134,7 @@ export async function loadConversations(activeProfileData, user, promptClickHand
  */
 export async function refreshConvoListOnly(activeProfileData, user, showModal) {
     // This calls loadConversations but explicitly sets shouldSwitchChat to false.
-    return loadConversations(activeProfileData, user, () => {}, showModal, false);
+    return loadConversations(activeProfileData, user, () => { }, showModal, false);
 }
 
 
@@ -149,7 +149,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     }
 
     convoList.innerHTML = '';
-    
+
     // --- NEW: Sorting Logic (Pinned first, then by date) ---
     conversations.sort((a, b) => {
         // Pinned conversations always come first
@@ -165,11 +165,11 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     const handlers = {
         switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal, true), // Click always switches/scrolls
         // NOTE: handleRename, handleDelete, handleTogglePin are now defined at the module top level.
-        renameHandler: handleRename, 
+        renameHandler: handleRename,
         deleteHandler: handleDelete,
         pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user) // Pass all args
     };
-    
+
     // Separate pinned and unpinned lists
     const pinnedConversations = conversations.filter(c => c.is_pinned);
     const unpinnedConversations = conversations.filter(c => !c.is_pinned);
@@ -179,7 +179,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         pinnedHeader.className = 'px-2 pt-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2';
         pinnedHeader.textContent = 'Pinned Conversations';
         convoList.appendChild(pinnedHeader);
-        
+
         pinnedConversations.forEach(convo => {
             const link = uiAuthSidebar.renderConversationLink(convo, handlers);
             convoList.appendChild(link);
@@ -206,7 +206,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 }
 
 
-export async function startNewConversation(isInitialLoad = false, activeProfileData, user, promptClickHandler) { 
+export async function startNewConversation(isInitialLoad = false, activeProfileData, user, promptClickHandler) {
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
 
@@ -222,7 +222,7 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
         const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
         uiMessages.displaySimpleGreeting(firstName);
         uiMessages.displayEmptyState(activeProfileData, promptClickHandler);
-    } 
+    }
     // We rely on sendMessage to create the conversation when the user types the first message.
 }
 
@@ -237,7 +237,7 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
 export async function switchConversation(id, activeProfileData, user, showModal, shouldScroll = false) {
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
-    
+
     currentConversationId = id;
     uiAuthSidebar.setActiveConvoLink(id);
     uiMessages.resetChatView();
@@ -261,7 +261,7 @@ export async function switchConversation(id, activeProfileData, user, showModal,
         // ADDED NULL CHECK: Safely get first name
         const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
         uiMessages.displaySimpleGreeting(firstName);
-        uiMessages.displayEmptyState(activeProfileData, (text) => { 
+        uiMessages.displayEmptyState(activeProfileData, (text) => {
             ui.elements.messageInput.value = text;
             ui.elements.sendButton.disabled = false;
             autoSize();
@@ -272,13 +272,13 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     try {
         // 2. Then fetch from network (or network's API cache via offlineManager)
         const historyResponse = await api.fetchHistory(id);
-        const history = Array.isArray(historyResponse) ? historyResponse 
-          : (historyResponse && Array.isArray(historyResponse.history)) ? historyResponse.history
-          : [];
+        const history = Array.isArray(historyResponse) ? historyResponse
+            : (historyResponse && Array.isArray(historyResponse.history)) ? historyResponse.history
+                : [];
 
         // 3. Save to local UI state cache, re-render, and scroll
         await cache.saveConvoHistory(id, history);
-        
+
         // Only re-render if the newly fetched history is different from the cache we rendered,
         // or if we initially rendered the empty state (cachedHistory.length === 0).
         if (cachedHistory.length === 0 || JSON.stringify(cachedHistory) !== JSON.stringify(history)) {
@@ -302,7 +302,7 @@ function renderHistory(history, user, showModal) {
         const date = turn.timestamp ? new Date(turn.timestamp) : new Date();
         const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
         const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
-        
+
         // --- THIS IS THE FIX ---
         // Parse `suggested_prompts` from a string to an array, just like we do for the ledger.
         let parsedSuggestions = [];
@@ -314,7 +314,7 @@ function renderHistory(history, user, showModal) {
             }
         }
         // --- END FIX ---
-        
+
         // --- THIS IS THE FIX ---
         // Filter out null/undefined scores *before* passing to the trend line.
         const scoresHistory = history.slice(0, i + 1)
@@ -329,7 +329,8 @@ function renderHistory(history, user, showModal) {
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
             // --- MODIFIED: Use the parsed array ---
-            suggested_prompts: parsedSuggestions
+            suggested_prompts: parsedSuggestions,
+            message_id: turn.message_id // Ensure message_id is in payload
         };
 
         const options = {};
@@ -345,15 +346,28 @@ function renderHistory(history, user, showModal) {
             date,
             turn.message_id,
             payload,
-            (p) => showModal('conscience', p),
+            async (p) => {
+                // --- FIX: Fetch fresh history on click ---
+                const freshHistory = await cache.loadConvoHistory(currentConversationId);
+                const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
+
+                let freshScores = [];
+                if (msgIndex > -1) {
+                    freshScores = freshHistory.slice(0, msgIndex + 1)
+                        .map(t => t.spirit_score)
+                        .filter(s => s !== null && s !== undefined);
+                }
+
+                ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+            },
             options
         );
-        
+
         // If audit data is missing, poll for it
         // --- MODIFIED: Use the parsed array for the check ---
         const suggestions = parsedSuggestions;
         const isBlocked = turn.content && turn.content.includes("🛑 **The answer was blocked**");
-        
+
         // We poll if:
         // 1. The audit is pending
         // 2. AND (it's a blocked message OR it's an approved message missing suggestions)
@@ -373,12 +387,12 @@ export async function sendMessage(activeProfileData, user) {
     if (!userMessage) return;
 
     let isNewConversation = false;
-    
+
     if (!currentConversationId) {
         isNewConversation = true;
         try {
             const newConvo = await api.createNewConversation();
-            
+
             if (newConvo === 'QUEUED') {
                 ui.showToast('Offline: Cannot start new chat now.', 'error');
                 return;
@@ -386,17 +400,17 @@ export async function sendMessage(activeProfileData, user) {
 
             currentConversationId = newConvo.id;
             // The API response now includes is_pinned: false
-            const newConvoMeta = { 
-                id: newConvo.id, 
-                title: 'Untitled', 
+            const newConvoMeta = {
+                id: newConvo.id,
+                title: 'Untitled',
                 last_updated: new Date().toISOString(),
                 is_pinned: newConvo.is_pinned === true
             };
             await cache.updateConvoInList(newConvo.id, newConvoMeta);
-            
-            const handlers = { 
-                switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true), 
-                renameHandler: handleRename, 
+
+            const handlers = {
+                switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true),
+                renameHandler: handleRename,
                 deleteHandler: handleDelete,
                 pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user)
             };
@@ -412,18 +426,18 @@ export async function sendMessage(activeProfileData, user) {
 
     const buttonIcon = document.getElementById('button-icon');
     const buttonLoader = document.getElementById('button-loader');
-    
+
     buttonIcon.classList.add('hidden');
     buttonLoader.classList.remove('hidden');
     ui.elements.sendButton.disabled = true;
-    
+
     const now = new Date();
     // ADDED NULL CHECK: Safely get user info
     const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
     const userMessageId = crypto.randomUUID();
 
     uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, { avatarUrl: pic });
-    
+
     const userMessageObject = {
         role: 'user',
         content: userMessage,
@@ -432,19 +446,19 @@ export async function sendMessage(activeProfileData, user) {
         audit_status: 'n/a' // User messages don't need audit
     };
     await cache.addMessageToHistory(currentConversationId, userMessageObject);
-    
+
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
     autoSize();
-    
+
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     try {
         const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
-        
+
         ui.clearLoadingInterval();
-        if(loadingIndicator) loadingIndicator.remove();
-        
+        if (loadingIndicator) loadingIndicator.remove();
+
         if (initialResponse === 'QUEUED') {
             ui.showToast('Message queued, will send when online.', 'info');
             // Remove user message from display/cache as it will be resent on flush.
@@ -457,7 +471,7 @@ export async function sendMessage(activeProfileData, user) {
         // --- START BUG FIX: Handle empty/missing data from API ---
         // 1. Get the answer, providing a fallback for the "blank message" bug.
         const mainAnswer = initialResponse.finalOutput ?? '[Sorry, the model returned an empty response.]';
-        
+
         // 2. Get all other data, defaulting to safe values
         const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
@@ -471,7 +485,7 @@ export async function sendMessage(activeProfileData, user) {
 
         // Fetch full history *including* the user message we just added
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
-        
+
         // --- THIS IS THE FIX ---
         // Filter out null/undefined scores *before* passing to the trend line.
         const scoresHistoryForPayload = historyForPayload
@@ -479,10 +493,10 @@ export async function sendMessage(activeProfileData, user) {
             .filter(s => s !== null && s !== undefined);
         // Add the new score (if it exists) to the history for the trend line
         if (spiritScore !== null && spiritScore !== undefined) {
-             scoresHistoryForPayload.push(spiritScore);
+            scoresHistoryForPayload.push(spiritScore);
         }
         // --- END FIX ---
-        
+
         const aiMessageObject = {
             role: 'ai',
             content: mainAnswer,
@@ -495,9 +509,9 @@ export async function sendMessage(activeProfileData, user) {
             suggested_prompts: suggestions,
             // --- FIX: Use status from orchestrator ---
             // If blocked, it's 'complete', otherwise 'pending'
-            audit_status: isBlocked ? 'complete' : 'pending' 
+            audit_status: isBlocked ? 'complete' : 'pending'
         };
-        
+
         await cache.addMessageToHistory(currentConversationId, aiMessageObject);
 
         const initialPayload = {
@@ -505,23 +519,37 @@ export async function sendMessage(activeProfileData, user) {
             profile: profileName,
             values: values,
             spirit_score: spiritScore,
-            spirit_scores_history: scoresHistoryForPayload // Pass the filtered list
+            spirit_scores_history: scoresHistoryForPayload, // Pass the filtered list
+            message_id: messageId // Ensure message_id is in payload
         };
-        
+
         // 6. Use these safe variables to display the message
         uiMessages.displayMessage(
-          'ai',
-          mainAnswer,
-          new Date(),
-          messageId,
-          initialPayload,
-          (payload) => ui.showModal('conscience', payload),
-          { suggestedPrompts: suggestions } 
+            'ai',
+            mainAnswer,
+            new Date(),
+            messageId,
+            initialPayload,
+            async (p) => {
+                // --- FIX: Fetch fresh history on click ---
+                const freshHistory = await cache.loadConvoHistory(currentConversationId);
+                const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
+
+                let freshScores = [];
+                if (msgIndex > -1) {
+                    freshScores = freshHistory.slice(0, msgIndex + 1)
+                        .map(t => t.spirit_score)
+                        .filter(s => s !== null && s !== undefined);
+                }
+
+                ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+            },
+            { suggestedPrompts: suggestions }
         );
         // --- END BUG FIX ---
-        
+
         const updateMeta = { last_updated: new Date().toISOString() };
-        
+
         if (initialResponse.newTitle && isNewConversation) {
             updateMeta.title = initialResponse.newTitle;
         }
@@ -544,7 +572,7 @@ export async function sendMessage(activeProfileData, user) {
             pollForAuditResults(messageId);
         }
         // --- END MODIFIED ---
-        
+
     } catch (error) {
         uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
@@ -566,14 +594,14 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             // Polling stopped, conversation switched/deleted
             return;
         }
-        
+
         attempts++;
 
         try {
             const auditResult = await api.fetchAuditResult(messageId);
-            
+
             // --- START FIX: Check for ledger OR suggestions ---
-            
+
             // Check if the auditResult is valid and has *something* new
             const rawLedger = auditResult?.ledger;
             const rawSuggestions = auditResult?.suggested_prompts;
@@ -583,7 +611,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
 
             // We update the UI if the audit is complete and has *either* a ledger *or* suggestions
             if (auditResult && (hasLedger || hasSuggestions)) {
-                
+
                 // Process Ledger (if it exists)
                 let parsedLedger = []; // Default to empty
                 if (rawLedger) {
@@ -593,7 +621,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                         parsedLedger = rawLedger;
                     }
                 }
-                
+
                 // --- THIS IS THE FIX ---
                 // Process Suggestions (if they exist)
                 let parsedSuggestions = []; // Default to empty
@@ -611,7 +639,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                 const history = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = history.findIndex(m => m.message_id === messageId);
                 if (msgIndex > -1) {
-                    
+
                     history[msgIndex] = {
                         ...history[msgIndex], // Keeps old `content`
                         ...auditResult,       // Adds new audit data (ledger, score, etc.)
@@ -623,27 +651,41 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
 
                     await cache.saveConvoHistory(currentConversationId, history);
                 }
-                
+
                 // 2. Load updated history for accurate trend line
                 const updatedHistory = await cache.loadConvoHistory(currentConversationId);
-                
+
                 // --- THIS IS THE FIX ---
                 // Filter out null/undefined scores *before* passing to the trend line.
                 const spiritScoresHistory = updatedHistory
-                     .map(t => t.spirit_score)
-                     .filter(s => s !== null && s !== undefined);
+                    .map(t => t.spirit_score)
+                    .filter(s => s !== null && s !== undefined);
                 // --- END FIX ---
-    
+
                 // 3. Build the payload for the UI
-                const payload = { 
+                const payload = {
                     ...auditResult, // This will include spirit_score, note
                     ledger: parsedLedger, // Pass parsed array
                     suggested_prompts: parsedSuggestions, // Pass parsed array
-                    spirit_scores_history: spiritScoresHistory 
+                    spirit_scores_history: spiritScoresHistory,
+                    message_id: messageId // Ensure message_id is in payload
                 };
-                
+
                 // 4. Update the UI
-                uiMessages.updateMessageWithAudit(messageId, payload, (p) => ui.showModal('conscience', p));
+                uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
+                    // --- FIX: Fetch fresh history on click ---
+                    const freshHistory = await cache.loadConvoHistory(currentConversationId);
+                    const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
+
+                    let freshScores = [];
+                    if (msgIndex > -1) {
+                        freshScores = freshHistory.slice(0, msgIndex + 1)
+                            .map(t => t.spirit_score)
+                            .filter(s => s !== null && s !== undefined);
+                    }
+
+                    ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+                });
                 resolve(auditResult);
             } else if (attempts >= maxAttempts) {
                 console.warn(`Polling timed out for message ${messageId}.`);
@@ -652,13 +694,13 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
                 setTimeout(() => executePoll(resolve, reject), interval);
             }
         } catch (error) {
-             const msg = error.message || '';
-             if (msg.includes('404') || msg.includes('UNAUTHORIZED')) {
+            const msg = error.message || '';
+            if (msg.includes('404') || msg.includes('UNAUTHORIZED')) {
                 // Not ready yet, retry
                 setTimeout(() => executePoll(resolve, reject), interval);
-             } else {
-                 console.error(`Error polling for audit on ${messageId}:`, error);
-             }
+            } else {
+                console.error(`Error polling for audit on ${messageId}:`, error);
+            }
         }
     };
 
@@ -685,16 +727,16 @@ export function autoSize() {
 export async function handleConfirmRename(activeProfileData, user) {
     const { id, oldTitle } = convoToRename;
     const newTitle = ui.elements.renameInput.value.trim();
-    
+
     if (newTitle && newTitle !== oldTitle) {
         try {
             await cache.updateConvoInList(id, { title: newTitle }); // Optimistic UI update
-            
+
             // NEW: Only refresh the list, do not switch chat or scroll
             await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-            
+
             const response = await api.renameConversation(id, newTitle);
-            
+
             if (response === 'QUEUED') {
                 ui.showToast('Rename queued.', 'info');
             } else {
@@ -703,7 +745,7 @@ export async function handleConfirmRename(activeProfileData, user) {
 
             // Reload conversations again after server response
             await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-            
+
             if (id === currentConversationId) {
                 uiAuthSidebar.updateChatTitle(newTitle);
             }
@@ -719,7 +761,7 @@ export async function handleConfirmRename(activeProfileData, user) {
 export async function handleConfirmDelete(activeProfileData, user) {
     const id = convoToDelete;
     if (!id) return;
-    
+
     try {
         await cache.deleteConvo(id); // Optimistic UI update
 
@@ -729,26 +771,26 @@ export async function handleConfirmDelete(activeProfileData, user) {
 
         // NEW: Only refresh the list, then if the current chat was deleted, start a new one
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-        
+
         if (currentConversationId === null) {
-             // If deleted chat was the active one, start a fresh view
-             
-             // --- THIS IS THE FIX ---
-             // Define the click handler locally, since we can't access the one from app.js
-             // This handler does what app.js's handleExamplePromptClick does.
-             const newChatPromptHandler = (promptText) => {
+            // If deleted chat was the active one, start a fresh view
+
+            // --- THIS IS THE FIX ---
+            // Define the click handler locally, since we can't access the one from app.js
+            // This handler does what app.js's handleExamplePromptClick does.
+            const newChatPromptHandler = (promptText) => {
                 ui.elements.messageInput.value = promptText;
-                autoSize(); 
+                autoSize();
                 ui.elements.sendButton.disabled = false;
                 sendMessage(activeProfileData, user);
-             };
-             // Pass the *real* handler, not the empty dummy function
-             await startNewConversation(false, activeProfileData, user, newChatPromptHandler); 
-             // --- END FIX ---
+            };
+            // Pass the *real* handler, not the empty dummy function
+            await startNewConversation(false, activeProfileData, user, newChatPromptHandler);
+            // --- END FIX ---
         }
 
         const response = await api.deleteConversation(id);
-        
+
         if (response === 'QUEUED') {
             ui.showToast('Delete queued.', 'info');
         } else {
@@ -762,7 +804,7 @@ export async function handleConfirmDelete(activeProfileData, user) {
         ui.showToast('Could not delete conversation.', 'error');
         // Note: Delete rollback is complex, rely on next sync to fix list if API failed but queue is cleared.
     }
-    
+
     ui.closeModal();
     convoToDelete = null;
 }
