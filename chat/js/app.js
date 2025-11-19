@@ -25,6 +25,8 @@ let user = null;
 let activeProfileData = {}; 
 let availableProfiles = []; 
 let availableModels = []; 
+// FLAG: Ensure listeners are only attached once
+let listenersAttached = false;
 
 // =================================================================
 // --- NATIVE HELPERS (MOVED TO TOP TO FIX REFERENCE ERROR) ---
@@ -174,6 +176,14 @@ async function checkLoginStatus() {
         uiAuthSidebar.updateUIForAuthState(user);
         
         if (user) {
+            // FIX: Only initialize the offline manager (and flush queue) IF we are logged in.
+            // This prevents the "401 Loop of Death" where pending prompts try to send while logged out.
+            try {
+                await offlineManager.initNetworkListener();
+            } catch (e) {
+                console.warn("Offline manager init warning:", e);
+            }
+
             // User is logged in, fetch necessary data
             const [profilesResponse, modelsResponse] = await Promise.all([
                 api.fetchAvailableProfiles(),
@@ -188,17 +198,12 @@ async function checkLoginStatus() {
             activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
             
             // Update the UI with the active profile
-            // THIS WILL ALSO UPDATE THE CHAT INPUT PLACEHOLDER (Feature 3)
             uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
-            // --- THIS IS THE FIX ---
-            // This function (which now lives in app.js) renders the content 
-            // for all control panel tabs, including the new "My Profile" tab.
+            // This function renders the content for all control panel tabs
             renderControlPanel();
-            // --- END FIX ---
             
             // Load the conversation list and the active chat
-            // This call should scroll to the bottom of the active chat
             await chat.loadConversations(
                 activeProfileData, 
                 user, 
@@ -294,10 +299,8 @@ function renderControlPanel() {
         handleModelsSave
     );
 
-    // --- NEW ---
     // Render "My Profile" Tab. This will fetch the data.
     uiSettingsModals.renderSettingsMyProfileTab();
-    // --- END NEW ---
 
     // Render App Settings Tab
     uiSettingsModals.renderSettingsAppTab(
@@ -324,10 +327,8 @@ async function handleProfileChange(newProfileKey) {
         const selectedProfile = availableProfiles.find(p => p.key === newProfileKey);
         ui.showToast(`Profile switched to ${selectedProfile.name}. Reloading...`, 'success');
         
-        // --- ADDED --- (Feature 1)
         // Set a flag to force a new chat window after the reload
         sessionStorage.setItem('forceNewChat', 'true');
-        // --- END ADDED ---
         
         setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
     } catch (error) {
@@ -373,14 +374,25 @@ function handleExamplePromptClick(promptText) {
 
 /** Attaches all non-dynamic event listeners */
 function attachEventListeners() {
-    // --- Auth ---
+    if (listenersAttached) return; // Prevent duplicates
+
+    // --- Auth Handlers (Explicit & Robust) ---
+    
+    // 1. Google Login
     if (ui.elements.loginButton) {
         if (isNative && GoogleAuth) {
            ui.elements.loginButton.addEventListener('click', handleNativeLogin); 
         } else {
-           // Fallback for web
-           ui.elements.loginButton.addEventListener('click', () => { window.location.href = api.urls.LOGIN; });
+           ui.elements.loginButton.addEventListener('click', () => { window.location.href = '/api/login'; });
         }
+    }
+
+    // 2. Microsoft Login (FIXED: Added Listener)
+    const microsoftBtn = document.getElementById('login-microsoft-button');
+    if (microsoftBtn) {
+        microsoftBtn.addEventListener('click', () => {
+            window.location.href = '/api/login/microsoft';
+        });
     }
 
     // --- Chat Composer ---
@@ -517,6 +529,8 @@ function attachEventListeners() {
     } catch (e) {
         console.error('Failed to add theme/network/app listener:', e);
     }
+
+    listenersAttached = true;
 }
 
 // --- BOOTSTRAP ---
@@ -525,8 +539,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Apply initial theme and set system bars
     applyTheme(localStorage.theme || 'system');
     
-    // 2. Initialize offline manager for hybrid fetching
-    await offlineManager.initNetworkListener();
+    // FIX: Removed offlineManager init from here to prevent 401 loops.
+    // It is now called inside checkLoginStatus on success.
 
     // 3. Initialize native auth for Google Sign-In
     await initializeNativeAuth();

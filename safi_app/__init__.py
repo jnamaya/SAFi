@@ -25,7 +25,7 @@ def create_app():
     
     # Apply ProxyFix middleware to correctly handle headers from a reverse proxy
     # (e.g., Nginx, Heroku) for things like HTTPS and client IP.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     
     # Configure CORS (Cross-Origin Resource Sharing)
@@ -57,6 +57,26 @@ def create_app():
         client_kwargs={'scope': 'openid email profile'},
         jwks_uri="https://www.googleapis.com/oauth2/v3/certs"
     )
+
+    # Register the Microsoft OAuth client
+    microsoft_client_id = app.config.get('MICROSOFT_CLIENT_ID')
+    microsoft_client_secret = app.config.get('MICROSOFT_CLIENT_SECRET')
+
+    if microsoft_client_id and microsoft_client_secret:
+        oauth.register(
+            name='microsoft',
+            client_id=microsoft_client_id,
+            client_secret=microsoft_client_secret,
+            # FIX: Use manual endpoints instead of server_metadata_url.
+            # This bypasses the strict 'iss' claim validation which fails for 
+            # multi-tenant apps where the issuer URL changes per tenant.
+            access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
+            authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+            jwks_uri='https://login.microsoftonline.com/common/discovery/v2.0/keys',
+            client_kwargs={'scope': 'openid email profile User.Read'}
+        )
+    else:
+        app.logger.warning("Microsoft OAuth credentials not found. Microsoft login will be disabled.")
 
     # Import and register API blueprints
     from .api.auth import auth_bp

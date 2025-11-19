@@ -243,6 +243,20 @@ def get_user_details(user_id: str) -> Optional[Dict[str, Any]]:
         if conn and conn.is_connected():
             conn.close()
 
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        return cursor.fetchone()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 def update_user_profile(user_id: str, profile_name: str):
     """
     Updates the user's ACTIVE PROFILE (e.g., 'fiduciary', 'philosopher').
