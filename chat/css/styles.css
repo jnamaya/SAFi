@@ -1,51 +1,64 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  /* CHANGE: Increased base font size from 14px to 15px */
   font-size: 15px; 
   font-weight: 400; 
-  /* CHANGE: Reduced line height for a more symmetrical, tighter feel */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  /* --- MODIFICATION: Added OpenType features for better typography --- */
   font-variant-ligatures: common-ligatures contextual;
   -webkit-font-feature-settings: "calt" on, "liga" on;
   font-feature-settings: "calt" on, "liga" on;
 
-  /* NEW: Ensure no horizontal scrolling on the body */
-  overflow-x: hidden;
+  /* CRITICAL CHANGE: Disable body scroll for Fixed App Layout */
+  overflow: hidden; 
+  height: 100%;
+  width: 100%;
 }
 
-/* REMOVED: Desktop media query for font size adjustment as this is mobile-only */
 /* CHANGE: Set the base font size for consistency across mobile */
 @media (min-width: 768px) {
   body {
-    font-size: 18px;
+    font-size: 16px; 
     line-height: 1.5;
+  }
+  
+  .message-container {
+      padding: 0 1% !important;
   }
 }
 
-html, body { 
+html { 
   height: 100%;
-  max-width: 100%; 
+  width: 100%;
+  overflow: hidden; /* Lock html scroll too */
 }
 
 #app-container { 
   max-width: 100%; 
+  height: 100%; /* Ensure main container fills screen */
+  display: flex; /* Enable flex layout for sidebar + content */
 }
 
-/* --- NEW: Hide scrollbar visuals on mobile only --- */
-@media (max-width: 767px) {
-  .custom-scrollbar::-webkit-scrollbar {
-    display: none; /* For Chrome, Safari, and Opera */
-  }
-  .custom-scrollbar {
-    -ms-overflow-style: none;  /* For IE and Edge */
-    scrollbar-width: none;  /* For Firefox */
-  }
+/* --- NEW: GLOBAL HIDE SCROLLBARS (Desktop & Mobile) --- */
+/* Applies to custom scrollbar class, chat window, login view, and modals */
+.custom-scrollbar, 
+#chat-window, 
+#login-view,
+.overflow-y-auto,
+.overflow-x-auto {
+  -ms-overflow-style: none;  /* For IE and Edge */
+  scrollbar-width: none;  /* For Firefox */
 }
+
+.custom-scrollbar::-webkit-scrollbar,
+#chat-window::-webkit-scrollbar,
+#login-view::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar {
+  display: none; /* For Chrome, Safari, and Opera */
+}
+
 
 #message-input::-webkit-scrollbar {
     display: none;
@@ -64,11 +77,9 @@ html, body {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  /* --- CHANGE: Branded user bubble in light mode --- */
   --user-bg: #16a34a;
   --user-fg: #ffffff;
   --ai-fg: #111827;
-  /* --- NEW: AI bubble background for tail to work --- */
   --ai-bg: #transparent;
 }
 
@@ -82,7 +93,6 @@ html, body {
   --user-bg: #166534;
   --user-fg: #f0fdf4;
   --ai-fg: #f3f4f6;
-  /* --- NEW: AI bubble background for tail to work --- */
   --ai-bg: #transparent;
 }
 
@@ -96,23 +106,19 @@ html, body {
     max-width: none !important;
 }
 
-
-
 .message.user {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   align-items: flex-start;
   margin-left: auto;
-  max-width: 94%;
+  max-width: 98%;
 }
-
 
 .message.ai {
   display: flex;
   align-items: flex-start;
   color: var(--ai-fg);
-  /* --- CHANGE: Reduced max-width --- */
   max-width: 100%;
 }
 
@@ -122,7 +128,6 @@ html, body {
   flex-shrink: 0;
   margin-top: 2px;
 }
-
 
 .ai-content-wrapper, .user-content-wrapper {
   flex: 1;
@@ -140,13 +145,12 @@ html, body {
   margin-bottom: 4px;
 }
 
-/* --- MODIFICATION: Added AI bubble background color --- */
 .message.ai .chat-bubble {
   background: var(--ai-bg);
   color: var(--ai-fg);
   padding: 14px 16px;
   border-radius: 12px;
-  position: relative; /* Needed for the tail */
+  position: relative;
 }
 
 .message.user .chat-bubble {
@@ -154,10 +158,9 @@ html, body {
   color: var(--user-fg);
   padding: 14px 16px;
   border-radius: 12px;
-  position: relative; /* Needed for the tail */
+  position: relative; 
 }
 
-/* NEW: Add the chat bubble tail for USER */
 .message.user .chat-bubble::after {
   content: '';
   position: absolute;
@@ -170,22 +173,6 @@ html, body {
   border-color: transparent transparent transparent var(--user-bg);
 }
 
-/* --- MODIFICATION: Restored the chat bubble tail for AI --- */
-/* .message.ai .chat-bubble::after {
-  content: '';
-  position: absolute;
-  left: -8px; 
-  top: 14px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 8px 10px 8px 0;
-  border-color: transparent var(--ai-bg) transparent transparent;
-}
---- */
-/* --- END MODIFICATION --- */
-
-
 .message .chat-bubble {
     box-shadow: none;
 }
@@ -193,16 +180,13 @@ html, body {
 .meta {
   display: flex;
   gap: 8px;
-  /* --- CHANGE: Refined spacing --- */
   margin-top: 8px; 
   align-items: baseline;
   width: 100%;
   padding-top: 6px;
-  /* --- CHANGE: Softened border --- */
   border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-/* --- CHANGE: Softened border --- */
 .dark .meta {
   border-top-color: rgba(255, 255, 255, 0.08);
 }
@@ -213,23 +197,21 @@ html, body {
 }
 
 .why-btn {
-  /* CHANGE: Made font smaller */
   font-size: 12px;
   font-weight: 500;
   color: var(--accent);
-  text-decoration: none; /* REMOVED UNDERLINE */
+  text-decoration: none; 
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
 }
 
-/* --- NEW: Branded why-btn for user bubble --- */
 .message.user .why-btn {
-  color: #f0fdf4; /* Light green */
+  color: #f0fdf4; 
 }
 .dark .message.user .why-btn {
-  color: #bbf7d0; /* Lighter green */
+  color: #bbf7d0;
 }
 
 .why-btn:hover {
@@ -237,42 +219,30 @@ html, body {
 }
 
 .stamp {
-  /* CHANGE: Made font smaller */
   font-size: 11px;
   color: var(--muted);
 }
-/* --- NEW: Branded stamp for user bubble --- */
 .message.user .stamp {
   color: rgba(255, 255, 255, 0.7);
 }
 .dark .message.user .stamp {
-  color: rgba(240, 253, 244, 0.7); /* dark:text-green-100/70 */
+  color: rgba(240, 253, 244, 0.7); 
 }
-/* --- End of new chat styles --- */
 
-
-/* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
-  
-  /* CHANGE: Use standard property + fallback */
   overflow-wrap: break-word;
   word-wrap: break-word; 
-  word-break: break-word; /* Keep as fallback */
-
+  word-break: break-word; 
   hyphens: auto;
 }
 
-/* --- Base styles that can be shared --- */
 .chat-bubble h1,
 .chat-bubble h2,
 .chat-bubble h3 {
-  font-weight: 400; /* Good, this can be shared */
-  line-height: 1.3;   /* Good, this can be shared */
+  font-weight: 400; 
+  line-height: 1.3;   
 }
-
-/* --- INDIVIDUAL styles for a clear hierarchy --- */
-/* We define size AND margins separately for each level */
 
 .chat-bubble h1 {
   font-size: 1.55rem;
@@ -293,7 +263,6 @@ html, body {
   margin-top: 1.1em;
   margin-bottom: 0.4em;
 }
-/* --- This rule is still perfect --- */
 .chat-bubble > *:first-child {
     margin-top: 0;
 }
@@ -310,13 +279,11 @@ html, body {
   margin-bottom: 1em; 
 }
 .chat-bubble ul { list-style-type: disc; }
-/* --- THIS IS THE FIX --- */
-/* Ensure ordered lists display correctly */
+
 .chat-bubble ol { 
   list-style-type: decimal; 
-  list-style-position: outside; /* Ensure numbers are outside the text flow */
+  list-style-position: outside; 
 }
-/* --- END FIX --- */
 
 .chat-bubble li { 
   margin-bottom: 0.5em; 
@@ -334,7 +301,6 @@ html, body {
 }
 .dark .chat-bubble a { color: #22c55e; }
 
-/* --- NEW: Branded link for user bubble --- */
 .message.user .chat-bubble a {
   color: #ffffff;
   font-weight: 500;
@@ -358,7 +324,6 @@ html, body {
   border-color: rgba(255,255,255,0.15);
 }
 
-/* --- NEW: Branded code for user bubble --- */
 .message.user .chat-bubble code {
   background: rgba(0, 0, 0, 0.15);
   border-color: rgba(0, 0, 0, 0.2);
@@ -372,8 +337,8 @@ html, body {
 
 
 .chat-bubble pre { 
-  background: #282c34; /* Atom One Dark background for consistency */
-  color: #abb2bf; /* Atom One Dark foreground */
+  background: #282c34; 
+  color: #abb2bf; 
   padding: 1rem; 
   border-radius: 0.75rem; 
   overflow-x: auto; 
@@ -394,7 +359,6 @@ html, body {
   color: #a3a3a3; 
 }
 
-/* --- NEW: Branded blockquote for user bubble --- */
 .message.user .chat-bubble blockquote {
   border-left-color: #f0fdf4;
   color: #f0fdf4;
@@ -404,55 +368,41 @@ html, body {
   color: #dcfce7;
 }
 
-/* --- START EDIT: Styles for wide tables --- */
-
-/* The wrapper handles the scroll, not the table itself */
 .table-wrapper {
   display: block;
   width: 100%;
-  overflow-x: auto;       /* Allows horizontal scroll */
-  -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+  overflow-x: auto;       
+  -webkit-overflow-scrolling: touch; 
   margin-bottom: 1em;
-  border-radius: 8px;     /* Optional: Rounds the corners of the scroll area */
-  border: 1px solid rgba(0,0,0,0.1); /* Border goes on the wrapper, not the table */
+  border-radius: 8px;     
+  border: 1px solid rgba(0,0,0,0.1); 
 }
 
-/* Dark mode border for the wrapper */
 .dark .table-wrapper {
   border-color: rgba(255,255,255,0.2);
 }
 
 .chat-bubble table {
-  width: 100%;            /* Force table to fill the scrolling wrapper */
+  width: 100%;            
   border-collapse: collapse;
-  border: none;           /* Remove border from table since wrapper has it */
-  /* We use min-width just to ensure it doesn't crush on very small screens, 
-     but the real wrap logic is in the td styles below. */
+  border: none;           
   min-width: 600px; 
 }
-
-/* --- END EDIT --- */
-
 
 .dark .chat-bubble table {
   border-color: rgba(255,255,255,0.2);
 }
 
-/* --- CRITICAL FIX: Force wrapping in table cells --- */
 .chat-bubble th, .chat-bubble td {
   padding: 0.75rem;
   border: 1px solid rgba(0,0,0,0.1);
   text-align: left;
   vertical-align: top;
-  
-  /* These properties force the text to wrap */
   white-space: normal;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  
-  /* This caps the width of a single cell, forcing the wrap */
   max-width: 400px; 
-  min-width: 150px; /* Prevents columns from getting too small */
+  min-width: 150px; 
 }
 
 .dark .chat-bubble th, .dark .chat-bubble td {
@@ -467,7 +417,6 @@ html, body {
   background-color: rgba(255,255,255,0.1);
 }
 
-/* --- NEW: Branded table for user bubble --- */
 .message.user .chat-bubble table {
   border-color: rgba(255, 255, 255, 0.3);
 }
@@ -479,7 +428,6 @@ html, body {
   background-color: rgba(0, 0, 0, 0.15);
 }
 
-
 .chat-bubble hr {
   border: none;
   height: 2px;
@@ -490,11 +438,9 @@ html, body {
   background-color: rgba(255,255,255,0.2);
 }
 
-/* --- NEW: Branded hr for user bubble --- */
 .message.user .chat-bubble hr {
   background-color: rgba(255, 255, 255, 0.3);
 }
-
 
 .chat-bubble del {
   text-decoration: line-through;
@@ -504,7 +450,6 @@ html, body {
   color: #9ca3af;
 }
 
-/* --- MODAL IMPROVEMENTS --- */
 .reason-text.truncated {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -526,7 +471,6 @@ html, body {
 .prose {
     line-height: 1.6;
 }
-/* Tailwind typography plugin styles */
 .prose :where(p):not(:where([class~="not-prose"] *)) {
     margin-top: 0.8em;
     margin-bottom: 0.8em;
@@ -538,24 +482,18 @@ html, body {
 .dark .fill-green-500 { fill: #22c55e; }
 .dark .fill-yellow-500 { fill: #eab308; }
 .dark .fill-red-500 { fill: #ef4444; }
-/* --- END MODAL IMPROVEMENTS --- */
-
 
 .msg { 
   max-width: min(120ch, 100%); 
   word-break: break-word; 
 }
 
-/* FIX: Toast Positioning for Desktop/Consistency */
 .toast { 
-  /* Initial state: start invisible (no transform needed as container is fixed) */
   opacity: 0; 
-  /* Added a slight offset for visual appeal, but can be removed if prefer pure fade */
   transform: translateY(10px); 
   transition: transform 0.3s ease-out, opacity 0.3s ease-out; 
 }
 .toast.show { 
-  /* Final state: visible and in place */
   transform: translateY(0); 
   opacity: 1; 
 }
@@ -615,29 +553,23 @@ html, body {
 }
 
 .thinking-spinner {
-  border: 3px solid #e5e7eb; /* gray-200 */
-  border-top: 3px solid #16a34a; /* green-600 */
+  border: 3px solid #e5e7eb; 
+  border-top: 3px solid #16a34a; 
   border-radius: 50%;
   width: 20px;
   height: 20px;
   animation: spin 1s linear infinite;
 }
 .dark .thinking-spinner {
-  border: 3px solid #374151; /* gray-700 */
-  border-top: 3px solid #22c55e; /* green-500 */
+  border: 3px solid #374151; 
+  border-top: 3px solid #22c55e; 
 }
 
-
-/* CHANGE: Reduced login logo size for better mobile proportions.
-  Was 8.5rem (136px), now 6rem (96px).
-*/
 #login-view .app-logo {
-  height: 6rem; /* 96px */
-  width: 6rem;  /* 96px */
+  height: 6rem; 
+  width: 6rem;  
 }
 
-
-/* --- MODIFICATION: Added styles for new settings modal --- */
 .modal-tab-button {
   display: flex;
   align-items: center;
@@ -648,43 +580,42 @@ html, body {
   font-size: 0.95rem;
   font-weight: 500;
   border-radius: 0.5rem;
-  color: #374151; /* gray-700 */
+  color: #374151; 
   transition: background-color 0.2s, color 0.2s;
 }
 .dark .modal-tab-button {
-  color: #d1d5db; /* gray-300 */
+  color: #d1d5db; 
 }
 
 .modal-tab-button:hover {
-  background-color: #f3f4f6; /* gray-100 */
+  background-color: #f3f4f6; 
 }
 .dark .modal-tab-button:hover {
-  background-color: #1f2937; /* gray-800 */
+  background-color: #1f2937; 
 }
 
 .modal-tab-button.active {
-  background-color: #dcfce7; /* green-100 */
-  color: #166534; /* green-800 */
+  background-color: #dcfce7; 
+  color: #166534; 
 }
 .dark .modal-tab-button.active {
-  background-color: #14532d; /* green-900 */
-  color: #bbf7d0; /* green-300 */
+  background-color: #14532d; 
+  color: #bbf7d0; 
 }
 
 .modal-tab-button.active svg {
-  color: #16a34a; /* green-600 */
+  color: #16a34a; 
 }
 .dark .modal-tab-button.active svg {
-  color: #22c55e; /* green-500 */
+  color: #22c55e; 
 }
 
-/* Style for the select dropdowns in the modal */
 .settings-modal-select {
     width: 100%;
     font-size: 0.875rem;
     color: var(--fg);
     background-color: var(--bg);
-    border: 1px solid #d1d5db; /* gray-300 */
+    border: 1px solid #d1d5db; 
     border-radius: 0.375rem;
     padding: 0.5rem 0.75rem;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -699,8 +630,8 @@ html, body {
 }
 
 .dark .settings-modal-select {
-    border-color: #4b5563; /* gray-600 */
-    background-color: #1f2937; /* gray-800 */
+    border-color: #4b5563; 
+    background-color: #1f2937; 
     color: var(--fg);
 }
 
@@ -710,7 +641,6 @@ html, body {
     box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* Radio button styles for profile selection */
 .form-radio {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -723,13 +653,13 @@ html, body {
   height: 1.25rem;
   width: 1.25rem;
   border-radius: 100%;
-  border: 2px solid #9ca3af; /* gray-400 */
+  border: 2px solid #9ca3af; 
   background-color: var(--bg);
 }
 
 .dark .form-radio {
-  border-color: #6b7280; /* gray-500 */
-  background-color: #374151; /* gray-700 */
+  border-color: #6b7280; 
+  background-color: #374151; 
 }
 
 .form-radio:checked {
@@ -740,11 +670,9 @@ html, body {
 
 .form-radio:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.3); /* green-600 with opacity */
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.3); 
 }
-/* --- END MODIFICATION --- */
 
-/* convo-menu-fix.css: optional polish */
 .convo-menu-button {
   position: absolute;
   right: 0.5rem;
@@ -752,12 +680,10 @@ html, body {
   transform: translateY(-50%);
   padding: 0.35rem;
   border-radius: 9999px;
-  /* Ensure initial state is hidden on ALL screen sizes for clean look */
   opacity: 0; 
   transition: opacity 0.2s ease-in-out;
 }
 
-/* --- NEW: Hide menu icon completely, regardless of hover/focus --- */
 .convo-menu-button.menu-icon-hidden {
     opacity: 0 !important;
 }
@@ -766,9 +692,7 @@ html, body {
   background: rgba(120, 120, 120, 0.12);
 }
 
-/* --- FIX: Desktop visibility for conversation menu (md: 768px) --- */
 @media (min-width: 768px) {
-    /* FIX: Corrected selector to target the button when the parent link (.convo-item-inner) is hovered/active */
     .convo-item-inner:hover .convo-menu-button,
     .convo-item-inner.active .convo-menu-button {
         opacity: 1 !important;
@@ -778,37 +702,24 @@ html, body {
         background: rgba(120, 120, 120, 0.12);
     }
 }
-/* --- END FIX: Desktop visibility for conversation menu (md: 768px) --- */
 
-/* If your convo rows don't already have relative positioning, add this */
 .convo-item {
   position: relative;
 }
 
-/* --- NEW: Sidebar Tagline Adjustment --- */
 .app-tagline {
-    font-size: 14px; /* Slightly increased size from 10px */
-    white-space: nowrap; /* Forces text onto a single line */
+    font-size: 14px; 
+    white-space: nowrap; 
     font-weight: bold;
 }
 
-/* --- REMOVED SWIPE CSS --- */
-.convo-swipe-container, .convo-actions, .convo-action-rename, .convo-action-delete {
-    /* Removed all swipe related styles */
-}
-
 .convo-item-inner {
-  /* This is the element that now holds the link content */
-  /* CHANGE: Reset background color for the new white sidebar theme */
-  background-color: white !important; /* Ensure it matches the new sidebar bg */
-  
-  /* CRITICAL: Must be relative for the menu button to position correctly inside */
+  background-color: white !important; 
   position: relative; 
 }
 .dark .convo-item-inner {
     background-color: black !important; 
 }
-/* Active state background is handled by JS but adding a fallback active class here just in case */
 .convo-item-inner.bg-green-600 {
     background-color: #16a34a !important; 
 }
@@ -816,41 +727,33 @@ html, body {
     background-color: #16a34a !important; 
 }
 
-/* --- NEW: Pin Icon Color/Placement --- */
 .convo-pin-icon {
-    color: #f59e0b; /* amber-500 */
+    color: #f59e0b; 
     margin-right: 0.5rem;
     flex-shrink: 0;
 }
 .dark .convo-pin-icon {
-    color: #fbbf24; /* amber-400 */
+    color: #fbbf24; 
 }
 .convo-item-inner.bg-green-600 .convo-pin-icon {
-    color: #fcd34d; /* amber-300 for active state */
-}.ai-content-wrapper, .user-content-wrapper {
+    color: #fcd34d; 
+}
 
-
-  
-/* ... existing styles ... */
-
-/* --- TRUST SCORE WIDGET --- */
 .trust-score-pill {
     display: inline-flex;
     align-items: center;
-    gap: 5px;             /* Reduced from 6px */
-    padding: 2px 8px;     /* Reduced from 4px 10px (Slimmer) */
+    gap: 5px;             
+    padding: 2px 8px;     
     border-radius: 999px;
-    font-size: 0.7rem;    /* Reduced from 0.75rem (12px -> ~11px) */
+    font-size: 0.7rem;    
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 1px solid transparent;
     margin-right: 8px;
-    
-    /* CRITICAL FIX: Prevent text from wrapping and expanding the button */
     white-space: nowrap;
     line-height: 1.2;
-    height: 24px;         /* Enforce a consistent, small height */
+    height: 24px;         
 }
 
 .trust-score-pill:hover {
@@ -858,42 +761,193 @@ html, body {
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-/* Color Variants (Light Mode) */
 .trust-green { 
-    background-color: #dcfce7; /* green-100 */
-    color: #166534; /* green-800 */
-    border-color: #bbf7d0; /* green-200 */
+    background-color: #dcfce7; 
+    color: #166534; 
+    border-color: #bbf7d0; 
 }
 .trust-yellow { 
-    background-color: #fef9c3; /* yellow-100 */
-    color: #854d0e; /* yellow-800 */
-    border-color: #fde047; /* yellow-200 */
+    background-color: #fef9c3; 
+    color: #854d0e; 
+    border-color: #fde047; 
 }
 .trust-red { 
-    background-color: #fee2e2; /* red-100 */
-    color: #991b1b; /* red-800 */
-    border-color: #fecaca; /* red-200 */
+    background-color: #fee2e2; 
+    color: #991b1b; 
+    border-color: #fecaca; 
 }
 
-/* Color Variants (Dark Mode) */
 .dark .trust-green { 
     background-color: rgba(22, 163, 74, 0.2); 
-    color: #86efac; /* green-300 */
+    color: #86efac; 
     border-color: rgba(22, 163, 74, 0.4);
 }
 .dark .trust-yellow { 
     background-color: rgba(234, 179, 8, 0.2); 
-    color: #fde047; /* yellow-300 */
+    color: #fde047; 
     border-color: rgba(234, 179, 8, 0.4);
 }
 .dark .trust-red { 
     background-color: rgba(220, 38, 38, 0.2); 
-    color: #fca5a5; /* red-300 */
+    color: #fca5a5; 
     border-color: rgba(220, 38, 38, 0.4);
 }
 
-/* Adjust the meta container alignment */
 .meta {
-    align-items: center !important; /* Ensure pill centers vertically with text */
+    align-items: center !important; 
 }
+
+/* --- NEW: Enhanced Input Styling (The "Conversational Surface") --- */
+
+/* 1. Wrapper for the input area (The "Dock") */
+.input-dock-container, .input-wrapper, form, #composer-footer {
+    position: relative; /* Crucial for button positioning */
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(0,0,0,0.05);
+    padding: 1rem; /* 16px padding */
+    
+    /* NEW: Ensure flex properties don't break absolute positioning */
+    display: flex;
+    align-items: flex-end;
+    gap: 0; /* Remove gap since button is absolute */
+}
+
+.dark .input-dock-container, .dark .input-wrapper, .dark form, .dark #composer-footer {
+    background: rgba(0, 0, 0, 0.8);
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 2. The Input Field Itself (The Capsule) */
+#message-input {
+    /* Modern Pill Shape */
+    border-radius: 26px; 
+    /* Right padding ensures text doesn't go behind the button */
+    padding: 14px 54px 14px 20px; 
+    
+    /* Surface styling */
+    background-color: #f3f4f6;
+    border: 1px solid transparent;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+    
+    /* Typography */
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--fg);
+    
+    /* Behavior */
+    outline: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    resize: none;
+    width: 100%;
+    min-height: 52px;
+    max-height: 150px;
+    
+    /* NEW: Ensure it overrides Tailwind utility classes */
+    margin: 0 !important;
+    flex: 1;
+}
+
+/* Focus State */
+#message-input:focus {
+    background-color: #ffffff;
+    border-color: var(--accent);
+    box-shadow: 0 4px 20px rgba(22, 163, 74, 0.12), 0 2px 4px rgba(0,0,0,0.05);
+    transform: translateY(-1px);
+}
+
+.dark #message-input {
+    background-color: #1f2937;
+    color: white;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+}
+.dark #message-input:focus {
+    background-color: #111827;
+    border-color: var(--accent);
+    box-shadow: 0 4px 20px rgba(34, 197, 94, 0.15);
+}
+
+#message-input::placeholder {
+    color: #9ca3af;
+}
+
+/* 3. The Send Button */
+#send-button, 
+#send-btn, 
+.send-btn, 
+button[type="submit"] {
+    position: absolute;
+    
+    /* CALCULATION FOR PERFECT CENTER:
+       Footer Padding: 16px
+       Input Min-Height: 52px
+       Button Height: 32px
+       Vertical Space Remaining in Input: 52 - 32 = 20px
+       Top/Bottom Margin needed inside input: 10px
+       Total Bottom Offset: 16px (Footer) + 10px (Input Margin) = 26px
+    */
+    right: 26px; 
+    bottom: 26px; 
+    
+    width: 32px; 
+    height: 32px;
+    border-radius: 50%;
+    
+    /* Force the Green Circle Look */
+    background-color: #16a34a !important; 
+    color: white !important;
+    
+    /* Center the Icon Perfectly */
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    z-index: 10;
+}
+
+/* Hover State */
+#send-button:hover {
+    background-color: #15803d !important; /* Darker green */
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+/* Disabled State (When input is empty) */
+#send-button:disabled {
+    background-color: #e5e7eb !important; 
+    color: #9ca3af !important;
+    box-shadow: none;
+    cursor: default;
+    transform: none;
+}
+
+.dark #send-button:disabled {
+     background-color: #374151 !important;
+     color: #6b7280 !important;
+}
+
+/* Icon Sizing & Optical Centering */
+#send-button svg {
+    width: 16px;
+    height: 16px;
+    
+    /* RESET any inline transforms from HTML */
+    transform: rotate(45deg) !important;
+    
+    /* Optical correction: Paper planes look heavy on the left/bottom, 
+       so we nudge it slightly right to make it look centered. */
+    margin-left: 2px; 
+    margin-top: 0;
+    
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2px;
 }

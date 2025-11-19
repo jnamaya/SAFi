@@ -309,10 +309,14 @@ export function setLoadingInterval(interval) {
     currentLoadingInterval = interval;
 }
 
+// CRITICAL CHANGE: Scroll the chat window element, not the window
 export function scrollToBottom() {
   _ensureElements();
-  // We scroll the window rather than the chat-window div for better mobile behavior
-  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  const chatWindow = elements.chatWindow;
+  if (chatWindow) {
+      // Scroll the container directly
+      chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+  }
 }
 
 // --- MODAL / TOAST ---
