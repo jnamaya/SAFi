@@ -128,6 +128,7 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .message.user .user-content-wrapper {
@@ -254,9 +255,12 @@ html, body {
 /* --- IMPROVEMENT: Enhanced Chat Bubble Typography --- */
 .chat-bubble { 
   line-height: 1.7; 
-  word-break: break-word; /* --- THIS IS THE FIX --- */
   
-  /* --- MODIFICATION: Added auto-hyphenation for better text flow --- */
+  /* CHANGE: Use standard property + fallback */
+  overflow-wrap: break-word;
+  word-wrap: break-word; 
+  word-break: break-word; /* Keep as fallback */
+
   hyphens: auto;
 }
 
@@ -401,29 +405,57 @@ html, body {
   color: #dcfce7;
 }
 
-
 /* --- START EDIT: Styles for wide tables --- */
-.chat-bubble table {
-  /* This display: block is the key fix */
+
+/* The wrapper handles the scroll, not the table itself */
+.table-wrapper {
   display: block;
-  max-width: 100%;
-  overflow-x: auto; /* This makes the table scroll horizontally */
-  
   width: 100%;
-  border-collapse: collapse;
+  overflow-x: auto;       /* Allows horizontal scroll */
+  -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
   margin-bottom: 1em;
-  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;     /* Optional: Rounds the corners of the scroll area */
+  border: 1px solid rgba(0,0,0,0.1); /* Border goes on the wrapper, not the table */
 }
+
+/* Dark mode border for the wrapper */
+.dark .table-wrapper {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.chat-bubble table {
+  width: 100%;            /* Force table to fill the scrolling wrapper */
+  border-collapse: collapse;
+  border: none;           /* Remove border from table since wrapper has it */
+  /* We use min-width just to ensure it doesn't crush on very small screens, 
+     but the real wrap logic is in the td styles below. */
+  min-width: 600px; 
+}
+
 /* --- END EDIT --- */
+
+
 .dark .chat-bubble table {
   border-color: rgba(255,255,255,0.2);
 }
 
+/* --- CRITICAL FIX: Force wrapping in table cells --- */
 .chat-bubble th, .chat-bubble td {
   padding: 0.75rem;
   border: 1px solid rgba(0,0,0,0.1);
   text-align: left;
+  vertical-align: top;
+  
+  /* These properties force the text to wrap */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  
+  /* This caps the width of a single cell, forcing the wrap */
+  max-width: 400px; 
+  min-width: 150px; /* Prevents columns from getting too small */
 }
+
 .dark .chat-bubble th, .dark .chat-bubble td {
   border-color: rgba(255,255,255,0.2);
 }
@@ -796,4 +828,4 @@ html, body {
 }
 .convo-item-inner.bg-green-600 .convo-pin-icon {
     color: #fcd34d; /* amber-300 for active state */
-}
+}.ai-content-wrapper, .user-content-wrapper {

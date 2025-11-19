@@ -1,6 +1,9 @@
 import asyncio
 import json
-from flask import Blueprint, session, jsonify, request, Response
+import time
+import threading
+import hashlib
+from flask import Blueprint, session, jsonify, request, Response, current_app
 from datetime import datetime, timezone
 
 from ..persistence import database as db
@@ -10,52 +13,88 @@ from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
 
-safi_instances = {}
+# --- CACHING INFRASTRUCTURE ---
 
-def _load_safi(profile_name: str) -> SAFi:
+class SafiInstanceCache:
     """
-    Loads or creates a cached SAFi instance for a given profile.
-    NOTE: This is now only used for non-user-specific instances,
-    like the public anonymous endpoint.
+    Thread-safe cache for SAFi instances to prevent reloading 
+    heavy resources (Vector DB, Embeddings) on every request.
     """
-    if profile_name in safi_instances:
-        return safi_instances[profile_name]
+    def __init__(self, ttl_seconds=600): # Default 10 minute TTL
+        self._cache = {}
+        self._lock = threading.Lock()
+        self._ttl = ttl_seconds
 
-    prof = get_profile(profile_name)
-    # When creating a cached instance, it always uses the default models from Config.
-    instance = SAFi(
-        config=Config, 
-        value_profile_or_list=prof,
-        intellect_model=Config.INTELLECT_MODEL,
-        will_model=Config.WILL_MODEL,
-        conscience_model=Config.CONSCIENCE_MODEL
-    )
-    
-    safi_instances[profile_name] = instance
-    return instance
+    def _generate_key(self, profile_name, intellect, will, conscience):
+        """
+        Creates a unique hash for a specific configuration.
+        If two users use the exact same profile and models, they share an instance.
+        """
+        raw_key = f"{profile_name}|{intellect}|{will}|{conscience}"
+        return hashlib.md5(raw_key.encode()).hexdigest()
+
+    def get_or_create(self, profile_name, intellect_model, will_model, conscience_model):
+        key = self._generate_key(profile_name, intellect_model, will_model, conscience_model)
+        now = time.time()
+
+        with self._lock:
+            # 1. Cleanup expired items first (simple lazy expiration)
+            keys_to_delete = [k for k, v in self._cache.items() if now - v['last_used'] > self._ttl]
+            for k in keys_to_delete:
+                del self._cache[k]
+
+            # 2. Return existing if found
+            if key in self._cache:
+                entry = self._cache[key]
+                entry['last_used'] = now
+                return entry['instance']
+
+            # 3. Create new if missing
+            # This initialization is heavy (loads RAG/FAISS)
+            try:
+                prof = get_profile(profile_name)
+                instance = SAFi(
+                    config=Config,
+                    value_profile_or_list=prof,
+                    intellect_model=intellect_model,
+                    will_model=will_model,
+                    conscience_model=conscience_model
+                )
+                
+                self._cache[key] = {
+                    'instance': instance,
+                    'created_at': now,
+                    'last_used': now
+                }
+                return instance
+            except Exception as e:
+                # Don't cache failed initializations
+                raise e
+
+# Initialize the global cache
+global_safi_cache = SafiInstanceCache(ttl_seconds=600)
+
+# --- END CACHING INFRASTRUCTURE ---
+
 
 def get_user_id():
-    """
-    Retrieves the authenticated user's ID from the session.
-    """
+    """Retrieves the authenticated user's ID from the session."""
     user = session.get('user')
     if not user:
         return None
     return user.get('sub') or user.get('id')
 
 def get_user_profile_name():
-    """
-    Retrieves the user's currently active profile name from the session.
-    Falls back to the system default profile.
-    """
+    """Retrieves the user's currently active profile name from the session."""
     user = session.get('user', {})
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
-# --- NEW TTS AUDIO ENDPOINT ---
+
 @conversations_bp.route('/tts_audio', methods=['POST'])
 def tts_audio_endpoint():
     """
     Handles POST request to generate TTS audio and stream the MP3 back.
+    Uses the cache to retrieve the SAFi instance.
     """
     user_id = get_user_id()
     if not user_id:
@@ -68,57 +107,44 @@ def tts_audio_endpoint():
         if not text_to_speak:
             return jsonify({"error": "Missing 'text' in request body."}), 400
         
-        # --- SAFi Instance Creation Logic (Replicated from process_prompt) ---
+        # 1. Resolve User Configuration
         user_details = db.get_user_details(user_id)
         if not user_details:
              return jsonify({"error": "User not found."}), 404
 
         user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-        prof = get_profile(user_profile_name)
-
-        # Get their model preferences, falling back to Config defaults
         intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         will_model = user_details.get('will_model') or Config.WILL_MODEL
         conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
-        # Create a new SAFi instance with these specific settings
-        saf_system = SAFi(
-            config=Config,
-            value_profile_or_list=prof,
-            intellect_model=intellect_model,
-            will_model=will_model,
-            conscience_model=conscience_model
+        # 2. Get Cached Instance (Fast)
+        saf_system = global_safi_cache.get_or_create(
+            user_profile_name, 
+            intellect_model, 
+            will_model, 
+            conscience_model
         )
-        # --- End SAFi Instance Creation Logic ---
 
-        # Call the orchestrator's synchronous TTS method
+        # 3. Generate Audio
         audio_content = saf_system.generate_speech_audio(text_to_speak)
         
         if audio_content is None:
             return jsonify({"error": "TTS generation failed on the backend."}), 500
 
-        # Return the audio content as a stream with the correct headers
         response = Response(audio_content, mimetype='audio/mpeg')
         response.headers['Content-Disposition'] = 'attachment; filename=speech.mp3'
-        # The 'audio/mpeg' mimetype will tell the browser it's an MP3 file
         return response
 
-    except json.JSONDecodeError:
-        return jsonify({"error": "Invalid JSON format."}), 400
     except Exception as e:
-        # Use a logger if available, otherwise just print to console/log
-        # if hasattr(current_app, 'logger'):
-        #     current_app.logger.error(f"Error processing TTS request: {e}")
+        current_app.logger.error(f"Error processing TTS request: {e}")
         return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
-# --- END NEW TTS AUDIO ENDPOINT ---
 
 
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
 def public_process_prompt_endpoint():
     """
     Process a user prompt from the public WordPress chatbot.
-    This endpoint is anonymous and does not require authentication.
-    It uses the cached _load_safi() function.
+    Uses the cache with default settings.
     """
     data = request.json
     if 'message' not in data or 'conversation_id' not in data:
@@ -126,25 +152,25 @@ def public_process_prompt_endpoint():
 
     anonymous_user_id = data['conversation_id']
     
-    # Ensure a user record exists for the anonymous session
+    # Ensure placeholder user exists
     if not db.get_user_details(anonymous_user_id):
-        placeholder_user_info = {
+        db.upsert_user({
             "sub": anonymous_user_id,
             "name": "Public User",
             "email": f"{anonymous_user_id}@public.chat",
             "picture": "" 
-        }
-        db.upsert_user(placeholder_user_info)
+        })
     
-    # Create a new conversation for each public prompt
-    # The orchestrator must have a valid conversation ID to save message history.
     new_convo = db.create_conversation(anonymous_user_id)
 
-    # Set the public persona to "safi"
-    public_profile_name = "safi"
-    saf_system = _load_safi(public_profile_name) # Uses the cached instance
+    # Public endpoints always use the "safi" profile and default models
+    saf_system = global_safi_cache.get_or_create(
+        "safi", 
+        Config.INTELLECT_MODEL, 
+        Config.WILL_MODEL, 
+        Config.CONSCIENCE_MODEL
+    )
     
-    # Use the ID from the newly created conversation record.
     result = asyncio.run(saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id']))
     return jsonify(result)
 
@@ -153,11 +179,13 @@ def public_process_prompt_endpoint():
 def process_prompt_endpoint():
     """
     Process a user prompt using their selected profile AND selected models.
+    Now utilizes caching for massive performance gains.
     """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
+    # Daily limit check
     limit = Config.DAILY_PROMPT_LIMIT
     if limit > 0:
         count = db.get_todays_prompt_count(user_id)
@@ -171,30 +199,26 @@ def process_prompt_endpoint():
     if limit > 0:
         db.record_prompt_usage(user_id)
     
-    # Create a user-specific SAFi instance instead of using the cache.
-    # 1. Get user's full details
+    # 1. Resolve User Configuration
     user_details = db.get_user_details(user_id)
     if not user_details:
          return jsonify({"error": "User not found."}), 404
 
-    # 2. Get their profile
     user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-    prof = get_profile(user_profile_name)
-
-    # 3. Get their model preferences, falling back to Config defaults
     intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
     will_model = user_details.get('will_model') or Config.WILL_MODEL
     conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
     
-    # 4. Create a new SAFi instance with these specific settings
-    saf_system = SAFi(
-        config=Config,
-        value_profile_or_list=prof,
-        intellect_model=intellect_model,
-        will_model=will_model,
-        conscience_model=conscience_model
+    # 2. Get Cached Instance (Fast)
+    # This skips the expensive FAISS/Retriever load if this config has been used recently
+    saf_system = global_safi_cache.get_or_create(
+        user_profile_name, 
+        intellect_model, 
+        will_model, 
+        conscience_model
     )
     
+    # 3. Process
     result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
     return jsonify(result)
 
@@ -216,21 +240,13 @@ def health_check():
 
 @conversations_bp.route('/models', methods=['GET'])
 def get_available_models():
-    """
-    Returns the list of available AI models from the config.
-    """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    
     return jsonify({"models": Config.AVAILABLE_MODELS})
 
 @conversations_bp.route('/profiles', methods=['GET'])
 def profiles_list():
-    """
-    Returns a list of all available profile configurations and the key
-    of the user's currently active profile.
-    """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -240,12 +256,11 @@ def profiles_list():
     all_profiles = []
     for p in list_profiles():
         try:
-            # We add the 'key' to the profile dict for the frontend
             profile_details = get_profile(p['key'])
             profile_details['key'] = p['key'] 
             all_profiles.append(profile_details)
         except KeyError:
-            continue # Skip any broken profiles
+            continue 
             
     sorted_profiles = sorted(all_profiles, key=lambda x: x['name'])
     
@@ -254,49 +269,48 @@ def profiles_list():
         "active_profile_key": user_profile_name
     })
 
-
 @conversations_bp.route('/conversations', methods=['GET'])
 def get_conversations():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # Use the modified function that fetches is_pinned
     conversations = db.fetch_user_conversations(user_id)
     
-    # --- MODIFICATION: Add 'last_updated' timestamp to each conversation ---
+    # Add 'last_updated' timestamp to each conversation
     conversations_with_timestamps = []
     for convo in conversations:
-        # Fetch all history for the conversation
-        history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0)
+        history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0) # Limit 1 is faster if sorted DESC
+        # Note: db.fetch_chat_history... usually returns sorted by timestamp ASC. 
+        # If you need the *latest*, ensure your DB query is efficient or fetch the end.
+        # Ideally, fetch_user_conversations should join on the last message timestamp in SQL.
+        # Assuming standard fetch_chat_history returns full list or oldest first:
+        # We'll stick to your previous logic which worked:
+        full_history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0)
         
-        if history:
-            # Assuming history is sorted oldest-to-newest, get the last message
-            last_message = history[-1]
+        if full_history:
+            last_message = full_history[-1]
             convo['last_updated'] = last_message.get('timestamp')
         else:
-            # If no messages, fall back to the conversation's creation time
             convo['last_updated'] = convo.get('created_at')
 
         conversations_with_timestamps.append(convo)
     
     return jsonify(conversations_with_timestamps)
-    # --- END MODIFICATION ---
+
 
 @conversations_bp.route('/conversations', methods=['POST'])
 def handle_create_conversation():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    # db.create_conversation now returns 'is_pinned' as False
+    
     new_convo = db.create_conversation(user_id)
     
-    # --- MODIFICATION: Ensure new convo has 'last_updated' field ---
     if 'created_at' in new_convo:
         new_convo['last_updated'] = new_convo['created_at']
     else:
         new_convo['last_updated'] = datetime.now(timezone.utc).isoformat()
-    # --- END MODIFICATION ---
 
     return jsonify(new_convo), 201
 
@@ -312,7 +326,6 @@ def handle_rename_conversation(conversation_id):
     db.rename_conversation(conversation_id, new_title)
     return jsonify({"status": "success"})
 
-# --- NEW ENDPOINT: Toggle Conversation Pin Status ---
 @conversations_bp.route('/conversations/<conversation_id>/pin', methods=['PATCH'])
 def handle_pin_conversation(conversation_id):
     user_id = get_user_id()
@@ -323,10 +336,8 @@ def handle_pin_conversation(conversation_id):
     if is_pinned is None or not isinstance(is_pinned, bool):
         return jsonify({"error": "'is_pinned' boolean field is required."}), 400
     
-    # Call the new database function
     db.toggle_conversation_pin(conversation_id, is_pinned)
     return jsonify({"status": "success", "is_pinned": is_pinned})
-# --- END NEW ENDPOINT ---
 
 @conversations_bp.route('/conversations/<conversation_id>', methods=['DELETE'])
 def handle_delete_conversation(conversation_id):
