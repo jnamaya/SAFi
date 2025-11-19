@@ -25,25 +25,26 @@ export function updateUIForAuthState(user) {
 
   if (user) {
     ui.elements.loginView.classList.add('hidden');
-    // NOTE: bg-neutral-100 dark:bg-neutral-900 changed to bg-white dark:bg-black
+    
+    // Renders the Sidebar HTML structure
     ui.elements.sidebarContainer.innerHTML = `
-        <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden"></div>
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
         <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-white dark:bg-black text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
+          
+          <!-- Header Area -->
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
-            
             <div class="flex items-center gap-3">
               <div class="app-logo h-10 w-10">
                 <img src="assets/chat-logo.svg" alt="SAFi Logo" class="rounded-lg w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
               </div>
-              <!-- CHANGE: Removed <br> tag for single-line tagline -->
               <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
-            <!-- --- THIS IS THE FIX --- -->
-            <!-- Added the "hidden" class to remove the button from view on all screens -->
-            <button id="close-sidebar-button" type="button" aria-label="Close sidebar" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 md:hidden hidden">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+
+            <!-- --- NEW: Close Sidebar Button (Mobile Only) --- -->
+            <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <!-- --- END FIX --- -->
+            <!-- --- END NEW --- -->
           </div>
           
           <div class="p-4 shrink-0">
@@ -69,12 +70,25 @@ export function updateUIForAuthState(user) {
               </div>
 
               <button id="control-panel-btn" type="button" class="shrink-0 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors" aria-label="Open Control Panel">
-                <svg class="w-6 h-6 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <svg class="w-6 h-6 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
               </button>
             </div>
           </div>
         </aside>
     `;
+    
+    // --- NEW: Attach Event Listeners for Sidebar Closing ---
+    const closeBtn = document.getElementById('sidebar-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', ui.closeSidebar);
+    }
+    
+    const overlay = document.getElementById('sidebar-overlay');
+    if (overlay) {
+        overlay.addEventListener('click', ui.closeSidebar);
+    }
+    // --- END NEW ---
+
   } else {
     ui.elements.sidebarContainer.innerHTML = '';
     ui.elements.loginView.classList.remove('hidden');
