@@ -217,8 +217,7 @@ html, body {
   font-size: 12px;
   font-weight: 500;
   color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none; /* REMOVED UNDERLINE */
   background: none;
   border: none;
   padding: 0;
@@ -829,3 +828,72 @@ html, body {
 .convo-item-inner.bg-green-600 .convo-pin-icon {
     color: #fcd34d; /* amber-300 for active state */
 }.ai-content-wrapper, .user-content-wrapper {
+
+
+  
+/* ... existing styles ... */
+
+/* --- TRUST SCORE WIDGET --- */
+.trust-score-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;             /* Reduced from 6px */
+    padding: 2px 8px;     /* Reduced from 4px 10px (Slimmer) */
+    border-radius: 999px;
+    font-size: 0.7rem;    /* Reduced from 0.75rem (12px -> ~11px) */
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    margin-right: 8px;
+    
+    /* CRITICAL FIX: Prevent text from wrapping and expanding the button */
+    white-space: nowrap;
+    line-height: 1.2;
+    height: 24px;         /* Enforce a consistent, small height */
+}
+
+.trust-score-pill:hover {
+    transform: scale(1.02);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* Color Variants (Light Mode) */
+.trust-green { 
+    background-color: #dcfce7; /* green-100 */
+    color: #166534; /* green-800 */
+    border-color: #bbf7d0; /* green-200 */
+}
+.trust-yellow { 
+    background-color: #fef9c3; /* yellow-100 */
+    color: #854d0e; /* yellow-800 */
+    border-color: #fde047; /* yellow-200 */
+}
+.trust-red { 
+    background-color: #fee2e2; /* red-100 */
+    color: #991b1b; /* red-800 */
+    border-color: #fecaca; /* red-200 */
+}
+
+/* Color Variants (Dark Mode) */
+.dark .trust-green { 
+    background-color: rgba(22, 163, 74, 0.2); 
+    color: #86efac; /* green-300 */
+    border-color: rgba(22, 163, 74, 0.4);
+}
+.dark .trust-yellow { 
+    background-color: rgba(234, 179, 8, 0.2); 
+    color: #fde047; /* yellow-300 */
+    border-color: rgba(234, 179, 8, 0.4);
+}
+.dark .trust-red { 
+    background-color: rgba(220, 38, 38, 0.2); 
+    color: #fca5a5; /* red-300 */
+    border-color: rgba(220, 38, 38, 0.4);
+}
+
+/* Adjust the meta container alignment */
+.meta {
+    align-items: center !important; /* Ensure pill centers vertically with text */
+}
+}
