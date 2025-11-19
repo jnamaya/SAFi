@@ -203,19 +203,12 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const rightMeta = document.createElement('div');
   rightMeta.className = 'flex items-center gap-2 ml-auto';
 
-  // --- NEW: Add Trust Pill AND text link ---
+  // --- NEW: Add Trust Pill (Link Removed) ---
   const hasLedger = payload?.ledger?.length > 0;
   if (hasLedger && whyHandler) {
       // 1. Create and append the pill
       const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
       leftMeta.appendChild(pill);
-
-      // 2. Create and append the text link
-      const reasonLink = document.createElement('button');
-      reasonLink.className = 'why-btn ml-2'; // ml-2 adds a bit of spacing from the pill
-      reasonLink.textContent = 'View Ethical Reasoning';
-      reasonLink.onclick = () => whyHandler(payload);
-      leftMeta.appendChild(reasonLink);
   }
 
   const stamp = document.createElement('div');
@@ -247,18 +240,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         const metaDiv = container.querySelector('.meta');
         if (metaDiv) {
             // Clean up old buttons (text link OR old pill)
-            // Note: We remove all .why-btn and .trust-score-pill inside metaDiv to avoid duplicates
             metaDiv.querySelectorAll('.why-btn').forEach(el => el.remove());
             metaDiv.querySelectorAll('.trust-score-pill').forEach(el => el.remove());
 
             // Create new pill with updated score
             const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
-
-            // Create new text link
-            const reasonLink = document.createElement('button');
-            reasonLink.className = 'why-btn ml-2';
-            reasonLink.textContent = 'View Full Ethical Reasoning';
-            reasonLink.onclick = () => whyHandler(payload);
 
             let leftMeta = metaDiv.querySelector('div:first-child');
             if (!leftMeta || leftMeta.classList.contains('flex')) { // basic check if it's the left container
@@ -266,8 +252,7 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
                 metaDiv.prepend(leftMeta);
             }
             
-            // Prepend in reverse order so they appear as [Pill] [Link] ...
-            leftMeta.prepend(reasonLink);
+            // Prepend only the pill
             leftMeta.prepend(pill);
         }
     }
@@ -355,7 +340,7 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
             To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
         </div>
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-6xl mx-auto">${promptsHtml}</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>
       </div>`;
   
   ui.elements.chatWindow.appendChild(container);
