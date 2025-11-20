@@ -19,7 +19,7 @@ body {
 /* CHANGE: Set the base font size for consistency across mobile */
 @media (min-width: 768px) {
   body {
-    font-size: 16px; 
+    font-size: 17px; 
     line-height: 1.5;
   }
   
