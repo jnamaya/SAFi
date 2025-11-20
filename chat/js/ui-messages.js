@@ -108,7 +108,7 @@ export function displaySimpleGreeting(firstName) {
   const existing = ui.elements.chatWindow.querySelector('.simple-greeting');
   if (existing) existing.remove();
   const div = document.createElement('div');
-  div.className = 'simple-greeting text-4xl font-bold text-center py-8 text-neutral-800 dark:text-neutral-200';
+  div.className = 'simple-greeting text-4xl font-bold text-center pt-10 pb-1 text-neutral-800 dark:text-neutral-200';
   div.textContent = `Hi ${firstName}`;
   ui.elements.chatWindow.appendChild(div);
 }
@@ -193,7 +193,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     // Check if retry option is passed
     if (options.onRetry) {
         retryBtn = document.createElement('button');
-        // UPDATED: Changed text color to #f8f8f8 per user request
         retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
         retryBtn.innerHTML = iconRetry;
         retryBtn.setAttribute('title', 'Retry this prompt');
@@ -342,9 +341,10 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
   
   const container = document.createElement('div');
   container.className = 'empty-state-container';
-  container.style.cssText = 'width: 98%; margin: 0 auto;';
+  // UPDATED: max-width increased to 56rem
+  container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
   container.innerHTML = `
-      <div class="text-center pt-8">
+      <div class="text-center pt-2">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <img src="${avatarUrl}" class="w-20 h-20 rounded-lg mx-auto mt-4">

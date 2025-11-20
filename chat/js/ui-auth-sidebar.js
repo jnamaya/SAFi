@@ -12,6 +12,9 @@ const iconPin = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="
 const iconUnpin = `<svg class="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 4v1m0 5v1m0 5v1m0 5v1M7 4h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>`;
 const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="0 0 24 24"><path d="M17 11.5c.34-.14.65-.3.94-.48l-2.61-2.61c-.18.29-.34.6-.48.94L17 11.5zM14 17.5V21h-2v-3.5L8.5 14H5v-2h3.5L12 8.5V5h2v3.5l3.5 3.5H21v2h-3.5L14 17.5zM14 3c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zM4 22c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
 
+// --- NEW: Search Icon ---
+const iconSearch = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
+
 
 /**
  * Updates the entire sidebar UI based on the user's login status.
@@ -26,9 +29,6 @@ export function updateUIForAuthState(user) {
   if (user) {
     ui.elements.loginView.classList.add('hidden');
     
-    // Renders the Sidebar HTML structure
-    // FIX: Added 'hidden md:flex' to the aside classes. 
-    // This ensures it is hidden by default on mobile (preventing ghost buttons) but visible on desktop.
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
         <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-72 bg-white dark:bg-black text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
@@ -42,12 +42,22 @@ export function updateUIForAuthState(user) {
               <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
 
-            <!-- Close Sidebar Button (Mobile Only) -->
             <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
           </div>
           
+          <!-- NEW: Search Bar Area -->
+          <div class="px-4 pt-4 shrink-0">
+             <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    ${iconSearch}
+                </div>
+                <!-- UPDATED: Changed pl-9 to pl-10 for better spacing -->
+                <input type="text" id="convo-search-input" placeholder="Search chats..." class="w-full pl-10 pr-3 py-2 bg-gray-100 dark:bg-neutral-900 border-none rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:outline-none transition-shadow">
+             </div>
+          </div>
+
           <div class="p-4 shrink-0">
             <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2.5 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
@@ -78,6 +88,42 @@ export function updateUIForAuthState(user) {
         </aside>
     `;
     
+    // --- Search Logic ---
+    const searchInput = document.getElementById('convo-search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const links = document.querySelectorAll('#convo-list > a'); // Select top level links only
+            
+            links.forEach(link => {
+                const titleEl = link.querySelector('.convo-title');
+                const title = titleEl ? titleEl.textContent.toLowerCase() : '';
+                // Simple filter: toggle hidden class
+                if (title.includes(term)) {
+                    link.classList.remove('hidden');
+                } else {
+                    link.classList.add('hidden');
+                }
+            });
+
+            // Optional: Hide headers if all their children are hidden
+            const headers = document.querySelectorAll('#convo-list h3');
+            headers.forEach(header => {
+                let next = header.nextElementSibling;
+                let hasVisible = false;
+                while (next && next.tagName === 'A') {
+                    if (!next.classList.contains('hidden')) {
+                        hasVisible = true;
+                        break;
+                    }
+                    next = next.nextElementSibling;
+                }
+                header.style.display = hasVisible ? 'block' : 'none';
+            });
+        });
+    }
+
+    // Event Listeners
     const closeBtn = document.getElementById('sidebar-close-btn');
     if (closeBtn) {
         closeBtn.addEventListener('click', ui.closeSidebar);
