@@ -141,7 +141,7 @@ def tts_audio_endpoint():
 
 
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
-def public_process_prompt_endpoint():
+async def public_process_prompt_endpoint():
     """
     Process a user prompt from the public WordPress chatbot.
     Uses the cache with default settings.
@@ -171,12 +171,13 @@ def public_process_prompt_endpoint():
         Config.CONSCIENCE_MODEL
     )
     
-    result = asyncio.run(saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id']))
+    # FIX: Using native await instead of asyncio.run
+    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'])
     return jsonify(result)
 
 
 @conversations_bp.route('/process_prompt', methods=['POST'])
-def process_prompt_endpoint():
+async def process_prompt_endpoint():
     """
     Process a user prompt using their selected profile AND selected models.
     Now utilizes caching for massive performance gains.
@@ -219,7 +220,8 @@ def process_prompt_endpoint():
     )
     
     # 3. Process
-    result = asyncio.run(saf_system.process_prompt(data['message'], user_id, data['conversation_id']))
+    # FIX: Using native await instead of asyncio.run
+    result = await saf_system.process_prompt(data['message'], user_id, data['conversation_id'])
     return jsonify(result)
 
 
@@ -280,12 +282,9 @@ def get_conversations():
     # Add 'last_updated' timestamp to each conversation
     conversations_with_timestamps = []
     for convo in conversations:
-        history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0) # Limit 1 is faster if sorted DESC
-        # Note: db.fetch_chat_history... usually returns sorted by timestamp ASC. 
-        # If you need the *latest*, ensure your DB query is efficient or fetch the end.
-        # Ideally, fetch_user_conversations should join on the last message timestamp in SQL.
-        # Assuming standard fetch_chat_history returns full list or oldest first:
-        # We'll stick to your previous logic which worked:
+        history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0) 
+        
+        # We stick to your previous logic which worked:
         full_history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0)
         
         if full_history:
