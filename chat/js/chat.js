@@ -571,7 +571,8 @@ export async function sendMessage(activeProfileData, user) {
 
                 ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
             },
-            { suggestedPrompts: suggestions }
+            // --- ADDED: Pass animate: true for new messages ---
+            { suggestedPrompts: suggestions, animate: true } 
         );
         // --- END BUG FIX ---
 

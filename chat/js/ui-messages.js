@@ -55,7 +55,6 @@ function _createTrustPill(score, onClick) {
     const button = document.createElement('button');
     button.className = 'trust-score-pill';
     
-    // Default to Green/High if score is missing but audit exists, or parse score
     const numScore = (score === null || score === undefined) ? 10.0 : parseFloat(score);
     
     let colorClass = 'trust-green';
@@ -71,7 +70,6 @@ function _createTrustPill(score, onClick) {
 
     button.classList.add(colorClass);
     
-    // Accessible label
     button.setAttribute('aria-label', `Trust Score: ${numScore.toFixed(1)} out of 10. Click to view reasoning.`);
     button.setAttribute('title', 'View Ethical Reasoning');
 
@@ -86,6 +84,160 @@ function _createTrustPill(score, onClick) {
     });
     
     return button;
+}
+
+// --- TYPEWRITER STATE ---
+let typingTimeout = null;
+let currentTypingSession = null;
+
+function stopTyping() {
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+        typingTimeout = null;
+    }
+    currentTypingSession = null;
+}
+
+/**
+ * Simulates typing by traversing the DOM Tree.
+ * Preserves HTML structure (Bold, Tables, Lists) while animating text.
+ * NOW WITH ADAPTIVE SPEED.
+ */
+function typeWriterEffect(targetElement, htmlContent, onComplete) {
+    stopTyping(); 
+    
+    // 1. Parse HTML into a virtual DOM fragment
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+
+    // 2. Flatten the DOM into a queue of operations
+    const steps = [];
+    
+    function traverse(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            if (node.textContent.length > 0) {
+                steps.push({ type: 'text', content: node.textContent });
+            }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            // Capture attributes (class, href, etc.)
+            const attributes = {};
+            if (node.attributes) {
+                for (const attr of node.attributes) {
+                    attributes[attr.name] = attr.value;
+                }
+            }
+            
+            steps.push({ type: 'open', tagName: node.tagName, attributes });
+            
+            // Recursively traverse children
+            node.childNodes.forEach(traverse);
+            
+            // Mark end of element
+            steps.push({ type: 'close' });
+        }
+    }
+    
+    // Fill the steps queue
+    tempDiv.childNodes.forEach(traverse);
+
+    // 3. Adaptive Speed Calculation
+    const fullText = tempDiv.textContent || "";
+    const textLength = fullText.length;
+    
+    let charsPerTick = 2; 
+    if (textLength > 50) charsPerTick = 3;
+    if (textLength > 100) charsPerTick = 5;
+    if (textLength > 500) charsPerTick = 15;
+    if (textLength > 1000) charsPerTick = 30;
+    if (textLength > 2500) charsPerTick = 80;
+
+    const delay = 5; // 5ms per tick
+
+    // 4. Execution
+    let stepIndex = 0;
+    let charIndex = 0;
+    let currentParent = targetElement;
+
+    // Store session to allow force-finish
+    currentTypingSession = {
+        element: targetElement,
+        fullHtml: htmlContent,
+        onComplete
+    };
+
+    function type() {
+        if (!currentTypingSession) return; // Stopped/Cancelled
+
+        if (stepIndex >= steps.length) {
+            if (onComplete) onComplete();
+            stopTyping();
+            return;
+        }
+
+        const step = steps[stepIndex];
+
+        if (step.type === 'open') {
+            // Create the element immediately
+            const newEl = document.createElement(step.tagName);
+            for (const [key, val] of Object.entries(step.attributes)) {
+                newEl.setAttribute(key, val);
+            }
+            currentParent.appendChild(newEl);
+            currentParent = newEl; // Step down into this element
+            stepIndex++;
+            
+            ui.scrollToBottom(); // Scroll on structure change
+            type(); // Recursively call immediately (don't wait for tags)
+        } 
+        else if (step.type === 'close') {
+            // Step up to parent
+            if (currentParent !== targetElement) {
+                currentParent = currentParent.parentNode;
+            }
+            stepIndex++;
+            type(); // Recursively call immediately
+        } 
+        else if (step.type === 'text') {
+            const content = step.content;
+            
+            // Type chunk of text
+            const remaining = content.length - charIndex;
+            const chunkLength = Math.min(charsPerTick, remaining);
+            const chunk = content.substr(charIndex, chunkLength);
+            
+            // Efficiently append text
+            if (currentParent.lastChild && currentParent.lastChild.nodeType === Node.TEXT_NODE) {
+                currentParent.lastChild.textContent += chunk;
+            } else {
+                currentParent.appendChild(document.createTextNode(chunk));
+            }
+            
+            charIndex += chunkLength;
+
+            if (charIndex >= content.length) {
+                stepIndex++;
+                charIndex = 0;
+            }
+            
+            typingTimeout = setTimeout(type, delay);
+        }
+    }
+
+    type();
+}
+
+function forceFinishTyping() {
+    if (currentTypingSession && typingTimeout) {
+        clearTimeout(typingTimeout);
+        const { element, fullHtml, onComplete } = currentTypingSession;
+        
+        element.innerHTML = fullHtml;
+        ui.scrollToBottom();
+        
+        if (onComplete) onComplete();
+        
+        stopTyping();
+    }
 }
 
 // --- MESSAGE RENDERING ---
@@ -145,36 +297,36 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   messageContainer.className = 'message-container';
   if (messageId) messageContainer.dataset.messageId = messageId;
 
-  let final_text;
+  let final_text_raw;
   if (typeof text === 'object' && text !== null) {
-      final_text = "```json\n" + JSON.stringify(text, null, 2) + "\n```";
+      final_text_raw = "```json\n" + JSON.stringify(text, null, 2) + "\n```";
   } else {
-      final_text = String(text ?? '[Sorry, the model returned an empty response.]');
+      final_text_raw = String(text ?? '[Sorry, the model returned an empty response.]');
   }
+  
+  const final_html = DOMPurify.sanitize(marked.parse(final_text_raw));
 
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
   
+  // Define buttons variable here
   let ttsBtn, copyBtn, retryBtn;
 
+  // 1. BUILD BASIC STRUCTURE (No text yet for AI)
   if (sender === 'ai') {
     const profileName = payload?.profile || null;
     const avatarUrl = getAvatarForProfile(profileName);
-    let promptsHtml = '';
-    if (options.suggestedPrompts?.length > 0) {
-        promptsHtml = _renderSuggestionsHtml(options.suggestedPrompts, final_text.includes("🛑 **The answer was blocked**"));
-    }
-
+    
     ttsBtn = document.createElement('button');
     ttsBtn.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
     ttsBtn.innerHTML = iconPlay;
-    ttsBtn.onclick = () => playSpeech(final_text, ttsBtn);
+    ttsBtn.onclick = () => playSpeech(final_text_raw, ttsBtn);
 
     copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
     copyBtn.innerHTML = iconCopy;
     copyBtn.onclick = () => {
-        navigator.clipboard.writeText(_markdownToPlainText(final_text)).then(() => {
+        navigator.clipboard.writeText(_markdownToPlainText(final_text_raw)).then(() => {
             ui.showToast('Copied', 'success');
             copyBtn.innerHTML = iconCheck;
             setTimeout(() => copyBtn.innerHTML = iconCopy, 2000);
@@ -184,40 +336,36 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageDiv.innerHTML = `
       <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-lg"></div>
       <div class="ai-content-wrapper">
-        <div class="chat-bubble"><div class="meta"></div></div>
-        ${promptsHtml}
+        <div class="chat-bubble cursor-pointer"><div class="meta"></div></div>
       </div>
     `;
-    messageDiv.querySelector('.chat-bubble').insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(final_text)));
   } else {
-    // Check if retry option is passed
+    // User Message - Render text immediately
     if (options.onRetry) {
         retryBtn = document.createElement('button');
         retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
         retryBtn.innerHTML = iconRetry;
         retryBtn.setAttribute('title', 'Retry this prompt');
-        // Pass the text (assuming it's a string) back to the handler
-        retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text);
+        retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text_raw);
     }
 
     const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
-           <div class="chat-bubble">${DOMPurify.sanitize(marked.parse(final_text))}<div class="meta"></div></div>
+           <div class="chat-bubble">${final_html}<div class="meta"></div></div>
         </div>
         <div class="user-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-full"></div>
     `;
   }
 
+  // 2. POPULATE META FOOTER (Before Animation Logic)
   const metaDiv = messageDiv.querySelector('.meta');
   const leftMeta = document.createElement('div');
   const rightMeta = document.createElement('div');
   rightMeta.className = 'flex items-center gap-2 ml-auto';
 
-  // --- NEW: Add Trust Pill (Link Removed) ---
   const hasLedger = payload?.ledger?.length > 0;
   if (hasLedger && whyHandler) {
-      // 1. Create and append the pill
       const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
       leftMeta.appendChild(pill);
   }
@@ -230,16 +378,64 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
       if (copyBtn) rightMeta.prepend(copyBtn);
       if (ttsBtn) rightMeta.prepend(ttsBtn);
   } else if (sender === 'user' && retryBtn) {
-      // Append retry button to the user message meta
       rightMeta.prepend(retryBtn);
   }
   rightMeta.appendChild(stamp);
   metaDiv.appendChild(leftMeta);
   metaDiv.appendChild(rightMeta);
 
+
+  // 3. HANDLE CONTENT & ANIMATION (AI Only)
+  if (sender === 'ai') {
+    const chatBubble = messageDiv.querySelector('.chat-bubble');
+    const contentWrapper = messageDiv.querySelector('.ai-content-wrapper');
+
+    let promptsHtml = '';
+    if (options.suggestedPrompts?.length > 0) {
+        promptsHtml = _renderSuggestionsHtml(options.suggestedPrompts, final_text_raw.includes("🛑 **The answer was blocked**"));
+    }
+
+    if (options.animate) {
+        // Safe to remove now because it is fully populated
+        metaDiv.remove(); 
+        
+        const clickHandler = () => {
+            forceFinishTyping();
+            chatBubble.removeEventListener('click', clickHandler);
+            chatBubble.classList.remove('cursor-pointer');
+        };
+        chatBubble.addEventListener('click', clickHandler);
+
+        typeWriterEffect(chatBubble, final_html, () => {
+            if (!chatBubble.contains(metaDiv)) chatBubble.appendChild(metaDiv);
+            
+            if (promptsHtml && !contentWrapper.querySelector('.prompt-suggestions-container')) {
+                contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
+                _attachSuggestionHandlers(contentWrapper);
+            }
+            ui.scrollToBottom();
+            chatBubble.removeEventListener('click', clickHandler);
+            chatBubble.classList.remove('cursor-pointer');
+        });
+    } else {
+        // Standard instant render
+        chatBubble.insertAdjacentHTML('afterbegin', final_html);
+        chatBubble.classList.remove('cursor-pointer');
+        if (promptsHtml) {
+            contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
+            _attachSuggestionHandlers(contentWrapper);
+        }
+    }
+  }
+
+  // 4. APPEND TO DOM
   messageContainer.appendChild(messageDiv);
   ui.elements.chatWindow.appendChild(messageContainer);
-  ui.scrollToBottom();
+  
+  if (!options.animate) {
+      ui.scrollToBottom();
+  }
+  
   _attachSuggestionHandlers(messageContainer);
   return messageContainer;
 }
@@ -253,20 +449,16 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     if (hasLedger) {
         const metaDiv = container.querySelector('.meta');
         if (metaDiv) {
-            // Clean up old buttons (text link OR old pill)
             metaDiv.querySelectorAll('.why-btn').forEach(el => el.remove());
             metaDiv.querySelectorAll('.trust-score-pill').forEach(el => el.remove());
 
-            // Create new pill with updated score
             const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
 
             let leftMeta = metaDiv.querySelector('div:first-child');
-            if (!leftMeta || leftMeta.classList.contains('flex')) { // basic check if it's the left container
+            if (!leftMeta || leftMeta.classList.contains('flex')) { 
                 leftMeta = document.createElement('div');
                 metaDiv.prepend(leftMeta);
             }
-            
-            // Prepend only the pill
             leftMeta.prepend(pill);
         }
     }
@@ -326,6 +518,7 @@ export function showLoadingIndicator(profileName) {
 
 export function resetChatView() {
   ui._ensureElements();
+  stopTyping(); // stop any active animation when switching
   lastRenderedDay = '';
   ui.elements.chatWindow.innerHTML = '';
 }
@@ -341,7 +534,6 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
   
   const container = document.createElement('div');
   container.className = 'empty-state-container';
-  // UPDATED: max-width increased to 56rem
   container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
   container.innerHTML = `
       <div class="text-center pt-2">
