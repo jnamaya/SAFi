@@ -79,18 +79,24 @@ class LLMProvider:
         
         # 1. Get the provider and client
         provider = self._get_provider_for_model(model)
-        client = self.clients.get(provider)
         
-        if client is None:
-            # Special case for Gemini, which uses a different client structure
-            if provider == "gemini":
-                client = self.gemini_models.get(model)
-                if client is None:
-                     raise ValueError(f"No initialized Gemini model found for '{model}'.")
-            elif provider not in self.clients:
+        # --- FIX: Gemini Re-instantiation Strategy ---
+        # We specifically check for Gemini first to handle the stateless fix.
+        if provider == "gemini":
+            # We DO NOT use self.gemini_models.get(model) here. 
+            # Using the cached client can cause "Event loop is closed" errors 
+            # if the loop that created it has died.
+            # Creating a lightweight wrapper here ensures it binds to the CURRENT loop.
+            try:
+                client = genai.GenerativeModel(model)
+            except Exception as e:
+                    raise ValueError(f"Failed to instantiate Gemini model '{model}': {e}")
+        else:
+            # For other providers (OpenAI, Anthropic), we use the cached clients.
+            # With Uvicorn (ASGI), the loop persists, so this is safe.
+            client = self.clients.get(provider)
+            if client is None:
                 raise ValueError(f"No valid client found for provider '{provider}'. Check your API keys.")
-            else:
-                client = self.clients[provider]
 
         # 2. Get model-specific extra parameters
         extra_model_params = self.extra_params.get(model, {})
@@ -146,14 +152,10 @@ class LLMProvider:
                 content = resp.content[0].text or "{}"
 
             elif provider == "gemini":
-                # --- FIX: Revert to OLD Gemini syntax ---
-                # This fixes the AttributeError: 'module' has no attribute 'Content'
-                # by avoiding the new (incompatible) system_instruction parameter.
+                # --- FIX: Use robust Prompt Concatenation ---
+                # This avoids the "system_instruction" parameter which causes 
+                # AttributeError on some older library versions.
                 
-                client = self.gemini_models.get(model) # client is the gemini_model object
-                if client is None:
-                     raise ValueError(f"No initialized Gemini model found for '{model}'.")
-
                 generation_config = genai.types.GenerationConfig(
                     temperature=temperature,
                     max_output_tokens=max_tokens,
@@ -162,13 +164,11 @@ class LLMProvider:
                 if json_mode:
                     generation_config.response_mime_type = "application/json"
 
-                # Use the old, compatible method of concatenating prompts
                 full_prompt = system_prompt + "\n\n---START OF USER PROMPT---\n" + user_prompt
                 
                 resp = await client.generate_content_async(
                     full_prompt, 
                     generation_config=generation_config
-                    # Note: No system_instruction parameter
                 )
                 content = resp.text or "{}"
                 # --- END FIX ---
