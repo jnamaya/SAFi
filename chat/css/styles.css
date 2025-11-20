@@ -971,3 +971,122 @@ button[type="submit"] {
     stroke: currentColor;
     stroke-width: 2px;
 }
+
+.profile-section-container {
+    background-color: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+.dark .profile-section-container {
+    background-color: rgba(31, 41, 55, 0.5);
+    border-color: #374151;
+}
+
+.chip-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    min-height: 2rem; /* Prevent collapse */
+}
+
+.profile-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    color: #1f2937;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px; /* Pill shape */
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.dark .profile-chip {
+    background-color: #374151;
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
+.profile-chip:hover {
+    border-color: #d1d5db;
+    background-color: #e5e7eb;
+}
+.dark .profile-chip:hover {
+    border-color: #6b7280;
+    background-color: #4b5563;
+}
+
+.chip-delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+.chip-delete-btn:hover {
+    color: #ef4444; /* Red on hover */
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Suggestions Area */
+.suggestions-area {
+    margin-top: 0.75rem;
+}
+.suggestion-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+.suggestion-pill {
+    display: inline-block;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.75rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0.5rem;
+    background-color: rgba(22, 163, 74, 0.08); /* Very light green */
+    color: #15803d;
+    cursor: pointer;
+    border: 1px dashed #86efac;
+    transition: all 0.2s;
+}
+.dark .suggestion-pill {
+    background-color: rgba(22, 163, 74, 0.15);
+    color: #86efac;
+    border-color: #15803d;
+}
+
+.suggestion-pill:hover {
+    background-color: #16a34a;
+    color: white;
+    border-color: #16a34a;
+    transform: translateY(-1px);
+}
+
+/* Empty State */
+.empty-section-state {
+    text-align: center;
+    padding: 1rem;
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 0.9rem;
+    border: 2px dashed #e5e7eb;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+.dark .empty-section-state {
+    border-color: #374151;
+    color: #6b7280;
+}

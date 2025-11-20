@@ -23,6 +23,9 @@ export function setupControlPanelTabs() {
     setupDelegatedModalListeners();
     // --- END FIX ---
 
+    // --- FIX: Ensure the Profile Modal exists in the DOM ---
+    ensureProfileModalExists();
+
     const tabs = [
         ui.elements.cpNavProfile, 
         ui.elements.cpNavModels, 
@@ -91,7 +94,67 @@ function setupDelegatedModalListeners() {
         });
     }
 }
+
+/**
+ * INJECTS the Profile Details Modal HTML if it is missing.
+ * This prevents the "Profile modal content area not found" error.
+ */
+function ensureProfileModalExists() {
+    if (document.getElementById('profile-details-modal')) return;
+
+    console.log('Injecting missing Profile Details Modal...');
+
+    const modalHtml = `
+    <div id="profile-details-modal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-gray-500/75 dark:bg-black/80 transition-opacity" aria-hidden="true"></div>
+        
+        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white dark:bg-neutral-900 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl border border-neutral-200 dark:border-neutral-800">
+                    
+                    <!-- Header -->
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white" id="profile-modal-title">Profile Details</h3>
+                        <button type="button" id="close-profile-modal" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+                            <span class="sr-only">Close</span>
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Content -->
+                    <div id="profile-details-content" class="px-6 py-4 max-h-[70vh] overflow-y-auto custom-scrollbar bg-white dark:bg-neutral-900">
+                        <!-- Dynamic Content -->
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="bg-gray-50 dark:bg-neutral-950 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 border-t border-neutral-200 dark:border-neutral-800">
+                        <button type="button" id="done-profile-modal" class="inline-flex w-full justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 sm:ml-3 sm:w-auto transition-colors">Done</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // CRITICAL: Manually update the UI elements reference
+    // This fixes the "Cannot read properties of null (reading 'classList')" error in ui.js
+    ui.elements.profileModal = document.getElementById('profile-details-modal');
+    ui.elements.profileModalContent = document.getElementById('profile-details-content');
+    
+    // Re-attach close listeners since this is a new element
+    const closeBtn = document.getElementById('close-profile-modal');
+    const doneBtn = document.getElementById('done-profile-modal');
+
+    if (closeBtn) closeBtn.addEventListener('click', ui.closeModal);
+    if (doneBtn) doneBtn.addEventListener('click', ui.closeModal);
+}
 // --- END FIX ---
+
 
 /**
  * Renders the Profile selection tab in the Control Panel.
@@ -106,10 +169,16 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     
     // Handler to open the profile details modal
     const viewDetailsHandler = (key) => {
-        const profile = profiles.find(p => p.key === key);
+        // Double check modal exists before trying to render
+        ensureProfileModalExists();
+
+        // FIX: Use String() conversion to ensure we match "1" with 1 if types differ
+        const profile = profiles.find(p => String(p.key) === String(key));
         if (profile) {
             renderProfileDetailsModal(profile); 
             ui.showModal('profile'); 
+        } else {
+            console.error('Profile not found for key:', key);
         }
     };
     
@@ -122,17 +191,19 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                 const avatarUrl = getAvatarForProfile(profile.name);
                 const description = profile.description_short || profile.description || '';
                 return `
-                <div class="p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg transition-colors">
-                    <label class="flex items-center justify-between cursor-pointer">
+                <div class="p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg transition-colors relative group">
+                    <label class="flex items-center justify-between cursor-pointer relative z-0">
                         <div class="flex items-center gap-3">
                             <img src="${avatarUrl}" alt="${profile.name} Avatar" class="w-8 h-8 rounded-lg">
                             <span class="font-semibold text-base text-neutral-800 dark:text-neutral-200">${profile.name}</span>
                         </div>
                         <input type="radio" name="ethical-profile" value="${profile.key}" class="form-radio text-green-600 focus:ring-green-500" ${profile.key === activeProfileKey ? 'checked' : ''}>
                     </label>
-                    <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2">${description}</p>
-                    <div class="mt-3">
-                        <button data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline">
+                    <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2 relative z-0">${description}</p>
+                    
+                    <!-- FIX: Added relative positioning and z-index to ensure button sits on top -->
+                    <div class="mt-3 relative z-10">
+                        <button type="button" data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
                             View Details
                         </button>
                     </div>
@@ -156,10 +227,13 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     });
     
     // Attach event listeners for "View Details" buttons
+    // FIX: Used explicit 'onclick' to ensure we override any bubbling issues and guarantee execution
     container.querySelectorAll('.view-profile-details-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.onclick = (e) => {
+            e.preventDefault(); 
+            e.stopPropagation(); 
             viewDetailsHandler(btn.dataset.key);
-        });
+        };
     });
 }
 
@@ -334,11 +408,19 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
     document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
 }
 
-// --- START: "MY PROFILE" TAB ---
+// --- START: "MY PROFILE" TAB (ENHANCED UX) ---
 
-// Store the profile data in memory to manage state
+// Store the profile data in memory
 let userProfileData = {};
 let isProfileFetched = false;
+
+// Static suggestions to help users who don't know what to type
+const SUGGESTIONS = {
+    stated_values: ['Honesty', 'Creativity', 'Family First', 'Sustainability', 'Freedom', 'Logic', 'Empathy', 'Hard Work', 'Tradition'],
+    interests: ['Technology', 'Hiking', 'History', 'Cooking', 'Philosophy', 'Sci-Fi', 'Finance', 'Art', 'Coding'],
+    stated_goals: ['Learn a language', 'Build a business', 'Improve fitness', 'Read more books', 'Save money', 'Travel to Japan'],
+    family_status: ['Married', 'Single', 'Have 2 kids', 'Own a dog', 'Live in the city', 'Digital Nomad']
+};
 
 /**
  * Renders the "My Profile" tab (What SAFi Knows About Me).
@@ -347,7 +429,7 @@ let isProfileFetched = false;
 export async function renderSettingsMyProfileTab() {
     ui._ensureElements();
     const container = ui.elements.cpTabMyProfile;
-    if (!container || isProfileFetched) return; // Don't re-fetch if already loaded
+    if (!container || isProfileFetched) return;
 
     container.innerHTML = `
         <div class="flex items-center justify-center h-32">
@@ -357,19 +439,14 @@ export async function renderSettingsMyProfileTab() {
 
     try {
         userProfileData = await api.fetchUserProfileMemory();
-        isProfileFetched = true; // Mark as fetched
+        isProfileFetched = true;
         
-        // Ensure userProfileData is an object
-        if (!userProfileData) {
-            userProfileData = {};
-        }
+        if (!userProfileData) userProfileData = {};
 
-        // Ensure all common keys exist and are ARRAYS.
-        // This prevents a crash if the db returns a string or null.
-        userProfileData.stated_values = Array.isArray(userProfileData.stated_values) ? userProfileData.stated_values : [];
-        userProfileData.interests = Array.isArray(userProfileData.interests) ? userProfileData.interests : [];
-        userProfileData.family_status = Array.isArray(userProfileData.family_status) ? userProfileData.family_status : [];
-        userProfileData.stated_goals = Array.isArray(userProfileData.stated_goals) ? userProfileData.stated_goals : [];
+        // Ensure arrays
+        ['stated_values', 'interests', 'family_status', 'stated_goals'].forEach(k => {
+            userProfileData[k] = Array.isArray(userProfileData[k]) ? userProfileData[k] : [];
+        });
 
         _buildProfileUI(container);
         
@@ -384,131 +461,151 @@ export async function renderSettingsMyProfileTab() {
  */
 function _buildProfileUI(container) {
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">My Profile</h3>
-        <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">
-            This is what SAFi has learned about you. This profile is used by the AI to personalize its responses. You can add, edit, or delete any item.
-        </p>
+        <div class="mb-6">
+            <div>
+                <h3 class="text-xl font-semibold">My Profile</h3>
+                <p class="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
+                    Teach the AI about you. It uses this context to personalize every response.
+                </p>
+            </div>
+        </div>
         
-        ${_buildProfileSection('stated_values', 'My Values', 'What you prioritize (e.g., "honesty", "growth")')}
-        ${_buildProfileSection('interests', 'My Interests', 'Topics you like (e.g., "football", "history")')}
-        ${_buildProfileSection('stated_goals', 'My Goals', 'What you want to achieve (e.g., "learn piano")')}
-        ${_buildProfileSection('family_status', 'My Facts', 'Simple facts (e.g., "has a son", "lives in New York")')}
-        
-        <div class="mt-8 pt-4 border-t border-neutral-200 dark:border-neutral-700 text-right">
-            <button id="save-my-profile-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            ${_buildProfileSection('stated_values', 'My Values', 'What defines your ethics?', 'shield')}
+            ${_buildProfileSection('interests', 'My Interests', 'Topics you enjoy?', 'heart')}
+            ${_buildProfileSection('stated_goals', 'My Goals', 'What are you aiming for?', 'flag')}
+            ${_buildProfileSection('family_status', 'Key Facts', 'Context about your life?', 'info')}
+        </div>
+
+        <div class="mt-8 flex justify-end pt-4 border-t border-neutral-200 dark:border-neutral-700">
+            <button id="save-my-profile-btn" class="px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors shadow-sm">
                 Save Changes
             </button>
         </div>
     `;
     
-    // Attach all event listeners
     _attachProfileEventListeners(container);
 }
 
 /**
- * Helper to build one editable section.
- * @param {string} key - The key in the userProfileData object
- * @param {string} title - The section title
- * @param {string} placeholder - The placeholder text for the input
+ * Helper to build one editable section with chips and suggestions.
  */
-function _buildProfileSection(key, title, placeholder) {
+function _buildProfileSection(key, title, subtitle, iconType) {
     const items = userProfileData[key] || [];
-    return `
-        <div class="mb-6">
-            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">${title}</h4>
-            <div id="profile-list-${key}" class="space-y-2">
-                ${items.map((item, index) => _buildProfileItem(key, item, index)).join('')}
-            </div>
-            <div class="flex gap-2 mt-3">
-                <input type="text" id="profile-input-${key}" class="settings-modal-select flex-1" placeholder="Add a new ${title.toLowerCase().slice(3)}...">
-                <button data-key="${key}" class="add-profile-item-btn shrink-0 px-4 py-2 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-sm">
-                    Add
+    
+    // Get 3 random suggestions that the user DOESN'T already have
+    const availableSuggestions = (SUGGESTIONS[key] || [])
+        .filter(s => !items.map(i => i.toLowerCase()).includes(s.toLowerCase()))
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 4);
+
+    const chipsHtml = items.length > 0 
+        ? items.map((item, index) => `
+            <div class="profile-chip">
+                <span>${DOMPurify.sanitize(item)}</span>
+                <button class="chip-delete-btn" data-key="${key}" data-index="${index}" title="Remove">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-        </div>
-    `;
-}
+          `).join('')
+        : `<div class="empty-section-state">Nothing here yet. Add a value or pick a suggestion!</div>`;
 
-/**
- * Helper to build a single editable item.
- * @param {string} key 
- * @param {string} item 
- * @param {number} index 
- */
-function _buildProfileItem(key, item, index) {
-    // Sanitize item for HTML attribute
-    const safeItem = String(item || '').replace(/"/g, '&quot;');
+    const suggestionsHtml = availableSuggestions.length > 0 
+        ? `
+            <div class="suggestions-area">
+                <div class="suggestion-label">Quick Add:</div>
+                <div>
+                    ${availableSuggestions.map(s => `<button class="suggestion-pill" data-key="${key}" data-val="${s}">+ ${s}</button>`).join('')}
+                </div>
+            </div>
+          ` 
+        : '';
+
     return `
-        <div class="flex items-center gap-2" data-index="${index}">
-            <input type="text" value="${safeItem}" data-key="${key}" class="profile-item-input settings-modal-select flex-1">
-            <button data-key="${key}" data-index="${index}" class="delete-profile-item-btn shrink-0 p-2 rounded-full text-gray-400 hover:bg-red-100 dark:hover:bg-red-900/50 hover:text-red-500 dark:hover:text-red-400">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-            </button>
+        <div class="profile-section-container shadow-sm">
+            <div class="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${title}</h4>
+                <span class="text-xs text-neutral-400 font-normal ml-auto">${subtitle}</span>
+            </div>
+            
+            <div class="chip-container" id="chip-list-${key}">
+                ${chipsHtml}
+            </div>
+
+            <div class="relative mt-2">
+                <div class="flex gap-2">
+                    <input type="text" id="profile-input-${key}" 
+                           class="settings-modal-select flex-1 !py-2 !text-sm" 
+                           placeholder="Type and press Enter...">
+                    <button data-key="${key}" class="add-profile-item-btn shrink-0 px-3 py-2 rounded-lg font-medium bg-neutral-800 text-white hover:bg-black dark:bg-neutral-700 dark:hover:bg-neutral-600 text-sm transition-colors">
+                        Add
+                    </button>
+                </div>
+                ${suggestionsHtml}
+            </div>
         </div>
     `;
 }
 
 /**
- * Attach listeners for Add, Delete, Edit, and Save
- * @param {HTMLElement} container 
+ * Attach listeners for Add, Delete, Suggestions, and Save
  */
 function _attachProfileEventListeners(container) {
-    
-    // Handle "Add" button
+    // 1. Handle "Add" via Button
     container.querySelectorAll('.add-profile-item-btn').forEach(btn => {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
+        btn.addEventListener('click', () => _handleAddItem(btn.dataset.key, container));
+    });
 
-        newBtn.addEventListener('click', () => {
-            const key = newBtn.dataset.key;
-            const input = document.getElementById(`profile-input-${key}`);
-            const value = input.value.trim();
-            
-            if (value) {
-                if (!userProfileData[key]) userProfileData[key] = []; // Ensure array exists
-                userProfileData[key].push(value);
-                const listContainer = document.getElementById(`profile-list-${key}`);
-                const newIndex = userProfileData[key].length - 1;
-                listContainer.insertAdjacentHTML('beforeend', _buildProfileItem(key, value, newIndex));
-                input.value = '';
-                // Re-attach listeners for the new item
-                _attachProfileEventListeners(container);
+    // 2. Handle "Add" via Enter Key
+    container.querySelectorAll('input[id^="profile-input-"]').forEach(input => {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const key = input.id.replace('profile-input-', '');
+                _handleAddItem(key, container);
             }
         });
     });
 
-    // Handle "Delete" button
-    container.querySelectorAll('.delete-profile-item-btn').forEach(btn => {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', _handleProfileItemDelete);
+    // 3. Handle "Delete" (Event delegation on container)
+    container.querySelectorAll('.chip-container').forEach(list => {
+        list.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.chip-delete-btn');
+            if (deleteBtn) {
+                const key = deleteBtn.dataset.key;
+                const index = parseInt(deleteBtn.dataset.index);
+                
+                // Remove item
+                if (userProfileData[key]) {
+                    userProfileData[key].splice(index, 1);
+                    _buildProfileUI(container); // Re-render to update indices
+                }
+            }
+        });
     });
 
-    // Handle "Edit" (typing in input)
-    container.querySelectorAll('.profile-item-input').forEach(input => {
-        const newInput = input.cloneNode(true);
-        input.parentNode.replaceChild(newInput, input);
-        
-        newInput.addEventListener('change', (e) => {
-            const key = e.target.dataset.key;
-            const index = e.target.parentElement.dataset.index;
-            if (userProfileData[key] && userProfileData[key][index] !== undefined) {
-                userProfileData[key][index] = e.target.value.trim();
-            }
+    // 4. Handle "Suggestion Click"
+    container.querySelectorAll('.suggestion-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            const key = pill.dataset.key;
+            const val = pill.dataset.val;
+            
+            if (!userProfileData[key]) userProfileData[key] = [];
+            userProfileData[key].push(val);
+            _buildProfileUI(container);
         });
     });
     
-    // Handle "Save" button
+    // 5. Handle "Save"
     const saveBtn = document.getElementById('save-my-profile-btn');
     if (saveBtn) {
-        const newSaveBtn = saveBtn.cloneNode(true);
-        saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
-
-        newSaveBtn.addEventListener('click', async () => {
-            newSaveBtn.textContent = 'Saving...';
-            newSaveBtn.disabled = true;
+        saveBtn.addEventListener('click', async () => {
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saving...';
+            saveBtn.disabled = true;
+            
             try {
-                // Filter out empty/null strings that may have resulted from edits or deletions
+                // Clean data (remove empty strings)
                 for (const key in userProfileData) {
                     if (Array.isArray(userProfileData[key])) {
                         userProfileData[key] = userProfileData[key].filter(item => item && String(item).trim() !== '');
@@ -516,30 +613,37 @@ function _attachProfileEventListeners(container) {
                 }
                 
                 await api.updateUserProfileMemory(userProfileData);
-                ui.showToast('Profile saved!', 'success');
-                // Re-render the UI to show the cleaned data and re-attach listeners
-                _buildProfileUI(container);
+                ui.showToast('Profile updated successfully', 'success');
             } catch (error) {
                 ui.showToast(`Error saving: ${error.message}`, 'error');
+            } finally {
+                saveBtn.textContent = originalText;
+                saveBtn.disabled = false;
             }
         });
     }
 }
 
-// Separate delete handler
-function _handleProfileItemDelete(e) {
-    const btn = e.currentTarget;
-    const key = btn.dataset.key;
-    const index = btn.dataset.index;
+function _handleAddItem(key, container) {
+    const input = document.getElementById(`profile-input-${key}`);
+    if (!input) return;
     
-    // Mark for deletion by setting to null (will be filtered on save)
-    if (userProfileData[key] && userProfileData[key][index] !== undefined) {
-        userProfileData[key][index] = null; 
+    const value = input.value.trim();
+    if (value) {
+        if (!userProfileData[key]) userProfileData[key] = [];
+        userProfileData[key].push(value);
+        
+        // Clear input and focus back for rapid entry
+        input.value = '';
+        _buildProfileUI(container);
+        
+        // Refocus the input we just used
+        setTimeout(() => {
+            const nextInput = document.getElementById(`profile-input-${key}`);
+            if(nextInput) nextInput.focus();
+        }, 0);
     }
-    // Remove from UI
-    btn.parentElement.remove();
 }
-
 
 // --- END: NEW "MY PROFILE" TAB ---
 
@@ -1019,6 +1123,10 @@ function renderValuesSection(values) {
  */
 export function renderProfileDetailsModal(profile) {
     ui._ensureElements();
+    
+    // FIX: Ensure modal exists in DOM before grabbing reference
+    ensureProfileModalExists();
+    
     const container = ui.elements.profileModalContent;
     if (!container) {
         console.error("Profile modal content area not found.");
