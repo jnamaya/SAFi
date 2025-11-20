@@ -109,6 +109,9 @@ function updateSidebarState(open) {
     // 1. Make it visible immediately so the slide-in transition can occur
     elements.sidebarElement.classList.remove('hidden'); 
     
+    // FIX: Force flex display so flex-col and flex-1 work on mobile, pushing footer down
+    elements.sidebarElement.classList.add('flex');
+
     // 2. Apply positioning classes
     elements.sidebarElement.classList.remove('-translate-x-full');
     elements.sidebarElement.classList.remove('w-72'); 
@@ -147,6 +150,9 @@ function updateSidebarState(open) {
         if (!isSidebarOpen) { 
             elements.sidebarElement.classList.add('hidden');
             
+            // FIX: Remove flex so it returns to default hidden state safely
+            elements.sidebarElement.classList.remove('flex');
+
             // FIX: Reset width ONLY after it is hidden to prepare for next open/desktop
             elements.sidebarElement.classList.remove('w-full');
             elements.sidebarElement.classList.add('w-72');
