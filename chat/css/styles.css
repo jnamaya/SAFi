@@ -98,12 +98,14 @@ html {
 
 .message-container {
     width: 100%;
-    margin: 0;
-    padding: 0 2%; 
+    /* UPDATED: Center the messages inside the full-width scroll view */
+    margin: 0 auto;
+    padding: 0 16px; 
 }
 
 .message-container {
-    max-width: none !important;
+    /* UPDATED: Max width to prevent text from stretching too far on large screens */
+    max-width: 64rem !important; /* 5xl size (1024px) */
 }
 
 .message.user {
@@ -800,7 +802,9 @@ html {
 /* --- NEW: Enhanced Input Styling (The "Conversational Surface") --- */
 
 /* 1. Wrapper for the input area (The "Dock") */
-.input-dock-container, .input-wrapper, form, #composer-footer {
+
+/* UPDATED: Separated logic. This handles generic classes and the new wrapper */
+.input-dock-container, .input-wrapper, form, .composer-bg-wrapper {
     position: relative; /* Crucial for button positioning */
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(10px);
@@ -814,9 +818,25 @@ html {
     gap: 0; /* Remove gap since button is absolute */
 }
 
-.dark .input-dock-container, .dark .input-wrapper, .dark form, .dark #composer-footer {
+/* UPDATED: Dark mode support for wrapper */
+.dark .input-dock-container, .dark .input-wrapper, .dark form, .dark .composer-bg-wrapper {
     background: rgba(0, 0, 0, 0.8);
     border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+/* UPDATED: Special logic for the inner footer ID to respect full-width parent */
+#composer-footer {
+    /* Needs relative for button positioning */
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    /* Background handled by wrapper, so we make this transparent */
+    background: transparent !important;
+    border: none !important;
+    backdrop-filter: none !important;
+    /* Remove default padding from previous version if any, padding is on wrapper or controlled by flex */
+    padding: 16px; 
+    gap: 0;
 }
 
 /* 2. The Input Field Itself (The Capsule) */

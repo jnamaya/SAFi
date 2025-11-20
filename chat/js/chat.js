@@ -255,7 +255,8 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     // 1. Load from local UI state cache first
     const cachedHistory = await cache.loadConvoHistory(id);
     if (cachedHistory.length > 0) {
-        renderHistory(cachedHistory, user, showModal);
+        // Updated to pass activeProfileData for retry logic
+        renderHistory(cachedHistory, user, showModal, activeProfileData);
         if (shouldScroll) ui.scrollToBottom(); // Scroll only if requested
     } else {
         // ADDED NULL CHECK: Safely get first name
@@ -283,7 +284,8 @@ export async function switchConversation(id, activeProfileData, user, showModal,
         // or if we initially rendered the empty state (cachedHistory.length === 0).
         if (cachedHistory.length === 0 || JSON.stringify(cachedHistory) !== JSON.stringify(history)) {
             uiMessages.resetChatView();
-            renderHistory(history, user, showModal);
+            // Updated to pass activeProfileData for retry logic
+            renderHistory(history, user, showModal, activeProfileData);
             if (shouldScroll) ui.scrollToBottom(); // Scroll only if requested
         }
     } catch (error) {
@@ -295,7 +297,8 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     }
 }
 
-function renderHistory(history, user, showModal) {
+// Updated signature to accept activeProfileData
+function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
 
     history.forEach((turn, i) => {
@@ -336,6 +339,18 @@ function renderHistory(history, user, showModal) {
         const options = {};
         if (turn.role === 'user' && user) {
             options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
+            
+            // --- NEW: Retry Handler ---
+            // If activeProfileData is available, allow retry
+            if (activeProfileData) {
+                options.onRetry = (text) => {
+                    ui.elements.messageInput.value = text;
+                    autoSize();
+                    ui.elements.sendButton.disabled = false;
+                    ui.elements.messageInput.focus();
+                    sendMessage(activeProfileData, user);
+                };
+            }
         }
         // --- MODIFIED: Use the parsed array ---
         options.suggestedPrompts = parsedSuggestions;
@@ -436,7 +451,19 @@ export async function sendMessage(activeProfileData, user) {
     const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
     const userMessageId = crypto.randomUUID();
 
-    uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, { avatarUrl: pic });
+    // --- NEW: Retry Handler for optimistic message ---
+    const retryHandler = (text) => {
+        ui.elements.messageInput.value = text;
+        autoSize();
+        ui.elements.sendButton.disabled = false;
+        ui.elements.messageInput.focus();
+        sendMessage(activeProfileData, user);
+    };
+
+    uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, { 
+        avatarUrl: pic,
+        onRetry: retryHandler 
+    });
 
     const userMessageObject = {
         role: 'user',

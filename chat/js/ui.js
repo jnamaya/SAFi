@@ -59,6 +59,7 @@ export function _initElements() {
     
     sidebarElement: null, // Initialized later in open/close functions
     sidebarOverlay: null, // Initialized later
+    // Note: We keep the reference but stop toggling its visibility class
     menuToggleButton: document.getElementById('menu-toggle'), 
   };
 }
@@ -121,15 +122,13 @@ function updateSidebarState(open) {
 
     isSidebarOpen = true;
     
-    // Hide menu toggle button when sidebar opens
-    if (elements.menuToggleButton) {
-        elements.menuToggleButton.classList.add('hidden');
-    }
   } else {
     // 1. Apply off-screen translation
     elements.sidebarElement.classList.add('-translate-x-full');
-    elements.sidebarElement.classList.remove('w-full');
-    elements.sidebarElement.classList.add('w-72');
+    
+    // FIX: Do NOT remove w-full immediately. Let it transition out at full width.
+    // elements.sidebarElement.classList.remove('w-full');
+    // elements.sidebarElement.classList.add('w-72');
     
     // Fade out overlay
     elements.sidebarOverlay.classList.add('opacity-0');
@@ -147,13 +146,12 @@ function updateSidebarState(open) {
     hideSidebarTimeout = setTimeout(() => {
         if (!isSidebarOpen) { 
             elements.sidebarElement.classList.add('hidden');
+            
+            // FIX: Reset width ONLY after it is hidden to prepare for next open/desktop
+            elements.sidebarElement.classList.remove('w-full');
+            elements.sidebarElement.classList.add('w-72');
         }
     }, 350); 
-
-    // Show menu toggle button when sidebar closes (on mobile)
-    if (elements.menuToggleButton && window.innerWidth < 768) {
-        elements.menuToggleButton.classList.remove('hidden');
-    }
   }
 }
 

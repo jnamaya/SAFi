@@ -27,9 +27,11 @@ export function updateUIForAuthState(user) {
     ui.elements.loginView.classList.add('hidden');
     
     // Renders the Sidebar HTML structure
+    // FIX: Added 'hidden md:flex' to the aside classes. 
+    // This ensures it is hidden by default on mobile (preventing ghost buttons) but visible on desktop.
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-white dark:bg-black text-neutral-900 dark:text-white flex flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-72 bg-white dark:bg-black text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
           
           <!-- Header Area -->
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
@@ -40,11 +42,10 @@ export function updateUIForAuthState(user) {
               <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
 
-            <!-- --- NEW: Close Sidebar Button (Mobile Only) --- -->
+            <!-- Close Sidebar Button (Mobile Only) -->
             <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <!-- --- END NEW --- -->
           </div>
           
           <div class="p-4 shrink-0">
@@ -77,7 +78,6 @@ export function updateUIForAuthState(user) {
         </aside>
     `;
     
-    // --- NEW: Attach Event Listeners for Sidebar Closing ---
     const closeBtn = document.getElementById('sidebar-close-btn');
     if (closeBtn) {
         closeBtn.addEventListener('click', ui.closeSidebar);
@@ -87,7 +87,6 @@ export function updateUIForAuthState(user) {
     if (overlay) {
         overlay.addEventListener('click', ui.closeSidebar);
     }
-    // --- END NEW ---
 
   } else {
     ui.elements.sidebarContainer.innerHTML = '';
@@ -105,7 +104,6 @@ function createDropdownMenu(convoId, isPinned, handlers) {
   menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
   menu.dataset.menuId = convoId;
   
-  // --- NEW: Pin/Unpin Button ---
   const pinButton = document.createElement('button');
   pinButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
   pinButton.innerHTML = isPinned ? 
@@ -119,7 +117,6 @@ function createDropdownMenu(convoId, isPinned, handlers) {
     handlers.pinHandler(convoId, isPinned);
   });
   menu.appendChild(pinButton);
-  // --- END NEW: Pin/Unpin Button ---
   
   const renameButton = document.createElement('button');
   renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
@@ -204,10 +201,6 @@ export function prependConversationLink(convo, handlers) {
           convoList.prepend(link);
       }
   }
-
-  // NOTE: Given the complexity of manually sorting headers on prepend,
-  // the `chat.js` function `loadConversations` is set up to call `renderConvoList`
-  // which clears and re-renders everything, ensuring correct sort order.
 }
 
 /**
@@ -217,14 +210,11 @@ export function renderConversationLink(convo, handlers) {
   ui._ensureElements();
   const { switchHandler, renameHandler, deleteHandler, pinHandler } = handlers;
   
-  // Outer element is now just the link
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
   
-  // Use a child div inside the <a> to hold content and apply class for active state/hover
   const innerContent = document.createElement('div');
-  // NOTE: Swapping background classes to white/near-black. Hover remains gray-100/800.
   innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 bg-white dark:bg-black hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors duration-150';
   
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
@@ -239,10 +229,6 @@ export function renderConversationLink(convo, handlers) {
             </span>
         </div>
     </div>
-    <!-- 
-      CHANGE: opacity-0 is applied to hide the icon but keep it clickable (long press trigger).
-      menu-icon-hidden class ensures no unwanted visual state on hover.
-    -->
     <button data-action="menu" class="convo-menu-button opacity-0 focus:opacity-100 menu-icon-hidden
                    absolute right-2 top-1/2 -translate-y-1/2 
                    p-1.5 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700" 
@@ -441,12 +427,10 @@ export function updateActiveProfileChip(profileName) {
     `;
   }
 
-  // --- ADDED --- (Feature 3)
   // Update the main chat input placeholder
   if (ui.elements.messageInput) {
       ui.elements.messageInput.placeholder = `Ask ${profileNameText}`;
   }
-  // --- END ADDED ---
 }
 
 /**

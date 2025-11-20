@@ -10,6 +10,7 @@ import { iconPlay } from './ui-render-constants.js';
 const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
 const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
 const iconShield = `<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
+const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
 
 // --- CONFIG: Persona-Specific Loading Messages ---
 const LOADING_MESSAGES = {
@@ -154,7 +155,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${sender}`;
   
-  let ttsBtn, copyBtn;
+  let ttsBtn, copyBtn, retryBtn;
 
   if (sender === 'ai') {
     const profileName = payload?.profile || null;
@@ -189,6 +190,17 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     `;
     messageDiv.querySelector('.chat-bubble').insertAdjacentHTML('afterbegin', DOMPurify.sanitize(marked.parse(final_text)));
   } else {
+    // Check if retry option is passed
+    if (options.onRetry) {
+        retryBtn = document.createElement('button');
+        // UPDATED: Changed text color to #f8f8f8 per user request
+        retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
+        retryBtn.innerHTML = iconRetry;
+        retryBtn.setAttribute('title', 'Retry this prompt');
+        // Pass the text (assuming it's a string) back to the handler
+        retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text);
+    }
+
     const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
     messageDiv.innerHTML = `
         <div class="user-content-wrapper">
@@ -218,6 +230,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
   if (sender === 'ai') {
       if (copyBtn) rightMeta.prepend(copyBtn);
       if (ttsBtn) rightMeta.prepend(ttsBtn);
+  } else if (sender === 'user' && retryBtn) {
+      // Append retry button to the user message meta
+      rightMeta.prepend(retryBtn);
   }
   rightMeta.appendChild(stamp);
   metaDiv.appendChild(leftMeta);

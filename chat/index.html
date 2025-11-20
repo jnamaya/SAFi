@@ -62,67 +62,70 @@
       <section class="w-full flex flex-col flex-1 h-full px-0 overflow-hidden">
         
         <!-- Login View -->
-        <div id="login-view" class="w-full h-full max-w-4xl mx-auto flex flex-col items-center overflow-y-auto p-6 pt-16">
-          <div class="app-logo mb-6 shrink-0">
-            <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
-          </div>
-           <h1 class="text-3xl font-bold text-center">Welcome to SAFi</h1>
-        <p class="text-neutral-500 dark:text-neutral-400 mt-2 text-center">The Governance Engine For AI</p>
-        
-          <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
-            <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
-            Sign in with Google
-          </button>
+        <!-- REMOVED max-w-4xl mx-auto to allow full-width scrolling on login too -->
+        <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
+          <div class="w-full max-w-4xl mx-auto flex flex-col items-center">
+            <div class="app-logo mb-6 shrink-0">
+                <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'"/>
+            </div>
+            <h1 class="text-3xl font-bold text-center">Welcome to SAFi</h1>
+            <p class="text-neutral-500 dark:text-neutral-400 mt-2 text-center">The Governance Engine For AI</p>
+            
+            <button id="login-button" type="button" class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
+                <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.082,5.571l6.19,5.238C42.021,35.596,44,30.138,44,24C44,22.659,43.862,21.35,43.611,20.083z"/></svg>
+                Sign in with Google
+            </button>
 
-          <button id="login-microsoft-button" type="button" class="mt-4 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
-            <svg class="w-5 h-5" viewBox="0 0 23 23" aria-hidden="true">
-                <path fill="#f35325" d="M1 1h10v10H1z"/>
-                <path fill="#81bc06" d="M12 1h10v10H12z"/>
-                <path fill="#05a6f0" d="M1 12h10v10H1z"/>
-                <path fill="#ffba08" d="M12 12h10v10H12z"/>
-            </svg>
-            Sign in with Microsoft
-          </button>
-          
-          <a href="https://selfalignmentframework.com/safi/" 
-             target="_blank" 
-             rel="noopener noreferrer" 
-             class="mt-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 hover:underline transition-colors shrink-0">
-            Learn More About SAFi
-          </a>
+            <button id="login-microsoft-button" type="button" class="mt-4 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
+                <svg class="w-5 h-5" viewBox="0 0 23 23" aria-hidden="true">
+                    <path fill="#f35325" d="M1 1h10v10H1z"/>
+                    <path fill="#81bc06" d="M12 1h10v10H12z"/>
+                    <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+                    <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                </svg>
+                Sign in with Microsoft
+            </button>
+            
+            <a href="https://selfalignmentframework.com/safi/" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                class="mt-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 hover:underline transition-colors shrink-0">
+                Learn More About SAFi
+            </a>
+          </div>
         </div>
 
         <!-- Chat View -->
         <!-- 
           CRITICAL CHANGE: 
-          - h-full ensures it fills the screen.
-          - flex-col organizes header, messages, and footer vertically.
-          - overflow-hidden prevents the view itself from scrolling, forcing inner scroll on #chat-window.
+          - REMOVED max-w-5xl mx-auto so the scrollable container (chat-window) spans full width.
+          - This fixes the issue where hovering on the sides doesn't scroll.
         -->
-        <div id="chat-view" class="w-full max-w-5xl mx-auto hidden flex flex-col h-full bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
+        <div id="chat-view" class="w-full hidden flex flex-col h-full bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
           
           <!-- Mobile Header -->
-          <header class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-black z-20 shrink-0">
-            <div class="flex items-center gap-3 md:hidden">
-              <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-              </button>
-            </div>
-            <div class="text-center flex-1 min-w-0 mx-2">
-                <h1 id="chat-title" class="font-semibold leading-tight truncate" style="font-size: 14px;">SAFi</h1>
-                <button id="active-profile-chip-mobile" class="text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 transition-colors">
-                  Loading Persona...
+          <header class="w-full border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black z-20 shrink-0">
+            <div class="w-full max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3 md:hidden">
+                <button id="menu-toggle" type="button" aria-label="Open sidebar" class="p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                 </button>
+                </div>
+                <div class="text-center flex-1 min-w-0 mx-2">
+                    <h1 id="chat-title" class="font-semibold leading-tight truncate" style="font-size: 14px;">SAFi</h1>
+                    <button id="active-profile-chip-mobile" class="text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 transition-colors">
+                    Loading Persona...
+                    </button>
+                </div>
+                <div class="w-10 md:hidden"> <!-- Spacer --> </div>
             </div>
-            <div class="w-10 md:hidden"> <!-- Spacer --> </div>
           </header>
 
           <!-- Chat Window (SCROLLABLE AREA) -->
           <!-- 
             CRITICAL CHANGE: 
-            - flex-1 makes it take up all remaining space.
-            - overflow-y-auto enables internal scrolling (this fixes the "sticky" issue).
-            - custom-scrollbar for aesthetics.
+            - This container is now full width.
+            - Content inside (messages) will be centered via CSS.
           -->
           <div id="chat-window" class="flex-1 overflow-y-auto custom-scrollbar pt-4 pb-4 flex flex-col justify-start gap-5">
             <!-- Chat messages dynamically generated -->
@@ -131,31 +134,33 @@
           <!-- Message Composer (FIXED BOTTOM) -->
           <!-- 
             CRITICAL CHANGE: 
-            - Removed sticky/bottom-0 because it's now naturally at the bottom of the flex column.
-            - shrink-0 ensures it doesn't get squashed.
+            - Wrapped in a full-width container to handle background/blur.
+            - Inner footer ID retains logic but is centered.
           -->
-          <footer id="composer-footer" class="shrink-0 p-4 bg-white/90 dark:bg-black/90 backdrop-blur flex items-end gap-3">
-            <textarea 
-              id="message-input" 
-              rows="1" 
-              class="flex-1 resize-none bg-transparent py-2.5 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-xl" 
-              placeholder="Ask something..."
-            ></textarea>
-            <button 
-              id="send-button" 
-              type="submit" 
-              aria-label="Send message" 
-              class="shrink-0 bg-green-600 text-white font-semibold w-10 h-10 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center"
-              disabled
-            >
-              <div id="button-icon">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" transform="rotate(45) translate(0.5, -0.5)">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
-                  </svg>
-              </div>
-              <div id="button-loader" class="loader hidden"></div>
-            </button>
-          </footer>
+          <div class="shrink-0 bg-white/90 dark:bg-black/90 backdrop-blur w-full flex justify-center z-20 composer-bg-wrapper">
+            <footer id="composer-footer" class="w-full max-w-5xl p-4 flex items-end gap-3 relative">
+                <textarea 
+                id="message-input" 
+                rows="1" 
+                class="flex-1 resize-none bg-transparent py-2.5 pl-4 pr-4 text-base placeholder-gray-500 focus:outline-none transition-all duration-200 border border-neutral-300 dark:border-neutral-700 rounded-xl" 
+                placeholder="Ask something..."
+                ></textarea>
+                <button 
+                id="send-button" 
+                type="submit" 
+                aria-label="Send message" 
+                class="shrink-0 bg-green-600 text-white font-semibold w-10 h-10 rounded-full hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center"
+                disabled
+                >
+                <div id="button-icon">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" transform="rotate(45) translate(0.5, -0.5)">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </div>
+                <div id="button-loader" class="loader hidden"></div>
+                </button>
+            </footer>
+          </div>
         </div>
 
         <!-- Control Panel View -->
@@ -277,22 +282,6 @@
     <div class="flex justify-end gap-3 mt-6">
       <button id="cancel-delete-convo-btn" type="button" class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
       <button id="confirm-delete-convo-btn" type="button" class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete</button>
-    </div>
-  </div>
-
-  <!-- Profile Details Modal -->
-  <div id="profile-details-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" class="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-auto sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 hidden flex flex-col sm:max-h-[85vh]">
-    <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-      <h3 id="profile-modal-title" class="text-lg font-semibold">Profile Details</h3>
-      <button id="close-profile-modal" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-      </button>
-    </div>
-    <div id="profile-details-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-        <!-- Content dynamically generated by ui-render.js -->
-    </div>
-    <div class="flex justify-end items-center p-4 bg-neutral-50 dark:bg-neutral-900/50 border-t border-neutral-200 dark:border-neutral-800 shrink-0">
-        <button id="done-profile-modal" type="button" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm">Done</button>
     </div>
   </div>
   
