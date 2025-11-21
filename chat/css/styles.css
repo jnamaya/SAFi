@@ -1,10 +1,9 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
-  font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  font-size: 16px; 
-  font-weight: 400; 
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 18px; 
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased; 
   -moz-osx-font-smoothing: grayscale;
   font-variant-ligatures: common-ligatures contextual;
   -webkit-font-feature-settings: "calt" on, "liga" on;
