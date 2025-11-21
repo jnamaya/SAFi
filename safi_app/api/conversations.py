@@ -211,7 +211,8 @@ async def process_prompt_endpoint():
     conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
     
     # --- FIX: Extract the name ---
-    user_name = user_details.get('name', 'User') 
+    full_name = user_details.get('name', 'User')
+    user_name = full_name.split(' ')[0] if full_name else 'User'
 
     # 2. Get Cached Instance (Fast)
     # This skips the expensive FAISS/Retriever load if this config has been used recently
