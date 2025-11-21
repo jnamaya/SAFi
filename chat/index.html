@@ -29,16 +29,20 @@
     gtag('config', 'G-NBYEV6VJGX');
   </script>
   
-  <!-- NEW: Extra styles for mobile tab scroll hiding -->
   <style>
-    /* Hide scrollbar for Chrome, Safari and Opera */
     .no-scrollbar::-webkit-scrollbar {
         display: none;
     }
-    /* Hide scrollbar for IE, Edge and Firefox */
     .no-scrollbar {
-        -ms-overflow-style: none;  /* IE and Edge */
-        scrollbar-width: none;  /* Firefox */
+        -ms-overflow-style: none; 
+        scrollbar-width: none;  
+    }
+
+    /* FIX: Force hide the Exit button on Desktop (md breakpoint approx 768px) */
+    @media (min-width: 768px) {
+        #control-panel-back-btn {
+            display: none !important;
+        }
     }
   </style>
 </head>
@@ -141,34 +145,29 @@
 
         <!-- Control Panel View -->
         <div id="control-panel-view" class="w-full h-full max-w-4xl mx-auto md:max-w-none hidden flex flex-col bg-white dark:bg-black relative md:z-auto z-50 overflow-hidden">
-          <header class="p-4 flex items-center gap-4 border-b border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-black/80 backdrop-blur z-10 shrink-0">
-            <button id="control-panel-back-btn" type="button" class="flex md:hidden items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm font-medium transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-              Back to Chat
-            </button>
+          
+          <!-- Header: Only visible on Desktop (md:flex) -->
+          <header class="hidden md:flex p-4 items-center gap-4 border-b border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-black/80 backdrop-blur z-10 shrink-0">
             <h1 class="text-xl font-semibold">Control Panel</h1>
           </header>
           
-          <!-- MODIFIED: Layout wrapper for tabs and content -->
           <div class="flex flex-col md:flex-row flex-1 min-h-0 relative">
             
-            <!-- 
-              MODIFIED NAV:
-              1. Added 'w-full' and 'md:w-72' to handle switching from horizontal to vertical
-              2. Added 'sticky top-0 z-20' to keep it visible on mobile while scrolling content
-              3. Added 'bg-white dark:bg-black' to ensure content doesn't show behind it
-            -->
             <nav id="control-panel-tabs" class="w-full md:w-72 p-2 md:p-4 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 shrink-0 md:absolute md:inset-y-0 md:left-0 md:overflow-y-auto custom-scrollbar sticky top-0 z-20 bg-white dark:bg-black">
               
-              <!-- 
-                MODIFIED LIST:
-                1. Changed to 'flex' default (horizontal) and 'md:flex-col' (vertical desktop)
-                2. Added 'overflow-x-auto no-scrollbar' for swipeable tabs on mobile
-                3. Added 'gap-2' for spacing between pills
-              -->
               <div class="flex md:flex-col gap-2 md:space-y-1 overflow-x-auto md:overflow-visible no-scrollbar pb-1 md:pb-0 px-1 md:px-0" role="tablist" aria-orientation="vertical">
                 
-                <!-- Added 'shrink-0 whitespace-nowrap' to buttons to prevent wrapping/squishing -->
+                <!-- 
+                  MOVED: 'Exit' Tab to START of list (Mobile Only)
+                  - 'md:hidden': Hides on desktop
+                  - Red text for clear "close" action
+                -->
+                <button id="control-panel-back-btn" type="button" class="modal-tab-button shrink-0 whitespace-nowrap md:hidden text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  <span>Exit</span>
+                </button>
+
+                <!-- Regular Tabs -->
                 <button id="cp-nav-profile" role="tab" aria-selected="true" class="modal-tab-button active shrink-0 whitespace-nowrap">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.25278C12 6.25278 6.72222 3 3 3C3 3 3 10.875 3 13.5C3 19.5 12 21 12 21C12 21 21 19.5 21 13.5C21 10.875 21 3 21 3C17.2778 3 12 6.25278 12 6.25278Z"></path></svg>
                   <span>Personas</span>
@@ -191,6 +190,7 @@
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2v13m0-13a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h5a2 2 0 002-2m0-17a2 2 0 012 2h5a2 2 0 012 2v14a2 2 0 01-2 2h-5a2 2 0 01-2-2m0 0V7a2 2 0 012-2h5a2 2 0 012 2v13a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2z"></path></svg>
                   <span>App Settings</span>
                 </button>
+
               </div>
             </nav>
             
@@ -217,7 +217,6 @@
     </div>
   </main>
 
-  <!-- (Modals and scripts remain unchanged) -->
   <div id="toast-container" class="fixed bottom-5 right-5 z-50"></div>
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
   
