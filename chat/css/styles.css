@@ -576,7 +576,7 @@ html {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  width: 100%;
+  /* REMOVED width: 100% - This was forcing tabs to be full width on mobile horizontal scroll */
   text-align: left;
   padding: 0.65rem 0.75rem;
   font-size: 0.95rem;
