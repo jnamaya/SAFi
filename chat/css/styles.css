@@ -1,7 +1,7 @@
 /* CHANGE: Switched to a more modern, professional font */
 body { 
   font-family: 'Inter', 'Source Sans Pro', sans-serif; 
-  font-size: 15px; 
+  font-size: 16px; 
   font-weight: 400; 
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
