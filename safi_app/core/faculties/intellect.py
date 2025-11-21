@@ -210,7 +210,9 @@ class IntellectEngine:
             ])
         )
         
-        # ---The "P.S." Reminder ---
+        # --- FIX: The "P.S." Reminder ---
+        # Retrieve the reminder from the prompt config (system_prompts.json)
+        # If missing, fallback to empty string or a hardcoded default if you prefer.
         formatting_reminder = self.prompt_config.get("formatting_reminder", "")
         
         final_user_message = user_prompt + formatting_reminder
