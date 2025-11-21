@@ -74,7 +74,6 @@ class SafiInstanceCache:
 # Initialize the global cache
 global_safi_cache = SafiInstanceCache(ttl_seconds=600)
 
-# --- END CACHING INFRASTRUCTURE ---
 
 
 def get_user_id():
@@ -172,7 +171,8 @@ async def public_process_prompt_endpoint():
     )
     
     # FIX: Using native await instead of asyncio.run
-    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'])
+    # Note: Public users don't have a name in user_details usually, or it's "Public User"
+    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'], user_name="Guest")
     return jsonify(result)
 
 
@@ -210,6 +210,9 @@ async def process_prompt_endpoint():
     will_model = user_details.get('will_model') or Config.WILL_MODEL
     conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
     
+    # --- FIX: Extract the name ---
+    user_name = user_details.get('name', 'User') 
+
     # 2. Get Cached Instance (Fast)
     # This skips the expensive FAISS/Retriever load if this config has been used recently
     saf_system = global_safi_cache.get_or_create(
@@ -221,7 +224,13 @@ async def process_prompt_endpoint():
     
     # 3. Process
     # FIX: Using native await instead of asyncio.run
-    result = await saf_system.process_prompt(data['message'], user_id, data['conversation_id'])
+    # --- FIX: Pass user_name to the orchestrator ---
+    result = await saf_system.process_prompt(
+        data['message'], 
+        user_id, 
+        data['conversation_id'],
+        user_name=user_name
+    )
     return jsonify(result)
 
 
