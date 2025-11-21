@@ -20,7 +20,11 @@ const LOADING_MESSAGES = {
     "The Fiduciary": ["Analyzing financial context...", "Checking for fiduciary alignment...", "Ensuring objective, non-advisory tone...", "Verifying disclaimers..."],
     "The Jurist": ["Reviewing Constitutional precedents...", "Analyzing via the Bill of Rights...", "Checking separation of powers...", "Ensuring legal neutrality..."],
     "The Health Navigator": ["Reviewing medical terminology...", "Checking patient privacy guidelines...", "Ensuring non-diagnostic tone...", "Structuring clear guidance..."],
-    "The SAFi Guide": ["Searching SAFi documentation...", "Verifying architecture details...", "Checking framework concepts...", "Formatting technical explanation..."]
+    "The SAFi Guide": ["Searching SAFi documentation...", "Verifying architecture details...", "Checking framework concepts...", "Formatting technical explanation..."],
+    // NEW PERSONAS
+    "The Socratic Tutor": ["Evaluating student's understanding...", "Formulating a guiding question...", "Checking pedagogical constraints...", "Ensuring the answer isn't revealed..."],
+    "The Vault": ["Verifying security clearance...", "Checking for prompt injection...", "Protecting the secret code...", "Formulating a secure refusal..."],
+    "The Negotiator": ["Assessing leverage...", "Checking negotiation history...", "Evaluating trust score...", "Formulating a counter-offer..."]
 };
 
 // --- MARKDOWN SETUP ---
@@ -535,6 +539,8 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
   const container = document.createElement('div');
   container.className = 'empty-state-container';
   container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
+  
+  // --- UPDATED INSTRUCTION TEXT AND ICON ---
   container.innerHTML = `
       <div class="text-center pt-2">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
@@ -543,9 +549,12 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-4">persona, which includes these values:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         <p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${activeProfile.description || ''}</p>
+        
+        <!-- CHANGED: Updated text and replaced gear icon with ellipsis -->
         <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different persona, open the <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> 'Control Panel'.
+            To choose a different persona, click your profile <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg> in the sidebar.
         </div>
+        
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>
       </div>`;
