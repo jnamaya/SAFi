@@ -490,14 +490,17 @@ export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
 switch (cleanName) {
- case 'the philosopher':
-return 'assets/philosopher.svg';
 case 'the fiduciary':
 return 'assets/fiduciary.svg';
 case 'the health navigator':
 return 'assets/health_navigator.svg';
-case 'the jurist':
-return 'assets/jurist.svg';
+case 'the socratic tutor':
+case 'the tutor':
+return 'assets/tutor.svg';
+case 'the vault':
+return 'assets/vault.svg';
+case 'the negotiator':
+return 'assets/negotiator.svg';
 case 'the bible scholar':
 return 'assets/bible_scholar.svg';
 case 'the safi guide':
