@@ -24,9 +24,28 @@ class BackgroundTasksMixin:
             cursor = conn.cursor()
 
             memory = db.load_and_lock_spirit_memory(conn, cursor, self.active_profile_name)
-            dim = max(len(self.values), 1)
+            
+            # --- CRITICAL FIX: Ensure Dimension Compatibility ---
+            # 1. Determine required dimension
+            required_dim = len(self.values)
+            
+            # 2. Check if memory exists and matches dimension
             if memory is None:
-                memory = {"turn": 0, "mu": np.zeros(dim)}
+                # Case A: No memory exists yet
+                memory = {"turn": 0, "mu": np.zeros(required_dim)}
+            else:
+                # Case B: Memory exists, check for mismatch
+                current_mu = memory.get("mu")
+                if current_mu is None or len(current_mu) != required_dim:
+                    self.log.warning(
+                        f"Spirit dimension mismatch in Audit Thread. "
+                        f"Profile '{self.active_profile_name}' requires {required_dim}, "
+                        f"found {len(current_mu) if current_mu is not None else 'None'}. "
+                        f"Resetting Spirit Memory to zero."
+                    )
+                    # Reset memory to fit the new profile
+                    memory = {"turn": 0, "mu": np.zeros(required_dim)}
+            # ----------------------------------------------------
 
             try:
                 ledger = asyncio.run(self.conscience.evaluate(
@@ -51,7 +70,8 @@ class BackgroundTasksMixin:
                 self.log.exception("Follow-up suggester failed in audit thread")
             # --- END ---
 
-            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory.get("mu", np.zeros(len(self.values))))
+            # Now we use the strictly validated memory['mu']
+            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory["mu"])
             self.last_drift = drift_val if drift_val is not None else 0.0
             
             log_entry = {

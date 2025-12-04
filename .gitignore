@@ -28,6 +28,10 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+debug.py
+teams_bot.py
+telegram_bot.py
+whatsapp_bot.py
 
 # Node / frontend
 node_modules/
@@ -44,6 +48,7 @@ Thumbs.db
 # a simple dashboard created in streamit
 dashboard/
 vector_store/
+tts_cache/
 
 
 #test file

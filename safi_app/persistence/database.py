@@ -715,3 +715,36 @@ def upsert_user_profile_memory(user_id: str, profile_json: str):
         if conn and conn.is_connected():
             conn.close()
 # --- END ADDITION ---
+
+def upsert_external_conversation(conversation_id: str, user_id: str, title: str = "External Chat"):
+    """
+    Ensures a conversation exists with a specific ID (e.g., from Teams/Slack).
+    Unlike create_conversation, this uses the provided conversation_id
+    instead of generating a new UUID.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Check if exists
+        cursor.execute("SELECT id FROM conversations WHERE id = %s", (conversation_id,))
+        if cursor.fetchone():
+            return # Already exists
+
+        # Create if missing
+        cursor.execute(
+            "INSERT INTO conversations (id, user_id, title, created_at) VALUES (%s, %s, %s, NOW())",
+            (conversation_id, user_id, title)
+        )
+        conn.commit()
+    except Exception as e:
+        # Re-raise so the caller knows it failed
+        if conn:
+            conn.rollback()
+        raise e
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()

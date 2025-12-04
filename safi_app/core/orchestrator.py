@@ -287,8 +287,18 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
              dim = max(len(self.values), 1)
              temp_spirit_memory = {"turn": 0, "mu": np.zeros(dim)} 
 
+        # --- MIGRATION FIX: Handle Dimension Mismatch ---
+        # If the profile definition changed (different number of values), reset memory.
+        current_mu = temp_spirit_memory.get("mu", np.zeros(len(self.values)))
+        if len(current_mu) != len(self.values):
+            self.log.warning(f"Spirit dimension mismatch for {self.active_profile_name} (Loaded: {len(current_mu)}, Required: {len(self.values)}). Resetting Spirit Memory.")
+            current_mu = np.zeros(len(self.values))
+            temp_spirit_memory["mu"] = current_mu
+            temp_spirit_memory["turn"] = 0
+        # ------------------------------------------------
+
         spirit_feedback = build_spirit_feedback(
-            mu=temp_spirit_memory.get("mu", np.zeros(len(self.values))),
+            mu=current_mu,
             value_names=[v['value'] for v in self.values],
             drift=self.last_drift,
             recent_mu=list(self.mu_history)

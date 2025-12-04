@@ -490,6 +490,9 @@ export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
 switch (cleanName) {
+  case 'the accion governance officer': 
+    case 'accion governance officer': // Good to add aliases just in case
+      return 'assets/accion.svg';
 case 'the fiduciary':
 return 'assets/fiduciary.svg';
 case 'the health navigator':
@@ -506,5 +509,6 @@ return 'assets/bible_scholar.svg';
 case 'the safi guide':
 default:
 return 'assets/safi.svg';
+
 }
 }

@@ -89,6 +89,89 @@ def get_user_profile_name():
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
 
+# --- NEW: Dedicated Endpoint for Teams Bot ---
+@conversations_bp.route('/bot/process_prompt', methods=['POST'])
+async def bot_process_prompt_endpoint():
+    """
+    Dedicated endpoint for the Microsoft Teams Bot.
+    Uses API Key authentication instead of Session Cookies.
+    """
+    # 1. Security: Check API Secret Header
+    # In production, move "safi-bot-secret-123" to Config.BOT_API_SECRET
+    api_key = request.headers.get("X-API-KEY")
+    if api_key != "safi-bot-secret-123": 
+        return jsonify({"error": "Unauthorized Bot Access"}), 401
+
+    data = request.json
+    user_id = data.get('user_id')
+    user_prompt = data.get('message') # Bot sends 'message' now
+    conversation_id = data.get('conversation_id')
+    persona_key = data.get('persona', 'safi') # Default to 'safi' to avoid missing profile errors
+
+    if not all([user_id, user_prompt, conversation_id]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    # 2. Ensure User Exists in DB (Just-in-Time Registration)
+    # Since Teams users didn't login via Google, we create a placeholder
+    # so the database constraints (Foreign Keys) don't fail.
+    try:
+        user_details = db.get_user_details(user_id)
+        if not user_details:
+            db.upsert_user({
+                "sub": user_id,
+                "id": user_id,
+                "name": f"Teams User {user_id[-4:]}", # e.g. "Teams User A1B2"
+                "email": f"{user_id}@safinstitute.org",
+                "picture": ""
+            })
+            # Set their profile to the one requested by the bot
+            db.update_user_profile(user_id, persona_key)
+        
+        # 3. Ensure Conversation Exists (Just-in-Time Creation)
+        # CRITICAL FIX: We must ensure the conversation row exists before SAFi tries to insert memory.
+        # We use a custom function in database.py to handle external IDs.
+        if hasattr(db, 'upsert_external_conversation'):
+            db.upsert_external_conversation(conversation_id, user_id, title="Teams Chat")
+        else:
+            # Fallback warning if you haven't updated database.py yet
+            current_app.logger.warning("db.upsert_external_conversation missing. Bot memory might fail if conversation is new.")
+
+        # --- MODEL SELECTION LOGIC ---
+        # 1. Load System Defaults
+        selected_intellect = Config.INTELLECT_MODEL
+        selected_will = Config.WILL_MODEL
+        selected_conscience = Config.CONSCIENCE_MODEL
+
+        # 2. Override ONLY Intellect for 'accion_admin'
+        if persona_key == "accion_admin":
+            # Using GPT-4o for high-reasoning intellect.
+            # Will and Conscience remain at system defaults (e.g. Llama 3.3).
+            selected_intellect = "claude-haiku-4-5-20251001" 
+        
+        # 4. Get Safi Instance (Cached)
+        saf_system = global_safi_cache.get_or_create(
+            persona_key, 
+            selected_intellect, 
+            selected_will, 
+            selected_conscience
+        )
+
+        # 5. Process Prompt
+        result = await saf_system.process_prompt(
+            user_prompt, 
+            user_id, 
+            conversation_id,
+            user_name="Colleague" # Generic name for Teams users
+        )
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        current_app.logger.error(f"Bot Processing Error: {str(e)}")
+        # Return a JSON error so the bot doesn't just hang or crash with HTML
+        return jsonify({"error": str(e), "finalOutput": "I encountered an internal error processing your request."}), 500
+
+
 @conversations_bp.route('/tts_audio', methods=['POST'])
 def tts_audio_endpoint():
     """

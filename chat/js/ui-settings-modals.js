@@ -336,7 +336,7 @@ export function renderSettingsDashboardTab() {
     iframeContainer.className = "w-full flex-1 relative min-h-0";
 
     const iframe = document.createElement('iframe');
-    iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
+    iframe.src = "https://dash.selfalignmentframework.com/?embed=true";
     // UPDATED: Use absolute positioning to fill the flex container completely
     iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0"; 
     iframe.title = "SAFi Dashboard";
