@@ -30,11 +30,12 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         A dictionary, or an error dictionary if parsing fails.
     """
     obj = {}
-    json_text = raw_text # Default to raw text
+    if not raw_text:
+        return {"error": "Empty input"}
+
+    json_text = raw_text 
     
     # 1. Find the first '{' and last '}'
-    # This is the most reliable way to extract a JSON blob
-    # from a string that might contain other text.
     start = raw_text.find('{')
     end = raw_text.rfind('}')
     
@@ -51,16 +52,26 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
     # 3. Sanitize and retry
     try:
         # Sanitize common errors:
-        # - Remove newlines and carriage returns
-        # - Fix trailing commas (e.g., "key": "value",})
-        # - Consolidate excess whitespace
+        # - Remove newlines and carriage returns (turns multiline JSON into single line)
         sanitized = json_text.replace("\r", " ").replace("\n", " ")
-        sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized) # Fix trailing commas
+        # - Fix trailing commas (e.g., "key": "value",})
+        sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized) 
+        # - Consolidate excess whitespace
         sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
+        
         obj = json.loads(sanitized)
         return obj
-    except json.JSONDecodeError as e:
-        log.error(f"Robust JSON parse failed after sanitization: {e} | content={sanitized[:500]}")
+    except json.JSONDecodeError:
+        # 4. Deep Fallback: Quote Repair
+        # Sometimes models produce: {"reason": "The user said "hello""} -> invalid
+        try:
+            # Extremely simple heuristic: assume keys are valid, try to ignore quotes in values?
+            # Actually, hard to fix generically. We log and return error.
+            pass
+        except Exception:
+            pass
+
+        log.warning(f"Robust JSON parse failed. Content start: {json_text[:100]}...")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
 
 # --- Specific Parsers for Each Faculty ---
@@ -68,8 +79,6 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
     Parses the "Answer---REFLECTION---{...}" format from Intellect.
-    
-    This function uses a 3-priority fallback system.
     """
     answer = ""
     reflection = ""
@@ -78,14 +87,13 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
     # --- Run the original robust parsing on the raw_text ---
     if delimiter_text in raw_text:
         # --- Priority 1: Model used the delimiter correctly ---
-        log.info("Parsing Intellect response using delimiter.")
         parts = raw_text.split(delimiter_text)
         answer = parts[0].strip()
         
         json_part_raw = parts[-1]
         json_obj = robust_json_parse(json_part_raw, log)
         
-        # FIX: Handle non-string reflection fields (e.g. nested dicts from Mistral)
+        # Handle non-string reflection fields
         ref_val = json_obj.get("reflection")
         if isinstance(ref_val, (dict, list)):
              reflection = json.dumps(ref_val, ensure_ascii=False)
@@ -94,19 +102,15 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
 
     else:
         # --- Priority 2: Model "forgot" delimiter but sent JSON ---
-        log.warning(f"Intellect model did not use delimiter. Searching for JSON...")
-        
         # Use regex to find JSON
         json_match = re.search(r"\{[\s\S]*\}", raw_text) # [\s\S] matches newlines
 
         if json_match:
-            log.info("Found salvaged JSON. Parsing.")
             json_part_raw = json_match.group(0).strip()
             answer = raw_text[:json_match.start()].strip() # Everything BEFORE the JSON
             
             json_obj = robust_json_parse(json_part_raw, log)
             
-            # FIX: Handle non-string reflection fields
             ref_val = json_obj.get("reflection")
             if isinstance(ref_val, (dict, list)):
                  reflection = json.dumps(ref_val, ensure_ascii=False)
@@ -118,7 +122,6 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
 
         else:
             # --- Priority 3: Model sent raw text ---
-            log.warning(f"No JSON found in Intellect response. Salvaging raw text.")
             answer = raw_text.strip()
             reflection = "Salvaged raw output; model failed to format."
 
@@ -132,42 +135,83 @@ def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]
     """
     Parses the {"decision": "...", "reason": "..."} format from Will.
     
-    This parser is simple: it just finds the first valid JSON in the
-    raw text and extracts the keys.
+    Includes Regex fallback for when the model outputs plain text or invalid JSON.
     """
-    # Find and parse the JSON blob
+    # 1. Try Standard JSON Parsing
     obj = robust_json_parse(raw_text, log)
     
-    if "error" in obj:
-        # This happens if robust_json_parse failed
-        return ("violation", "Internal evaluation error (JSON parse failed)")
-        
-    decision = str(obj.get("decision") or "").strip().lower()
-    reason = (obj.get("reason") or "").strip()
+    decision = ""
+    reason = ""
+
+    if "error" not in obj:
+        # Case-insensitive key lookup
+        decision = str(obj.get("decision") or obj.get("Decision") or "").strip().lower()
+        reason = (obj.get("reason") or obj.get("Reason") or "").strip()
     
-    if decision not in {"approve", "violation"}:
-        decision = "violation" # Default to violation if decision is invalid
+    # 2. Fallback: Regex Search if JSON failed or produced empty keys
+    if not decision or "error" in obj:
+        log.info("JSON parse failed for Will. Attempting Regex fallback.")
         
+        # Look for "decision": "value" OR decision: value
+        d_match = re.search(r'(?:["\']?decision["\']?|\bdecision\b)\s*[:=]\s*["\']?(\w+)["\']?', raw_text, re.IGNORECASE)
+        # Look for "reason": "value" OR reason: value
+        # Captures until end of line or next quote
+        r_match = re.search(r'(?:["\']?reason["\']?|\breason\b)\s*[:=]\s*["\']?([^"}\n\r]+)["\']?', raw_text, re.IGNORECASE)
+        
+        if d_match:
+            decision = d_match.group(1).lower()
+        if r_match:
+            reason = r_match.group(1).strip()
+
+    # 3. Validate and Default
+    if decision not in {"approve", "violation"}:
+        # Aggressive check: if "violation" or "block" appears anywhere, assume violation
+        if "violation" in raw_text.lower() or "block" in raw_text.lower():
+            decision = "violation"
+        elif "approve" in raw_text.lower():
+            decision = "approve"
+        else:
+            decision = "violation" # Fail safe
+            if not reason:
+                reason = "Internal Error: Model output unreadable. Blocking for safety."
+
     if not reason:
-        reason = "Decision explained by Will policies and the active value set."
+        # If we have a decision but no reason, try to grab the whole text as reason
+        # assuming the model just chattered without formatting.
+        clean_text = raw_text.replace("{", "").replace("}", "").strip()
+        if len(clean_text) < 200:
+            reason = clean_text
+        else:
+            reason = "Decision explained by Will policies (reason missing in parsed output)."
         
     return decision, reason
 
 def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict[str, Any]]:
     """
     Parses the {"evaluations": [...]} format from Conscience.
-    
-    This parser is simple: it just finds the first valid JSON in the
-    raw text and extracts the 'evaluations' key.
     """
     # Find and parse the JSON blob
     obj = robust_json_parse(raw_text, log)
     
     if "error" in obj:
-        # This happens if robust_json_parse failed
+        # Try to salvage a list if the root object failed but a list exists
+        # e.g. model returned just [...] instead of {"evaluations": [...]}
+        list_match = re.search(r"\[.*\]", raw_text, re.DOTALL)
+        if list_match:
+            try:
+                possible_list = json.loads(list_match.group(0))
+                if isinstance(possible_list, list):
+                    return possible_list
+            except:
+                pass
         return [{"error": "Internal evaluation error (JSON parse failed)"}]
     
     evaluations = obj.get("evaluations", [])
+    
+    # Handle case where model returns just the list directly
+    if not evaluations and isinstance(obj, list):
+        evaluations = obj
+
     if not isinstance(evaluations, list):
         log.error(f"Conscience 'evaluations' was not a list. Got: {type(evaluations)}")
         return [{"error": f"Conscience 'evaluations' was not a list."}]
