@@ -65,7 +65,6 @@ THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
     "will_rules": [
         "Reject answers that engage in denominational debates or one sided views.",
         "Reject any answer that attempts to convert the user.",
-        "Reject any answer that has obvious factual errors.",
         "Reject any answer that is not related to biblical scholarship.",
         "Reject any answer that cites other bibles translation other than the Berean Standard Bible (BSB)."
     ],

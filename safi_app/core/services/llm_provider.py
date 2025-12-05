@@ -1,17 +1,14 @@
 """
 Defines the LLMProvider service.
 
-This class is the ONLY part of the application that knows how to:
-1.  Talk to different LLM providers (OpenAI, Anthropic, Gemini, Groq).
-2.  Select the correct API client for a given model.
-3.  Inject model-specific parameters (e.g., "reasoning_effort").
-4.  Call the `parsing_utils` to sanitize and parse the raw LLM responses.
-
-This isolates all provider-specific and parsing logic from the "faculties."
+This is the "Universal Client". It centralizes all API interactions.
+It supports OpenAI, Anthropic, and Gemini natively, and generic OpenAI-compatible
+providers (like DeepSeek, Groq, Mistral, Ollama) via configuration.
 """
 from __future__ import annotations
 import json
 import logging
+import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 
 # External provider libraries
@@ -28,227 +25,182 @@ from .parsing_utils import (
 
 class LLMProvider:
     """
-    A unified service to handle all LLM calls and response parsing.
-    
-    It is initialized by the Orchestrator with all necessary API clients
-    and model configurations.
+    A unified service to handle all LLM calls.
+    Faculties call this service by 'route' (e.g., 'intellect'), not by model name.
     """
-    def __init__(
-        self,
-        clients: Dict[str, Any],
-        gemini_models: Dict[str, Any],
-        model_configs: Dict[str, str],
-        extra_params: Optional[Dict[str, Any]] = None # Accepts model-specific params
-    ):
+    def __init__(self, config: Dict[str, Any]):
         """
-        Initializes the LLM provider service.
-
         Args:
-            clients: A dict of initialized async clients (e.g., {"groq": AsyncOpenAI(...)}).
-            gemini_models: A dict of initialized Gemini model instances.
-            model_configs: A dict mapping faculties to model names
-                           (e.g., {"intellect": "llama3-70b-8192"}).
-            extra_params: A dict of model-specific parameters to inject,
-                          (e.g., {"qwen/qwen3-32b": {"reasoning_effort": "none"}}).
-        """
-        self.clients = clients
-        self.gemini_models = gemini_models
-        self.model_configs = model_configs
-        self.extra_params = extra_params or {} # Store the extra params
-        self.log = logging.getLogger(self.__class__.__name__)
-        self.log.info(f"LLMProvider initialized with clients: {list(self.clients.keys())}")
-
-    def _get_provider_for_model(self, model_name: str) -> str:
-        """
-        Determines the provider (e.g., "openai", "groq") from the model name.
-        """
-        if model_name.startswith("gpt-"):
-            return "openai"
-        elif model_name.startswith("claude-"):
-            return "anthropic"
-        elif model_name.startswith("gemini-"):
-            return "gemini"
-        # Default fallback for OpenAI-compatible APIs
-        return "groq"
-
-    async def _make_llm_call(self, model: str, system_prompt: str, user_prompt: str, max_tokens: int, temperature: float, json_mode: bool = False) -> str:
-        """
-        A single, private method to dispatch the API call to the correct provider.
-        """
-        content = "{}"
-        
-        # 1. Get the provider and client
-        provider = self._get_provider_for_model(model)
-        
-        # --- FIX: Gemini Re-instantiation Strategy ---
-        # We specifically check for Gemini first to handle the stateless fix.
-        if provider == "gemini":
-            # We DO NOT use self.gemini_models.get(model) here. 
-            # Using the cached client can cause "Event loop is closed" errors 
-            # if the loop that created it has died.
-            # Creating a lightweight wrapper here ensures it binds to the CURRENT loop.
-            try:
-                client = genai.GenerativeModel(model)
-            except Exception as e:
-                    raise ValueError(f"Failed to instantiate Gemini model '{model}': {e}")
-        else:
-            # For other providers (OpenAI, Anthropic), we use the cached clients.
-            # With Uvicorn (ASGI), the loop persists, so this is safe.
-            client = self.clients.get(provider)
-            if client is None:
-                raise ValueError(f"No valid client found for provider '{provider}'. Check your API keys.")
-
-        # 2. Get model-specific extra parameters
-        extra_model_params = self.extra_params.get(model, {})
-        if extra_model_params:
-            self.log.info(f"Applying extra parameters for model {model}: {extra_model_params}")
-
-        # 3. Make the API call based on the provider
-        try:
-            if provider == "groq" or provider == "openai":
-                if not isinstance(client, AsyncOpenAI):
-                    raise TypeError(f"Client for {provider} is not an AsyncOpenAI")
-                
-                params = {
-                    "model": model,
-                    "temperature": temperature,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+            config: A dictionary defining providers and routes.
+            Example:
+            {
+                "providers": {
+                    "main_openai": {"type": "openai", "api_key": "...", "base_url": None},
+                    "deepseek": {"type": "openai", "api_key": "...", "base_url": "https://api.deepseek.com"},
+                    "my_anthropic": {"type": "anthropic", "api_key": "..."}
+                },
+                "routes": {
+                    "intellect": {"provider": "deepseek", "model": "deepseek-reasoner"},
+                    "will": {"provider": "my_anthropic", "model": "claude-3-5-sonnet-20240620"}
                 }
+            }
+        """
+        self.config = config
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.clients = {}
+        self._initialize_clients()
 
-                # Note: We are not using json_mode=True, as the robust
-                # parser is more reliable for models with reasoning logs.
-                if json_mode:
-                    params["response_format"] = {"type": "json_object"}
-                
-                if provider == "openai" and (model.startswith("gpt-4o") or model.startswith("gpt-5")):
-                    params["max_completion_tokens"] = max_tokens
-                else:
-                    params["max_tokens"] = max_tokens
-
-                # Pass standard params as keywords, and all non-standard
-                # params (like "reasoning_effort") in the `extra_body` dict.
-                resp = await client.chat.completions.create(
-                    **params,
-                    extra_body=extra_model_params
-                )
-                
-                content = resp.choices[0].message.content or "{}"
-
-            elif provider == "anthropic":
-                if not isinstance(client, AsyncAnthropic):
-                    raise TypeError(f"Client for {provider} is not an AsyncAnthropic")
-                
-                resp = await client.messages.create(
-                    model=model,
-                    system=system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    messages=[{"role": "user", "content": user_prompt}],
-                    **extra_model_params # Pass extra params directly
-                )
-                content = resp.content[0].text or "{}"
-
-            elif provider == "gemini":
-                # --- FIX: Use robust Prompt Concatenation ---
-                # This avoids the "system_instruction" parameter which causes 
-                # AttributeError on some older library versions.
-                
-                generation_config = genai.types.GenerationConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_tokens,
-                )
-                
-                if json_mode:
-                    generation_config.response_mime_type = "application/json"
-
-                full_prompt = system_prompt + "\n\n---START OF USER PROMPT---\n" + user_prompt
-                
-                resp = await client.generate_content_async(
-                    full_prompt, 
-                    generation_config=generation_config
-                )
-                content = resp.text or "{}"
-                # --- END FIX ---
+    def _initialize_clients(self):
+        """Initializes API clients based on the provider config."""
+        providers = self.config.get("providers", {})
+        
+        for name, details in providers.items():
+            p_type = details.get("type")
+            api_key = details.get("api_key")
             
+            if not api_key:
+                self.log.warning(f"Skipping provider '{name}': No API key provided.")
+                continue
+
+            try:
+                if p_type == "openai":
+                    self.clients[name] = AsyncOpenAI(
+                        api_key=api_key,
+                        base_url=details.get("base_url") # Handles Groq, DeepSeek, Mistral
+                    )
+                elif p_type == "anthropic":
+                    self.clients[name] = AsyncAnthropic(api_key=api_key)
+                elif p_type == "gemini":
+                    genai.configure(api_key=api_key)
+                    self.clients[name] = "gemini_configured" # Client created on demand
+                else:
+                    self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
+            except Exception as e:
+                self.log.error(f"Failed to initialize provider '{name}': {e}")
+
+    async def _chat_completion(self, route: str, system_prompt: str, user_prompt: str, temperature: float = 1.0, max_tokens: int = 4096) -> str:
+        """
+        Internal generic handler that routes the request to the correct provider.
+        """
+        route_config = self.config.get("routes", {}).get(route)
+        if not route_config:
+            raise ValueError(f"No route configuration found for '{route}'")
+
+        provider_name = route_config["provider"]
+        model_name = route_config["model"]
+        
+        # Get provider details
+        provider_details = self.config.get("providers", {}).get(provider_name)
+        if not provider_details:
+             raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
+
+        provider_type = provider_details["type"]
+        client = self.clients.get(provider_name)
+
+        if not client:
+            raise RuntimeError(f"Client for provider '{provider_name}' is not initialized.")
+
+        # --- Dispatch based on Type ---
+        
+        # 1. OpenAI / DeepSeek / Groq / Mistral
+        if provider_type == "openai":
+            params = {
+                "model": model_name,
+                "temperature": temperature,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+            }
+            # Handle o1/o3 reasoning models which don't support system roles or temperature in some versions
+            if "o1" in model_name or "o3" in model_name:
+                params["messages"] = [{"role": "user", "content": f"System Instruction: {system_prompt}\n\nUser Query: {user_prompt}"}]
+                params.pop("temperature", None) # o1 often doesn't support temp
+                params.pop("max_tokens", None) # o1 uses max_completion_tokens
+                params["max_completion_tokens"] = max_tokens
             else:
-                raise ValueError(f"Unknown provider '{provider}'")
+                 params["max_tokens"] = max_tokens
 
-            return content
+            resp = await client.chat.completions.create(**params)
+            return resp.choices[0].message.content or "{}"
 
+        # 2. Anthropic (Claude)
+        elif provider_type == "anthropic":
+            resp = await client.messages.create(
+                model=model_name,
+                system=system_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            return resp.content[0].text or "{}"
+
+        # 3. Google Gemini
+        elif provider_type == "gemini":
+            # Instantiate model on the fly to avoid event loop issues
+            gemini_model = genai.GenerativeModel(model_name)
+            generation_config = genai.types.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+            # Concatenate prompts for robustness
+            full_prompt = f"{system_prompt}\n\nUSER PROMPT:\n{user_prompt}"
+            
+            resp = await gemini_model.generate_content_async(
+                full_prompt, 
+                generation_config=generation_config
+            )
+            return resp.text or "{}"
+
+        else:
+            raise ValueError(f"Unsupported provider type '{provider_type}'")
+
+
+    # --- Public Faculty Interfaces ---
+
+    async def run_intellect(self, system_prompt: str, user_prompt: str, context_for_audit: str) -> Tuple[str, str, str]:
+        """Runs the configured Intellect model and parses the result."""
+        try:
+            raw_content = await self._chat_completion(
+                route="intellect",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=1.0,
+                max_tokens=4096
+            )
+            answer, reflection = parse_intellect_response(raw_content, self.log)
+            return answer, reflection, context_for_audit
         except Exception as e:
-            self.log.exception(f"LLM call failed for {provider} model {model}: {e}")
-            # Return a string that will safely parse to an error state
-            if json_mode:
-                return '{"error": "Internal LLM call failed"}'
-            else:
-                # This format allows the robust parser to still find a reflection
-                return f"[LLM call failed: {e}] ---REFLECTION--- {{\"reflection\": \"Internal LLM call failed.\"}}"
+            self.log.exception("Intellect execution failed")
+            return None, None, context_for_audit
 
-    # --- Public Methods for Faculties ---
+    async def run_will(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
+        """Runs the configured Will model and parses the result."""
+        try:
+            raw_content = await self._chat_completion(
+                route="will",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.0,
+                max_tokens=1024
+            )
+            decision, reason = parse_will_response(raw_content, self.log)
+            return decision, reason
+        except Exception as e:
+            self.log.exception("Will execution failed")
+            return "violation", f"System Error: {e}"
 
-    async def get_intellect_response(self, system_prompt: str, user_prompt: str, context_for_audit: str) -> Tuple[str, str, str]:
-        """
-        Gets a structured (answer, reflection) response for the IntellectEngine.
-        
-        This method uses the reliable text-delimiter-json format and
-        does *not* force json_mode, as many open models struggle with it
-        (especially when reasoning is enabled).
-        """
-        model = self.model_configs.get("intellect", "default-intellect-model")
-        
-        raw_content = await self._make_llm_call(
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=4096,
-            temperature=1.0,
-            json_mode=False # Use text-delimiter-json format
-        )
-        
-        answer, reflection = parse_intellect_response(raw_content, self.log)
-        return answer, reflection, context_for_audit
-
-    async def get_will_decision(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
-        """
-        Gets a structured (decision, reason) response for the WillGate.
-        
-        This method does *not* use json_mode, to allow reasoning logs
-        to be present. The parser will strip them.
-        """
-        model = self.model_configs.get("will", "default-will-model")
-        
-        raw_content = await self._make_llm_call(
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=1024,
-            temperature=0.0,
-            json_mode=False # Use robust text/JSON parsing
-        )
-        
-        decision, reason = parse_will_response(raw_content, self.log)
-        return decision, reason
-
-    async def get_conscience_audit(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
-        """
-        Gets a structured [evaluations] list for the ConscienceAuditor.
-
-        This method does *not* use json_mode, to allow reasoning logs
-        to be present. The parser will strip them.
-        """
-        model = self.model_configs.get("conscience", "default-conscience-model")
-        
-        raw_content = await self._make_llm_call(
-            model=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=4096,
-            temperature=0.1,
-            json_mode=False # Use robust text/JSON parsing
-        )
-        
-        evaluations = parse_conscience_response(raw_content, self.log)
-        return evaluations
+    async def run_conscience(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
+        """Runs the configured Conscience model and parses the result."""
+        try:
+            raw_content = await self._chat_completion(
+                route="conscience",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.1,
+                max_tokens=4096
+            )
+            return parse_conscience_response(raw_content, self.log)
+        except Exception as e:
+            self.log.exception("Conscience execution failed")
+            return []

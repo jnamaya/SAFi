@@ -6,9 +6,6 @@ import asyncio
 import numpy as np
 from datetime import datetime, timezone
 from typing import Dict, Any
-
-# Note: The SAFi class (which will use this) is expected to import 'db'
-# and have it available, as well as all 'self' attributes.
 from ...persistence import database as db
 
 class BackgroundTasksMixin:
@@ -25,28 +22,17 @@ class BackgroundTasksMixin:
 
             memory = db.load_and_lock_spirit_memory(conn, cursor, self.active_profile_name)
             
-            # --- CRITICAL FIX: Ensure Dimension Compatibility ---
-            # 1. Determine required dimension
+            # 1. Ensure Dimension Compatibility
             required_dim = len(self.values)
-            
-            # 2. Check if memory exists and matches dimension
             if memory is None:
-                # Case A: No memory exists yet
                 memory = {"turn": 0, "mu": np.zeros(required_dim)}
             else:
-                # Case B: Memory exists, check for mismatch
                 current_mu = memory.get("mu")
                 if current_mu is None or len(current_mu) != required_dim:
-                    self.log.warning(
-                        f"Spirit dimension mismatch in Audit Thread. "
-                        f"Profile '{self.active_profile_name}' requires {required_dim}, "
-                        f"found {len(current_mu) if current_mu is not None else 'None'}. "
-                        f"Resetting Spirit Memory to zero."
-                    )
-                    # Reset memory to fit the new profile
+                    self.log.warning(f"Spirit dimension mismatch. Resetting Spirit Memory.")
                     memory = {"turn": 0, "mu": np.zeros(required_dim)}
-            # ----------------------------------------------------
 
+            # 2. Run Conscience (This is Async, so we need a loop for THIS part only)
             try:
                 ledger = asyncio.run(self.conscience.evaluate(
                     final_output=snapshot["a_t"], 
@@ -54,26 +40,26 @@ class BackgroundTasksMixin:
                     reflection=snapshot["r_t"],
                     retrieved_context=snapshot.get("retrieved_context", "")
                 ))
-            except Exception as e:
+            except Exception:
                 self.log.exception("ConscienceAuditor.evaluate() failed in audit thread")
                 ledger = []
             
-            # --- Get follow-up suggestions in background ---
+            # 3. Get Follow-up Suggestions (SYNC call now - no asyncio.run needed)
             S_p = []
             try:
-                # This method now comes from SuggestionsMixin
-                S_p = asyncio.run(self._get_follow_up_suggestions(
+                # Direct synchronous call to avoid Event Loop issues
+                S_p = self._get_follow_up_suggestions(
                     user_prompt=snapshot["x_t"],
                     ai_response=snapshot["a_t"]
-                ))
-            except Exception as e:
+                )
+            except Exception:
                 self.log.exception("Follow-up suggester failed in audit thread")
-            # --- END ---
 
-            # Now we use the strictly validated memory['mu']
+            # 4. Compute Spirit
             S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory["mu"])
             self.last_drift = drift_val if drift_val is not None else 0.0
             
+            # 5. Log and Save
             log_entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "t": snapshot["t"],
@@ -93,85 +79,66 @@ class BackgroundTasksMixin:
                 "spiritFeedback": spirit_feedback,
                 "retrievedContext": snapshot.get("retrieved_context", "")
             }
-            self._append_log(log_entry) # This method must be on the main class
+            self._append_log(log_entry)
 
             memory["turn"] += 1
             memory["mu"] = np.array(mu_new)
             db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
-            
             self.mu_history.append(mu_new)
             
             db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
 
             conn.commit()
 
-        except Exception as e:
+        except Exception:
             self.log.exception("Unhandled exception in _run_audit_thread")
-            if conn:
-                conn.rollback()
+            if conn: conn.rollback()
         finally:
-            if conn and conn.is_connected():
-                conn.close()
+            if conn and conn.is_connected(): conn.close()
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        """
-        Runs the summarization logic in a background thread.
-        """
-        if not hasattr(self, 'groq_client_sync'):
+        """Runs the summarization logic in a background thread using Sync client."""
+        if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
             return
             
         summarizer_prompt_config = self.prompts.get("summarizer")
-        if not summarizer_prompt_config or "system_prompt" not in summarizer_prompt_config:
-            self.log.warning("No 'summarizer' prompt found. Skipping summarization.")
-            return
+        if not summarizer_prompt_config: return
 
         try:
             system_prompt = summarizer_prompt_config["system_prompt"]
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
             
             response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL"),
+                model=getattr(self.config, "SUMMARIZER_MODEL", "llama-3.1-8b-instant"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
             )
-
-            new_summary = response.choices[0].message.content.strip()
-            db.update_conversation_summary(conversation_id, new_summary)
+            db.update_conversation_summary(conversation_id, response.choices[0].message.content.strip())
         except Exception as e:
             self.log.warning(f"Summarization thread failed: {e}")
 
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
-        """
-        Runs the long-term user profile update logic in a background thread.
-        """
-        if not hasattr(self, 'groq_client_sync'):
+        """Runs the long-term user profile update logic in a background thread."""
+        if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
             return
             
         profile_prompt_config = self.prompts.get("profile_extractor")
-        if not profile_prompt_config or "system_prompt" not in profile_prompt_config:
-            self.log.warning("No 'profile_extractor' prompt found. Skipping profile update.")
-            return
+        if not profile_prompt_config: return
 
         try:
             system_prompt = profile_prompt_config["system_prompt"]
-            
             content = (
                 f"CURRENT_PROFILE_JSON:\n{current_profile_json}\n\n"
                 f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
                 "Return the new, updated JSON object."
             )
-            
             response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL"), # Use the fast summarizer model
+                model=getattr(self.config, "SUMMARIZER_MODEL", "llama-3.1-8b-instant"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
                 response_format={"type": "json_object"},
             )
-
-            new_profile_json = response.choices[0].message.content.strip()
-            
-            db.upsert_user_profile_memory(user_id, new_profile_json)
+            db.upsert_user_profile_memory(user_id, response.choices[0].message.content.strip())
             self.log.info(f"Successfully updated user profile for {user_id}")
-
         except Exception as e:
             self.log.warning(f"User profile update thread failed: {e}")

@@ -65,10 +65,6 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
 
 # --- Specific Parsers for Each Faculty ---
 
-# --- FIX: Removed the _strip_thinking_logs helper function. ---
-# It's no longer needed, as we have disabled reasoning flags
-# in the orchestrator.
-
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
     Parses the "Answer---REFLECTION---{...}" format from Intellect.
@@ -88,7 +84,13 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
         
         json_part_raw = parts[-1]
         json_obj = robust_json_parse(json_part_raw, log)
-        reflection = json_obj.get("reflection", "Parsed reflection from delimiter.").strip()
+        
+        # FIX: Handle non-string reflection fields (e.g. nested dicts from Mistral)
+        ref_val = json_obj.get("reflection")
+        if isinstance(ref_val, (dict, list)):
+             reflection = json.dumps(ref_val, ensure_ascii=False)
+        else:
+             reflection = str(ref_val if ref_val is not None else "Parsed reflection from delimiter.").strip()
 
     else:
         # --- Priority 2: Model "forgot" delimiter but sent JSON ---
@@ -103,7 +105,13 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
             answer = raw_text[:json_match.start()].strip() # Everything BEFORE the JSON
             
             json_obj = robust_json_parse(json_part_raw, log)
-            reflection = json_obj.get("reflection", "Parsed reflection from regex search.").strip()
+            
+            # FIX: Handle non-string reflection fields
+            ref_val = json_obj.get("reflection")
+            if isinstance(ref_val, (dict, list)):
+                 reflection = json.dumps(ref_val, ensure_ascii=False)
+            else:
+                 reflection = str(ref_val if ref_val is not None else "Parsed reflection from regex search.").strip()
 
             if not answer:
                 answer = f"[Answer missing, model only sent JSON: {json_part_raw}]"
