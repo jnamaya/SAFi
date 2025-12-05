@@ -50,7 +50,7 @@ def init_db():
         
         logging.info("Initializing database schema...")
         
-        # --- MODEL COLUMNS (from previous work) ---
+        # --- MODEL COLUMNS ---
         cursor.execute("SHOW COLUMNS FROM users LIKE 'intellect_model'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN intellect_model VARCHAR(255) DEFAULT NULL")
@@ -65,12 +65,12 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN conscience_model VARCHAR(255) DEFAULT NULL")
             logging.info("Added 'conscience_model' column to 'users' table.")
-        # --- PINNED CONVERSATION COLUMN (New for this feature) ---
+        
+        # --- PINNED CONVERSATION COLUMN ---
         cursor.execute("SHOW COLUMNS FROM conversations LIKE 'is_pinned'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE conversations ADD COLUMN is_pinned BOOLEAN DEFAULT FALSE")
             logging.info("Added 'is_pinned' column to 'conversations' table.")
-        # --- END NEW COLUMN ---
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -99,12 +99,11 @@ def init_db():
             )
         ''')
 
-        # --- MODIFICATION: Added suggested_prompts column ---
+        # --- suggested_prompts column ---
         cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'suggested_prompts'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE chat_history ADD COLUMN suggested_prompts JSON DEFAULT NULL")
             logging.info("Added 'suggested_prompts' column to 'chat_history' table.")
-        # --- END MODIFICATION ---
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
@@ -152,7 +151,7 @@ def init_db():
             )
         ''')
         
-        # --- ADDED: Create the user_profiles table for long-term memory ---
+        # --- user_profiles table ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id VARCHAR(255) NOT NULL,
@@ -163,7 +162,6 @@ def init_db():
             )
         ''')
         logging.info("Checked/Created 'user_profiles' table.")
-        # --- END ADDITION ---
         
         logging.info("MySQL database schema checked/initialized successfully.")
         conn.commit()
@@ -228,8 +226,6 @@ def get_user_details(user_id: str) -> Optional[Dict[str, Any]]:
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        # --- MODIFICATION ---
-        # Updated select to include the new per-user model fields.
         cursor.execute("""
             SELECT id, email, name, picture, active_profile, 
                    intellect_model, will_model, conscience_model 
@@ -258,10 +254,6 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
             conn.close()
 
 def update_user_profile(user_id: str, profile_name: str):
-    """
-    Updates the user's ACTIVE PROFILE (e.g., 'fiduciary', 'philosopher').
-    This is separate from their profile_memory.
-    """
     conn = None
     cursor = None
     try:
@@ -275,7 +267,6 @@ def update_user_profile(user_id: str, profile_name: str):
         if conn and conn.is_connected():
             conn.close()
 
-# --- MODIFICATION: Updated to support per-user model fields ---
 def update_user_models(user_id: str, intellect_model: str, will_model: str, conscience_model: str):
     conn = None
     cursor = None
@@ -293,7 +284,6 @@ def update_user_models(user_id: str, intellect_model: str, will_model: str, cons
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-# --- END MODIFICATION ---
 
 def delete_user(user_id: str):
     conn = None
@@ -336,9 +326,6 @@ def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dic
     return None
 
 def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Loads spirit memory without a database lock. Used for read-only operations.
-    """
     conn = None
     cursor = None
     try:
@@ -390,7 +377,6 @@ def get_todays_prompt_count(user_id: str) -> int:
             conn.close()
 
 
-# --- MODIFICATION: Fetch conversation list including 'is_pinned' ---
 def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
     conn = None
     cursor = None
@@ -399,9 +385,7 @@ def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
         cursor = conn.cursor(dictionary=True)
         # Select the new is_pinned column
         cursor.execute("SELECT id, title, is_pinned, created_at FROM conversations WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
-        # Renamed variable to avoid clash with built-in
         user_convos = cursor.fetchall()
-        # --- FIX: We must get the last_updated time from chat_history ---
         
         if not user_convos:
             return []
@@ -409,11 +393,8 @@ def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
         # Get the latest timestamp for each conversation
         convo_ids = [c['id'] for c in user_convos]
         
-        # Use a placeholder string for the IN clause
         placeholders = ', '.join(['%s'] * len(convo_ids))
         
-        # This query finds the MAX(id) for each conversation, which is the last message
-        # It's much faster than sorting by timestamp on a large table
         timestamp_query = f"""
             SELECT conversation_id, MAX(timestamp) as last_updated
             FROM chat_history
@@ -426,7 +407,6 @@ def fetch_user_conversations(user_id: str) -> List[Dict[str, str]]:
         
         # Combine the data
         for convo in user_convos:
-            # Use the latest message timestamp if it exists, otherwise use the convo creation time
             convo['last_updated'] = timestamps.get(convo['id'], convo['created_at'])
         
         return user_convos
@@ -455,25 +435,34 @@ def create_conversation(user_id: str) -> Dict[str, str]:
         if conn and conn.is_connected():
             conn.close()
 
-
-def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+# --- SECURITY FIX: Added user_id parameter to prevent IDOR ---
+def fetch_chat_history_for_conversation(conversation_id: str, limit: int = 50, offset: int = 0, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        # --- FIX: Sort by the auto-incrementing `id` column ---
-        # Sorting by `id` instead of `timestamp` guarantees correct message order
-        # and is immune to clock skew issues between server processes.
+        
         query = """
-            SELECT role, content, timestamp, message_id, conscience_ledger, 
-                   spirit_score, spirit_note, profile_name, profile_values,
-                   suggested_prompts 
-            FROM chat_history WHERE conversation_id = %s 
-            ORDER BY id DESC
-            LIMIT %s OFFSET %s
+            SELECT ch.role, ch.content, ch.timestamp, ch.message_id, ch.conscience_ledger, 
+                   ch.spirit_score, ch.spirit_note, ch.profile_name, ch.profile_values,
+                   ch.suggested_prompts 
+            FROM chat_history ch
         """
-        cursor.execute(query, (conversation_id, limit, offset))
+        params = []
+        
+        if user_id:
+            query += " JOIN conversations c ON ch.conversation_id = c.id WHERE ch.conversation_id = %s AND c.user_id = %s "
+            params = [conversation_id, user_id]
+        else:
+            # Legacy/Internal call without user verification
+            query += " WHERE ch.conversation_id = %s "
+            params = [conversation_id]
+            
+        query += " ORDER BY ch.id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, tuple(params))
         results = cursor.fetchall()
         return list(reversed(results))
     finally:
@@ -501,7 +490,6 @@ def insert_memory_entry(conversation_id: str, role: str, content: str, message_i
             conn.close()
 
 
-# --- MODIFICATION: Added suggested_prompts ---
 def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_score: int, spirit_note: str, profile_name: str, profile_values: List[Dict[str, Any]], suggested_prompts: List[str] = None):
     conn = None
     cursor = None
@@ -510,7 +498,6 @@ def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_s
         cursor = conn.cursor()
         ledger_json = json.dumps(ledger)
         values_json = json.dumps(profile_values)
-        # Handle null or empty list for suggestions
         prompts_json = json.dumps(suggested_prompts) if suggested_prompts else None
         
         sql = """
@@ -521,7 +508,6 @@ def update_audit_results(message_id: str, ledger: List[Dict[str, Any]], spirit_s
             WHERE message_id = %s
         """
         cursor.execute(sql, (ledger_json, spirit_score, spirit_note, profile_name, values_json, prompts_json, message_id))
-        # --- END MODIFICATION ---
         conn.commit()
     finally:
         if cursor:
@@ -553,7 +539,7 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
                 "spirit_note": row.get('spirit_note'),
                 "profile": row.get('profile_name'), 
                 "values": row.get('profile_values'),
-                "suggested_prompts": row.get('suggested_prompts') # Add suggestions
+                "suggested_prompts": row.get('suggested_prompts')
             }
         return None
     finally:
@@ -562,13 +548,18 @@ def get_audit_result(message_id: str) -> Optional[Dict[str, Any]]:
         if conn and conn.is_connected():
             conn.close()
 
-def fetch_conversation_summary(conversation_id: str) -> str:
+# --- SECURITY FIX: Added user_id check ---
+def fetch_conversation_summary(conversation_id: str, user_id: Optional[str] = None) -> str:
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT memory_summary FROM conversations WHERE id = %s", (conversation_id,))
+        if user_id:
+            cursor.execute("SELECT memory_summary FROM conversations WHERE id = %s AND user_id = %s", (conversation_id, user_id))
+        else:
+            cursor.execute("SELECT memory_summary FROM conversations WHERE id = %s", (conversation_id,))
+        
         row = cursor.fetchone()
         return row[0] if row and row[0] else ""
     finally:
@@ -578,13 +569,16 @@ def fetch_conversation_summary(conversation_id: str) -> str:
             conn.close()
 
 
-def update_conversation_summary(conversation_id: str, new_summary: str):
+def update_conversation_summary(conversation_id: str, new_summary: str, user_id: Optional[str] = None):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE conversations SET memory_summary = %s WHERE id = %s", (new_summary, conversation_id))
+        if user_id:
+            cursor.execute("UPDATE conversations SET memory_summary = %s WHERE id = %s AND user_id = %s", (new_summary, conversation_id, user_id))
+        else:
+            cursor.execute("UPDATE conversations SET memory_summary = %s WHERE id = %s", (new_summary, conversation_id))
         conn.commit()
     finally:
         if cursor:
@@ -593,13 +587,16 @@ def update_conversation_summary(conversation_id: str, new_summary: str):
             conn.close()
 
 
-def rename_conversation(conversation_id: str, new_title: str):
+def rename_conversation(conversation_id: str, new_title: str, user_id: Optional[str] = None):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE conversations SET title = %s WHERE id = %s", (new_title, conversation_id))
+        if user_id:
+            cursor.execute("UPDATE conversations SET title = %s WHERE id = %s AND user_id = %s", (new_title, conversation_id, user_id))
+        else:
+            cursor.execute("UPDATE conversations SET title = %s WHERE id = %s", (new_title, conversation_id))
         conn.commit()
     finally:
         if cursor:
@@ -607,35 +604,36 @@ def rename_conversation(conversation_id: str, new_title: str):
         if conn and conn.is_connected():
             conn.close()
 
-# --- NEW FUNCTION: Toggle the is_pinned status ---
-def toggle_conversation_pin(conversation_id: str, is_pinned: bool):
+def toggle_conversation_pin(conversation_id: str, is_pinned: bool, user_id: Optional[str] = None):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # MySQL uses 1 for True, 0 for False
         is_pinned_int = 1 if is_pinned else 0
-        cursor.execute("UPDATE conversations SET is_pinned = %s WHERE id = %s", (is_pinned_int, conversation_id))
+        if user_id:
+            cursor.execute("UPDATE conversations SET is_pinned = %s WHERE id = %s AND user_id = %s", (is_pinned_int, conversation_id, user_id))
+        else:
+            cursor.execute("UPDATE conversations SET is_pinned = %s WHERE id = %s", (is_pinned_int, conversation_id))
         conn.commit()
-        
-        # Optional: return the new state if needed
         return {"id": conversation_id, "is_pinned": is_pinned}
     finally:
         if cursor:
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-# --- END NEW FUNCTION ---
 
 
-def delete_conversation(conversation_id: str):
+def delete_conversation(conversation_id: str, user_id: Optional[str] = None):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
+        if user_id:
+            cursor.execute("DELETE FROM conversations WHERE id = %s AND user_id = %s", (conversation_id, user_id))
+        else:
+            cursor.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
         conn.commit()
     finally:
         if cursor:
@@ -643,23 +641,36 @@ def delete_conversation(conversation_id: str):
         if conn and conn.is_connected():
             conn.close()
 
-def set_conversation_title_from_first_message(conversation_id: str, message: str) -> str:
+def set_conversation_title_from_first_message(conversation_id: str, message: str, user_id: Optional[str] = None) -> str:
     new_title = (message[:50] + '...') if len(message) > 50 else message
-    rename_conversation(conversation_id, new_title)
+    rename_conversation(conversation_id, new_title, user_id)
     return new_title
 
-# --- ADDED: New functions for persistent User Profile Memory ---
-
-def fetch_user_profile_memory(user_id: str) -> str:
+# --- NEW: Helper to verify ownership BEFORE processing ---
+def verify_conversation_ownership(user_id: str, conversation_id: str) -> bool:
     """
-    Fetches the persistent user profile JSON string for a given user_id.
-    Returns an empty JSON string ("{}") if not found or on error.
+    Returns True if the user owns the conversation, False otherwise.
+    Used by the backend to guard processing.
     """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
-        # Assuming a dictionary cursor to get 'profile_json' by name
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM conversations WHERE id = %s AND user_id = %s", (conversation_id, user_id))
+        return cursor.fetchone() is not None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+
+def fetch_user_profile_memory(user_id: str) -> str:
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
         cursor = conn.cursor(dictionary=True) 
         
         query = "SELECT profile_json FROM user_profiles WHERE user_id = %s"
@@ -670,13 +681,11 @@ def fetch_user_profile_memory(user_id: str) -> str:
         if row and row.get('profile_json'):
             return row['profile_json']
         else:
-            # No profile found, return empty JSON
             return "{}"
             
     except Exception as e:
-        # Log the error if possible, but return safely
         print(f"ERROR: Failed to fetch user profile for {user_id}: {e}", flush=True)
-        return "{}" # Always return a valid JSON string
+        return "{}" 
     finally:
         if cursor:
             cursor.close()
@@ -684,17 +693,12 @@ def fetch_user_profile_memory(user_id: str) -> str:
             conn.close()
 
 def upsert_user_profile_memory(user_id: str, profile_json: str):
-    """
-    Inserts or updates the persistent user profile JSON string for a given user_id.
-    """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Use INSERT ... ON DUPLICATE KEY UPDATE to handle both cases
-        # This is for MySQL.
         query = """
             INSERT INTO user_profiles (user_id, profile_json)
             VALUES (%s, %s)
@@ -705,7 +709,6 @@ def upsert_user_profile_memory(user_id: str, profile_json: str):
         conn.commit()
             
     except Exception as e:
-        # Log the error
         print(f"ERROR: Failed to update user profile for {user_id}: {e}", flush=True)
         if conn:
             conn.rollback()
@@ -714,32 +717,24 @@ def upsert_user_profile_memory(user_id: str, profile_json: str):
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-# --- END ADDITION ---
+
 
 def upsert_external_conversation(conversation_id: str, user_id: str, title: str = "External Chat"):
-    """
-    Ensures a conversation exists with a specific ID (e.g., from Teams/Slack).
-    Unlike create_conversation, this uses the provided conversation_id
-    instead of generating a new UUID.
-    """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Check if exists
         cursor.execute("SELECT id FROM conversations WHERE id = %s", (conversation_id,))
         if cursor.fetchone():
-            return # Already exists
+            return 
 
-        # Create if missing
         cursor.execute(
             "INSERT INTO conversations (id, user_id, title, created_at) VALUES (%s, %s, %s, NOW())",
             (conversation_id, user_id, title)
         )
         conn.commit()
     except Exception as e:
-        # Re-raise so the caller knows it failed
         if conn:
             conn.rollback()
         raise e

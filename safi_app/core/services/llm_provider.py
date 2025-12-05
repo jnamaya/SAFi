@@ -32,18 +32,6 @@ class LLMProvider:
         """
         Args:
             config: A dictionary defining providers and routes.
-            Example:
-            {
-                "providers": {
-                    "main_openai": {"type": "openai", "api_key": "...", "base_url": None},
-                    "deepseek": {"type": "openai", "api_key": "...", "base_url": "https://api.deepseek.com"},
-                    "my_anthropic": {"type": "anthropic", "api_key": "..."}
-                },
-                "routes": {
-                    "intellect": {"provider": "deepseek", "model": "deepseek-reasoner"},
-                    "will": {"provider": "my_anthropic", "model": "claude-3-5-sonnet-20240620"}
-                }
-            }
         """
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
@@ -58,8 +46,9 @@ class LLMProvider:
             p_type = details.get("type")
             api_key = details.get("api_key")
             
+            # Allow skipping provider if key is empty/None
             if not api_key:
-                self.log.warning(f"Skipping provider '{name}': No API key provided.")
+                self.log.debug(f"Skipping provider '{name}': No API key provided.")
                 continue
 
             try:
@@ -98,7 +87,7 @@ class LLMProvider:
         client = self.clients.get(provider_name)
 
         if not client:
-            raise RuntimeError(f"Client for provider '{provider_name}' is not initialized.")
+            raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
 
         # --- Dispatch based on Type ---
         
@@ -112,11 +101,14 @@ class LLMProvider:
                     {"role": "user", "content": user_prompt},
                 ]
             }
-            # Handle o1/o3 reasoning models which don't support system roles or temperature in some versions
+            # Handle o1/o3 reasoning models
             if "o1" in model_name or "o3" in model_name:
+                # o1 models do not support 'system' role in current API versions
                 params["messages"] = [{"role": "user", "content": f"System Instruction: {system_prompt}\n\nUser Query: {user_prompt}"}]
-                params.pop("temperature", None) # o1 often doesn't support temp
-                params.pop("max_tokens", None) # o1 uses max_completion_tokens
+                # o1 models do not support temperature
+                params.pop("temperature", None) 
+                # o1 uses max_completion_tokens
+                params.pop("max_tokens", None) 
                 params["max_completion_tokens"] = max_tokens
             else:
                  params["max_tokens"] = max_tokens
@@ -137,13 +129,11 @@ class LLMProvider:
 
         # 3. Google Gemini
         elif provider_type == "gemini":
-            # Instantiate model on the fly to avoid event loop issues
             gemini_model = genai.GenerativeModel(model_name)
             generation_config = genai.types.GenerationConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens,
             )
-            # Concatenate prompts for robustness
             full_prompt = f"{system_prompt}\n\nUSER PROMPT:\n{user_prompt}"
             
             resp = await gemini_model.generate_content_async(

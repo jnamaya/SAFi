@@ -50,7 +50,6 @@ class SafiInstanceCache:
                 return entry['instance']
 
             # 3. Create new if missing
-            # This initialization is heavy (loads RAG/FAISS)
             try:
                 prof = get_profile(profile_name)
                 instance = SAFi(
@@ -94,58 +93,47 @@ def get_user_profile_name():
 async def bot_process_prompt_endpoint():
     """
     Dedicated endpoint for the Microsoft Teams Bot.
-    Uses API Key authentication instead of Session Cookies.
+    Uses API Key authentication.
     """
-    # 1. Security: Check API Secret Header
-    # In production, move "safi-bot-secret-123" to Config.BOT_API_SECRET
+    # 1. Security: Check API Secret Header (Fixed hardcoding)
     api_key = request.headers.get("X-API-KEY")
-    if api_key != "safi-bot-secret-123": 
+    if api_key != Config.BOT_API_SECRET: 
         return jsonify({"error": "Unauthorized Bot Access"}), 401
 
     data = request.json
     user_id = data.get('user_id')
-    user_prompt = data.get('message') # Bot sends 'message' now
+    user_prompt = data.get('message') 
     conversation_id = data.get('conversation_id')
-    persona_key = data.get('persona', 'safi') # Default to 'safi' to avoid missing profile errors
+    persona_key = data.get('persona', 'safi') 
 
     if not all([user_id, user_prompt, conversation_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
     # 2. Ensure User Exists in DB (Just-in-Time Registration)
-    # Since Teams users didn't login via Google, we create a placeholder
-    # so the database constraints (Foreign Keys) don't fail.
     try:
         user_details = db.get_user_details(user_id)
         if not user_details:
             db.upsert_user({
                 "sub": user_id,
                 "id": user_id,
-                "name": f"Teams User {user_id[-4:]}", # e.g. "Teams User A1B2"
+                "name": f"Teams User {user_id[-4:]}",
                 "email": f"{user_id}@safinstitute.org",
                 "picture": ""
             })
-            # Set their profile to the one requested by the bot
             db.update_user_profile(user_id, persona_key)
         
-        # 3. Ensure Conversation Exists (Just-in-Time Creation)
-        # CRITICAL FIX: We must ensure the conversation row exists before SAFi tries to insert memory.
-        # We use a custom function in database.py to handle external IDs.
+        # 3. Ensure Conversation Exists
         if hasattr(db, 'upsert_external_conversation'):
             db.upsert_external_conversation(conversation_id, user_id, title="Teams Chat")
         else:
-            # Fallback warning if you haven't updated database.py yet
             current_app.logger.warning("db.upsert_external_conversation missing. Bot memory might fail if conversation is new.")
 
         # --- MODEL SELECTION LOGIC ---
-        # 1. Load System Defaults
         selected_intellect = Config.INTELLECT_MODEL
         selected_will = Config.WILL_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
 
-        # 2. Override ONLY Intellect for 'accion_admin'
         if persona_key == "accion_admin":
-            # Using GPT-4o for high-reasoning intellect.
-            # Will and Conscience remain at system defaults (e.g. Llama 3.3).
             selected_intellect = "claude-haiku-4-5-20251001" 
         
         # 4. Get Safi Instance (Cached)
@@ -161,22 +149,20 @@ async def bot_process_prompt_endpoint():
             user_prompt, 
             user_id, 
             conversation_id,
-            user_name="Colleague" # Generic name for Teams users
+            user_name="Colleague"
         )
         
         return jsonify(result)
         
     except Exception as e:
         current_app.logger.error(f"Bot Processing Error: {str(e)}")
-        # Return a JSON error so the bot doesn't just hang or crash with HTML
         return jsonify({"error": str(e), "finalOutput": "I encountered an internal error processing your request."}), 500
 
 
 @conversations_bp.route('/tts_audio', methods=['POST'])
 def tts_audio_endpoint():
     """
-    Handles POST request to generate TTS audio and stream the MP3 back.
-    Uses the cache to retrieve the SAFi instance.
+    Handles POST request to generate TTS audio.
     """
     user_id = get_user_id()
     if not user_id:
@@ -189,7 +175,6 @@ def tts_audio_endpoint():
         if not text_to_speak:
             return jsonify({"error": "Missing 'text' in request body."}), 400
         
-        # 1. Resolve User Configuration
         user_details = db.get_user_details(user_id)
         if not user_details:
              return jsonify({"error": "User not found."}), 404
@@ -199,7 +184,6 @@ def tts_audio_endpoint():
         will_model = user_details.get('will_model') or Config.WILL_MODEL
         conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
-        # 2. Get Cached Instance (Fast)
         saf_system = global_safi_cache.get_or_create(
             user_profile_name, 
             intellect_model, 
@@ -207,7 +191,6 @@ def tts_audio_endpoint():
             conscience_model
         )
 
-        # 3. Generate Audio
         audio_content = saf_system.generate_speech_audio(text_to_speak)
         
         if audio_content is None:
@@ -226,7 +209,6 @@ def tts_audio_endpoint():
 async def public_process_prompt_endpoint():
     """
     Process a user prompt from the public WordPress chatbot.
-    Uses the cache with default settings.
     """
     data = request.json
     if 'message' not in data or 'conversation_id' not in data:
@@ -234,7 +216,6 @@ async def public_process_prompt_endpoint():
 
     anonymous_user_id = data['conversation_id']
     
-    # Ensure placeholder user exists
     if not db.get_user_details(anonymous_user_id):
         db.upsert_user({
             "sub": anonymous_user_id,
@@ -243,9 +224,9 @@ async def public_process_prompt_endpoint():
             "picture": "" 
         })
     
+    # NOTE: Public chats are less secure by design, but we still ensure consistency
     new_convo = db.create_conversation(anonymous_user_id)
 
-    # Public endpoints always use the "safi" profile and default models
     saf_system = global_safi_cache.get_or_create(
         "safi", 
         Config.INTELLECT_MODEL, 
@@ -253,8 +234,6 @@ async def public_process_prompt_endpoint():
         Config.CONSCIENCE_MODEL
     )
     
-    # FIX: Using native await instead of asyncio.run
-    # Note: Public users don't have a name in user_details usually, or it's "Public User"
     result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'], user_name="Guest")
     return jsonify(result)
 
@@ -263,13 +242,12 @@ async def public_process_prompt_endpoint():
 async def process_prompt_endpoint():
     """
     Process a user prompt using their selected profile AND selected models.
-    Now utilizes caching for massive performance gains.
+    IDOR PROTECTION ADDED: Verifies ownership before processing.
     """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # Daily limit check
     limit = Config.DAILY_PROMPT_LIMIT
     if limit > 0:
         count = db.get_todays_prompt_count(user_id)
@@ -280,6 +258,13 @@ async def process_prompt_endpoint():
     if 'message' not in data or 'conversation_id' not in data:
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
     
+    conversation_id = data['conversation_id']
+
+    # --- SECURITY: Verify Ownership ---
+    if not db.verify_conversation_ownership(user_id, conversation_id):
+        return jsonify({"error": "You do not have permission to access this conversation."}), 403
+    # ----------------------------------
+
     if limit > 0:
         db.record_prompt_usage(user_id)
     
@@ -293,12 +278,10 @@ async def process_prompt_endpoint():
     will_model = user_details.get('will_model') or Config.WILL_MODEL
     conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
     
-    # --- FIX: Extract the name ---
     full_name = user_details.get('name', 'User')
     user_name = full_name.split(' ')[0] if full_name else 'User'
 
-    # 2. Get Cached Instance (Fast)
-    # This skips the expensive FAISS/Retriever load if this config has been used recently
+    # 2. Get Cached Instance
     saf_system = global_safi_cache.get_or_create(
         user_profile_name, 
         intellect_model, 
@@ -307,12 +290,10 @@ async def process_prompt_endpoint():
     )
     
     # 3. Process
-    # FIX: Using native await instead of asyncio.run
-    # --- FIX: Pass user_name to the orchestrator ---
     result = await saf_system.process_prompt(
         data['message'], 
         user_id, 
-        data['conversation_id'],
+        conversation_id,
         user_name=user_name
     )
     return jsonify(result)
@@ -323,6 +304,12 @@ def get_audit_result_endpoint(message_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
+    
+    # Note: message_id is unique, but ideally we should verify the user owns the conversation 
+    # that this message belongs to. 
+    # Since we lack a direct mapping from message_id -> user_id without a join, 
+    # we rely on the UUID complexity of message_id for now, but a strict implementation would join here too.
+    
     result = db.get_audit_result(message_id)
     if result:
         return jsonify(result)
@@ -372,13 +359,12 @@ def get_conversations():
     
     conversations = db.fetch_user_conversations(user_id)
     
-    # Add 'last_updated' timestamp to each conversation
     conversations_with_timestamps = []
     for convo in conversations:
-        history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0) 
+        # Pass user_id for security
+        history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0, user_id=user_id) 
         
-        # We stick to your previous logic which worked:
-        full_history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0)
+        full_history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0, user_id=user_id)
         
         if full_history:
             last_message = full_history[-1]
@@ -415,7 +401,9 @@ def handle_rename_conversation(conversation_id):
     new_title = data.get('title')
     if not new_title:
         return jsonify({"error": "'title' is required."}), 400
-    db.rename_conversation(conversation_id, new_title)
+    
+    # IDOR check is implicit in the DB function now
+    db.rename_conversation(conversation_id, new_title, user_id=user_id)
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/pin', methods=['PATCH'])
@@ -428,7 +416,8 @@ def handle_pin_conversation(conversation_id):
     if is_pinned is None or not isinstance(is_pinned, bool):
         return jsonify({"error": "'is_pinned' boolean field is required."}), 400
     
-    db.toggle_conversation_pin(conversation_id, is_pinned)
+    # IDOR check is implicit in the DB function now
+    db.toggle_conversation_pin(conversation_id, is_pinned, user_id=user_id)
     return jsonify({"status": "success", "is_pinned": is_pinned})
 
 @conversations_bp.route('/conversations/<conversation_id>', methods=['DELETE'])
@@ -436,7 +425,9 @@ def handle_delete_conversation(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    db.delete_conversation(conversation_id)
+    
+    # IDOR check is implicit in the DB function now
+    db.delete_conversation(conversation_id, user_id=user_id)
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])
@@ -446,7 +437,10 @@ def get_chat_history(conversation_id):
         return jsonify({"error": "Authentication required."}), 401
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
-    history = db.fetch_chat_history_for_conversation(conversation_id, limit=limit, offset=offset)
+    
+    # SECURITY: Pass user_id to enforce ownership check
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=limit, offset=offset, user_id=user_id)
+    
     return jsonify(history)
 
 @conversations_bp.route('/conversations/<conversation_id>/export', methods=['GET'])
@@ -454,9 +448,14 @@ def export_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0)
+    
+    # SECURITY: Pass user_id
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0, user_id=user_id)
+    
+    # We also check user_convos to get the title, which implicitly checks ownership if logic is consistent
     convos = db.fetch_user_conversations(user_id)
     convo_title = next((c['title'] for c in convos if c['id'] == conversation_id), "Untitled")
+    
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()
     export_data = {
         "title": convo_title,

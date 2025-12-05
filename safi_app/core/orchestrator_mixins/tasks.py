@@ -7,6 +7,9 @@ import numpy as np
 from datetime import datetime, timezone
 from typing import Dict, Any
 from ...persistence import database as db
+from ..services import LLMProvider 
+# FIX: Updated import path. ConscienceAuditor is inside 'faculties', not 'core'.
+from ..faculties import ConscienceAuditor
 
 class BackgroundTasksMixin:
     """Mixin for background task management (audits, summarization)."""
@@ -14,6 +17,7 @@ class BackgroundTasksMixin:
     def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
         """
         Runs the Conscience and Spirit faculties in a background thread.
+        CRITICAL FIX: Instantiates FRESH faculties to ensure thread-safety of Async Clients.
         """
         conn = None
         try:
@@ -32,22 +36,72 @@ class BackgroundTasksMixin:
                     self.log.warning(f"Spirit dimension mismatch. Resetting Spirit Memory.")
                     memory = {"turn": 0, "mu": np.zeros(required_dim)}
 
-            # 2. Run Conscience (This is Async, so we need a loop for THIS part only)
+            # 2. Run Conscience (THREAD SAFE REFACTOR)
+            # We MUST create a new LLMProvider here. The main one (self.llm_provider)
+            # has clients bound to the Main Thread's event loop. Using them here
+            # in asyncio.run() (a new loop) causes a RuntimeError.
+            
+            # We pass self.config (which is thread-safe) to create a new provider.
+            # We use a custom simplified config for the thread if needed, or the full one.
+            # Note: We need to reconstruct the LLM config dictionary as it was done in Orchestrator.__init__
+            # Since that logic is in __init__, we can't easily access the raw dict unless we saved it.
+            # OPTIMIZATION: In the Orchestrator, we should save `self.llm_config`.
+            # FALLBACK: We reconstruct it here.
+            
+            def detect_provider(model_name: str) -> str:
+                if not model_name: return "groq"
+                model_lower = model_name.lower()
+                if model_lower.startswith("gpt-") or model_lower.startswith("o1-"): return "openai"
+                if model_lower.startswith("claude-"): return "anthropic"
+                if model_lower.startswith("gemini-"): return "gemini"
+                if model_lower.startswith("deepseek-"): return "deepseek"
+                if model_lower.startswith("mistral-"): return "mistral"
+                return "groq"
+            
+            # Reconstruct minimal necessary config for Conscience
+            c_model = self.conscience.prompt_config.get("model") or getattr(self.config, "CONSCIENCE_MODEL") 
+            # Note: self.conscience doesn't store model name directly in prompt_config usually, 
+            # but we can fallback to config.
+            
+            thread_llm_config = {
+                "providers": {
+                    "openai": { "type": "openai", "api_key": self.config.OPENAI_API_KEY },
+                    "groq": { "type": "openai", "api_key": self.config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" },
+                    "anthropic": { "type": "anthropic", "api_key": self.config.ANTHROPIC_API_KEY },
+                    "gemini": { "type": "gemini", "api_key": self.config.GEMINI_API_KEY },
+                },
+                "routes": {
+                    "conscience": {
+                        "provider": getattr(self.config, "CONSCIENCE_PROVIDER", detect_provider(c_model)),
+                        "model": c_model
+                    }
+                }
+            }
+            
+            # Create fresh instances
+            thread_provider = LLMProvider(thread_llm_config)
+            thread_conscience = ConscienceAuditor(
+                llm_provider=thread_provider,
+                values=self.values,
+                profile=self.profile,
+                prompt_config=self.prompts.get("conscience_auditor", {})
+            )
+            
             try:
-                ledger = asyncio.run(self.conscience.evaluate(
+                # Now we can safely run the async method in this thread's new loop
+                ledger = asyncio.run(thread_conscience.evaluate(
                     final_output=snapshot["a_t"], 
                     user_prompt=snapshot["x_t"], 
                     reflection=snapshot["r_t"],
                     retrieved_context=snapshot.get("retrieved_context", "")
                 ))
-            except Exception:
-                self.log.exception("ConscienceAuditor.evaluate() failed in audit thread")
+            except Exception as e:
+                self.log.exception(f"ConscienceAuditor.evaluate() failed in audit thread: {e}")
                 ledger = []
             
-            # 3. Get Follow-up Suggestions (SYNC call now - no asyncio.run needed)
+            # 3. Get Follow-up Suggestions (SYNC call)
             S_p = []
             try:
-                # Direct synchronous call to avoid Event Loop issues
                 S_p = self._get_follow_up_suggestions(
                     user_prompt=snapshot["x_t"],
                     ai_response=snapshot["a_t"]

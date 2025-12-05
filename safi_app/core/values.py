@@ -1,12 +1,11 @@
 from typing import Dict, Any, List
 import copy
 
-# 1. Import Governance (Now from the 'accion' sub-package)
-from .governance.accion.policy import ACCION_GLOBAL_POLICY
+# 1. Import Governance (Updated for Contoso structure)
+from .governance.contoso.policy import CONTOSO_GLOBAL_POLICY
 
-# 2. Import Personas (From the renamed folder and new variables)
-# NOTE: Individual imports now, instead of one monolithic import
-from .personas.accion_admin import THE_ACCION_ADMIN_PERSONA
+# 2. Import Personas (Updated for Contoso Admin)
+from .personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
 from .personas.fiduciary import THE_FIDUCIARY_PERSONA
 from .personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
 from .personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
@@ -16,12 +15,11 @@ from .personas.vault import THE_VAULT_PERSONA
 from .personas.negotiator import THE_NEGOTIATOR_PERSONA
 
 # 3. Define the Persona Registry
-# Renamed from PROFILES to PERSONAS for internal consistency.
 PERSONAS: Dict[str, Dict[str, Any]] = {
-    # The Accion Persona (Governed)
-    "accion_admin": THE_ACCION_ADMIN_PERSONA,
+    # The Contoso Persona (Governed)
+    "contoso_admin": THE_CONTOSO_ADMIN_PERSONA,
     
-    # The Independent Personas
+    # The Independent Personas (Unchanged)
     "fiduciary": THE_FIDUCIARY_PERSONA,
     "health_navigator": THE_HEALTH_NAVIGATOR_PERSONA,
     "bible_scholar": THE_BIBLE_SCHOLAR_PERSONA,
@@ -32,9 +30,9 @@ PERSONAS: Dict[str, Dict[str, Any]] = {
 }
 
 # 4. Define Governance Mapping
+# Maps the specific persona key to the global policy
 GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {
-    "accion_admin": ACCION_GLOBAL_POLICY,
-    # Future example: "contoso_hr": CONTOSO_GLOBAL_POLICY
+    "contoso_admin": CONTOSO_GLOBAL_POLICY,
 }
 
 # 5. Define the Compiler Logic
@@ -79,9 +77,6 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
     return final_profile
 
 # 6. Public Accessors
-# NOTE: We keep the function name 'list_profiles' and 'get_profile' 
-# to avoid breaking the API layer (api/auth.py, etc.) which calls them.
-
 def list_profiles() -> List[Dict[str, str]]:
     return sorted(
         [{"key": key, "name": persona["name"]} for key, persona in PERSONAS.items()],
@@ -96,7 +91,6 @@ def get_profile(name: str) -> Dict[str, Any]:
     key = (name or "").lower().strip()
     
     if key not in PERSONAS:
-        # Fallback or Error
         raise KeyError(f"Unknown persona '{name}'. Available: {[p['key'] for p in list_profiles()]}")
         
     raw_persona = PERSONAS[key]
