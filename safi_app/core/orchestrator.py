@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 # --- Import Provider SDKs (Needed for Sync Clients) ---
 from openai import OpenAI
@@ -55,6 +56,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
         
+        # --- PRODUCTION FIX: ThreadPool for Background Tasks ---
+        # Prevent unbounded thread spawning. 
+        # Max workers can be tuned based on server capacity (CPU cores * 2 is standard)
+        self.executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="SafiWorker")
+
         # --- Helper: Auto-detect Provider (Backward Compatibility) ---
         def detect_provider(model_name: str) -> str:
             if not model_name: return "groq"
@@ -204,6 +210,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
+    def __del__(self):
+        """Cleanup thread executor on destruction"""
+        try:
+            self.executor.shutdown(wait=False)
+        except Exception:
+            pass
 
     async def process_prompt(
         self, 
@@ -285,15 +297,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         
         snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context }
         
-        # FIX: Ensure background threads have access to sync clients (self.groq_client_sync)
-        threading.Thread(target=self._run_audit_thread, args=(snapshot, D_t, E_t, message_id, spirit_feedback), daemon=True).start()
+        # FIX: Submit tasks to ThreadPoolExecutor instead of spawning new Threads
+        self.executor.submit(self._run_audit_thread, snapshot, D_t, E_t, message_id, spirit_feedback)
         
         if hasattr(self, 'groq_client_sync'):
-            threading.Thread(target=self._run_summarization_thread, args=(conversation_id, memory_summary, user_prompt, a_t), daemon=True).start()
+            self.executor.submit(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
         
         if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
-                 threading.Thread(target=self._run_profile_update_thread, args=(user_id, current_profile_json, user_prompt, a_t), daemon=True).start()
+                 self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
 
         return { 
             "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, 
