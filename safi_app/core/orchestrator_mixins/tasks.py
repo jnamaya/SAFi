@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import numpy as np
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from ...persistence import database as db
 from ..services import LLMProvider 
 # FIX: Updated import path. ConscienceAuditor is inside 'faculties', not 'core'.
@@ -14,7 +14,15 @@ from ..faculties import ConscienceAuditor
 class BackgroundTasksMixin:
     """Mixin for background task management (audits, summarization)."""
 
-    def _run_audit_thread(self, snapshot: Dict[str, Any], will_decision: str, will_reason: str, message_id: str, spirit_feedback: str):
+    def _run_audit_thread(
+        self, 
+        snapshot: Dict[str, Any], 
+        will_decision: str, 
+        will_reason: str, 
+        message_id: str, 
+        spirit_feedback: str,
+        retry_metadata: Optional[Dict[str, Any]] = None # New argument
+    ):
         """
         Runs the Conscience and Spirit faculties in a background thread.
         CRITICAL FIX: Instantiates FRESH faculties to ensure thread-safety of Async Clients.
@@ -37,17 +45,6 @@ class BackgroundTasksMixin:
                     memory = {"turn": 0, "mu": np.zeros(required_dim)}
 
             # 2. Run Conscience (THREAD SAFE REFACTOR)
-            # We MUST create a new LLMProvider here. The main one (self.llm_provider)
-            # has clients bound to the Main Thread's event loop. Using them here
-            # in asyncio.run() (a new loop) causes a RuntimeError.
-            
-            # We pass self.config (which is thread-safe) to create a new provider.
-            # We use a custom simplified config for the thread if needed, or the full one.
-            # Note: We need to reconstruct the LLM config dictionary as it was done in Orchestrator.__init__
-            # Since that logic is in __init__, we can't easily access the raw dict unless we saved it.
-            # OPTIMIZATION: In the Orchestrator, we should save `self.llm_config`.
-            # FALLBACK: We reconstruct it here.
-            
             def detect_provider(model_name: str) -> str:
                 if not model_name: return "groq"
                 model_lower = model_name.lower()
@@ -55,13 +52,10 @@ class BackgroundTasksMixin:
                 if model_lower.startswith("claude-"): return "anthropic"
                 if model_lower.startswith("gemini-"): return "gemini"
                 if model_lower.startswith("deepseek-"): return "deepseek"
-                if model_lower.startswith("mistral-"): return "mistral"
+                if model_lower.startswith("mistral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
                 return "groq"
             
-            # Reconstruct minimal necessary config for Conscience
             c_model = self.conscience.prompt_config.get("model") or getattr(self.config, "CONSCIENCE_MODEL") 
-            # Note: self.conscience doesn't store model name directly in prompt_config usually, 
-            # but we can fallback to config.
             
             thread_llm_config = {
                 "providers": {
@@ -87,14 +81,25 @@ class BackgroundTasksMixin:
                 prompt_config=self.prompts.get("conscience_auditor", {})
             )
             
+            async def run_conscience_safely():
+                try:
+                    return await thread_conscience.evaluate(
+                        final_output=snapshot["a_t"], 
+                        user_prompt=snapshot["x_t"], 
+                        reflection=snapshot["r_t"],
+                        retrieved_context=snapshot.get("retrieved_context", "")
+                    )
+                finally:
+                    # Explicitly close clients to prevent "Event loop is closed" errors
+                    # Iterate through clients in the provider and close them if they have a close method
+                    for name, client in thread_provider.clients.items():
+                        if hasattr(client, 'close'):
+                            await client.close()
+                        elif hasattr(client, 'aclose'): # httpx clients use aclose
+                            await client.aclose()
+
             try:
-                # Now we can safely run the async method in this thread's new loop
-                ledger = asyncio.run(thread_conscience.evaluate(
-                    final_output=snapshot["a_t"], 
-                    user_prompt=snapshot["x_t"], 
-                    reflection=snapshot["r_t"],
-                    retrieved_context=snapshot.get("retrieved_context", "")
-                ))
+                ledger = asyncio.run(run_conscience_safely())
             except Exception as e:
                 self.log.exception(f"ConscienceAuditor.evaluate() failed in audit thread: {e}")
                 ledger = []
@@ -131,7 +136,8 @@ class BackgroundTasksMixin:
                 "mu_t_vector": mu_new.tolist(),
                 "memorySummary": snapshot.get("memory_summary") or "",
                 "spiritFeedback": spirit_feedback,
-                "retrievedContext": snapshot.get("retrieved_context", "")
+                "retrievedContext": snapshot.get("retrieved_context", ""),
+                "retryMetadata": retry_metadata # Added metadata
             }
             self._append_log(log_entry)
 
