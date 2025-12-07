@@ -57,18 +57,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.log = logging.getLogger(self.__class__.__name__)
         
         # --- PRODUCTION FIX: ThreadPool for Background Tasks ---
-        # Prevent unbounded thread spawning. 
-        # Max workers can be tuned based on server capacity (CPU cores * 2 is standard)
         self.executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="SafiWorker")
 
-        # --- Helper: Auto-detect Provider (Backward Compatibility) ---
+        # --- Helper: Auto-detect Provider ---
         def detect_provider(model_name: str) -> str:
             if not model_name: return "groq"
             model_lower = model_name.lower()
             if model_lower.startswith("gpt-") or model_lower.startswith("o1-"): return "openai"
             if model_lower.startswith("claude-"): return "anthropic"
             if model_lower.startswith("gemini-"): return "gemini"
-            # NEW: Auto-detect DeepSeek and Mistral
             if model_lower.startswith("deepseek-"): return "deepseek"
             if model_lower.startswith("mistral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
             return "groq" 
@@ -78,7 +75,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         c_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
 
         # --- 1. Construct LLM Configuration ---
-        # FIX: We use standard keys ("groq", "openai") so existing Mixins can find them.
         llm_config = {
             "providers": {
                 "openai": {
@@ -98,13 +94,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     "type": "gemini",
                     "api_key": config.GEMINI_API_KEY
                 },
-                # DeepSeek Native API
                 "deepseek": {
                     "type": "openai",
                     "api_key": getattr(config, "DEEPSEEK_API_KEY", ""),
                     "base_url": "https://api.deepseek.com"
                 },
-                # Mistral Native API
                 "mistral": {
                     "type": "openai",
                     "api_key": getattr(config, "MISTRAL_API_KEY", ""),
@@ -127,16 +121,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             }
         }
         
-        # Initialize the Universal LLM Provider
         self.llm_provider = LLMProvider(llm_config)
-        
-        # FIX: Expose the async clients to Mixins (SuggestionsMixin looks for self.clients["groq"])
         self.clients = self.llm_provider.clients
 
-        # --- 2. RESTORE SYNC CLIENTS (For Background Threads & TTS) ---
-        # The LLMProvider is purely async. We must manually restore sync clients
-        # because BackgroundTasksMixin and TtsMixin rely on them.
-        
+        # --- 2. RESTORE SYNC CLIENTS ---
         if config.GROQ_API_KEY:
             self.groq_client_sync = OpenAI(
                 api_key=config.GROQ_API_KEY,
@@ -211,7 +199,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
 
     def __del__(self):
-        """Cleanup thread executor on destruction"""
         try:
             self.executor.shutdown(wait=False)
         except Exception:
@@ -234,7 +221,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         
         # Plugins
         plugin_context_data = {}
-        # Plugins may need a raw client. Use Groq sync client if available, else Async from provider.
         plugin_client = self.clients.get("groq") 
         
         plugin_tasks = [
@@ -264,7 +250,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             recent_mu=list(self.mu_history)
         )
 
-        # Execution Chain
+        # --- 1. First Pass: Intellect Generation ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
             memory_summary=memory_summary, 
@@ -284,21 +270,92 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
+        # --- 2. First Pass: Will Evaluation ---
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
+        # --- Retry Metadata Tracking ---
+        retry_metadata = {
+            "was_retried": False,
+            "original_draft": None,
+            "violation_reason": None
+        }
+
+        # --- 3. Reflexion Loop (Single Retry) ---
+        if D_t == "violation":
+            self.log.info(f"Will blocked first draft. Reason: {E_t}. Attempting Reflexion Retry.")
+            
+            # Record that we are retrying
+            retry_metadata["was_retried"] = True
+            retry_metadata["original_draft"] = a_t
+            retry_metadata["violation_reason"] = E_t
+
+            retry_template = self.prompts.get("will_retry", {}).get("template")
+            if not retry_template:
+                retry_template = (
+                    "{original_prompt_with_date}\n\n"
+                    "--- INTERNAL GOVERNANCE FEEDBACK ---\n"
+                    "Your previous draft response was blocked by the 'Will' gatekeeper.\n"
+                    "Your Blocked Draft:\n\"\"\"\n{blocked_draft}\n\"\"\"\n\n"
+                    "Violation Reason:\n{violation_reason}\n\n"
+                    "INSTRUCTION: Rewrite your response to be fully compliant with the persona values and rules. "
+                    "Analyze your blocked draft to understand what triggered the violation. "
+                    "Address the user's intent safely. Do not mention this internal system correction or the block."
+                )
+            
+            retry_prompt = retry_template.format(
+                original_prompt_with_date=prompt_with_date,
+                blocked_draft=a_t,
+                violation_reason=E_t
+            )
+
+            a_t_retry, r_t_retry, context_retry = await self.intellect_engine.generate(
+                user_prompt=retry_prompt, 
+                memory_summary=memory_summary,
+                spirit_feedback=spirit_feedback,
+                plugin_context=plugin_context_data, 
+                user_profile_json=current_profile_json,
+                user_name=user_name
+            )
+            
+            if a_t_retry:
+                D_t_retry, E_t_retry = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t_retry)
+                
+                if D_t_retry == "approve":
+                    self.log.info("Reflexion Retry Successful. Proceeding with safe response.")
+                    a_t = a_t_retry
+                    r_t = r_t_retry
+                    retrieved_context = context_retry
+                    D_t = D_t_retry
+                    E_t = E_t_retry
+                else:
+                    self.log.info(f"Reflexion Retry Failed. Still blocked. Reason: {E_t_retry}")
+                    E_t = f"Original violation: {E_t}. Retry violation: {E_t_retry}"
+            else:
+                self.log.warning("Reflexion Retry failed to generate text.")
+
+        # --- 4. Final Decision (Block or Allow) ---
         if D_t == "violation":
             suppression_message = f"🛑 **Blocked**\n\nReason: {E_t}"
             S_p = await self._get_prompt_suggestions(user_prompt, self.profile.get("will_rules", []))
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete") 
-            self._append_log({"userPrompt": user_prompt, "finalOutput": suppression_message, "willDecision": D_t, "willReason": E_t, "timestamp": datetime.now(timezone.utc).isoformat()})
+            self._append_log({
+                "userPrompt": user_prompt, 
+                "blockedDraft": a_t,
+                "finalOutput": suppression_message, 
+                "willDecision": D_t, 
+                "willReason": E_t, 
+                "retryMetadata": retry_metadata, # Log metadata even on failure
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
 
+        # --- 5. Success: Save and Audit ---
         db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
         
         snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context }
         
-        # FIX: Submit tasks to ThreadPoolExecutor instead of spawning new Threads
-        self.executor.submit(self._run_audit_thread, snapshot, D_t, E_t, message_id, spirit_feedback)
+        # Pass retry_metadata to the audit thread
+        self.executor.submit(self._run_audit_thread, snapshot, D_t, E_t, message_id, spirit_feedback, retry_metadata)
         
         if hasattr(self, 'groq_client_sync'):
             self.executor.submit(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
