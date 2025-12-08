@@ -13,10 +13,10 @@ const storage = {
     try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
   },
   async set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { }
   },
   async remove(key) {
-    try { localStorage.removeItem(key); } catch {}
+    try { localStorage.removeItem(key); } catch { }
   }
 };
 
@@ -40,7 +40,7 @@ function headersToObject(headers) {
   const out = {};
   try {
     for (const [k, v] of headers.entries()) out[k] = v;
-  } catch {}
+  } catch { }
   return out;
 }
 
@@ -62,7 +62,7 @@ async function initNetworkListener() {
   try {
     window.addEventListener('online', () => { isOnline = true; flushQueue(); });
     window.addEventListener('offline', () => { isOnline = false; });
-  } catch {}
+  } catch { }
 
   // Capacitor Network plugin if present
   if (Network && typeof Network.addListener === 'function') {
@@ -114,10 +114,10 @@ async function fetchWithCache(request) {
     const msg = await res.clone().text().catch(() => '');
 
     if (status === 401) {
-        // Throw a specific error that checkLoginStatus can handle.
-        throw new Error(`UNAUTHORIZED: ${msg || 'Authentication required'}`);
+      // Throw a specific error that checkLoginStatus can handle.
+      throw new Error(`UNAUTHORIZED: ${msg || 'Authentication required'}`);
     }
-    
+
     // For other non-2xx statuses, throw the raw server message or generic status error
     throw new Error(msg || `Request failed with status ${status}`);
   }
@@ -125,9 +125,9 @@ async function fetchWithCache(request) {
   // --- CRITICAL FIX START: Check Content-Type for 2xx responses ---
   const contentType = res.headers.get('Content-Type');
   if (contentType && !contentType.includes('application/json')) {
-      const htmlBody = await res.clone().text().catch(() => '');
-      console.error(`Status 200/2xx, but unexpected Content-Type: ${contentType}. Body starts with: ${htmlBody.substring(0, 50)}`);
-      throw new Error(`Server returned HTML for API call (status ${res.status}). Expected JSON.`);
+    const htmlBody = await res.clone().text().catch(() => '');
+    console.error(`Status 200/2xx, but unexpected Content-Type: ${contentType}. Body starts with: ${htmlBody.substring(0, 50)}`);
+    throw new Error(`Server returned HTML for API call (status ${res.status}). Expected JSON.`);
   }
   // --- CRITICAL FIX END ---
 
@@ -142,41 +142,76 @@ async function fetchWithCache(request) {
     throw new Error(`Invalid server response format for status ${res.status}.`);
   }
 }
-
 /**
  * POST/PUT/DELETE with offline queue.
- * Returns JSON if sent now, or 'QUEUED' if stored for later.
+ * Accepts plain arguments to avoid Request stream issues.
+ * Supports legacy Request object as first arg for backward compatibility (cache issues).
+ * @param {string|Request} urlOrRequest
+ * @param {string|FormData} [body]
+ * @param {string} [method]
+ * @param {Headers|Object} [headers]
+ * @returns JSON response or 'QUEUED'
  */
-async function postWithQueue(request) {
-  // Safely capture parts before we touch the network
-  const bodyText = await readRequestBodyOnce(request);
-  const method = request.method || 'POST';
-  const headers = headersToObject(request.headers);
-  const url = request.url;
+async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}) {
+  let requestUrl, requestBody, requestMethod, requestHeaders;
+
+  // POLYMORPHIC HANDLING: Detect if called with legacy Request object (Browser cache mismatch)
+  if (typeof urlOrRequest === 'object' && typeof urlOrRequest.url === 'string') {
+    console.warn("Mobile/Offline: Cache mismatch detected. Handling legacy Request object.");
+    const req = urlOrRequest;
+    requestUrl = req.url;
+    requestMethod = req.method;
+    requestHeaders = headersToObject(req.headers);
+    try {
+      // Attempt to read body. If it was already consumed by a failed clone, this might fail,
+      // but usually 'new Request()' from api.js is fresh.
+      requestBody = await req.text();
+    } catch (e) {
+      console.warn("Legacy Request body read failed:", e);
+      requestBody = '';
+    }
+  } else {
+    // Standard New Signature
+    requestUrl = urlOrRequest;
+    requestBody = body;
+    requestMethod = method;
+    requestHeaders = headers instanceof Headers ? headersToObject(headers) : headers;
+  }
+
+  // Prepare fetch options
+  const fetchOptions = {
+    method: requestMethod,
+    headers: requestHeaders,
+    body: requestBody,
+    credentials: 'include'
+  };
 
   if (isOnline) {
     try {
-      const res = await fetch(request);
+      const res = await fetch(requestUrl, fetchOptions);
+
       if (!res.ok) {
-        // Queue on server error too, to avoid losing intent
-        await queueRequest({ url, method, headers, bodyText });
+        if (res.status >= 400 && res.status < 500) {
+          const msg = await res.text();
+          throw new Error(msg || res.statusText);
+        }
+
+        // Queue on 5xx errors or network failures
+        await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
         return 'QUEUED';
       }
-      // Return JSON exactly once
       return await res.json();
-    } catch {
-      // Network failed, queue it
-      await queueRequest({ url, method, headers, bodyText });
+    } catch (e) {
+      console.warn("Fetch failed, queuing:", e);
+      await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
       return 'QUEUED';
     }
   } else {
     // Offline, queue immediately
-    await queueRequest({ url, method, headers, bodyText });
+    await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
     return 'QUEUED';
   }
 }
-
-/* ---------- Queue handling ---------- */
 
 async function queueRequest(parts) {
   const queue = await loadQueue();

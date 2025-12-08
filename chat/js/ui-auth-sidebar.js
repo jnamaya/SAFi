@@ -1,7 +1,7 @@
 // ui-auth-sidebar.js
 
 import * as ui from './ui.js';
-// Assuming formatRelativeTime is in utils.js, based on context from other files
+// Assuming formatRelativeTime is in utils.js
 import { formatRelativeTime } from './utils.js'; 
 import { iconMenuDots } from './ui-render-constants.js';
 
@@ -15,6 +15,13 @@ const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" vie
 // --- NEW: Search Icon ---
 const iconSearch = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
 
+// --- NEW: Profile Cache ---
+// Allows us to look up avatars for custom profiles by name
+let _knownProfiles = [];
+
+export function setKnownProfiles(profiles) {
+    _knownProfiles = profiles || [];
+}
 
 /**
  * Updates the entire sidebar UI based on the user's login status.
@@ -47,13 +54,12 @@ export function updateUIForAuthState(user) {
             </button>
           </div>
           
-          <!-- NEW: Search Bar Area -->
+          <!-- Search Bar Area -->
           <div class="px-4 pt-4 shrink-0">
              <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     ${iconSearch}
                 </div>
-                <!-- UPDATED: Changed pl-9 to pl-10 for better spacing -->
                 <input type="text" id="convo-search-input" placeholder="Search chats..." class="w-full pl-10 pr-3 py-2 bg-gray-100 dark:bg-neutral-900 border-none rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:outline-none transition-shadow">
              </div>
           </div>
@@ -70,7 +76,6 @@ export function updateUIForAuthState(user) {
           </nav>
           
           <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
-            <!-- MODIFIED: The whole container is now a button for easier clicking on mobile -->
             <button id="control-panel-btn" type="button" class="w-full flex items-center justify-between gap-3 min-w-0 group rounded-lg p-2 -m-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-left" aria-label="Open Control Panel">
               
               <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -81,7 +86,6 @@ export function updateUIForAuthState(user) {
                 </div>
               </div>
 
-              <!-- MODIFIED: Changed to ellipsis icon -->
               <div class="shrink-0 p-1 rounded-full text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-200">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
               </div>
@@ -228,11 +232,6 @@ export function prependConversationLink(convo, handlers) {
       let pinnedHeader = convoList.querySelector('h3:first-of-type');
       if (!pinnedHeader || pinnedHeader.textContent !== 'Pinned Conversations') {
            // Reloading the entire list is simpler for accurate sorting/headers
-           // However, if we must prepend, we'll try to find the last pinned item.
-           
-           // Simpler approach: call loadConversations to correctly sort/render everything
-           // Since we already updated the cache, a full reload is efficient here.
-           // For now, let's just prepend to the start if pinned.
            convoList.prepend(link);
       } else {
           // Prepend after the pinned header
@@ -449,19 +448,31 @@ export function updateChatTitle(title) {
 /**
  * Updates the chip displaying the currently active profile/persona.
  */
-export function updateActiveProfileChip(profileName) {
+export function updateActiveProfileChip(profileNameOrObject) {
   ui._ensureElements();
   
-  const avatarUrl = getAvatarForProfile(profileName);
-  const textLabel = "Persona:";
-  const profileNameText = profileName || 'Default';
+  // Handle both string and object input
+  let profileNameText = 'Default';
+  let avatarUrl = '';
+
+  if (typeof profileNameOrObject === 'string') {
+      profileNameText = profileNameOrObject || 'Default';
+      avatarUrl = getAvatarForProfile(profileNameText);
+  } else if (profileNameOrObject && typeof profileNameOrObject === 'object') {
+      profileNameText = profileNameOrObject.name || 'Default';
+      // Use the object's avatar if present, otherwise look up by name
+      avatarUrl = profileNameOrObject.avatar || getAvatarForProfile(profileNameText);
+  }
+
+  // --- CHANGED: "Persona:" to "Agent:" ---
+  const textLabel = "Agent:";
 
   // Desktop chip
   if (ui.elements.activeProfileChip) {
     ui.elements.activeProfileChip.classList.add('flex', 'items-center', 'gap-2');
     ui.elements.activeProfileChip.innerHTML = `
       <span class="truncate flex-shrink-0">${textLabel}</span>
-      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-5 h-5 rounded-md flex-shrink-0">
+      <img src="${avatarUrl}" alt="${profileNameText} Avatar" class="w-5 h-5 rounded-md flex-shrink-0 object-cover">
       <span class="truncate">${profileNameText}</span>
     `;
   }
@@ -470,7 +481,7 @@ export function updateActiveProfileChip(profileName) {
   if (ui.elements.activeProfileChipMobile) {
     ui.elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto', 'justify-center');
     ui.elements.activeProfileChipMobile.innerHTML = `
-      <img src="${avatarUrl}" alt="${profileName || 'SAFi'} Avatar" class="w-4 h-4 rounded-lg flex-shrink-0">
+      <img src="${avatarUrl}" alt="${profileNameText} Avatar" class="w-4 h-4 rounded-lg flex-shrink-0 object-cover">
       <span class="font-semibold truncate">${profileNameText}</span>
     `;
   }
@@ -489,26 +500,32 @@ export function updateActiveProfileChip(profileName) {
 export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
-switch (cleanName) {
-  case 'the contoso governance officer': 
-    case 'contoso governance officer': // Good to add aliases just in case
-      return 'assets/contoso.svg';
-case 'the fiduciary':
-return 'assets/fiduciary.svg';
-case 'the health navigator':
-return 'assets/health_navigator.svg';
-case 'the socratic tutor':
-case 'the tutor':
-return 'assets/tutor.svg';
-case 'the vault':
-return 'assets/vault.svg';
-case 'the negotiator':
-return 'assets/negotiator.svg';
-case 'the bible scholar':
-return 'assets/bible_scholar.svg';
-case 'the safi guide':
-default:
-return 'assets/safi.svg';
+  // 1. Check known custom profiles first
+  const customProfile = _knownProfiles.find(p => p.name && p.name.trim().toLowerCase() === cleanName);
+  if (customProfile && customProfile.avatar) {
+      return customProfile.avatar;
+  }
 
-}
+  // 2. Fallback to hardcoded assets
+  switch (cleanName) {
+    case 'the contoso governance officer': 
+    case 'contoso governance officer': 
+      return 'assets/contoso.svg';
+    case 'the fiduciary':
+      return 'assets/fiduciary.svg';
+    case 'the health navigator':
+      return 'assets/health_navigator.svg';
+    case 'the socratic tutor':
+    case 'the tutor':
+      return 'assets/tutor.svg';
+    case 'the vault':
+      return 'assets/vault.svg';
+    case 'the negotiator':
+      return 'assets/negotiator.svg';
+    case 'the bible scholar':
+      return 'assets/bible_scholar.svg';
+    case 'the safi guide':
+    default:
+      return 'assets/safi.svg';
+  }
 }

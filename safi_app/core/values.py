@@ -1,5 +1,8 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import copy
+import json
+import os
+from pathlib import Path
 
 # 1. Import Governance (Updated for Contoso structure)
 from .governance.contoso.policy import CONTOSO_GLOBAL_POLICY
@@ -76,12 +79,88 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
     
     return final_profile
 
-# 6. Public Accessors
-def list_profiles() -> List[Dict[str, str]]:
-    return sorted(
-        [{"key": key, "name": persona["name"]} for key, persona in PERSONAS.items()],
-        key=lambda x: x["name"]
-    )
+# 6. JSON Loading Helpers
+
+CUSTOM_PERSONAS_DIR = Path(__file__).parent / "personas" / "custom"
+
+def load_custom_persona(name: str) -> Optional[Dict[str, Any]]:
+    """
+    Attempts to load a persona from a JSON file in core/personas/custom/.
+    """
+    try:
+        if not CUSTOM_PERSONAS_DIR.exists():
+            return None
+            
+        # Support both 'my_agent' and 'my_agent.json' inputs
+        clean_name = name.replace(".json", "")
+        file_path = CUSTOM_PERSONAS_DIR / f"{clean_name}.json"
+        
+        if file_path.exists():
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Ensure the key matches the filename
+                data["key"] = clean_name
+                
+                # FIX for SpiritIntegrator compatibility:
+                # SpiritIntegrator expects keys 'value' and 'weight', but Frontend sends 'name' and 'weight'.
+                # We map 'name' -> 'value' if missing.
+                if "values" in data and isinstance(data["values"], list):
+                    for v in data["values"]:
+                        if "name" in v and "value" not in v:
+                            v["value"] = v["name"]
+                
+                return data
+    except Exception as e:
+        print(f"Error loading custom persona {name}: {e}")
+        return None
+    return None
+
+def list_custom_personas(owner_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Scans the custom directory and returns a list of minimal persona dicts.
+    Filters by owner_id if provided.
+    """
+    results = []
+    if not CUSTOM_PERSONAS_DIR.exists():
+        return results
+
+    for file_path in CUSTOM_PERSONAS_DIR.glob("*.json"):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+                # VISIBILITY LOGIC:
+                # 1. If 'created_by' is missing, it's public (Legacy or System).
+                # 2. If 'created_by' matches owner_id, it's mine -> Show.
+                # 3. If 'created_by' exists and mismatch -> Hide.
+                
+                creator = data.get("created_by")
+                
+                if creator and creator != owner_id:
+                    continue # Skip private agents of others
+
+                results.append({
+                    "key": file_path.stem,
+                    "name": data.get("name", file_path.stem),
+                    "description": data.get("description", ""),
+                    "is_custom": True,
+                    "created_by": creator
+                })
+        except Exception:
+            continue
+    return results
+
+# 7. Public Accessors
+def list_profiles(owner_id: Optional[str] = None) -> List[Dict[str, str]]:
+    # Built-in Personas (Always visible)
+    builtins = [{"key": key, "name": persona["name"], "is_custom": False, "created_by": None} for key, persona in PERSONAS.items()]
+    
+    # Custom Personas (Filtered by owner)
+    customs = list_custom_personas(owner_id)
+    
+    # Merge and sort
+    all_profiles = builtins + customs
+    return sorted(all_profiles, key=lambda x: x["name"])
 
 def get_profile(name: str) -> Dict[str, Any]:
     """
@@ -90,10 +169,15 @@ def get_profile(name: str) -> Dict[str, Any]:
     """
     key = (name or "").lower().strip()
     
-    if key not in PERSONAS:
-        raise KeyError(f"Unknown persona '{name}'. Available: {[p['key'] for p in list_profiles()]}")
-        
-    raw_persona = PERSONAS[key]
+    # 1. Check Built-ins
+    if key in PERSONAS:
+        raw_persona = PERSONAS[key]
+    else:
+        # 2. Check Customs
+        raw_persona = load_custom_persona(key)
+        if not raw_persona:
+            available_keys = [p['key'] for p in list_profiles()]
+            raise KeyError(f"Unknown persona '{name}'. Available: {available_keys}")
 
     # --- CONDITIONAL GOVERNANCE LOGIC ---
     # If this persona is assigned to a governance policy, apply it.

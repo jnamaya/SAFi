@@ -140,7 +140,15 @@ class LLMProvider:
                 full_prompt, 
                 generation_config=generation_config
             )
-            return resp.text or "{}"
+            
+            # --- GEMINI FIX: Safe Text Access ---
+            try:
+                return resp.text or "{}"
+            except ValueError:
+                # This catches the "Invalid operation: ... valid Part ... none were returned" error
+                self.log.warning(f"Gemini returned empty response. Finish Reason: {resp.candidates[0].finish_reason if resp.candidates else 'Unknown'}")
+                # Return empty JSON to trigger downstream error handling gracefully
+                return "{}"
 
         else:
             raise ValueError(f"Unsupported provider type '{provider_type}'")

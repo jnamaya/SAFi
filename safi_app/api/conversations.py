@@ -336,10 +336,14 @@ def profiles_list():
     user_profile_name = get_user_profile_name()
     
     all_profiles = []
-    for p in list_profiles():
+    # FIX: Pass user_id to filter private agents
+    for p in list_profiles(owner_id=user_id):
         try:
             profile_details = get_profile(p['key'])
             profile_details['key'] = p['key'] 
+            # Pass ownership info to frontend
+            profile_details['is_custom'] = p.get('is_custom', False)
+            profile_details['created_by'] = p.get('created_by')
             all_profiles.append(profile_details)
         except KeyError:
             continue 

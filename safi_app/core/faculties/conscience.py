@@ -56,12 +56,27 @@ class ConscienceAuditor:
             if template: worldview_injection = template.format(worldview=worldview)
 
         rubrics = []
+        rubrics = []
         for v in self.values:
             if "rubric" in v:
+                rub = v["rubric"]
+                # Handle both Dict (standard) and List (legacy/custom) formats
+                if isinstance(rub, dict):
+                     desc = rub.get("description", "")
+                     guide = rub.get("scoring_guide", [])
+                elif isinstance(rub, list):
+                     # If it's a list, it's the scoring guide itself.
+                     # Expect description on the parent value object.
+                     desc = v.get("description", "")
+                     guide = rub
+                else:
+                     desc = ""
+                     guide = []
+
                 rubrics.append({
                     "value": v["value"],
-                    "description": v["rubric"].get("description", ""),
-                    "scoring_guide": v["rubric"].get("scoring_guide", []),
+                    "description": desc,
+                    "scoring_guide": guide,
                 })
         rubrics_str = json.dumps(rubrics, indent=2)
 
