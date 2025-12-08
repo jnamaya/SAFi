@@ -1,8 +1,9 @@
 // ui-settings-modals.js
 
-import * as ui from './ui.js'; 
-import { getAvatarForProfile } from './ui-auth-sidebar.js'; 
+import * as ui from './ui.js';
+import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import * as api from './api.js';
+import { openAgentWizard } from './ui-agent-wizard.js'; // Import Wizard
 
 // External libraries (must be available globally or imported)
 // NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
@@ -15,7 +16,7 @@ import * as api from './api.js';
  */
 export function setupControlPanelTabs() {
     ui._ensureElements();
-    
+
     // --- FIX: SET UP MODAL DELEGATED LISTENERS ---
     // We call this function *once* when the app initializes.
     // This attaches a single, persistent listener to the modal container
@@ -27,27 +28,27 @@ export function setupControlPanelTabs() {
     ensureProfileModalExists();
 
     const tabs = [
-        ui.elements.cpNavProfile, 
-        ui.elements.cpNavModels, 
+        ui.elements.cpNavProfile,
+        ui.elements.cpNavModels,
         ui.elements.cpNavMyProfile, // My Profile Tab
-        ui.elements.cpNavDashboard, 
+        ui.elements.cpNavDashboard,
         ui.elements.cpNavAppSettings
     ];
     const panels = [
-        ui.elements.cpTabProfile, 
-        ui.elements.cpTabModels, 
+        ui.elements.cpTabProfile,
+        ui.elements.cpTabModels,
         ui.elements.cpTabMyProfile, // My Profile Panel
-        ui.elements.cpTabDashboard, 
+        ui.elements.cpTabDashboard,
         ui.elements.cpTabAppSettings
     ];
-    
+
     tabs.forEach((tab, index) => {
         if (!tab) return;
         tab.addEventListener('click', () => {
             // Handle tab highlighting
             tabs.forEach(t => t?.classList.remove('active'));
             tab.classList.add('active');
-            
+
             // Handle panel visibility
             panels.forEach(p => p?.classList.add('hidden'));
             if (panels[index]) {
@@ -60,14 +61,14 @@ export function setupControlPanelTabs() {
             }
             // Lazy-load user profile
             if (tab === ui.elements.cpNavMyProfile) {
-                renderSettingsMyProfileTab(); 
+                renderSettingsMyProfileTab();
             }
         });
     });
-    
+
     // Activate the first tab by default
     if (tabs[0]) {
-      tabs[0].click();
+        tabs[0].click();
     }
 }
 
@@ -80,7 +81,7 @@ function setupDelegatedModalListeners() {
     // --- "Show More" logic for Conscience Modal ---
     const conscienceContainer = ui.elements.conscienceDetails;
     if (conscienceContainer) {
-        conscienceContainer.addEventListener('click', function(event) {
+        conscienceContainer.addEventListener('click', function (event) {
             // This single listener handles all "Show More" clicks inside
             // the conscience modal, even on dynamic content.
             if (event.target.classList.contains('expand-btn')) {
@@ -145,7 +146,7 @@ function ensureProfileModalExists() {
     // This fixes the "Cannot read properties of null (reading 'classList')" error in ui.js
     ui.elements.profileModal = document.getElementById('profile-details-modal');
     ui.elements.profileModalContent = document.getElementById('profile-details-content');
-    
+
     // Re-attach close listeners since this is a new element
     const closeBtn = document.getElementById('close-profile-modal');
     const doneBtn = document.getElementById('done-profile-modal');
@@ -166,7 +167,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     ui._ensureElements();
     const container = ui.elements.cpTabProfile;
     if (!container) return;
-    
+
     // Handler to open the profile details modal
     const viewDetailsHandler = (key) => {
         // Double check modal exists before trying to render
@@ -175,22 +176,38 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         // FIX: Use String() conversion to ensure we match "1" with 1 if types differ
         const profile = profiles.find(p => String(p.key) === String(key));
         if (profile) {
-            renderProfileDetailsModal(profile); 
-            ui.showModal('profile'); 
+            renderProfileDetailsModal(profile);
+            ui.showModal('profile');
         } else {
             console.error('Profile not found for key:', key);
         }
     };
-    
+
     // Generate the HTML for the profile list
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">Choose a Persona</h3>
+        <h3 class="text-xl font-semibold mb-4">Choose an Agent</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
+        
+        <!-- NEW: "Create New Agent" Button -->
+        <div class="mb-6">
+            <button id="btn-create-agent" class="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group">
+                <div class="p-2 bg-gray-100 dark:bg-neutral-800 rounded-full group-hover:bg-green-100 dark:group-hover:bg-green-800 transition-colors">
+                    <svg class="w-6 h-6 text-gray-500 dark:text-gray-400 group-hover:text-green-600 dark:group-hover:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </div>
+                <div class="text-left">
+                    <h4 class="font-semibold text-gray-700 dark:text-gray-200 group-hover:text-green-700 dark:group-hover:text-green-300">Create Custom Agent</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-green-600/70">Design a unique persona with custom values & rules</p>
+                </div>
+            </button>
+        </div>
+        
         <div class="space-y-4" role="radiogroup">
             ${profiles.map(profile => {
-                const avatarUrl = getAvatarForProfile(profile.name);
-                const description = profile.description_short || profile.description || '';
-                return `
+        const avatarUrl = getAvatarForProfile(profile.name);
+        const description = profile.description_short || profile.description || '';
+        return `
                 <div class="p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg transition-colors relative group">
                     <label class="flex items-center justify-between cursor-pointer relative z-0">
                         <div class="flex items-center gap-3">
@@ -202,10 +219,18 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                     <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2 relative z-0">${description}</p>
                     
                     <!-- FIX: Added relative positioning and z-index to ensure button sits on top -->
-                    <div class="mt-3 relative z-10">
+                    <div class="mt-3 relative z-10 flex gap-2">
                         <button type="button" data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
                             View Details
                         </button>
+                        ${profile.is_custom ? `
+                        <button type="button" data-key="${profile.key}" class="edit-agent-btn text-sm font-medium text-blue-600 dark:text-blue-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                            Edit
+                        </button>
+                         <button type="button" data-key="${profile.key}" class="delete-agent-btn text-sm font-medium text-red-600 dark:text-red-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ml-2">
+                            Delete
+                        </button>
+                        ` : ''}
                     </div>
                 </div>
             `}).join('')}
@@ -225,16 +250,77 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
             radio.closest('.p-4.border').classList.remove('border-neutral-300', 'dark:border-neutral-700');
         });
     });
-    
+
     // Attach event listeners for "View Details" buttons
-    // FIX: Used explicit 'onclick' to ensure we override any bubbling issues and guarantee execution
     container.querySelectorAll('.view-profile-details-btn').forEach(btn => {
         btn.onclick = (e) => {
-            e.preventDefault(); 
-            e.stopPropagation(); 
+            e.preventDefault();
+            e.stopPropagation();
             viewDetailsHandler(btn.dataset.key);
         };
     });
+
+    // --- NEW: Attach listeners for "Edit Agent" buttons ---
+    container.querySelectorAll('.edit-agent-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = btn.dataset.key;
+
+            // Show loading state on button
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block"></span>`;
+            btn.disabled = true;
+
+            try {
+                const res = await api.getAgent(key);
+                if (res && res.ok && res.agent) {
+                    openAgentWizard(res.agent);
+                } else {
+                    ui.showToast("Failed to load agent details", "error");
+                }
+            } catch (err) {
+                ui.showToast(`Error: ${err.message}`, "error");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        };
+    });
+
+    // --- NEW: Attach listeners for "Delete Agent" buttons ---
+    container.querySelectorAll('.delete-agent-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = btn.dataset.key;
+
+            if (confirm("Are you sure you want to permanently delete this agent?")) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block"></span>`;
+                btn.disabled = true;
+
+                try {
+                    await api.deleteAgent(key);
+                    ui.showToast("Agent deleted.", "success");
+                    setTimeout(() => window.location.reload(), 1000);
+                } catch (err) {
+                     ui.showToast(`Error: ${err.message}`, "error");
+                     btn.innerHTML = originalText;
+                     btn.disabled = false;
+                }
+            }
+        };
+    });
+
+    // --- NEW: Attach Event Listener for "Create New Agent" ---
+    const createBtn = document.getElementById('btn-create-agent');
+    if (createBtn) {
+        createBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openAgentWizard(); // Open the wizard
+        });
+    }
 }
 
 /**
@@ -247,7 +333,7 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
     ui._ensureElements();
     const container = ui.elements.cpTabModels;
     if (!container) return;
-    
+
     // Filter the available models based on categories
     // We handle backward compatibility: if no 'categories' field exists, include it in both lists.
     const intellectModels = availableModels.filter(m => {
@@ -259,23 +345,23 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
         if (typeof m === 'string') return true; // Legacy support
         return !m.categories || m.categories.includes('support');
     });
-    
+
     // Helper function to create a single <select> dropdown with a custom list of options
     const createSelect = (id, label, selectedValue, modelsList) => `
         <div>
             <label for="${id}" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">${label}</label>
             <select id="${id}" class="settings-modal-select">
                 ${modelsList.map(model => {
-                    // Handle both old format (string) and new format (object)
-                    const modelId = model.id || model;
-                    const modelLabel = model.label || model;
+        // Handle both old format (string) and new format (object)
+        const modelId = model.id || model;
+        const modelLabel = model.label || model;
 
-                    return `
+        return `
                     <option value="${modelId}" ${modelId === selectedValue ? 'selected' : ''}>
                         ${modelLabel}
                     </option>
                     `;
-                }).join('')}
+    }).join('')}
             </select>
         </div>
     `;
@@ -327,7 +413,7 @@ export function renderSettingsDashboardTab() {
         <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze ethical alignment and trace decisions across all conversations.</p>
     `;
-    
+
     const iframeContainer = document.createElement('div');
     // UPDATED: Changed from fixed h-[1024px] to flexible height
     // flex-1: fills remaining vertical space
@@ -338,10 +424,10 @@ export function renderSettingsDashboardTab() {
     const iframe = document.createElement('iframe');
     iframe.src = "https://dashboard.selfalignmentframework.com/?embed=true";
     // UPDATED: Use absolute positioning to fill the flex container completely
-    iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0"; 
+    iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0";
     iframe.title = "SAFi Dashboard";
     iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
-    
+
     iframeContainer.appendChild(iframe);
 
     container.appendChild(headerDiv);
@@ -398,7 +484,7 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
         radio.addEventListener('change', (e) => {
             const newTheme = e.target.value;
             onThemeChange(newTheme);
-            
+
             // Update styles
             container.querySelectorAll('label').forEach(label => {
                 label.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
@@ -445,7 +531,7 @@ export async function renderSettingsMyProfileTab() {
     try {
         userProfileData = await api.fetchUserProfileMemory();
         isProfileFetched = true;
-        
+
         if (!userProfileData) userProfileData = {};
 
         // Ensure arrays
@@ -454,7 +540,7 @@ export async function renderSettingsMyProfileTab() {
         });
 
         _buildProfileUI(container);
-        
+
     } catch (error) {
         container.innerHTML = `<p class="text-red-500">Error loading profile: ${error.message}</p>`;
     }
@@ -488,7 +574,7 @@ function _buildProfileUI(container) {
             </button>
         </div>
     `;
-    
+
     _attachProfileEventListeners(container);
 }
 
@@ -497,14 +583,14 @@ function _buildProfileUI(container) {
  */
 function _buildProfileSection(key, title, subtitle, iconType) {
     const items = userProfileData[key] || [];
-    
+
     // Get 3 random suggestions that the user DOESN'T already have
     const availableSuggestions = (SUGGESTIONS[key] || [])
         .filter(s => !items.map(i => i.toLowerCase()).includes(s.toLowerCase()))
         .sort(() => 0.5 - Math.random())
         .slice(0, 4);
 
-    const chipsHtml = items.length > 0 
+    const chipsHtml = items.length > 0
         ? items.map((item, index) => `
             <div class="profile-chip">
                 <span>${DOMPurify.sanitize(item)}</span>
@@ -515,7 +601,7 @@ function _buildProfileSection(key, title, subtitle, iconType) {
           `).join('')
         : `<div class="empty-section-state">Nothing here yet. Add a value or pick a suggestion!</div>`;
 
-    const suggestionsHtml = availableSuggestions.length > 0 
+    const suggestionsHtml = availableSuggestions.length > 0
         ? `
             <div class="suggestions-area">
                 <div class="suggestion-label">Quick Add:</div>
@@ -523,7 +609,7 @@ function _buildProfileSection(key, title, subtitle, iconType) {
                     ${availableSuggestions.map(s => `<button class="suggestion-pill" data-key="${key}" data-val="${s}">+ ${s}</button>`).join('')}
                 </div>
             </div>
-          ` 
+          `
         : '';
 
     return `
@@ -579,7 +665,7 @@ function _attachProfileEventListeners(container) {
             if (deleteBtn) {
                 const key = deleteBtn.dataset.key;
                 const index = parseInt(deleteBtn.dataset.index);
-                
+
                 // Remove item
                 if (userProfileData[key]) {
                     userProfileData[key].splice(index, 1);
@@ -594,13 +680,13 @@ function _attachProfileEventListeners(container) {
         pill.addEventListener('click', () => {
             const key = pill.dataset.key;
             const val = pill.dataset.val;
-            
+
             if (!userProfileData[key]) userProfileData[key] = [];
             userProfileData[key].push(val);
             _buildProfileUI(container);
         });
     });
-    
+
     // 5. Handle "Save"
     const saveBtn = document.getElementById('save-my-profile-btn');
     if (saveBtn) {
@@ -608,7 +694,7 @@ function _attachProfileEventListeners(container) {
             const originalText = saveBtn.textContent;
             saveBtn.textContent = 'Saving...';
             saveBtn.disabled = true;
-            
+
             try {
                 // Clean data (remove empty strings)
                 for (const key in userProfileData) {
@@ -616,7 +702,7 @@ function _attachProfileEventListeners(container) {
                         userProfileData[key] = userProfileData[key].filter(item => item && String(item).trim() !== '');
                     }
                 }
-                
+
                 await api.updateUserProfileMemory(userProfileData);
                 ui.showToast('Profile updated successfully', 'success');
             } catch (error) {
@@ -632,20 +718,20 @@ function _attachProfileEventListeners(container) {
 function _handleAddItem(key, container) {
     const input = document.getElementById(`profile-input-${key}`);
     if (!input) return;
-    
+
     const value = input.value.trim();
     if (value) {
         if (!userProfileData[key]) userProfileData[key] = [];
         userProfileData[key].push(value);
-        
+
         // Clear input and focus back for rapid entry
         input.value = '';
         _buildProfileUI(container);
-        
+
         // Refocus the input we just used
         setTimeout(() => {
             const nextInput = document.getElementById(`profile-input-${key}`);
-            if(nextInput) nextInput.focus();
+            if (nextInput) nextInput.focus();
         }, 0);
     }
 }
@@ -666,7 +752,7 @@ export function setupConscienceModalContent(payload) {
     container.innerHTML = ''; // Clear previous content
 
     const profileName = payload.profile ? `<strong>${payload.profile}</strong>` : 'the current';
-    
+
     // 1. Group ledger items
     const ledger = payload.ledger || [];
     const groups = {
@@ -705,7 +791,7 @@ export function setupConscienceModalContent(payload) {
             </div>
         </div>
     `;
-    
+
     // 3. Attach all event listeners for the new content
     attachModalEventListeners(container, payload);
 }
@@ -719,7 +805,7 @@ function renderScoreAndTrend(payload) {
     const score = (payload.spirit_score !== null && payload.spirit_score !== undefined) ? Math.max(0, Math.min(10, payload.spirit_score)) : 10.0;
     const circumference = 50 * 2 * Math.PI; // 314
     const offset = circumference - (score / 10) * circumference;
-    
+
     const getScoreColor = (s) => {
         if (s >= 8) return 'text-green-500';
         if (s >= 5) return 'text-yellow-500';
@@ -748,7 +834,7 @@ function renderScoreAndTrend(payload) {
     const scores = (payload.spirit_scores_history || [])
         .filter(s => s !== null && s !== undefined) // Filter out null/undefined
         .slice(-10); // Get last 10
-    
+
     let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-gray-400">Not enough data for trend.</div>';
 
     if (scores.length > 1) {
@@ -776,7 +862,7 @@ function renderScoreAndTrend(payload) {
                     <polyline fill="none" class="stroke-green-500" stroke-width="2" points="${points}" />
                     
                     <!-- Last point circle -->
-                    <circle fill="currentColor" class="${getScoreColor(scores[scores.length-1])} stroke-white dark:stroke-gray-900" stroke-width="2" r="4" cx="${lastPoint[0]}" cy="${lastPoint[1]}"></circle>
+                    <circle fill="currentColor" class="${getScoreColor(scores[scores.length - 1])} stroke-white dark:stroke-gray-900" stroke-width="2" r="4" cx="${lastPoint[0]}" cy="${lastPoint[1]}"></circle>
                 </svg>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center md:text-left">Recent score history (${scores.length} turns)</p>
                 
@@ -808,11 +894,11 @@ function renderTabButton(key, title, count, isActive) {
         neutral: { icon: 'M18 12H6', color: 'gray' },
     };
     const config = groupConfig[key];
-    
+
     // State Styles (these are toggled by the event listener)
     const activeClasses = `border-${config.color}-500 text-${config.color}-600 dark:border-${config.color}-500 dark:text-${config.color}-500`;
     const inactiveClasses = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600';
-    
+
     // Responsive Layout Styles
     // flex-1: makes them equal width
     // flex-col sm:flex-row: stacked on mobile, inline on desktop
@@ -852,7 +938,7 @@ function renderTabPanel(key, items, isActive) {
     } else {
         content = `<p class="text-sm text-center text-gray-500 dark:text-gray-400">No items in this category.</p>`;
     }
-    
+
     return `
         <div id="tab-${key}" class="tab-panel space-y-4 ${isActive ? '' : 'hidden'}">
             ${content}
@@ -869,7 +955,7 @@ function renderLedgerItem(item, key) {
     const reasonHtml = DOMPurify.sanitize(String(item.reason || ''));
     const maxLength = 120;
     const isLong = reasonHtml.length > maxLength;
-    
+
     const borderColor = {
         upholds: 'border-green-200 dark:border-green-700/80',
         conflicts: 'border-red-300 dark:border-red-700/80',
@@ -920,7 +1006,7 @@ function attachModalEventListeners(container, payload) {
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const targetId = btn.getAttribute('data-tab-target');
-            
+
             // Update button styles
             tabButtons.forEach(b => {
                 const key = b.getAttribute('data-tab-target').replace('#tab-', '');
@@ -929,13 +1015,13 @@ function attachModalEventListeners(container, payload) {
                 b.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300', 'dark:hover:border-gray-600');
                 b.setAttribute('aria-current', 'false');
             });
-            
+
             const activeKey = targetId.replace('#tab-', '');
             const activeConfig = groupConfig[activeKey];
             btn.classList.add(`border-${activeConfig.color}-500`, `text-${activeConfig.color}-600`, `dark:border-${activeConfig.color}-500`, `dark:text-${activeConfig.color}-500`);
             btn.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300', 'dark:hover:border-gray-600');
             btn.setAttribute('aria-current', 'page');
-            
+
             // Show/hide panels
             tabPanels.forEach(panel => {
                 if ('#' + panel.id === targetId) {
@@ -991,7 +1077,7 @@ function copyAuditToClipboard(payload) {
     text += `Profile: ${payload.profile || 'N_A'}\n`;
     text += `Alignment Score: ${payload.spirit_score !== null ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
     text += `------------------------------------\n\n`;
-    
+
     if (payload.ledger && payload.ledger.length > 0) {
         const upholds = payload.ledger.filter(r => r.score > 0);
         const conflicts = payload.ledger.filter(r => r.score < 0);
@@ -1038,9 +1124,9 @@ function copyAuditToClipboard(payload) {
  */
 function createModalSection(title, content) {
     if (!content) return '';
-    
+
     let contentHtml = '';
-    
+
     if (Array.isArray(content)) {
         if (content.length === 0) return '';
         contentHtml = '<ul class="space-y-1">' + content.map(item => `<li class="flex gap-2"><span class="opacity-60">»</span><span class="flex-1">${item}</span></li>`).join('') + '</ul>';
@@ -1069,44 +1155,66 @@ function renderValuesSection(values) {
     const valuesHtml = values.map(v => {
         let rubricHtml = '';
         if (v.rubric) {
-            
-            const scoringGuideHtml = (v.rubric.scoring_guide || []).map(g => {
+
+            // Handle both Object (standard) and Limit (custom) rubric formats
+            let scoringGuide = [];
+            let description = 'N/A';
+
+            if (Array.isArray(v.rubric)) {
+                // Custom Agent Format: rubric is the list, description is on the value
+                scoringGuide = v.rubric;
+                description = v.description || 'N/A';
+            } else {
+                // Standard Format: rubric is object
+                scoringGuide = v.rubric.scoring_guide || [];
+                description = v.rubric.description || 'N/A';
+            }
+
+            const scoringGuideHtml = scoringGuide.map(g => {
                 let scoreClasses = '';
-                let scoreText = String(g.score); 
+                let scoreText = String(g.score);
 
                 if (g.score > 0) {
                     scoreClasses = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
-                    scoreText = `+${g.score.toFixed(1)}`; 
+                    scoreText = `+${g.score.toFixed(1)}`;
                 } else if (g.score === 0) {
                     scoreClasses = 'bg-neutral-100 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-300';
-                    scoreText = g.score.toFixed(1); 
-                } else { 
+                    scoreText = g.score.toFixed(1);
+                } else {
                     scoreClasses = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
-                    scoreText = g.score.toFixed(1); 
+                    scoreText = g.score.toFixed(1);
                 }
-                
+
                 const scoreChipHtml = `<span class="inline-block text-xs font-mono font-bold px-1.5 py-0.5 rounded ${scoreClasses}">${scoreText}</span>`;
-                
+
+                // Handle both 'descriptor' (built-in) and 'criteria' (custom wizard) keys
+                const text = g.descriptor || g.criteria || '';
+
                 return `<li class="mb-1.5 flex items-start gap-2">
                             <div class="flex-shrink-0 w-12 text-center mt-0.5">${scoreChipHtml}</div>
-                            <div class="flex-1">${g.descriptor}</div>
+                            <div class="flex-1">${text}</div>
                         </li>`;
             }).join('');
-            
+
             rubricHtml = `
                 <div class="mt-3 pl-4 border-l-2 border-neutral-200 dark:border-neutral-700">
                     <h6 class="font-semibold text-neutral-700 dark:text-neutral-300">Rubric Description:</h6>
-                    <p class="italic text-sm">${v.rubric.description || 'N/A'}</p>
+                    <p class="italic text-sm">${description}</p>
                     <h6 class="font-semibold text-neutral-700 dark:text-neutral-300 mt-3">Scoring Guide:</h6>
                     <ul class="list-none pl-0 mt-2">${scoringGuideHtml}</ul>
                 </div>
             `;
         }
-        
+
+        // Use v.value (ID) or fallback to v.name if value is missing (custom agent quirks)
+        // Also use v.description as definition fallback for custom agents
+        const valName = v.value || v.name || 'Unknown Value';
+        const valDef = v.definition || v.description || 'No definition provided.';
+
         return `
             <div classa="mb-3">
-                <h5 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${v.value}</h5>
-                <p class="mb-1 text-sm">${v.definition || 'No definition provided.'}</p>
+                <h5 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${valName}</h5>
+                <p class="mb-1 text-sm">${valDef}</p>
                 ${rubricHtml}
             </div>
         `;
@@ -1128,10 +1236,10 @@ function renderValuesSection(values) {
  */
 export function renderProfileDetailsModal(profile) {
     ui._ensureElements();
-    
+
     // FIX: Ensure modal exists in DOM before grabbing reference
     ensureProfileModalExists();
-    
+
     const container = ui.elements.profileModalContent;
     if (!container) {
         console.error("Profile modal content area not found.");
@@ -1142,7 +1250,7 @@ export function renderProfileDetailsModal(profile) {
     if (titleEl) titleEl.textContent = profile.name || 'Profile Details';
 
     container.innerHTML = '';
-    
+
     container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
     container.insertAdjacentHTML('beforeend', createModalSection('Worldview', profile.worldview));
     container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));

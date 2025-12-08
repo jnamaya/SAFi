@@ -546,13 +546,13 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
         <img src="${avatarUrl}" class="w-20 h-20 rounded-lg mx-auto mt-4">
-        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-4">persona, which includes these values:</p>
+        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-4">agent, which includes these values:</p>
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         <p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${activeProfile.description || ''}</p>
         
         <!-- CHANGED: Updated text and replaced gear icon with ellipsis -->
         <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300">
-            To choose a different persona, click your profile <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg> in the sidebar.
+            To choose a different agent, click your profile <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg> in the sidebar.
         </div>
         
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>

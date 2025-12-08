@@ -1,6 +1,6 @@
 import * as api from './api.js';
 import * as ui from './ui.js';
-import * as uiAuthSidebar from './ui-auth-sidebar.js'; 
+import * as uiAuthSidebar from './ui-auth-sidebar.js';
 import * as uiMessages from './ui-messages.js';
 import * as uiSettingsModals from './ui-settings-modals.js';
 import * as chat from './chat.js';
@@ -14,17 +14,17 @@ const GoogleAuth = Plugins?.GoogleAuth;
 const SplashScreen = Plugins?.SplashScreen;
 const Haptics = Plugins?.Haptics;
 const StatusBar = Plugins?.StatusBar;
-const Network = Plugins?.Network; 
+const Network = Plugins?.Network;
 // ADDED: Import App Plugin
-const App = Plugins?.App; 
+const App = Plugins?.App;
 
 const WEB_CLIENT_ID = '391499357887-ggqkfpcqptcr93raffcv5mhgufmlu92v.apps.googleusercontent.com';
 
 // --- GLOBAL STATE ---
-let user = null; 
-let activeProfileData = {}; 
-let availableProfiles = []; 
-let availableModels = []; 
+let user = null;
+let activeProfileData = {};
+let availableProfiles = [];
+let availableModels = [];
 // FLAG: Ensure listeners are only attached once
 let listenersAttached = false;
 
@@ -35,9 +35,9 @@ let listenersAttached = false;
 /** Sets the native status bar style and App Window color */
 function setSystemBarsTheme(isDark) {
   if (!isNative || !StatusBar) return;
-  
+
   const barColor = isDark ? '#000000' : '#ffffff';
-  
+
   try {
     StatusBar.setStyle({ style: isDark ? 'DARK' : 'LIGHT' });
     StatusBar.setBackgroundColor({ color: barColor });
@@ -49,7 +49,7 @@ function setSystemBarsTheme(isDark) {
 /** Triggers a light haptic impact */
 function hapticImpactLight() {
   if (isNative && Haptics) {
-    try { Haptics.impact({ style: 'LIGHT' }); } catch(e) {
+    try { Haptics.impact({ style: 'LIGHT' }); } catch (e) {
       // console.warn('Haptic impact failed', e);
     }
   }
@@ -58,7 +58,7 @@ function hapticImpactLight() {
 /** Triggers a short vibration, typically for errors */
 function hapticError() {
   if (isNative && Haptics) {
-    try { Haptics.vibrate(); } catch(e) {
+    try { Haptics.vibrate(); } catch (e) {
       // console.warn('Haptic vibrate failed', e);
     }
   }
@@ -91,15 +91,15 @@ async function handleNativeLogin() {
   try {
     const googleUser = await GoogleAuth.signIn();
     const authCode = googleUser?.serverAuthCode;
-    
+
     if (!authCode) {
       ui.showToast('Authentication failed. No server auth code.', 'error');
       hapticError();
       return;
     }
-    
-    await api.mobileLogin(authCode); 
-    
+
+    await api.mobileLogin(authCode);
+
     hapticImpactLight();
     ui.showToast('Login successful!', 'success');
     setTimeout(() => window.location.reload(), 400);
@@ -127,108 +127,113 @@ function updateOfflineUI(isOnline) {
 
 /** Applies the selected theme and saves it to localStorage. */
 function applyTheme(theme) {
-    const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    let shouldBeDark = false;
-    
-    if (theme === 'system') {
-        localStorage.removeItem('theme');
-        shouldBeDark = isSystemDark;
-    } else if (theme === 'dark') {
-        localStorage.theme = 'dark';
-        shouldBeDark = true;
-    } else {
-        localStorage.theme = 'light';
-        shouldBeDark = false;
-    }
-    
-    if (shouldBeDark) {
-        document.documentElement.classList.add('dark');
-    } else {
-        document.documentElement.classList.remove('dark');
-    }
-    // Update native status bar to match the theme
-    setSystemBarsTheme(shouldBeDark);
+  const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let shouldBeDark = false;
+
+  if (theme === 'system') {
+    localStorage.removeItem('theme');
+    shouldBeDark = isSystemDark;
+  } else if (theme === 'dark') {
+    localStorage.theme = 'dark';
+    shouldBeDark = true;
+  } else {
+    localStorage.theme = 'light';
+    shouldBeDark = false;
+  }
+
+  if (shouldBeDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+  // Update native status bar to match the theme
+  setSystemBarsTheme(shouldBeDark);
 
 
-    // Re-render app settings tab if it's currently open to reflect the theme change
-    if (ui.elements.controlPanelView && !ui.elements.controlPanelView.classList.contains('hidden')) {
-        const currentActiveTab = document.querySelector('.modal-tab-button.active');
-        if (currentActiveTab && currentActiveTab.id === 'cp-nav-app-settings') {
-            uiSettingsModals.renderSettingsAppTab(
-                theme,
-                applyTheme,
-                handleLogout,
-                () => ui.showModal('delete') // Show modal instead of direct delete
-            );
-        }
+  // Re-render app settings tab if it's currently open to reflect the theme change
+  if (ui.elements.controlPanelView && !ui.elements.controlPanelView.classList.contains('hidden')) {
+    const currentActiveTab = document.querySelector('.modal-tab-button.active');
+    if (currentActiveTab && currentActiveTab.id === 'cp-nav-app-settings') {
+      uiSettingsModals.renderSettingsAppTab(
+        theme,
+        applyTheme,
+        handleLogout,
+        () => ui.showModal('delete') // Show modal instead of direct delete
+      );
     }
+  }
 }
 
 // --- AUTHENTICATION & DATA LOADING ---
 
 async function checkLoginStatus() {
-    try {
-        await api.awaitAuthInit(); 
-        const me = await api.getMe(); 
-        user = (me && me.ok) ? me.user : null;
-        
-        // Render the sidebar/login view based on auth state
-        uiAuthSidebar.updateUIForAuthState(user);
-        
-        if (user) {
-            // FIX: Only initialize the offline manager (and flush queue) IF we are logged in.
-            // This prevents the "401 Loop of Death" where pending prompts try to send while logged out.
-            try {
-                await offlineManager.initNetworkListener();
-            } catch (e) {
-                console.warn("Offline manager init warning:", e);
-            }
+  try {
+    await api.awaitAuthInit();
+    const me = await api.getMe();
+    user = (me && me.ok) ? me.user : null;
 
-            // User is logged in, fetch necessary data
-            const [profilesResponse, modelsResponse] = await Promise.all([
-                api.fetchAvailableProfiles(),
-                api.fetchAvailableModels()
-            ]);
-            
-            availableProfiles = profilesResponse.available || [];
-            availableModels = modelsResponse.models || [];
-            
-            // Determine the active profile
-            const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
-            activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
-            
-            // Update the UI with the active profile
-            uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
+    // Render the sidebar/login view based on auth state
+    uiAuthSidebar.updateUIForAuthState(user);
 
-            // This function renders the content for all control panel tabs
-            renderControlPanel();
-            
-            // Load the conversation list and the active chat
-            await chat.loadConversations(
-                activeProfileData, 
-                user, 
-                handleExamplePromptClick,
-                ui.showModal,
-                true // Explicitly set shouldSwitchChat=true on initial load
-            );
-        }
-        // Attach all global event listeners
-        attachEventListeners();
-    } catch (error) {
-        console.error("Failed to check login status:", error);
-        uiAuthSidebar.updateUIForAuthState(null); // Show login screen on error
-        attachEventListeners(); // Still attach login button listener
-        hapticError();
-    } finally {
-        // Hide the native splash screen
-        setTimeout(() => {
-            if (SplashScreen) {
-              SplashScreen.hide();
-            } else if (isNative) {
-              // console.warn('SplashScreen plugin not available, cannot hide.');
-            }
-        }, 250);
+    if (user) {
+      // FIX: Only initialize the offline manager (and flush queue) IF we are logged in.
+      // This prevents the "401 Loop of Death" where pending prompts try to send while logged out.
+      try {
+        await offlineManager.initNetworkListener();
+      } catch (e) {
+        console.warn("Offline manager init warning:", e);
+      }
+
+      // User is logged in, fetch necessary data
+      const [profilesResponse, modelsResponse] = await Promise.all([
+        api.fetchAvailableProfiles(),
+        api.fetchAvailableModels()
+      ]);
+
+      availableProfiles = profilesResponse.available || [];
+      availableModels = modelsResponse.models || [];
+
+      // --- CRITICAL UPDATE: Pass profiles to sidebar for avatar lookup ---
+      uiAuthSidebar.setKnownProfiles(availableProfiles);
+      // ------------------------------------------------------------------
+
+      // Determine the active profile
+      const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
+      activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
+
+      // Update the UI with the active profile
+      // Pass the FULL object so it can find the custom avatar
+      uiAuthSidebar.updateActiveProfileChip(activeProfileData);
+
+      // This function renders the content for all control panel tabs
+      renderControlPanel();
+
+      // Load the conversation list and the active chat
+      await chat.loadConversations(
+        activeProfileData,
+        user,
+        handleExamplePromptClick,
+        ui.showModal,
+        true // Explicitly set shouldSwitchChat=true on initial load
+      );
     }
+    // Attach all global event listeners
+    attachEventListeners();
+  } catch (error) {
+    console.error("Failed to check login status:", error);
+    uiAuthSidebar.updateUIForAuthState(null); // Show login screen on error
+    attachEventListeners(); // Still attach login button listener
+    hapticError();
+  } finally {
+    // Hide the native splash screen
+    setTimeout(() => {
+      if (SplashScreen) {
+        SplashScreen.hide();
+      } else if (isNative) {
+        // console.warn('SplashScreen plugin not available, cannot hide.');
+      }
+    }, 250);
+  }
 }
 
 // --- LOGIC HANDLERS ---
@@ -238,39 +243,39 @@ async function handleLogout() {
   if (isNative && GoogleAuth) {
     try { await GoogleAuth.signOut(); } catch (e) { console.warn('Google signOut error:', e); }
   }
-  
+
   try {
     await api.logout();
   } catch (e) {
     console.warn('Logout API call failed (may be queued):', e);
   }
-  
+
   localStorage.removeItem('theme'); // Reset theme
   await api.clearAuthToken(); // Clear local token
-  
+
   window.location.reload(); // Reload the app
 }
 
 async function handleDeleteAccount() {
   try {
     const response = await api.deleteAccount();
-    
+
     if (response === 'QUEUED') {
-       ui.showToast('Account deletion queued.', 'info');
-       ui.closeModal();
-       return;
+      ui.showToast('Account deletion queued.', 'info');
+      ui.closeModal();
+      return;
     }
 
     ui.showToast('Account deleted successfully.', 'success');
     hapticImpactLight();
-    
+
     if (isNative && GoogleAuth) {
       try { await GoogleAuth.signOut(); } catch (e) { console.warn('Google signOut error:', e); }
     }
-    
+
     await api.clearAuthToken();
     localStorage.removeItem('theme');
-    
+
     setTimeout(() => window.location.reload(), 1000);
   } catch (error) {
     console.error('Failed to delete account:', error);
@@ -283,268 +288,269 @@ async function handleDeleteAccount() {
 
 /** Renders the content for all Control Panel tabs */
 function renderControlPanel() {
-    if (!user) return;
-    
-    // Render Personas Tab
-    uiSettingsModals.renderSettingsProfileTab(
-        availableProfiles, 
-        activeProfileData.key, 
-        handleProfileChange
-    );
-    
-    // Render AI Models Tab
-    uiSettingsModals.renderSettingsModelsTab(
-        availableModels, 
-        user, 
-        handleModelsSave
-    );
+  if (!user) return;
 
-    // Render "My Profile" Tab. This will fetch the data.
-    uiSettingsModals.renderSettingsMyProfileTab();
+  // Render Personas Tab
+  uiSettingsModals.renderSettingsProfileTab(
+    availableProfiles,
+    activeProfileData.key,
+    handleProfileChange,
+    user // Pass user for ownership checks
+  );
 
-    // Render App Settings Tab
-    uiSettingsModals.renderSettingsAppTab(
-        localStorage.theme || 'system',
-        applyTheme,
-        handleLogout,
-        () => ui.showModal('delete') // Open "are you sure" modal
-    );
+  // Render AI Models Tab
+  uiSettingsModals.renderSettingsModelsTab(
+    availableModels,
+    user,
+    handleModelsSave
+  );
+
+  // Render "My Profile" Tab. This will fetch the data.
+  uiSettingsModals.renderSettingsMyProfileTab();
+
+  // Render App Settings Tab
+  uiSettingsModals.renderSettingsAppTab(
+    localStorage.theme || 'system',
+    applyTheme,
+    handleLogout,
+    () => ui.showModal('delete') // Open "are you sure" modal
+  );
 }
 
 async function handleProfileChange(newProfileKey) {
-    hapticImpactLight();
-    try {
-        const response = await api.updateUserProfile(newProfileKey);
-        
-        if (response === 'QUEUED') {
-           ui.showToast('Profile change queued.', 'info');
-           // Optimistically update UI
-           activeProfileData = availableProfiles.find(p => p.key === newProfileKey) || activeProfileData;
-           uiAuthSidebar.updateActiveProfileChip(activeProfileData.name);
-           return;
-        }
+  hapticImpactLight();
+  try {
+    const response = await api.updateUserProfile(newProfileKey);
 
-        const selectedProfile = availableProfiles.find(p => p.key === newProfileKey);
-        ui.showToast(`Profile switched to ${selectedProfile.name}. Reloading...`, 'success');
-        
-        // Set a flag to force a new chat window after the reload
-        sessionStorage.setItem('forceNewChat', 'true');
-        
-        setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
-    } catch (error) {
-        console.error('Failed to switch profile:', error);
-        ui.showToast('Could not switch profile.', 'error');
-        hapticError();
+    if (response === 'QUEUED') {
+      ui.showToast('Profile change queued.', 'info');
+      // Optimistically update UI
+      activeProfileData = availableProfiles.find(p => p.key === newProfileKey) || activeProfileData;
+      uiAuthSidebar.updateActiveProfileChip(activeProfileData); // Pass object for avatar support
+      return;
     }
+
+    const selectedProfile = availableProfiles.find(p => p.key === newProfileKey);
+    ui.showToast(`Agent switched to ${selectedProfile.name}. Reloading...`, 'success');
+
+    // Set a flag to force a new chat window after the reload
+    sessionStorage.setItem('forceNewChat', 'true');
+
+    setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
+  } catch (error) {
+    console.error('Failed to switch profile:', error);
+    ui.showToast('Could not switch agent.', 'error');
+    hapticError();
+  }
 }
 
 async function handleModelsSave(newModels) {
-    hapticImpactLight();
-    try {
-        const response = await api.updateUserModels(newModels);
-        
-        if (response === 'QUEUED') {
-           ui.showToast('Model changes queued.', 'info');
-           // Optimistically update UI
-           user.intellect_model = newModels.intellect_model;
-           user.will_model = newModels.will_model;
-           user.conscience_model = newModels.conscience_model;
-           ui.closeModal(); // Close the control panel
-           return;
-        }
+  hapticImpactLight();
+  try {
+    const response = await api.updateUserModels(newModels);
 
-        ui.showToast('Model preferences saved. Reloading...', 'success');
-        setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
-    } catch (error) {
-         console.error('Failed to save models:', error);
-        ui.showToast('Could not save model preferences.', 'error');
-        hapticError();
+    if (response === 'QUEUED') {
+      ui.showToast('Model changes queued.', 'info');
+      // Optimistically update UI
+      user.intellect_model = newModels.intellect_model;
+      user.will_model = newModels.will_model;
+      user.conscience_model = newModels.conscience_model;
+      ui.closeModal(); // Close the control panel
+      return;
     }
+
+    ui.showToast('Model preferences saved. Reloading...', 'success');
+    setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
+  } catch (error) {
+    console.error('Failed to save models:', error);
+    ui.showToast('Could not save model preferences.', 'error');
+    hapticError();
+  }
 }
 
 /** Handles click on an example prompt in the empty chat view */
 function handleExamplePromptClick(promptText) {
-    ui.elements.messageInput.value = promptText;
-    chat.autoSize(); // Resize textarea
-    ui.elements.sendButton.disabled = false;
-    chat.sendMessage(activeProfileData, user);
+  ui.elements.messageInput.value = promptText;
+  chat.autoSize(); // Resize textarea
+  ui.elements.sendButton.disabled = false;
+  chat.sendMessage(activeProfileData, user);
 }
 
 // --- EVENT LISTENERS ---
 
 /** Attaches all non-dynamic event listeners */
 function attachEventListeners() {
-    if (listenersAttached) return; // Prevent duplicates
+  if (listenersAttached) return; // Prevent duplicates
 
-    // --- Auth Handlers (Explicit & Robust) ---
-    
-    // 1. Google Login
-    if (ui.elements.loginButton) {
-        if (isNative && GoogleAuth) {
-           ui.elements.loginButton.addEventListener('click', handleNativeLogin); 
-        } else {
-           ui.elements.loginButton.addEventListener('click', () => { window.location.href = '/api/login'; });
-        }
+  // --- Auth Handlers (Explicit & Robust) ---
+
+  // 1. Google Login
+  if (ui.elements.loginButton) {
+    if (isNative && GoogleAuth) {
+      ui.elements.loginButton.addEventListener('click', handleNativeLogin);
+    } else {
+      ui.elements.loginButton.addEventListener('click', () => { window.location.href = '/api/login'; });
     }
+  }
 
-    // 2. Microsoft Login (FIXED: Added Listener)
-    const microsoftBtn = document.getElementById('login-microsoft-button');
-    if (microsoftBtn) {
-        microsoftBtn.addEventListener('click', () => {
-            window.location.href = '/api/login/microsoft';
-        });
+  // 2. Microsoft Login (FIXED: Added Listener)
+  const microsoftBtn = document.getElementById('login-microsoft-button');
+  if (microsoftBtn) {
+    microsoftBtn.addEventListener('click', () => {
+      window.location.href = '/api/login/microsoft';
+    });
+  }
+
+  // --- Chat Composer ---
+  if (ui.elements.sendButton) {
+    ui.elements.sendButton.addEventListener('click', () => { hapticImpactLight(); chat.sendMessage(activeProfileData, user); });
+    ui.elements.messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        hapticImpactLight();
+        chat.sendMessage(activeProfileData, user);
+      }
+    });
+    ui.elements.messageInput.addEventListener('input', chat.autoSize);
+  }
+
+  // --- Sidebar & Navigation ---
+  const newChatButton = document.getElementById('new-chat-button');
+  if (newChatButton) {
+    newChatButton.addEventListener('click', () => {
+      hapticImpactLight();
+      chat.startNewConversation(false, activeProfileData, user, handleExamplePromptClick);
+      if (window.innerWidth < 768) ui.closeSidebar();
+    });
+  }
+
+  const menuToggle = document.getElementById('menu-toggle');
+  if (menuToggle) menuToggle.addEventListener('click', ui.openSidebar);
+  const closeSidebarButton = document.getElementById('close-sidebar-button');
+  if (closeSidebarButton) closeSidebarButton.addEventListener('click', ui.closeSidebar);
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  if (sidebarOverlay) sidebarOverlay.addEventListener('click', ui.closeSidebar);
+
+  // --- Control Panel ---
+  const controlPanelButton = document.getElementById('control-panel-btn');
+  if (controlPanelButton) {
+    controlPanelButton.addEventListener('click', () => {
+      hapticImpactLight();
+      ui.elements.chatView.classList.add('hidden');
+      ui.elements.controlPanelView.classList.remove('hidden');
+      if (window.innerWidth < 768) ui.closeSidebar();
+    });
+  }
+  if (ui.elements.controlPanelBackButton) {
+    ui.elements.controlPanelBackButton.addEventListener('click', () => {
+      hapticImpactLight();
+      ui.elements.controlPanelView.classList.add('hidden');
+      ui.elements.chatView.classList.remove('hidden');
+    });
+  }
+
+  // --- Profile Chips (shortcut to Control Panel) ---
+  if (ui.elements.activeProfileChip) {
+    ui.elements.activeProfileChip.addEventListener('click', () => {
+      hapticImpactLight();
+      ui.elements.chatView.classList.add('hidden');
+      ui.elements.controlPanelView.classList.remove('hidden');
+      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
+    });
+  }
+  if (ui.elements.activeProfileChipMobile) {
+    ui.elements.activeProfileChipMobile.addEventListener('click', () => {
+      hapticImpactLight();
+      ui.elements.chatView.classList.add('hidden');
+      ui.elements.controlPanelView.classList.remove('hidden');
+      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
+    });
+  }
+
+  // --- Modal Buttons ---
+  document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
+  document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
+  document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
+  document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
+  document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
+
+  document.getElementById('close-profile-modal')?.addEventListener('click', ui.closeModal);
+  document.getElementById('done-profile-modal')?.addEventListener('click', ui.closeModal);
+
+  ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
+  ui.elements.confirmRenameBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmRename(activeProfileData, user); });
+  ui.elements.renameInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      hapticImpactLight();
+      chat.handleConfirmRename(activeProfileData, user);
     }
+  });
 
-    // --- Chat Composer ---
-    if (ui.elements.sendButton) {
-        ui.elements.sendButton.addEventListener('click', () => { hapticImpactLight(); chat.sendMessage(activeProfileData, user); });
-        ui.elements.messageInput.addEventListener('keydown', (e) => { 
-            if (e.key === 'Enter' && !e.shiftKey) { 
-                e.preventDefault(); 
-                hapticImpactLight();
-                chat.sendMessage(activeProfileData, user); 
-            } 
-        });
-        ui.elements.messageInput.addEventListener('input', chat.autoSize);
+  ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
+  ui.elements.confirmDeleteConvoBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmDelete(activeProfileData, user); });
+
+  // --- Global Click Listeners ---
+  document.addEventListener('click', (event) => {
+    // Close convo menu if clicking outside
+    const convoMenuButton = event.target.closest('.convo-menu-button');
+    if (!convoMenuButton) {
+      ui.closeAllConvoMenus();
     }
+  });
 
-    // --- Sidebar & Navigation ---
-    const newChatButton = document.getElementById('new-chat-button');
-    if (newChatButton) {
-        newChatButton.addEventListener('click', () => { 
-            hapticImpactLight();
-            chat.startNewConversation(false, activeProfileData, user, handleExamplePromptClick); 
-            if (window.innerWidth < 768) ui.closeSidebar(); 
-        });
-    }
+  // --- System Listeners ---
+  uiSettingsModals.setupControlPanelTabs();
 
-    const menuToggle = document.getElementById('menu-toggle');
-    if (menuToggle) menuToggle.addEventListener('click', ui.openSidebar);
-    const closeSidebarButton = document.getElementById('close-sidebar-button');
-    if(closeSidebarButton) closeSidebarButton.addEventListener('click', ui.closeSidebar);
-    const sidebarOverlay = document.getElementById('sidebar-overlay');
-    if(sidebarOverlay) sidebarOverlay.addEventListener('click', ui.closeSidebar);
-
-    // --- Control Panel ---
-    const controlPanelButton = document.getElementById('control-panel-btn');
-    if (controlPanelButton) {
-        controlPanelButton.addEventListener('click', () => {
-            hapticImpactLight();
-            ui.elements.chatView.classList.add('hidden');
-            ui.elements.controlPanelView.classList.remove('hidden');
-            if (window.innerWidth < 768) ui.closeSidebar();
-        });
-    }
-    if (ui.elements.controlPanelBackButton) {
-        ui.elements.controlPanelBackButton.addEventListener('click', () => {
-            hapticImpactLight();
-            ui.elements.controlPanelView.classList.add('hidden');
-            ui.elements.chatView.classList.remove('hidden');
-        });
-    }
-
-    // --- Profile Chips (shortcut to Control Panel) ---
-    if (ui.elements.activeProfileChip) {
-        ui.elements.activeProfileChip.addEventListener('click', () => {
-            hapticImpactLight();
-            ui.elements.chatView.classList.add('hidden');
-            ui.elements.controlPanelView.classList.remove('hidden');
-            if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
-        });
-    }
-    if (ui.elements.activeProfileChipMobile) {
-        ui.elements.activeProfileChipMobile.addEventListener('click', () => {
-            hapticImpactLight();
-            ui.elements.chatView.classList.add('hidden');
-            ui.elements.controlPanelView.classList.remove('hidden');
-            if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
-        });
-    }
-
-    // --- Modal Buttons ---
-    document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
-    document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
-    document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
-    document.getElementById('modal-backdrop')?.addEventListener('click', ui.closeModal);
-    document.getElementById('confirm-delete-btn')?.addEventListener('click', handleDeleteAccount);
-
-    document.getElementById('close-profile-modal')?.addEventListener('click', ui.closeModal);
-    document.getElementById('done-profile-modal')?.addEventListener('click', ui.closeModal);
-
-    ui.elements.cancelRenameBtn?.addEventListener('click', ui.closeModal);
-    ui.elements.confirmRenameBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmRename(activeProfileData, user); });
-    ui.elements.renameInput?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            hapticImpactLight();
-            chat.handleConfirmRename(activeProfileData, user);
-        }
+  try {
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', () => {
+      if (localStorage.theme === 'system' || !localStorage.theme) {
+        applyTheme('system');
+      }
     });
 
-    ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
-    ui.elements.confirmDeleteConvoBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmDelete(activeProfileData, user); });
-    
-    // --- Global Click Listeners ---
-    document.addEventListener('click', (event) => {
-        // Close convo menu if clicking outside
-        const convoMenuButton = event.target.closest('.convo-menu-button');
-        if (!convoMenuButton) {
-            ui.closeAllConvoMenus();
-        }
-    });
-
-    // --- System Listeners ---
-    uiSettingsModals.setupControlPanelTabs();
-    
-    try {
-        // Listen for system theme changes
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        mediaQuery.addEventListener('change', () => {
-          if (localStorage.theme === 'system' || !localStorage.theme) {
-            applyTheme('system');
-          }
-        });
-        
-        // Listen for network online/offline status
-        if (isNative && Network) {
-            Network.addListener('networkStatusChange', (status) => {
-              updateOfflineUI(status.connected);
-            });
-            // Update initial state
-            Network.getStatus().then(status => updateOfflineUI(status.connected));
-        }
-
-        // --- NEW: Refresh conversations when app resumes from background ---
-        if (isNative && App) {
-            App.addListener('appStateChange', ({ isActive }) => {
-                if (isActive && user) {
-                    // Only reload if the app is active and the user is logged in
-                    console.log('App resumed, reloading conversations...');
-                    // This call should switch and scroll to the bottom of the active chat
-                    chat.loadConversations(activeProfileData, user, handleExamplePromptClick, ui.showModal, true);
-                }
-            });
-        }
-        
-    } catch (e) {
-        console.error('Failed to add theme/network/app listener:', e);
+    // Listen for network online/offline status
+    if (isNative && Network) {
+      Network.addListener('networkStatusChange', (status) => {
+        updateOfflineUI(status.connected);
+      });
+      // Update initial state
+      Network.getStatus().then(status => updateOfflineUI(status.connected));
     }
 
-    listenersAttached = true;
+    // --- NEW: Refresh conversations when app resumes from background ---
+    if (isNative && App) {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive && user) {
+          // Only reload if the app is active and the user is logged in
+          console.log('App resumed, reloading conversations...');
+          // This call should switch and scroll to the bottom of the active chat
+          chat.loadConversations(activeProfileData, user, handleExamplePromptClick, ui.showModal, true);
+        }
+      });
+    }
+
+  } catch (e) {
+    console.error('Failed to add theme/network/app listener:', e);
+  }
+
+  listenersAttached = true;
 }
 
 // --- BOOTSTRAP ---
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Apply initial theme and set system bars
-    applyTheme(localStorage.theme || 'system');
-    
-    // FIX: Removed offlineManager init from here to prevent 401 loops.
-    // It is now called inside checkLoginStatus on success.
+  // 1. Apply initial theme and set system bars
+  applyTheme(localStorage.theme || 'system');
 
-    // 3. Initialize native auth for Google Sign-In
-    await initializeNativeAuth();
-    
-    // 4. Run main logic
-    await checkLoginStatus();
+  // FIX: Removed offlineManager init from here to prevent 401 loops.
+  // It is now called inside checkLoginStatus on success.
+
+  // 3. Initialize native auth for Google Sign-In
+  await initializeNativeAuth();
+
+  // 4. Run main logic
+  await checkLoginStatus();
 });

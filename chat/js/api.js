@@ -1,23 +1,25 @@
 // js/api.js
 
-import { 
-    setAuthToken, 
-    getAuthToken, 
-    awaitAuthInit, 
+import {
+    setAuthToken,
+    getAuthToken,
+    awaitAuthInit,
     clearAuthToken // Function specifically for clearing the token
-} from './cache.js'; 
+} from './cache.js';
 
 import offlineManager from './offline-manager.js';
 
 const Cap = typeof window !== "undefined" ? window.Capacitor : null;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 
+console.log("SAFI API Loaded v2.1 (Plain Args Fix)");
+
 // Use the fixed host for Capacitor builds
 const HOST = "https://safi.selfalignmentframework.com";
 const j = (p) => (isNative ? `${HOST}${p}` : p);
 
 // Export Auth utilities used by app.js
-export { awaitAuthInit, setAuthToken, getAuthToken, clearAuthToken }; 
+export { awaitAuthInit, setAuthToken, getAuthToken, clearAuthToken };
 
 export const urls = {
     LOGIN: j('/api/login'),
@@ -25,18 +27,20 @@ export const urls = {
     LOGOUT: j('/api/logout'),
     ME: j('/api/me'),
     PROFILES: j('/api/profiles'),
-    MODELS: j('/api/models'), 
-    UPDATE_MODELS: j('/api/me/models'), 
-    UPDATE_PROFILE: j('/api/me/profile'), 
+    MODELS: j('/api/models'),
+    UPDATE_MODELS: j('/api/me/models'),
+    UPDATE_PROFILE: j('/api/me/profile'),
     CONVERSATIONS: j('/api/conversations'),
     PROCESS: j('/api/process_prompt'),
     AUDIT: j('/api/audit_result'),
     DELETE_ACCOUNT: j('/api/me/delete'),
     TTS: j('/api/tts_audio'),
-    // --- NEW: API endpoint for the user's learned profile ---
+    // --- NEW: API endpoints for custom agents ---
     MY_PROFILE: j('/api/me/profile'),
+    AGENTS: j('/api/agents'),
+    RUBRIC_GEN: j('/api/generate/rubric/'), // Note: Trailing slash maintained for compatibility
     // --- END NEW ---
-    CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`, 
+    CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
     // NEW URL for Pin Toggle
     PIN_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/pin`,
@@ -66,18 +70,17 @@ async function httpGet(url) {
         return result.data;
     }
     // Fallback if the structure is flat (e.g., from a direct fetch)
-    return result; 
+    return result;
 }
 
 // POST/PUT/DELETE/PATCH requests use offlineManager.postWithQueue
 async function httpJSON(url, method, body) {
-    const request = new Request(url, {
-        method,
-        headers: await createHeaders(),
-        body: JSON.stringify(body),
-        credentials: 'include'
-    });
-    return await offlineManager.postWithQueue(request);
+    // We construct the body string and headers here
+    const headers = await createHeaders();
+    const bodyStr = JSON.stringify(body);
+
+    // Pass plain arguments to offlineManager to avoid Request stream issues
+    return await offlineManager.postWithQueue(url, bodyStr, method, headers);
 }
 
 function ensureOkOrQueued(res, tag) {
@@ -101,19 +104,19 @@ export async function login(payload) {
 export async function mobileLogin(code) {
     const res = await httpJSON(urls.MOBILE_LOGIN, "POST", { code });
     if (res?.token) {
-      await setAuthToken(res.token);
-      return { ok: true, token: res.token };
+        await setAuthToken(res.token);
+        return { ok: true, token: res.token };
     }
     return ensureOkOrQueued(res, "mobile_login");
 }
 
 export async function logout() {
-    try { 
-        await httpJSON(urls.LOGOUT, "POST", {}); 
-    } catch(e) {
+    try {
+        await httpJSON(urls.LOGOUT, "POST", {});
+    } catch (e) {
         console.warn("Logout API call failed, clearing token anyway.", e);
     } finally {
-      await clearAuthToken(); // Use clearAuthToken from cache.js
+        await clearAuthToken(); // Use clearAuthToken from cache.js
     }
     return { ok: true };
 }
@@ -123,37 +126,37 @@ export const getMe = () => httpGet(urls.ME);
 // User/Profile/Model management
 export const fetchAvailableProfiles = () => httpGet(urls.PROFILES);
 export const fetchAvailableModels = () => httpGet(urls.MODELS);
-export const updateUserProfile = (profileName) => 
+export const updateUserProfile = (profileName) =>
     httpJSON(urls.UPDATE_PROFILE, 'PUT', { profile: profileName });
-export const updateUserModels = (models) => 
+export const updateUserModels = (models) =>
     httpJSON(urls.UPDATE_MODELS, 'PUT', models);
 
 // Conversation management
 export const fetchConversations = () => httpGet(urls.CONVERSATIONS);
 export const createNewConversation = () => httpJSON(urls.CONVERSATIONS, 'POST', {});
-export const renameConversation = (id, title) => 
+export const renameConversation = (id, title) =>
     httpJSON(urls.CONVERSATION(id), 'PUT', { title });
-export const deleteConversation = (id) => 
+export const deleteConversation = (id) =>
     httpJSON(urls.CONVERSATION(id), 'DELETE', {});
-    
+
 // NEW API function for Pin Toggle
-export const togglePinConversation = (id, isPinned) => 
+export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
 
 // Chat flow
-export const fetchHistory = (id, limit = 50, offset = 0) => 
-    httpGet(urls.HISTORY(id, limit, offset)); 
-export const processUserMessage = (message, conversation_id) => 
+export const fetchHistory = (id, limit = 50, offset = 0) =>
+    httpGet(urls.HISTORY(id, limit, offset));
+export const processUserMessage = (message, conversation_id) =>
     httpJSON(urls.PROCESS, 'POST', { message, conversation_id });
-export const fetchAuditResult = (messageId) => 
+export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
-export const deleteAccount = () => 
+export const deleteAccount = () =>
     httpJSON(urls.DELETE_ACCOUNT, 'DELETE', {});
 
 // TTS audio does not need offline queue/cache, but it DOES need auth.
 export const fetchTTSAudio = async (text) => {
     // Create auth headers
-    const headers = await createHeaders(); 
+    const headers = await createHeaders();
     // Set body
     const body = JSON.stringify({ text });
 
@@ -167,7 +170,7 @@ export const fetchTTSAudio = async (text) => {
     if (!response.ok) {
         throw new Error('TTS audio generation failed.');
     }
-    return response.blob(); 
+    return response.blob();
 };
 
 // --- NEW: API functions for "My Profile" tab ---
@@ -187,5 +190,24 @@ export async function fetchUserProfileMemory() {
  */
 export async function updateUserProfileMemory(profileData) {
     return httpJSON(urls.MY_PROFILE, 'POST', profileData);
+}
+// --- END NEW ---
+
+// --- NEW: API functions for Custom Agents ---
+export async function saveAgent(agentData) {
+    return httpJSON(urls.AGENTS, 'POST', agentData);
+}
+
+export async function getAgent(key) {
+    return httpGet(`${urls.AGENTS}/${key}`);
+}
+
+// NEW: Delete Agent
+export async function deleteAgent(key) {
+    return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
+}
+
+export async function generateRubric(valueName, context) {
+    return httpJSON(urls.RUBRIC_GEN, 'POST', { value_name: valueName, context });
 }
 // --- END NEW ---
