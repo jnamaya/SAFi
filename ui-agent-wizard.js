@@ -586,10 +586,23 @@ function renderWillStep(container) {
                         // Standardize format (Action-First)
                          const processedRules = newRules.map(r => {
                             let clean = r.trim();
-                            // Simple heuristic to ensure they look like rules
-                            if (!clean.match(/^(Reject|Require|Flag|Do not|Must|Always|Never)/i)) {
+                            
+                            // 1. Remove common fluff prefixes
+                            clean = clean.replace(/^(The AI should|The AI must|The agent should|The agent must|Must|Will|Always)\s+/i, "");
+
+                            // 2. Normalize "Refuse/Decline" to "Reject requests to " (Clean English grammar)
+                            if (clean.match(/^(Refuse|Decline|Deny)\s+to\s+/i)) {
+                                clean = clean.replace(/^(Refuse|Decline|Deny)\s+to\s+/i, "Reject requests to ");
+                            }
+                             else if (clean.match(/^Never\s+/i)) {
+                                clean = clean.replace(/^Never\s+/i, "Reject requests to ");
+                            }
+
+                            // 3. Fallback: If it doesn't start with a strong action verb, assume it's a negative constraint
+                            if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) {
                                 return "Reject " + clean; 
                             }
+                            
                             return clean.charAt(0).toUpperCase() + clean.slice(1);
                         });
                         
