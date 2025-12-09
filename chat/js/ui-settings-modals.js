@@ -4,6 +4,7 @@ import * as ui from './ui.js';
 import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import * as api from './api.js';
 import { openAgentWizard } from './ui-agent-wizard.js'; // Import Wizard
+import { openPolicyWizard } from './ui-policy-wizard.js'; // Import Policy Wizard
 
 // External libraries (must be available globally or imported)
 // NOTE: marked, hljs, DOMPurify are assumed to be available globally from the original file's context.
@@ -32,14 +33,16 @@ export function setupControlPanelTabs() {
         ui.elements.cpNavModels,
         ui.elements.cpNavMyProfile, // My Profile Tab
         ui.elements.cpNavDashboard,
-        ui.elements.cpNavAppSettings
+        ui.elements.cpNavAppSettings,
+        ui.elements.cpNavGovernance // Governance Tab
     ];
     const panels = [
         ui.elements.cpTabProfile,
         ui.elements.cpTabModels,
         ui.elements.cpTabMyProfile, // My Profile Panel
         ui.elements.cpTabDashboard,
-        ui.elements.cpTabAppSettings
+        ui.elements.cpTabAppSettings,
+        ui.elements.cpTabGovernance // Governance Panel
     ];
 
     tabs.forEach((tab, index) => {
@@ -58,6 +61,9 @@ export function setupControlPanelTabs() {
             // Lazy-load dashboard
             if (tab === ui.elements.cpNavDashboard) {
                 renderSettingsDashboardTab();
+            }
+            if (tab === ui.elements.cpNavGovernance) {
+                renderSettingsGovernanceTab();
             }
             // Lazy-load user profile
             if (tab === ui.elements.cpNavMyProfile) {
@@ -305,9 +311,9 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                     ui.showToast("Agent deleted.", "success");
                     setTimeout(() => window.location.reload(), 1000);
                 } catch (err) {
-                     ui.showToast(`Error: ${err.message}`, "error");
-                     btn.innerHTML = originalText;
-                     btn.disabled = false;
+                    ui.showToast(`Error: ${err.message}`, "error");
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                 }
             }
         };
@@ -1259,4 +1265,104 @@ export function renderProfileDetailsModal(profile) {
 
     // Scroll to top of modal content
     container.scrollTop = 0;
+}
+
+// --- NEW: Governance Tab Rendering ---
+export async function renderSettingsGovernanceTab() {
+    ui._ensureElements();
+    const container = ui.elements.cpTabGovernance;
+    if (!container) return;
+
+    container.innerHTML = `<div class="p-8 text-center"><div class="thinking-spinner w-8 h-8 mx-auto mb-4"></div><p>Loading Policies...</p></div>`;
+
+    try {
+        const res = await api.fetchPolicies();
+        if (!res.ok) throw new Error(res.error || "Failed to fetch policies");
+
+        const policies = res.policies || []; // Ensure array
+
+        container.innerHTML = `
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                     <h3 class="text-xl font-bold">Organizational Policies</h3>
+                     <p class="text-sm text-gray-500 dark:text-gray-400">Define global constitutions for headless agents.</p>
+                </div>
+                <button id="btn-create-policy" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                    Create Policy
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                ${policies.length === 0 ? `
+                    <div class="p-8 text-center border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl">
+                        <p class="text-gray-500 mb-4">No policies defined yet.</p>
+                    </div>
+                ` : policies.map(p => `
+                    <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start">
+                             <div>
+                                 <h4 class="font-bold text-lg text-gray-900 dark:text-white">${p.name}</h4>
+                                 <p class="text-xs text-gray-500 font-mono mt-1 mb-3">ID: ${p.id}</p>
+                                 <div class="flex gap-2">
+                                     <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs rounded-full font-medium">
+                                        ${(p.values_weights || []).length} Values
+                                     </span>
+                                     <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-xs rounded-full font-medium">
+                                        ${(p.will_rules || []).length} Constraints
+                                     </span>
+                                 </div>
+                             </div>
+                             <div class="flex gap-3">
+                                 <button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>
+                                 <button class="text-sm text-red-500 hover:text-red-600 delete-policy-btn" data-id="${p.id}">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                 </button>
+                             </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        // Handlers
+        const createBtn = document.getElementById('btn-create-policy');
+        if (createBtn) {
+            createBtn.addEventListener('click', () => {
+                openPolicyWizard();
+            });
+        }
+
+        container.querySelectorAll('.delete-policy-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this policy? This may break agents using it.')) {
+                    await api.deletePolicy(btn.dataset.id);
+                    renderSettingsGovernanceTab(); // Refresh
+                }
+            });
+        });
+
+        container.querySelectorAll('.gen-key-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const label = prompt(`Enter a label for this new key (e.g. "Marketing Bot"):`, "New Key");
+                if (label) {
+                    // We could reuse the wizard success screen or just show an alert
+                    try {
+                        const res = await api.generateKey(btn.dataset.id, label);
+                        if (res.ok) {
+                            // Use a prompt to allow copying
+                            prompt("API Key Generated. Copy it now, it won't be shown again:", res.api_key);
+                        } else {
+                            alert("Error: " + res.error);
+                        }
+                    } catch (e) {
+                        alert(e.message);
+                    }
+                }
+            });
+        });
+
+    } catch (e) {
+        container.innerHTML = `<div class="p-8 text-center text-red-500">Error loading policies: ${e.message}</div>`;
+    }
 }

@@ -168,6 +168,11 @@
                 </button>
 
                 <!-- Regular Tabs -->
+                <!-- NEW: Governance Tab -->
+                <button id="cp-nav-governance" role="tab" aria-selected="false" class="modal-tab-button shrink-0 whitespace-nowrap">
+                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"></path></svg>
+                   <span>Governance</span>
+                </button>
                 <button id="cp-nav-profile" role="tab" aria-selected="true" class="modal-tab-button active shrink-0 whitespace-nowrap">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.25278C12 6.25278 6.72222 3 3 3C3 3 3 10.875 3 13.5C3 19.5 12 21 12 21C12 21 21 19.5 21 13.5C21 10.875 21 3 21 3C17.2778 3 12 6.25278 12 6.25278Z"></path></svg>
                   <span>Agents</span>
@@ -195,6 +200,9 @@
             </nav>
             
             <div class="flex-1 flex flex-col min-h-0 md:ml-72">
+              <div id="cp-tab-governance" role="tabpanel" class="modal-tab-content p-6 max-w-3xl hidden overflow-y-auto custom-scrollbar">
+                <!-- Governance Content -->
+              </div>
               <div id="cp-tab-profile" role="tabpanel" class="modal-tab-content p-6 max-w-3xl overflow-y-auto custom-scrollbar">
                 <!-- Content dynamically generated -->
               </div>
