@@ -35,13 +35,14 @@ class SpiritIntegrator:
         self.beta = beta
         
         # Pre-calculate value weights as a numpy array
+        # ROBUSTNESS FIX: Handle missing keys (custom wizard uses 'name', legacy uses 'value')
         self.value_weights = (
-            np.array([v["weight"] for v in self.values]) if self.values else np.array([1.0])
+            np.array([float(v.get("weight", 0.2)) for v in self.values], dtype=float) if self.values else np.array([1.0])
         )
         
         # Pre-calculate normalized value names for quick lookup
         self._norm_values = (
-            [_norm_label(v["value"]) for v in self.values] if self.values else []
+            [_norm_label(v.get("value") or v.get("name") or "Unknown_Value") for v in self.values] if self.values else []
         )
         self._norm_index = {name: i for i, name in enumerate(self._norm_values)}
 

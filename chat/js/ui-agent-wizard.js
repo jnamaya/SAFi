@@ -223,17 +223,87 @@ async function renderIntellectStep(container) {
             </div>
 
             <div>
-                <label class="block text-sm font-bold mb-2">System Instructions / Worldview</label>
-                <p class="text-xs text-gray-400 mb-2">TIPS: Use "You are..." statements. Describe their core philosophy.</p>
+                <div class="flex justify-between items-end mb-2">
+                    <div>
+                        <label class="block text-sm font-bold">System Instructions / Persona</label>
+                        <p class="text-xs text-gray-400">TIPS: Use "You are..." statements. Describe their core philosophy.</p>
+                    </div>
+                     <button id="wiz-gen-persona-btn" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        Draft with AI
+                    </button>
+                </div>
                 <textarea id="wiz-instructions" class="w-full h-40 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-sm" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${agentData.instructions}</textarea>
             </div>
             <div>
-                <label class="block text-sm font-bold mb-2">Communication Style</label>
-                <p class="text-xs text-gray-400 mb-2">How should they speak? (e.g., Formal, Socratic, Concise)</p>
+                <div class="flex justify-between items-end mb-2">
+                    <div>
+                        <label class="block text-sm font-bold">Communication Style</label>
+                        <p class="text-xs text-gray-400">How should they speak? (e.g., Formal, Socratic, Concise)</p>
+                    </div>
+                    <button id="wiz-gen-style-btn" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        Draft with AI
+                    </button>
+                </div>
                 <textarea id="wiz-style" class="w-full h-24 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-sm" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${agentData.style}</textarea>
             </div>
         </div>
     `;
+
+    // AI PERSONA HANDLER
+    document.getElementById('wiz-gen-persona-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const original = btn.innerHTML;
+        btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block mr-1"></span> Drafting...`;
+        btn.disabled = true;
+
+        try {
+            const context = agentData.description || "A helpful AI assistant";
+            const res = await api.generatePolicyContent('persona', context, { name: agentData.name });
+
+            if (res.ok && res.content) {
+                document.getElementById('wiz-instructions').value = res.content;
+                agentData.instructions = res.content;
+                ui.showToast("Persona generated!", "success");
+            } else {
+                ui.showToast("Failed to generate persona", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            ui.showToast("Generation error", "error");
+        } finally {
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    });
+
+    // AI STYLE HANDLER
+    document.getElementById('wiz-gen-style-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const original = btn.innerHTML;
+        btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block mr-1"></span> Drafting...`;
+        btn.disabled = true;
+
+        try {
+            const context = agentData.instructions || agentData.description || "A helpful AI assistant";
+            const res = await api.generatePolicyContent('style', context, { name: agentData.name });
+
+            if (res.ok && res.content) {
+                document.getElementById('wiz-style').value = res.content;
+                agentData.style = res.content;
+                ui.showToast("Style generated!", "success");
+            } else {
+                ui.showToast("Failed to generate style", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            ui.showToast("Generation error", "error");
+        } finally {
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    });
 
     // Fetch and Populate Policies
     try {
