@@ -1,9 +1,9 @@
 // This file focuses on element initialization, visibility control,
 // toasts, and other low-level UI helpers.
-import * as uiSettingsModals from './ui-settings-modals.js'; 
+import * as uiSettingsModals from './ui-settings-modals.js';
 
 export let elements = {};
-let currentLoadingInterval = null; 
+let currentLoadingInterval = null;
 let activeToast = null;
 let openDropdown = null;
 
@@ -22,12 +22,15 @@ export function _initElements() {
     cpNavDashboard: document.getElementById('cp-nav-dashboard'),
     cpNavAppSettings: document.getElementById('cp-nav-app-settings'),
     cpNavMyProfile: document.getElementById('cp-nav-my-profile'),
-    
+    cpNavGovernance: document.getElementById('cp-nav-governance'),
+
     cpTabProfile: document.getElementById('cp-tab-profile'),
     cpTabModels: document.getElementById('cp-tab-models'),
     cpTabDashboard: document.getElementById('cp-tab-dashboard'),
     cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
+    cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
     cpTabMyProfile: document.getElementById('cp-tab-my-profile'),
+    cpTabGovernance: document.getElementById('cp-tab-governance'),
 
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),
@@ -41,7 +44,7 @@ export function _initElements() {
     composerFooter: document.getElementById('composer-footer'),
     conscienceDetails: document.getElementById('conscience-details'),
     closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-    
+
     renameModal: document.getElementById('rename-modal'),
     renameInput: document.getElementById('rename-input'),
     confirmRenameBtn: document.getElementById('confirm-rename-btn'),
@@ -50,17 +53,17 @@ export function _initElements() {
     deleteConvoModal: document.getElementById('delete-convo-modal'),
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
     cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
-    
+
     activeProfileChip: document.getElementById('active-profile-chip'),
     activeProfileChipMobile: document.getElementById('active-profile-chip-mobile'),
-    
+
     profileModal: document.getElementById('profile-details-modal'),
     profileModalContent: document.getElementById('profile-details-content'),
-    
+
     sidebarElement: null, // Initialized later in open/close functions
     sidebarOverlay: null, // Initialized later
     // Note: We keep the reference but stop toggling its visibility class
-    menuToggleButton: document.getElementById('menu-toggle'), 
+    menuToggleButton: document.getElementById('menu-toggle'),
   };
 }
 
@@ -95,69 +98,69 @@ function updateSidebarState(open) {
   elements.sidebarOverlay = document.getElementById('sidebar-overlay');
 
   if (!elements.sidebarElement || !elements.sidebarOverlay) return;
-  
+
   // Clear any pending hide timeout
   if (hideSidebarTimeout) {
-      clearTimeout(hideSidebarTimeout);
-      hideSidebarTimeout = null;
+    clearTimeout(hideSidebarTimeout);
+    hideSidebarTimeout = null;
   }
-  
+
   // Reset inline transform property for CSS classes to take over transitions
   elements.sidebarElement.style.transform = '';
-  
+
   if (open) {
     // 1. Make it visible immediately so the slide-in transition can occur
-    elements.sidebarElement.classList.remove('hidden'); 
-    
+    elements.sidebarElement.classList.remove('hidden');
+
     // FIX: Force flex display so flex-col and flex-1 work on mobile, pushing footer down
     elements.sidebarElement.classList.add('flex');
 
     // 2. Apply positioning classes
     elements.sidebarElement.classList.remove('-translate-x-full');
-    elements.sidebarElement.classList.remove('w-72'); 
+    elements.sidebarElement.classList.remove('w-72');
     elements.sidebarElement.classList.add('w-full');
     elements.sidebarOverlay.classList.remove('hidden');
-    
+
     // Fade in overlay
     setTimeout(() => {
-        elements.sidebarOverlay.classList.remove('opacity-0');
+      elements.sidebarOverlay.classList.remove('opacity-0');
     }, 10);
 
     isSidebarOpen = true;
-    
+
   } else {
     // 1. Apply off-screen translation
     elements.sidebarElement.classList.add('-translate-x-full');
-    
+
     // FIX: Do NOT remove w-full immediately. Let it transition out at full width.
     // elements.sidebarElement.classList.remove('w-full');
     // elements.sidebarElement.classList.add('w-72');
-    
+
     // Fade out overlay
     elements.sidebarOverlay.classList.add('opacity-0');
-    
+
     // Hide overlay completely after fade
     setTimeout(() => {
-        if (!isSidebarOpen) {
-             elements.sidebarOverlay.classList.add('hidden');
-        }
+      if (!isSidebarOpen) {
+        elements.sidebarOverlay.classList.add('hidden');
+      }
     }, 300);
 
     isSidebarOpen = false;
 
     // 2. Hide the element completely after the transition (300ms duration in CSS)
     hideSidebarTimeout = setTimeout(() => {
-        if (!isSidebarOpen) { 
-            elements.sidebarElement.classList.add('hidden');
-            
-            // FIX: Remove flex so it returns to default hidden state safely
-            elements.sidebarElement.classList.remove('flex');
+      if (!isSidebarOpen) {
+        elements.sidebarElement.classList.add('hidden');
 
-            // FIX: Reset width ONLY after it is hidden to prepare for next open/desktop
-            elements.sidebarElement.classList.remove('w-full');
-            elements.sidebarElement.classList.add('w-72');
-        }
-    }, 350); 
+        // FIX: Remove flex so it returns to default hidden state safely
+        elements.sidebarElement.classList.remove('flex');
+
+        // FIX: Reset width ONLY after it is hidden to prepare for next open/desktop
+        elements.sidebarElement.classList.remove('w-full');
+        elements.sidebarElement.classList.add('w-72');
+      }
+    }, 350);
   }
 }
 
@@ -179,24 +182,24 @@ export function clearLoadingInterval() {
 }
 
 export function setLoadingInterval(interval) {
-    currentLoadingInterval = interval;
+  currentLoadingInterval = interval;
 }
 
 export function scrollToBottom() {
   _ensureElements();
   const chatWindow = elements.chatWindow;
-  
+
   if (chatWindow) {
-      requestAnimationFrame(() => {
-          const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-          chatWindow.scrollTo({
-              top: chatWindow.scrollHeight,
-              behavior: behavior
-          });
-          setTimeout(() => {
-             chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'auto' });
-          }, 150);
+    requestAnimationFrame(() => {
+      const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      chatWindow.scrollTo({
+        top: chatWindow.scrollHeight,
+        behavior: behavior
       });
+      setTimeout(() => {
+        chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'auto' });
+      }, 150);
+    });
   }
 }
 
@@ -208,12 +211,12 @@ const Toast = Cap?.Plugins?.Toast;
 
 export async function showToast(message, type = 'info', duration = 3000) {
   _ensureElements();
-  
+
   try {
     if (isNative && Toast && typeof Toast.show === 'function') {
-        let capDuration = duration <= 2000 ? 'short' : 'long';
-        await Toast.show({ text: message, duration: capDuration });
-        return;
+      let capDuration = duration <= 2000 ? 'short' : 'long';
+      await Toast.show({ text: message, duration: capDuration });
+      return;
     }
   } catch (e) {
     console.warn('Native Toast failed:', e);
@@ -223,17 +226,17 @@ export async function showToast(message, type = 'info', duration = 3000) {
   const toast = document.createElement('div');
   const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600' };
   toast.className = `toast text-white px-4 py-2 rounded-lg shadow-lg ${colors[type]} cursor-default`;
-  toast.textContent = message; 
+  toast.textContent = message;
   elements.toastContainer.appendChild(toast);
   activeToast = toast;
-  
+
   setTimeout(() => toast.classList.add('show'), 10);
-  
+
   setTimeout(() => {
     toast.classList.remove('show');
     toast.addEventListener('transitionend', function handler() {
-        toast.removeEventListener('transitionend', handler);
-        toast.remove();
+      toast.removeEventListener('transitionend', handler);
+      toast.remove();
     });
     if (activeToast === toast) activeToast = null;
   }, duration);
@@ -247,15 +250,15 @@ export function showModal(kind, data) {
     elements.conscienceModal.classList.remove('hidden');
   } else if (kind === 'delete') {
     elements.deleteAccountModal.classList.remove('hidden');
-  } 
+  }
   else if (kind === 'rename') {
     if (elements.renameInput) {
-        elements.renameInput.value = data.oldTitle;
+      elements.renameInput.value = data.oldTitle;
     }
     elements.renameModal.classList.remove('hidden');
     if (elements.renameInput) {
-        elements.renameInput.focus();
-        elements.renameInput.select();
+      elements.renameInput.focus();
+      elements.renameInput.select();
     }
   } else if (kind === 'delete-convo') {
     elements.deleteConvoModal.classList.remove('hidden');
@@ -263,7 +266,7 @@ export function showModal(kind, data) {
   else if (kind === 'profile') {
     elements.profileModal.classList.remove('hidden');
   }
-  
+
   elements.modalBackdrop.classList.remove('hidden');
 }
 
@@ -274,7 +277,7 @@ export function closeModal() {
   elements.deleteAccountModal.classList.add('hidden');
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
-  
+
   if (elements.profileModal) {
     elements.profileModal.classList.add('hidden');
   }

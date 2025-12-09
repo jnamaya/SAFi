@@ -7,6 +7,8 @@ import numpy as np
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 import logging
+import hashlib
+import secrets
 from ..config import Config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -99,11 +101,46 @@ def init_db():
             )
         ''')
 
-        # --- suggested_prompts column ---
-        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'suggested_prompts'")
+        # --- GOVERNANCE TABLES ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS organizations (
+                id CHAR(36) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS policies (
+                id CHAR(36) PRIMARY KEY,
+                org_id CHAR(36),
+                name VARCHAR(255) NOT NULL,
+                worldview TEXT,
+                will_rules JSON,
+                values_weights JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE SET NULL
+            )
+        ''')
+        
+        # Add column for global policy if not exists (circular dep handled by updating org later)
+        cursor.execute("SHOW COLUMNS FROM organizations LIKE 'global_policy_id'")
         if not cursor.fetchone():
-            cursor.execute("ALTER TABLE chat_history ADD COLUMN suggested_prompts JSON DEFAULT NULL")
-            logging.info("Added 'suggested_prompts' column to 'chat_history' table.")
+             cursor.execute("ALTER TABLE organizations ADD COLUMN global_policy_id CHAR(36) NULL REFERENCES policies(id)")
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS api_keys (
+                key_hash VARCHAR(64) PRIMARY KEY,
+                policy_id CHAR(36) NOT NULL,
+                label VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP NULL,
+                FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
+            )
+        ''')
+
+
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
@@ -124,6 +161,13 @@ def init_db():
                 INDEX idx_message_id (message_id)
             )
         ''')
+
+
+        # --- suggested_prompts column ---
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'suggested_prompts'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN suggested_prompts JSON DEFAULT NULL")
+            logging.info("Added 'suggested_prompts' column to 'chat_history' table.")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
@@ -743,3 +787,195 @@ def upsert_external_conversation(conversation_id: str, user_id: str, title: str 
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+# -------------------------------------------------------------------------
+# GOVERNANCE & POLICY MANAGEMENT
+# -------------------------------------------------------------------------
+
+def create_policy(name: str, worldview: str, will_rules: List[str], values: List[Dict], org_id: str = None) -> str:
+    """
+    Creates a new Policy in the database.
+    Returns: policy_id (str)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    policy_id = str(uuid.uuid4())
+    will_json = json.dumps(will_rules)
+    values_json = json.dumps(values)
+    
+    # Simple default Org if none provided (Single Tenant Mode for now)
+    # in multi-tenant, org_id would be mandatory
+    
+    sql = """
+        INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    cursor.execute(sql, (policy_id, org_id, name, worldview, will_json, values_json))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return policy_id
+
+def update_policy(policy_id: str, name: str = None, worldview: str = None, will_rules: List[str] = None, values: List[Dict] = None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    fields = []
+    params = []
+    
+    if name is not None:
+        fields.append("name = %s")
+        params.append(name)
+    if worldview is not None:
+        fields.append("worldview = %s")
+        params.append(worldview)
+    if will_rules is not None:
+        fields.append("will_rules = %s")
+        params.append(json.dumps(will_rules))
+    if values is not None:
+        fields.append("values_weights = %s")
+        params.append(json.dumps(values))
+        
+    if not fields:
+        return
+        
+    params.append(policy_id)
+    sql = f"UPDATE policies SET {', '.join(fields)} WHERE id = %s"
+    
+    cursor.execute(sql, tuple(params))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def get_policy(policy_id: str) -> Optional[Dict]:
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    cursor.execute("SELECT * FROM policies WHERE id = %s", (policy_id,))
+    row = cursor.fetchone()
+    
+    cursor.close()
+    conn.close()
+    
+    if row:
+        if isinstance(row['will_rules'], str):
+            row['will_rules'] = json.loads(row['will_rules'])
+        if isinstance(row['values_weights'], str):
+            row['values_weights'] = json.loads(row['values_weights'])
+    return row
+
+def list_policies(org_id: str = None) -> List[Dict]:
+    """
+    Lists policies. Ideally filtered by org_id.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    # For now, list all. In future, filter by org_id
+    sql = "SELECT * FROM policies ORDER BY created_at DESC"
+    cursor.execute(sql)
+    rows = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    for row in rows:
+        if isinstance(row['will_rules'], str):
+            row['will_rules'] = json.loads(row['will_rules'])
+        if isinstance(row['values_weights'], str):
+            row['values_weights'] = json.loads(row['values_weights'])
+            
+    return rows
+
+def delete_policy(policy_id: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    # Also delete associated API keys due to CASCADE, but policies deletion might need checks
+    cursor.execute("DELETE FROM policies WHERE id = %s", (policy_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# -------------------------------------------------------------------------
+# API KEY MANAGEMENT
+# -------------------------------------------------------------------------
+
+def create_api_key(policy_id: str, label: str) -> str:
+    """
+    Generates a new secure API Key, hashes it, stores the hash, and returns the RAW key.
+    The raw key is known ONLY at this moment.
+    """
+    # 1. Generate Raw Key
+    # Prefix 'sk-safi-' for easy identification
+    random_part = secrets.token_urlsafe(32)
+    raw_key = f"sk-safi-{random_part}"
+    
+    # 2. Hash it
+    key_hash = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    
+    # 3. Store Hash
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    sql = "INSERT INTO api_keys (key_hash, policy_id, label) VALUES (%s, %s, %s)"
+    cursor.execute(sql, (key_hash, policy_id, label))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    # 4. Return Raw Key (One-time)
+    return raw_key
+
+def verify_api_key(raw_key: str) -> Optional[Dict]:
+    """
+    Verifies an incoming API Key.
+    Returns the associated Policy if valid, else None.
+    """
+    # 1. Hash the incoming key
+    key_hash = hashlib.sha256(raw_key.encode('utf-8')).hexdigest()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    # 2. Lookup
+    sql = """
+        SELECT k.policy_id, p.name as policy_name, p.worldview, p.will_rules, p.values_weights
+        FROM api_keys k
+        JOIN policies p ON k.policy_id = p.id
+        WHERE k.key_hash = %s
+    """
+    cursor.execute(sql, (key_hash,))
+    result = cursor.fetchone()
+    
+    # 3. Update Usage Stats (Async/Fire-and-forget in production, sync here is fine for prototype)
+    if result:
+         cursor.execute("UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = %s", (key_hash,))
+         conn.commit()
+         
+    cursor.close()
+    conn.close()
+    
+    if result:
+        # Parse JSON fields
+        if isinstance(result['will_rules'], str):
+            result['will_rules'] = json.loads(result['will_rules'])
+        if isinstance(result['values_weights'], str):
+            result['values_weights'] = json.loads(result['values_weights'])
+            
+    return result
+
+def get_policy_keys(policy_id: str) -> List[Dict]:
+    """Lists keys for a policy (masked)."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    sql = "SELECT label, created_at, last_used_at, key_hash FROM api_keys WHERE policy_id = %s ORDER BY created_at DESC"
+    cursor.execute(sql, (policy_id,))
+    rows = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return rows

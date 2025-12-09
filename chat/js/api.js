@@ -39,6 +39,9 @@ export const urls = {
     MY_PROFILE: j('/api/me/profile'),
     AGENTS: j('/api/agents'),
     RUBRIC_GEN: j('/api/generate/rubric/'), // Note: Trailing slash maintained for compatibility
+    // --- GOVERNANCE ---
+    POLICIES: j('/api/policies'),
+    // --- END NEW ---
     // --- END NEW ---
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
@@ -209,5 +212,33 @@ export async function deleteAgent(key) {
 
 export async function generateRubric(valueName, context) {
     return httpJSON(urls.RUBRIC_GEN, 'POST', { value_name: valueName, context });
+}
+
+// --- GOVERNANCE API Functions ---
+
+export async function fetchPolicies() {
+    return httpGet(urls.POLICIES);
+}
+
+export async function savePolicy(policyData) {
+    if (policyData.policy_id) {
+        // Update
+        return httpJSON(`${urls.POLICIES}/${policyData.policy_id}`, 'PUT', policyData);
+    } else {
+        // Create
+        return httpJSON(urls.POLICIES, 'POST', policyData);
+    }
+}
+
+export async function getPolicy(policyId) {
+    return httpGet(`${urls.POLICIES}/${policyId}`);
+}
+
+export async function deletePolicy(policyId) {
+    return httpJSON(`${urls.POLICIES}/${policyId}`, 'DELETE', {});
+}
+
+export async function generateKey(policyId, label = "Default") {
+    return httpJSON(`${urls.POLICIES}/${policyId}/keys`, 'POST', { label });
 }
 // --- END NEW ---
