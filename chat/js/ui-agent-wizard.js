@@ -12,7 +12,8 @@ let agentData = {
     instructions: "", // Worldview
     style: "", // NEW: Communication Style
     values: [],
-    rules: []
+    rules: [],
+    policy_id: "standalone" // NEW: Governance Policy
 };
 
 // --- MAIN ENTRY POINT ---
@@ -31,7 +32,8 @@ export function openAgentWizard(existingAgent = null) {
             instructions: (existingAgent.worldview || "").replace("--- Organizational Policy ---\n", "").split("--- SPECIFIC ROLE ---\n").pop() || "",
             style: existingAgent.style || "", // Load existing style
             values: existingAgent.values || [],
-            rules: existingAgent.will_rules || []
+            rules: existingAgent.will_rules || [],
+            policy_id: existingAgent.policy_id || "standalone"
         };
         // Clean up instructions if they are just the raw worldview
         if (existingAgent.worldview && !agentData.instructions) {
@@ -198,12 +200,28 @@ function renderIdentityStep(container) {
 }
 
 // === STEP 2: INTELLECT (Worldview & Style) ===
-function renderIntellectStep(container) {
+async function renderIntellectStep(container) {
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4">Worldview (The Intellect)</h2>
         <p class="text-gray-500 mb-6">How does this agent think? Define their philosophy and tone.</p>
         
         <div class="space-y-4">
+            <!-- GOVERNANCE DROPDOWN -->
+            <div class="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <label class="block text-sm font-bold mb-2 text-blue-900 dark:text-blue-100">Governing Policy</label>
+                <div class="flex gap-4">
+                    <select id="wiz-policy" class="flex-1 p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800">
+                        <option value="standalone">Loading Policies...</option>
+                    </select>
+                </div>
+                <p class="text-xs text-blue-600 dark:text-blue-300 mt-2" id="wiz-policy-desc">
+                    Policies define base values and hard rules that cannot be overridden.
+                </p>
+                <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-2 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
+                    <!-- Preview -->
+                </div>
+            </div>
+
             <div>
                 <label class="block text-sm font-bold mb-2">System Instructions / Worldview</label>
                 <p class="text-xs text-gray-400 mb-2">TIPS: Use "You are..." statements. Describe their core philosophy.</p>
@@ -216,6 +234,55 @@ function renderIntellectStep(container) {
             </div>
         </div>
     `;
+
+    // Fetch and Populate Policies
+    try {
+        const res = await api.fetchPolicies();
+        const policies = (res.ok && res.policies) ? res.policies : [];
+        const select = document.getElementById('wiz-policy');
+        if (!select) return;
+
+        select.innerHTML = `<option value="standalone">No Governance (Standalone)</option>`;
+
+        policies.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = `${p.name} ${p.is_demo ? '(Official)' : ''}`;
+            select.appendChild(opt);
+        });
+
+        // Set current value
+        select.value = agentData.policy_id || "standalone";
+
+        // Change Listener for Preview
+        select.addEventListener('change', () => {
+            const pid = select.value;
+            const preview = document.getElementById('wiz-policy-preview');
+
+            if (pid === 'standalone') {
+                preview.classList.add('hidden');
+                return;
+            }
+
+            const policy = policies.find(p => p.id === pid);
+            if (policy) {
+                preview.innerHTML = `
+                    <strong class="block mb-1">Inherited Rules:</strong>
+                    <ul class="list-disc list-inside">
+                        ${(policy.will_rules || []).slice(0, 3).map(r => `<li>${r}</li>`).join('')}
+                        ${(policy.will_rules || []).length > 3 ? `<li>...and ${(policy.will_rules.length - 3)} more</li>` : ''}
+                    </ul>
+                `;
+                preview.classList.remove('hidden');
+            }
+        });
+
+        // Trigger once
+        select.dispatchEvent(new Event('change'));
+
+    } catch (e) {
+        console.error("Failed to load policies", e);
+    }
 }
 
 // === STEP 3: CONSCIENCE (Values) ===
@@ -408,6 +475,7 @@ function saveCurrentStepData() {
     if (currentStep === 2) {
         agentData.instructions = document.getElementById('wiz-instructions').value;
         agentData.style = document.getElementById('wiz-style').value; // Save Style
+        agentData.policy_id = document.getElementById('wiz-policy').value; // Save Policy
     }
 }
 
@@ -427,6 +495,7 @@ async function finishWizard() {
             style: agentData.style, // Include Style
             values: agentData.values,
             will_rules: agentData.rules,
+            policy_id: agentData.policy_id, // Include Policy
             is_custom: true
         };
 

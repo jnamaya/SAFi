@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 
 # 1. Import Governance (Updated for Contoso structure)
+# 1. Import Governance (Updated for Contoso structure)
 from .governance.contoso.policy import CONTOSO_GLOBAL_POLICY
+from ..persistence import database as db
 
 # 2. Import Personas (Updated for Contoso Admin)
 from .personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
@@ -59,21 +61,38 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
         final_profile.get("will_rules", [])
     )
 
-    # C. Merge Values & Math
+    # C. Merge Values & Math (Enforce 40/60 Split)
     global_values = copy.deepcopy(governance.get("global_values", []))
     agent_values = final_profile.get("values", [])
     
-    # Calculate Weight Distribution
-    global_weight_sum = sum(v["weight"] for v in global_values) 
-    remaining_space = 1.0 - global_weight_sum
+    # Determine Targets
+    if not agent_values:
+        # If agent has no values, Global takes 100%
+        g_target = 1.0
+        a_target = 0.0
+    elif not global_values:
+         # If no global policy, Agent takes 100%
+         g_target = 0.0
+         a_target = 1.0
+    else:
+        # Standard Split
+        g_target = 0.40
+        a_target = 0.60
     
-    # Scale Agent Values
-    current_agent_sum = sum(v["weight"] for v in agent_values)
-    scale_factor = remaining_space / current_agent_sum if current_agent_sum > 0 else 0
+    # 1. Normalize Global Values
+    g_sum = sum(v.get("weight", 0) for v in global_values)
+    if g_sum > 0:
+        factor = g_target / g_sum
+        for v in global_values:
+            v["weight"] = round(v.get("weight", 0) * factor, 3)
     
-    for val in agent_values:
-        val["weight"] = round(val["weight"] * scale_factor, 3)
-        
+    # 2. Normalize Agent Values
+    a_sum = sum(v.get("weight", 0) for v in agent_values)
+    if a_sum > 0:
+        factor = a_target / a_sum
+        for v in agent_values:
+            v["weight"] = round(v.get("weight", 0) * factor, 3)
+    
     # Combine
     final_profile["values"] = global_values + agent_values
     
@@ -165,7 +184,7 @@ def list_profiles(owner_id: Optional[str] = None) -> List[Dict[str, str]]:
 def get_profile(name: str) -> Dict[str, Any]:
     """
     Retrieves a persona. 
-    Checks the GOVERNANCE_MAP to see if a policy should be applied.
+    Checks for a linked Policy ID or the GOVERNANCE_MAP.
     """
     key = (name or "").lower().strip()
     
@@ -176,13 +195,38 @@ def get_profile(name: str) -> Dict[str, Any]:
         # 2. Check Customs
         raw_persona = load_custom_persona(key)
         if not raw_persona:
+            # Fallback checks or error
             available_keys = [p['key'] for p in list_profiles()]
-            raise KeyError(f"Unknown persona '{name}'. Available: {available_keys}")
+            # Soft error or default to avoid crashes if user deleted a file
+            raise KeyError(f"Unknown persona '{name}'.")
 
     # --- CONDITIONAL GOVERNANCE LOGIC ---
-    # If this persona is assigned to a governance policy, apply it.
+    
+    # A. Dynamic Policy from DB (New Way)
+    policy_id = raw_persona.get("policy_id")
+    if policy_id and policy_id != "standalone":
+        try:
+            db_policy = db.get_policy(policy_id)
+            if db_policy:
+                # Map DB Policy to assemble_agent format
+                gov_dict = {
+                    "global_worldview": db_policy.get("worldview", ""),
+                    "global_will_rules": db_policy.get("will_rules", []),
+                    "global_values": db_policy.get("values_weights", [])
+                }
+                # Fix field names for DB values if needed (name vs value)
+                for v in gov_dict["global_values"]:
+                     if "name" in v and "value" not in v:
+                         v["value"] = v["name"]
+                         
+                return assemble_agent(raw_persona, gov_dict)
+        except Exception as e:
+            print(f"Error applying policy {policy_id}: {e}")
+            # Fall through to raw persona or Error? For now fall through.
+
+    # B. Legacy Hardcoded Map (Old Way)
     if key in GOVERNANCE_MAP:
         return assemble_agent(raw_persona, GOVERNANCE_MAP[key])
     
-    # Otherwise, return the raw persona (Independent)
+    # C. Standalone / No Governance
     return raw_persona

@@ -27,7 +27,7 @@ def create_policy():
         if not name:
             return jsonify({"ok": False, "error": "Policy name is required"}), 400
             
-        policy_id = db.create_policy(name=name, worldview=worldview, will_rules=will_rules, values=values)
+        policy_id = db.create_policy(name=name, worldview=worldview, will_rules=will_rules, values=values, created_by=user_id)
         
         return jsonify({"ok": True, "policy_id": policy_id}), 201
 
@@ -45,8 +45,9 @@ def list_policies():
     if not user:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
+    user_id = user.get('id')
     try:
-        policies = db.list_policies()
+        policies = db.list_policies(user_id=user_id)
         return jsonify({"ok": True, "policies": policies})
     except Exception as e:
         current_app.logger.error(f"Error listing policies: {e}")
@@ -79,6 +80,18 @@ def update_policy(policy_id):
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     
     try:
+        # Check ownership
+        policy = db.get_policy(policy_id)
+        if not policy:
+             return jsonify({"ok": False, "error": "Policy not found"}), 404
+             
+        if policy.get('is_demo'):
+             return jsonify({"ok": False, "error": "Cannot edit demo policies"}), 403
+             
+        # Allow if created by user OR if user is in an admin list (future). For now, strict ownership.
+        if policy.get('created_by') and policy.get('created_by') != user['id']:
+             return jsonify({"ok": False, "error": "Unauthorized"}), 403
+
         data = request.get_json()
         db.update_policy(
             policy_id,
@@ -101,6 +114,17 @@ def delete_policy(policy_id):
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
     try:
+        # Check ownership
+        policy = db.get_policy(policy_id)
+        if not policy:
+             return jsonify({"ok": False, "error": "Policy not found"}), 404
+             
+        if policy.get('is_demo'):
+             return jsonify({"ok": False, "error": "Cannot delete demo policies"}), 403
+             
+        if policy.get('created_by') and policy.get('created_by') != user['id']:
+             return jsonify({"ok": False, "error": "Unauthorized"}), 403
+
         db.delete_policy(policy_id)
         return jsonify({"ok": True})
     except Exception as e:
