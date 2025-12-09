@@ -555,15 +555,21 @@ function renderRulesStep(container) {
                         const processedRules = json.map(r => {
                             let clean = r.trim();
                             
-                            // 1. Force "Reject" for negative constraints
-                            clean = clean.replace(/^(The AI should|The AI must|Must|Will|Always)\s+(refuse|decline|reject)\s+to\s+(provide|generate|discuss|answer)?\s*/i, "Reject ");
-                            clean = clean.replace(/^Never\s+(provide|generate|discuss|answer)\s*/i, "Reject ");
-                            
-                            // 2. Force "Require" for obligations
-                            clean = clean.replace(/^(The AI should|The AI must|Must|Always)\s+(ask|require|force)\s+(users|the user)\s+to\s*/i, "Require users to ");
-                            
-                            // 3. Force "Flag" for detection
-                            clean = clean.replace(/^(The AI should|The AI must|Must|Always)\s+(flag|detect|identify)\s*/i, "Flag ");
+                            // 1. Remove common fluff prefixes
+                            clean = clean.replace(/^(The AI should|The AI must|The agent should|The agent must|Must|Will|Always)\s+/i, "");
+
+                            // 2. Normalize "Refuse/Decline" to "Reject requests to " (Clean English grammar)
+                            if (clean.match(/^(Refuse|Decline|Deny)\s+to\s+/i)) {
+                                clean = clean.replace(/^(Refuse|Decline|Deny)\s+to\s+/i, "Reject requests to ");
+                            }
+                             else if (clean.match(/^Never\s+/i)) {
+                                clean = clean.replace(/^Never\s+/i, "Reject requests to ");
+                            }
+
+                            // 3. Fallback: If it doesn't start with a strong action verb, assume it's a negative constraint
+                            if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) {
+                                return "Reject " + clean; 
+                            }
 
                             // Capitalize first letter
                             return clean.charAt(0).toUpperCase() + clean.slice(1);
@@ -595,17 +601,27 @@ function renderRulesList() {
     policyData.will_rules.forEach((rule, idx) => {
         const item = document.createElement('li');
         item.className = "flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg shadow-sm group hover:border-red-300 transition-colors";
+        
+        // Editable Input
         item.innerHTML = `
-            <span class="text-sm font-medium text-red-900 dark:text-red-200 flex items-center gap-2">
-                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                ${rule}
-            </span>
+            <div class="flex-1 flex items-center gap-3">
+                <svg class="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                <input type="text" 
+                    class="w-full bg-transparent border-none focus:ring-0 p-1 text-sm font-medium text-red-900 dark:text-red-200 placeholder-red-300" 
+                    value="${rule}" 
+                    onchange="window.updatePolicyRule(${idx}, this.value)"
+                    placeholder="Rule definition...">
+            </div>
             <button class="text-red-300 hover:text-red-600 dark:hover:text-red-400 transition-colors" onclick="window.removePolicyRule(${idx})">
                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
         `;
         list.appendChild(item);
     });
+
+    window.updatePolicyRule = (idx, val) => {
+        policyData.will_rules[idx] = val;
+    };
 
     window.removePolicyRule = (idx) => {
         policyData.will_rules.splice(idx, 1);
@@ -763,7 +779,7 @@ if __name__ == "__main__":
                     <ol class="list-decimal list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1 ml-1">
                         <li>Go to <strong>Agents</strong> tab.</li>
                         <li>Create a new <strong>Custom Agent</strong>.</li>
-                        <li>In Step 1 under Governing Policy choose <strong>"${policyData.name}"</strong> as the Policy.</li>
+                        <li>In the settings dropdown, select <strong>"${policyData.name}"</strong> as the active Policy.</li>
                     </ol>
                 </div>
 
