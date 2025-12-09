@@ -2,7 +2,7 @@ import json
 import os
 from flask import Blueprint, request, jsonify, g, session, current_app
 from pathlib import Path
-from ..core.values import CUSTOM_PERSONAS_DIR, get_profile
+from ..core.values import CUSTOM_PERSONAS_DIR, get_profile, PERSONAS
 from ..core.orchestrator import SAFi  # Need access to LLM provider for generation
 from ..config import Config
 
@@ -40,6 +40,10 @@ def save_agent():
         
         if not key:
              return jsonify({"ok": False, "error": "Invalid key provided."}), 400
+             
+        # Check for Reserved Keys (Built-ins)
+        if key in PERSONAS:
+             return jsonify({"ok": False, "error": f"'{key}' is a reserved system agent name. Please choose a different name."}), 409
 
         # Construct path
         if not CUSTOM_PERSONAS_DIR.exists():

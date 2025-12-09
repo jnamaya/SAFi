@@ -217,7 +217,8 @@ export async function generateRubric(valueName, context) {
 // --- GOVERNANCE API Functions ---
 
 export async function fetchPolicies() {
-    return httpGet(urls.POLICIES);
+    // Return policies with cache busting to ensure updates are seen immediately
+    return httpGet(`${urls.POLICIES}?_t=${Date.now()}`);
 }
 
 export async function savePolicy(policyData) {
@@ -240,5 +241,9 @@ export async function deletePolicy(policyId) {
 
 export async function generateKey(policyId, label = "Default") {
     return httpJSON(`${urls.POLICIES}/${policyId}/keys`, 'POST', { label });
+}
+
+export async function generatePolicyContent(type, context, extraData = {}) {
+    return httpJSON(`${urls.POLICIES}/ai/generate`, 'POST', { type, context, ...extraData });
 }
 // --- END NEW ---
