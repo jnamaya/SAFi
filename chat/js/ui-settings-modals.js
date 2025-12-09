@@ -1305,6 +1305,9 @@ export async function renderSettingsGovernanceTab() {
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
                          <button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>
                          ${!isReadOnly ? `
+                         <button class="text-sm text-gray-600 hover:text-blue-600 edit-policy-btn" data-id="${p.id}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                         </button>
                          <button class="text-sm text-red-500 hover:text-red-600 delete-policy-btn" data-id="${p.id}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                          </button>` : ''}
@@ -1314,22 +1317,25 @@ export async function renderSettingsGovernanceTab() {
         `;
 
         container.innerHTML = `
-            <div class="flex justify-between items-center mb-6">
-                <div>
+            <div class="mb-8">
+                <div class="mb-4">
                      <h3 class="text-xl font-bold">Organizational Policies</h3>
-                     <p class="text-sm text-gray-500 dark:text-gray-400">Define global constitutions for headless agents.</p>
+                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-3xl">
+                        Organizational AI policies are defined by Legal or IT departments to enforce strict behavioral governance across all agents built under this policy. 
+                        These policies act as an immutable "Constitution" for your AI workforce.
+                     </p>
                 </div>
-                <button id="btn-create-policy" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2">
+                <button id="btn-create-policy" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                    Create Policy
+                    Create New Policy
                 </button>
             </div>
 
             <div class="space-y-8">
-                <!-- OFFICIAL POLICIES -->
+                <!-- DEMO POLICIES -->
                 <div>
-                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">Official Policies (Read Only)</h4>
-                    ${demoPolicies.length === 0 ? '<p class="text-sm text-gray-400 italic">No official policies available.</p>' : demoPolicies.map(p => renderPolicyCard(p, true)).join('')}
+                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">DEMO Policy</h4>
+                    ${demoPolicies.length === 0 ? '<p class="text-sm text-gray-400 italic">No demo policies available.</p>' : demoPolicies.map(p => renderPolicyCard(p, true)).join('')}
                 </div>
 
                 <!-- MY POLICIES -->
@@ -1351,6 +1357,15 @@ export async function renderSettingsGovernanceTab() {
                 openPolicyWizard();
             });
         }
+
+        container.querySelectorAll('.edit-policy-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const policy = allPolicies.find(p => p.id === btn.dataset.id);
+                if (policy) {
+                    openPolicyWizard(policy);
+                }
+            });
+        });
 
         container.querySelectorAll('.delete-policy-btn').forEach(btn => {
             btn.addEventListener('click', async () => {

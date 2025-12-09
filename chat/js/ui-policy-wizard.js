@@ -284,9 +284,9 @@ function renderSuccessStep(container) {
             <h4 class="font-bold text-lg mb-4">Integration Credentials</h4>
             
             <div class="mb-4">
-                <label class="block text-xs uppercase text-gray-400 font-bold mb-1">API Endpoint</label>
+                <label class="block text-xs uppercase text-gray-400 font-bold mb-1">Headless API Endpoint</label>
                 <div class="flex gap-2">
-                    <code class="flex-1 p-2 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-sm">https://api.safi.ai/v1</code>
+                    <code class="flex-1 p-2 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-sm">https://safi.selfalignmentframework.com/api/bot/process_prompt</code>
                 </div>
             </div>
 
@@ -297,6 +297,94 @@ function renderSuccessStep(container) {
                     <button class="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm text-black font-semibold" onclick="navigator.clipboard.writeText('${api_key}')">Copy</button>
                 </div>
                 <p class="text-xs text-red-500 mt-2">⚠️ This key will not be shown again.</p>
+            </div>
+            
+            <hr class="my-6 border-gray-200 dark:border-neutral-700">
+            
+            <h4 class="font-bold text-lg mb-2">🚀 Quick Start: Microsoft Teams Bot</h4>
+            <p class="text-sm text-gray-500 mb-4">Use this Python code to spin up a headless governance bot governed by this policy.</p>
+            
+            <div class="relative">
+                <pre class="bg-neutral-900 text-gray-300 p-4 rounded-lg text-xs font-mono h-64 overflow-y-auto whitespace-pre scrolling-touch relative">
+import os
+import sys
+import traceback
+import aiohttp
+from http import HTTPStatus
+from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
+from botbuilder.schema import Activity, ActivityTypes
+from flask import Flask, request, Response
+
+# --- CONFIGURATION ---
+SAFI_API_URL = "https://safi.selfalignmentframework.com/api/bot/process_prompt"
+SAFI_BOT_SECRET = "${api_key}" # Your New Key
+SAFI_PERSONA = "safi" # Or use policy_id logic if supported
+
+APP_ID = os.environ.get("MicrosoftAppId", "")
+APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
+
+app = Flask(__name__)
+settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
+adapter = BotFrameworkAdapter(settings)
+
+class SafiTeamsBot:
+    async def on_turn(self, ctx: TurnContext):
+        if ctx.activity.type == ActivityTypes.message:
+            user_text = ctx.activity.text
+            # Prepare payload for Headless Governance Engine
+            payload = {
+                "message": user_text,
+                "user_id": ctx.activity.from_property.id,
+                "conversation_id": ctx.activity.conversation.id,
+                "persona": SAFI_PERSONA
+            }
+            headers = {"X-API-KEY": SAFI_BOT_SECRET, "Content-Type": "application/json"}
+            
+            # Show Typing
+            await ctx.send_activity(Activity(type=ActivityTypes.typing))
+            
+            # Call Safi
+            async with aiohttp.ClientSession() as session:
+                async with session.post(SAFI_API_URL, json=payload, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        await ctx.send_activity(data.get("finalOutput", "Error"))
+                    else:
+                        await ctx.send_activity(f"Governance Error: {resp.status}")
+
+bot = SafiTeamsBot()
+
+@app.route("/api/messages", methods=["POST"])
+def messages():
+    if "application/json" in request.headers["Content-Type"]:
+        body = request.json
+    else:
+        return Response(status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+
+    activity = Activity().deserialize(body)
+    auth_header = request.headers.get("Authorization", "")
+
+    async def aux_func(turn_context):
+        await bot.on_turn(turn_context)
+
+    try:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        task = adapter.process_activity(activity, auth_header, aux_func)
+        loop.run_until_complete(task)
+        return Response(status=HTTPStatus.OK)
+    except Exception as e:
+        traceback.print_exc()
+        return Response(status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+if __name__ == "__main__":
+    app.run(port=3978)
+</pre>
+            <button class="absolute top-2 right-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded shadow" 
+                onclick="navigator.clipboard.writeText(this.parentElement.querySelector('pre').innerText)">
+                Copy Code
+            </button>
             </div>
         </div>
         
