@@ -1263,8 +1263,6 @@ export function renderProfileDetailsModal(profile) {
     container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values));
     container.insertAdjacentHTML('beforeend', createModalSection('Rules (Non-Negotiable)', profile.will_rules));
 
-    // Scroll to top of modal content
-    container.scrollTop = 0;
 }
 
 // --- NEW: Governance Tab Rendering ---
@@ -1279,7 +1277,41 @@ export async function renderSettingsGovernanceTab() {
         const res = await api.fetchPolicies();
         if (!res.ok) throw new Error(res.error || "Failed to fetch policies");
 
-        const policies = res.policies || []; // Ensure array
+        const allPolicies = res.policies || []; // Ensure array
+
+        // Split Policies
+        const demoPolicies = allPolicies.filter(p => p.is_demo);
+        const myPolicies = allPolicies.filter(p => !p.is_demo);
+
+        const renderPolicyCard = (p, isReadOnly) => `
+            <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow mb-3">
+                <div class="flex justify-between items-start">
+                     <div>
+                         <div class="flex items-center gap-2">
+                            <h4 class="font-bold text-lg text-gray-900 dark:text-white">${p.name}</h4>
+                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold">DEMO</span>' : ''}
+                         </div>
+                         <p class="text-xs text-gray-500 font-mono mt-1 mb-3">ID: ${p.id}</p>
+                         <div class="flex gap-2">
+                             <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs rounded-full font-medium">
+                                ${(p.values_weights || []).length} Values
+                             </span>
+                             <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-xs rounded-full font-medium">
+                                ${(p.will_rules || []).length} Constraints
+                             </span>
+                         </div>
+                     </div>
+                     <div class="flex gap-3">
+                         <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
+                         <button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>
+                         ${!isReadOnly ? `
+                         <button class="text-sm text-red-500 hover:text-red-600 delete-policy-btn" data-id="${p.id}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                         </button>` : ''}
+                     </div>
+                </div>
+            </div>
+        `;
 
         container.innerHTML = `
             <div class="flex justify-between items-center mb-6">
@@ -1293,35 +1325,22 @@ export async function renderSettingsGovernanceTab() {
                 </button>
             </div>
 
-            <div class="space-y-4">
-                ${policies.length === 0 ? `
-                    <div class="p-8 text-center border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl">
-                        <p class="text-gray-500 mb-4">No policies defined yet.</p>
-                    </div>
-                ` : policies.map(p => `
-                    <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow">
-                        <div class="flex justify-between items-start">
-                             <div>
-                                 <h4 class="font-bold text-lg text-gray-900 dark:text-white">${p.name}</h4>
-                                 <p class="text-xs text-gray-500 font-mono mt-1 mb-3">ID: ${p.id}</p>
-                                 <div class="flex gap-2">
-                                     <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs rounded-full font-medium">
-                                        ${(p.values_weights || []).length} Values
-                                     </span>
-                                     <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-xs rounded-full font-medium">
-                                        ${(p.will_rules || []).length} Constraints
-                                     </span>
-                                 </div>
-                             </div>
-                             <div class="flex gap-3">
-                                 <button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>
-                                 <button class="text-sm text-red-500 hover:text-red-600 delete-policy-btn" data-id="${p.id}">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                 </button>
-                             </div>
+            <div class="space-y-8">
+                <!-- OFFICIAL POLICIES -->
+                <div>
+                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">Official Policies (Read Only)</h4>
+                    ${demoPolicies.length === 0 ? '<p class="text-sm text-gray-400 italic">No official policies available.</p>' : demoPolicies.map(p => renderPolicyCard(p, true)).join('')}
+                </div>
+
+                <!-- MY POLICIES -->
+                <div>
+                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">Custom Policies</h4>
+                     ${myPolicies.length === 0 ? `
+                        <div class="p-8 text-center border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl">
+                            <p class="text-gray-500 mb-4">No custom policies defined yet.</p>
                         </div>
-                    </div>
-                `).join('')}
+                    ` : myPolicies.map(p => renderPolicyCard(p, false)).join('')}
+                </div>
             </div>
         `;
 
@@ -1358,6 +1377,27 @@ export async function renderSettingsGovernanceTab() {
                     } catch (e) {
                         alert(e.message);
                     }
+                }
+            });
+        });
+
+        container.querySelectorAll('.view-policy-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const policy = allPolicies.find(p => p.id === btn.dataset.id);
+                if (policy) {
+                    // Reuse Profile Modal for displaying Policy Details
+                    const policyAsProfile = {
+                        name: policy.name,
+                        description: `**Policy ID:** ${policy.id}\n\nThis policy is ${policy.is_demo ? 'a **DEMO/OFFICIAL** policy' : 'a **CUSTOM** policy'}.`,
+                        worldview: policy.worldview,
+                        style: "N/A (Policies do not enforce style directly, only logic)",
+                        values: policy.values_weights,
+                        will_rules: policy.will_rules
+                    };
+                    renderProfileDetailsModal(policyAsProfile);
+                    // Open the modal
+                    const modal = document.getElementById('profile-details-modal');
+                    if (modal) modal.classList.remove('hidden');
                 }
             });
         });

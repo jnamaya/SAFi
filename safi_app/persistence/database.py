@@ -2,6 +2,7 @@
 import mysql.connector
 from mysql.connector import pooling
 import json
+import os
 import uuid
 import numpy as np
 from datetime import datetime, timezone
@@ -139,6 +140,57 @@ def init_db():
                 FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
             )
         ''')
+        
+        # --- MIGRATIONS ---
+        cursor.execute("SHOW COLUMNS FROM policies LIKE 'created_by'")
+        if not cursor.fetchone():
+             cursor.execute("ALTER TABLE policies ADD COLUMN created_by VARCHAR(255) DEFAULT NULL")
+             cursor.execute("ALTER TABLE policies ADD COLUMN is_demo BOOLEAN DEFAULT FALSE")
+             logging.info("Added 'created_by' and 'is_demo' columns to 'policies' table.")
+             
+        # --- SEED DEFAULT CONTOSO POLICY ---
+        # --- SEED / UPDATE DEFAULT CONTOSO POLICY ---
+        # Look for existing ID to update, or create new if missing
+        cursor.execute("SELECT id FROM policies WHERE is_demo = TRUE LIMIT 1")
+        row = cursor.fetchone()
+        
+        logging.info("Syncing Default Contoso Policy from JSON...")
+        
+        # Path to the JSON file
+        json_path = os.path.join(os.path.dirname(__file__), '..', 'core', 'governance', 'custom', 'contoso.json')
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                policy_data = json.load(f)
+            
+            # Map JSON keys to DB columns
+            demo_name = policy_data.get("name", "Contoso Global Standard")
+            demo_worldview = policy_data.get("global_worldview", "")
+            demo_rules = json.dumps(policy_data.get("global_will_rules", []))
+            demo_values = json.dumps(policy_data.get("global_values", []))
+
+            if row:
+                # UPDATE existing
+                demo_id = row[0]
+                cursor.execute("""
+                    UPDATE policies 
+                    SET name=%s, worldview=%s, will_rules=%s, values_weights=%s
+                    WHERE id=%s
+                """, (demo_name, demo_worldview, demo_rules, demo_values, demo_id))
+                logging.info(f"Updated existing demo policy: {demo_name}")
+            else:
+                # INSERT new
+                demo_id = str(uuid.uuid4())
+                cursor.execute("""
+                    INSERT INTO policies (id, name, worldview, will_rules, values_weights, is_demo)
+                    VALUES (%s, %s, %s, %s, %s, TRUE)
+                """, (demo_id, demo_name, demo_worldview, demo_rules, demo_values))
+                logging.info(f"Inserted new demo policy: {demo_name}")
+            
+        except FileNotFoundError:
+            logging.error(f"Could not find seeding file at {json_path}. Skipping default policy sync.")
+        except Exception as e:
+            logging.error(f"Error syncing default policy: {e}")
 
 
 
@@ -792,7 +844,7 @@ def upsert_external_conversation(conversation_id: str, user_id: str, title: str 
 # GOVERNANCE & POLICY MANAGEMENT
 # -------------------------------------------------------------------------
 
-def create_policy(name: str, worldview: str, will_rules: List[str], values: List[Dict], org_id: str = None) -> str:
+def create_policy(name: str, worldview: str, will_rules: List[str], values: List[Dict], org_id: str = None, created_by: str = None) -> str:
     """
     Creates a new Policy in the database.
     Returns: policy_id (str)
@@ -808,10 +860,10 @@ def create_policy(name: str, worldview: str, will_rules: List[str], values: List
     # in multi-tenant, org_id would be mandatory
     
     sql = """
-        INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """
-    cursor.execute(sql, (policy_id, org_id, name, worldview, will_json, values_json))
+    cursor.execute(sql, (policy_id, org_id, name, worldview, will_json, values_json, created_by))
     conn.commit()
     cursor.close()
     conn.close()
@@ -866,16 +918,25 @@ def get_policy(policy_id: str) -> Optional[Dict]:
             row['values_weights'] = json.loads(row['values_weights'])
     return row
 
-def list_policies(org_id: str = None) -> List[Dict]:
+def list_policies(org_id: str = None, user_id: str = None) -> List[Dict]:
     """
-    Lists policies. Ideally filtered by org_id.
+    Lists policies. Filtered by ownership or demo status.
     """
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
-    # For now, list all. In future, filter by org_id
-    sql = "SELECT * FROM policies ORDER BY created_at DESC"
-    cursor.execute(sql)
+    # List:
+    # 1. Demo policies (is_demo = TRUE)
+    # 2. Policies created by the user (created_by = user_id)
+    # 3. (Optional) Policies matching org (if we were strictly enforcing orgs)
+    
+    sql = """
+        SELECT * FROM policies 
+        WHERE is_demo = TRUE 
+           OR created_by = %s
+        ORDER BY is_demo DESC, created_at DESC
+    """
+    cursor.execute(sql, (user_id,))
     rows = cursor.fetchall()
     
     cursor.close()
