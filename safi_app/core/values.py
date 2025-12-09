@@ -134,7 +134,7 @@ def load_custom_persona(name: str) -> Optional[Dict[str, Any]]:
         return None
     return None
 
-def list_custom_personas(owner_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_custom_personas(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, Any]]:
     """
     Scans the custom directory and returns a list of minimal persona dicts.
     Filters by owner_id if provided.
@@ -149,33 +149,34 @@ def list_custom_personas(owner_id: Optional[str] = None) -> List[Dict[str, Any]]
                 data = json.load(f)
                 
                 # VISIBILITY LOGIC:
-                # 1. If 'created_by' is missing, it's public (Legacy or System).
-                # 2. If 'created_by' matches owner_id, it's mine -> Show.
-                # 3. If 'created_by' exists and mismatch -> Hide.
+                # 1. If include_all is True, show everything (Admin/Dashboard).
+                # 2. If 'created_by' is missing, it's public (Legacy or System).
+                # 3. If 'created_by' matches owner_id, it's mine -> Show.
+                # 4. If 'created_by' exists and mismatch -> Hide.
                 
-                creator = data.get("created_by")
-                
-                if creator and creator != owner_id:
-                    continue # Skip private agents of others
+                if not include_all:
+                    creator = data.get("created_by")
+                    if creator and creator != owner_id:
+                        continue # Skip private agents of others
 
                 results.append({
                     "key": file_path.stem,
                     "name": data.get("name", file_path.stem),
                     "description": data.get("description", ""),
                     "is_custom": True,
-                    "created_by": creator
+                    "created_by": data.get("created_by")
                 })
         except Exception:
             continue
     return results
 
 # 7. Public Accessors
-def list_profiles(owner_id: Optional[str] = None) -> List[Dict[str, str]]:
+def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, str]]:
     # Built-in Personas (Always visible)
     builtins = [{"key": key, "name": persona["name"], "is_custom": False, "created_by": None} for key, persona in PERSONAS.items()]
     
-    # Custom Personas (Filtered by owner)
-    customs = list_custom_personas(owner_id)
+    # Custom Personas (Filtered by owner or included all)
+    customs = list_custom_personas(owner_id, include_all=include_all)
     
     # Merge and sort
     all_profiles = builtins + customs

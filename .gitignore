@@ -47,6 +47,8 @@ Thumbs.db
 .vscode/
 # a simple dashboard created in streamit
 dashboard/
+safi_app/dashboard/
+/var/www/safi/safi_app/dashboard
 vector_store/
 tts_cache/
 
