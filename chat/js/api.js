@@ -12,7 +12,7 @@ import offlineManager from './offline-manager.js';
 const Cap = typeof window !== "undefined" ? window.Capacitor : null;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 
-console.log("SAFI API Loaded v2.1 (Plain Args Fix)");
+console.log("SAFI API Loaded v2.3 (Fixes 405 & Verbose AI)");
 
 // Use the fixed host for Capacitor builds
 const HOST = "https://safi.selfalignmentframework.com";
@@ -26,7 +26,7 @@ export const urls = {
     MOBILE_LOGIN: j("/api/auth/google/mobile"),
     LOGOUT: j('/api/logout'),
     ME: j('/api/me'),
-    PROFILES: j('/api/profiles'),
+    PROFILES: j('/api/agents/all'), // DB-backed list
     MODELS: j('/api/models'),
     UPDATE_MODELS: j('/api/me/models'),
     UPDATE_PROFILE: j('/api/me/profile'),
@@ -35,17 +35,12 @@ export const urls = {
     AUDIT: j('/api/audit_result'),
     DELETE_ACCOUNT: j('/api/me/delete'),
     TTS: j('/api/tts_audio'),
-    // --- NEW: API endpoints for custom agents ---
     MY_PROFILE: j('/api/me/profile'),
     AGENTS: j('/api/agents'),
-    RUBRIC_GEN: j('/api/generate/rubric/'), // Note: Trailing slash maintained for compatibility
-    // --- GOVERNANCE ---
+    RUBRIC_GEN: j('/api/generate/rubric'), // Fixed: No trailing slash
     POLICIES: j('/api/policies'),
-    // --- END NEW ---
-    // --- END NEW ---
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
-    // NEW URL for Pin Toggle
     PIN_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/pin`,
 };
 
@@ -142,7 +137,6 @@ export const renameConversation = (id, title) =>
 export const deleteConversation = (id) =>
     httpJSON(urls.CONVERSATION(id), 'DELETE', {});
 
-// NEW API function for Pin Toggle
 export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
 
@@ -156,18 +150,16 @@ export const fetchAuditResult = (messageId) =>
 export const deleteAccount = () =>
     httpJSON(urls.DELETE_ACCOUNT, 'DELETE', {});
 
-// TTS audio does not need offline queue/cache, but it DOES need auth.
+// TTS audio
 export const fetchTTSAudio = async (text) => {
-    // Create auth headers
     const headers = await createHeaders();
-    // Set body
     const body = JSON.stringify({ text });
 
     const response = await fetch(urls.TTS, {
         method: 'POST',
-        headers: headers, // Use the auth headers
+        headers: headers,
         body: body,
-        credentials: 'include' // Match other requests
+        credentials: 'include'
     });
 
     if (!response.ok) {
@@ -177,35 +169,27 @@ export const fetchTTSAudio = async (text) => {
 };
 
 // --- NEW: API functions for "My Profile" tab ---
-
-/**
- * Fetches the user's learned profile from the backend.
- * @returns {Promise<Object>} A promise that resolves to the user's profile object.
- */
 export async function fetchUserProfileMemory() {
     return httpGet(urls.MY_PROFILE);
 }
 
-/**
- * Saves the user's (potentially edited) profile to the backend.
- * @param {Object} profileData - The complete profile object to save.
- * @returns {Promise<Object>} A promise that resolves to the saved profile.
- */
 export async function updateUserProfileMemory(profileData) {
     return httpJSON(urls.MY_PROFILE, 'POST', profileData);
 }
-// --- END NEW ---
 
 // --- NEW: API functions for Custom Agents ---
 export async function saveAgent(agentData) {
-    return httpJSON(urls.AGENTS, 'POST', agentData);
+    if (agentData.is_update_mode) {
+        return httpJSON(urls.AGENTS, 'PUT', agentData);
+    } else {
+        return httpJSON(urls.AGENTS, 'POST', agentData);
+    }
 }
 
 export async function getAgent(key) {
     return httpGet(`${urls.AGENTS}/${key}`);
 }
 
-// NEW: Delete Agent
 export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
@@ -217,16 +201,13 @@ export async function generateRubric(valueName, context) {
 // --- GOVERNANCE API Functions ---
 
 export async function fetchPolicies() {
-    // Return policies with cache busting to ensure updates are seen immediately
     return httpGet(`${urls.POLICIES}?_t=${Date.now()}`);
 }
 
 export async function savePolicy(policyData) {
     if (policyData.policy_id) {
-        // Update
         return httpJSON(`${urls.POLICIES}/${policyData.policy_id}`, 'PUT', policyData);
     } else {
-        // Create
         return httpJSON(urls.POLICIES, 'POST', policyData);
     }
 }
@@ -246,4 +227,3 @@ export async function generateKey(policyId, label = "Default") {
 export async function generatePolicyContent(type, context, extraData = {}) {
     return httpJSON(`${urls.POLICIES}/ai/generate`, 'POST', { type, context, ...extraData });
 }
-// --- END NEW ---

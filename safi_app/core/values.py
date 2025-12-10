@@ -1,15 +1,13 @@
 from typing import Dict, Any, List, Optional
 import copy
 import json
-import os
 from pathlib import Path
 
-# 1. Import Governance (Updated for Contoso structure)
-# 1. Import Governance (Updated for Contoso structure)
+# 1. Import Governance
 from .governance.contoso.policy import CONTOSO_GLOBAL_POLICY
 from ..persistence import database as db
 
-# 2. Import Personas (Updated for Contoso Admin)
+# 2. Import Personas
 from .personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
 from .personas.fiduciary import THE_FIDUCIARY_PERSONA
 from .personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
@@ -21,10 +19,7 @@ from .personas.negotiator import THE_NEGOTIATOR_PERSONA
 
 # 3. Define the Persona Registry
 PERSONAS: Dict[str, Dict[str, Any]] = {
-    # The Contoso Persona (Governed)
     "contoso_admin": THE_CONTOSO_ADMIN_PERSONA,
-    
-    # The Independent Personas (Unchanged)
     "fiduciary": THE_FIDUCIARY_PERSONA,
     "health_navigator": THE_HEALTH_NAVIGATOR_PERSONA,
     "bible_scholar": THE_BIBLE_SCHOLAR_PERSONA,
@@ -34,13 +29,12 @@ PERSONAS: Dict[str, Dict[str, Any]] = {
     "negotiator": THE_NEGOTIATOR_PERSONA,
 }
 
-# 4. Define Governance Mapping
-# Maps the specific persona key to the global policy
+# 4. Governance Mapping
 GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {
     "contoso_admin": CONTOSO_GLOBAL_POLICY,
 }
 
-# 5. Define the Compiler Logic
+# 5. Compiler Logic
 def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> Dict[str, Any]:
     """
     Applies the Governance Layer to a base persona.
@@ -50,7 +44,7 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
     # A. Merge Worldview (Gov on top)
     final_profile["worldview"] = (
         f"--- Organizational Policy ---\n"
-        f"{governance['global_worldview']}\n"
+        f"{governance.get('global_worldview', '')}\n"
         f"--- SPECIFIC ROLE ---\n"
         f"{final_profile.get('worldview', '')}"
     )
@@ -65,127 +59,86 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
     global_values = copy.deepcopy(governance.get("global_values", []))
     agent_values = final_profile.get("values", [])
     
-    # Determine Targets
+    # Target Ratios
     if not agent_values:
-        # If agent has no values, Global takes 100%
-        g_target = 1.0
-        a_target = 0.0
+        g_target, a_target = 1.0, 0.0
     elif not global_values:
-         # If no global policy, Agent takes 100%
-         g_target = 0.0
-         a_target = 1.0
+         g_target, a_target = 0.0, 1.0
     else:
-        # Standard Split
-        g_target = 0.40
-        a_target = 0.60
+        g_target, a_target = 0.40, 0.60
     
-    # 1. Normalize Global Values
+    # Normalize
     g_sum = sum(v.get("weight", 0) for v in global_values)
     if g_sum > 0:
         factor = g_target / g_sum
-        for v in global_values:
-            v["weight"] = round(v.get("weight", 0) * factor, 3)
+        for v in global_values: v["weight"] = round(v.get("weight", 0) * factor, 3)
     
-    # 2. Normalize Agent Values
     a_sum = sum(v.get("weight", 0) for v in agent_values)
     if a_sum > 0:
         factor = a_target / a_sum
-        for v in agent_values:
-            v["weight"] = round(v.get("weight", 0) * factor, 3)
+        for v in agent_values: v["weight"] = round(v.get("weight", 0) * factor, 3)
     
-    # Combine
     final_profile["values"] = global_values + agent_values
-    
     return final_profile
 
-# 6. JSON Loading Helpers
-
-CUSTOM_PERSONAS_DIR = Path(__file__).parent / "personas" / "custom"
+# 6. Loading Helpers (DB UPDATED)
 
 def load_custom_persona(name: str) -> Optional[Dict[str, Any]]:
     """
-    Attempts to load a persona from a JSON file in core/personas/custom/.
+    Loads a custom persona from the Database.
+    Replaces old file-based logic.
     """
     try:
-        if not CUSTOM_PERSONAS_DIR.exists():
-            return None
-            
-        # Support both 'my_agent' and 'my_agent.json' inputs
-        clean_name = name.replace(".json", "")
-        file_path = CUSTOM_PERSONAS_DIR / f"{clean_name}.json"
+        # Normalize key
+        clean_name = name.lower().strip().replace(" ", "_")
+        clean_name = "".join(c for c in clean_name if c.isalnum() or c == '_')
         
-        if file_path.exists():
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # Ensure the key matches the filename
-                data["key"] = clean_name
-                
-                # FIX for SpiritIntegrator compatibility:
-                # SpiritIntegrator expects keys 'value' and 'weight', but Frontend sends 'name' and 'weight'.
-                # We map 'name' -> 'value' if missing.
-                if "values" in data and isinstance(data["values"], list):
-                    for v in data["values"]:
-                        if "name" in v and "value" not in v:
-                            v["value"] = v["name"]
-                
-                return data
+        # Fetch from DB
+        agent = db.get_agent(clean_name)
+        if agent:
+            # Ensure critical keys exist
+            if "values" not in agent: agent["values"] = []
+            if "will_rules" not in agent: agent["will_rules"] = []
+            
+            # --- COMPATIBILITY FIX ---
+            # Map 'name' -> 'value' for the core engine
+            if isinstance(agent["values"], list):
+                for v in agent["values"]:
+                    if "name" in v and "value" not in v:
+                        v["value"] = v["name"]
+            
+            return agent
+            
     except Exception as e:
-        print(f"Error loading custom persona {name}: {e}")
+        print(f"Error loading custom persona {name} from DB: {e}")
         return None
     return None
 
 def list_custom_personas(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, Any]]:
     """
-    Scans the custom directory and returns a list of minimal persona dicts.
-    Filters by owner_id if provided.
+    Lists personas from the Database.
     """
-    results = []
-    if not CUSTOM_PERSONAS_DIR.exists():
-        return results
-
-    for file_path in CUSTOM_PERSONAS_DIR.glob("*.json"):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-                # VISIBILITY LOGIC:
-                # 1. If include_all is True, show everything (Admin/Dashboard).
-                # 2. If 'created_by' is missing, it's public (Legacy or System).
-                # 3. If 'created_by' matches owner_id, it's mine -> Show.
-                # 4. If 'created_by' exists and mismatch -> Hide.
-                
-                if not include_all:
-                    creator = data.get("created_by")
-                    if creator and creator != owner_id:
-                        continue # Skip private agents of others
-
-                results.append({
-                    "key": file_path.stem,
-                    "name": data.get("name", file_path.stem),
-                    "description": data.get("description", ""),
-                    "is_custom": True,
-                    "created_by": data.get("created_by")
-                })
-        except Exception:
-            continue
-    return results
+    try:
+        # DB List function already filters by owner_id
+        return db.list_agents(owner_id)
+    except Exception as e:
+        print(f"Error listing custom personas: {e}")
+        return []
 
 # 7. Public Accessors
 def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, str]]:
-    # Built-in Personas (Always visible)
+    # Built-in Personas
     builtins = [{"key": key, "name": persona["name"], "is_custom": False, "created_by": None} for key, persona in PERSONAS.items()]
     
-    # Custom Personas (Filtered by owner or included all)
+    # Custom Personas (From DB)
     customs = list_custom_personas(owner_id, include_all=include_all)
     
-    # Merge and sort
     all_profiles = builtins + customs
     return sorted(all_profiles, key=lambda x: x["name"])
 
 def get_profile(name: str) -> Dict[str, Any]:
     """
-    Retrieves a persona. 
-    Checks for a linked Policy ID or the GOVERNANCE_MAP.
+    Retrieves a persona. Checks DB first, then built-ins.
     """
     key = (name or "").lower().strip()
     
@@ -193,29 +146,25 @@ def get_profile(name: str) -> Dict[str, Any]:
     if key in PERSONAS:
         raw_persona = PERSONAS[key]
     else:
-        # 2. Check Customs
+        # 2. Check DB
         raw_persona = load_custom_persona(key)
         if not raw_persona:
-            # Fallback checks or error
-            available_keys = [p['key'] for p in list_profiles()]
-            # Soft error or default to avoid crashes if user deleted a file
             raise KeyError(f"Unknown persona '{name}'.")
 
-    # --- CONDITIONAL GOVERNANCE LOGIC ---
+    # --- GOVERNANCE LOGIC ---
     
-    # A. Dynamic Policy from DB (New Way)
+    # A. Dynamic Policy from DB
     policy_id = raw_persona.get("policy_id")
     if policy_id and policy_id != "standalone":
         try:
             db_policy = db.get_policy(policy_id)
             if db_policy:
-                # Map DB Policy to assemble_agent format
                 gov_dict = {
                     "global_worldview": db_policy.get("worldview", ""),
                     "global_will_rules": db_policy.get("will_rules", []),
                     "global_values": db_policy.get("values_weights", [])
                 }
-                # Fix field names for DB values if needed (name vs value)
+                # Fix field names for DB values
                 for v in gov_dict["global_values"]:
                      if "name" in v and "value" not in v:
                          v["value"] = v["name"]
@@ -223,11 +172,9 @@ def get_profile(name: str) -> Dict[str, Any]:
                 return assemble_agent(raw_persona, gov_dict)
         except Exception as e:
             print(f"Error applying policy {policy_id}: {e}")
-            # Fall through to raw persona or Error? For now fall through.
 
-    # B. Legacy Hardcoded Map (Old Way)
+    # B. Legacy Hardcoded Map
     if key in GOVERNANCE_MAP:
         return assemble_agent(raw_persona, GOVERNANCE_MAP[key])
     
-    # C. Standalone / No Governance
     return raw_persona

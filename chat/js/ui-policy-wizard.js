@@ -25,7 +25,7 @@ function getInitialState() {
 // Debounce helper for smoother inputs
 function debounce(func, wait) {
     let timeout;
-    return function(...args) {
+    return function (...args) {
         const context = this;
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(context, args), wait);
@@ -36,7 +36,7 @@ function debounce(func, wait) {
 export function openPolicyWizard(existingPolicy = null) {
     currentStep = 1;
     generatedCredentials = null;
-    
+
     // 1. Check for Saved Draft
     const savedDraft = localStorage.getItem(STORAGE_KEY);
     let useDraft = false;
@@ -99,10 +99,10 @@ export function openPolicyWizard(existingPolicy = null) {
 function closeWizard(skipReload = false) {
     const modal = document.getElementById('policy-wizard-modal');
     if (modal) modal.classList.add('hidden');
-    
+
     // Note: We do NOT clear the draft here implicitly. 
     // We keep it in case accidental close. We clear it on SUCCESS.
-    
+
     if (generatedCredentials && !skipReload) {
         window.location.reload();
     }
@@ -192,7 +192,16 @@ function saveDraft() {
         step: currentStep,
         timestamp: Date.now()
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+            console.warn("LocalStorage full, cannot save draft.");
+            ui.showToast("Draft not saved (Storage Full)", "warning");
+        } else {
+            console.error(e);
+        }
+    }
 }
 
 async function nextStep() {
@@ -210,9 +219,9 @@ async function nextStep() {
 
 function prevStep() {
     // Ensure we capture current inputs before going back
-    saveCurrentStepData(); 
+    saveCurrentStepData();
     saveDraft();
-    
+
     if (currentStep > 1) {
         currentStep--;
         renderStep(currentStep);
@@ -365,11 +374,18 @@ function renderConstitutionStep(container) {
             const ctx = policyData.context || policyData.name || "General Organization";
             const res = await api.generatePolicyContent('values', ctx);
             if (res.ok && res.content) {
-                let cleaned = res.content.trim();
-                if (cleaned.startsWith('{') && !cleaned.startsWith('[')) {
-                    cleaned = `[${cleaned}]`;
+                let json;
+                if (typeof res.content === 'string') {
+                    // Legacy/Fallback string path
+                    let cleaned = res.content.trim();
+                    if (cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+                        cleaned = `[${cleaned}]`;
+                    }
+                    json = JSON.parse(cleaned);
+                } else {
+                    // New Object path
+                    json = res.content;
                 }
-                const json = JSON.parse(cleaned);
 
                 policyData.values = json.map(v => ({ ...v, weight: v.weight || 0.2 }));
                 renderValuesList();
@@ -404,8 +420,8 @@ function renderValuesList() {
         // Safe access to rubric structure
         let rubricText = "";
         let hasRubric = false;
-        
-        if(v.rubric) {
+
+        if (v.rubric) {
             if (v.rubric.scoring_guide && Array.isArray(v.rubric.scoring_guide)) {
                 // New Format
                 hasRubric = v.rubric.scoring_guide.length > 0;
@@ -415,17 +431,17 @@ function renderValuesList() {
                 hasRubric = v.rubric.length > 0;
                 rubricText = JSON.stringify(v.rubric, null, 2);
             } else {
-                 rubricText = JSON.stringify(v.rubric, null, 2);
+                rubricText = JSON.stringify(v.rubric, null, 2);
             }
         }
 
-        const rubricBadge = hasRubric 
+        const rubricBadge = hasRubric
             ? `<span class="text-green-600 flex items-center gap-1 text-[10px] font-bold">✅ Rubric Active</span>`
             : `<span class="text-yellow-600 text-[10px] font-bold">⚠️ No Rubric</span>`;
 
         const card = document.createElement('div');
         card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg p-3 shadow-sm hover:border-blue-300 transition-colors group";
-        
+
         // Use unique IDs for inputs to avoid reading wrong element later
         const nameId = `pw-val-name-${idx}`;
         const descId = `pw-val-desc-${idx}`;
@@ -462,7 +478,7 @@ function renderValuesList() {
             </div>
         `;
         list.appendChild(card);
-        
+
         // Add Debounced Listeners directly to elements
         const nameInput = card.querySelector(`#${nameId}`);
         const descInput = card.querySelector(`#${descId}`);
@@ -474,7 +490,7 @@ function renderValuesList() {
 
     window.removePolicyValue = (idx) => {
         // Read current state before deleting to preserve unsaved edits in other fields
-        saveCurrentStepData(); 
+        saveCurrentStepData();
         policyData.values.splice(idx, 1);
         renderValuesList();
     };
@@ -549,12 +565,17 @@ function renderRulesStep(container) {
             const res = await api.generatePolicyContent('rules', policyData.context || "General Organization");
             if (res.ok && res.content) {
                 try {
-                    const json = JSON.parse(res.content);
+                    let json;
+                    if (typeof res.content === 'string') {
+                        json = JSON.parse(res.content);
+                    } else {
+                        json = res.content;
+                    }
                     if (Array.isArray(json)) {
                         // Transform rules to match "Action-First" style (Reject, Require, Flag)
                         const processedRules = json.map(r => {
                             let clean = r.trim();
-                            
+
                             // 1. Remove common fluff prefixes
                             clean = clean.replace(/^(The AI should|The AI must|The agent should|The agent must|Must|Will|Always)\s+/i, "");
 
@@ -562,19 +583,19 @@ function renderRulesStep(container) {
                             if (clean.match(/^(Refuse|Decline|Deny)\s+to\s+/i)) {
                                 clean = clean.replace(/^(Refuse|Decline|Deny)\s+to\s+/i, "Reject requests to ");
                             }
-                             else if (clean.match(/^Never\s+/i)) {
+                            else if (clean.match(/^Never\s+/i)) {
                                 clean = clean.replace(/^Never\s+/i, "Reject requests to ");
                             }
 
                             // 3. Fallback: If it doesn't start with a strong action verb, assume it's a negative constraint
                             if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) {
-                                return "Reject " + clean; 
+                                return "Reject " + clean;
                             }
 
                             // Capitalize first letter
                             return clean.charAt(0).toUpperCase() + clean.slice(1);
                         });
-                        
+
                         policyData.will_rules = [...new Set([...policyData.will_rules, ...processedRules])]; // Merge Unique
                         renderRulesList();
                     }
@@ -601,7 +622,7 @@ function renderRulesList() {
     policyData.will_rules.forEach((rule, idx) => {
         const item = document.createElement('li');
         item.className = "flex justify-between items-center p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg shadow-sm group hover:border-red-300 transition-colors";
-        
+
         // Editable Input
         item.innerHTML = `
             <div class="flex-1 flex items-center gap-3">
@@ -842,7 +863,7 @@ function validateCurrentStep() {
             return false;
         }
     }
-    
+
     // Warn if Step 3 (Rules) is empty, but don't block
     if (currentStep === 3) {
         if (policyData.will_rules.length === 0) {
@@ -851,30 +872,30 @@ function validateCurrentStep() {
             }
         }
     }
-    
+
     return true;
 }
 
 function saveCurrentStepData() {
     // Read directly from DOM to ensure we capture latest keystrokes (better than onchange state)
-    
+
     if (currentStep === 1) {
         const nameEl = document.getElementById('pw-name');
         const ctxEl = document.getElementById('pw-context');
         if (nameEl) policyData.name = nameEl.value.trim();
         if (ctxEl) policyData.context = ctxEl.value.trim();
     }
-    
+
     if (currentStep === 2) {
         const wvEl = document.getElementById('pw-worldview');
         if (wvEl) policyData.worldview = wvEl.value.trim();
-        
+
         // Sync Values from Cards
         policyData.values.forEach((v, idx) => {
             const nameEl = document.getElementById(`pw-val-name-${idx}`);
             const descEl = document.getElementById(`pw-val-desc-${idx}`);
             const rubricEl = document.getElementById(`pw-val-rubric-${idx}`);
-            
+
             if (nameEl) v.name = nameEl.value;
             if (descEl) v.description = descEl.value;
             if (rubricEl) {
@@ -888,7 +909,7 @@ function saveCurrentStepData() {
             }
         });
     }
-    
+
     // Step 3 (Rules) updates immediately via list methods, no bulk read needed
 }
 
@@ -910,7 +931,7 @@ async function submitPolicy() {
             const cleanView = payload.worldview.replace(/<!-- CONTEXT: .*? -->\n?/, "");
             payload.worldview = `<!-- CONTEXT: ${payload.context} -->\n${cleanView}`;
         }
-        
+
         // We also send context as a distinct field for backends that DO support it
         payload.context = policyData.context;
 
@@ -930,7 +951,7 @@ async function submitPolicy() {
             policy_id: policyId,
             api_key: apiKey
         };
-        
+
         // Clear Draft on Success
         localStorage.removeItem(STORAGE_KEY);
 

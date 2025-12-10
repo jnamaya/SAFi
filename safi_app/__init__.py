@@ -85,12 +85,14 @@ def create_app():
     from .api.profile_api_routes import profile_bp
     from .api.agent_api_routes import agent_api_bp
     from .api.policy_api_routes import policy_api_bp
+    from .api.organizations import organizations_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
     app.register_blueprint(agent_api_bp, url_prefix='/api')
     app.register_blueprint(policy_api_bp, url_prefix='/api')
+    app.register_blueprint(organizations_bp, url_prefix='/api')
 
     # Catch-all route to serve the Single Page Application (SPA) frontend
     @app.route('/', defaults={'path': ''})
