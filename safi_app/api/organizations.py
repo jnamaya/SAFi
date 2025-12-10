@@ -2,21 +2,24 @@ from flask import Blueprint, jsonify, request, current_app, session
 import uuid
 import dns.resolver
 from ..persistence import database as db
+from ..core.rbac import require_role, check_permission, get_current_org_id
 
 organizations_bp = Blueprint('organizations', __name__)
 
 @organizations_bp.route('/organizations/domain/start', methods=['POST'])
+@require_role('admin')
 def start_domain_verification():
     """
     [POST /api/organizations/domain/start]
     Generates a verification token for the given domain.
     """
-    if not session.get('user'):
-        return jsonify({"error": "Unauthorized"}), 401
-        
     data = request.json or {}
     org_id = data.get('org_id')
     domain = data.get('domain')
+    
+    # Security check: Ensure user belongs to this org
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
     
     if not org_id or not domain:
         return jsonify({"error": "Missing org_id or domain"}), 400
@@ -36,16 +39,17 @@ def start_domain_verification():
         return jsonify({"error": "Internal Server Error"}), 500
 
 @organizations_bp.route('/organizations/domain/verify', methods=['POST'])
+@require_role('admin')
 def verify_domain_dns():
     """
     [POST /api/organizations/domain/verify]
     Checks DNS TXT records for the verification token.
     """
-    if not session.get('user'):
-        return jsonify({"error": "Unauthorized"}), 401
-
     data = request.json or {}
     org_id = data.get('org_id')
+    
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
     
     if not org_id:
         return jsonify({"error": "Missing org_id"}), 400
@@ -86,6 +90,8 @@ def verify_domain_dns():
         return jsonify({"error": f"DNS Lookup Failed: {str(e)}"}), 500
 
 @organizations_bp.route('/organizations', methods=['POST'])
+# No Role required strictly, but usually only authenticated users can create orgs
+# If we want to limit org creation, we can add a check. For now, any user can create.
 def create_organization():
     """
     [POST /api/organizations]
@@ -102,6 +108,10 @@ def create_organization():
         
     try:
         result = db.create_organization_atomic(name, user_id)
+        
+        # Determine logic for session update? 
+        # Ideally the user's generic session should update, but for now we just return ID
+        
         return jsonify({
             "status": "created", 
             "id": result['org_id'], 
@@ -113,8 +123,11 @@ def create_organization():
         return jsonify({"error": str(e)}), 500
 
 @organizations_bp.route('/organizations/<org_id>/policy', methods=['POST'])
+@require_role('admin')
 def update_organization_policy(org_id):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
     data = request.json or {}
     policy_id = data.get('policy_id') or None
     try:
@@ -127,6 +140,12 @@ def update_organization_policy(org_id):
 def get_my_organization():
     user = session.get('user')
     if not user or not user.get('email'): return jsonify({"organization": None})
+    
+    # FIX: Prefer DB org_id over email domain if available
+    if user.get('org_id'):
+       org = db.get_organization(user['org_id'])
+       return jsonify({"organization": org})
+       
     try:
         domain = user['email'].split('@')[-1].lower()
         org = db.get_organization_by_domain(domain)
