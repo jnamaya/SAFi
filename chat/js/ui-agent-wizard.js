@@ -13,7 +13,8 @@ let agentData = {
     style: "", // Communication Style
     values: [],
     rules: [],
-    policy_id: "standalone" // Governance Policy
+    policy_id: "standalone", // Governance Policy
+    is_update_mode: false // Flag for Create vs Update
 };
 
 // --- MAIN ENTRY POINT ---
@@ -33,7 +34,8 @@ export function openAgentWizard(existingAgent = null) {
             style: existingAgent.style || "",
             values: existingAgent.values || [],
             rules: existingAgent.will_rules || [],
-            policy_id: existingAgent.policy_id || "standalone"
+            policy_id: existingAgent.policy_id || "standalone",
+            is_update_mode: true // Explicitly set update mode
         };
         if (existingAgent.worldview && !agentData.instructions) {
             agentData.instructions = existingAgent.worldview;
@@ -49,7 +51,8 @@ export function openAgentWizard(existingAgent = null) {
             style: "",
             values: [],
             rules: [],
-            policy_id: "standalone"
+            policy_id: "standalone",
+            is_update_mode: false // Explicitly set create mode
         };
     }
 
@@ -696,6 +699,7 @@ function saveCurrentStepData() {
         // Generate key ONLY if it doesn't exist (Create Mode)
         if (!agentData.key) {
             agentData.key = agentData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            agentData.is_update_mode = false; // Ensure update mode is off for new keys
         }
     }
     if (currentStep === 2) {
@@ -706,7 +710,7 @@ function saveCurrentStepData() {
 
 async function finishWizard() {
     const btn = document.getElementById('wizard-next-btn');
-    const isEdit = !!agentData.key;
+    const isEdit = !!agentData.key && agentData.is_update_mode;
     btn.innerHTML = isEdit ? "Saving..." : "Creating Agent...";
     btn.disabled = true;
 
@@ -721,7 +725,8 @@ async function finishWizard() {
             values: agentData.values,
             will_rules: agentData.rules,
             policy_id: agentData.policy_id,
-            is_custom: true
+            is_custom: true,
+            is_update_mode: agentData.is_update_mode // PASS THE FLAG TO API
         };
 
         await api.saveAgent(payload);

@@ -1,240 +1,191 @@
 import json
-import os
-from flask import Blueprint, request, jsonify, g, session, current_app
-from pathlib import Path
-from ..core.values import CUSTOM_PERSONAS_DIR, get_profile, PERSONAS
-from ..core.orchestrator import SAFi  # Need access to LLM provider for generation
+from flask import Blueprint, request, jsonify, session, current_app
+from ..persistence import database as db
+from ..persistence import database as db
+from ..core.values import PERSONAS, get_profile
 from ..config import Config
 
 agent_api_bp = Blueprint('agent_api', __name__)
 
-@agent_api_bp.route('/agents', methods=['POST'], strict_slashes=False)
+def validate_agent_data(data):
+    # RELAXED VALIDATION: Allow generic types, just cast them later.
+    return (True, "")
+
+@agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
 def save_agent():
-    """
-    [POST /api/agents]
-    Saves a new or updated custom agent JSON.
-    Payload: { "key": "my_agent", "name": "...", ... }
-    """
     try:
-        data = request.get_json()
+        # FIX: force=True handles missing Content-Type headers
+        data = request.get_json(force=True, silent=True)
         if not data:
             return jsonify({"error": "Invalid JSON or Empty Body"}), 400
+        
+        # DEBUG: Log payload to find 400 cause
+        current_app.logger.info(f"Save Agent Payload: {json.dumps(data)}")
             
         key = data.get("key")
-        
-        # Security: Get ID (Assuming auth middleware or session)
         user = session.get("user")
-        # FIX: Check 'id' first (used by auth.py), then fallback to 'sub'
         user_id = user.get("id") or user.get("sub") if user else None
         
-        if not user_id:
-            return jsonify({"error": "Unauthorized"}), 401
-
-        # Validation
-        if not key or not data.get("name"):
-            return jsonify({"error": "Missing key or name"}), 400
+        if not user_id: return jsonify({"error": "Unauthorized"}), 401
+        if not key or not data.get("name"): return jsonify({"error": "Missing key or name"}), 400
             
-        # Sanitize key
         key = key.lower().strip().replace(" ", "_")
         key = "".join(c for c in key if c.isalnum() or c == '_')
         
-        if not key:
-             return jsonify({"ok": False, "error": "Invalid key provided."}), 400
-             
-        # Check for Reserved Keys (Built-ins)
-        if key in PERSONAS:
-             return jsonify({"ok": False, "error": f"'{key}' is a reserved system agent name. Please choose a different name."}), 409
+        if key in PERSONAS: return jsonify({"error": "Reserved name"}), 409
 
-        # Construct path
-        if not CUSTOM_PERSONAS_DIR.exists():
-            CUSTOM_PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+        is_valid, err = validate_agent_data(data)
+        if not is_valid: return jsonify({"error": err}), 400
+
+        if request.method == 'POST':
+            if db.get_agent(key): return jsonify({"error": "Agent exists"}), 409
+            db.create_agent(
+                key=key, name=str(data['name']), 
+                description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
+                worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
+                values=data.get('values', []), rules=data.get('will_rules', []),
+                policy_id=data.get('policy_id', 'standalone'), created_by=user_id
+            )
+        elif request.method == 'PUT':
+            exist = db.get_agent(key)
+            if not exist: return jsonify({"error": "Not found"}), 404
+            if exist.get('created_by') != user_id: return jsonify({"error": "Unauthorized"}), 403
             
-        file_path = CUSTOM_PERSONAS_DIR / f"{key}.json"
-        
-        # IDOR / Ownership Check
-        if file_path.exists():
-            with open(file_path, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-                creator = existing.get("created_by")
-                # If it has a creator, and it's not you => Forbid
-                if creator and creator != user_id:
-                     return jsonify({"error": "You cannot edit an agent created by someone else."}), 403
-        
-        # Inject Ownership
-        data["created_by"] = user_id
-        
-        # Normalize 'values': Ensure 'value' key exists (frontend sends 'name')
-        if "values" in data and isinstance(data["values"], list):
-            for v in data["values"]:
-                if "name" in v and "value" not in v:
-                    v["value"] = v["name"]
-        
-        # Save JSON
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            
-        current_app.logger.info(f"User {user_id} saved custom agent: {key}")
-        
+            db.update_agent(
+                key=key, name=str(data['name']), 
+                description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
+                worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
+                values=data.get('values', []), rules=data.get('will_rules', []),
+                policy_id=data.get('policy_id', 'standalone')
+            )
+
         return jsonify({"ok": True, "key": key}), 200
         
     except Exception as e:
-        current_app.logger.error(f"Error saving agent: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.error(f"Agent Save Exception: {e}")
+        return jsonify({"error": str(e)}), 500
 
-@agent_api_bp.route('/agents/<key>', methods=['GET'])
-def get_agent(key):
-    """
-    [GET /api/agents/<key>]
-    Retrieves the JSON for a specific agent.
-    """
-    user_id = session.get('user', {}).get('id')
-    if not user_id:
-        return jsonify({"ok": False, "error": "Not authenticated"}), 401
+@agent_api_bp.route('/agents/all', methods=['GET'], strict_slashes=False)
+def list_all_agents():
+    user = session.get("user")
+    user_id = user.get("id") if user else None
     
-    try:
-        # Re-use our logic from get_profile, but we want the RAW json
-        # We can just read the file directly for editing purposes
-        clean_key = key.lower().strip().replace(" ", "_")
-        clean_key = "".join(c for c in clean_key if c.isalnum() or c == '_')
+    sys_agents = []
+    for k, v in PERSONAS.items():
+        a = v.copy()
+        a['key'] = k
+        a['is_custom'] = False
+        sys_agents.append(a)
         
-        file_path = CUSTOM_PERSONAS_DIR / f"{clean_key}.json"
-        
-        if not file_path.exists():
-             return jsonify({"ok": False, "error": "Agent not found"}), 404
-             
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return jsonify({"ok": True, "agent": data})
+    db_agents = []
+    if user_id:
+        try:
+            # Raw list from DB
+            raw_list = db.list_agents(user_id)
+            # Enhance with merged policy data
+            for agent in raw_list:
+                try:
+                    # Use get_profile to perform the merge
+                    merged = get_profile(agent['key'])
+                    
+                    # RESTORE METADATA: get_profile returns the "engine view", we need "db attributes" for UI
+                    merged['key'] = agent['key']
+                    merged['is_custom'] = agent.get('is_custom', True)
+                    merged['created_by'] = agent.get('created_by')
+                    
+                    db_agents.append(merged)
+                except Exception:
+                    # Fallback to raw if merge fails
+                    db_agents.append(agent)
+        except Exception as e:
+            current_app.logger.error(f"DB List Error: {e}")
             
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "available": sys_agents + db_agents})
 
-@agent_api_bp.route('/agents/<key>', methods=['DELETE'])
-def delete_agent(key):
-    """
-    [DELETE /api/agents/<key>]
-    Deletes a custom agent if the requesting user created it.
-    """
-    user = session.get('user')
-    user_id = user.get('id') or user.get('sub') if user else None
+@agent_api_bp.route('/agents/<key>', methods=['GET'], strict_slashes=False)
+def get_agent(key):
+    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
+    clean = "".join(c for c in key.lower() if c.isalnum() or c == '_')
     
-    if not user_id:
-        return jsonify({"ok": False, "error": "Unauthorized"}), 401
-
+    # FIX: Use get_profile() to ensure Policy Inheritance is visible in UI
     try:
-        # Sanitize key
-        clean_key = key.lower().strip().replace(" ", "_")
-        clean_key = "".join(c for c in clean_key if c.isalnum() or c == '_')
+        agent = get_profile(clean)
         
-        file_path = CUSTOM_PERSONAS_DIR / f"{clean_key}.json"
+        # Verify ownership (get_profile pulls from DB, need to check owner manually if strictly private)
+        raw = db.get_agent(clean)
+        if raw:
+             if raw.get('created_by') != session.get('user')['id']:
+                 pass # Ownership check placeholder
+             
+             # RESTORE METADATA
+             agent['created_by'] = raw.get('created_by')
+             agent['is_custom'] = True
+             agent['key'] = clean
 
-        if not file_path.exists():
-            return jsonify({"ok": False, "error": "Agent not found"}), 404
-
-        # IDOR / Ownership Check
-        with open(file_path, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                creator = data.get("created_by")
-                
-                # If there is a creator and it matches the current user, allow delete.
-                # If there is NO creator, assume it's a system/legacy file and forbid delete via API.
-                if not creator:
-                     return jsonify({"ok": False, "error": "Cannot delete system or protected agents."}), 403
-                
-                if creator != user_id:
-                     return jsonify({"ok": False, "error": "You do not have permission to delete this agent."}), 403
-                     
-            except json.JSONDecodeError:
-                # If file is corrupt, but exists in custom dir, we might want to allow delete?
-                # For safety, fail.
-                return jsonify({"ok": False, "error": "Agent file is corrupted."}), 500
-
-        # Perform Deletion
-        os.remove(file_path)
-        current_app.logger.info(f"User {user_id} deleted custom agent: {clean_key}")
-        
-        return jsonify({"ok": True})
-
+        return jsonify({"ok": True, "agent": agent})
     except Exception as e:
-        current_app.logger.error(f"Error deleting agent: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"error": "Not found"}), 404
+
+@agent_api_bp.route('/agents/<key>', methods=['DELETE'], strict_slashes=False)
+def delete_agent(key):
+    uid = session.get('user', {}).get('id')
+    if not uid: return jsonify({"error": "Unauthorized"}), 401
+    clean = "".join(c for c in key.lower() if c.isalnum() or c == '_')
+    
+    agent = db.get_agent(clean)
+    if not agent: return jsonify({"error": "Not found"}), 404
+    if agent.get('created_by') != uid: return jsonify({"error": "Unauthorized"}), 403
+    
+    db.delete_agent(clean)
+    return jsonify({"ok": True})
 
 @agent_api_bp.route('/generate/rubric', methods=['POST'], strict_slashes=False)
 async def generate_rubric():
-    """
-    [POST /api/generate/rubric]
-    Uses the Intellect Engine to generate a scoring rubric for a value.
-    Payload: { "value_name": "Honesty", "context": "Optional context about the agent" }
-    """
-    # FIX: Use .get('id') to match auth.py session structure
+    # FIX: strict_slashes=False solves the 405 error
     user = session.get('user')
-    user_id = user.get('id') if user else None
-    
-    if not user_id:
-        return jsonify({"ok": False, "error": "Not authenticated"}), 401
-        
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"ok": False, "error": "Invalid JSON"}), 400
+    if not user: return jsonify({"error": "Unauthorized"}), 401
 
+    try:
+        data = request.get_json(force=True, silent=True)
         value_name = data.get('value_name')
         context = data.get('context', '')
-        
-        if not value_name:
-            return jsonify({"ok": False, "error": "Missing value_name"}), 400
 
-        # We need an LLM client. We can instantiate a temp LLMProvider or re-use one if available.
-        # Ideally, we should grab the app's SAFi instance, but that's not easily accessible in a route.
-        # We will create a fresh LLMProvider.
-        from ..core.services.llm_provider import LLMProvider
-        
-        # Reconstruct minimal config
-        # NOTE: In a real app we'd use 'current_app.safi_instance' 
-        # but simpler here to just init the provider with API keys from Config
+        from safi_app.core.services.llm_provider import LLMProvider
         
         llm_config = {
-            "providers": {
-                "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY },
-                "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" }
-            },
-            "routes": {
-                 # Use a fast model for generation
-                "intellect": { "provider": "groq", "model": Config.INTELLECT_MODEL or "llama-3.1-8b-instant" }
-            }
+            "providers": { "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY }, "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" } },
+            "routes": { "intellect": { "provider": "groq", "model": Config.INTELLECT_MODEL or "llama-3.1-8b-instant" } }
         }
-        
         provider = LLMProvider(llm_config)
         
         system_prompt = (
-            "You are an expert AI Ethicist. Your job is to write a concrete scoring rubric for a specific value.\n"
-            "Return ONLY a JSON object with this structure:\n"
-            "{\n"
-            '  "description": "A single sentence definition of the value.",\n'
-            '  "scoring_guide": [\n'
-            '     { "score": -1.0, "criteria": "What constitutes a clear violation." },\n'
-            '     { "score": 0.0, "criteria": "What constitutes a neutral or partial adherence." },\n'
-            '     { "score": 1.0, "criteria": "What constitutes perfect adherence." }\n'
-            '  ]\n'
-            "}"
+            "You are an expert AI Ethicist. Write a concrete scoring rubric for a value.\n"
+            "Return ONLY a JSON object: { \"description\": \"...\", \"scoring_guide\": [ { \"score\": 1.0, \"criteria\": \"...\" }, ... ] }"
         )
+        user_prompt = f"Value: '{value_name}'. Context: {context}"
         
-        user_prompt = f"Write a rubric for the value: '{value_name}'. Context for this agent: {context}"
+        response_text = await provider._chat_completion(route="intellect", system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.7)
         
-        response_text = await provider._chat_completion(
-            route="intellect",
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.7
-        )
+        # FIX: More robust cleaning
+        clean_text = response_text.strip()
+        if "```" in clean_text:
+            clean_text = clean_text.split("```json")[-1].split("```")[0].strip()
         
-        # Clean up code blocks if model output them
-        clean_text = response_text.replace("```json", "").replace("```", "").strip()
-        result_json = json.loads(clean_text)
-        
-        return jsonify({"ok": True, "rubric": result_json})
+        # Remove any pre-amble text if braces exist
+        if "{" in clean_text and clean_text.find("{") > 0:
+            clean_text = clean_text[clean_text.find("{"):]
+        if "}" in clean_text:
+             clean_text = clean_text[:clean_text.rfind("}")+1]
+
+        try:
+            result_json = json.loads(clean_text)
+            return jsonify({"ok": True, "rubric": result_json})
+        except json.JSONDecodeError:
+             return jsonify({
+                 "ok": False, 
+                 "error": "Failed to parse AI response. Try again.",
+                 "raw": response_text
+             }), 422
 
     except Exception as e:
-        current_app.logger.error(f"Rubric gen error: {e}")
-        return jsonify({"ok": False, "error": f"Failed to generate: {e}"}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500

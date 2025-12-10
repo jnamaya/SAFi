@@ -261,8 +261,10 @@ async def process_prompt_endpoint():
     conversation_id = data['conversation_id']
 
     # --- SECURITY: Verify Ownership ---
-    if not db.verify_conversation_ownership(user_id, conversation_id):
+    # --- SECURITY: Verify Ownership (and Auto-Create for External Bots) ---
+    if not db.ensure_conversation_access(user_id, conversation_id):
         return jsonify({"error": "You do not have permission to access this conversation."}), 403
+    # ----------------------------------
     # ----------------------------------
 
     if limit > 0:
