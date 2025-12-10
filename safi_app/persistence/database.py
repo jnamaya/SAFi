@@ -54,9 +54,18 @@ def init_db():
                 last_login TIMESTAMP NULL,
                 intellect_model VARCHAR(255) DEFAULT NULL,
                 will_model VARCHAR(255) DEFAULT NULL,
-                conscience_model VARCHAR(255) DEFAULT NULL
+                conscience_model VARCHAR(255) DEFAULT NULL,
+                org_id CHAR(36),
+                role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'
             )
         ''')
+        
+        # Check if new columns exist (for migration of existing dev DBs)
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'org_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN org_id CHAR(36)")
+            cursor.execute("ALTER TABLE users ADD COLUMN role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'")
+            cursor.execute("CREATE INDEX idx_user_org ON users(org_id)")
 
         # --- Conversations ---
         cursor.execute('''
@@ -76,13 +85,22 @@ def init_db():
             CREATE TABLE IF NOT EXISTS organizations (
                 id CHAR(36) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
+                owner_id VARCHAR(255),
                 domain_verified BOOLEAN DEFAULT FALSE,
                 domain_to_verify VARCHAR(255),
                 verification_token VARCHAR(255),
                 global_policy_id CHAR(36),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                settings JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
             )
         ''')
+
+        cursor.execute("SHOW COLUMNS FROM organizations LIKE 'owner_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE organizations ADD COLUMN owner_id VARCHAR(255)")
+            cursor.execute("ALTER TABLE organizations ADD COLUMN settings JSON")
+            cursor.execute("ALTER TABLE organizations ADD CONSTRAINT fk_org_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL")
 
         # --- Policies ---
         cursor.execute('''
@@ -275,12 +293,21 @@ def upsert_user(user_info: Dict[str, Any]):
     cursor = conn.cursor()
     try:
         user_id = user_info.get('sub') or user_info.get('id')
+        role = user_info.get('role', 'member')
+        org_id = user_info.get('org_id')
+        
         sql = """
-            INSERT INTO users (id, email, name, picture, last_login)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON DUPLICATE KEY UPDATE email=VALUES(email), name=VALUES(name), picture=VALUES(picture), last_login=NOW()
+            INSERT INTO users (id, email, name, picture, role, org_id, last_login)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE 
+                email=VALUES(email), 
+                name=VALUES(name), 
+                picture=VALUES(picture), 
+                role=COALESCE(VALUES(role), role), 
+                org_id=COALESCE(VALUES(org_id), org_id),
+                last_login=NOW()
         """
-        cursor.execute(sql, (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture')))
+        cursor.execute(sql, (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture'), role, org_id))
         conn.commit()
     finally:
         cursor.close()
@@ -631,7 +658,12 @@ def create_organization_atomic(org_name, user_id):
     try:
         conn.start_transaction()
         oid = str(uuid.uuid4())
-        cursor.execute("INSERT INTO organizations (id, name) VALUES (%s, %s)", (oid, org_name))
+        
+        # FIX: Include owner_id and settings
+        cursor.execute("""
+            INSERT INTO organizations (id, name, owner_id, settings, created_at) 
+            VALUES (%s, %s, %s, %s, NOW())
+        """, (oid, org_name, user_id, json.dumps({'allow_auto_join': False})))
         
         pid = str(uuid.uuid4())
         cursor.execute("INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by) VALUES (%s, %s, %s, %s, '[]', '[]', %s)", (pid, oid, "Default Policy", f"AI for {org_name}", user_id))

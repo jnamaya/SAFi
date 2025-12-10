@@ -68,13 +68,14 @@ def callback():
             'id': user_details['id'],
             'email': user_details.get('email'),
             'name': user_details.get('name'),
-            'active_profile': user_details.get('active_profile')
+            'active_profile': user_details.get('active_profile'),
+            'role': user_details.get('role', 'member'),
+            'org_id': user_details.get('org_id')
         }
         session['user'] = session_user
         
         current_app.logger.info(f"Web callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
-        
     except Exception as e:
         current_app.logger.error(f"Web callback error: {str(e)}")
         current_app.logger.error(traceback.format_exc())
@@ -150,16 +151,13 @@ def callback_microsoft():
             user_details['active_profile'] = default_profile
 
         # FIX: Critical Session Size Optimization
-        # We create a lightweight session object. 
-        # We DO NOT include 'picture' here because for Microsoft users, it is a 
-        # massive Base64 string that exceeds the 4KB browser cookie limit.
         session_user = {
             'id': user_details['id'],
             'email': user_details.get('email'),
             'name': user_details.get('name'),
             'active_profile': user_details.get('active_profile'),
-            # Note: We exclude 'picture' from the cookie. The frontend fetches
-            # full user details (including the picture) via /api/me anyway.
+            'role': user_details.get('role', 'member'),
+            'org_id': user_details.get('org_id')
         }
         session['user'] = session_user
         
@@ -170,74 +168,6 @@ def callback_microsoft():
         current_app.logger.error(f"Microsoft callback error: {str(e)}")
         current_app.logger.error(traceback.format_exc())
         return redirect('/?error=auth_failed')
-
-
-@auth_bp.route('/auth/google/mobile', methods=['POST'])
-def mobile_callback():
-    """
-    [POST /api/auth/google/mobile]
-    """
-    current_app.logger.info("Mobile auth callback initiated.")
-    data = request.json
-    code = data.get('code')
-    if not code:
-        return jsonify({"ok": False, "error": "No 'code' provided."}), 400
-
-    try:
-        redirect_uri = Config.WEB_CALLBACK_URL
-        token_url = 'https://oauth2.googleapis.com/token'
-        token_data = {
-            'code': code,
-            'client_id': oauth.google.client_id,
-            'client_secret': oauth.google.client_secret,
-            'redirect_uri': redirect_uri,
-            'grant_type': 'authorization_code'
-        }
-        token_response = requests.post(token_url, data=token_data)
-        
-        if not token_response.ok:
-            raise OAuthError(error='token_exchange_failed')
-        
-        token = token_response.json()
-        user_info = oauth.google.parse_id_token(token, nonce=None)
-
-        email = user_info.get('email')
-        if email:
-            existing_user = db.get_user_by_email(email)
-            if existing_user:
-                user_info['sub'] = existing_user['id']
-                user_info['id'] = existing_user['id']
-
-        db.upsert_user(user_info)
-        user_id = user_info.get('sub') or user_info.get('id')
-        user_details = db.get_user_details(user_id)
-
-        if not user_details.get('active_profile'):
-            default_profile = Config.DEFAULT_PROFILE
-            db.update_user_profile(user_id, default_profile)
-            user_details['active_profile'] = default_profile
-
-        # Optimized Session
-        session_user = {
-            'id': user_details['id'],
-            'email': user_details.get('email'),
-            'name': user_details.get('name'),
-            'active_profile': user_details.get('active_profile')
-        }
-        session['user'] = session_user
-        
-        return jsonify({"ok": True, "status": "login_success"})
-
-    except Exception as e:
-        current_app.logger.error(f"Exception in mobile login: {str(e)}")
-        return jsonify({"ok": False, "error": f"Server error: {str(e)}"}), 500
-
-
-@auth_bp.route('/logout', methods=['POST'])
-def logout():
-    session.pop('user', None)
-    return jsonify({"status": "logged_out"})
-
 
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
@@ -269,6 +199,10 @@ def get_me():
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         user_details['will_model'] = user_details.get('will_model') or Config.WILL_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+        
+        # Ensure role/org are present (defaults if DB missing them for some reason)
+        if 'role' not in user_details: user_details['role'] = 'member'
+        if 'org_id' not in user_details: user_details['org_id'] = None
     
         return jsonify({"ok": True, "user": user_details})
         
