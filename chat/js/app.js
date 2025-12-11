@@ -290,6 +290,40 @@ async function handleDeleteAccount() {
 function renderControlPanel() {
   if (!user) return;
 
+  // --- NEW: Strict RBAC Visibility Matrix ---
+  console.log('[RBAC] Checking visibility for user:', user.id, 'Role:', user.role);
+
+  // Organization: Admin & Auditor only (Auditor = View Only)
+  const canSeeOrg = ['admin', 'auditor'].includes(user.role);
+  // Governance: Admin, Editor, Auditor (Member = No Access)
+  const canSeeGovernance = ['admin', 'editor', 'auditor'].includes(user.role);
+  // Dashboard: Admin, Editor, Auditor (Member = No Access)
+  const canSeeDashboard = ['admin', 'editor', 'auditor'].includes(user.role);
+
+  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard });
+
+  if (canSeeOrg) {
+    document.getElementById('cp-nav-organization').classList.remove('hidden');
+  } else {
+    document.getElementById('cp-nav-organization').classList.add('hidden');
+  }
+
+  if (canSeeGovernance) {
+    document.getElementById('cp-nav-governance').classList.remove('hidden');
+  } else {
+    document.getElementById('cp-nav-governance').classList.add('hidden');
+  }
+
+  if (canSeeDashboard) {
+    document.getElementById('cp-nav-dashboard').classList.remove('hidden');
+  } else {
+    document.getElementById('cp-nav-dashboard').classList.add('hidden');
+  }
+  // ----------------------------------------
+
+  // Update UI Modals with current user context
+  uiSettingsModals.updateCurrentUser(user);
+
   // Render Personas Tab
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
@@ -315,6 +349,27 @@ function renderControlPanel() {
     handleLogout,
     () => ui.showModal('delete') // Open "are you sure" modal
   );
+
+  // --- NEW: Select Default Open Tab (RBAC Aware) ---
+  // Ensure we switch to a visible tab if the current/default one is hidden.
+  // We prioritize: Agents (Profile) > Organization > Dashboard
+  const orgTab = document.getElementById('cp-nav-organization');
+  const agentsTab = document.getElementById('cp-nav-profile'); // "Agents" tab
+
+  // If Organization tab is hidden (Member), but it was somehow active or we need a default:
+  // We force click the "Agents" tab which is safe for everyone.
+  if (orgTab.classList.contains('hidden')) {
+    if (agentsTab) agentsTab.click();
+  } else {
+    // If Org tab is visible (Admin), and nothing else is selected, default to it?
+    // Or just let the sticky selection persist.
+    // For now, let's default to Organization if visible and nothing else is active.
+    const anyActive = document.querySelector('.modal-tab-button.active');
+    if (!anyActive && orgTab) {
+      orgTab.click();
+    }
+  }
+  // --------------------------------------------------
 }
 
 async function handleProfileChange(newProfileKey) {

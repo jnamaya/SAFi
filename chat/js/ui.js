@@ -23,14 +23,15 @@ export function _initElements() {
     cpNavAppSettings: document.getElementById('cp-nav-app-settings'),
     cpNavMyProfile: document.getElementById('cp-nav-my-profile'),
     cpNavGovernance: document.getElementById('cp-nav-governance'),
+    cpNavOrganization: document.getElementById('cp-nav-organization'), // NEW
 
     cpTabProfile: document.getElementById('cp-tab-profile'),
     cpTabModels: document.getElementById('cp-tab-models'),
     cpTabDashboard: document.getElementById('cp-tab-dashboard'),
     cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
-    cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
     cpTabMyProfile: document.getElementById('cp-tab-my-profile'),
     cpTabGovernance: document.getElementById('cp-tab-governance'),
+    cpTabOrganization: document.getElementById('cp-tab-organization'), // NEW
 
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),

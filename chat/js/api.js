@@ -42,6 +42,13 @@ export const urls = {
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
     PIN_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/pin`,
+
+    // Org & Domain
+    ORG_ME: j('/api/organizations/me'),
+    ORG_CREATE: j('/api/organizations'),
+    ORG_VERIFY_START: j('/api/organizations/domain/start'),
+    ORG_VERIFY_CHECK: j('/api/organizations/domain/verify'),
+    ORG_VERIFY_CANCEL: j('/api/organizations/domain/cancel'),
 };
 
 
@@ -226,4 +233,44 @@ export async function generateKey(policyId, label = "Default") {
 
 export async function generatePolicyContent(type, context, extraData = {}) {
     return httpJSON(`${urls.POLICIES}/ai/generate`, 'POST', { type, context, ...extraData });
+}
+
+// --- ORGANIZATION API Functions ---
+
+export async function getMyOrganization() {
+    return httpGet(urls.ORG_ME);
+}
+
+export async function saveOrganization(orgData) {
+    // If we were editing, we'd use PUT, but currently we only confirm creation via Wizard
+    // which uses this. If we implement "Update Settings", we will need a PUT route.
+    return httpJSON(urls.ORG_CREATE, 'POST', orgData);
+}
+
+export async function startDomainVerification(orgId, domain) {
+    return httpJSON(urls.ORG_VERIFY_START, 'POST', { org_id: orgId, domain });
+}
+
+export async function cancelDomainVerification(orgId) {
+    return httpJSON(urls.ORG_VERIFY_CANCEL, 'POST', { org_id: orgId });
+}
+
+export async function checkDomainVerification(orgId) {
+    return httpJSON(urls.ORG_VERIFY_CHECK, 'POST', { org_id: orgId });
+}
+
+export async function updateOrganization(orgId, data) {
+    return httpJSON(`/api/organizations/${orgId}`, 'PUT', data);
+}
+
+export async function getOrganizationMembers(orgId) {
+    return httpGet(`/api/organizations/${orgId}/members`);
+}
+
+export async function updateMemberRole(orgId, userId, role) {
+    return httpJSON(`/api/organizations/${orgId}/members/${userId}/role`, 'PUT', { role });
+}
+
+export async function removeMember(orgId, userId) {
+    return httpJSON(`/api/organizations/${orgId}/members/${userId}`, 'DELETE', {});
 }
