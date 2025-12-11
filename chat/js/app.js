@@ -613,6 +613,12 @@ function attachEventListeners() {
       });
     }
 
+    // --- Control Panel Logout Button ---
+    const cpNavLogout = document.getElementById('cp-nav-logout');
+    if (cpNavLogout) {
+      cpNavLogout.addEventListener('click', handleLogout);
+    }
+
   } catch (e) {
     console.error('Failed to add theme/network/app listener:', e);
   }
