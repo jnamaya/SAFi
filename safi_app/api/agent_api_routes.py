@@ -1,8 +1,8 @@
 import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
-from ..persistence import database as db
 from ..core.values import PERSONAS, get_profile
+from ..core.rbac import check_permission
 from ..config import Config
 
 agent_api_bp = Blueprint('agent_api', __name__)
@@ -27,6 +27,11 @@ def save_agent():
         user_id = user.get("id") or user.get("sub") if user else None
         
         if not user_id: return jsonify({"error": "Unauthorized"}), 401
+        
+        # RESTRICTION: Only Editors and Admins can create/edit agents
+        if not check_permission(user.get('role', 'member'), 'editor'):
+            return jsonify({"error": "Forbidden: Only Editors/Admins can manage agents"}), 403
+
         if not key or not data.get("name"): return jsonify({"error": "Missing key or name"}), 400
             
         key = key.lower().strip().replace(" ", "_")
@@ -49,7 +54,17 @@ def save_agent():
         elif request.method == 'PUT':
             exist = db.get_agent(key)
             if not exist: return jsonify({"error": "Not found"}), 404
-            if exist.get('created_by') != user_id: return jsonify({"error": "Unauthorized"}), 403
+            
+            # Additional check: even if editor, maybe restrict editing others' agents?
+            # For now, we trust RBAC 'editor' implies generic edit rights, BUT existing code checked ownership.
+            # Let's keep ownership check OR admin check.
+            # actually check_permission('admin') OR ownership.
+            
+            is_owner = (exist.get('created_by') == user_id)
+            is_admin = check_permission(user.get('role'), 'admin')
+            
+            if not (is_owner or is_admin):
+                 return jsonify({"error": "Unauthorized"}), 403
             
             db.update_agent(
                 key=key, name=str(data['name']), 
