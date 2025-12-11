@@ -245,7 +245,8 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                         <button type="button" data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
                             View Details
                         </button>
-                        ${profile.is_custom ? `
+                        </button>
+                        ${(profile.is_custom && currentUser && (currentUser.role === 'admin' || currentUser.id === profile.created_by)) ? `
                         <button type="button" data-key="${profile.key}" class="edit-agent-btn text-sm font-medium text-blue-600 dark:text-blue-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                             Edit
                         </button>

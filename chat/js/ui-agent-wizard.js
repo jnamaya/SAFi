@@ -35,6 +35,7 @@ export function openAgentWizard(existingAgent = null) {
             values: existingAgent.values || [],
             rules: existingAgent.will_rules || [],
             policy_id: existingAgent.policy_id || "standalone",
+            visibility: existingAgent.visibility || "private",
             is_update_mode: true // Explicitly set update mode
         };
         if (existingAgent.worldview && !agentData.instructions) {
@@ -52,6 +53,7 @@ export function openAgentWizard(existingAgent = null) {
             values: [],
             rules: [],
             policy_id: "standalone",
+            visibility: "private",
             is_update_mode: false // Explicitly set create mode
         };
     }
@@ -199,23 +201,43 @@ async function renderIdentityStep(container) {
                 </div>
             </div>
 
-            <!-- GOVERNANCE SELECTION MOVED HERE -->
-            <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
-                <div class="flex items-center gap-2 mb-2">
-                    <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                    <label class="block text-sm font-bold text-blue-900 dark:text-blue-100">Governing Policy</label>
-                </div>
-                
-                <div class="flex gap-4">
-                    <select id="wiz-policy" class="flex-1 p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
-                        <option value="standalone">Loading Policies...</option>
+            <!-- GOVERNANCE & VISIBILITY SELECTION -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- VISIBILITY -->
+                <div class="bg-gray-50 dark:bg-neutral-800 p-5 rounded-xl border border-gray-200 dark:border-neutral-700">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        <label class="block text-sm font-bold text-gray-900 dark:text-gray-100">Visibility</label>
+                    </div>
+                    <select id="wiz-visibility" class="w-full p-2 rounded border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                        <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing)</option>
+                        <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
+                        <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
+                        <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
                     </select>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        Control who can access this agent.
+                    </p>
                 </div>
-                <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
-                    Policies define the "Constitution" (Values & Rules) that this agent must obey.
-                </p>
-                <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
-                    <!-- Preview populated by JS -->
+
+                <!-- GOVERNANCE -->
+                <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                        <label class="block text-sm font-bold text-blue-900 dark:text-blue-100">Governing Policy</label>
+                    </div>
+                    
+                    <div class="flex gap-4">
+                        <select id="wiz-policy" class="flex-1 p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                            <option value="standalone">Loading Policies...</option>
+                        </select>
+                    </div>
+                    <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
+                        Policies define the "Constitution" (Values & Rules) that this agent must obey.
+                    </p>
+                    <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
+                        <!-- Preview populated by JS -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -226,7 +248,7 @@ async function renderIdentityStep(container) {
         const res = await api.fetchPolicies();
         const policies = (res.ok && res.policies) ? res.policies : [];
         const select = document.getElementById('wiz-policy');
-        
+
         if (select) {
             select.innerHTML = `<option value="standalone">No Governance (Standalone)</option>`;
             policies.forEach(p => {
@@ -263,7 +285,7 @@ async function renderIdentityStep(container) {
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400">Rules</span>
                                 <ul class="list-disc list-inside mt-1 text-red-600 dark:text-red-400">
-                                    ${(policy.will_rules || []).slice(0, 2).map(r => `<li>${r.substring(0,30)}...</li>`).join('')}
+                                    ${(policy.will_rules || []).slice(0, 2).map(r => `<li>${r.substring(0, 30)}...</li>`).join('')}
                                 </ul>
                             </div>
                         </div>
@@ -442,7 +464,7 @@ function renderValuesList() {
     agentData.values.forEach((val, idx) => {
         const card = document.createElement('div');
         card.className = "bg-gray-50 dark:bg-neutral-800 p-4 rounded-lg border border-gray-200 dark:border-neutral-700 relative group";
-        
+
         // Prepare JSON for the textarea
         const rubricJson = JSON.stringify(val.rubric, null, 2);
 
@@ -488,7 +510,7 @@ function renderValuesList() {
         list.appendChild(card);
     });
 
-     // Helpers attached to window for inline onclicks
+    // Helpers attached to window for inline onclicks
     window.toggleEdit = (idx) => {
         const editDiv = document.getElementById(`wiz-val-edit-${idx}`);
         if (editDiv) {
@@ -575,21 +597,21 @@ function renderWillStep(container) {
             // Use instructions (Step 2) as context, fallback to description (Step 1)
             const context = agentData.instructions || agentData.description || "General Assistant";
             const res = await api.generatePolicyContent('rules', context);
-            
+
             if (res.ok && res.content) {
                 try {
                     // Try to parse JSON list
                     let newRules = [];
                     const json = JSON.parse(res.content);
                     if (Array.isArray(json)) {
-                         newRules = json;
+                        newRules = json;
                     }
-                    
+
                     if (newRules.length > 0) {
                         // Standardize format (Action-First)
-                         const processedRules = newRules.map(r => {
+                        const processedRules = newRules.map(r => {
                             let clean = r.trim();
-                            
+
                             // 1. Remove common fluff prefixes
                             clean = clean.replace(/^(The AI should|The AI must|The agent should|The agent must|Must|Will|Always)\s+/i, "");
 
@@ -597,18 +619,18 @@ function renderWillStep(container) {
                             if (clean.match(/^(Refuse|Decline|Deny)\s+to\s+/i)) {
                                 clean = clean.replace(/^(Refuse|Decline|Deny)\s+to\s+/i, "Reject requests to ");
                             }
-                             else if (clean.match(/^Never\s+/i)) {
+                            else if (clean.match(/^Never\s+/i)) {
                                 clean = clean.replace(/^Never\s+/i, "Reject requests to ");
                             }
 
                             // 3. Fallback: If it doesn't start with a strong action verb, assume it's a negative constraint
                             if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) {
-                                return "Reject " + clean; 
+                                return "Reject " + clean;
                             }
-                            
+
                             return clean.charAt(0).toUpperCase() + clean.slice(1);
                         });
-                        
+
                         // Merge unique
                         agentData.rules = [...new Set([...agentData.rules, ...processedRules])];
                         renderRulesList();
@@ -616,13 +638,13 @@ function renderWillStep(container) {
                     }
                 } catch (e) {
                     console.error("JSON Parse error", e);
-                     // Fallback for plain text list if API returns that
-                     const lines = res.content.split('\n').filter(l => l.trim().length > 0);
-                     agentData.rules = [...new Set([...agentData.rules, ...lines])];
-                     renderRulesList();
+                    // Fallback for plain text list if API returns that
+                    const lines = res.content.split('\n').filter(l => l.trim().length > 0);
+                    agentData.rules = [...new Set([...agentData.rules, ...lines])];
+                    renderRulesList();
                 }
             } else {
-                 ui.showToast("Failed to generate rules", "error");
+                ui.showToast("Failed to generate rules", "error");
             }
         } catch (err) {
             console.error(err);
@@ -642,7 +664,7 @@ function renderRulesList() {
     agentData.rules.forEach((rule, idx) => {
         const item = document.createElement('li');
         item.className = "flex justify-between items-center p-2 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg shadow-sm group hover:border-red-300 transition-colors";
-        
+
         // Editable Input
         item.innerHTML = `
             <div class="flex-1 flex items-center gap-3">
@@ -689,11 +711,17 @@ function saveCurrentStepData() {
         agentData.name = document.getElementById('wiz-name').value.trim();
         agentData.description = document.getElementById('wiz-desc').value.trim();
         agentData.avatar = document.getElementById('wiz-avatar').value.trim();
-        
+
         // Save Policy ID if available
         const policySelect = document.getElementById('wiz-policy');
         if (policySelect) {
             agentData.policy_id = policySelect.value;
+        }
+
+        // Save Visibility
+        const visSelect = document.getElementById('wiz-visibility');
+        if (visSelect) {
+            agentData.visibility = visSelect.value;
         }
 
         // Generate key ONLY if it doesn't exist (Create Mode)
@@ -724,7 +752,10 @@ async function finishWizard() {
             style: agentData.style,
             values: agentData.values,
             will_rules: agentData.rules,
+            values: agentData.values,
+            will_rules: agentData.rules,
             policy_id: agentData.policy_id,
+            visibility: agentData.visibility,
             is_custom: true,
             is_update_mode: agentData.is_update_mode // PASS THE FLAG TO API
         };
