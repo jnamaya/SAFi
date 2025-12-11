@@ -62,6 +62,37 @@ def callback():
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
+        if not user_details.get('org_id'):
+            # NEW: Domain-based Auto-Join
+            # If the user has a domain that matches a verified organization, join them as MEMBER.
+            try:
+                user_email = user_details.get('email', '')
+                if '@' in user_email:
+                    domain = user_email.split('@')[-1]
+                    existing_org = db.get_organization_by_domain(domain)
+                    if existing_org:
+                        user_details['org_id'] = existing_org['id']
+                        user_details['role'] = 'member'
+                        db.update_user_org_and_role(user_id, existing_org['id'], 'member')
+                        current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} (Domain: {domain})")
+            except Exception as e:
+                current_app.logger.error(f"Error in domain auto-join: {e}")
+
+        if not user_details.get('org_id'):
+            # NEW: "Founder Flow" - Auto-create Personal Organization
+            org_name = f"{user_details.get('name', 'My')} Organization"
+            try:
+                new_org = db.create_organization_atomic(org_name, user_id)
+                user_details['org_id'] = new_org['org_id']
+                user_details['role'] = 'admin'
+                
+                # CRITICAL FIX: Persist the role promotion to DB!
+                db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
+                
+                current_app.logger.info(f"Created Personal Org '{org_name}' for new user {user_id}")
+            except Exception as e:
+                current_app.logger.error(f"Failed to auto-create org: {e}")
+
         # FIX: Store minimal data in session to prevent "Cookie too large" errors.
         # Google pictures are URLs, so they are safe, but we strip unnecessary fields anyway.
         session_user = {
@@ -150,6 +181,36 @@ def callback_microsoft():
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
+        if not user_details.get('org_id'):
+            # NEW: Domain-based Auto-Join
+            try:
+                user_email = user_details.get('email', '')
+                if '@' in user_email:
+                    domain = user_email.split('@')[-1]
+                    existing_org = db.get_organization_by_domain(domain)
+                    if existing_org:
+                        user_details['org_id'] = existing_org['id']
+                        user_details['role'] = 'member'
+                        db.update_user_org_and_role(user_id, existing_org['id'], 'member')
+                        current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} (Domain: {domain})")
+            except Exception as e:
+                current_app.logger.error(f"Error in domain auto-join: {e}")
+
+        if not user_details.get('org_id'):
+            # NEW: "Founder Flow" - Auto-create Personal Organization
+            org_name = f"{user_details.get('name', 'My')} Organization"
+            try:
+                new_org = db.create_organization_atomic(org_name, user_id)
+                user_details['org_id'] = new_org['org_id']
+                user_details['role'] = 'admin'
+                
+                # CRITICAL FIX: Persist the role promotion to DB!
+                db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
+                
+                current_app.logger.info(f"Created Personal Org '{org_name}' for new user {user_id}")
+            except Exception as e:
+                current_app.logger.error(f"Failed to auto-create org: {e}")
+
         # FIX: Critical Session Size Optimization
         session_user = {
             'id': user_details['id'],
@@ -204,6 +265,27 @@ def get_me():
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
     
+        # FIX: Refresh session if DB differs (e.g. after migration or role change)
+        session_user = session.get('user', {})
+        
+        # --- NEW: Self-Correction for Org Owners ---
+        # If user is the OWNER of the org but has 'member' role (e.g. legacy data issue), promote them.
+        if user_details.get('org_id') and user_details.get('role') != 'admin':
+            org = db.get_organization(user_details['org_id'])
+            if org and org.get('owner_id') == user_id:
+                current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
+                db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
+                user_details['role'] = 'admin' # Update local dict for response
+        # -------------------------------------------
+
+        if session_user.get('role') != user_details['role'] or session_user.get('org_id') != user_details['org_id']:
+            current_app.logger.info(f"Refeshing stale session for user {user_id}. Org: {session_user.get('org_id')}->{user_details['org_id']}")
+            session_user['role'] = user_details['role']
+            session_user['org_id'] = user_details['org_id']
+            # Update other fields if needed, but these are the critical ones for RBAC
+            session['user'] = session_user
+            session.modified = True
+
         return jsonify({"ok": True, "user": user_details})
         
     except Exception as e:
@@ -239,5 +321,14 @@ def delete_me():
     user_id = session.get('user', {}).get('id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     db.delete_user(user_id)
+    session.clear()
+    return jsonify({"status": "success"})
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    """
+    [POST /api/logout]
+    Clears the server-side session.
+    """
     session.clear()
     return jsonify({"status": "success"})

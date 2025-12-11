@@ -303,8 +303,6 @@ def upsert_user(user_info: Dict[str, Any]):
                 email=VALUES(email), 
                 name=VALUES(name), 
                 picture=VALUES(picture), 
-                role=COALESCE(VALUES(role), role), 
-                org_id=COALESCE(VALUES(org_id), org_id),
                 last_login=NOW()
         """
         cursor.execute(sql, (user_id, user_info.get('email'), user_info.get('name'), user_info.get('picture'), role, org_id))
@@ -348,6 +346,16 @@ def update_user_models(user_id, intellect, will, conscience):
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE users SET intellect_model=%s, will_model=%s, conscience_model=%s WHERE id=%s", (intellect, will, conscience, user_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_user_org_and_role(user_id, org_id, role):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE users SET org_id=%s, role=%s WHERE id=%s", (org_id, role, user_id))
         conn.commit()
     finally:
         cursor.close()
@@ -770,7 +778,17 @@ def get_policy_keys(pid):
         conn.close()
 
 # Org helpers
-def get_organization_by_domain(domain): return None
+def get_organization_by_domain(domain):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Check for EXACT match on domain_to_verify AND domain_verified=TRUE
+        cursor.execute("SELECT * FROM organizations WHERE domain_verified=TRUE AND domain_to_verify=%s", (domain,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_organization(oid):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -807,6 +825,15 @@ def confirm_domain_verification(oid):
     finally:
         cursor.close()
         conn.close()
+def reset_domain_verification(oid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE organizations SET domain_to_verify=NULL, verification_token=NULL WHERE id=%s", (oid,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 def create_organization(name):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -815,6 +842,48 @@ def create_organization(name):
         cursor.execute("INSERT INTO organizations (id, name) VALUES (%s, %s)", (oid, name))
         conn.commit()
         return oid
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_organization_name(oid, name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE organizations SET name=%s WHERE id=%s", (name, oid))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_organization_members(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Sort so Admins appear first, then others
+        cursor.execute("SELECT id, name, email, role FROM users WHERE org_id=%s ORDER BY FIELD(role, 'admin', 'editor', 'auditor', 'member'), name", (org_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_member_role(user_id, org_id, new_role):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE users SET role=%s WHERE id=%s AND org_id=%s", (new_role, user_id, org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def remove_member_from_org(user_id, org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # We simply set org_id to NULL and role to 'member' (resetting them)
+        cursor.execute("UPDATE users SET org_id=NULL, role='member' WHERE id=%s AND org_id=%s", (user_id, org_id))
+        conn.commit()
     finally:
         cursor.close()
         conn.close()

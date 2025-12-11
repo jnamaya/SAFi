@@ -243,8 +243,14 @@ async function flushQueue() {
         body: item.body
       });
       if (!res.ok) {
-        // Keep it for later if server still unhappy
-        remaining.push(item);
+        // CRITICAL FIX: Discard 4xx errors (Client Error). Do not retry them.
+        if (res.status >= 400 && res.status < 500) {
+          console.warn(`[OfflineManager] Discarding failed queue item (Status ${res.status}): ${item.url}`);
+          // Do NOT push to remaining
+        } else {
+          // Keep it for later if server error (5xx)
+          remaining.push(item);
+        }
       }
       // We do not need to return anything here
     } catch {

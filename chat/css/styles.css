@@ -611,6 +611,11 @@ html {
   color: #22c55e; 
 }
 
+/* FIX: Ensure hidden tabs stay hidden even with display:flex on base class */
+.modal-tab-button.hidden {
+    display: none !important;
+}
+
 .settings-modal-select {
     width: 100%;
     font-size: 0.875rem;

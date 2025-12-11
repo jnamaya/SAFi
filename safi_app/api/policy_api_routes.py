@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
+from ..core.rbac import require_role
 import logging
 import json
 
@@ -15,6 +16,7 @@ def validate_policy_data(data):
     return True, None
 
 @policy_api_bp.route('/policies', methods=['POST'], strict_slashes=False)
+@require_role('editor')
 def create_policy():
     user = session.get('user')
     user_id = user.get('id') if user else None
@@ -60,16 +62,15 @@ def get_policy(policy_id):
         return jsonify({"error": str(e)}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['PUT'], strict_slashes=False)
+@require_role('editor')
 def update_policy(policy_id):
     user = session.get('user')
     user_id = user.get('id') if user else None
-    if not user_id: return jsonify({"error": "Unauthorized"}), 401
     
     try:
         policy = db.get_policy(policy_id)
         if not policy: return jsonify({"error": "Not found"}), 404
-        if policy.get('created_by') != user_id and not policy.get('is_demo'):
-             return jsonify({"error": "Unauthorized"}), 403
+        # Ownership check removed in favor of strict Admin RBAC
 
         data = request.get_json(force=True, silent=True) or {}
         valid, msg = validate_policy_data(data)
@@ -87,15 +88,12 @@ def update_policy(policy_id):
         return jsonify({"error": str(e)}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['DELETE'], strict_slashes=False)
+@require_role('editor')
 def delete_policy(policy_id):
-    user = session.get('user')
-    user_id = user.get('id') if user else None
-    if not user_id: return jsonify({"error": "Unauthorized"}), 401
-
     try:
         policy = db.get_policy(policy_id)
         if not policy: return jsonify({"error": "Not found"}), 404
-        if policy.get('created_by') != user_id: return jsonify({"error": "Unauthorized"}), 403
+        # Ownership check removed in favor of strict Admin RBAC
 
         db.delete_policy(policy_id)
         return jsonify({"ok": True})
@@ -103,6 +101,7 @@ def delete_policy(policy_id):
         return jsonify({"error": str(e)}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['POST'], strict_slashes=False)
+@require_role('editor')
 def generate_key(policy_id):
     if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
