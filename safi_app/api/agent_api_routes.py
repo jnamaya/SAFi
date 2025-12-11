@@ -29,7 +29,8 @@ def save_agent():
         if not user_id: return jsonify({"error": "Unauthorized"}), 401
         
         # RESTRICTION: Only Editors and Admins can create/edit agents
-        if not check_permission(user.get('role', 'member'), 'editor'):
+        # FIX: check_permission takes only 1 arg (required_role)
+        if not check_permission('editor'):
             return jsonify({"error": "Forbidden: Only Editors/Admins can manage agents"}), 403
 
         if not key or not data.get("name"): return jsonify({"error": "Missing key or name"}), 400
@@ -49,7 +50,9 @@ def save_agent():
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
                 values=data.get('values', []), rules=data.get('will_rules', []),
-                policy_id=data.get('policy_id', 'standalone'), created_by=user_id
+                policy_id=data.get('policy_id', 'standalone'), created_by=user_id,
+                org_id=user.get('org_id'), 
+                visibility=data.get('visibility', 'private')
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -61,7 +64,8 @@ def save_agent():
             # actually check_permission('admin') OR ownership.
             
             is_owner = (exist.get('created_by') == user_id)
-            is_admin = check_permission(user.get('role'), 'admin')
+            # FIX: check_permission takes 1 arg
+            is_admin = check_permission('admin')
             
             if not (is_owner or is_admin):
                  return jsonify({"error": "Unauthorized"}), 403
@@ -71,7 +75,8 @@ def save_agent():
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
                 values=data.get('values', []), rules=data.get('will_rules', []),
-                policy_id=data.get('policy_id', 'standalone')
+                policy_id=data.get('policy_id', 'standalone'),
+                visibility=data.get('visibility', 'private')
             )
 
         return jsonify({"ok": True, "key": key}), 200
@@ -83,7 +88,7 @@ def save_agent():
 @agent_api_bp.route('/agents/all', methods=['GET'], strict_slashes=False)
 def list_all_agents():
     user = session.get("user")
-    user_id = user.get("id") if user else None
+    user_id = user.get("id") or user.get("sub") if user else None
     
     sys_agents = []
     for k, v in PERSONAS.items():
@@ -95,8 +100,8 @@ def list_all_agents():
     db_agents = []
     if user_id:
         try:
-            # Raw list from DB
-            raw_list = db.list_agents(user_id)
+            # Raw list from DB (Updated to fetch shared organization agents)
+            raw_list = db.list_agents(user_id, user.get('org_id'), user.get('role', 'member'))
             # Enhance with merged policy data
             for agent in raw_list:
                 try:

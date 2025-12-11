@@ -132,10 +132,19 @@ def init_db():
                 will_rules_json JSON,
                 policy_id VARCHAR(255) DEFAULT 'standalone',
                 created_by VARCHAR(255),
+                org_id CHAR(36),
+                visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         ''')
+
+        # Check for new columns in agents table
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'org_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN org_id CHAR(36)")
+            cursor.execute("ALTER TABLE agents ADD COLUMN visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private'")
+            cursor.execute("CREATE INDEX idx_agent_org ON agents(org_id)")
 
         # --- API Keys ---
         cursor.execute('''
@@ -573,27 +582,27 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # NEW: AGENT MANAGEMENT
 # -------------------------------------------------------------------------
 
-def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by):
+def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private'):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         # FIX: Enforce standalone policy if None provided
         if not policy_id: policy_id = 'standalone'
-        sql = """INSERT INTO agents (agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-        cursor.execute(sql, (key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by))
+        sql = """INSERT INTO agents (agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(sql, (key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id):
+def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private'):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         # FIX: Enforce standalone policy if None provided
         if not policy_id: policy_id = 'standalone'
-        sql = """UPDATE agents SET name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s WHERE agent_key=%s"""
-        cursor.execute(sql, (name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, key))
+        sql = """UPDATE agents SET name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s WHERE agent_key=%s"""
+        cursor.execute(sql, (name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility, key))
         conn.commit()
     finally:
         cursor.close()
@@ -622,11 +631,38 @@ def get_agent(key):
         cursor.close()
         conn.close()
 
-def list_agents(user_id):
+def list_agents(user_id, org_id=None, user_role='member'):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM agents WHERE created_by=%s ORDER BY created_at DESC", (user_id,))
+        # LOGIC:
+        # 1. Always show agents created by the user (regardless of org or visibility)
+        # 2. Show agents from the same org IF visibility permissions are met:
+        #    - 'member' visible to everyone in org
+        #    - 'auditor' visible to auditor, editor, admin
+        #    - 'editor' visible to editor, admin
+        #    - 'admin' visible to admin
+        #    - 'private' is NOT visible to others
+        
+        sql = """
+            SELECT * FROM agents 
+            WHERE 
+                (created_by = %s)
+                OR 
+                (
+                    org_id = %s 
+                    AND org_id IS NOT NULL
+                    AND (
+                        visibility = 'member'
+                        OR (visibility = 'auditor' AND %s IN ('auditor', 'editor', 'admin'))
+                        OR (visibility = 'editor' AND %s IN ('editor', 'admin'))
+                        OR (visibility = 'admin' AND %s = 'admin')
+                    )
+                )
+            ORDER BY created_at DESC
+        """
+        
+        cursor.execute(sql, (user_id, org_id, user_role, user_role, user_role))
         rows = cursor.fetchall()
         res = []
         for row in rows:
@@ -640,6 +676,10 @@ def list_agents(user_id):
                     v['value'] = v['name']
                     
             row['is_custom'] = True
+            
+            # Add metadata for UI
+            row['shared_with_org'] = (row['org_id'] == org_id) and (row['visibility'] != 'private')
+            
             res.append(row)
         return res
     finally:
