@@ -711,6 +711,37 @@ def list_agents(user_id, org_id=None, user_role='member'):
             
             res.append(row)
         return res
+        return res
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_all_agents():
+    """
+    Lists ALL agents in the database, ignoring permissions.
+    Used for the Dashboard/Admin view.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        sql = "SELECT * FROM agents ORDER BY created_at DESC"
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        
+        res = []
+        for row in rows:
+            row['key'] = row['agent_key']
+            row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
+            row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
+            
+            # Ensure 'value' key exists
+            for v in row['values']:
+                if 'name' in v and 'value' not in v:
+                    v['value'] = v['name']
+                    
+            row['is_custom'] = True
+            res.append(row)
+        return res
     finally:
         cursor.close()
         conn.close()

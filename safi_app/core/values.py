@@ -119,8 +119,12 @@ def list_custom_personas(owner_id: Optional[str] = None, include_all: bool = Fal
     Lists personas from the Database.
     """
     try:
-        # DB List function already filters by owner_id
-        return db.list_agents(owner_id)
+        if include_all:
+             # Dashboard/Admin View
+             return db.list_all_agents()
+        else:
+             # Standard User View (filtered)
+             return db.list_agents(owner_id)
     except Exception as e:
         print(f"Error listing custom personas: {e}")
         return []
