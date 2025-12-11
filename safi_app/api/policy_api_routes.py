@@ -149,7 +149,25 @@ async def generate_policy_content_endpoint():
         
         elif gen_type == 'values':
              sys_prompt += " Output JSON Array only."
-             prompt = f"Generate 3-5 core values with rubrics for: '{context}'. Return JSON Array of objects with 'name', 'description', 'rubric' (object with scoring_guide list)."
+             prompt = (
+                 f"Generate 3-5 core values with rubrics for: '{context}'.\n"
+                 "Return a JSON Array of objects. Each object must have:\n"
+                 "- 'name': value name\n"
+                 "- 'weight': float (e.g. 0.2)\n"
+                 "- 'definition': short definition\n"
+                 "- 'rubric': object containing 'description' and 'scoring_guide'.\n\n"
+                 "IMPORTANT: 'scoring_guide' must be a list of EXACTLY 3 items using a strict -1.0 to 1.0 scale.\n"
+                 "DO NOT use a 1-5 scale.\n\n"
+                 "Example Rubric Format:\n"
+                 "\"rubric\": {\n"
+                 "  \"description\": \"...\",\n"
+                 "  \"scoring_guide\": [\n"
+                 "    { \"score\": 1.0, \"criteria\": \"Excellent...\" },\n"
+                 "    { \"score\": 0.0, \"criteria\": \"Neutral...\" },\n"
+                 "    { \"score\": -1.0, \"criteria\": \"Violation...\" }\n"
+                 "  ]\n"
+                 "}"
+             )
         
         elif gen_type == 'rules':
              sys_prompt += " Output JSON List only."

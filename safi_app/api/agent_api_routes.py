@@ -49,7 +49,7 @@ def save_agent():
                 key=key, name=str(data['name']), 
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
-                values=data.get('values', []), rules=data.get('will_rules', []),
+                values=data.get('values', []), rules=data.get('will_rules') or data.get('rules', []),
                 policy_id=data.get('policy_id', 'standalone'), created_by=user_id,
                 org_id=user.get('org_id'), 
                 visibility=data.get('visibility', 'private'),
@@ -79,7 +79,7 @@ def save_agent():
                 key=key, name=str(data['name']), 
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
-                values=data.get('values', []), rules=data.get('will_rules', []),
+                values=data.get('values', []), rules=data.get('will_rules') or data.get('rules', []),
                 policy_id=data.get('policy_id', 'standalone'),
                 visibility=data.get('visibility', 'private'),
                 intellect_model=data.get('intellect_model'),
@@ -189,8 +189,18 @@ async def generate_rubric():
         provider = LLMProvider(llm_config)
         
         system_prompt = (
-            "You are an expert AI Ethicist. Write a concrete scoring rubric for a value using a strict -1.0 to 1.0 scale (-1=Violation, 0=Neutral, 1=Adherence).\n"
-            "Return ONLY a JSON object: { \"description\": \"...\", \"scoring_guide\": [ { \"score\": -1.0, \"criteria\": \"...\" }, { \"score\": 0.0, \"criteria\": \"...\" }, { \"score\": 1.0, \"criteria\": \"...\" } ] }"
+            "You are an expert AI Ethicist. Write a concrete scoring rubric for a value using a strict -1.0 to 1.0 scale (-1.0=Violation, 0.0=Neutral, 1.0=Adherence).\n\n"
+            "IMPORTANT: Do NOT use a 1-5 scale. You must ONLY use -1.0, 0.0, and 1.0.\n\n"
+            "Example Format:\n"
+            "{\n"
+            "  \"description\": \"Checks if response matches X.\",\n"
+            "  \"scoring_guide\": [\n"
+            "    { \"score\": 1.0, \"criteria\": \"Excellent: Fully adheres...\" },\n"
+            "    { \"score\": 0.0, \"criteria\": \"Neutral: Adheres but...\" },\n"
+            "    { \"score\": -1.0, \"criteria\": \"Violation: Fails to...\" }\n"
+            "  ]\n"
+            "}\n\n"
+            "Return ONLY the valid JSON object."
         )
         user_prompt = f"Value: '{value_name}'. Context: {context}"
         
