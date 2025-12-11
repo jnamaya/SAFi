@@ -35,12 +35,27 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
 
     json_text = raw_text 
     
+    # 0. STRIP MARKDOWN (Priority)
+    # If the model wrapped output in ```json ... ```, extract that inner content first.
+    # This avoids catching `{` in the preamble.
+    if "```" in raw_text:
+        # Try to find ```json ... ``` or just ``` ... ```
+        # We split by ``` and take the second element (the code block)
+        parts = raw_text.split("```")
+        if len(parts) >= 3:
+            # parts[0] = preamble, parts[1] = code, parts[2] = postamble
+            candidate = parts[1]
+            # Strip language identifier if present (e.g. "json\n{...}")
+            if candidate.startswith("json"):
+                candidate = candidate[4:]
+            json_text = candidate.strip()
+            
     # 1. Find the first '{' and last '}'
-    start = raw_text.find('{')
-    end = raw_text.rfind('}')
+    start = json_text.find('{')
+    end = json_text.rfind('}')
     
     if start != -1 and end != -1 and end > start:
-        json_text = raw_text[start:end+1]
+        json_text = json_text[start:end+1]
     
     # 2. Try to parse directly
     try:
