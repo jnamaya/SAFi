@@ -134,6 +134,8 @@ def init_db():
                 created_by VARCHAR(255),
                 org_id CHAR(36),
                 visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private',
+                rag_knowledge_base VARCHAR(255),
+                rag_format_string TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
@@ -145,6 +147,18 @@ def init_db():
             cursor.execute("ALTER TABLE agents ADD COLUMN org_id CHAR(36)")
             cursor.execute("ALTER TABLE agents ADD COLUMN visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private'")
             cursor.execute("CREATE INDEX idx_agent_org ON agents(org_id)")
+
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'rag_knowledge_base'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN rag_knowledge_base VARCHAR(255)")
+            cursor.execute("ALTER TABLE agents ADD COLUMN rag_format_string TEXT")
+
+        # --- Check for AI Model Columns (Missing in initial migration) ---
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'intellect_model'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN intellect_model VARCHAR(100)")
+            cursor.execute("ALTER TABLE agents ADD COLUMN will_model VARCHAR(100)")
+            cursor.execute("ALTER TABLE agents ADD COLUMN conscience_model VARCHAR(100)")
 
         # --- API Keys ---
         cursor.execute('''
@@ -582,27 +596,40 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # NEW: AGENT MANAGEMENT
 # -------------------------------------------------------------------------
 
-def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private'):
+def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private', 
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # FIX: Enforce standalone policy if None provided
         if not policy_id: policy_id = 'standalone'
-        sql = """INSERT INTO agents (agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-        cursor.execute(sql, (key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility))
+        sql = """INSERT INTO agents (
+            agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(sql, (
+            key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string
+        ))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private'):
+def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # FIX: Enforce standalone policy if None provided
         if not policy_id: policy_id = 'standalone'
-        sql = """UPDATE agents SET name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s WHERE agent_key=%s"""
-        cursor.execute(sql, (name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility, key))
+        sql = """UPDATE agents SET 
+            name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
+            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s
+            WHERE agent_key=%s"""
+        cursor.execute(sql, (
+            name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string,
+            key
+        ))
         conn.commit()
     finally:
         cursor.close()
@@ -662,8 +689,10 @@ def list_agents(user_id, org_id=None, user_role='member'):
             ORDER BY created_at DESC
         """
         
+        logging.info(f"Listing agents for user={user_id}, org={org_id}, role={user_role}")
         cursor.execute(sql, (user_id, org_id, user_role, user_role, user_role))
         rows = cursor.fetchall()
+        logging.info(f"Found {len(rows)} agents")
         res = []
         for row in rows:
             row['key'] = row['agent_key']
