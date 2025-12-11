@@ -31,7 +31,8 @@ from .orchestrator_mixins.suggestions import SuggestionsMixin
 from .orchestrator_mixins.tasks import BackgroundTasksMixin
 
 # --- Import Refactored Services ---
-from .services import LLMProvider, RAGService
+# --- Import Refactored Services ---
+from .services import LLMProvider, RAGService, MCPManager
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -174,11 +175,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.rag_service = RAGService(
             knowledge_base_name=self.profile.get("rag_knowledge_base")
         )
+
+        # Initialize MCP Manager
+        # We assume specific tools are enabled via config or default
+        mcp_config = getattr(config, "MCP_CONFIG", {})
+        self.mcp_manager = MCPManager(mcp_config)
         
         self.intellect_engine = IntellectEngine(
             llm_provider=self.llm_provider,
             profile=self.profile, 
-            prompt_config=self.prompts.get("intellect_engine", {})
+            prompt_config=self.prompts.get("intellect_engine", {}),
+            mcp_manager=self.mcp_manager
         )
         self.intellect_engine.retriever = self.rag_service.retriever
 
@@ -225,7 +232,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         
         plugin_tasks = [
             handle_bible_scholar_commands(user_prompt, self.active_profile_name, self.log),
-            handle_fiduciary_commands(user_prompt, self.active_profile_name, self.log, plugin_client)
+            # handle_fiduciary_commands(user_prompt, self.active_profile_name, self.log, plugin_client)  # Disabled for MCP
         ]
         plugin_results = await asyncio.gather(*plugin_tasks)
         for _, data in plugin_results:
