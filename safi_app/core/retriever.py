@@ -12,6 +12,7 @@ import os
 import numpy as np
 import re
 import logging
+import threading
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any
 
@@ -28,6 +29,20 @@ os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
 os.environ["HF_HUB_CACHE"] = CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 # --------------------->
+
+# --- GLOBAL SINGLETON FOR EMBEDDING MODEL ---
+# Optimization: Load the model once, share across all user sessions.
+_SHARED_MODEL = None
+_MODEL_LOCK = threading.Lock()
+
+def get_shared_embedding_model():
+    """Returns the global singleton instance of the embedding model."""
+    global _SHARED_MODEL
+    with _MODEL_LOCK:
+        if _SHARED_MODEL is None:
+            logging.info(f"Loading Global Embedding Model: {EMBEDDING_MODEL}")
+            _SHARED_MODEL = SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
+    return _SHARED_MODEL
 
 
 class Retriever:
@@ -69,9 +84,9 @@ class Retriever:
             with open(metadata_path, "rb") as f:
                 self.metadata = pickle.load(f)
             
-            self.log.info(f"Loading embedding model: {EMBEDDING_MODEL}")
-            self.model = SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
-            self.log.info(f"Retriever for '{knowledge_base_name}' loaded successfully.")
+            # OPTIMIZATION: Use the global singleton model
+            self.model = get_shared_embedding_model()
+            self.log.info(f"Retriever for '{knowledge_base_name}' attached to global model.")
             
         except Exception as e:
             self.log.exception(f"Error loading retriever for '{knowledge_base_name}': {e}")

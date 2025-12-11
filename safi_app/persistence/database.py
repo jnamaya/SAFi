@@ -23,7 +23,7 @@ def get_db_connection():
             logging.info("Connection pool not found. Attempting to create a new one...")
             db_pool = mysql.connector.pooling.MySQLConnectionPool(
                 pool_name="safi_pool",
-                pool_size=5,
+                pool_size=20,
                 host=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
