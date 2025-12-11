@@ -52,7 +52,12 @@ def save_agent():
                 values=data.get('values', []), rules=data.get('will_rules', []),
                 policy_id=data.get('policy_id', 'standalone'), created_by=user_id,
                 org_id=user.get('org_id'), 
-                visibility=data.get('visibility', 'private')
+                visibility=data.get('visibility', 'private'),
+                intellect_model=data.get('intellect_model'),
+                will_model=data.get('will_model'),
+                conscience_model=data.get('conscience_model'),
+                rag_knowledge_base=data.get('rag_knowledge_base'),
+                rag_format_string=data.get('rag_format_string')
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -76,7 +81,12 @@ def save_agent():
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
                 values=data.get('values', []), rules=data.get('will_rules', []),
                 policy_id=data.get('policy_id', 'standalone'),
-                visibility=data.get('visibility', 'private')
+                visibility=data.get('visibility', 'private'),
+                intellect_model=data.get('intellect_model'),
+                will_model=data.get('will_model'),
+                conscience_model=data.get('conscience_model'),
+                rag_knowledge_base=data.get('rag_knowledge_base'),
+                rag_format_string=data.get('rag_format_string')
             )
 
         return jsonify({"ok": True, "key": key}), 200
@@ -179,8 +189,8 @@ async def generate_rubric():
         provider = LLMProvider(llm_config)
         
         system_prompt = (
-            "You are an expert AI Ethicist. Write a concrete scoring rubric for a value.\n"
-            "Return ONLY a JSON object: { \"description\": \"...\", \"scoring_guide\": [ { \"score\": 1.0, \"criteria\": \"...\" }, ... ] }"
+            "You are an expert AI Ethicist. Write a concrete scoring rubric for a value using a strict -1.0 to 1.0 scale (-1=Violation, 0=Neutral, 1=Adherence).\n"
+            "Return ONLY a JSON object: { \"description\": \"...\", \"scoring_guide\": [ { \"score\": -1.0, \"criteria\": \"...\" }, { \"score\": 0.0, \"criteria\": \"...\" }, { \"score\": 1.0, \"criteria\": \"...\" } ] }"
         )
         user_prompt = f"Value: '{value_name}'. Context: {context}"
         

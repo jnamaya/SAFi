@@ -14,13 +14,23 @@ let agentData = {
     values: [],
     rules: [],
     policy_id: "standalone", // Governance Policy
-    is_update_mode: false // Flag for Create vs Update
+    is_update_mode: false, // Flag for Create vs Update
+    // NEW: Model & RAG Configuration
+    intellect_model: "",
+    will_model: "",
+    conscience_model: "",
+    rag_knowledge_base: "",
+    rag_format_string: ""
 };
 
+let availableModelsCache = []; // Store passed models
+
 // --- MAIN ENTRY POINT ---
-export function openAgentWizard(existingAgent = null) {
+export function openAgentWizard(existingAgent = null, availableModels = []) {
     // Reset State
     currentStep = 1;
+
+    availableModelsCache = availableModels || [];
 
     if (existingAgent) {
         // PRE-FILL for Edit Mode
@@ -36,7 +46,14 @@ export function openAgentWizard(existingAgent = null) {
             rules: existingAgent.will_rules || [],
             policy_id: existingAgent.policy_id || "standalone",
             visibility: existingAgent.visibility || "private",
-            is_update_mode: true // Explicitly set update mode
+            is_update_mode: true, // Explicitly set update mode
+
+            // Populate New Fields
+            intellect_model: existingAgent.intellect_model || "",
+            will_model: existingAgent.will_model || "",
+            conscience_model: existingAgent.conscience_model || "",
+            rag_knowledge_base: existingAgent.rag_knowledge_base || "",
+            rag_format_string: existingAgent.rag_format_string || ""
         };
         if (existingAgent.worldview && !agentData.instructions) {
             agentData.instructions = existingAgent.worldview;
@@ -54,7 +71,14 @@ export function openAgentWizard(existingAgent = null) {
             rules: [],
             policy_id: "standalone",
             visibility: "private",
-            is_update_mode: false // Explicitly set create mode
+            is_update_mode: false, // Explicitly set create mode
+
+            // Reset New Fields
+            intellect_model: "",
+            will_model: "",
+            conscience_model: "",
+            rag_knowledge_base: "",
+            rag_format_string: ""
         };
     }
 
@@ -204,23 +228,40 @@ async function renderIdentityStep(container) {
             <!-- GOVERNANCE & VISIBILITY SELECTION -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- VISIBILITY -->
-                <div class="bg-gray-50 dark:bg-neutral-800 p-5 rounded-xl border border-gray-200 dark:border-neutral-700">
-                    <div class="flex items-center gap-2 mb-2">
-                        <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                        <label class="block text-sm font-bold text-gray-900 dark:text-gray-100">Visibility</label>
+                <div>
+                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
+                    <div class="relative">
+                        <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 appearance-none">
+                            <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing only)</option>
+                            <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
+                            <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
+                            <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </div>
                     </div>
-                    <select id="wiz-visibility" class="w-full p-2 rounded border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
-                        <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing)</option>
-                        <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
-                        <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
-                        <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
-                    </select>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                        Control who can access this agent.
-                    </p>
                 </div>
 
-                <!-- GOVERNANCE -->
+                <!-- RAG Configuration -->
+                <div class="pt-4 border-t border-gray-200 dark:border-neutral-800 mt-2">
+                    <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-4 uppercase tracking-wider">RAG / Knowledge Base</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Knowledge Base ID</label>
+                            <input type="text" id="wiz-rag-kb" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. bible_bsb_v1" value="${agentData.rag_knowledge_base || ''}">
+                            <p class="text-xs text-gray-500 mt-1">Foundational text for retrieval</p>
+                        </div>
+                        <div>
+                             <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Format String</label>
+                             <textarea id="wiz-rag-fmt" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 font-mono text-xs h-[100px]" placeholder="REFERENCE: {reference}\nCONTENT:\n{text_chunk}\n---">${agentData.rag_format_string || 'REFERENCE: {reference}\nCONTENT:\n{text_chunk}\n---'}</textarea>
+                             <p class="text-xs text-gray-500 mt-1">Result formatting template</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
                 <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
                     <div class="flex items-center gap-2 mb-2">
                         <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
@@ -303,11 +344,46 @@ async function renderIdentityStep(container) {
     }
 }
 
-// === STEP 2: INTELLECT & STYLE ===
+// Helper to render model dropdown
+function renderModelSelector(id, currentValue, category) {
+    console.log(`[Wizard] Rendering selector ${id} forcat ${category}. Available:`, availableModelsCache.length);
+
+    const filteredModels = availableModelsCache.filter(m => {
+        if (typeof m === 'string') return true;
+        return !m.categories || m.categories.includes(category);
+    });
+    console.log(`[Wizard] Filtered models for ${category}:`, filteredModels);
+
+    if (filteredModels.length === 0) {
+        // Fallback to text input if no models loaded
+        return `<input type="text" id="${id}" class="p-1 text-sm border-b border-gray-300 dark:border-neutral-700 bg-transparent focus:ring-0 w-32" placeholder="Default" value="${currentValue}">`;
+    }
+
+    return `
+        <select id="${id}" class="p-1 text-xs border border-gray-300 dark:border-neutral-700 rounded bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 w-40">
+            <option value="">Default (System)</option>
+            ${filteredModels.map(m => {
+        const val = m.id || m;
+        const label = m.label || m;
+        return `<option value="${val}" ${val === currentValue ? 'selected' : ''}>${label}</option>`;
+    }).join('')}
+        </select>
+    `;
+}
+
+// === STEP 2: INTELLECT (Worldview & Style) ===
 function renderIntellectStep(container) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Intellect & Style</h2>
-        <p class="text-gray-500 mb-6">How does this agent think and speak?</p>
+        <div class="flex justify-between items-start mb-4">
+             <div>
+                <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Intellect & Style</h2>
+                <p class="text-gray-500 text-sm mb-4">How does this agent think and speak?</p>
+             </div>
+             <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">AI Model</label>
+                ${renderModelSelector('wiz-intellect-model', agentData.intellect_model || '', 'intellect')}
+            </div>
+        </div>
         
         <div class="space-y-6">
             <div>
@@ -398,8 +474,16 @@ function renderIntellectStep(container) {
 // === STEP 3: CONSCIENCE (Values) ===
 function renderConscienceStep(container) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Core Values</h2>
-        <p class="text-gray-500 mb-6">What does this agent value? The AI will score itself against these.</p>
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Core Values</h2>
+                <p class="text-gray-500 text-sm mb-6">What does this agent value? The AI will score itself against these.</p>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">AI Model</label>
+                ${renderModelSelector('wiz-conscience-model', agentData.conscience_model || '', 'support')}
+            </div>
+        </div>
         
         <div class="flex gap-4 mb-6">
             <input type="text" id="wiz-val-input" class="flex-1 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="Enter a value (e.g. Honesty, Frugality)">
@@ -550,10 +634,16 @@ function renderWillStep(container) {
                 <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Rules (Non-Negotiable)</h2>
                 <p class="text-gray-500 text-sm">Hard rules. If the Intellect violates these, the Will forces a rewrite.</p>
             </div>
-            <button id="wiz-gen-rules-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                Suggest Rules
-            </button>
+             <div class="flex flex-col items-end gap-2">
+                <div>
+                     <label class="block text-xs font-bold text-gray-500 uppercase text-right mb-1">AI Model</label>
+                     ${renderModelSelector('wiz-will-model', agentData.will_model || '', 'support')}
+                </div>
+                <button id="wiz-gen-rules-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    Suggest Rules
+                </button>
+            </div>
         </div>
         
         <div class="flex gap-4 mb-6">
@@ -599,12 +689,22 @@ function renderWillStep(container) {
             const res = await api.generatePolicyContent('rules', context);
 
             if (res.ok && res.content) {
+                let newRules = [];
                 try {
-                    // Try to parse JSON list
-                    let newRules = [];
-                    const json = JSON.parse(res.content);
-                    if (Array.isArray(json)) {
-                        newRules = json;
+                    // Case 1: Already an Array (Backend sent JSON list)
+                    if (Array.isArray(res.content)) {
+                        newRules = res.content;
+                    }
+                    // Case 2: String that needs parsing
+                    else if (typeof res.content === 'string') {
+                        // Try JSON parse first
+                        try {
+                            const json = JSON.parse(res.content);
+                            if (Array.isArray(json)) newRules = json;
+                        } catch (e) {
+                            // Fallback to newline splitting
+                            newRules = res.content.split('\n').filter(l => l.trim().length > 0);
+                        }
                     }
 
                     if (newRules.length > 0) {
@@ -637,11 +737,8 @@ function renderWillStep(container) {
                         ui.showToast(`Added ${processedRules.length} rules`, "success");
                     }
                 } catch (e) {
-                    console.error("JSON Parse error", e);
-                    // Fallback for plain text list if API returns that
-                    const lines = res.content.split('\n').filter(l => l.trim().length > 0);
-                    agentData.rules = [...new Set([...agentData.rules, ...lines])];
-                    renderRulesList();
+                    console.error("Rules processing error", e);
+                    ui.showToast("Failed to process rules", "error");
                 }
             } else {
                 ui.showToast("Failed to generate rules", "error");
@@ -697,9 +794,9 @@ function renderRulesList() {
 
 function validateCurrentStep() {
     if (currentStep === 1) {
-        const name = document.getElementById('wiz-name').value.trim();
-        if (!name) {
-            ui.showToast("Please name your agent.", "error");
+        const name = document.getElementById('wiz-name').value;
+        if (!name || !name.trim()) {
+            alert("Agent Name is required");
             return false;
         }
     }
@@ -711,66 +808,81 @@ function saveCurrentStepData() {
         agentData.name = document.getElementById('wiz-name').value.trim();
         agentData.description = document.getElementById('wiz-desc').value.trim();
         agentData.avatar = document.getElementById('wiz-avatar').value.trim();
-
+        agentData.visibility = document.getElementById('wiz-visibility').value;
         // Save Policy ID if available
         const policySelect = document.getElementById('wiz-policy');
         if (policySelect) {
             agentData.policy_id = policySelect.value;
         }
 
-        // Save Visibility
-        const visSelect = document.getElementById('wiz-visibility');
-        if (visSelect) {
-            agentData.visibility = visSelect.value;
+        // Generate key ONLY if it doesn't exist (Create Mode)
+        if (!agentData.key && agentData.name) {
+            agentData.key = agentData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            agentData.is_update_mode = false;
         }
 
-        // Generate key ONLY if it doesn't exist (Create Mode)
-        if (!agentData.key) {
-            agentData.key = agentData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-            agentData.is_update_mode = false; // Ensure update mode is off for new keys
-        }
-    }
-    if (currentStep === 2) {
+        // New RAG Fields
+        agentData.rag_knowledge_base = document.getElementById('wiz-rag-kb').value;
+        agentData.rag_format_string = document.getElementById('wiz-rag-fmt').value;
+    } else if (currentStep === 2) {
         agentData.instructions = document.getElementById('wiz-instructions').value;
         agentData.style = document.getElementById('wiz-style').value;
+        agentData.intellect_model = document.getElementById('wiz-intellect-model')?.value || "";
+    } else if (currentStep === 3) {
+        // Values updated in real-time
+        agentData.conscience_model = document.getElementById('wiz-conscience-model')?.value || "";
+    } else if (currentStep === 4) {
+        // Rules updated in real-time
+        agentData.will_model = document.getElementById('wiz-will-model')?.value || "";
     }
 }
 
+// === API CALLS ===
 async function finishWizard() {
     const btn = document.getElementById('wizard-next-btn');
-    const isEdit = !!agentData.key && agentData.is_update_mode;
-    btn.innerHTML = isEdit ? "Saving..." : "Creating Agent...";
+    const originalText = btn.innerText;
+    btn.innerText = "Saving...";
     btn.disabled = true;
 
     try {
         const payload = {
-            key: agentData.key,
-            name: agentData.name,
-            description: agentData.description,
-            avatar: agentData.avatar,
+            ...agentData,
+            // MAP Frontend 'instructions' (Persona) to Backend 'worldview'
             worldview: agentData.instructions,
-            style: agentData.style,
-            values: agentData.values,
-            will_rules: agentData.rules,
-            values: agentData.values,
-            will_rules: agentData.rules,
-            policy_id: agentData.policy_id,
-            visibility: agentData.visibility,
-            is_custom: true,
-            is_update_mode: agentData.is_update_mode // PASS THE FLAG TO API
+            // Ensure we send the correct key for update, or allow backend to generate for create
+            key: agentData.key || undefined
         };
 
-        await api.saveAgent(payload);
+        const res = await api.saveAgent(payload, agentData.is_update_mode);
 
-        ui.showToast(isEdit ? "Agent Updated!" : "Agent Created Successfully!", "success");
-        closeWizard();
+        if (res.ok) {
+            const isNew = !agentData.is_update_mode;
+            if (isNew) {
+                ui.showToast(`Agent "${agentData.name}" created!`, "success");
+            } else {
+                ui.showToast(`Agent "${agentData.name}" updated!`, "success");
+            }
+            closeWizard();
 
-        // Trigger a refresh of the profiles list
-        setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 1000);
 
+        } else {
+            // Handle specific API errors
+            if (res.status === 409 || (res.error && res.error.includes("exists"))) {
+                ui.showToast("Agent name already taken. Please Edit existing agent.", "error");
+            } else {
+                ui.showToast(res.error || "Failed to save agent", "error");
+            }
+        }
     } catch (e) {
-        ui.showToast(`Error saving agent: ${e.message}`, "error");
-        btn.innerHTML = "Try Again";
+        console.error("Save Wizard Error", e);
+        if (e.message && e.message.includes("409")) {
+            ui.showToast("Agent name already taken. Please Edit existing agent.", "error");
+        } else {
+            ui.showToast("Error saving agent: " + e.message, "error");
+        }
+    } finally {
+        btn.innerText = originalText;
         btn.disabled = false;
     }
 }

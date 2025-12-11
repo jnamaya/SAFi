@@ -325,11 +325,13 @@ function renderControlPanel() {
   uiSettingsModals.updateCurrentUser(user);
 
   // Render Personas Tab
+  // Render Personas Tab
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
     activeProfileData.key,
     handleProfileChange,
-    user // Pass user for ownership checks
+    user, // Pass user for ownership checks
+    availableModels // Pass models for wizard
   );
 
   // Render AI Models Tab
@@ -486,40 +488,56 @@ function attachEventListeners() {
   const sidebarOverlay = document.getElementById('sidebar-overlay');
   if (sidebarOverlay) sidebarOverlay.addEventListener('click', ui.closeSidebar);
 
-  // --- Control Panel ---
-  const controlPanelButton = document.getElementById('control-panel-btn');
-  if (controlPanelButton) {
-    controlPanelButton.addEventListener('click', () => {
+  // --- Navigation & Control Panel Handling (Delegated for Dynamic Elements) ---
+  document.addEventListener('click', (e) => {
+    // 1. Control Panel Button (in Sidebar)
+    const cpBtn = e.target.closest('#control-panel-btn');
+    if (cpBtn) {
       hapticImpactLight();
-      ui.elements.chatView.classList.add('hidden');
-      ui.elements.controlPanelView.classList.remove('hidden');
-      if (window.innerWidth < 768) ui.closeSidebar();
-    });
-  }
-  if (ui.elements.controlPanelBackButton) {
-    ui.elements.controlPanelBackButton.addEventListener('click', () => {
+      openControlPanel();
+      return;
+    }
+
+    // 2. Profile Chips (Shortcut to CP)
+    const chip = e.target.closest('#active-profile-chip, #active-profile-chip-mobile');
+    if (chip) {
+      // If on mobile, clicking chip might need to open sidebar or CP?
+      // Existing logic was CP.
       hapticImpactLight();
-      ui.elements.controlPanelView.classList.add('hidden');
-      ui.elements.chatView.classList.remove('hidden');
-    });
+      openControlPanel(true); // true = switch to profile tab
+      return;
+    }
+
+    // 3. Back to Chat Buttons (Mobile exit button support)
+    const backBtn = e.target.closest('#control-panel-back-btn');
+    if (backBtn) {
+      hapticImpactLight();
+      closeControlPanel();
+      return;
+    }
+  });
+
+  // Helper to Open Control Panel
+  function openControlPanel(switchToProfile = false) {
+    ui.elements.chatView.classList.add('hidden');
+    ui.elements.controlPanelView.classList.remove('hidden');
+
+    // We do NOT hide the sidebar anymore (User preference: visible is OK).
+    // If mobile, we might want to close it?
+    if (window.innerWidth < 768) {
+      ui.closeSidebar();
+    }
+
+    if (switchToProfile && ui.elements.cpNavProfile) {
+      ui.elements.cpNavProfile.click();
+    }
   }
 
-  // --- Profile Chips (shortcut to Control Panel) ---
-  if (ui.elements.activeProfileChip) {
-    ui.elements.activeProfileChip.addEventListener('click', () => {
-      hapticImpactLight();
-      ui.elements.chatView.classList.add('hidden');
-      ui.elements.controlPanelView.classList.remove('hidden');
-      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
-    });
-  }
-  if (ui.elements.activeProfileChipMobile) {
-    ui.elements.activeProfileChipMobile.addEventListener('click', () => {
-      hapticImpactLight();
-      ui.elements.chatView.classList.add('hidden');
-      ui.elements.controlPanelView.classList.remove('hidden');
-      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
-    });
+  // Helper to Close Control Panel
+  function closeControlPanel() {
+    ui.elements.controlPanelView.classList.add('hidden');
+    ui.elements.chatView.classList.remove('hidden');
+    // Sidebar handling is not needed as it stays visible.
   }
 
   // --- Modal Buttons ---
