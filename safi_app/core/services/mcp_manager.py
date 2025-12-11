@@ -120,6 +120,19 @@ class MCPManager:
                 }
             })
 
+        if "find_places" in allowed_tools:
+             tools.append({
+                "name": "find_places",
+                "description": "Find places (e.g. healthcare providers, hospitals) near a location.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query (e.g. 'Cardiologist in Seattle')."}
+                    },
+                    "required": ["query"]
+                }
+            })
+
         return tools
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
@@ -151,5 +164,10 @@ class MCPManager:
         if tool_name == "get_analyst_recommendations":
             from ..mcp_servers.fiduciary import get_analyst_recommendations
             return await get_analyst_recommendations(arguments["ticker"])
+
+        # -- GOOGLE MAPS IMPLEMENTATION --
+        if tool_name == "find_places":
+            from ..mcp_servers.google_maps import find_places
+            return await find_places(arguments["query"])
 
         return json.dumps({"error": f"Tool '{tool_name}' not found."})
