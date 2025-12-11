@@ -208,7 +208,8 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         <h3 class="text-xl font-semibold mb-4">Choose an Agent</h3>
         <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
         
-        <!-- NEW: "Create New Agent" Button -->
+        <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->
+        ${(currentUser && ['admin', 'editor'].includes(currentUser.role)) ? `
         <div class="mb-6">
             <button id="btn-create-agent" class="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group">
                 <div class="p-2 bg-gray-100 dark:bg-neutral-800 rounded-full group-hover:bg-green-100 dark:group-hover:bg-green-800 transition-colors">
@@ -222,6 +223,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                 </div>
             </button>
         </div>
+        ` : ''}
         
         <div class="space-y-4" role="radiogroup">
             ${profiles.map(profile => {
