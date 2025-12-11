@@ -264,6 +264,39 @@ def get_me():
         # Ensure role/org are present (defaults if DB missing them for some reason)
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
+
+        # --- NEW: Handle "Limbo" Users (No Org) in /me ---
+        if not user_details.get('org_id'):
+             # 1. Try Domain Auto-Join first
+            try:
+                user_email = user_details.get('email', '')
+                if '@' in user_email:
+                    domain = user_email.split('@')[-1]
+                    # Only auto-join if domain is NOT a common public provider (simple check)
+                    public_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com', 'me.com']
+                    if domain not in public_domains:
+                        existing_org = db.get_organization_by_domain(domain)
+                        if existing_org:
+                            user_details['org_id'] = existing_org['id']
+                            user_details['role'] = 'member'
+                            db.update_user_org_and_role(user_id, existing_org['id'], 'member')
+                            current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} via /me")
+            except Exception as e:
+                current_app.logger.error(f"Error in /me domain auto-join: {e}")
+
+            # 2. If still no org, Founder Flow
+            if not user_details.get('org_id'):
+                org_name = f"{user_details.get('name', 'My')} Organization"
+                try:
+                    new_org = db.create_organization_atomic(org_name, user_id)
+                    user_details['org_id'] = new_org['org_id']
+                    user_details['role'] = 'admin'
+                    
+                    db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
+                    current_app.logger.info(f"Created Personal Org '{org_name}' for user {user_id} via /me")
+                except Exception as e:
+                    current_app.logger.error(f"Failed to auto-create org in /me: {e}")
+        # ------------------------------------------------
     
         # FIX: Refresh session if DB differs (e.g. after migration or role change)
         session_user = session.get('user', {})

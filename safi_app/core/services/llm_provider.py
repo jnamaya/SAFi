@@ -67,7 +67,15 @@ class LLMProvider:
             except Exception as e:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
-    async def _chat_completion(self, route: str, system_prompt: str, user_prompt: str, temperature: float = 1.0, max_tokens: int = 4096) -> str:
+    async def _chat_completion(
+        self, 
+        route: str, 
+        system_prompt: str, 
+        user_prompt: str, 
+        temperature: float = 1.0, 
+        max_tokens: int = 4096,
+        tools: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
         """
         Internal generic handler that routes the request to the correct provider.
         """
@@ -89,7 +97,7 @@ class LLMProvider:
         if not client:
             raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
 
-        # --- Dispatch based on Type ---
+            # --- Dispatch based on Type ---
         
         # 1. OpenAI / DeepSeek / Groq / Mistral
         if provider_type == "openai":
@@ -101,6 +109,22 @@ class LLMProvider:
                     {"role": "user", "content": user_prompt},
                 ]
             }
+
+            # Map generic MCP tools to OpenAI format if provided
+            if tools:
+                openai_tools = []
+                for t in tools:
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t["description"],
+                            "parameters": t["input_schema"]
+                        }
+                    })
+                params["tools"] = openai_tools
+                # If tools are present, we force auto or required? Default is auto.
+
             # Handle o1/o3 reasoning models
             if "o1" in model_name or "o3" in model_name:
                 # o1 models do not support 'system' role in current API versions
@@ -110,11 +134,28 @@ class LLMProvider:
                 # o1 uses max_completion_tokens
                 params.pop("max_tokens", None) 
                 params["max_completion_tokens"] = max_tokens
+                # o1 preview doesn't support tools well yet, so maybe skip tools for o1?
+                # For now let's leave it, it might just error if used.
             else:
                  params["max_tokens"] = max_tokens
 
             resp = await client.chat.completions.create(**params)
-            return resp.choices[0].message.content or "{}"
+            
+            # OpenAI Tool Use Handling
+            msg = resp.choices[0].message
+            if msg.tool_calls:
+                # Return a special structure indicating tool call
+                return json.dumps({
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": json.loads(tc.function.arguments)
+                        } for tc in msg.tool_calls
+                    ]
+                })
+
+            return msg.content or "{}"
 
         # 2. Anthropic (Claude)
         elif provider_type == "anthropic":
@@ -156,7 +197,7 @@ class LLMProvider:
 
     # --- Public Faculty Interfaces ---
 
-    async def run_intellect(self, system_prompt: str, user_prompt: str, context_for_audit: str) -> Tuple[str, str, str]:
+    async def run_intellect(self, system_prompt: str, user_prompt: str, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str]:
         """Runs the configured Intellect model and parses the result."""
         try:
             raw_content = await self._chat_completion(
@@ -164,8 +205,13 @@ class LLMProvider:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=1.0,
-                max_tokens=4096
+                max_tokens=4096,
+                tools=tools
             )
+            # Check for tool calls first (optimization)
+            if raw_content and raw_content.strip().startswith('{') and '"tool_calls"' in raw_content:
+                return raw_content, "Tool Call", context_for_audit
+
             answer, reflection = parse_intellect_response(raw_content, self.log)
             return answer, reflection, context_for_audit
         except Exception as e:

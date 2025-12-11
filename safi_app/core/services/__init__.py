@@ -16,10 +16,12 @@ from .parsing_utils import (
     parse_conscience_response
 )
 from .rag_service import RAGService
+from .mcp_manager import MCPManager
 
 __all__ = [
     "LLMProvider",
     "RAGService",
+    "MCPManager",
     "robust_json_parse",
     "parse_intellect_response",
     "parse_will_response",

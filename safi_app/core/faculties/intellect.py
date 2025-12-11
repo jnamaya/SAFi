@@ -19,26 +19,27 @@ class IntellectEngine:
         llm_provider: Any,
         profile: Optional[Dict[str, Any]] = None,
         prompt_config: Optional[Dict[str, Any]] = None,
+        mcp_manager: Any = None
     ):
         """
         Args:
             llm_provider: The unified LLM service.
             profile: The persona profile configuration.
             prompt_config: The configuration for system prompts.
+            mcp_manager: Manager for tool execution.
         """
         self.llm_provider = llm_provider
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.log = logging.getLogger(self.__class__.__name__)
         self.last_error = None
+        self.mcp_manager = mcp_manager
 
         # Initialize Retriever if configured
         self.retriever = None
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
             self.retriever = Retriever(knowledge_base_name=kb_name)
-            # Inject retriever into provider if needed (rare, but keeping pattern if exists)
-            # Note: In this refactor, LLMProvider is pure LLM, so Retriever stays here.
 
     async def generate(
         self,
@@ -52,11 +53,18 @@ class IntellectEngine:
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Generates a response based on the user prompt and contextual information.
+        Handles Tool Execution Loop.
         """
         self.last_error = None
+        
+        # --- 0. Prepare Tools ---
+        tools = []
+        if self.mcp_manager:
+            tools = await self.mcp_manager.get_tools_for_agent(self.profile)
 
         # --- 1. RAG & Plugin Context Logic ---
         query_for_rag = user_prompt
+        # ... (Existing RAG Logic preserved) ...
         if plugin_context and plugin_context.get("rag_query_override"):
             query_for_rag = plugin_context["rag_query_override"]
 
@@ -82,7 +90,7 @@ class IntellectEngine:
             if "plugin_error" in plugin_context:
                 plugin_context_string += f"CONTEXT ERROR: {plugin_context['plugin_error']}\n\n"
 
-        # --- 2. Prompt Construction ---
+        # --- 2. Prompt Construction (Base) ---
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
         
@@ -127,13 +135,70 @@ class IntellectEngine:
         ]))
         
         formatting_reminder = self.prompt_config.get("formatting_reminder", "")
-        final_user_message = user_prompt + formatting_reminder
+        
+        # --- 3. Tool Loop Execution ---
+        # We allow up to 5 turns of tool use
+        max_tool_turns = 5
+        current_user_prompt = user_prompt + formatting_reminder
         final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
+        
+        for turn in range(max_tool_turns):
+            # Execute LLM Call
+            # We explicitly pass tools. LLMProvider needs to handle parsing tool calls vs text.
+            # We expect LLMProvider.run_intellect to return (answer, reflection, context) OR raise/return special tool signal.
+            
+            # Since we haven't modified run_intellect deeply, we'll rely on it returning the raw JSON string 
+            # if we hacked parsing support, OR we need to modify run_intellect to be friendlier.
+            
+            # To be safe, let's assume `run_intellect` returns the raw content if it fails to parse XML tags
+            # but sees valid JSON.
+            
+            response_tuple = await self.llm_provider.run_intellect(
+                system_prompt=system_prompt,
+                user_prompt=current_user_prompt,
+                context_for_audit=final_context_for_audit,
+                tools=tools
+            )
+            
+            answer, reflection, context = response_tuple
+            
+            # Detect Tool Call (Hacky JSON check on 'answer' if parsing failed or if provider returned raw)
+            # If `parse_intellect_response` failed, answer might be None or raw string.
+            tool_calls = None
+            if answer and answer.strip().startswith('{') and '"tool_calls"' in answer:
+                 import json
+                 try:
+                     payload = json.loads(answer)
+                     if "tool_calls" in payload:
+                         tool_calls = payload["tool_calls"]
+                 except: pass
 
-        # --- 3. Execution (Delegated to LLMProvider) ---
-        # The provider handles clients, models, retries, and parsing.
-        return await self.llm_provider.run_intellect(
-            system_prompt=system_prompt,
-            user_prompt=final_user_message,
-            context_for_audit=final_context_for_audit
-        )
+            if not tool_calls:
+                # No tools used, just return the text response
+                return answer, reflection, context
+
+            # Determine if we should execute tools
+            if tool_calls:
+                self.log.info(f"Intellect: Tool calls detected: {len(tool_calls)}")
+                
+                tool_results_text = ""
+                for tc in tool_calls:
+                     name = tc.get("name")
+                     args = tc.get("arguments")
+                     
+                     # GOVERNANCE CHECK (Will Faculty could go here in v2)
+                     
+                     if self.mcp_manager:
+                         result = await self.mcp_manager.execute_tool(name, args)
+                         tool_results_text += f"\n[TOOL EXECUTION: {name}({args}) => {result}]\n"
+                     else:
+                         tool_results_text += f"\n[TOOL EXECUTION FAILED: No Manager]\n"
+
+                # Append result to prompt and loop
+                current_user_prompt += tool_results_text
+                # Log this internally
+                self.log.info(f"Intellect: Appending tool results: {tool_results_text[:100]}...")
+                continue
+        
+        # If we exit loop without returning, fallback
+        return "I tried to use tools but got stuck in a loop.", "System Loop Error", final_context_for_audit

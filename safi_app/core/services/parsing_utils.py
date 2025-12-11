@@ -94,56 +94,89 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
     Parses the "Answer---REFLECTION---{...}" format from Intellect.
+    
+    Robustness Improvements:
+    - Handles proper delimiter usage.
+    - Handles implied delimiter (JSON block at end of text).
+    - Handles markdown wrapping (```json ... ```).
+    - Handles 'chatty' preambles/postambles.
     """
     answer = ""
     reflection = ""
     delimiter_text = "---REFLECTION---"
+    
+    clean_text = raw_text.strip()
 
-    # --- Run the original robust parsing on the raw_text ---
-    if delimiter_text in raw_text:
-        # --- Priority 1: Model used the delimiter correctly ---
-        parts = raw_text.split(delimiter_text)
+    # --- Strategy 1: Explicit Delimiter ---
+    if delimiter_text in clean_text:
+        parts = clean_text.split(delimiter_text)
         answer = parts[0].strip()
+        json_part_raw = parts[-1].strip()
         
-        json_part_raw = parts[-1]
+        # Parse the JSON part
         json_obj = robust_json_parse(json_part_raw, log)
-        
-        # Handle non-string reflection fields
-        ref_val = json_obj.get("reflection")
-        if isinstance(ref_val, (dict, list)):
-             reflection = json.dumps(ref_val, ensure_ascii=False)
-        else:
-             reflection = str(ref_val if ref_val is not None else "Parsed reflection from delimiter.").strip()
-
-    else:
-        # --- Priority 2: Model "forgot" delimiter but sent JSON ---
-        # Use regex to find JSON
-        json_match = re.search(r"\{[\s\S]*\}", raw_text) # [\s\S] matches newlines
-
-        if json_match:
-            json_part_raw = json_match.group(0).strip()
-            answer = raw_text[:json_match.start()].strip() # Everything BEFORE the JSON
-            
-            json_obj = robust_json_parse(json_part_raw, log)
-            
+        if "error" not in json_obj:
             ref_val = json_obj.get("reflection")
-            if isinstance(ref_val, (dict, list)):
-                 reflection = json.dumps(ref_val, ensure_ascii=False)
-            else:
-                 reflection = str(ref_val if ref_val is not None else "Parsed reflection from regex search.").strip()
+            reflection = str(ref_val) if ref_val else "Parsed reflection from delimiter."
+            return answer, reflection
+    
+    # --- Strategy 2: Implicit JSON Block (Regex) ---
+    # Look for the LAST JSON-like block in the text.
+    # We look for { "reflection": ... } loosely.
+    # This regex matches a curly brace block that contains "reflection" key.
+    
+    # Simple JSON object regex (non-recursive, but good enough for flat structures or 1-level deep)
+    # We rely on searching for the *last* valid JSON start '{' 
+    
+    last_brace_idx = clean_text.rfind("}")
+    if last_brace_idx != -1:
+        # Scan backwards for the matching opening brace? 
+        # Actually, let's try to finding the first opening brace that makes a valid JSON with the rest of the string.
+        # OR: Look for markdown blocks first.
+        
+        # 2a. Markdown Block
+        code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean_text, re.DOTALL | re.IGNORECASE)
+        if code_block_match:
+            json_candidate = code_block_match.group(1)
+            json_obj = robust_json_parse(json_candidate, log)
+            if "error" not in json_obj and "reflection" in json_obj:
+                # Successfully found the reflection JSON
+                reflection = str(json_obj["reflection"])
+                
+                # Answer is everything BEFORE this code block
+                answer = clean_text[:code_block_match.start()].strip()
+                # If answer contains the delimiter symbol but we ignored it (failed split above), clean it
+                answer = answer.replace(delimiter_text, "").strip()
+                return answer, reflection
 
-            if not answer:
-                answer = f"[Answer missing, model only sent JSON: {json_part_raw}]"
+        # 2b. Raw JSON at end
+        # Find the last occurrence of "{" that might start the reflection object
+        # We search specifically for the key "reflection"
+        ref_key_match = re.search(r'["\']reflection["\']\s*:', clean_text)
+        if ref_key_match:
+            # The object probably starts before this key.
+            # Walk backwards from ref_key_match.start() to find '{'
+            start_search = clean_text.rfind("{", 0, ref_key_match.start() + 1)
+            if start_search != -1:
+                json_candidate = clean_text[start_search:]
+                # Try parsing this candidate
+                json_obj = robust_json_parse(json_candidate, log)
+                if "error" not in json_obj:
+                     reflection = str(json_obj.get("reflection", "Parsed implicit JSON."))
+                     answer = clean_text[:start_search].strip()
+                     answer = answer.replace(delimiter_text, "").strip()
+                     return answer, reflection
 
-        else:
-            # --- Priority 3: Model sent raw text ---
-            answer = raw_text.strip()
-            reflection = "Salvaged raw output; model failed to format."
+    # --- Strategy 3: Falback (Raw Text) ---
+    # If we are here, we couldn't separate the answer from the reflection safely.
+    # We treat the whole text as the answer and log a soft failure for the reflection.
+    
+    answer = clean_text
+    reflection = "Salvaged raw output; model failed to format."
 
-    if not answer.strip():
-        answer = "[Model returned an empty answer]"
-        reflection = "Model returned empty answer."
-
+    if not answer:
+        answer = "[Model returned empty answer]"
+        
     return answer.replace("\\n", "\n"), reflection.replace("\\n", "\n")
 
 def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
