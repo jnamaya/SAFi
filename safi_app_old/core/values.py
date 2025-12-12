@@ -78,13 +78,7 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
         factor = a_target / a_sum
         for v in agent_values: v["weight"] = round(v.get("weight", 0) * factor, 3)
     
-    # Ensure STRICT schema for Faculties (key 'value' is required)
-    final_combined = global_values + agent_values
-    for v in final_combined:
-        if "value" not in v and "name" in v:
-            v["value"] = v["name"]
-
-    final_profile["values"] = final_combined
+    final_profile["values"] = global_values + agent_values
     return final_profile
 
 # 6. Loading Helpers (DB UPDATED)

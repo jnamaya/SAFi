@@ -1000,39 +1000,19 @@ def remove_member_from_org(user_id, org_id):
         conn.close()
 
 def get_policy_id_by_api_key(raw_key):
-    # DEBUG LOGGING (Temporary)
-    try:
-        masked_input = raw_key[:15] + "..." if raw_key else "None"
-        h = hashlib.sha256(raw_key.encode()).hexdigest()
-        logging.error(f"DEBUG_KEY_CHECK: Input: {masked_input}, Hash: {h[:10]}...")
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT policy_id FROM api_keys WHERE key_hash=%s", (h,))
-            row = cursor.fetchone()
-            if row:
-                logging.error(f"DEBUG_KEY_CHECK: Match Found! Policy ID: {row[0]}")
-                # Update usage stats
-                cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
-                conn.commit()
-                return row[0]
-            
-            logging.error(f"DEBUG_KEY_CHECK: FAIL. No match for hash {h[:10]}...")
-            return None
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception as e:
-        print(f"DEBUG: Verification CRASH: {e}")
-        return None
-
-def delete_policy_keys(pid):
+    h = hashlib.sha256(raw_key.encode()).hexdigest()
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM api_keys WHERE policy_id=%s", (pid,))
-        conn.commit()
+        cursor.execute("SELECT policy_id FROM api_keys WHERE key_hash=%s", (h,))
+        row = cursor.fetchone()
+        if row:
+            # Update usage stats
+            cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
+            conn.commit()
+            return row[0]
+        return None
     finally:
         cursor.close()
         conn.close()
+

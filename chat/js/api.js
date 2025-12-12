@@ -219,6 +219,9 @@ export async function savePolicy(policyData) {
     }
 }
 
+export const createPolicy = savePolicy;
+export const updatePolicy = savePolicy;
+
 export async function getPolicy(policyId) {
     return httpGet(`${urls.POLICIES}/${policyId}`);
 }
@@ -229,6 +232,10 @@ export async function deletePolicy(policyId) {
 
 export async function generateKey(policyId, label = "Default") {
     return httpJSON(`${urls.POLICIES}/${policyId}/keys`, 'POST', { label });
+}
+
+export async function rotateKey(policyId) {
+    return httpJSON(`${urls.POLICIES}/${policyId}/rotate_key`, 'POST', {});
 }
 
 export async function generatePolicyContent(type, context, extraData = {}) {

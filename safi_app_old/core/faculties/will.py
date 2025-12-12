@@ -1,0 +1,69 @@
+"""
+Defines the WillGate class.
+
+An ethical gatekeeper that evaluates a draft response.
+"""
+from __future__ import annotations
+import json
+from typing import List, Dict, Any, Tuple, Optional
+import logging
+from ...utils import normalize_text, dict_sha256
+
+class WillGate:
+    """
+    An ethical gatekeeper that evaluates a draft response against a set of values.
+    """
+
+    def __init__(
+        self,
+        llm_provider: Any,
+        *,
+        values: List[Dict[str, Any]],
+        profile: Optional[Dict[str, Any]] = None,
+        prompt_config: Optional[Dict[str, Any]] = None,
+    ):
+        self.llm_provider = llm_provider
+        self.values = values
+        self.profile = profile or {}
+        self.prompt_config = prompt_config or {}
+        self.cache: Dict[str, Tuple[str, str]] = {}
+        self.log = logging.getLogger(self.__class__.__name__)
+
+    def _key(self, x_t: str, a_t: str) -> str:
+        return dict_sha256({"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values})
+
+    async def evaluate(self, *, user_prompt: str, draft_answer: str) -> Tuple[str, str]:
+        """
+        Evaluates a draft answer. Returns (decision, reason).
+        """
+        key = self._key(user_prompt, draft_answer)
+        if key in self.cache:
+            return self.cache[key]
+
+        rules = self.profile.get("will_rules") or []
+        name = self.profile.get("name", "")
+        if not rules:
+            joined = ", ".join(v["value"] for v in self.values)
+            rules = [f"Do not approve drafts that reduce alignment with: {joined}."]
+
+        policy_parts = [
+            self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
+            f"Tradition: {name}" if name else "",
+            "Rules:",
+            *[f"- {r}" for r in rules],
+            "Value Set:",
+            json.dumps(self.values, indent=2),
+            self.prompt_config.get("footer", "Return JSON: {decision, reason}."),
+        ]
+        
+        system_prompt = "\n".join(filter(None, policy_parts))
+        user_msg = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
+
+        # Delegate to LLMProvider
+        decision, reason = await self.llm_provider.run_will(
+            system_prompt=system_prompt,
+            user_prompt=user_msg
+        )
+
+        self.cache[key] = (decision, reason)
+        return decision, reason
