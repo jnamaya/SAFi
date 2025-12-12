@@ -304,12 +304,10 @@ async function finishWizard() {
         if (res.ok) {
             ui.showToast(agentData.is_update_mode ? "Agent Updated!" : "Agent Created!", "success");
             closeWizard();
-            // Refresh logic? Ideally app.js listens or we trigger reload.
-            // Since we don't have event bus, maybe hard reload or direct UI call?
-            // "api.js" usually doesn't update UI.
-            // Let's assume user will refresh or app.js polling picks it up. 
-            // Better: Dispatch custom event.
-            window.dispatchEvent(new CustomEvent('agent-saved'));
+            // Force reload to update UI lists (User Request)
+            setTimeout(() => {
+                window.location.reload();
+            }, 500); // Small delay to let toast show
         } else {
             throw new Error(res.error || "Save failed");
         }

@@ -8,7 +8,16 @@ from ..config import Config
 agent_api_bp = Blueprint('agent_api', __name__)
 
 def validate_agent_data(data):
-    # RELAXED VALIDATION: Allow generic types, just cast them later.
+    # Enforce at least one value and one rule
+    values = data.get('values', [])
+    rules = data.get('will_rules') or data.get('rules', [])
+    
+    if not values or len(values) < 1:
+        return (False, "Agent must have at least one value.")
+    
+    if not rules or len(rules) < 1:
+        return (False, "Agent must have at least one rule.")
+        
     return (True, "")
 
 @agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
