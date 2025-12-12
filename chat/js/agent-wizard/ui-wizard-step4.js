@@ -118,13 +118,13 @@ function renderValuesList(agentData) {
             <!-- Mini Rubric Preview -->
             <div id="wiz-val-preview-${idx}" class="grid grid-cols-3 gap-2 text-xs mt-3">
                <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded text-red-800 dark:text-red-200">
-                   <strong>-1.0:</strong> ${(val.rubric && val.rubric.find(r => r.score < 0)?.criteria) || 'Violation'}
+                   <strong>-1.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score < 0)?.criteria) || 'Violation'}
                </div>
                <div class="p-2 bg-gray-100 dark:bg-gray-700/50 rounded text-gray-800 dark:text-gray-200">
-                   <strong>0.0:</strong> ${(val.rubric && val.rubric.find(r => r.score === 0)?.criteria) || 'Neutral'}
+                   <strong>0.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score === 0)?.criteria) || 'Neutral'}
                </div>
                <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded text-green-800 dark:text-green-200">
-                   <strong>1.0:</strong> ${(val.rubric && val.rubric.find(r => r.score > 0)?.criteria) || 'Perfect'}
+                   <strong>1.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score > 0)?.criteria) || 'Perfect'}
                </div>
             </div>
         `;

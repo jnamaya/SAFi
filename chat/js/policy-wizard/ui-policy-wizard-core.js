@@ -155,7 +155,7 @@ async function submitPolicy() {
         const finalWorldview = `<!-- CONTEXT: ${policyData.context} -->\n${policyData.worldview}`;
         const payload = { ...policyData, worldview: finalWorldview };
 
-        const res = await api.createPolicy(payload);
+        const res = await api.savePolicy(payload);
         if (res.ok) {
             localStorage.removeItem(STORAGE_KEY);
             ui.showToast("Policy Saved!", "success");

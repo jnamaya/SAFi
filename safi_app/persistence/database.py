@@ -987,3 +987,27 @@ def remove_member_from_org(user_id, org_id):
     finally:
         cursor.close()
         conn.close()
+# --- API Keys ---
+def create_api_key(policy_id, label="Default Key"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        raw_key = f"sk_{secrets.token_urlsafe(24)}"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        cursor.execute("INSERT INTO api_keys (key_hash, policy_id, label) VALUES (%s, %s, %s)", (key_hash, policy_id, label))
+        conn.commit()
+        return raw_key # Return raw only once
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_policy_keys(policy_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Return masked key to satisfy frontend expectation of 'key' field
+        cursor.execute("SELECT label, created_at, 'sk_************************' as `key` FROM api_keys WHERE policy_id=%s ORDER BY created_at DESC", (policy_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
