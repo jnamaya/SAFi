@@ -167,5 +167,9 @@ function renderRulesList(agentData) {
 }
 
 export function validateWillStep(agentData) {
+    if (!agentData.rules || agentData.rules.length === 0) {
+        ui.showToast("Please add at least one rule to define the agent's operational constraints.", "error");
+        return false;
+    }
     return true;
 }

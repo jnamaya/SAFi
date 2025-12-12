@@ -51,11 +51,14 @@ export function renderConscienceStep(container, agentData, availableModels) {
 
             if (res.ok && res.rubric) {
                 const rubric = res.rubric;
+                // Backend returns "definition" but ui typically uses "description". 
+                // We'll use "description" if available, else "definition".
+                // Ideally backend is fixed to return "description".
                 agentData.values.push({
                     name: name,
                     weight: 0.2, // Default weight
-                    description: rubric.description,
-                    rubric: rubric.scoring_guide
+                    description: rubric.description || rubric.definition,
+                    rubric: rubric.scoring_guide || rubric
                 });
                 renderValuesList(agentData);
                 document.getElementById('wiz-val-input').value = '';
@@ -83,80 +86,88 @@ function renderValuesList(agentData) {
     }
 
     agentData.values.forEach((val, idx) => {
-        const card = document.createElement('div');
-        card.className = "bg-gray-50 dark:bg-neutral-800 p-4 rounded-lg border border-gray-200 dark:border-neutral-700 relative group";
+        // Prepare Rubric Status & Text
+        let hasRubric = false;
+        let rubricText = '{}';
+        if (val.rubric) {
+            if (Array.isArray(val.rubric)) {
+                hasRubric = val.rubric.length > 0;
+            } else if (val.rubric.scoring_guide && Array.isArray(val.rubric.scoring_guide)) {
+                hasRubric = val.rubric.scoring_guide.length > 0;
+            }
+            rubricText = JSON.stringify(val.rubric, null, 2);
+        }
 
-        // Prepare JSON for the textarea
-        const rubricJson = JSON.stringify(val.rubric, null, 2);
+        const rubricBadge = hasRubric
+            ? `<span class="text-green-600 flex items-center gap-1 text-[10px] font-bold">✅ Rubric Active</span>`
+            : `<span class="text-yellow-600 text-[10px] font-bold">⚠️ No Rubric</span>`;
+
+        const card = document.createElement('div');
+        card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg p-3 shadow-sm hover:border-blue-300 transition-colors group";
+
+        const nameId = `ag-val-name-${idx}`;
+        const descId = `ag-val-desc-${idx}`;
+        const rubricId = `ag-val-rubric-${idx}`;
 
         card.innerHTML = `
-            <div class="flex justify-between items-start mb-2">
-                <div class="flex-1">
-                    <input type="text" class="font-bold text-lg text-gray-900 dark:text-white bg-transparent border-none focus:ring-0 p-0 w-full" value="${val.name}" onchange="window.updateValueName(${idx}, this.value)">
-                    <p class="text-xs text-gray-500">${val.description}</p>
-                </div>
-                <div class="flex gap-2">
-                    <button class="text-blue-500 hover:text-blue-700 text-xs" onclick="toggleEdit(${idx})">Edit</button>
-                    <button class="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity" onclick="window.removeValue(${idx})">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                </div>
+            <div class="flex justify-between items-start mb-2 gap-2">
+                <input type="text" id="${nameId}" class="flex-1 font-bold bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-gray-800 dark:text-gray-100 placeholder-gray-400 px-1 py-1 transition-all" 
+                    value="${val.name}" placeholder="Value Name">
+                    
+                <button class="text-gray-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity" onclick="window.removeValue(${idx})">
+                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
             </div>
             
-             <!-- Edit Mode (Hidden) -->
-            <div id="wiz-val-edit-${idx}" class="hidden mt-4 space-y-3 border-t border-gray-200 dark:border-neutral-700 pt-3">
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 mb-1">Description</label>
-                    <textarea class="w-full text-xs p-2 rounded border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white" rows="2" onchange="window.updateValueDesc(${idx}, this.value)">${val.description}</textarea>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 mb-1">Rubric Criteria (JSON)</label>
-                    <textarea class="w-full font-mono text-xs p-2 rounded border border-gray-300 dark:border-neutral-700 bg-gray-900 text-green-400" rows="6" onchange="window.updateValueRubric(${idx}, this.value)">${rubricJson}</textarea>
+            <textarea id="${descId}" class="w-full text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-neutral-900 border border-transparent hover:border-gray-200 focus:border-blue-500 rounded p-2 resize-none h-16 outline-none transition-all"
+                placeholder="Description of this value...">${val.description || ''}</textarea>
+            
+            <div class="flex justify-between items-center mt-3 border-t border-gray-100 dark:border-neutral-700 pt-2">
+                <div class="flex items-center gap-3">
+                    ${rubricBadge}
+                    <button class="text-xs text-blue-600 dark:text-blue-400 hover:underline" onclick="document.getElementById('ag-rubric-container-${idx}').classList.toggle('hidden')">
+                        View/Edit Rubric
+                    </button>
+                    
+                    <div class="flex items-center gap-2 ml-4">
+                        <label class="text-[10px] uppercase font-bold text-gray-400">Imp</label>
+                        <input type="range" min="1" max="100" value="${(val.weight && val.weight <= 1.0) ? Math.round(val.weight * 100) : (val.weight || 20)}" 
+                            class="w-16 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                        <span id="ag-weight-lbl-${idx}" class="text-[10px] text-gray-500 w-6">${(val.weight && val.weight <= 1.0) ? Math.round(val.weight * 100) : (val.weight || 20)}%</span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Mini Rubric Preview -->
-            <div id="wiz-val-preview-${idx}" class="grid grid-cols-3 gap-2 text-xs mt-3">
-               <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded text-red-800 dark:text-red-200">
-                   <strong>-1.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score < 0)?.criteria) || 'Violation'}
-               </div>
-               <div class="p-2 bg-gray-100 dark:bg-gray-700/50 rounded text-gray-800 dark:text-gray-200">
-                   <strong>0.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score === 0)?.criteria) || 'Neutral'}
-               </div>
-               <div class="p-2 bg-green-100 dark:bg-green-900/30 rounded text-green-800 dark:text-green-200">
-                   <strong>1.0:</strong> ${(Array.isArray(val.rubric) && val.rubric.find(r => r.score > 0)?.criteria) || 'Perfect'}
-               </div>
+            <div id="ag-rubric-container-${idx}" class="hidden mt-3 pt-3 border-t border-gray-100 dark:border-neutral-700">
+                <label class="block text-[10px] uppercase text-gray-400 font-bold mb-1">Scoring Logic (JSON)</label>
+                <textarea id="${rubricId}" class="w-full h-32 font-mono text-xs p-2 bg-gray-900 text-green-400 rounded border border-gray-700 focus:border-green-500 outline-none" spellcheck="false">${rubricText}</textarea>
+                <p class="text-[10px] text-gray-400 mt-1">Edit the raw JSON to adjust scoring criteria.</p>
             </div>
         `;
         list.appendChild(card);
+
+        // Bind Change Events
+        card.querySelector(`#${nameId}`).addEventListener('change', (e) => agentData.values[idx].name = e.target.value);
+        card.querySelector(`#${descId}`).addEventListener('change', (e) => agentData.values[idx].description = e.target.value);
+        card.querySelector(`#${rubricId}`).addEventListener('change', (e) => {
+            try {
+                agentData.values[idx].rubric = JSON.parse(e.target.value);
+            } catch (err) { /* ignore or warn */ }
+        });
+
+        // Bind Slider
+        const slider = card.querySelector(`input[type="range"]`);
+        const label = card.querySelector(`#ag-weight-lbl-${idx}`);
+        if (slider) {
+            slider.addEventListener('input', (e) => {
+                const newWeight = parseInt(e.target.value);
+                agentData.values[idx].weight = newWeight;
+                if (label) label.innerText = newWeight + '%';
+            });
+        }
     });
 
-    // Helpers attached to window for inline onclicks (scoped for safety?)
-    // In modules, window globals are messy. Ideally we attach event listeners to buttons.
-    // But since I'm regenerating HTML string, I'll stick to window helpers for now OR delegate.
-    // Event delegation is cleaner. Let's try to clean this up later.
-    // For now, I'll attach them to window in `ui-wizard-core.js` or here.
-    // Since these need access to `agentData` which is local scope here...
-    // I MUST re-attach definitions to window every time render is called with new agentData closure?
-    // or use a closure-safe way.
-
-    window.toggleEdit = (idx) => {
-        const editDiv = document.getElementById(`wiz-val-edit-${idx}`);
-        if (editDiv) editDiv.classList.toggle('hidden');
-    };
-
-    window.updateValueName = (idx, val) => { agentData.values[idx].name = val; };
-    window.updateValueDesc = (idx, val) => { agentData.values[idx].description = val; };
-
-    window.updateValueRubric = (idx, val) => {
-        try {
-            const parsed = JSON.parse(val);
-            agentData.values[idx].rubric = parsed;
-        } catch (e) {
-            alert("Invalid JSON");
-        }
-    };
-
+    // Delegated Remove
     window.removeValue = (idx) => {
         agentData.values.splice(idx, 1);
         renderValuesList(agentData);
@@ -165,11 +176,8 @@ function renderValuesList(agentData) {
 
 export function validateConscienceStep(agentData) {
     if (agentData.values.length === 0) {
-        // Warning OK, but maybe optional? Let's require at least one for a good agent?
-        // User might rely on Policy.
-        // Let's allow empty if policy is set.
-        // But for "Custom" agent usually you want values.
-        // We'll trust the user.
+        ui.showToast("Please add at least one value to define the agent's ethical framework.", "error");
+        return false;
     }
     return true;
 }

@@ -227,7 +227,7 @@ async def generate_policy_content_endpoint():
                  "Return a JSON Array of objects. Each object must have:\n"
                  "- 'name': value name\n"
                  "- 'weight': float (e.g. 0.2)\n"
-                 "- 'definition': short definition\n"
+                 "- 'description': short description\n"
                  "- 'rubric': object containing 'description' and 'scoring_guide'.\n\n"
                  "CRITICAL RUBRIC RULES:\n"
                  "1. Use a 3-point scale ONLY: 1.0, 0.0, and -1.0.\n"

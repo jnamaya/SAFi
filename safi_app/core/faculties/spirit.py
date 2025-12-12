@@ -86,15 +86,18 @@ class SpiritIntegrator:
             note = f"Ledger missing values: {', '.join(missing)}"
             return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
 
-        # Convert scores and confidences to numpy arrays
-        scores = np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
-        confidences = np.array(
-            [float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float
+        # Convert scores and confidences to numpy arrays, handling potential None/NaN
+        scores = np.nan_to_num(
+            np.array([float(r.get("score", 0.0)) if r.get("score") is not None else 0.0 for r in sorted_rows], dtype=float)
+        )
+        confidences = np.nan_to_num(
+            np.array([float(r.get("confidence", 0.0)) if r.get("confidence") is not None else 0.0 for r in sorted_rows], dtype=float)
         )
 
         # --- 2. Calculate This Turn's Vector (p_t) ---
         # Calculate the raw weighted, confidence-adjusted score
-        raw = float(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1))
+        # nan_to_num ensures we don't propagate NaNs
+        raw = float(np.nan_to_num(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1)))
         # Normalize the raw score to a 1-10 spirit score
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
         

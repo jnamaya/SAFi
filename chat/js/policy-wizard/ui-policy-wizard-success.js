@@ -8,7 +8,7 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
     }
 
     const { policy_id, api_key } = generatedCredentials;
-    const publicUrl = "https://safi.selfalignmentfrmework.com";
+    const publicUrl = "https://safi.selfalignmentframework.com";
     const endpointUrl = `${publicUrl}/api/bot/process_prompt`;
 
     const isMasked = api_key.includes('*');

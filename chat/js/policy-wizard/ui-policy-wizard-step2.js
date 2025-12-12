@@ -176,14 +176,19 @@ function renderValuesList(policyData) {
             <textarea id="${descId}" class="w-full text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-neutral-900 border border-transparent hover:border-gray-200 focus:border-blue-500 rounded p-2 resize-none h-16 outline-none transition-all"
                 placeholder="Description of this value...">${v.description || ''}</textarea>
             
-            <div class="mt-2 flex items-center justify-between">
                 <div class="flex items-center gap-3">
                     ${rubricBadge}
                     <button class="text-xs text-blue-600 dark:text-blue-400 hover:underline" onclick="document.getElementById('rubric-container-${idx}').classList.toggle('hidden')">
                         View/Edit Rubric
                     </button>
+                    
+                    <div class="flex items-center gap-2 ml-4">
+                        <label class="text-[10px] uppercase font-bold text-gray-400">Imp</label>
+                        <input type="range" min="1" max="100" value="${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}" 
+                            class="w-16 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700">
+                        <span id="pw-weight-lbl-${idx}" class="text-[10px] text-gray-500 w-6">${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}%</span>
+                    </div>
                 </div>
-                <span class="text-[10px] text-gray-400">Weight: ${v.weight || '0.2'}</span>
             </div>
 
             <div id="rubric-container-${idx}" class="hidden mt-3 pt-3 border-t border-gray-100 dark:border-neutral-700">
@@ -202,6 +207,18 @@ function renderValuesList(policyData) {
                 policyData.values[idx].rubric = JSON.parse(e.target.value);
             } catch (err) { /* ignore or warn */ }
         });
+
+        // Fix: Bind Slider Event properly with closure
+        const slider = card.querySelector(`input[type="range"]`);
+        const label = card.querySelector(`#pw-weight-lbl-${idx}`);
+        if (slider) {
+            slider.addEventListener('input', (e) => {
+                const newWeight = parseInt(e.target.value);
+                policyData.values[idx].weight = newWeight; // Update Data Model
+                // Update Label immediately
+                if (label) label.innerText = newWeight + '%';
+            });
+        }
     });
 
     // Delegated Remove Handler (Needs scope access, so must re-define on window or use cleaner delegation in core)

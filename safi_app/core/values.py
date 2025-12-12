@@ -35,6 +35,40 @@ GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {
 }
 
 # 5. Compiler Logic
+def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) -> List[Dict[str, Any]]:
+    """
+    Scales the weights of the provided values so they sum to `target_sum`.
+    If weights are missing or zero, they are treated as equal.
+    """
+    if not values: return []
+    
+    # Copy to avoid mutation issues
+    normalized = copy.deepcopy(values)
+    
+    # 1. Fill missing weights
+    # If a value has no weight, assume it's meant to be significant (e.g., 1.0)
+    # We will scale everything down later.
+    for v in normalized:
+        if "weight" not in v:
+            v["weight"] = 1.0
+            
+    # 2. Calculate current sum
+    current_sum = sum(float(v.get("weight", 0)) for v in normalized)
+    
+    # 3. Handle zero sum (all weights 0) -> distribute equally
+    if current_sum <= 0:
+        count = len(normalized)
+        equal_share = target_sum / count
+        for v in normalized: v["weight"] = round(equal_share, 3)
+        return normalized
+
+    # 4. Scale to target
+    factor = target_sum / current_sum
+    for v in normalized:
+        v["weight"] = round(float(v.get("weight", 0)) * factor, 3)
+        
+    return normalized
+
 def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> Dict[str, Any]:
     """
     Applies the Governance Layer to a base persona.
@@ -56,27 +90,12 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
     )
 
     # C. Merge Values & Math (Enforce 40/60 Split)
-    global_values = copy.deepcopy(governance.get("global_values", []))
-    agent_values = final_profile.get("values", [])
+    # AUTOMATIC DISTRIBUTION LOGIC:
+    # 1. Normalize Policy Values to exactly 0.40 (40%)
+    global_values = _normalize_weights(governance.get("global_values", []), target_sum=0.40)
     
-    # Target Ratios
-    if not agent_values:
-        g_target, a_target = 1.0, 0.0
-    elif not global_values:
-         g_target, a_target = 0.0, 1.0
-    else:
-        g_target, a_target = 0.40, 0.60
-    
-    # Normalize
-    g_sum = sum(v.get("weight", 0) for v in global_values)
-    if g_sum > 0:
-        factor = g_target / g_sum
-        for v in global_values: v["weight"] = round(v.get("weight", 0) * factor, 3)
-    
-    a_sum = sum(v.get("weight", 0) for v in agent_values)
-    if a_sum > 0:
-        factor = a_target / a_sum
-        for v in agent_values: v["weight"] = round(v.get("weight", 0) * factor, 3)
+    # 2. Normalize Agent Values to exactly 0.60 (60%)
+    agent_values = _normalize_weights(final_profile.get("values", []), target_sum=0.60)
     
     # Ensure STRICT schema for Faculties (key 'value' is required)
     final_combined = global_values + agent_values
@@ -187,4 +206,12 @@ def get_profile(name: str) -> Dict[str, Any]:
     if key in GOVERNANCE_MAP:
         return assemble_agent(raw_persona, GOVERNANCE_MAP[key])
     
-    return raw_persona
+    # C. Standalone Agent (No Policy) - NEW NORMALIZATION LOGIC
+    # Ensure values sum to 100% (1.0) automatically
+    normalized_persona = copy.deepcopy(raw_persona)
+    normalized_persona["values"] = _normalize_weights(
+        normalized_persona.get("values", []), 
+        target_sum=1.0
+    )
+    
+    return normalized_persona

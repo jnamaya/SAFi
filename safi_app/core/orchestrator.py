@@ -168,7 +168,18 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- 5. Initialize Services & Faculties ---
         self.log_dir = getattr(config, "LOG_DIR", "logs")
         self.log_template = getattr(config, "LOG_FILE_TEMPLATE", None)
-        self.active_profile_name = (self.profile or {}).get("name", "custom").lower()
+        
+        # --- LOGGING FIX: Use 'key' if available, else sanitized 'name' ---
+        raw_key = (self.profile or {}).get("key")
+        raw_name = (self.profile or {}).get("name", "custom")
+        
+        if raw_key:
+             self.active_profile_name = raw_key
+        else:
+             import re
+             # Sanitize name: replace non-alphanumeric with underscore
+             self.active_profile_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw_name).lower()
+
         self.last_drift = 0.0
         self.mu_history = deque(maxlen=5)
 
@@ -380,12 +391,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         log_path = Path(self.log_dir)
         if self.log_template:
             try:
+                # Mock timestamp matching format in Orchestrator
                 ts = datetime.fromisoformat(log_entry.get("timestamp").replace("Z", "+00:00"))
                 fname = ts.strftime(self.log_template.format(profile=self.active_profile_name))
                 log_path = log_path / fname
-            except Exception: pass
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                self.log.error(f"Failed to generate log filename for {self.active_profile_name}: {e}")
+                return
+
         try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a", encoding="utf-8") as f: 
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-        except Exception: pass
+        except Exception as e:
+            self.log.error(f"Failed to write log entry to {log_path}: {e}")
