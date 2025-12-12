@@ -147,10 +147,17 @@ def get_agent(key):
              if raw.get('created_by') != session.get('user')['id']:
                  pass # Ownership check placeholder
              
-             # RESTORE METADATA
+             # RESTORE METADATA & RAW CONFIG (For Editor)
              agent['created_by'] = raw.get('created_by')
              agent['is_custom'] = True
              agent['key'] = clean
+             
+             # overwritten merged fields with raw db fields
+             agent['values'] = raw.get('values', [])
+             agent['will_rules'] = raw.get('will_rules', [])
+             agent['worldview'] = raw.get('worldview', '')
+             # handle 'rules' alias if used by frontend
+             agent['rules'] = agent['will_rules']
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:

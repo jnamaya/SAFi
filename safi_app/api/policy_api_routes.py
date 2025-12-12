@@ -36,7 +36,18 @@ def create_policy():
             values=data.get("values", []), 
             created_by=user_id
         )
-        return jsonify({"ok": True, "policy_id": pid}), 201
+        
+        # Auto-generate credentials for immediate use
+        default_key = db.create_api_key(pid, "Initial Key")
+        
+        return jsonify({
+            "ok": True, 
+            "policy_id": pid,
+            "credentials": {
+                "policy_id": pid,
+                "api_key": default_key
+            }
+        }), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -70,8 +81,7 @@ def update_policy(policy_id):
     try:
         policy = db.get_policy(policy_id)
         if not policy: return jsonify({"error": "Not found"}), 404
-        # Ownership check removed in favor of strict Admin RBAC
-
+        
         data = request.get_json(force=True, silent=True) or {}
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
@@ -83,7 +93,18 @@ def update_policy(policy_id):
             will_rules=data.get('will_rules'),
             values=data.get('values')
         )
-        return jsonify({"ok": True})
+        
+        # Return existing (or new) credentials for UI convenience
+        keys = db.get_policy_keys(policy_id)
+        api_key = keys[0]['key'] if keys else db.create_api_key(policy_id, "Default Key")
+        
+        return jsonify({
+            "ok": True,
+            "credentials": {
+                "policy_id": policy_id,
+                "api_key": api_key
+            }
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

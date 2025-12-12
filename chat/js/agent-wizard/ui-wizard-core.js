@@ -195,7 +195,7 @@ function updateProgress() {
     }
 }
 
-function renderStep(step) {
+async function renderStep(step) {
     updateProgress();
     const container = document.getElementById('wizard-content');
     container.innerHTML = '';
@@ -207,7 +207,29 @@ function renderStep(step) {
             case 3: renderIntellectStep(container, agentData, availableModelsCache); break;
             case 4: renderConscienceStep(container, agentData, availableModelsCache); break;
             case 5: renderWillStep(container, agentData, availableModelsCache); break;
-            case 6: renderReviewStep(container, agentData); break;
+            case 6:
+                // Auto-generate key for review visualization
+                // Naming Convention: [org_prefix]_[agent_name]
+                if (!agentData.key && agentData.name) {
+                    let prefix = "org";
+                    try {
+                        const res = await api.getMyOrganization();
+                        const org = res ? res.organization : null;
+
+                        if (org) {
+                            if (org.domain_verified && org.domain_to_verify) {
+                                prefix = org.domain_to_verify.replace(/\./g, '_').toLowerCase();
+                            } else if (org.id) {
+                                prefix = `org_${org.id.substring(0, 4)}`;
+                            }
+                        }
+                    } catch (e) { console.warn("Naming fetch failed", e); }
+
+                    const nameSlug = agentData.name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                    agentData.key = `${prefix}_${nameSlug}`;
+                }
+                renderReviewStep(container, agentData);
+                break;
         }
     } catch (e) {
         console.error("Render Step Failed", e);
@@ -252,6 +274,26 @@ async function finishWizard() {
     btn.disabled = true;
 
     try {
+        // Fix: Auto-generate key if missing (Robust Fallback)
+        if (!agentData.key && agentData.name) {
+            let prefix = "org";
+            try {
+                const res = await api.getMyOrganization();
+                const org = res ? res.organization : null;
+
+                if (org) {
+                    if (org.domain_verified && org.domain_to_verify) {
+                        prefix = org.domain_to_verify.replace(/\./g, '_').toLowerCase();
+                    } else if (org.id) {
+                        prefix = `org_${org.id.substring(0, 4)}`;
+                    }
+                }
+            } catch (e) { console.warn("Naming fetch failed in finishWizard", e); }
+
+            const nameSlug = agentData.name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            agentData.key = `${prefix}_${nameSlug}`;
+        }
+
         const payload = {
             ...agentData,
             worldview: agentData.instructions // Map back to backend expectation

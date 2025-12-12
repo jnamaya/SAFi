@@ -112,13 +112,19 @@ async function loadPolicies(agentData) {
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400">Values</span>
                                 <ul class="list-disc list-inside mt-1">
-                                    ${(policy.values_weights || []).slice(0, 2).map(v => `<li>${v.name}</li>`).join('')}
+                                    ${(policy.values_weights || []).slice(0, 2).map(v => {
+                        const label = (typeof v === 'object' ? (v.name || v.value || 'Untitled') : v);
+                        return `<li>${label}</li>`;
+                    }).join('')}
                                 </ul>
                             </div>
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400">Rules</span>
                                 <ul class="list-disc list-inside mt-1 text-red-600 dark:text-red-400">
-                                    ${(policy.will_rules || []).slice(0, 2).map(r => `<li>${r.substring(0, 30)}...</li>`).join('')}
+                                    ${(policy.will_rules || []).slice(0, 2).map(r => {
+                        const text = (typeof r === 'object' ? (r.name || r.text || JSON.stringify(r)) : r);
+                        return `<li>${String(text).substring(0, 30)}...</li>`;
+                    }).join('')}
                                 </ul>
                             </div>
                         </div>

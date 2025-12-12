@@ -9,16 +9,16 @@ export function renderReviewStep(container, agentData) {
         
         <div class="space-y-6">
             
-            <!-- Identity -->
-            <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg p-4 border border-gray-200 dark:border-neutral-700 flex gap-4">
+             <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg p-4 border border-gray-200 dark:border-neutral-700 flex gap-4">
                 <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
                      ${agentData.avatar ? `<img src="${agentData.avatar}" class="w-full h-full object-cover">` : `<span class="text-2xl">🤖</span>`}
                 </div>
                 <div>
                      <h3 class="font-bold text-lg dark:text-white">${agentData.name || 'Unnamed Agent'}</h3>
                      <p class="text-sm text-gray-500">${agentData.description || 'No description'}</p>
-                     <div class="flex gap-2 mt-2">
-                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">Visibility: ${agentData.visibility}</span>
+                     <div class="flex gap-2 mt-2 items-center flex-wrap">
+                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-mono">ID: ${agentData.key}</span>
+                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Visibility: ${agentData.visibility}</span>
                         <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Policy: ${agentData.policy_id}</span>
                      </div>
                 </div>
