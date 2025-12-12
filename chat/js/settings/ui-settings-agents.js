@@ -35,7 +35,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     // Generate the HTML for the profile list
     container.innerHTML = `
         <h3 class="text-xl font-semibold mb-4">Choose an Agent</h3>
-        <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select a profile to define the AI's values, worldview, and rules. The chat will reload to apply the change.</p>
+        <p class="text-sm text-gray-400 mt-1 mb-6">Select a persona to define the AI's values, worldview, and capabilities. Switching agents will start a new conversation.</p>
         
         <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->
         ${(currentUser && ['admin', 'editor'].includes(currentUser.role)) ? `
