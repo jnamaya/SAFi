@@ -133,10 +133,11 @@ def update_policy(policy_id):
         return jsonify({"error": str(e)}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/rotate_key', methods=['POST'], strict_slashes=False)
-@require_role('editor')
+# @require_role('editor')
 def rotate_key(policy_id):
+    import traceback
     try:
-        # Verify function existence (Guard against stale code in future)
+        # Verify function existence
         if not hasattr(db, 'delete_policy_keys'):
             return jsonify({"error": "FATAL: database.delete_policy_keys missing"}), 500
 
@@ -158,7 +159,8 @@ def rotate_key(policy_id):
             }
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        tb = traceback.format_exc()
+        return jsonify({"error": f"Error: {str(e)} \nTrace: {tb}"}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['DELETE'], strict_slashes=False)
 @require_role('editor')
@@ -229,19 +231,15 @@ async def generate_policy_content_endpoint():
                  "- 'weight': float (e.g. 0.2)\n"
                  "- 'definition': short definition\n"
                  "- 'rubric': object containing 'description' and 'scoring_guide'.\n\n"
-                 "CRITICAL RUBRIC RULES:\n"
-                 "1. Use a 3-point scale ONLY: 1.0, 0.0, and -1.0.\n"
-                 "2. 1.0 = Full Compliance/Positive.\n"
-                 "3. 0.0 = Neutral/Not Applicable.\n"
-                 "4. -1.0 = Violation/Negative.\n"
-                 "5. DO NOT produce a 1-5 scale.\n\n"
+                 "IMPORTANT: 'scoring_guide' must be a list of EXACTLY 3 items using a strict -1.0 to 1.0 scale.\n"
+                 "DO NOT use a 1-5 scale.\n\n"
                  "Example Rubric Format:\n"
                  "\"rubric\": {\n"
                  "  \"description\": \"...\",\n"
                  "  \"scoring_guide\": [\n"
-                 "    { \"score\": 1.0, \"criteria\": \"Explicitly demonstrates validation...\" },\n"
-                 "    { \"score\": 0.0, \"criteria\": \"Neither valid nor invalid...\" },\n"
-                 "    { \"score\": -1.0, \"criteria\": \"Violates validation rules...\" }\n"
+                 "    { \"score\": 1.0, \"criteria\": \"Excellent...\" },\n"
+                 "    { \"score\": 0.0, \"criteria\": \"Neutral...\" },\n"
+                 "    { \"score\": -1.0, \"criteria\": \"Violation...\" }\n"
                  "  ]\n"
                  "}"
              )

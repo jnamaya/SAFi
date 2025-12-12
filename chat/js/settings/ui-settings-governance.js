@@ -131,12 +131,12 @@ export async function renderSettingsGovernanceTab() {
             btn.addEventListener('click', async () => {
                 const label = prompt(`Enter a label for this new key (e.g. "Marketing Bot"):`, "New Key");
                 if (label) {
-                    // We could reuse the wizard success screen or just show an alert
                     try {
                         const res = await api.generateKey(btn.dataset.id, label);
                         if (res.ok) {
-                            // Use a prompt to allow copying
-                            prompt("API Key Generated. Copy it now, it won't be shown again:", res.api_key);
+                            const key = res.api_key.trim();
+                            await navigator.clipboard.writeText(key);
+                            alert(`Secure Key Generated & Copied to Clipboard!\n\n${key}\n\nPlease paste this immediately.`);
                         } else {
                             alert("Error: " + res.error);
                         }

@@ -1,4 +1,5 @@
 import * as ui from './../ui.js';
+import * as api from './../api.js';
 
 export function renderSuccessStep(container, policyData, generatedCredentials) {
     if (!generatedCredentials) {
@@ -9,6 +10,8 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
     const { policy_id, api_key } = generatedCredentials;
     const publicUrl = "https://safi.selfalignmentfrmework.com";
     const endpointUrl = `${publicUrl}/api/bot/process_prompt`;
+
+    const isMasked = api_key.includes('*');
 
     container.innerHTML = `
         <div class="text-center py-8">
@@ -30,9 +33,11 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
                 <div>
                     <label class="block text-xs uppercase text-gray-400 font-bold mb-1">API Key</label>
                     <div class="flex gap-2">
-                        <code class="flex-1 p-3 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-sm text-green-600 font-bold truncate">${api_key}</code>
-                        <button class="px-3 bg-gray-200 hover:bg-gray-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 rounded text-black dark:text-white font-bold transition-colors" onclick="navigator.clipboard.writeText('${api_key}'); ui.showToast('Copied!', 'success');">Copy</button>
+                        <code id="display-api-key" class="flex-1 p-3 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-sm text-green-600 font-bold truncate">${api_key}</code>
+                        <button id="btn-copy-key" class="px-3 bg-gray-200 hover:bg-gray-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 rounded text-black dark:text-white font-bold transition-colors">Copy</button>
+                        <button id="btn-rotate-key" class="px-3 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold transition-colors text-xs" title="Generate a new key (Old one stops working)">Rotate</button>
                     </div>
+                    ${isMasked ? '<p id="key-warning" class="text-xs text-red-500 mt-1 font-bold">⚠️ Key is hidden. If lost, click Rotate to generate a new one.</p>' : ''}
                 </div>
             </div>
             
@@ -65,7 +70,7 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
                  </button>
                  <div id="teams-code-block" class="hidden border-t border-gray-200 dark:border-neutral-700 bg-[#1e1e1e]">
                      <div class="flex justify-end p-2 bg-[#2d2d2d] border-b border-[#3e3e3e]">
-                         <button class="text-xs text-gray-300 hover:text-white px-2 py-1 bg-white/10 rounded" onclick="navigator.clipboard.writeText(document.getElementById('py-code-content').innerText); ui.showToast('Code Copied!', 'success')">Copy Code</button>
+                         <button id="btn-copy-code" class="text-xs text-gray-300 hover:text-white px-2 py-1 bg-white/10 rounded">Copy Code</button>
                      </div>
                      <pre id="py-code-content" class="p-4 text-xs font-mono text-gray-300 whitespace-pre overflow-x-auto max-h-96">import os
 import sys
@@ -163,4 +168,71 @@ if __name__ == "__main__":
              <button onclick="window.location.reload()" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg transition-transform hover:scale-105">Finish Setup</button>
         </div>
     `;
+
+    // --- EVENT LISTENERS ---
+    const copyBtn = document.getElementById('btn-copy-key');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const keyText = document.getElementById('display-api-key').innerText.trim();
+            navigator.clipboard.writeText(keyText);
+            ui.showToast('Copied!', 'success');
+        });
+    }
+
+    const copyCodeBtn = document.getElementById('btn-copy-code');
+    if (copyCodeBtn) {
+        copyCodeBtn.addEventListener('click', () => {
+            const codeText = document.getElementById('py-code-content').innerText;
+            navigator.clipboard.writeText(codeText);
+            ui.showToast('Code Copied!', 'success');
+        });
+    }
+
+    const rotateBtn = document.getElementById('btn-rotate-key');
+    if (rotateBtn) {
+        rotateBtn.addEventListener('click', async () => {
+            if (!confirm("Are you sure? This will invalidate the old key immediatley. Any running bots will stop working until updated.")) return;
+
+            rotateBtn.disabled = true;
+            rotateBtn.innerText = "Generating...";
+
+            try {
+                // Use imported api client
+                const resp = await api.rotateKey(policy_id);
+
+                if (resp.ok && resp.credentials) {
+                    const newKey = resp.credentials.api_key;
+
+                    // 1. Update Display
+                    const display = document.getElementById('display-api-key');
+                    if (display) {
+                        display.innerText = newKey;
+                        display.classList.add('bg-green-50', 'text-green-700');
+                        setTimeout(() => display.classList.remove('bg-green-50', 'text-green-700'), 500);
+                    }
+
+                    // 2. Remove Warning
+                    const warning = document.getElementById('key-warning');
+                    if (warning) warning.remove();
+
+                    // 3. Update Python Code Snippet
+                    const codeBlock = document.getElementById('py-code-content');
+                    if (codeBlock) {
+                        // Regex to replace the value in SAFI_BOT_SECRET line
+                        codeBlock.innerText = codeBlock.innerText.replace(/SAFI_BOT_SECRET = os\.environ\.get\("SAFI_BOT_SECRET", ".*?"\)/, `SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${newKey}")`);
+                    }
+
+                    ui.showToast('New Key Generated!', 'success');
+                } else {
+                    ui.showToast('Failed to rotate key', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                ui.showToast('Error rotating key: ' + e.message, 'error');
+            } finally {
+                rotateBtn.disabled = false;
+                rotateBtn.innerText = "Rotate";
+            }
+        });
+    }
 }
