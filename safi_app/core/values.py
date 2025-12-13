@@ -89,13 +89,13 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
         final_profile.get("will_rules", [])
     )
 
-    # C. Merge Values & Math (Enforce 40/60 Split)
+    # C. Merge Values & Math (Enforce 60/40 Split - SAFETY FIRST)
     # AUTOMATIC DISTRIBUTION LOGIC:
-    # 1. Normalize Policy Values to exactly 0.40 (40%)
-    global_values = _normalize_weights(governance.get("global_values", []), target_sum=0.40)
+    # 1. Normalize Policy Values to exactly 0.60 (60%)
+    global_values = _normalize_weights(governance.get("global_values", []), target_sum=0.60)
     
-    # 2. Normalize Agent Values to exactly 0.60 (60%)
-    agent_values = _normalize_weights(final_profile.get("values", []), target_sum=0.60)
+    # 2. Normalize Agent Values to exactly 0.40 (40%)
+    agent_values = _normalize_weights(final_profile.get("values", []), target_sum=0.40)
     
     # Ensure STRICT schema for Faculties (key 'value' is required)
     final_combined = global_values + agent_values
