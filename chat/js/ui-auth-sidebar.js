@@ -510,21 +510,35 @@ export function getAvatarForProfile(profileName) {
   switch (cleanName) {
     case 'the contoso governance officer':
     case 'contoso governance officer':
+    case 'the_contoso_governance_officer': // Sanitized backend key
       return 'assets/contoso.svg';
     case 'the fiduciary':
+    case 'fiduciary':
+    case 'the_fiduciary': // Sanitized backend key
       return 'assets/fiduciary.svg';
     case 'the health navigator':
-      return 'assets/health_navigator.svg';
+    case 'health navigator':
+    case 'the_health_navigator': // Sanitized backend key
+      return 'assets/health.svg';
     case 'the socratic tutor':
+    case 'socratic tutor':
+    case 'the_socratic_tutor': // Sanitized backend key
     case 'the tutor':
       return 'assets/tutor.svg';
     case 'the vault':
+    case 'vault':
+    case 'the_vault': // Sanitized backend key
       return 'assets/vault.svg';
     case 'the negotiator':
+    case 'negotiator':
+    case 'the_negotiator': // Sanitized backend key
       return 'assets/negotiator.svg';
     case 'the bible scholar':
-      return 'assets/bible_scholar.svg';
+    case 'bible scholar':
+    case 'the_bible_scholar': // Sanitized backend key
+      return 'assets/bible.svg';
     case 'the safi guide':
+    case 'the_safi_guide': // Sanitized backend key
     default:
       return 'assets/safi.svg';
   }
