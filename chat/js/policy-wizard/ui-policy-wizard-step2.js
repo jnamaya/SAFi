@@ -230,8 +230,9 @@ function renderValuesList(policyData) {
 }
 
 export function validateConstitutionStep(policyData) {
-    if (policyData.values.length === 0) {
-        // warning?
+    if (!policyData.values || policyData.values.length === 0) {
+        ui.showToast("At least one Core Value is required to proceed.", "error");
+        return false;
     }
     return true;
 }

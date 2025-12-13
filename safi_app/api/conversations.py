@@ -63,6 +63,8 @@ class SafiInstanceCache:
                             "global_values": policy_data.get('values_weights', [])
                         }
                         prof = assemble_agent(prof, gov)
+                        # CRITICAL: Stamp Policy ID on the profile for auditing
+                        prof['policy_id'] = policy_id
                 
                 instance = SAFi(
                     config=Config,

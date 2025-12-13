@@ -130,5 +130,9 @@ function renderRulesList(policyData) {
 }
 
 export function validateRulesStep(policyData) {
+    if (!policyData.will_rules || policyData.will_rules.length === 0) {
+        ui.showToast("At least one Rule is required to proceed.", "error");
+        return false;
+    }
     return true;
 }

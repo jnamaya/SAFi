@@ -13,8 +13,21 @@ def validate_policy_data(data):
     errors = []
     if 'name' in data and not isinstance(data['name'], str):
         errors.append("Name must be a string.")
-    if 'will_rules' in data and not isinstance(data['will_rules'], list):
-        errors.append("will_rules must be a list.")
+    
+    # Enforce Values
+    if 'values' in data:
+        if not isinstance(data['values'], list):
+            errors.append("Values must be a list.")
+        elif len(data['values']) < 1:
+            errors.append("At least one Core Value is required.")
+    
+    # Enforce Rules
+    if 'will_rules' in data:
+        if not isinstance(data['will_rules'], list):
+            errors.append("will_rules must be a list.")
+        elif len(data['will_rules']) < 1:
+            errors.append("At least one Will Rule (hard constraint) is required.")
+
     if errors: return False, "; ".join(errors)
     return True, None
 
