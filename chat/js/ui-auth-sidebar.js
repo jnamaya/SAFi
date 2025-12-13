@@ -519,7 +519,7 @@ export function getAvatarForProfile(profileName) {
     case 'the health navigator':
     case 'health navigator':
     case 'the_health_navigator': // Sanitized backend key
-      return 'assets/health.svg';
+      return 'assets/the_health_navigator.svg';
     case 'the socratic tutor':
     case 'socratic tutor':
     case 'the_socratic_tutor': // Sanitized backend key
@@ -536,7 +536,7 @@ export function getAvatarForProfile(profileName) {
     case 'the bible scholar':
     case 'bible scholar':
     case 'the_bible_scholar': // Sanitized backend key
-      return 'assets/bible.svg';
+      return 'assets/bible_scholar.svg';
     case 'the safi guide':
     case 'the_safi_guide': // Sanitized backend key
     default:
