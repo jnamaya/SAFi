@@ -96,7 +96,8 @@ async def handle_bible_scholar_commands(
     """
     
     # This plugin only runs for 'the bible scholar'
-    if active_profile_name != "the bible scholar":
+    # FIX: Orchestrator sanitizes names to use underscores, so we must check for that too.
+    if active_profile_name not in ["the bible scholar", "the_bible_scholar"]:
         return user_prompt, None
 
     original_user_prompt = user_prompt
