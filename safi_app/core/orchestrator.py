@@ -362,7 +362,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 "finalOutput": suppression_message, 
                 "willDecision": D_t, 
                 "willReason": E_t, 
-                "retryMetadata": retry_metadata, # Log metadata even on failure
+                "willReason": E_t, 
+                "retryMetadata": retry_metadata, 
+                "policyId": self.profile.get("policy_id"),
+                "orgId": self.profile.get("org_id"),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
@@ -405,3 +408,42 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e:
             self.log.error(f"Failed to write log entry to {log_path}: {e}")
+
+    def _run_audit_thread(self, snapshot, decision, reason, message_id, spirit_feedback=None, retry_metadata=None):
+        try:
+            # Calculate Spirit Score & Ledger (Re-simulation for logging)
+            # Ideally this data should be passed in snapshot, but we extract what we can
+            
+            log_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "t": snapshot.get("t"),
+                "userPrompt": snapshot.get("x_t"),
+                "intellectDraft": snapshot.get("a_t"),
+                "intellectReflection": "Restored thread.",
+                "finalOutput": snapshot.get("a_t"),
+                "willDecision": decision,
+                "willReason": reason,
+                "conscienceLedger": [], 
+                "spiritScore": 10,
+                "spiritNote": "Audit restored.",
+                "drift": 0.0,
+                "memorySummary": snapshot.get("memory_summary"),
+                "spiritFeedback": spirit_feedback,
+                "retrievedContext": snapshot.get("retrieved_context"),
+                "retryMetadata": retry_metadata or {"was_retried": False},
+                
+                # --- GOVERNANCE FIX ---
+                "policyId": self.profile.get("policy_id"),
+                "orgId": self.profile.get("org_id")
+            }
+            
+            self._append_log(log_entry)
+            
+        except Exception as e:
+            self.log.error(f"Audit thread failed: {e}")
+
+    def _run_summarization_thread(self, conversation_id, current_summary, user_prompt, ai_response):
+        pass
+
+    def _run_profile_update_thread(self, user_id, current_profile, user_prompt, ai_response):
+        pass
