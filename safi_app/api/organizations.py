@@ -195,12 +195,18 @@ def update_organization(org_id):
 
     data = request.json or {}
     name = data.get('name')
+    settings = data.get('settings')
     
-    if not name:
-        return jsonify({"error": "Name is required"}), 400
+    if not name and not settings:
+        return jsonify({"error": "No changes provided (name or settings required)"}), 400
         
     try:
-        db.update_organization_name(org_id, name)
+        if name:
+            db.update_organization_name(org_id, name)
+        
+        if settings:
+            db.update_organization_settings(org_id, settings)
+
         return jsonify({"status": "updated", "id": org_id, "name": name})
     except Exception as e:
         current_app.logger.error(f"Error updating org: {e}")

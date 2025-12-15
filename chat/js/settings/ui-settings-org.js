@@ -140,6 +140,54 @@ function renderOrganizationUI(container, org) {
 
         ${verificationSection}
 
+        <div class="mb-8 border-b border-neutral-200 dark:border-neutral-800 pb-8">
+             <h4 class="text-lg font-semibold mb-4">AI Governance Configuration</h4>
+             
+             <div class="bg-gray-50 dark:bg-neutral-800/50 rounded-xl p-6 border border-gray-200 dark:border-neutral-800 space-y-8">
+                 <!-- Authority Slider -->
+                 <div>
+                      <div class="flex justify-between items-end mb-2">
+                          <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Organizational Authority</label>
+                          <span id="lbl-gov-weight" class="text-sm font-mono bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded">
+                            ${Math.round((org.settings?.governance_split ?? 0.60) * 100)}%
+                          </span>
+                      </div>
+                      <input type="range" id="sl-gov-weight" min="0" max="100" value="${Math.round((org.settings?.governance_split ?? 0.60) * 100)}" 
+                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600">
+                      <div class="flex justify-between text-xs text-gray-500 mt-2">
+                          <span>Agent Autonomy (0%)</span>
+                          <span class="font-bold text-gray-400">Balanced (60%)</span>
+                          <span>Strict Compliance (100%)</span>
+                      </div>
+                      <p class="text-xs text-gray-500 mt-2">Determines how much weight is given to the Organization's Policy vs the Agent's Persona.</p>
+                 </div>
+                 
+                 <!-- Memory Slider -->
+                 <div>
+                      <div class="flex justify-between items-end mb-2">
+                          <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Ethical Memory (Retention)</label>
+                          <span id="lbl-spirit-beta" class="text-sm font-mono bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded">
+                            ${(org.settings?.spirit_beta ?? 0.90)}
+                          </span>
+                      </div>
+                      <input type="range" id="sl-spirit-beta" min="10" max="99" value="${Math.round((org.settings?.spirit_beta ?? 0.90) * 100)}" 
+                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-purple-600">
+                      <div class="flex justify-between text-xs text-gray-500 mt-2">
+                          <span>Short Term (Adapts Fast)</span>
+                          <span class="font-bold text-gray-400">Balanced</span>
+                          <span>Long Term (Resists Change)</span>
+                      </div>
+                      <p class="text-xs text-gray-500 mt-2">Determines the weight of history. High values (0.9) mean the AI prioritizes its long-term training; low values (0.1) mean it is easily influenced by recent chats.</p>
+                 </div>
+                 
+                 <div class="flex justify-end">
+                     <button id="btn-save-gov-settings" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">
+                        Save Configuration
+                     </button>
+                 </div>
+             </div>
+        </div>
+
         <div class="space-y-6">
             <section>
                 <div class="flex items-center justify-between mb-3">
@@ -273,6 +321,53 @@ function renderOrganizationUI(container, org) {
             } catch (e) {
                 ui.showToast(e.message, "error");
                 cancelVerifyBtn.disabled = false;
+            }
+        });
+    }
+
+    // --- Governance Settings ---
+    const slGov = document.getElementById('sl-gov-weight');
+    const lblGov = document.getElementById('lbl-gov-weight');
+    const slBeta = document.getElementById('sl-spirit-beta');
+    const lblBeta = document.getElementById('lbl-spirit-beta');
+    const btnSaveGov = document.getElementById('btn-save-gov-settings');
+
+    if (slGov && lblGov) {
+        slGov.addEventListener('input', (e) => {
+            lblGov.textContent = `${e.target.value}%`;
+        });
+    }
+
+    if (slBeta && lblBeta) {
+        slBeta.addEventListener('input', (e) => {
+            const val = (parseInt(e.target.value) / 100).toFixed(2);
+            lblBeta.textContent = val;
+        });
+    }
+
+    if (btnSaveGov) {
+        btnSaveGov.addEventListener('click', async () => {
+            btnSaveGov.disabled = true;
+            btnSaveGov.textContent = "Saving...";
+
+            const settings = {
+                governance_split: parseInt(slGov.value) / 100,
+                spirit_beta: parseFloat((parseInt(slBeta.value) / 100).toFixed(2))
+            };
+
+            try {
+                const res = await api.updateOrganization(org.id, { settings });
+                if (res && (res.ok || res.status === 'updated')) {
+                    ui.showToast("Governance settings saved!", "success");
+                    // Update local org object reference potentially, or just wait for reload
+                } else {
+                    throw new Error(res.error || "Save failed");
+                }
+            } catch (e) {
+                ui.showToast(e.message, "error");
+            } finally {
+                btnSaveGov.disabled = false;
+                btnSaveGov.textContent = "Save Configuration";
             }
         });
     }

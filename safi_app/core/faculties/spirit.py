@@ -49,72 +49,85 @@ class SpiritIntegrator:
     def compute(
         self, 
         ledger: List[Dict[str, Any]], 
-        mu_tm1: np.ndarray
-    ) -> Tuple[int, str, np.ndarray, np.ndarray, Optional[float]]:
+        mu_memory: Union[np.ndarray, List, Dict[str, float]]
+    ) -> Tuple[int, str, Union[Dict[str, float], np.ndarray], np.ndarray, Optional[float]]:
         """
         Updates the spirit memory vector based on the latest audit ledger.
-
-        Args:
-            ledger: The list of evaluation dicts from the Conscience.
-            mu_tm1: The spirit vector from the previous turn (t-1).
-
-        Returns:
-            A tuple containing:
-            (spirit_score, note, mu_new, p_t, drift)
-            - spirit_score: A 1-10 score for this turn's coherence.
-            - note: A human-readable note about the computation.
-            - mu_new: The updated spirit vector for this turn (t).
-            - p_t: The raw alignment vector for this turn.
-            - drift: The cosine drift between p_t and mu_tm1 (None if invalid).
         """
         if not self.values or not ledger:
-            return 1, "Incomplete ledger", mu_tm1, np.zeros_like(mu_tm1), None
+            # Return same memory if no update possible
+            return 1, "Incomplete ledger", mu_memory, np.zeros(len(self.values)), None
 
-        # --- 1. Parse and Sort Ledger ---
-        # Create a map of normalized value names to their ledger rows
+        # --- 1. Resolve Memory to Vector (Transition Logic) ---
+        expected_len = len(self.value_weights)
+        mu_tm1_vector = np.zeros(expected_len)
+        
+        # Determine format
+        is_legacy = isinstance(mu_memory, (list, np.ndarray))
+        
+        if is_legacy:
+            # LEGACY: Positional Memory
+            old_arr = np.array(mu_memory)
+            if old_arr.shape[0] != expected_len:
+                # Resize logic (Pad/Truncate)
+                common_len = min(expected_len, old_arr.shape[0])
+                mu_tm1_vector[:common_len] = old_arr[:common_len]
+            else:
+                mu_tm1_vector = old_arr
+        else:
+            # MODERN: Semantic Memory (Dict)
+            # Map current values to memory keys
+            for i, norm_name in enumerate(self._norm_values):
+                mu_tm1_vector[i] = mu_memory.get(norm_name, 0.0)
+
+        # --- 2. Parse and Sort Ledger ---
         lmap: Dict[str, Dict[str, Any]] = {
             _norm_label(row.get("value")): row for row in ledger if row.get("value")
         }
-        # Sort the rows to match the canonical order of self.values
         sorted_rows: List[Optional[Dict[str, Any]]] = [
             lmap.get(nkey) for nkey in self._norm_values
         ]
 
-        # Check if any values were missing from the audit
         if any(r is None for r in sorted_rows):
             missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
-            note = f"Ledger missing values: {', '.join(missing)}"
-            return 1, note, mu_tm1, np.zeros_like(mu_tm1), None
+            # Safety return
+            return 1, f"Ledger missing: {', '.join(missing)}", mu_memory, np.zeros(expected_len), None
 
-        # Convert scores and confidences to numpy arrays, handling potential None/NaN
+        # Convert scores/confidences
         scores = np.nan_to_num(
-            np.array([float(r.get("score", 0.0)) if r.get("score") is not None else 0.0 for r in sorted_rows], dtype=float)
+            np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
         )
         confidences = np.nan_to_num(
-            np.array([float(r.get("confidence", 0.0)) if r.get("confidence") is not None else 0.0 for r in sorted_rows], dtype=float)
+            np.array([float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float)
         )
 
-        # --- 2. Calculate This Turn's Vector (p_t) ---
-        # Calculate the raw weighted, confidence-adjusted score
-        # nan_to_num ensures we don't propagate NaNs
+        # --- 3. Compute This Turn (p_t) ---
         raw = float(np.nan_to_num(np.clip(np.sum(self.value_weights * scores * confidences), -1, 1)))
-        # Normalize the raw score to a 1-10 spirit score
         spirit_score = int(round((raw + 1) / 2 * 9 + 1))
-        
-        # p_t is the alignment vector for this turn, based on score and weight
         p_t = self.value_weights * scores
 
-        # --- 3. Update Spirit Vector (mu) ---
-        # Apply the exponential moving average (EMA)
-        # mu_new = (beta * old_memory) + ((1 - beta) * new_observation)
-        mu_new = self.beta * mu_tm1 + (1 - self.beta) * p_t
+        # --- 4. Update Spirit Vector (mu) ---
+        # mu_new_vector only contains CURRENT active values
+        mu_new_vector = self.beta * mu_tm1_vector + (1 - self.beta) * p_t
 
-        # --- 4. Calculate Drift ---
-        # Calculate the cosine drift (1 - cosine_similarity)
-        # This measures how much the new observation (p_t) diverges from the old memory (mu_tm1).
+        # --- 5. Export Memory (Reconstruct Dict) ---
+        if is_legacy:
+            # First time migration: Start fresh dict
+            new_memory_dict = {}
+        else:
+            # Checkpoint: Copy old memory to preserve DORMANT values (values not in current policy)
+            new_memory_dict = mu_memory.copy()
+        
+        # Update/Overwrite keys for CURRENT values
+        for i, norm_name in enumerate(self._norm_values):
+            new_memory_dict[norm_name] = float(mu_new_vector[i])
+
+        # --- 6. Calculate Drift ---
         eps = 1e-8
-        denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1))
-        drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1) / denom)
+        denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1_vector))
+        drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1_vector) / denom)
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
-        return spirit_score, note, mu_new, p_t, drift
+        
+        # Return the DICTIONARY memory for storage
+        return spirit_score, note, new_memory_dict, p_t, drift

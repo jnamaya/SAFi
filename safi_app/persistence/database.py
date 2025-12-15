@@ -265,16 +265,20 @@ def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
         row = cursor.fetchone()
         if row:
             turn, mu_json = row
-            mu_list = json.loads(mu_json) if mu_json else []
-            return {"turn": turn, "mu": np.array(mu_list)}
+            # Return raw object (List or Dict), let SpiritIntegrator handle type coercion
+            mu_obj = json.loads(mu_json) if mu_json else {}
+            return {"turn": turn, "mu": mu_obj}
         return None
     finally:
         cursor.close()
         conn.close()
 
 def save_spirit_memory_in_transaction(cursor, profile_name: str, memory: Dict[str, Any]):
-    mu_list = memory.get('mu', np.array([])).tolist()
-    mu_json = json.dumps(mu_list)
+    # Accepts Dict or List, dumps to JSON
+    mu_obj = memory.get('mu', {})
+    if hasattr(mu_obj, 'tolist'): mu_obj = mu_obj.tolist() # Handle numpy array
+    
+    mu_json = json.dumps(mu_obj)
     turn = memory.get('turn', 0)
     sql = """
         INSERT INTO spirit_memory (profile_name, turn, mu)
@@ -291,9 +295,39 @@ def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dic
     row = cursor.fetchone()
     if row:
         turn, mu_json = row
-        mu_list = json.loads(mu_json) if mu_json else []
-        return {"turn": turn, "mu": np.array(mu_list)}
+        mu_obj = json.loads(mu_json) if mu_json else {}
+        return {"turn": turn, "mu": mu_obj}
     return None
+
+def get_latest_spirit_memory(agent_id):
+    """
+    Wrapper for load_spirit_memory to match orchestrator call signature.
+    """
+    return load_spirit_memory(agent_id)
+
+def save_spirit_memory(agent_id, mu, turn, score=None, drift=None):
+    """
+    Wrapper to save spirit memory. 
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Robust serialization: Handle Dict, List, or Numpy Array
+        if hasattr(mu, 'tolist'): mu = mu.tolist()
+        
+        mu_json = json.dumps(mu)
+        sql = """
+            INSERT INTO spirit_memory (profile_name, turn, mu)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                turn = VALUES(turn),
+                mu = VALUES(mu)
+        """
+        cursor.execute(sql, (agent_id, turn, mu_json))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 
 # -------------------------------------------------------------------------
 # USER & CHAT FUNCTIONS
@@ -905,7 +939,14 @@ def get_organization(oid):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM organizations WHERE id=%s", (oid,))
-        return cursor.fetchone()
+        row = cursor.fetchone()
+        if row and row.get('settings'):
+            try:
+                if isinstance(row['settings'], str):
+                     row['settings'] = json.loads(row['settings'])
+            except:
+                row['settings'] = {}
+        return row
     finally:
         cursor.close()
         conn.close()
@@ -962,6 +1003,33 @@ def update_organization_name(oid, name):
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE organizations SET name=%s WHERE id=%s", (name, oid))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_organization_settings(oid, settings):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Check if settings exist first to merge? 
+        # For now, we assume frontend sends the full or partial dict and we merge it here?
+        # Actually safer to fetch, merge, save.
+        
+        # Fetch current
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (oid,))
+        row = cursor.fetchone() # Tuple (json_str,)
+        current_settings = {}
+        if row and row[0]:
+            try:
+                current_settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except:
+                current_settings = {}
+        
+        # Merge
+        current_settings.update(settings)
+        
+        cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s", (json.dumps(current_settings), oid))
         conn.commit()
     finally:
         cursor.close()
@@ -1032,6 +1100,40 @@ def delete_policy_keys(pid):
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM api_keys WHERE policy_id=%s", (pid,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_memory_audit(message_id, audit_status, ledger, spirit_score, spirit_note, profile_name=None, profile_values=None, suggested_prompts=None):
+    """
+    Updates a chat history record with the results of the Conscience Audit.
+    Similar to update_audit_results but kept for compatibility.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            UPDATE chat_history 
+            SET audit_status=%s, 
+                conscience_ledger=%s, 
+                spirit_score=%s, 
+                spirit_note=%s,
+                profile_name=%s,
+                profile_values=%s,
+                suggested_prompts=%s
+            WHERE message_id=%s
+        """
+        cursor.execute(sql, (
+            audit_status, 
+            json.dumps(ledger), 
+            spirit_score, 
+            spirit_note,
+            profile_name,
+            json.dumps(profile_values) if profile_values else None,
+            json.dumps(suggested_prompts) if suggested_prompts else None,
+            message_id
+        ))
         conn.commit()
     finally:
         cursor.close()
