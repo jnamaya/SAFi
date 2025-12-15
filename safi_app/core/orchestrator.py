@@ -49,7 +49,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         value_set: Optional[List[Dict[str, Any]]] = None,
         intellect_model: Optional[str] = None,
         will_model: Optional[str] = None,
-        conscience_model: Optional[str] = None
+        conscience_model: Optional[str] = None,
+        spirit_beta: Optional[float] = None
     ):
         """
         Initializes the SAFi orchestration system.
@@ -184,7 +185,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.mu_history = deque(maxlen=5)
 
         self.rag_service = RAGService(
-            knowledge_base_name=self.profile.get("rag_knowledge_base")
+            knowledge_base_name=(self.profile or {}).get("rag_knowledge_base")
         )
 
         # Initialize MCP Manager
@@ -214,7 +215,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             prompt_config=self.prompts.get("conscience_auditor", {})
         )
 
-        self.spirit = SpiritIntegrator(self.values, beta=getattr(config, "SPIRIT_BETA", 0.9))
+        beta_val = spirit_beta if spirit_beta is not None else getattr(config, "SPIRIT_BETA", 0.9)
+        self.spirit = SpiritIntegrator(self.values, beta=beta_val)
 
     def __del__(self):
         try:
@@ -255,15 +257,29 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
-             temp_spirit_memory = {"turn": 0, "mu": np.zeros(max(len(self.values), 1))} 
+             temp_spirit_memory = {}
+        
+        # --- FIX: Resolve Vector from Memory (Dict or List) for Feedback ---
+        mu_memory = temp_spirit_memory.get("mu", {})
 
-        current_mu = temp_spirit_memory.get("mu", np.zeros(len(self.values)))
-        if len(current_mu) != len(self.values):
-            current_mu = np.zeros(len(self.values))
+        current_mu = np.zeros(len(self.values))
+        
+        if isinstance(mu_memory, (list, np.ndarray)):
+            # Legacy: Padding/Truncation
+            old_arr = np.array(mu_memory)
+            common_len = min(len(current_mu), old_arr.shape[0])
+            current_mu[:common_len] = old_arr[:common_len]
+        else:
+            # Modern: Key Lookup
+            # Sanitize value names for lookup
+            from .faculties.utils import _norm_label
+            for i, v in enumerate(self.values):
+                v_name = v.get("value") or v.get("name") or "Unknown"
+                current_mu[i] = mu_memory.get(_norm_label(v_name), 0.0)
 
         spirit_feedback = build_spirit_feedback(
             mu=current_mu,
-            value_names=[v['value'] for v in self.values],
+            value_names=[v.get('value') or v.get('name') for v in self.values],
             drift=self.last_drift,
             recent_mu=list(self.mu_history)
         )
@@ -354,7 +370,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- 4. Final Decision (Block or Allow) ---
         if D_t == "violation":
             suppression_message = f"🛑 **Blocked**\n\nReason: {E_t}"
-            S_p = await self._get_prompt_suggestions(user_prompt, self.profile.get("will_rules", []))
+            S_p = await self._get_prompt_suggestions(user_prompt, (self.profile or {}).get("will_rules", []))
             db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete") 
             self._append_log({
                 "userPrompt": user_prompt, 
@@ -362,7 +378,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 "finalOutput": suppression_message, 
                 "willDecision": D_t, 
                 "willReason": E_t, 
-                "retryMetadata": retry_metadata, # Log metadata even on failure
+                "willReason": E_t, 
+                "retryMetadata": retry_metadata, 
+                "policyId": (self.profile or {}).get("policy_id"),
+                "orgId": (self.profile or {}).get("org_id"),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
@@ -405,3 +424,86 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
         except Exception as e:
             self.log.error(f"Failed to write log entry to {log_path}: {e}")
+
+    def _run_audit_thread(self, snapshot, decision, reason, message_id, spirit_feedback=None, retry_metadata=None):
+        """
+        Executes the *actual* Conscience Audit and Spirit Update in a background thread.
+        This ensures the user response is fast, but the governance record is rigorous.
+        """
+        try:
+            # 1. Setup new event loop for this thread (asyncio is not thread-safe by default)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # 2. Run Conscience Audit
+            # We evaluate the FINAL output (snapshot['a_t'])
+            ledger = loop.run_until_complete(self.conscience.evaluate(
+                final_output=snapshot.get("a_t", ""),
+                user_prompt=snapshot.get("x_t", ""),
+                reflection=snapshot.get("r_t", ""), # Intellect's reflection
+                retrieved_context=snapshot.get("retrieved_context", "")
+            ))
+            
+            # 3. Update Spirit
+            # Fetch current spirit memory to update against
+            # DB calls are synchronous, so we call them directly
+            temp_spirit_memory = db.get_latest_spirit_memory((self.profile or {}).get("id", "default"))
+            mu_memory = temp_spirit_memory.get("mu", {}) if temp_spirit_memory else {}
+            
+            spirit_score, spirit_note, mu_new, p_t, drift = self.spirit.compute(ledger, mu_memory)
+            
+            # 4. Save Spirit Update to DB
+            db.save_spirit_memory(
+                agent_id=(self.profile or {}).get("id", "default"),
+                mu=mu_new, # Now passing Dict directly
+                turn=snapshot.get("t"),
+                score=spirit_score,
+                drift=drift if drift is not None else 0.0
+            )
+
+            # 5. Save Audit Results to Chat History (for Frontend)
+            db.update_memory_audit(
+                message_id=message_id,
+                audit_status="complete",
+                ledger=ledger,
+                spirit_score=spirit_score,
+                spirit_note=spirit_note,
+                profile_name=self.active_profile_name,
+                profile_values=self.values,
+                suggested_prompts=(retry_metadata or {}).get("suggested_prompts")
+            )
+            
+            # 6. Log the REAL Data
+            log_entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "t": snapshot.get("t"),
+                "userPrompt": snapshot.get("x_t"),
+                "intellectDraft": snapshot.get("a_t"), # In this flow, draft == final if approved
+                "intellectReflection": snapshot.get("r_t", ""),
+                "finalOutput": snapshot.get("a_t"),
+                "willDecision": decision,
+                "willReason": reason,
+                "conscienceLedger": ledger, 
+                "spiritScore": spirit_score,
+                "spiritNote": spirit_note,
+                "drift": drift if drift is not None else 0.0,
+                "memorySummary": snapshot.get("memory_summary"),
+                "spiritFeedback": spirit_feedback, # Feedback used for *generating* this response (from t-1)
+                "retrievedContext": snapshot.get("retrieved_context"),
+                "retryMetadata": retry_metadata or {"was_retried": False},
+                "policyId": (self.profile or {}).get("policy_id"),
+                "orgId": (self.profile or {}).get("org_id")
+            }
+            
+            self._append_log(log_entry)
+            
+            loop.close()
+            
+        except Exception as e:
+            self.log.error(f"Audit thread failed: {e}")
+
+    def _run_summarization_thread(self, conversation_id, current_summary, user_prompt, ai_response):
+        pass
+
+    def _run_profile_update_thread(self, user_id, current_profile, user_prompt, ai_response):
+        pass

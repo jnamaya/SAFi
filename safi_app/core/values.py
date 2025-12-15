@@ -69,7 +69,7 @@ def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) ->
         
     return normalized
 
-def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> Dict[str, Any]:
+def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], governance_weight: float = 0.60) -> Dict[str, Any]:
     """
     Applies the Governance Layer to a base persona.
     """
@@ -89,13 +89,17 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any]) -> 
         final_profile.get("will_rules", [])
     )
 
-    # C. Merge Values & Math (Enforce 60/40 Split - SAFETY FIRST)
+    # C. Merge Values & Math (Enforce Configurable Split)
     # AUTOMATIC DISTRIBUTION LOGIC:
-    # 1. Normalize Policy Values to exactly 0.60 (60%)
-    global_values = _normalize_weights(governance.get("global_values", []), target_sum=0.60)
+    # 1. Normalize Policy Values to target governance weight (Default 0.60)
+    # Ensure weight is within bounds
+    gov_weight = max(0.0, min(1.0, float(governance_weight)))
+    agent_weight = 1.0 - gov_weight
     
-    # 2. Normalize Agent Values to exactly 0.40 (40%)
-    agent_values = _normalize_weights(final_profile.get("values", []), target_sum=0.40)
+    global_values = _normalize_weights(governance.get("global_values", []), target_sum=gov_weight)
+    
+    # 2. Normalize Agent Values to remaining weight
+    agent_values = _normalize_weights(final_profile.get("values", []), target_sum=agent_weight)
     
     # Ensure STRICT schema for Faculties (key 'value' is required)
     final_combined = global_values + agent_values

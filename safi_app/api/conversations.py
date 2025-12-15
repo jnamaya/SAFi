@@ -25,15 +25,54 @@ class SafiInstanceCache:
         self._lock = threading.Lock()
         self._ttl = ttl_seconds
 
-    def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None):
+    def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None, org_settings_hash=None):
         """
         Creates a unique hash for a specific configuration.
         """
-        raw_key = f"{profile_name}|{intellect}|{will}|{conscience}|{policy_id or ''}"
+        raw_key = f"{profile_name}|{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
         return hashlib.md5(raw_key.encode()).hexdigest()
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
-        key = self._generate_key(profile_name, intellect_model, will_model, conscience_model, policy_id)
+        # 1. Pre-fetch Org Settings if policy exists (needed for key generation)
+        org_settings = {}
+        gov_weight = 0.60
+        spirit_beta = 0.90
+        
+        if policy_id:
+             try:
+                 # We need to fetch policy to know the org_id, but we do that inside create usually.
+                 # However, to generate the cache KEY, we need the settings *before* we check cache?
+                 # OR we make the key depend on policy_id, and if the DB config changes, we rely on TTL?
+                 # No, user wants immediate feedback.
+                 
+                 # Optimization: Fetch minimal data or use a composite key?
+                 # Let's fetch policy + org. It's valid to be fast enough for now (cache miss case).
+                 # Wait, for cache HIT, we don't want to fetch DB every time.
+                 # Compromise: We don't put settings in the KEY if we trust TTL, 
+                 # BUT if we want immediate updates, we should probably fetch the "version" or "hash" of the org settings?
+                 # For simplicity in this implementation: We will fetch the policy & org settings *on every request* 
+                 # to generate the key. DB reads are fast (esp by ID).
+                 
+                 # Actually, let's defer fetching. If we have a cache hit based on Policy ID, 
+                 # that assumes Policy ID implies specific settings. 
+                 # But Org Settings are separate.
+                 # To support instant slider updates, we MUST include settings in the key.
+                 
+                 # Fast fetch:
+                 p_data = db.get_policy(policy_id)
+                 if p_data and p_data.get('org_id'):
+                     org = db.get_organization(p_data['org_id'])
+                     if org and org.get('settings'):
+                         org_settings = org['settings']
+                         if isinstance(org_settings, str): org_settings = json.loads(org_settings)
+                         
+                         gov_weight = float(org_settings.get('governance_split', 0.60))
+                         spirit_beta = float(org_settings.get('spirit_beta', 0.90))
+             except Exception:
+                 pass
+
+        config_hash = hashlib.md5(json.dumps(org_settings, sort_keys=True).encode()).hexdigest()
+        key = self._generate_key(profile_name, intellect_model, will_model, conscience_model, policy_id, config_hash)
         now = time.time()
 
         with self._lock:
@@ -53,25 +92,25 @@ class SafiInstanceCache:
                 prof = get_profile(profile_name)
                 
                 # --- Dynamic Policy Injection ---
-                if policy_id:
-                    policy_data = db.get_policy(policy_id)
-                    if policy_data:
-                        # Map DB fields to assemble_agent expectations
-                        gov = {
-                            "global_worldview": policy_data.get('worldview', ''),
-                            "global_will_rules": policy_data.get('will_rules', []),
-                            "global_values": policy_data.get('values_weights', [])
-                        }
-                        prof = assemble_agent(prof, gov)
-                        # CRITICAL: Stamp Policy ID on the profile for auditing
-                        prof['policy_id'] = policy_id
+                if policy_id and p_data: # p_data cached from above
+                    gov = {
+                        "global_worldview": p_data.get('worldview', ''),
+                        "global_will_rules": p_data.get('will_rules', []),
+                        "global_values": p_data.get('values_weights', [])
+                    }
+                    # Pass dynamic Governance Weight
+                    prof = assemble_agent(prof, gov, governance_weight=gov_weight)
+                    
+                    # CRITICAL: Stamp Policy ID on the profile for auditing
+                    prof['policy_id'] = policy_id
                 
                 instance = SAFi(
                     config=Config,
                     value_profile_or_list=prof,
                     intellect_model=intellect_model,
                     will_model=will_model,
-                    conscience_model=conscience_model
+                    conscience_model=conscience_model,
+                    spirit_beta=spirit_beta # Dynamic Beta
                 )
                 
                 self._cache[key] = {
@@ -83,6 +122,17 @@ class SafiInstanceCache:
             except Exception as e:
                 # Don't cache failed initializations
                 raise e
+
+    def invalidate_profile(self, profile_name):
+        """
+        Removes all cached instances for a specific profile, forcing a reload on next request.
+        """
+        prefix = f"{profile_name}|"
+        with self._lock:
+            keys_to_remove = [k for k in self._cache.keys() if k.startswith(prefix)]
+            for k in keys_to_remove:
+                del self._cache[k]
+                current_app.logger.info(f"Invalidated cache for key: {k}")
 
 # Initialize the global cache
 global_safi_cache = SafiInstanceCache(ttl_seconds=600)

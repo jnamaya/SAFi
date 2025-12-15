@@ -4,6 +4,7 @@ from ..persistence import database as db
 from ..core.values import PERSONAS, get_profile
 from ..core.rbac import check_permission
 from ..config import Config
+from .conversations import global_safi_cache  # Import Cache
 
 agent_api_bp = Blueprint('agent_api', __name__)
 
@@ -98,6 +99,9 @@ def save_agent():
                 rag_format_string=data.get('rag_format_string')
             )
 
+        # Invalidate Cache to ensure runtime uses new config
+        global_safi_cache.invalidate_profile(key)
+
         return jsonify({"ok": True, "key": key}), 200
         
     except Exception as e:
@@ -183,6 +187,10 @@ def delete_agent(key):
     if agent.get('created_by') != uid: return jsonify({"error": "Unauthorized"}), 403
     
     db.delete_agent(clean)
+    
+    # Invalidate Cache
+    global_safi_cache.invalidate_profile(clean)
+    
     return jsonify({"ok": True})
 
 @agent_api_bp.route('/generate/rubric', methods=['POST'], strict_slashes=False)
