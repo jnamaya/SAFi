@@ -19,7 +19,7 @@ export function renderRulesStep(container, policyData) {
                 <div class="flex gap-4 mb-6">
                     <input type="text" id="pw-rule-input" class="flex-1 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-neutral-800 focus:ring-2 focus:ring-red-500 placeholder-gray-400" placeholder="e.g. Reject financial advice.">
                     <button id="pw-add-rule-btn" class="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">
-                        Block
+                        Add
                     </button>
                 </div>
 
