@@ -67,7 +67,8 @@ def save_agent():
                 will_model=data.get('will_model'),
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
-                rag_format_string=data.get('rag_format_string')
+                rag_format_string=data.get('rag_format_string'),
+                tools=data.get('tools', [])
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -96,7 +97,8 @@ def save_agent():
                 will_model=data.get('will_model'),
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
-                rag_format_string=data.get('rag_format_string')
+                rag_format_string=data.get('rag_format_string'),
+                tools=data.get('tools', [])
             )
 
         # Invalidate Cache to ensure runtime uses new config
@@ -171,6 +173,7 @@ def get_agent(key):
              agent['worldview'] = raw.get('worldview', '')
              # handle 'rules' alias if used by frontend
              agent['rules'] = agent['will_rules']
+             agent['tools'] = raw.get('tools', [])
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:
@@ -252,4 +255,58 @@ async def generate_rubric():
              }), 422
 
     except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@agent_api_bp.route('/generate/values', methods=['POST'], strict_slashes=False)
+async def generate_values():
+    user = session.get('user')
+    if not user: return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        data = request.get_json(force=True, silent=True)
+        context = data.get('context', '')
+        
+        from safi_app.core.services.llm_provider import LLMProvider
+        # Re-use config logic using Groq/Llama for speed/quality
+        llm_config = {
+            "providers": { "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY }, "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" } },
+            "routes": { "intellect": { "provider": "groq", "model": Config.INTELLECT_MODEL or "llama-3.1-8b-instant" } }
+        }
+        provider = LLMProvider(llm_config)
+        
+        system_prompt = (
+            "You are an expert AI Character Designer. Suggest 3-5 Core Values for an AI agent based on the provided description.\n"
+            "Each value should have a Name (1-3 words) and a brief Description (1 sentence).\n"
+            "Format the output as a JSON List of Objects: [{\"name\": \"...\", \"description\": \"...\"}]\n"
+            "Do NOT include markdown formatting or code blocks. Just the raw JSON."
+        )
+        user_prompt = f"Agent Description: {context}\n\nSuggest Values:"
+        
+        response_text = await provider._chat_completion(route="intellect", system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.7)
+        
+        # Robust JSON cleaning
+        clean_text = response_text.strip()
+        if "```" in clean_text:
+            clean_text = clean_text.split("```json")[-1].split("```")[0].strip()
+        if "[" in clean_text and clean_text.find("[") >= 0:
+            clean_text = clean_text[clean_text.find("["):]
+        if "]" in clean_text:
+            clean_text = clean_text[:clean_text.rfind("]")+1]
+            
+        result_json = json.loads(clean_text)
+        return jsonify({"ok": True, "values": result_json})
+        
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@agent_api_bp.route('/agents/tools', methods=['GET'], strict_slashes=False)
+def list_available_tools():
+    try:
+        from ..core.services.mcp_manager import MCPManager
+        # Config not strictly needed just for listing static tools list
+        mcp = MCPManager(current_app.config)
+        tools = mcp.list_all_tools()
+        return jsonify({"ok": True, "tools": tools})
+    except Exception as e:
+        current_app.logger.error(f"List Tools Error: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500

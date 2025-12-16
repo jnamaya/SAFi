@@ -51,8 +51,7 @@ class WillGate:
             f"Tradition: {name}" if name else "",
             "Rules:",
             *[f"- {r}" for r in rules],
-            "Value Set:",
-            json.dumps(self.values, indent=2),
+            # Removed Value Set per user request to restrict Will to Rules only.
             self.prompt_config.get("footer", "Return JSON: {decision, reason}."),
         ]
         

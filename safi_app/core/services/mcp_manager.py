@@ -135,6 +135,56 @@ class MCPManager:
 
         return tools
 
+    def list_all_tools(self) -> List[Dict[str, Any]]:
+        """
+        Returns a list of all available tools for selection in the UI.
+        Categorized by domain.
+        """
+        return [
+            # --- FINANCE (Fiduciary) ---
+            {
+                "category": "Finance & Market Data",
+                "tools": [
+                    {
+                        "name": "get_stock_price",
+                        "label": "Stock Price",
+                        "description": "Get current stock price and basic info.",
+                        "icon": "chart-bar"
+                    },
+                    {
+                        "name": "get_company_news",
+                        "label": "Company News",
+                        "description": "Latest news headlines for a company.",
+                        "icon": "newspaper"
+                    },
+                    {
+                        "name": "get_earnings_history",
+                        "label": "Earnings History",
+                        "description": "Recent earnings and calednar.",
+                        "icon": "calendar"
+                    },
+                    {
+                        "name": "get_analyst_recommendations",
+                        "label": "Analyst Ratings",
+                        "description": "Buy/Sell/Hold recommendations.",
+                        "icon": "users"
+                    }
+                ]
+            },
+            # --- GEO (Google Maps) ---
+            {
+                "category": "Location & Maps",
+                "tools": [
+                    {
+                        "name": "find_places",
+                        "label": "Find Places",
+                        "description": "Find places near a location (Google Maps).",
+                        "icon": "location-marker"
+                    }
+                ]
+            }
+        ]
+
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
         Executes a named tool. 

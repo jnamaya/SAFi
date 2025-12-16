@@ -37,7 +37,9 @@ export const urls = {
     TTS: j('/api/tts_audio'),
     MY_PROFILE: j('/api/me/profile'),
     AGENTS: j('/api/agents'),
+    TOOLS: j('/api/agents/tools'),
     RUBRIC_GEN: j('/api/generate/rubric'), // Fixed: No trailing slash
+    VALUES_GEN: j('/api/generate/values'),
     POLICIES: j('/api/policies'),
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
@@ -201,8 +203,16 @@ export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
 
+export async function fetchAvailableTools() {
+    return httpGet(urls.TOOLS);
+}
+
 export async function generateRubric(valueName, context) {
     return httpJSON(urls.RUBRIC_GEN, 'POST', { value_name: valueName, context });
+}
+
+export async function suggestValues(context) {
+    return httpJSON(urls.VALUES_GEN, 'POST', { context });
 }
 
 // --- GOVERNANCE API Functions ---
