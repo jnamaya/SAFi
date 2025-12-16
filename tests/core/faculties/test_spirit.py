@@ -31,7 +31,7 @@ class TestSpiritIntegrator:
             {"value": "Harm Reduction", "score": 1, "confidence": 1.0}
         ]
         
-        score, note, mu_new, p_t, drift = spirit.compute(ledger, mu_tm1)
+        score, note, mu_new, p_t, drift, _ = spirit.compute(ledger, mu_tm1)
         
         # p_t calculation: weight * score
         assert p_t[0] == 1.0
@@ -59,7 +59,7 @@ class TestSpiritIntegrator:
             {"value": "Harm Reduction", "score": 0, "confidence": 1.0} # Irrelevant here
         ]
         
-        _, _, _, p_t, drift = spirit.compute(ledger, mu_tm1)
+        _, _, _, p_t, drift, _ = spirit.compute(ledger, mu_tm1)
         
         # p_t = [-1.0, 0.0]
         # mu_tm1(vec) = [1.0, 0.0]
@@ -80,7 +80,7 @@ class TestSpiritIntegrator:
             {"value": "Honesty", "score": 1, "confidence": 1.0}
         ]
         
-        score, note, mu_new, _, _ = spirit.compute(ledger, mu_tm1)
+        score, note, mu_new, _, _, _ = spirit.compute(ledger, mu_tm1)
         
         # Should detect the missing value
         assert "Ledger missing" in note
