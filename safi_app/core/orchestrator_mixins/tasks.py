@@ -115,7 +115,7 @@ class BackgroundTasksMixin:
                 self.log.exception("Follow-up suggester failed in audit thread")
 
             # 4. Compute Spirit
-            S_t, note, mu_new, p_t, drift_val = self.spirit.compute(ledger, memory["mu"])
+            S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, memory["mu"])
             self.last_drift = drift_val if drift_val is not None else 0.0
             
             # 5. Log and Save
@@ -133,7 +133,7 @@ class BackgroundTasksMixin:
                 "spiritNote": note,
                 "drift": drift_val,
                 "p_t_vector": p_t.tolist(),
-                "mu_t_vector": mu_new.tolist(),
+                "mu_t_vector": mu_new,
                 "memorySummary": snapshot.get("memory_summary") or "",
                 "spiritFeedback": spirit_feedback,
                 "retrievedContext": snapshot.get("retrieved_context", ""),
@@ -142,9 +142,9 @@ class BackgroundTasksMixin:
             self._append_log(log_entry)
 
             memory["turn"] += 1
-            memory["mu"] = np.array(mu_new)
+            memory["mu"] = mu_new
             db.save_spirit_memory_in_transaction(cursor, self.active_profile_name, memory)
-            self.mu_history.append(mu_new)
+            self.mu_history.append(mu_new_vector)
             
             db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
 

@@ -50,13 +50,14 @@ class SpiritIntegrator:
         self, 
         ledger: List[Dict[str, Any]], 
         mu_memory: Union[np.ndarray, List, Dict[str, float]]
-    ) -> Tuple[int, str, Union[Dict[str, float], np.ndarray], np.ndarray, Optional[float]]:
+    ) -> Tuple[int, str, Union[Dict[str, float], np.ndarray], np.ndarray, Optional[float], np.ndarray]:
         """
         Updates the spirit memory vector based on the latest audit ledger.
+        Returns: spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector
         """
         if not self.values or not ledger:
             # Return same memory if no update possible
-            return 1, "Incomplete ledger", mu_memory, np.zeros(len(self.values)), None
+            return 1, "Incomplete ledger", mu_memory, np.zeros(len(self.values)), None, np.zeros(len(self.values))
 
         # --- 1. Resolve Memory to Vector (Transition Logic) ---
         expected_len = len(self.value_weights)
@@ -91,7 +92,7 @@ class SpiritIntegrator:
         if any(r is None for r in sorted_rows):
             missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
             # Safety return
-            return 1, f"Ledger missing: {', '.join(missing)}", mu_memory, np.zeros(expected_len), None
+            return 1, f"Ledger missing: {', '.join(missing)}", mu_memory, np.zeros(expected_len), None, np.zeros(expected_len)
 
         # Convert scores/confidences
         scores = np.nan_to_num(
@@ -129,5 +130,5 @@ class SpiritIntegrator:
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         
-        # Return the DICTIONARY memory for storage
-        return spirit_score, note, new_memory_dict, p_t, drift
+        # Return the DICTIONARY memory for storage, AND the vector for in-memory history
+        return spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector
