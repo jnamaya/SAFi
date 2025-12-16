@@ -306,19 +306,35 @@ async function finishWizard() {
 
         const res = await api.saveAgent(payload);
 
-        if (res.ok) {
+        // Handle SUCCESS or QUEUED
+        if (res === 'QUEUED' || res.ok) {
             ui.showToast(agentData.is_update_mode ? "Agent Updated!" : "Agent Created!", "success");
             closeWizard();
             // Force reload to update UI lists (User Request)
             setTimeout(() => {
                 window.location.reload();
-            }, 500); // Small delay to let toast show
+            }, 500);
         } else {
+            // Should be unreachable if offlineManager throws, but handled for safety
             throw new Error(res.error || "Save failed");
         }
     } catch (e) {
-        console.error(e);
-        ui.showToast(`Error: ${e.message}`, "error");
+        console.error("Save Agent Error:", e);
+        let msg = e.message;
+
+        // Try to parse JSON error message from backend
+        try {
+            if (msg.includes("{")) {
+                const json = JSON.parse(msg);
+                if (json.error) msg = json.error;
+            }
+        } catch (parseErr) { /* ignore */ }
+
+        if (msg.includes("already exists")) {
+            ui.showToast("An agent with this name already exists. Please choose a different name.", "error");
+        } else {
+            ui.showToast(`Error: ${msg}`, "error");
+        }
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
