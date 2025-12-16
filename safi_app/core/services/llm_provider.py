@@ -159,31 +159,102 @@ class LLMProvider:
 
         # 2. Anthropic (Claude)
         elif provider_type == "anthropic":
-            resp = await client.messages.create(
-                model=model_name,
-                system=system_prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                messages=[{"role": "user", "content": user_prompt}]
-            )
-            return resp.content[0].text or "{}"
+            kwargs = {
+                "model": model_name,
+                "system": system_prompt,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": user_prompt}]
+            }
+
+            if tools:
+                anthropic_tools = []
+                for t in tools:
+                    anthropic_tools.append({
+                        "name": t["name"],
+                        "description": t["description"],
+                        "input_schema": t["input_schema"]
+                    })
+                kwargs["tools"] = anthropic_tools
+
+            resp = await client.messages.create(**kwargs)
+            
+            # Check for tool use
+            if resp.stop_reason == "tool_use":
+                tool_calls = []
+                for block in resp.content:
+                    if block.type == "tool_use":
+                        tool_calls.append({
+                            "id": block.id,
+                            "name": block.name,
+                            "arguments": block.input
+                        })
+                return json.dumps({"tool_calls": tool_calls})
+
+            # Check for text content
+            text_content = ""
+            for block in resp.content:
+                if block.type == "text":
+                    text_content += block.text
+            
+            return text_content or "{}"
 
         # 3. Google Gemini
         elif provider_type == "gemini":
             gemini_model = genai.GenerativeModel(model_name)
+            
+            gemini_tools = None
+            if tools:
+                # Map to Gemini FunctionDeclaration
+                funcs = []
+                for t in tools:
+                    # Gemini requires strict types, but we'll try to map broadly
+                    # Note: Gemini python SDK uses a specific structure
+                    funcs.append(genai.types.FunctionDeclaration(
+                        name=t["name"],
+                        description=t["description"],
+                        parameters=t["input_schema"]
+                    ))
+                gemini_tools = genai.types.Tool(function_declarations=funcs)
+
             generation_config = genai.types.GenerationConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens,
             )
             full_prompt = f"{system_prompt}\n\nUSER PROMPT:\n{user_prompt}"
             
-            resp = await gemini_model.generate_content_async(
-                full_prompt, 
-                generation_config=generation_config
-            )
-            
-            # --- GEMINI FIX: Safe Text Access ---
+            # Pass tools if present
+            kwargs = {"generation_config": generation_config}
+            if gemini_tools:
+                kwargs["tools"] = [gemini_tools]
+
             try:
+                resp = await gemini_model.generate_content_async(
+                    full_prompt, 
+                    **kwargs
+                )
+            except Exception as e:
+                self.log.error(f"Gemini generation failed: {e}")
+                return "{}"
+            
+            # --- GEMINI FIX: Safe Text Access & Tool Check ---
+            try:
+                # Check for function call in the first candidate's parts
+                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
+                    for part in resp.candidates[0].content.parts:
+                        if part.function_call:
+                            # Found a function call
+                            fc = part.function_call
+                            # Gemini arguments are a Map (dict-like)
+                            args = dict(fc.args)
+                            return json.dumps({
+                                "tool_calls": [{
+                                    "id": "gemini_call", # Gemini doesn't give a call ID easily in this mode
+                                    "name": fc.name,
+                                    "arguments": args
+                                }]
+                            })
+
                 return resp.text or "{}"
             except ValueError:
                 # This catches the "Invalid operation: ... valid Part ... none were returned" error
