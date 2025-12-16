@@ -56,7 +56,11 @@ def create_policy():
                 if org.get('domain_verified') and org.get('domain_to_verify'):
                     org_prefix = org['domain_to_verify'].replace('.', '_').lower()
                 elif org.get('name'):
-                    org_prefix = re.sub(r'[^a-z0-9]', '', org['name'].lower())[:12]
+                    # Without verified domain, use first 12 chars of org name + Random Token to prevent collisions
+                    import secrets
+                    safe_name = re.sub(r'[^a-z0-9]', '', org['name'].lower())[:12]
+                    suffix = secrets.token_hex(2) # 4 chars
+                    org_prefix = f"{safe_name}_{suffix}"
         
         slug = re.sub(r'[^a-z0-9]', '_', data.get("name", "").lower()).strip('_')
         readable_id = f"{org_prefix}_{slug}"
