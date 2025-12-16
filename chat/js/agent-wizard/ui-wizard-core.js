@@ -41,7 +41,8 @@ export let agentData = {
     will_model: "",
     conscience_model: "",
     rag_knowledge_base: "",
-    rag_format_string: ""
+    rag_format_string: "",
+    tools: []
 };
 
 // --- MAIN ENTRANCE ---
@@ -68,7 +69,9 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             will_model: existingAgent.will_model || "",
             conscience_model: existingAgent.conscience_model || "",
             rag_knowledge_base: existingAgent.rag_knowledge_base || "",
-            rag_format_string: existingAgent.rag_format_string || ""
+            rag_knowledge_base: existingAgent.rag_knowledge_base || "",
+            rag_format_string: existingAgent.rag_format_string || "",
+            tools: existingAgent.tools || []
         };
         // Fallback checks
         if (existingAgent.worldview && !agentData.instructions) {
@@ -92,7 +95,9 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             will_model: "",
             conscience_model: "",
             rag_knowledge_base: "",
-            rag_format_string: ""
+            rag_knowledge_base: "",
+            rag_format_string: "",
+            tools: []
         };
     }
 
@@ -140,7 +145,7 @@ function ensureWizardModalExists() {
                     <!-- Step Labels (Optional enhancement) -->
                     <div class="flex justify-between px-6 py-2 text-[10px] text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
                         <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
-                        <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Data</span>
+                        <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Capabilities</span>
                         <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Intellect</span>
                         <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
                         <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Rules</span>

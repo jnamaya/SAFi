@@ -25,40 +25,34 @@ class SafiInstanceCache:
         self._lock = threading.Lock()
         self._ttl = ttl_seconds
 
+    def _normalize_key(self, name):
+        """Standardizes profile name to ensure cache hits regardless of casing/spacing."""
+        if not name: return ""
+        # Match safe slug logic from values.py/agent_api_routes.py
+        clean = name.lower().strip().replace(" ", "_")
+        return "".join(c for c in clean if c.isalnum() or c == '_')
+
     def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None, org_settings_hash=None):
         """
-        Creates a unique hash for a specific configuration.
+        Creates a unique key that allows prefix matching for invalidation.
+        Format: {normalized_profile_name}|{md5_hash_of_rest}
         """
-        raw_key = f"{profile_name}|{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
-        return hashlib.md5(raw_key.encode()).hexdigest()
+        norm_name = self._normalize_key(profile_name)
+        rest = f"{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
+        rest_hash = hashlib.md5(rest.encode()).hexdigest()
+        
+        # KEY CHANGE: Prefix is plaintext profile name, suffix is unique hash
+        return f"{norm_name}|{rest_hash}"
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
-        # 1. Pre-fetch Org Settings if policy exists (needed for key generation)
+        # 1. Pre-fetch Org Settings
         org_settings = {}
         gov_weight = 0.60
         spirit_beta = 0.90
-        
+        p_data = None  # Ensure scope
+
         if policy_id:
              try:
-                 # We need to fetch policy to know the org_id, but we do that inside create usually.
-                 # However, to generate the cache KEY, we need the settings *before* we check cache?
-                 # OR we make the key depend on policy_id, and if the DB config changes, we rely on TTL?
-                 # No, user wants immediate feedback.
-                 
-                 # Optimization: Fetch minimal data or use a composite key?
-                 # Let's fetch policy + org. It's valid to be fast enough for now (cache miss case).
-                 # Wait, for cache HIT, we don't want to fetch DB every time.
-                 # Compromise: We don't put settings in the KEY if we trust TTL, 
-                 # BUT if we want immediate updates, we should probably fetch the "version" or "hash" of the org settings?
-                 # For simplicity in this implementation: We will fetch the policy & org settings *on every request* 
-                 # to generate the key. DB reads are fast (esp by ID).
-                 
-                 # Actually, let's defer fetching. If we have a cache hit based on Policy ID, 
-                 # that assumes Policy ID implies specific settings. 
-                 # But Org Settings are separate.
-                 # To support instant slider updates, we MUST include settings in the key.
-                 
-                 # Fast fetch:
                  p_data = db.get_policy(policy_id)
                  if p_data and p_data.get('org_id'):
                      org = db.get_organization(p_data['org_id'])
@@ -127,12 +121,18 @@ class SafiInstanceCache:
         """
         Removes all cached instances for a specific profile, forcing a reload on next request.
         """
-        prefix = f"{profile_name}|"
+        norm_name = self._normalize_key(profile_name)
+        prefix = f"{norm_name}|"
+        
         with self._lock:
+            # Keys now START with the normalized profile name, enabling safe prefix deletion
             keys_to_remove = [k for k in self._cache.keys() if k.startswith(prefix)]
+            count = len(keys_to_remove)
             for k in keys_to_remove:
                 del self._cache[k]
-                current_app.logger.info(f"Invalidated cache for key: {k}")
+            
+            if count > 0:
+                current_app.logger.info(f"Invalidated {count} cached instances for profile: {profile_name}")
 
 # Initialize the global cache
 global_safi_cache = SafiInstanceCache(ttl_seconds=600)
@@ -256,9 +256,17 @@ def tts_audio_endpoint():
              return jsonify({"error": "User not found."}), 404
 
         user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-        intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
-        will_model = user_details.get('will_model') or Config.WILL_MODEL
-        conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+        
+        # FETCH AGENT PROFILE FIRST to check for overrides
+        try:
+            agent_profile = get_profile(user_profile_name)
+        except Exception:
+            agent_profile = {}
+
+        # PRIORITY: Agent -> User -> System Default
+        intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
+        will_model = agent_profile.get('will_model') or user_details.get('will_model') or Config.WILL_MODEL
+        conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
         saf_system = global_safi_cache.get_or_create(
             user_profile_name, 
@@ -352,9 +360,17 @@ async def process_prompt_endpoint():
          return jsonify({"error": "User not found."}), 404
 
     user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-    intellect_model = user_details.get('intellect_model') or Config.INTELLECT_MODEL
-    will_model = user_details.get('will_model') or Config.WILL_MODEL
-    conscience_model = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+    
+    # FETCH AGENT PROFILE FIRST to check for overrides
+    try:
+        agent_profile = get_profile(user_profile_name)
+    except Exception:
+        agent_profile = {}
+
+    # PRIORITY: Agent -> User -> System Default
+    intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
+    will_model = agent_profile.get('will_model') or user_details.get('will_model') or Config.WILL_MODEL
+    conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
     
     full_name = user_details.get('name', 'User')
     user_name = full_name.split(' ')[0] if full_name else 'User'

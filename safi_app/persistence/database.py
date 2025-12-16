@@ -164,6 +164,10 @@ def init_db():
             cursor.execute("ALTER TABLE agents ADD COLUMN rag_knowledge_base VARCHAR(255)")
             cursor.execute("ALTER TABLE agents ADD COLUMN rag_format_string TEXT")
 
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'tools_json'")
+        if not cursor.fetchone():
+             cursor.execute("ALTER TABLE agents ADD COLUMN tools_json JSON")
+
         # --- Check for AI Model Columns (Missing in initial migration) ---
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'intellect_model'")
         if not cursor.fetchone():
@@ -642,18 +646,18 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # -------------------------------------------------------------------------
 
 def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private', 
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """INSERT INTO agents (
             agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (
             key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or [])
         ))
         conn.commit()
     finally:
@@ -661,18 +665,18 @@ def create_agent(key, name, description, avatar, worldview, style, values, rules
         conn.close()
 
 def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """UPDATE agents SET 
             name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
-            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s
+            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s
             WHERE agent_key=%s"""
         cursor.execute(sql, (
             name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string,
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []),
             key
         ))
         conn.commit()
@@ -691,6 +695,7 @@ def get_agent(key):
             row['policy_id'] = row['policy_id'] or 'standalone' # FIX: Ensure never None
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
+            row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             
             # --- FIX: Ensure 'value' key exists for Core Engine ---
             for v in row['values']:
@@ -743,6 +748,7 @@ def list_agents(user_id, org_id=None, user_role='member'):
             row['key'] = row['agent_key']
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
+            row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             
             # --- FIX: Ensure 'value' key exists here too for consistency ---
             for v in row['values']:
@@ -778,6 +784,7 @@ def list_all_agents():
             row['key'] = row['agent_key']
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
+            row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             
             # Ensure 'value' key exists
             for v in row['values']:
