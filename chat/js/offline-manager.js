@@ -152,7 +152,7 @@ async function fetchWithCache(request) {
  * @param {Headers|Object} [headers]
  * @returns JSON response or 'QUEUED'
  */
-async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}) {
+async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, options = {}) {
   let requestUrl, requestBody, requestMethod, requestHeaders;
 
   // POLYMORPHIC HANDLING: Detect if called with legacy Request object (Browser cache mismatch)
@@ -183,7 +183,8 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}) 
     method: requestMethod,
     headers: requestHeaders,
     body: requestBody,
-    credentials: 'include'
+    credentials: 'include',
+    signal: options.signal // Pass the AbortSignal
   };
 
   if (isOnline) {
@@ -202,6 +203,10 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}) 
       }
       return await res.json();
     } catch (e) {
+      // AbortError should NOT be queued?
+      if (e.name === 'AbortError') {
+          throw e; // Propagate abort up
+      }
       console.warn("Fetch failed, queuing:", e);
       await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
       return 'QUEUED';

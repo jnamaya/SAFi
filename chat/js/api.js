@@ -81,13 +81,13 @@ async function httpGet(url) {
 }
 
 // POST/PUT/DELETE/PATCH requests use offlineManager.postWithQueue
-async function httpJSON(url, method, body) {
+async function httpJSON(url, method, body, options = {}) {
     // We construct the body string and headers here
     const headers = await createHeaders();
     const bodyStr = JSON.stringify(body);
 
     // Pass plain arguments to offlineManager to avoid Request stream issues
-    return await offlineManager.postWithQueue(url, bodyStr, method, headers);
+    return await offlineManager.postWithQueue(url, bodyStr, method, headers, options);
 }
 
 function ensureOkOrQueued(res, tag) {
@@ -152,8 +152,8 @@ export const togglePinConversation = (id, isPinned) =>
 // Chat flow
 export const fetchHistory = (id, limit = 50, offset = 0) =>
     httpGet(urls.HISTORY(id, limit, offset));
-export const processUserMessage = (message, conversation_id) =>
-    httpJSON(urls.PROCESS, 'POST', { message, conversation_id });
+export const processUserMessage = (message, conversation_id, signal = null) =>
+    httpJSON(urls.PROCESS, 'POST', { message, conversation_id }, { signal });
 export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
 export const deleteAccount = () =>

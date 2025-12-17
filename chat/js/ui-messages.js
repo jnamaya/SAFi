@@ -1,10 +1,10 @@
 // ui-messages.js
 
 import { formatTime } from './utils.js';
-import * as ui from './ui.js'; 
-import { getAvatarForProfile } from './ui-auth-sidebar.js'; 
-import { playSpeech } from './tts-audio.js'; 
-import { iconPlay } from './ui-render-constants.js'; 
+import * as ui from './ui.js';
+import { getAvatarForProfile } from './ui-auth-sidebar.js';
+import { playSpeech } from './tts-audio.js';
+import { iconPlay } from './ui-render-constants.js';
 
 // --- ICONS ---
 const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
@@ -29,7 +29,7 @@ const LOADING_MESSAGES = {
 
 // --- MARKDOWN SETUP ---
 const renderer = new marked.Renderer();
-renderer.table = function(token) {
+renderer.table = function (token) {
     let header = '';
     let body = '';
     let headerRow = '';
@@ -58,9 +58,9 @@ function _markdownToPlainText(markdown) {
 function _createTrustPill(score, onClick) {
     const button = document.createElement('button');
     button.className = 'trust-score-pill';
-    
+
     const numScore = (score === null || score === undefined) ? 10.0 : parseFloat(score);
-    
+
     let colorClass = 'trust-green';
     let label = 'Aligned';
 
@@ -73,7 +73,7 @@ function _createTrustPill(score, onClick) {
     }
 
     button.classList.add(colorClass);
-    
+
     button.setAttribute('aria-label', `Trust Score: ${numScore.toFixed(1)} out of 10. Click to view reasoning.`);
     button.setAttribute('title', 'View Ethical Reasoning');
 
@@ -81,12 +81,12 @@ function _createTrustPill(score, onClick) {
         ${iconShield}
         <span>${numScore.toFixed(1)}/10 ${label}</span>
     `;
-    
+
     button.addEventListener('click', (e) => {
         e.stopPropagation();
         onClick();
     });
-    
+
     return button;
 }
 
@@ -108,15 +108,15 @@ function stopTyping() {
  * NOW WITH ADAPTIVE SPEED.
  */
 function typeWriterEffect(targetElement, htmlContent, onComplete) {
-    stopTyping(); 
-    
+    stopTyping();
+
     // 1. Parse HTML into a virtual DOM fragment
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = htmlContent;
 
     // 2. Flatten the DOM into a queue of operations
     const steps = [];
-    
+
     function traverse(node) {
         if (node.nodeType === Node.TEXT_NODE) {
             if (node.textContent.length > 0) {
@@ -130,25 +130,25 @@ function typeWriterEffect(targetElement, htmlContent, onComplete) {
                     attributes[attr.name] = attr.value;
                 }
             }
-            
+
             steps.push({ type: 'open', tagName: node.tagName, attributes });
-            
+
             // Recursively traverse children
             node.childNodes.forEach(traverse);
-            
+
             // Mark end of element
             steps.push({ type: 'close' });
         }
     }
-    
+
     // Fill the steps queue
     tempDiv.childNodes.forEach(traverse);
 
     // 3. Adaptive Speed Calculation
     const fullText = tempDiv.textContent || "";
     const textLength = fullText.length;
-    
-    let charsPerTick = 2; 
+
+    let charsPerTick = 2;
     if (textLength > 50) charsPerTick = 3;
     if (textLength > 100) charsPerTick = 5;
     if (textLength > 500) charsPerTick = 15;
@@ -189,10 +189,10 @@ function typeWriterEffect(targetElement, htmlContent, onComplete) {
             currentParent.appendChild(newEl);
             currentParent = newEl; // Step down into this element
             stepIndex++;
-            
+
             ui.scrollToBottom(); // Scroll on structure change
             type(); // Recursively call immediately (don't wait for tags)
-        } 
+        }
         else if (step.type === 'close') {
             // Step up to parent
             if (currentParent !== targetElement) {
@@ -200,29 +200,29 @@ function typeWriterEffect(targetElement, htmlContent, onComplete) {
             }
             stepIndex++;
             type(); // Recursively call immediately
-        } 
+        }
         else if (step.type === 'text') {
             const content = step.content;
-            
+
             // Type chunk of text
             const remaining = content.length - charIndex;
             const chunkLength = Math.min(charsPerTick, remaining);
             const chunk = content.substr(charIndex, chunkLength);
-            
+
             // Efficiently append text
             if (currentParent.lastChild && currentParent.lastChild.nodeType === Node.TEXT_NODE) {
                 currentParent.lastChild.textContent += chunk;
             } else {
                 currentParent.appendChild(document.createTextNode(chunk));
             }
-            
+
             charIndex += chunkLength;
 
             if (charIndex >= content.length) {
                 stepIndex++;
                 charIndex = 0;
             }
-            
+
             typingTimeout = setTimeout(type, delay);
         }
     }
@@ -234,12 +234,12 @@ function forceFinishTyping() {
     if (currentTypingSession && typingTimeout) {
         clearTimeout(typingTimeout);
         const { element, fullHtml, onComplete } = currentTypingSession;
-        
+
         element.innerHTML = fullHtml;
         ui.scrollToBottom();
-        
+
         if (onComplete) onComplete();
-        
+
         stopTyping();
     }
 }
@@ -248,25 +248,25 @@ function forceFinishTyping() {
 let lastRenderedDay = '';
 
 export function maybeInsertDayDivider(date) {
-  ui._ensureElements();
-  const key = date.toLocaleDateString();
-  if (key !== lastRenderedDay) {
-    lastRenderedDay = key;
-    const div = document.createElement('div');
-    div.className = 'flex items-center justify-center my-2';
-    div.innerHTML = `<div class="text-xs text-neutral-500 dark:text-neutral-400 px-3 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>`;
-    ui.elements.chatWindow.appendChild(div);
-  }
+    ui._ensureElements();
+    const key = date.toLocaleDateString();
+    if (key !== lastRenderedDay) {
+        lastRenderedDay = key;
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-center my-2';
+        div.innerHTML = `<div class="text-xs text-neutral-500 dark:text-neutral-400 px-3 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700">${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>`;
+        ui.elements.chatWindow.appendChild(div);
+    }
 }
 
 export function displaySimpleGreeting(firstName) {
-  ui._ensureElements();
-  const existing = ui.elements.chatWindow.querySelector('.simple-greeting');
-  if (existing) existing.remove();
-  const div = document.createElement('div');
-  div.className = 'simple-greeting text-4xl font-bold text-center pt-10 pb-1 text-neutral-800 dark:text-neutral-200';
-  div.textContent = `Hi ${firstName}`;
-  ui.elements.chatWindow.appendChild(div);
+    ui._ensureElements();
+    const existing = ui.elements.chatWindow.querySelector('.simple-greeting');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'simple-greeting text-4xl font-bold text-center pt-10 pb-1 text-neutral-800 dark:text-neutral-200';
+    div.textContent = `Hi ${firstName}`;
+    ui.elements.chatWindow.appendChild(div);
 }
 
 function _attachSuggestionHandlers(container) {
@@ -292,156 +292,156 @@ function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
 }
 
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
-  ui._ensureElements();
-  document.querySelector('.empty-state-container')?.remove();
-  document.querySelector('.simple-greeting')?.remove();
-  maybeInsertDayDivider(date);
+    ui._ensureElements();
+    document.querySelector('.empty-state-container')?.remove();
+    document.querySelector('.simple-greeting')?.remove();
+    maybeInsertDayDivider(date);
 
-  const messageContainer = document.createElement('div');
-  messageContainer.className = 'message-container';
-  if (messageId) messageContainer.dataset.messageId = messageId;
+    const messageContainer = document.createElement('div');
+    messageContainer.className = 'message-container';
+    if (messageId) messageContainer.dataset.messageId = messageId;
 
-  let final_text_raw;
-  if (typeof text === 'object' && text !== null) {
-      final_text_raw = "```json\n" + JSON.stringify(text, null, 2) + "\n```";
-  } else {
-      final_text_raw = String(text ?? '[Sorry, the model returned an empty response.]');
-  }
-  
-  const final_html = DOMPurify.sanitize(marked.parse(final_text_raw));
+    let final_text_raw;
+    if (typeof text === 'object' && text !== null) {
+        final_text_raw = "```json\n" + JSON.stringify(text, null, 2) + "\n```";
+    } else {
+        final_text_raw = String(text ?? '[Sorry, the model returned an empty response.]');
+    }
 
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${sender}`;
-  
-  // Define buttons variable here
-  let ttsBtn, copyBtn, retryBtn;
+    const final_html = DOMPurify.sanitize(marked.parse(final_text_raw));
 
-  // 1. BUILD BASIC STRUCTURE (No text yet for AI)
-  if (sender === 'ai') {
-    const profileName = payload?.profile || null;
-    const avatarUrl = getAvatarForProfile(profileName);
-    
-    ttsBtn = document.createElement('button');
-    ttsBtn.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
-    ttsBtn.innerHTML = iconPlay;
-    ttsBtn.onclick = () => playSpeech(final_text_raw, ttsBtn);
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}`;
 
-    copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
-    copyBtn.innerHTML = iconCopy;
-    copyBtn.onclick = () => {
-        navigator.clipboard.writeText(_markdownToPlainText(final_text_raw)).then(() => {
-            ui.showToast('Copied', 'success');
-            copyBtn.innerHTML = iconCheck;
-            setTimeout(() => copyBtn.innerHTML = iconCopy, 2000);
-        });
-    };
+    // Define buttons variable here
+    let ttsBtn, copyBtn, retryBtn;
 
-    messageDiv.innerHTML = `
+    // 1. BUILD BASIC STRUCTURE (No text yet for AI)
+    if (sender === 'ai') {
+        const profileName = payload?.profile || null;
+        const avatarUrl = getAvatarForProfile(profileName);
+
+        ttsBtn = document.createElement('button');
+        ttsBtn.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+        ttsBtn.innerHTML = iconPlay;
+        ttsBtn.onclick = () => playSpeech(final_text_raw, ttsBtn);
+
+        copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+        copyBtn.innerHTML = iconCopy;
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(_markdownToPlainText(final_text_raw)).then(() => {
+                ui.showToast('Copied', 'success');
+                copyBtn.innerHTML = iconCheck;
+                setTimeout(() => copyBtn.innerHTML = iconCopy, 2000);
+            });
+        };
+
+        messageDiv.innerHTML = `
       <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-lg"></div>
       <div class="ai-content-wrapper">
         <div class="chat-bubble cursor-pointer"><div class="meta"></div></div>
       </div>
     `;
-  } else {
-    // User Message - Render text immediately
-    if (options.onRetry) {
-        retryBtn = document.createElement('button');
-        retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
-        retryBtn.innerHTML = iconRetry;
-        retryBtn.setAttribute('title', 'Retry this prompt');
-        retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text_raw);
-    }
+    } else {
+        // User Message - Render text immediately
+        if (options.onRetry) {
+            retryBtn = document.createElement('button');
+            retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
+            retryBtn.innerHTML = iconRetry;
+            retryBtn.setAttribute('title', 'Retry this prompt');
+            retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text_raw);
+        }
 
-    const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
-    messageDiv.innerHTML = `
+        const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+        messageDiv.innerHTML = `
         <div class="user-content-wrapper">
            <div class="chat-bubble">${final_html}<div class="meta"></div></div>
         </div>
         <div class="user-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-full"></div>
     `;
-  }
-
-  // 2. POPULATE META FOOTER (Before Animation Logic)
-  const metaDiv = messageDiv.querySelector('.meta');
-  const leftMeta = document.createElement('div');
-  const rightMeta = document.createElement('div');
-  rightMeta.className = 'flex items-center gap-2 ml-auto';
-
-  const hasLedger = payload?.ledger?.length > 0;
-  if (hasLedger && whyHandler) {
-      const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
-      leftMeta.appendChild(pill);
-  }
-
-  const stamp = document.createElement('div');
-  stamp.className = 'stamp text-xs';
-  stamp.textContent = formatTime(date);
-
-  if (sender === 'ai') {
-      if (copyBtn) rightMeta.prepend(copyBtn);
-      if (ttsBtn) rightMeta.prepend(ttsBtn);
-  } else if (sender === 'user' && retryBtn) {
-      rightMeta.prepend(retryBtn);
-  }
-  rightMeta.appendChild(stamp);
-  metaDiv.appendChild(leftMeta);
-  metaDiv.appendChild(rightMeta);
-
-
-  // 3. HANDLE CONTENT & ANIMATION (AI Only)
-  if (sender === 'ai') {
-    const chatBubble = messageDiv.querySelector('.chat-bubble');
-    const contentWrapper = messageDiv.querySelector('.ai-content-wrapper');
-
-    let promptsHtml = '';
-    if (options.suggestedPrompts?.length > 0) {
-        promptsHtml = _renderSuggestionsHtml(options.suggestedPrompts, final_text_raw.includes("🛑 **The answer was blocked**"));
     }
 
-    if (options.animate) {
-        // Safe to remove now because it is fully populated
-        metaDiv.remove(); 
-        
-        const clickHandler = () => {
-            forceFinishTyping();
-            chatBubble.removeEventListener('click', clickHandler);
-            chatBubble.classList.remove('cursor-pointer');
-        };
-        chatBubble.addEventListener('click', clickHandler);
+    // 2. POPULATE META FOOTER (Before Animation Logic)
+    const metaDiv = messageDiv.querySelector('.meta');
+    const leftMeta = document.createElement('div');
+    const rightMeta = document.createElement('div');
+    rightMeta.className = 'flex items-center gap-2 ml-auto';
 
-        typeWriterEffect(chatBubble, final_html, () => {
-            if (!chatBubble.contains(metaDiv)) chatBubble.appendChild(metaDiv);
-            
-            if (promptsHtml && !contentWrapper.querySelector('.prompt-suggestions-container')) {
+    const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
+    if (hasScore && whyHandler) {
+        const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
+        leftMeta.appendChild(pill);
+    }
+
+    const stamp = document.createElement('div');
+    stamp.className = 'stamp text-xs';
+    stamp.textContent = formatTime(date);
+
+    if (sender === 'ai') {
+        if (copyBtn) rightMeta.prepend(copyBtn);
+        if (ttsBtn) rightMeta.prepend(ttsBtn);
+    } else if (sender === 'user' && retryBtn) {
+        rightMeta.prepend(retryBtn);
+    }
+    rightMeta.appendChild(stamp);
+    metaDiv.appendChild(leftMeta);
+    metaDiv.appendChild(rightMeta);
+
+
+    // 3. HANDLE CONTENT & ANIMATION (AI Only)
+    if (sender === 'ai') {
+        const chatBubble = messageDiv.querySelector('.chat-bubble');
+        const contentWrapper = messageDiv.querySelector('.ai-content-wrapper');
+
+        let promptsHtml = '';
+        if (options.suggestedPrompts?.length > 0) {
+            promptsHtml = _renderSuggestionsHtml(options.suggestedPrompts, final_text_raw.includes("🛑 **The answer was blocked**"));
+        }
+
+        if (options.animate) {
+            // Safe to remove now because it is fully populated
+            metaDiv.remove();
+
+            const clickHandler = () => {
+                forceFinishTyping();
+                chatBubble.removeEventListener('click', clickHandler);
+                chatBubble.classList.remove('cursor-pointer');
+            };
+            chatBubble.addEventListener('click', clickHandler);
+
+            typeWriterEffect(chatBubble, final_html, () => {
+                if (!chatBubble.contains(metaDiv)) chatBubble.appendChild(metaDiv);
+
+                if (promptsHtml && !contentWrapper.querySelector('.prompt-suggestions-container')) {
+                    contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
+                    _attachSuggestionHandlers(contentWrapper);
+                }
+                ui.scrollToBottom();
+                chatBubble.removeEventListener('click', clickHandler);
+                chatBubble.classList.remove('cursor-pointer');
+            });
+        } else {
+            // Standard instant render
+            chatBubble.insertAdjacentHTML('afterbegin', final_html);
+            chatBubble.classList.remove('cursor-pointer');
+            if (promptsHtml) {
                 contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
                 _attachSuggestionHandlers(contentWrapper);
             }
-            ui.scrollToBottom();
-            chatBubble.removeEventListener('click', clickHandler);
-            chatBubble.classList.remove('cursor-pointer');
-        });
-    } else {
-        // Standard instant render
-        chatBubble.insertAdjacentHTML('afterbegin', final_html);
-        chatBubble.classList.remove('cursor-pointer');
-        if (promptsHtml) {
-            contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
-            _attachSuggestionHandlers(contentWrapper);
         }
     }
-  }
 
-  // 4. APPEND TO DOM
-  messageContainer.appendChild(messageDiv);
-  ui.elements.chatWindow.appendChild(messageContainer);
-  
-  if (!options.animate) {
-      ui.scrollToBottom();
-  }
-  
-  _attachSuggestionHandlers(messageContainer);
-  return messageContainer;
+    // 4. APPEND TO DOM
+    messageContainer.appendChild(messageDiv);
+    ui.elements.chatWindow.appendChild(messageContainer);
+
+    if (!options.animate) {
+        ui.scrollToBottom();
+    }
+
+    _attachSuggestionHandlers(messageContainer);
+    return messageContainer;
 }
 
 export function updateMessageWithAudit(messageId, payload, whyHandler) {
@@ -449,8 +449,8 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     const container = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!container) return;
 
-    const hasLedger = payload?.ledger?.length > 0;
-    if (hasLedger) {
+    const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
+    if (hasScore) {
         const metaDiv = container.querySelector('.meta');
         if (metaDiv) {
             metaDiv.querySelectorAll('.why-btn').forEach(el => el.remove());
@@ -459,7 +459,7 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
             const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
 
             let leftMeta = metaDiv.querySelector('div:first-child');
-            if (!leftMeta || leftMeta.classList.contains('flex')) { 
+            if (!leftMeta || leftMeta.classList.contains('flex')) {
                 leftMeta = document.createElement('div');
                 metaDiv.prepend(leftMeta);
             }
@@ -475,17 +475,17 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 }
 
 export function showLoadingIndicator(profileName) {
-  ui._ensureElements();
-  ui.clearLoadingInterval(); 
-  document.querySelector('.empty-state-container')?.remove();
-  document.querySelector('.simple-greeting')?.remove();
-  maybeInsertDayDivider(new Date());
+    ui._ensureElements();
+    ui.clearLoadingInterval();
+    document.querySelector('.empty-state-container')?.remove();
+    document.querySelector('.simple-greeting')?.remove();
+    maybeInsertDayDivider(new Date());
 
-  const container = document.createElement('div');
-  container.className = 'message-container';
-  const avatarUrl = getAvatarForProfile(profileName || null);
-  
-  container.innerHTML = `
+    const container = document.createElement('div');
+    container.className = 'message-container';
+    const avatarUrl = getAvatarForProfile(profileName || null);
+
+    container.innerHTML = `
     <div class="message ai">
         <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-lg"></div>
         <div class="ai-content-wrapper">
@@ -495,53 +495,53 @@ export function showLoadingIndicator(profileName) {
             </div>
         </div>
     </div>`;
-  ui.elements.chatWindow.appendChild(container);
-  ui.scrollToBottom();
+    ui.elements.chatWindow.appendChild(container);
+    ui.scrollToBottom();
 
-  const statusSpan = container.querySelector('#thinking-status');
-  const messages = LOADING_MESSAGES[profileName] || LOADING_MESSAGES.default;
-  let stage = 0;
-  
-  if(statusSpan) statusSpan.textContent = messages[0];
+    const statusSpan = container.querySelector('#thinking-status');
+    const messages = LOADING_MESSAGES[profileName] || LOADING_MESSAGES.default;
+    let stage = 0;
 
-  const interval = setInterval(() => {
-      stage++;
-      const msg = messages[stage % messages.length];
-      if (statusSpan) {
-          statusSpan.style.opacity = '0';
-          setTimeout(() => {
-              statusSpan.textContent = msg;
-              statusSpan.style.opacity = '1';
-          }, 200);
-      }
-  }, 2500);
-  ui.setLoadingInterval(interval);
+    if (statusSpan) statusSpan.textContent = messages[0];
 
-  return container;
+    const interval = setInterval(() => {
+        stage++;
+        const msg = messages[stage % messages.length];
+        if (statusSpan) {
+            statusSpan.style.opacity = '0';
+            setTimeout(() => {
+                statusSpan.textContent = msg;
+                statusSpan.style.opacity = '1';
+            }, 200);
+        }
+    }, 2500);
+    ui.setLoadingInterval(interval);
+
+    return container;
 }
 
 export function resetChatView() {
-  ui._ensureElements();
-  stopTyping(); // stop any active animation when switching
-  lastRenderedDay = '';
-  ui.elements.chatWindow.innerHTML = '';
+    ui._ensureElements();
+    stopTyping(); // stop any active animation when switching
+    lastRenderedDay = '';
+    ui.elements.chatWindow.innerHTML = '';
 }
 
 export function displayEmptyState(activeProfile, promptClickHandler) {
-  ui._ensureElements();
-  document.querySelector('.empty-state-container')?.remove();
-  if (!activeProfile) return;
+    ui._ensureElements();
+    document.querySelector('.empty-state-container')?.remove();
+    if (!activeProfile) return;
 
-  const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
-  const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
-  const avatarUrl = getAvatarForProfile(activeProfile.name);
-  
-  const container = document.createElement('div');
-  container.className = 'empty-state-container';
-  container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
-  
-  // --- UPDATED INSTRUCTION TEXT AND ICON ---
-  container.innerHTML = `
+    const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
+    const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
+    const avatarUrl = getAvatarForProfile(activeProfile.name);
+
+    const container = document.createElement('div');
+    container.className = 'empty-state-container';
+    container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
+
+    // --- UPDATED INSTRUCTION TEXT AND ICON ---
+    container.innerHTML = `
       <div class="text-center pt-2">
         <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
         <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
@@ -558,9 +558,9 @@ export function displayEmptyState(activeProfile, promptClickHandler) {
         <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>
       </div>`;
-  
-  ui.elements.chatWindow.appendChild(container);
-  container.querySelectorAll('.example-prompt-btn').forEach(btn => {
-      btn.addEventListener('click', () => promptClickHandler(btn.textContent.replace(/"/g, '')));
-  });
+
+    ui.elements.chatWindow.appendChild(container);
+    container.querySelectorAll('.example-prompt-btn').forEach(btn => {
+        btn.addEventListener('click', () => promptClickHandler(btn.textContent.replace(/"/g, '')));
+    });
 }
