@@ -45,6 +45,10 @@ export function _initElements() {
     composerFooter: document.getElementById('composer-footer'),
     conscienceDetails: document.getElementById('conscience-details'),
     closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
+    
+    agentSelectorBtn: document.getElementById('agent-selector-btn'),
+    agentSelectorDropdown: document.getElementById('agent-selector-dropdown'),
+    agentSelectorContainer: document.getElementById('agent-selector-container'),
 
     renameModal: document.getElementById('rename-modal'),
     renameInput: document.getElementById('rename-input'),

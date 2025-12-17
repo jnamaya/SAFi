@@ -339,7 +339,7 @@ function renderHistory(history, user, showModal, activeProfileData) {
         const options = {};
         if (turn.role === 'user' && user) {
             options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
-            
+
             // --- NEW: Retry Handler ---
             // If activeProfileData is available, allow retry
             if (activeProfileData) {
@@ -460,9 +460,9 @@ export async function sendMessage(activeProfileData, user) {
         sendMessage(activeProfileData, user);
     };
 
-    uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, { 
+    uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, {
         avatarUrl: pic,
-        onRetry: retryHandler 
+        onRetry: retryHandler
     });
 
     const userMessageObject = {
@@ -572,7 +572,7 @@ export async function sendMessage(activeProfileData, user) {
                 ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
             },
             // --- ADDED: Pass animate: true for new messages ---
-            { suggestedPrompts: suggestions, animate: true } 
+            { suggestedPrompts: suggestions, animate: true }
         );
         // --- END BUG FIX ---
 
@@ -745,9 +745,13 @@ export function autoSize() {
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
+    // Reset height to auto to shrink properly
     input.style.height = 'auto';
-    const newHeight = input.scrollHeight;
-    input.style.height = `${newHeight}px`;
+
+    // Calculate new height, capped by max-height in CSS (if set, or we can enforce here)
+    // The CSS class max-h-32 (approx 128px) handles the scrolling limit.
+    // We just need to set scrollHeight.
+    input.style.height = `${input.scrollHeight}px`;
 }
 
 // --- CONVERSATION RENAMING/DELETING/PINNING ---

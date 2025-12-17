@@ -341,6 +341,13 @@ function renderControlPanel() {
     handleModelsSave
   );
 
+  // --- NEW: Init Agent Selector ---
+  uiAuthSidebar.initAgentSelector(
+    availableProfiles,
+    activeProfileData.key,
+    handleProfileChange
+  );
+
   // Render "My Profile" Tab. This will fetch the data.
   uiSettingsModals.renderSettingsMyProfileTab();
 

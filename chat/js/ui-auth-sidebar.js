@@ -543,3 +543,124 @@ export function getAvatarForProfile(profileName) {
       return 'assets/safi.svg';
   }
 }
+
+/**
+ * --- NEW: Agent Selector Logic (Bottom Input) ---
+ */
+
+/**
+ * Initializes the agent selector in the chat input area.
+ * @param {Array} profiles - List of available profiles.
+ * @param {string} activeProfileKey - The key of the currently active profile.
+ * @param {Function} onSelect - Callback when a profile is selected (key) => void.
+ */
+export function initAgentSelector(profiles, activeProfileKey, onSelect) {
+  ui._ensureElements();
+  const { agentSelectorBtn, agentSelectorDropdown, agentSelectorContainer } = ui.elements;
+
+  if (!agentSelectorBtn || !agentSelectorDropdown) return;
+
+  // 1. Render Options
+  renderAgentSelectorOptions(profiles, activeProfileKey, onSelect);
+
+  // 2. Set Initial Button State
+  const activeProfile = profiles.find(p => p.key === activeProfileKey) || profiles[0];
+  updateAgentSelectorButton(activeProfile);
+
+  // 3. Toggle Logic
+  // Remove old listener if any (simple way: clone node, or just assume init is called once)
+  // We'll stick to adding a listener, assuming init is called once per app load or we handle deduping
+  agentSelectorBtn.onclick = (e) => {
+    e.stopPropagation();
+    const isHidden = agentSelectorDropdown.classList.contains('hidden');
+    if (isHidden) {
+      showAgentSelector();
+    } else {
+      hideAgentSelector();
+    }
+  };
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!agentSelectorContainer.contains(e.target)) {
+      hideAgentSelector();
+    }
+  });
+}
+
+function showAgentSelector() {
+  ui._ensureElements();
+  const { agentSelectorDropdown } = ui.elements;
+  if (agentSelectorDropdown) agentSelectorDropdown.classList.remove('hidden');
+}
+
+function hideAgentSelector() {
+  ui._ensureElements();
+  const { agentSelectorDropdown } = ui.elements;
+  if (agentSelectorDropdown) agentSelectorDropdown.classList.add('hidden');
+}
+
+/**
+ * Updates the text and icon of the selector button.
+ */
+export function updateAgentSelectorButton(profile) {
+  ui._ensureElements();
+  const { agentSelectorBtn } = ui.elements;
+  if (!agentSelectorBtn) return;
+  if (!profile) return;
+
+  const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);
+
+  agentSelectorBtn.innerHTML = `
+    <img src="${avatarUrl}" alt="Agent" class="w-4 h-4 rounded-full object-cover">
+    <span>${profile.name}</span>
+    <svg class="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+    </svg>
+  `;
+}
+
+/**
+ * Renders the list of agents in the dropdown.
+ */
+function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
+  ui._ensureElements();
+  const { agentSelectorDropdown, agentSelectorBtn } = ui.elements;
+  if (!agentSelectorDropdown) return;
+
+  agentSelectorDropdown.innerHTML = '';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'px-3 py-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider bg-neutral-50 dark:bg-neutral-800/50';
+  header.textContent = 'Select Agent';
+  agentSelectorDropdown.appendChild(header);
+
+  profiles.forEach(profile => {
+    const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);
+    const isActive = profile.key === activeProfileKey;
+
+    const btn = document.createElement('button');
+    btn.className = `w-full text-left px-4 py-2 text-sm flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${isActive ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500' : 'text-neutral-700 dark:text-neutral-300'}`;
+
+    btn.innerHTML = `
+      <img src="${avatarUrl}" alt="${profile.name}" class="w-4 h-4 rounded-full object-cover">
+      <span class="truncate">${profile.name}</span>
+      ${isActive ? `<svg class="w-4 h-4 ml-auto text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>` : ''}
+    `;
+
+    btn.onclick = () => {
+      // Optimistic update
+      updateAgentSelectorButton(profile);
+      hideAgentSelector();
+
+      // Re-render options to update checkmarks
+      renderAgentSelectorOptions(profiles, profile.key, onSelect);
+
+      // Trigger callback
+      if (onSelect) onSelect(profile.key);
+    };
+
+    agentSelectorDropdown.appendChild(btn);
+  });
+}

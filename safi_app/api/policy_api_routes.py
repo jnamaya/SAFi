@@ -71,6 +71,7 @@ def create_policy():
             will_rules=data.get("will_rules", []), 
             values=data.get("values", []), 
             created_by=user_id,
+            org_id=user.get('org_id'), # FIX: Link to Org
             policy_id=readable_id
         )
         
@@ -92,11 +93,27 @@ def create_policy():
 def list_policies():
     user = session.get('user')
     user_id = user.get('id') if user else None
+    org_id = user.get('org_id') if user else None
+    
     if not user_id: return jsonify({"error": "Unauthorized"}), 401
     try:
-        policies = db.list_policies(user_id=user_id)
-        return jsonify({"ok": True, "policies": policies})
+        # DEBUG LOGGING
+        print(f"DEBUG: list_policies called for User: {user_id}, Org: {org_id}")
+        policies = db.list_policies(user_id=user_id, org_id=org_id)
+        print(f"DEBUG: Found {len(policies)} policies.")
+        
+        return jsonify({
+            "ok": True, 
+            "policies": policies,
+            "debug_info": {
+                "user_id": user_id,
+                "org_id": org_id,
+                "count": len(policies),
+                "db_host": current_app.config.get('DB_HOST') # Check if it's hitting the right DB
+            }
+        })
     except Exception as e:
+        print(f"DEBUG: list_policies ERROR: {e}")
         return jsonify({"error": str(e)}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['GET'], strict_slashes=False)
