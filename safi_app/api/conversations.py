@@ -395,19 +395,18 @@ async def process_prompt_endpoint():
 
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
 def get_audit_result_endpoint(message_id):
+    current_app.logger.info(f"AUDIT CHECK: Looking for message_id={message_id}")
     user_id = get_user_id()
     if not user_id:
+        current_app.logger.warning(f"AUDIT CHECK: Unauthorized access attempt for {message_id}")
         return jsonify({"error": "Authentication required."}), 401
-    
-    # Note: message_id is unique, but ideally we should verify the user owns the conversation 
-    # that this message belongs to. 
-    # Since we lack a direct mapping from message_id -> user_id without a join, 
-    # we rely on the UUID complexity of message_id for now, but a strict implementation would join here too.
     
     result = db.get_audit_result(message_id)
     if result:
+        current_app.logger.info(f"AUDIT CHECK: Found result for {message_id}: {result['status']}")
         return jsonify(result)
     else:
+        current_app.logger.warning(f"AUDIT CHECK: NOT FOUND {message_id}")
         return jsonify({"status": "not_found"}), 404
 
 @conversations_bp.route('/health')

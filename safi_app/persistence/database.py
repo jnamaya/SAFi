@@ -882,11 +882,19 @@ def get_policy(pid):
         cursor.close()
         conn.close()
 
-def list_policies(user_id=None):
+def list_policies(user_id=None, org_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM policies WHERE is_demo=TRUE OR created_by=%s ORDER BY created_at DESC", (user_id,))
+        # Filter by Demo, Creator, OR Organization
+        cursor.execute("""
+            SELECT * FROM policies 
+            WHERE is_demo=TRUE 
+            OR created_by=%s 
+            OR (org_id IS NOT NULL AND org_id=%s)
+            ORDER BY created_at DESC
+        """, (user_id, org_id))
+        
         rows = cursor.fetchall()
         for row in rows:
             row['will_rules'] = json.loads(row['will_rules']) if isinstance(row['will_rules'], str) else row['will_rules']
