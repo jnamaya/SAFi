@@ -397,7 +397,41 @@ function renderHistory(history, user, showModal, activeProfileData) {
 
 // --- MESSAGE FLOW ---
 
+// --- ABORT CONTROLLER STATE ---
+let currentAbortController = null;
+
 export async function sendMessage(activeProfileData, user) {
+    // 1. Check if we are currently sending (and thus can cancel)
+    if (currentAbortController) {
+        console.log('Cancelling request...');
+        currentAbortController.abort();
+        currentAbortController = null;
+
+        // UI Reset is handled in the catch block or manually here if needed immediately
+        ui.showToast('Request cancelled.', 'info');
+
+        // Reset button immediately
+        const buttonIcon = document.getElementById('button-icon');
+        const buttonLoader = document.getElementById('button-loader');
+        buttonIcon.classList.remove('hidden');
+        buttonIcon.innerHTML = `
+           <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd"
+                d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                clip-rule="evenodd" />
+            </svg>`;
+        buttonLoader.classList.add('hidden');
+
+        // Re-evaluate disabled state based on input text (likely empty if just sent)
+        // But the input was cleared! So we should keep it focused.
+        ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
+
+        ui.clearLoadingInterval();
+        const loadingIndicator = document.querySelector('.loading-indicator'); // Or robust find
+        if (loadingIndicator) loadingIndicator.remove();
+        return;
+    }
+
     const userMessage = ui.elements.messageInput.value.trim();
     if (!userMessage) return;
 
@@ -442,9 +476,43 @@ export async function sendMessage(activeProfileData, user) {
     const buttonIcon = document.getElementById('button-icon');
     const buttonLoader = document.getElementById('button-loader');
 
-    buttonIcon.classList.add('hidden');
-    buttonLoader.classList.remove('hidden');
-    ui.elements.sendButton.disabled = true;
+    // UI: Show Stop Button instead of Spinner/Arrow
+    // Ideally we want a nice transition. For now, swap icon to "Stop"
+    buttonIcon.classList.remove('hidden'); // Keep icon visible
+    buttonIcon.innerHTML = `
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <rect x="5" y="5" width="10" height="10" rx="1"></rect>
+        </svg>`;
+
+    // We do NOT use the spinner anymore, or we use it as a border? 
+    // The user asked for "cancel option to the spinning button". 
+    // Let's keep the spinner but put the stop icon INSIDE it?
+    // Current CSS structure: button-icon OR button-loader. Loader replaces icon.
+    // Let's show loader AND stop icon.
+    buttonLoader.classList.remove('hidden'); // Spinner rotating
+    // Remove the icon? No, we want the stop icon visible. 
+    // The loader is likely a div that spins. If we put text inside it spins.
+    // Let's look at index.html: loader is empty div.
+    // Solution: Keep loader spinning (if it's absolute/overlay) or just show Stop icon.
+    // "cancel option to the spinning button" -> implied Stop Button.
+    // Standard UI: Spinner ring around a square stop button.
+    // Simpler UI: Just a stop button. 
+
+    // Let's do: Stop Icon only. No spinner, or spinner around it? 
+    // Given the request, "spinning button" usually means "button is loading". 
+    // I will replace the spinner with an actionable Stop Icon.
+    buttonLoader.classList.add('hidden'); // Hide simple spinner
+    // Stop icon is already set above.
+    ui.elements.sendButton.disabled = false; // ENABLED so we can click to cancel!
+
+    // FORCE STYLE to ensure it turns red, overriding any CSS specificity issues
+    ui.elements.sendButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+    ui.elements.sendButton.classList.add('bg-red-600', 'hover:bg-red-700');
+    ui.elements.sendButton.style.backgroundColor = '#dc2626'; // tailwind red-600
+    ui.elements.sendButton.style.color = '#ffffff';
+
+    // Init AbortController
+    currentAbortController = new AbortController();
 
     const now = new Date();
     // ADDED NULL CHECK: Safely get user info
@@ -481,39 +549,34 @@ export async function sendMessage(activeProfileData, user) {
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     try {
-        const initialResponse = await api.processUserMessage(userMessage, currentConversationId);
+        // PASS SIGNAL HERE
+        const initialResponse = await api.processUserMessage(userMessage, currentConversationId, currentAbortController.signal);
 
         ui.clearLoadingInterval();
-        if (loadingIndicator) loadingIndicator.remove();
+        if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
 
         if (initialResponse === 'QUEUED') {
             ui.showToast('Message queued, will send when online.', 'info');
             // Remove user message from display/cache as it will be resent on flush.
             const userMsgElement = document.querySelector(`[data-message-id="${userMessageId}"]`);
             if (userMsgElement) userMsgElement.remove();
-            // Since we don't have handleExamplePromptClick here, we'll just rely on the app resume listener
             return;
         }
 
         // --- START BUG FIX: Handle empty/missing data from API ---
-        // 1. Get the answer, providing a fallback for the "blank message" bug.
         const mainAnswer = initialResponse.finalOutput ?? '[Sorry, the model returned an empty response.]';
-
-        // 2. Get all other data, defaulting to safe values
         const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
-        const messageId = initialResponse.messageId || crypto.randomUUID(); // Fallback messageId
+        const messageId = initialResponse.messageId || crypto.randomUUID();
         const profileName = initialResponse.activeProfile || activeProfileData.name || null;
-        const spiritScore = initialResponse.spirit_score; // Can be null (e.g., for blocked)
+        const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
         // --- END BUG FIX ---
-
 
         // Fetch full history *including* the user message we just added
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
 
-        // --- THIS IS THE FIX ---
         // Filter out null/undefined scores *before* passing to the trend line.
         const scoresHistoryForPayload = historyForPayload
             .map(t => t.spirit_score)
@@ -522,7 +585,6 @@ export async function sendMessage(activeProfileData, user) {
         if (spiritScore !== null && spiritScore !== undefined) {
             scoresHistoryForPayload.push(spiritScore);
         }
-        // --- END FIX ---
 
         const aiMessageObject = {
             role: 'ai',
@@ -534,8 +596,6 @@ export async function sendMessage(activeProfileData, user) {
             profile_values: values,
             spirit_score: spiritScore,
             suggested_prompts: suggestions,
-            // --- FIX: Use status from orchestrator ---
-            // If blocked, it's 'complete', otherwise 'pending'
             audit_status: isBlocked ? 'complete' : 'pending'
         };
 
@@ -546,11 +606,10 @@ export async function sendMessage(activeProfileData, user) {
             profile: profileName,
             values: values,
             spirit_score: spiritScore,
-            spirit_scores_history: scoresHistoryForPayload, // Pass the filtered list
-            message_id: messageId // Ensure message_id is in payload
+            spirit_scores_history: scoresHistoryForPayload,
+            message_id: messageId
         };
 
-        // 6. Use these safe variables to display the message
         uiMessages.displayMessage(
             'ai',
             mainAnswer,
@@ -558,7 +617,6 @@ export async function sendMessage(activeProfileData, user) {
             messageId,
             initialPayload,
             async (p) => {
-                // --- FIX: Fetch fresh history on click ---
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
@@ -571,13 +629,10 @@ export async function sendMessage(activeProfileData, user) {
 
                 ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
             },
-            // --- ADDED: Pass animate: true for new messages ---
             { suggestedPrompts: suggestions, animate: true }
         );
-        // --- END BUG FIX ---
 
         const updateMeta = { last_updated: new Date().toISOString() };
-
         if (initialResponse.newTitle && isNewConversation) {
             updateMeta.title = initialResponse.newTitle;
         }
@@ -594,23 +649,47 @@ export async function sendMessage(activeProfileData, user) {
         }
         await cache.updateConvoInList(currentConversationId, updateMeta);
 
-        // --- MODIFIED ---
-        // Only poll if the message was *not* blocked
         if (messageId && !isBlocked) {
             pollForAuditResults(messageId);
         }
-        // --- END MODIFIED ---
 
     } catch (error) {
+        if (error.name === 'AbortError') {
+            // Handled by the abort logic at top of function? No, confusing.
+            // If we aborted, we probably already handled UI cleanup.
+            // BUT, fetch throws AbortError. So we land here.
+            console.log('Fetch aborted in catch block.');
+            return; // Exit cleanly
+        }
+
         uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
         ui.elements.messageInput.value = originalMessage;
         autoSize();
         ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
+        // Reset Button Style
         buttonIcon.classList.remove('hidden');
+        buttonIcon.innerHTML = `
+           <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+               <path fill-rule="evenodd"
+                 d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                 clip-rule="evenodd" />
+             </svg>`;
+
         buttonLoader.classList.add('hidden');
+
+        ui.elements.sendButton.classList.remove('bg-red-600', 'hover:bg-red-700'); // Revert Color
+        ui.elements.sendButton.classList.add('bg-green-600', 'hover:bg-green-700');
+        ui.elements.sendButton.style.backgroundColor = ''; // Remove inline style
+
         ui.elements.sendButton.disabled = false;
+
+        currentAbortController = null;
+
+        // Re-focus and check input state
         ui.elements.messageInput.focus();
+        // Since input is empty after send, disable it again if needed
+        ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
     }
 }
 
@@ -637,8 +716,10 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             const hasLedger = rawLedger && (Array.isArray(rawLedger) || typeof rawLedger === 'string');
             const hasSuggestions = rawSuggestions && (Array.isArray(rawSuggestions) || typeof rawSuggestions === 'string');
 
-            // We update the UI if the audit is complete and has *either* a ledger *or* suggestions
-            if (auditResult && (hasLedger || hasSuggestions)) {
+            // We update the UI if the audit is complete and has *either* a ledger *or* suggestions *or* a spirit score
+            const hasScore = auditResult.spirit_score !== null && auditResult.spirit_score !== undefined;
+
+            if (auditResult && (hasLedger || hasSuggestions || hasScore)) {
 
                 // Process Ledger (if it exists)
                 let parsedLedger = []; // Default to empty
