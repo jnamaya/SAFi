@@ -65,14 +65,7 @@ html {
 }
 
 
-#message-input::-webkit-scrollbar {
-  display: none;
-}
-
-#message-input {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+/* Scrollbar hidden rules removed */
 
 
 /* --- NEW: Text-first chat styles from mockup --- */
@@ -949,7 +942,7 @@ form {
   /* Modern Pill Shape */
   border-radius: 8px;
   /* Right padding ensures text doesn't go behind the button */
-  padding: 14px 54px 14px 20px;
+  padding: 10px 54px 10px 20px;
 
   /* Surface styling */
   background-color: #f3f4f6;
@@ -967,7 +960,7 @@ form {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   resize: none;
   width: 100%;
-  min-height: 52px;
+  min-height: 44px;
   max-height: 150px;
 
   /* NEW: Ensure it overrides Tailwind utility classes */
@@ -1195,4 +1188,32 @@ button[type="submit"] {
 .dark .empty-section-state {
   border-color: #374151;
   color: #6b7280;
+}
+
+/* Visible Scrollbar for Input */
+.input-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.dark .input-scrollbar {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.input-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.input-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.input-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.dark .input-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
 }

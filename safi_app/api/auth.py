@@ -2,7 +2,8 @@
 Defines the authentication and user management API endpoints.
 
 This blueprint handles all user-facing authentication logic, including:
-- Google OAuth 2.0 flow for web and mobile.
+- Google/Microsoft OAuth 2.0 flow for web Login (OpenID).
+- Tool-specific token acquisition (Google Drive, SharePoint).
 - Session management (login, logout, /me).
 - User profile and model preference management.
 - Account deletion.
@@ -12,33 +13,45 @@ import secrets
 import traceback
 import requests
 import base64
-from .. import oauth
+import os
+import json
+from datetime import datetime, timedelta
+from ..extensions import oauth
 from ..persistence import database as db
 from ..config import Config
 from ..core.values import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
+from google_auth_oauthlib.flow import Flow # For Tool Auth
 
 auth_bp = Blueprint('auth', __name__)
+
+# =================================================================
+# MAIN APP AUTHENTICATION (OpenID Connect for Login)
+# =================================================================
 
 @auth_bp.route('/login')
 def login():
     """
     [GET /api/login]
-    Initiates the Google OAuth 2.0 login flow for web clients.
+    Initiates the Google OAuth 2.0 login flow for web clients (User Identity).
     """
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
-    return oauth.google.authorize_redirect(Config.WEB_CALLBACK_URL, nonce=nonce)
+    # Force HTTPS scheme
+    redirect_uri = url_for('auth.callback', _external=True, _scheme='https')
+    return oauth.google.authorize_redirect(redirect_uri, nonce=nonce)
 
 
 @auth_bp.route('/callback')
 def callback():
     """
     [GET /api/callback]
-    Handles the redirect callback from Google.
+    Handles the redirect callback from Google Login.
     """
     try:
         current_app.logger.info("Web callback initiated.")
+        # Authlib handles redirect_uri from session automatically, 
+        # provided the login route set it correctly (with https).
         token = oauth.google.authorize_access_token() 
         nonce = session.pop('nonce', None)
         oauth.google.parse_id_token(token, nonce=nonce)
@@ -94,7 +107,6 @@ def callback():
                 current_app.logger.error(f"Failed to auto-create org: {e}")
 
         # FIX: Store minimal data in session to prevent "Cookie too large" errors.
-        # Google pictures are URLs, so they are safe, but we strip unnecessary fields anyway.
         session_user = {
             'id': user_details['id'],
             'email': user_details.get('email'),
@@ -105,19 +117,28 @@ def callback():
         }
         session['user'] = session_user
         
+        # Compatibility with Tool Auth (which uses simple keys)
+        session['user_id'] = user_details['id']
+        session['user_email'] = user_details.get('email')
+        
         current_app.logger.info(f"Web callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
     except Exception as e:
-        current_app.logger.error(f"Web callback error: {str(e)}")
-        current_app.logger.error(traceback.format_exc())
+        current_app.logger.error(f"Web callback error: {str(e)}", exc_info=True)
         return redirect('/?error=auth_failed')
 
+
+# =================================================================
+# MICROSOFT LOGIN (App Login / Linking via "Sign in with Microsoft")
+# =================================================================
 
 @auth_bp.route('/login/microsoft')
 def login_microsoft():
     """
     [GET /api/login/microsoft]
-    Initiates the Microsoft OAuth 2.0 login flow.
+    Initiates the Microsoft OAuth 2.0 login flow using Authlib.
+    This supports the "Sign in with Microsoft" button.
+    Currently used primarily for linking accounts or identifying user.
     """
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
@@ -175,14 +196,9 @@ def callback_microsoft():
         
         user_id = mapped_user_info.get('id')
         user_details = db.get_user_details(user_id)
-
-        if not user_details.get('active_profile'):
-            default_profile = Config.DEFAULT_PROFILE
-            db.update_user_profile(user_id, default_profile)
-            user_details['active_profile'] = default_profile
-
+        
+        # Reuse user setup logic (Org/Profile)
         if not user_details.get('org_id'):
-            # NEW: Domain-based Auto-Join
             try:
                 user_email = user_details.get('email', '')
                 if '@' in user_email:
@@ -192,26 +208,9 @@ def callback_microsoft():
                         user_details['org_id'] = existing_org['id']
                         user_details['role'] = 'member'
                         db.update_user_org_and_role(user_id, existing_org['id'], 'member')
-                        current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} (Domain: {domain})")
-            except Exception as e:
-                current_app.logger.error(f"Error in domain auto-join: {e}")
+            except Exception: pass # logging handled elsewhere
 
-        if not user_details.get('org_id'):
-            # NEW: "Founder Flow" - Auto-create Personal Organization
-            org_name = f"{user_details.get('name', 'My')} Organization"
-            try:
-                new_org = db.create_organization_atomic(org_name, user_id)
-                user_details['org_id'] = new_org['org_id']
-                user_details['role'] = 'admin'
-                
-                # CRITICAL FIX: Persist the role promotion to DB!
-                db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
-                
-                current_app.logger.info(f"Created Personal Org '{org_name}' for new user {user_id}")
-            except Exception as e:
-                current_app.logger.error(f"Failed to auto-create org: {e}")
-
-        # FIX: Critical Session Size Optimization
+        # Create session
         session_user = {
             'id': user_details['id'],
             'email': user_details.get('email'),
@@ -221,14 +220,233 @@ def callback_microsoft():
             'org_id': user_details.get('org_id')
         }
         session['user'] = session_user
+        session['user_id'] = user_details['id']
+        
+        # --- Microsoft Token Storage for Tools (Bonus) ---
+        # Since we have the token here, we can piggyback and save it for OneDrive use!
+        # Scope might be limited to 'User.Read' depending on Init config, 
+        # but if we add 'Files.ReadWrite.All' to init, this works double-duty.
+        # For now, we just log in. The 'Connect' flow below adds specific scopes.
         
         current_app.logger.info(f"Microsoft callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
         
     except Exception as e:
-        current_app.logger.error(f"Microsoft callback error: {str(e)}")
-        current_app.logger.error(traceback.format_exc())
+        current_app.logger.error(f"Microsoft callback error: {str(e)}", exc_info=True)
         return redirect('/?error=auth_failed')
+
+
+# =================================================================
+# TOOL AUTHENTICATION (Google Drive & SharePoint via Manual Flow)
+# =================================================================
+
+@auth_bp.route('/auth/status')
+def auth_status():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"connected": []})
+    
+    connected = db.get_connected_providers(user_id)
+    return jsonify({"connected": connected})
+
+@auth_bp.route('/auth/<provider>/disconnect', methods=['POST'])
+def disconnect_provider(provider):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+        
+    db.delete_oauth_token(user_id, provider)
+    return jsonify({"status": "disconnected", "provider": provider})
+
+# --- GOOGLE DRIVE TOOL ---
+@auth_bp.route('/auth/google/login')
+def google_tool_login():
+    try:
+        user_id = session.get('user_id')
+        # Allow linking even if not logged in? No, must be logged in.
+        if not user_id:
+            return jsonify({"error": "Not logged in"}), 401
+
+        # Define scopes for Drive
+        scopes = [
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/drive.file",
+        ]
+
+        client_config = {
+            "web": {
+                "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+                "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        }
+        
+        flow = Flow.from_client_config(
+            client_config=client_config,
+            scopes=scopes
+        )
+        # Unique callback for Drive tool
+        flow.redirect_uri = url_for('auth.google_tool_callback', _external=True, _scheme='https')
+        current_app.logger.info(f"Google Drive Redirect URI: {flow.redirect_uri}")
+        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent' # Force consent to get refresh token
+        )
+        
+        session['google_tool_state'] = state
+        return redirect(authorization_url)
+    except Exception as e:
+        current_app.logger.error(f"Google Drive Login Start Logic Failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@auth_bp.route('/auth/google/callback')
+def google_tool_callback():
+    current_app.logger.info("Entering Google Drive Callback")
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect('/chat?error=auth_session_expired')
+
+    state = session.get('google_tool_state')
+    
+    # Bypass library's strict HTTPS check if behind a proxy terminating SSL
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+    # Allow the provider to return different scopes than requested (e.g. adding openid/profile)
+    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+
+    client_config = {
+        "web": {
+            "client_id": current_app.config['GOOGLE_CLIENT_ID'],
+            "client_secret": current_app.config['GOOGLE_CLIENT_SECRET'],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    }
+
+    flow = Flow.from_client_config(
+        client_config=client_config,
+        scopes=[],
+        state=state
+    )
+    # Must match init
+    flow.redirect_uri = url_for('auth.google_tool_callback', _external=True, _scheme='https')
+
+    try:
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
+        
+        db.upsert_oauth_token(
+            user_id, 
+            'google', 
+            creds.token, 
+            creds.refresh_token, 
+            creds.expiry, # datetime object
+            " ".join(creds.scopes) if creds.scopes else ""
+        )
+        
+        return redirect('/?status=google_connected')
+    except Exception as e:
+        current_app.logger.error(f"Google Tool Auth Error: {e}", exc_info=True)
+        # Redirect to root to avoid 404s on /chat if SPA routing is flaky
+        return redirect(f'/?error=google_auth_failed&details={str(e)}')
+
+# --- MICROSOFT SHAREPOINT TOOL ---
+@auth_bp.route('/auth/microsoft/login')
+def microsoft_tool_login():
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "Not logged in"}), 401
+        
+        # Minimal scopes for SharePoint/OneDrive
+        scopes = "Files.ReadWrite.All Sites.Read.All offline_access"
+        
+        client_id = current_app.config['MICROSOFT_CLIENT_ID']
+        if not client_id:
+            current_app.logger.error("Microsoft Client ID not set")
+            return jsonify({"error": "MS Config Missing"}), 500
+
+        redirect_uri = url_for('auth.microsoft_tool_callback', _external=True, _scheme='https')
+        current_app.logger.info(f"MS Tool Login Redirect URI: {redirect_uri}")
+        
+        state = os.urandom(16).hex()
+        session['ms_tool_state'] = state
+        
+        # Generic OAuth2 Code Flow
+        base_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        params = {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "response_mode": "query",
+            "scope": scopes,
+            "state": state
+        }
+        
+        import urllib.parse
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        return redirect(url)
+    except Exception as e:
+        current_app.logger.error(f"MS Tool Login Start Failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@auth_bp.route('/auth/microsoft/callback')
+def microsoft_tool_callback():
+    current_app.logger.info("Entering MS Tool Callback")
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect('/chat?error=auth_session_expired')
+        
+    code = request.args.get('code')
+    state = request.args.get('state')
+    
+    if state != session.get('ms_tool_state'):
+         current_app.logger.error("MS State mismatch")
+         return redirect('/chat?error=state_mismatch')
+         
+    token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    redirect_uri = url_for('auth.microsoft_tool_callback', _external=True, _scheme='https')
+    
+    data = {
+        "client_id": current_app.config['MICROSOFT_CLIENT_ID'],
+        "client_secret": current_app.config['MICROSOFT_CLIENT_SECRET'],
+        "scope": "Files.ReadWrite.All Sites.Read.All offline_access",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code"
+    }
+    
+    try:
+        current_app.logger.info(f"Exchanging code for MS tool token. URI: {redirect_uri}")
+        r = requests.post(token_url, data=data)
+        r.raise_for_status()
+        tokens = r.json()
+        
+        access_token = tokens.get('access_token')
+        refresh_token = tokens.get('refresh_token')
+        expires_in = tokens.get('expires_in', 3600)
+        expires_at = datetime.now() + timedelta(seconds=expires_in)
+        scope = tokens.get('scope', "")
+        
+        db.upsert_oauth_token(
+            user_id,
+            'microsoft',
+            access_token,
+            refresh_token,
+            expires_at,
+            scope
+        )
+        return redirect('/?status=microsoft_connected')
+    except Exception as e:
+        current_app.logger.error(f"Microsoft Tool Auth Error: {e}", exc_info=True)
+        return redirect(f'/?error=microsoft_auth_failed&details={str(e)}')
+
+
+# =================================================================
+# USER & SESSION MANAGEMENT
+# =================================================================
 
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
@@ -236,16 +454,14 @@ def get_me():
     [GET /api/me]
     Returns full user details.
     """
-    user_id = session.get('user', {}).get('id')
+    user_id = session.get('user_id') # Use session['user_id'] for consistency
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
 
     try:
-        # We fetch the FULL details (including the massive picture blob) from DB here.
-        # This is fine because /api/me returns JSON, which has a much higher size limit than cookies.
+        # We fetch the FULL details from DB here.
         user_details = db.get_user_details(user_id)
         if not user_details:
-            session.pop('user', None)
             return jsonify({"ok": False, "error": "User details not found"}), 404
     
         active_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
@@ -261,107 +477,55 @@ def get_me():
         user_details['will_model'] = user_details.get('will_model') or Config.WILL_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
-        # Ensure role/org are present (defaults if DB missing them for some reason)
+        # Ensure role/org are present
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
 
-        # --- NEW: Handle "Limbo" Users (No Org) in /me ---
-        if not user_details.get('org_id'):
-             # 1. Try Domain Auto-Join first
-            try:
-                user_email = user_details.get('email', '')
-                if '@' in user_email:
-                    domain = user_email.split('@')[-1]
-                    # Only auto-join if domain is NOT a common public provider (simple check)
-                    public_domains = ['gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com', 'me.com']
-                    if domain not in public_domains:
-                        existing_org = db.get_organization_by_domain(domain)
-                        if existing_org:
-                            user_details['org_id'] = existing_org['id']
-                            user_details['role'] = 'member'
-                            db.update_user_org_and_role(user_id, existing_org['id'], 'member')
-                            current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} via /me")
-            except Exception as e:
-                current_app.logger.error(f"Error in /me domain auto-join: {e}")
-
-            # 2. If still no org, Founder Flow
-            if not user_details.get('org_id'):
-                org_name = f"{user_details.get('name', 'My')} Organization"
-                try:
-                    new_org = db.create_organization_atomic(org_name, user_id)
-                    user_details['org_id'] = new_org['org_id']
-                    user_details['role'] = 'admin'
-                    
-                    db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
-                    current_app.logger.info(f"Created Personal Org '{org_name}' for user {user_id} via /me")
-                except Exception as e:
-                    current_app.logger.error(f"Failed to auto-create org in /me: {e}")
-        # ------------------------------------------------
-    
-        # FIX: Refresh session if DB differs (e.g. after migration or role change)
-        session_user = session.get('user', {})
-        
-        # --- NEW: Self-Correction for Org Owners ---
-        # If user is the OWNER of the org but has 'member' role (e.g. legacy data issue), promote them.
+        # --- Self-Correction for Org Owners ---
         if user_details.get('org_id') and user_details.get('role') != 'admin':
             org = db.get_organization(user_details['org_id'])
             if org and org.get('owner_id') == user_id:
                 current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
                 db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
-                user_details['role'] = 'admin' # Update local dict for response
+                user_details['role'] = 'admin' # Update local dict
         # -------------------------------------------
-
-        if session_user.get('role') != user_details['role'] or session_user.get('org_id') != user_details['org_id']:
-            current_app.logger.info(f"Refeshing stale session for user {user_id}. Org: {session_user.get('org_id')}->{user_details['org_id']}")
-            session_user['role'] = user_details['role']
-            session_user['org_id'] = user_details['org_id']
-            # Update other fields if needed, but these are the critical ones for RBAC
-            session['user'] = session_user
-            session.modified = True
 
         return jsonify({"ok": True, "user": user_details})
         
     except Exception as e:
-        current_app.logger.error(f"/api/me error: {str(e)}")
+        current_app.logger.error(f"/api/me error: {str(e)}", exc_info=True)
         return jsonify({'ok': False, 'error': 'Server error'}), 500
 
-# ... (Profile/Model update routes remain unchanged) ...
 @auth_bp.route('/me/profile', methods=['PUT'])
 def set_user_profile():
-    user_id = session.get('user', {}).get('id')
+    user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     data = request.json
     profile_name = data.get('profile')
     db.update_user_profile(user_id, profile_name)
-    # Update session
-    user_session = session.get('user', {})
-    user_session['active_profile'] = profile_name
-    session['user'] = user_session
     return jsonify({"status": "success", "active_profile": profile_name})
 
 @auth_bp.route('/me/models', methods=['PUT'])
 def set_user_models():
-    user_id = session.get('user', {}).get('id')
+    user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     data = request.json
     db.update_user_models(user_id, data.get('intellect_model'), data.get('will_model'), data.get('conscience_model'))
-    # Update session (optional since we fetch fresh on /me, but good for consistency)
-    # We don't store models in session anymore to save space, so nothing to update here.
     return jsonify({"status": "success"})
 
 @auth_bp.route('/me/delete', methods=['POST'])
 def delete_me():
-    user_id = session.get('user', {}).get('id')
+    user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     db.delete_user(user_id)
     session.clear()
     return jsonify({"status": "success"})
 
-@auth_bp.route('/logout', methods=['POST'])
+@auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():
     """
     [POST /api/logout]
     Clears the server-side session.
     """
     session.clear()
-    return jsonify({"status": "success"})
+    return redirect('/') if request.method == 'GET' else jsonify({"status": "success"})

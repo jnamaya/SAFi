@@ -215,6 +215,15 @@ export async function suggestValues(context) {
     return httpJSON(urls.VALUES_GEN, 'POST', { context });
 }
 
+export async function getAuthStatus() {
+    // FIX: Force fresh fetch to avoid caching old status
+    return httpGet(`/api/auth/status?_t=${Date.now()}`);
+}
+
+export async function disconnectProvider(provider) {
+    return httpJSON(`/api/auth/${provider}/disconnect`, 'POST', {});
+}
+
 // --- GOVERNANCE API Functions ---
 
 export async function fetchPolicies() {

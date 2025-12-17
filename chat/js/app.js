@@ -461,7 +461,7 @@ function attachEventListeners() {
   const microsoftBtn = document.getElementById('login-microsoft-button');
   if (microsoftBtn) {
     microsoftBtn.addEventListener('click', () => {
-      window.location.href = '/api/login/microsoft';
+      window.location.href = '/api/auth/microsoft/login';
     });
   }
 

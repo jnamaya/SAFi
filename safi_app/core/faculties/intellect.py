@@ -189,8 +189,14 @@ class IntellectEngine:
                      # GOVERNANCE CHECK (Will Faculty could go here in v2)
                      
                      if self.mcp_manager:
-                         result = await self.mcp_manager.execute_tool(name, args)
-                         tool_results_text += f"\n[TOOL EXECUTION: {name}({args}) => {result}]\n"
+                         # SECURITY CHECK: Ensure the agent is allowed to use this tool
+                         allowed_tool_names = [t["name"] for t in tools]
+                         if name not in allowed_tool_names:
+                             tool_results_text += f"\n[TOOL ERROR: Tool '{name}' is not enabled for this agent.]\n"
+                             self.log.warning(f"BLOCKED tool execution '{name}' for agent (not in allowed list {allowed_tool_names})")
+                         else:
+                             result = await self.mcp_manager.execute_tool(name, args)
+                             tool_results_text += f"\n[TOOL EXECUTION: {name}({args}) => {result}]\n"
                      else:
                          tool_results_text += f"\n[TOOL EXECUTION FAILED: No Manager]\n"
 

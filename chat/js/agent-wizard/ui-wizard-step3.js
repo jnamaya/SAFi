@@ -51,6 +51,11 @@ export function renderIntellectStep(container, agentData, availableModels) {
                 </div>
                 <textarea id="wiz-style" class="w-full h-24 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${agentData.style}</textarea>
             </div>
+
+            <div class="mt-6 pt-6 border-t border-gray-200 dark:border-neutral-700">
+                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Capabilities</label>
+                <div id="intellect-tools-container">Loading...</div>
+            </div>
         </div>
     `;
 
@@ -68,6 +73,86 @@ export function renderIntellectStep(container, agentData, availableModels) {
 
     // AI Handlers
     attachAiHandlers(agentData);
+
+    // Capabilities / Tools
+    _renderToolSelector(agentData);
+}
+
+async function _renderToolSelector(agentData) {
+    const container = document.getElementById('intellect-tools-container');
+    if (!container) return; // Should exist if HTML updated
+
+    try {
+        const res = await api.fetchAvailableTools();
+        // mcp_manager returns list of categories, containing tools
+        // We want to find "Office & Productivity" or just flatten
+
+        let tools = [];
+        if (res && Array.isArray(res)) {
+            // Flatten categories
+            res.forEach(cat => {
+                if (cat.tools) tools.push(...cat.tools);
+            });
+        }
+
+        // Use defined capabilities "google_drive" and "sharepoint"
+        // Filter for specific ones we support toggling
+        const supported = ['google_drive', 'sharepoint'];
+        const displayTools = tools.filter(t => supported.includes(t.name));
+
+        if (displayTools.length === 0) {
+            container.innerHTML = `<p class="text-xs text-gray-500">No external tools available.</p>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                ${displayTools.map(t => {
+            const isChecked = agentData.tools && agentData.tools.includes(t.name);
+            return `
+                    <label class="flex items-start gap-3 p-3 bg-white dark:bg-neutral-800 border ${isChecked ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/10' : 'border-gray-200 dark:border-neutral-700'} rounded-lg cursor-pointer hover:border-purple-400 transition-colors group">
+                        <div class="mt-0.5">
+                            <input type="checkbox" value="${t.name}" class="w-4 h-4 text-purple-600 rounded focus:ring-purple-500" ${isChecked ? 'checked' : ''}>
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                ${t.label || t.name}
+                                ${t.icon === 'cloud' ? '<svg class="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>' : ''}
+                                ${t.icon === 'office-building' ? '<svg class="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>' : ''}
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 leading-snug mt-0.5">${t.description}</div>
+                        </div>
+                    </label>
+                    `;
+        }).join('')}
+            </div>
+            <p class="text-xs text-gray-400 mt-2">
+                <span class="font-bold">Note:</span> You must connect your accounts in App Settings > Connected Accounts for these to work.
+            </p>
+        `;
+
+        // Bind events
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (!agentData.tools) agentData.tools = [];
+
+                if (e.target.checked) {
+                    if (!agentData.tools.includes(val)) agentData.tools.push(val);
+                    e.target.closest('label').classList.add('border-purple-500', 'bg-purple-50', 'dark:bg-purple-900/10');
+                    e.target.closest('label').classList.remove('border-gray-200', 'dark:border-neutral-700');
+                } else {
+                    agentData.tools = agentData.tools.filter(t => t !== val);
+                    e.target.closest('label').classList.remove('border-purple-500', 'bg-purple-50', 'dark:bg-purple-900/10');
+                    e.target.closest('label').classList.add('border-gray-200', 'dark:border-neutral-700');
+                }
+            });
+        });
+
+    } catch (e) {
+        console.error("Error loading tools", e);
+        container.innerHTML = `<div class="text-red-500 text-xs">Failed to load capabilities.</div>`;
+    }
 }
 
 function attachAiHandlers(agentData) {
