@@ -249,6 +249,38 @@ def init_db():
             )
         ''')
 
+        # --- OAuth Tokens (NEW) ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS oauth_tokens (
+                user_id VARCHAR(255),
+                provider VARCHAR(50),
+                access_token TEXT,
+                refresh_token TEXT,
+                expires_at TIMESTAMP NULL,
+                scope TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, provider),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # --- OAuth Tokens (NEW) ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS oauth_tokens (
+                user_id VARCHAR(255),
+                provider VARCHAR(50),
+                access_token TEXT,
+                refresh_token TEXT,
+                expires_at TIMESTAMP NULL,
+                scope TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, provider),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
         conn.commit()
         logging.info("Database initialized.")
     except Exception as e:
@@ -1150,6 +1182,104 @@ def update_memory_audit(message_id, audit_status, ledger, spirit_score, spirit_n
             message_id
         ))
         conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# OAUTH TOKEN MANAGEMENT
+# -------------------------------------------------------------------------
+
+def upsert_oauth_token(user_id, provider, access_token, refresh_token, expires_at, scope):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, expires_at, scope)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                access_token=VALUES(access_token),
+                refresh_token=VALUES(refresh_token),
+                expires_at=VALUES(expires_at),
+                scope=VALUES(scope)
+        """
+        cursor.execute(sql, (user_id, provider, access_token, refresh_token, expires_at, scope))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_oauth_token(user_id, provider):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_oauth_token(user_id, provider):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# OAUTH TOKEN MANAGEMENT
+# -------------------------------------------------------------------------
+
+def upsert_oauth_token(user_id, provider, access_token, refresh_token, expires_at, scope):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, expires_at, scope)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                access_token=VALUES(access_token),
+                refresh_token=VALUES(refresh_token),
+                expires_at=VALUES(expires_at),
+                scope=VALUES(scope)
+        """
+        cursor.execute(sql, (user_id, provider, access_token, refresh_token, expires_at, scope))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_oauth_token(user_id, provider):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_oauth_token(user_id, provider):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_connected_providers(user_id):
+    """Returns a list of provider names that the user has connected."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT provider FROM oauth_tokens WHERE user_id=%s", (user_id,))
+        rows = cursor.fetchall()
+        return [row[0] for row in rows]
     finally:
         cursor.close()
         conn.close()

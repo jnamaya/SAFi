@@ -745,6 +745,11 @@ export function autoSize() {
     const hasText = input.value.trim().length > 0;
     sendButton.disabled = !hasText;
 
+    if (!hasText) {
+        input.style.height = '44px'; // Force reset to min-height
+        return;
+    }
+
     // Reset height to auto to shrink properly
     input.style.height = 'auto';
 

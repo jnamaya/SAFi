@@ -133,6 +133,122 @@ class MCPManager:
                 }
             })
 
+        # --- GOOGLE DRIVE ---
+        if "google_drive" in allowed_tools:
+            tools.append({
+                "name": "google_list_files",
+                "description": "List files in user's Google Drive.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Optional search term to filter by name."}
+                    }
+                }
+            })
+            tools.append({
+                "name": "google_read_file",
+                "description": "Read content of a Google Drive file.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "file_id": {"type": "string", "description": "The ID of the file to read."}
+                    },
+                    "required": ["file_id"]
+                }
+            })
+            tools.append({
+                "name": "google_upload_file",
+                "description": "Create/Upload a file to Google Drive.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Filename."},
+                        "content": {"type": "string", "description": "Text content of the file."}
+                    },
+                    "required": ["name", "content"]
+                }
+            })
+
+        # --- MICROSOFT SHAREPOINT ---
+        if "sharepoint" in allowed_tools:
+            tools.append({
+                "name": "sharepoint_search",
+                "description": "Search files in SharePoint/OneDrive.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query."}
+                    },
+                    "required": ["query"]
+                }
+            })
+            tools.append({
+                "name": "sharepoint_read",
+                "description": "Read content of a SharePoint file.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "item_id": {"type": "string", "description": "The ID of the item."}
+                    },
+                    "required": ["item_id"]
+                }
+            })
+            tools.append({
+                "name": "sharepoint_upload",
+                "description": "Upload a file to SharePoint root.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Filename."},
+                        "content": {"type": "string", "description": "Text content."}
+                    },
+                    "required": ["name", "content"]
+                }
+            })
+            tools.append({
+                "name": "sharepoint_search_sites",
+                "description": "Find SharePoint Sites (e.g. Teams, Projects) by name.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query for site name/title."}
+                    },
+                    "required": ["query"]
+                }
+            })
+            tools.append({
+                "name": "sharepoint_search_site_files",
+                "description": "Search for files within a specific SharePoint Site.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "site_id": {"type": "string", "description": "The ID of the SharePoint Site."},
+                        "query": {"type": "string", "description": "Search query for file name/content."}
+                    },
+                    "required": ["site_id", "query"]
+                }
+            })
+            tools.append({
+                "name": "sharepoint_list_folders",
+                "description": "List contents of a SharePoint folder (defaults to root).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "folder_path": {"type": "string", "description": "OPTIONAL: Path to folder (e.g. 'Documents/MyProject'). Defaults to root."}
+                    }
+                }
+            })
+            tools.append({
+                "name": "sharepoint_get_tree",
+                "description": "Get a simplified folder tree structure of the drive.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "max_depth": {"type": "integer", "description": "Depth of recursion (defualt 2)."}
+                    }
+                }
+            })
+
         return tools
 
     def list_all_tools(self) -> List[Dict[str, Any]]:
@@ -182,6 +298,24 @@ class MCPManager:
                         "icon": "location-marker"
                     }
                 ]
+            },
+             # --- OFFICE & PRODUCTIVITY ---
+            {
+                "category": "Office & Productivity",
+                "tools": [
+                    {
+                        "name": "google_drive",
+                        "label": "Google Drive",
+                        "description": "Read/Write Access to Google Drive",
+                        "icon": "cloud"
+                    },
+                    {
+                        "name": "sharepoint",
+                        "label": "OneDrive / SharePoint",
+                        "description": "Read/Write Access to OneDrive & SharePoint",
+                        "icon": "office-building"
+                    }
+                ]
             }
         ]
 
@@ -219,5 +353,33 @@ class MCPManager:
         if tool_name == "find_places":
             from ..mcp_servers.google_maps import find_places
             return await find_places(arguments["query"])
+
+        # -- GOOGLE DRIVE --
+        if tool_name.startswith("google_"):
+            from ..mcp_servers import google_drive
+            if tool_name == "google_list_files":
+                return await google_drive.list_files(arguments.get("query"))
+            if tool_name == "google_read_file":
+                return await google_drive.read_file(arguments["file_id"])
+            if tool_name == "google_upload_file":
+                 return await google_drive.upload_file(arguments["name"], arguments["content"])
+
+        # -- SHAREPOINT --
+        if tool_name.startswith("sharepoint_"):
+            from ..mcp_servers import sharepoint
+            if tool_name == "sharepoint_search":
+                return await sharepoint.search_drive(arguments["query"])
+            if tool_name == "sharepoint_read":
+                return await sharepoint.read_item(arguments["item_id"])
+            if tool_name == "sharepoint_upload":
+                return await sharepoint.upload_item(arguments["name"], arguments["content"])
+            if tool_name == "sharepoint_search_sites":
+                return await sharepoint.search_sites(arguments["query"])
+            if tool_name == "sharepoint_search_site_files":
+                return await sharepoint.search_site_drive(arguments["site_id"], arguments["query"])
+            if tool_name == "sharepoint_list_folders":
+                return await sharepoint.list_folders(arguments.get("folder_path", "root"))
+            if tool_name == "sharepoint_get_tree":
+                return await sharepoint.get_tree(arguments.get("max_depth", 2))
 
         return json.dumps({"error": f"Tool '{tool_name}' not found."})
