@@ -54,7 +54,7 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
             ${createSelect('model-select-conscience', 'Conscience (Auditing)', user.conscience_model, supportModels)}
         </div>
         <div class="mt-6 text-right">
-            <button id="save-models-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+            <button id="save-models-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-black text-white hover:bg-gray-800 text-sm transition-colors">
                 Save Changes
             </button>
         </div>
