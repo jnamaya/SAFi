@@ -17,21 +17,23 @@ export function _initElements() {
     chatView: document.getElementById('chat-view'),
     controlPanelView: document.getElementById('control-panel-view'),
     controlPanelBackButton: document.getElementById('control-panel-back-btn'),
-    cpNavProfile: document.getElementById('cp-nav-profile'),
-    cpNavModels: document.getElementById('cp-nav-models'),
-    cpNavDashboard: document.getElementById('cp-nav-dashboard'),
-    cpNavAppSettings: document.getElementById('cp-nav-app-settings'),
-    cpNavMyProfile: document.getElementById('cp-nav-my-profile'),
-    cpNavGovernance: document.getElementById('cp-nav-governance'),
-    cpNavOrganization: document.getElementById('cp-nav-organization'), // NEW
 
-    cpTabProfile: document.getElementById('cp-tab-profile'),
-    cpTabModels: document.getElementById('cp-tab-models'),
-    cpTabDashboard: document.getElementById('cp-tab-dashboard'),
-    cpTabAppSettings: document.getElementById('cp-tab-app-settings'),
-    cpTabMyProfile: document.getElementById('cp-tab-my-profile'),
-    cpTabGovernance: document.getElementById('cp-tab-governance'),
-    cpTabOrganization: document.getElementById('cp-tab-organization'), // NEW
+    // Updated IDs for New Sidebar
+    cpNavProfile: document.getElementById('nav-agents'),      // "Agents" tab
+    cpNavModels: document.getElementById('nav-models'),
+    cpNavDashboard: document.getElementById('nav-dashboard'), // Might be null
+    cpNavAppSettings: document.getElementById('nav-settings'),
+    cpNavMyProfile: document.getElementById('nav-profile'),   // "My Profile" tab
+    cpNavGovernance: document.getElementById('nav-governance'),
+    cpNavOrganization: document.getElementById('nav-organization'),
+
+    cpTabProfile: document.getElementById('tab-agents'),      // Content ID for Agents
+    cpTabModels: document.getElementById('tab-models'),
+    cpTabDashboard: document.getElementById('tab-dashboard'),
+    cpTabAppSettings: document.getElementById('tab-settings'),
+    cpTabMyProfile: document.getElementById('tab-profile'),   // Content ID for user profile
+    cpTabGovernance: document.getElementById('tab-governance'),
+    cpTabOrganization: document.getElementById('tab-organization'),
 
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),
@@ -45,7 +47,7 @@ export function _initElements() {
     composerFooter: document.getElementById('composer-footer'),
     conscienceDetails: document.getElementById('conscience-details'),
     closeConscienceModalBtn: document.getElementById('close-conscience-modal'),
-    
+
     agentSelectorBtn: document.getElementById('agent-selector-btn'),
     agentSelectorDropdown: document.getElementById('agent-selector-dropdown'),
     agentSelectorContainer: document.getElementById('agent-selector-container'),

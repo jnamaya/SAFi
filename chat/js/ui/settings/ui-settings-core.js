@@ -21,6 +21,20 @@ import { renderSettingsAppTab } from './ui-settings-app.js';
 
 let currentUser = null;
 
+// NEW: Global state container for settings context
+const settingsState = {
+    profiles: [],
+    activeProfileKey: null,
+    availableModels: [],
+    onProfileChange: null,
+    currentTheme: 'system',
+    onThemeChange: null,
+    onLogout: null,
+    onDeleteAccount: null,
+    // Model handlers
+    onSaveModels: null
+};
+
 export function updateCurrentUser(u) {
     currentUser = u;
     // Propagate to org module which needs it for member table
@@ -28,81 +42,112 @@ export function updateCurrentUser(u) {
 }
 
 /**
+ * Updates the global settings state with data/callbacks from app.js.
+ * This is required because ui-settings-core handles the navigation but app.js owns the data.
+ */
+export function updateSettingsState(newState) {
+    Object.assign(settingsState, newState);
+    // Also update local user reference if passed (redundant slightly but safe)
+    if (newState.currentUser) {
+        updateCurrentUser(newState.currentUser);
+    }
+}
+
+/**
  * Sets up event listeners for the Control Panel navigation tabs.
+ * This function is called once on application load.
+ */
+/**
+ * Sets up event listeners for the Control Panel navigation tabs (Sidebar).
  * This function is called once on application load.
  */
 export function setupControlPanelTabs() {
     ui._ensureElements();
-
-    // --- FIX: SET UP MODAL DELEGATED LISTENERS ---
-    // We call this function *once* when the app initializes.
-    // This attaches a single, persistent listener to the modal container
-    // to prevent the "frozen links" bug.
     setupDelegatedModalListeners();
-    // --- END FIX ---
-
-    // --- FIX: Ensure the Profile Modal exists in the DOM ---
     ensureProfileModalExists();
 
-    const tabs = [
-        ui.elements.cpNavOrganization, // Organization (Admin only)
-        ui.elements.cpNavProfile,
-        ui.elements.cpNavModels,
-        ui.elements.cpNavMyProfile,
-        ui.elements.cpNavDashboard,
-        ui.elements.cpNavAppSettings,
-        ui.elements.cpNavGovernance
-    ];
-    const panels = [
-        ui.elements.cpTabOrganization,
-        ui.elements.cpTabProfile,
-        ui.elements.cpTabModels,
-        ui.elements.cpTabMyProfile,
-        ui.elements.cpTabDashboard,
-        ui.elements.cpTabAppSettings,
-        ui.elements.cpTabGovernance
-    ];
+    // Mobile Menu Toggle Logic
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
+    const mobileMenuClose = document.getElementById('close-mobile-menu');
 
-    tabs.forEach((tab, index) => {
-        if (!tab) return;
-        tab.addEventListener('click', () => {
-            // Handle tab highlighting
-            tabs.forEach(t => t?.classList.remove('active'));
-            tab.classList.add('active');
+    function toggleMobileMenu() {
+        if (!mobileMenu || !mobileMenuBackdrop) return;
+        if (mobileMenu.classList.contains('-translate-x-full')) {
+            mobileMenu.classList.remove('-translate-x-full');
+            mobileMenuBackdrop.classList.remove('hidden');
+        } else {
+            mobileMenu.classList.add('-translate-x-full');
+            mobileMenuBackdrop.classList.add('hidden');
+        }
+    }
 
-            // Handle panel visibility
-            panels.forEach(p => p?.classList.add('hidden'));
-            if (panels[index]) {
-                panels[index].classList.remove('hidden');
-            }
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', toggleMobileMenu);
+    if (mobileMenuClose) mobileMenuClose.addEventListener('click', toggleMobileMenu);
+    if (mobileMenuBackdrop) mobileMenuBackdrop.addEventListener('click', toggleMobileMenu);
 
-            // Lazy-load dashboard
-            if (tab === ui.elements.cpNavDashboard) {
-                // Inline implementation or imported? 
-                // I'll define renderSettingsDashboardTab at the bottom of this file if it's small, 
-                // OR import it.
-                // Let's import it to be consistent. 
+    // Sidebar Navigation Logic
+    const sidebarButtons = document.querySelectorAll('.sidebar-item');
+
+    sidebarButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.getAttribute('data-tab');
+            if (!tabId) return;
+
+            // 1. Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+
+            // 2. Show selected tab content
+            const selectedContent = document.getElementById('tab-' + tabId);
+            if (selectedContent) selectedContent.classList.remove('hidden');
+
+            // 3. Update Sidebar Active State
+            sidebarButtons.forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+
+            // 4. Update Mobile Menu Active State
+            // (If we had separate mobile buttons, which we might inject dynamically or have static duplicates)
+
+            // 5. Trigger Lazy Loading
+            // 5. Trigger Lazy Loading
+            if (tabId === 'dashboard') {
                 import('./ui-settings-dashboard.js').then(m => m.renderSettingsDashboardTab());
-            }
-            if (tab === ui.elements.cpNavGovernance) {
+            } else if (tabId === 'governance') {
                 renderSettingsGovernanceTab();
-            }
-            if (tab === ui.elements.cpNavOrganization) {
+            } else if (tabId === 'organization') {
                 renderSettingsOrganizationTab();
-            }
-            // Lazy-load user profile
-            if (tab === ui.elements.cpNavMyProfile) {
+            } else if (tabId === 'profile') {
                 renderSettingsMyProfileTab();
+            } else if (tabId === 'agents') {
+                // Pass args from state
+                renderSettingsProfileTab(
+                    settingsState.profiles,
+                    settingsState.activeProfileKey,
+                    settingsState.onProfileChange,
+                    currentUser,
+                    settingsState.availableModels
+                );
+            } else if (tabId === 'models') {
+                // Pass args from state
+                renderSettingsModelsTab(
+                    settingsState.availableModels,
+                    currentUser,
+                    settingsState.onSaveModels
+                );
+            } else if (tabId === 'settings') {
+                // Pass args from state
+                renderSettingsAppTab(
+                    settingsState.currentTheme,
+                    settingsState.onThemeChange,
+                    settingsState.onLogout,
+                    settingsState.onDeleteAccount
+                );
             }
         });
     });
-
-    // Activate the first tab by default
-    // CHANGE: Don't auto-click here. Logic moved to renderControlPanel to respect RBAC.
-    // if (tabs[0]) {
-    //    tabs[0].click();
-    // }
 }
+
 
 // --- FIX: NEW FUNCTION FOR ONE-TIME LISTENERS ---
 /**
