@@ -65,7 +65,7 @@ export function updateUIForAuthState(user) {
           </div>
 
           <div class="p-4 shrink-0">
-            <button id="new-chat-button" type="button" class="w-full bg-green-600 text-white font-semibold px-4 py-2.5 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
+            <button id="new-chat-button" type="button" class="w-full bg-neutral-900 hover:bg-neutral-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-semibold px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
               New Chat
             </button>
@@ -400,31 +400,29 @@ export function setActiveConvoLink(id) {
     const title = link.querySelector('.convo-title');
     const timestamp = link.querySelector('.convo-timestamp');
 
-    // Toggle active state classes on the inner element
-    inner.classList.toggle('bg-green-600', isActive);
-    inner.classList.toggle('text-white', isActive);
-    inner.classList.toggle('dark:bg-green-600', isActive);
-    inner.classList.toggle('dark:text-white', isActive);
+    // -- Active State --
+    if (isActive) {
+      // FORCE class list to ensure no specific override - INCREASED CONTRAST
+      // FIX: Light mode uses bg-gray-200 and text-black. Dark mode uses bg-gray-700 and text-white.
+      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 rounded-lg transition-colors duration-150 bg-gray-200 text-black dark:bg-gray-700 dark:text-white font-semibold border-l-4 border-gray-400 dark:border-gray-500';
 
-    // Toggle inactive state classes (using bg-white dark:bg-black theme)
-    inner.classList.toggle('bg-white', !isActive);
-    inner.classList.toggle('dark:bg-black', !isActive);
-    inner.classList.toggle('text-neutral-900', !isActive);
-    inner.classList.toggle('dark:text-white', !isActive);
-    inner.classList.toggle('hover:bg-neutral-100', !isActive);
-    inner.classList.toggle('dark:hover:bg-neutral-800', !isActive);
+      if (timestamp) {
+        // Timestamp text made slightly lighter than main text
+        timestamp.className = "convo-timestamp truncate block text-xs text-gray-600 dark:text-gray-300";
+      }
+    } else {
+      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 rounded-lg transition-colors duration-150 bg-white dark:bg-black hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-900 dark:text-white';
 
-    title?.classList.toggle('font-semibold', isActive);
-    title?.classList.toggle('font-medium', !isActive);
+      // title styling handled via CSS or class if needed, but inner className covers text color
+      // We need to handle title specifically if it has its own font weight class toggles elsewhere?
+      // actually title classes are usually static 'truncate block text-sm', the active weight was toggled.
+      // Let's keep title weight toggle if we can target it.
+      if (title) title.className = `convo-title truncate block text-sm ${isActive ? 'font-semibold' : 'font-medium'}`;
+    }
 
+    // Timestamp color is consistent now (neutral grey)
     if (timestamp) {
-      // Active state timestamp
-      timestamp.classList.toggle('text-green-100', isActive);
-      timestamp.classList.toggle('dark:text-green-100', isActive);
-
-      // Inactive state timestamp
-      timestamp.classList.toggle('text-neutral-500', !isActive);
-      timestamp.classList.toggle('dark:text-neutral-400', !isActive);
+      timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400";
     }
   });
 }
