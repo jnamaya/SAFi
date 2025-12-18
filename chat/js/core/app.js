@@ -5,6 +5,8 @@ import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import { initDataSources } from '../ui/ui-data-sources.js';
 import * as chat from './chat.js';
+import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-settings-core.js';
+
 import offlineManager from '../services/offline-manager.js';
 
 // --- CAPACITOR GLOBAL STATE & PLUGINS ---
@@ -302,26 +304,28 @@ function renderControlPanel() {
   // Governance: Admin, Editor, Auditor (Member = No Access)
   const canSeeGovernance = ['admin', 'editor', 'auditor'].includes(user.role);
   // Dashboard: Admin, Editor, Auditor (Member = No Access)
+  // Dashboard: Admin, Editor, Auditor (Member = No Access)
   const canSeeDashboard = ['admin', 'editor', 'auditor'].includes(user.role);
 
   console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard });
 
-  if (canSeeOrg) {
-    document.getElementById('cp-nav-organization').classList.remove('hidden');
-  } else {
-    document.getElementById('cp-nav-organization').classList.add('hidden');
+  const navOrg = document.getElementById('nav-organization'); // NEW ID
+  if (navOrg) {
+    if (canSeeOrg) navOrg.classList.remove('hidden');
+    else navOrg.classList.add('hidden');
   }
 
-  if (canSeeGovernance) {
-    document.getElementById('cp-nav-governance').classList.remove('hidden');
-  } else {
-    document.getElementById('cp-nav-governance').classList.add('hidden');
+  const navGov = document.getElementById('nav-governance'); // NEW ID
+  if (navGov) {
+    if (canSeeGovernance) navGov.classList.remove('hidden');
+    else navGov.classList.add('hidden');
   }
 
-  if (canSeeDashboard) {
-    document.getElementById('cp-nav-dashboard').classList.remove('hidden');
-  } else {
-    document.getElementById('cp-nav-dashboard').classList.add('hidden');
+  // Dashboard tab currently hidden/removed in HTML, but keeping logic safe
+  const navDash = document.getElementById('nav-dashboard'); // NEW ID
+  if (navDash) {
+    if (canSeeDashboard) navDash.classList.remove('hidden');
+    else navDash.classList.add('hidden');
   }
   // ----------------------------------------
 
@@ -352,6 +356,21 @@ function renderControlPanel() {
     handleProfileChange
   );
 
+  // --- NEW: Push State to UI Settings Module ---
+  // This ensures the sidebar click handlers work correctly even if data changes
+  updateSettingsState({
+    currentUser: user,
+    profiles: availableProfiles,
+    activeProfileKey: activeProfileData.key,
+    availableModels: availableModels,
+    onProfileChange: handleProfileChange,
+    currentTheme: localStorage.theme || 'system',
+    onThemeChange: applyTheme,
+    onLogout: handleLogout,
+    onDeleteAccount: () => ui.showModal('delete'),
+    onSaveModels: handleModelsSave
+  });
+
   // Render "My Profile" Tab. This will fetch the data.
   uiSettingsModals.renderSettingsMyProfileTab();
 
@@ -366,23 +385,66 @@ function renderControlPanel() {
   // --- NEW: Select Default Open Tab (RBAC Aware) ---
   // Ensure we switch to a visible tab if the current/default one is hidden.
   // We prioritize: Agents (Profile) > Organization > Dashboard
-  const orgTab = document.getElementById('cp-nav-organization');
-  const agentsTab = document.getElementById('cp-nav-profile'); // "Agents" tab
+  const orgTab = document.getElementById('nav-organization');
+  const agentsTab = document.getElementById('nav-agents'); // "Agents" tab
 
-  // If Organization tab is hidden (Member), but it was somehow active or we need a default:
-  // We force click the "Agents" tab which is safe for everyone.
-  if (orgTab.classList.contains('hidden')) {
+  // Safety fallback logic
+  if (orgTab && orgTab.classList.contains('hidden')) {
     if (agentsTab) agentsTab.click();
-  } else {
-    // If Org tab is visible (Admin), and nothing else is selected, default to it?
-    // Or just let the sticky selection persist.
-    // For now, let's default to Organization if visible and nothing else is active.
-    const anyActive = document.querySelector('.modal-tab-button.active');
-    if (!anyActive && orgTab) {
+  } else if (orgTab) {
+    // If Org tab is visible (Admin), and nothing else is active...
+    // Note: Our sidebar items use .active class just like old tabs
+    const anyActive = document.querySelector('.sidebar-item.active');
+    if (!anyActive) {
       orgTab.click();
     }
+  } else if (agentsTab) {
+    // Fallback if org tab totally missing
+    const anyActive = document.querySelector('.sidebar-item.active');
+    if (!anyActive) agentsTab.click();
   }
   // --------------------------------------------------
+
+  // --- Mobile Menu Population ---
+  const mobileNavContainer = document.getElementById('mobile-nav-links');
+  const desktopNav = document.getElementById('sidebar-nav');
+  if (mobileNavContainer && desktopNav) {
+    mobileNavContainer.innerHTML = ''; // Clear previous
+
+    Array.from(desktopNav.children).forEach(child => {
+      // Skip "Back to Chat" as header has one
+      if (child.querySelector('#desktop-back-to-chat')) return;
+
+      // Only clone visible elements (respect RBAC)
+      // desktopNav children are divs wrapping uls. Check if the buttons inside are hidden?
+      // The RBAC logic hides the BUTTONS inside the list items usually? 
+      // WAIT, RBAC logic above removes 'hidden' from: navOrg, navGov, navDash.
+      // Those are BUTTONS.
+      // The structure is Div -> UL -> LI -> Button.
+      // If the button is hidden, we clone it hidden.
+      // If we want to skip cloning hidden items?
+      // Let's just clone. If button is hidden, it will be hidden on mobile too.
+      // BUT IDs must be stripped to avoid conflict.
+
+      const clone = child.cloneNode(true);
+      clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+
+      mobileNavContainer.appendChild(clone);
+    });
+
+    // Re-attach listeners to the CLONED buttons
+    mobileNavContainer.querySelectorAll('button[data-tab]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const tab = e.currentTarget.dataset.tab;
+        const originalBtn = document.getElementById(`nav-${tab}`);
+        if (originalBtn) originalBtn.click();
+
+        // Close mobile menu
+        document.getElementById('mobile-menu')?.classList.add('-translate-x-full');
+        document.getElementById('mobile-menu-backdrop')?.classList.add('hidden');
+      });
+    });
+  }
 }
 
 async function handleProfileChange(newProfileKey) {
@@ -507,23 +569,62 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // HIDE Sidebar entirely (Desktop & Mobile) logic
-      if (ui.elements.sidebarContainer) {
-        // We can't just use closeSidebar because that handles mobile overlay transition only?
-        // Looking at ui.js closeSidebar, it removes transform classes.
-        // index.html sidebar has 'hidden md:flex'.
-        // To hide on desktop, we must explicitly add 'hidden' to the ASIDE element inside the container
-        const sidebar = document.getElementById('sidebar');
-        if (sidebar) sidebar.classList.add('hidden');
+      // HIDE Sidebar entirely
+      ui.closeSidebar(); // Close mobile menu if open
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.add('hidden'); // Ensure hidden class is present
+        sidebar.classList.remove('md:flex'); // Disable desktop flex display
       }
+
+      // Remove margin from main wrapper to reclaim space
+      const wrapper = document.getElementById('main-layout-wrapper');
+      if (wrapper) wrapper.classList.remove('md:ml-72');
     });
   }
+
+  // --- Control Panel Logout Button ---
+  const navLogoutBtn = document.getElementById('nav-logout');
+  if (navLogoutBtn) {
+    navLogoutBtn.addEventListener('click', handleLogout);
+  }
+
+  // --- Control Panel Mobile Menu (Delegated for robustness) ---
+  // Using delegation to ensure it works even if elements aren't immediately found/bound
+  document.addEventListener('click', (e) => {
+    // Open Menu
+    const openBtn = e.target.closest('#mobile-menu-btn');
+    if (openBtn) {
+      const menu = document.getElementById('mobile-menu');
+      const backdrop = document.getElementById('mobile-menu-backdrop');
+      if (menu && backdrop) {
+        menu.classList.remove('-translate-x-full');
+        backdrop.classList.remove('hidden');
+        setTimeout(() => backdrop.classList.remove('opacity-0'), 10);
+      }
+    }
+
+    // Close Menu (Close Btn or Backdrop click)
+    const closeBtn = e.target.closest('#close-mobile-menu');
+    const isBackdrop = e.target.id === 'mobile-menu-backdrop';
+
+    if (closeBtn || isBackdrop) {
+      const menu = document.getElementById('mobile-menu');
+      const backdrop = document.getElementById('mobile-menu-backdrop');
+      if (menu && backdrop) {
+        menu.classList.add('-translate-x-full');
+        backdrop.classList.add('opacity-0');
+        setTimeout(() => backdrop.classList.add('hidden'), 300);
+      }
+    }
+  });
 
   // Back Button Logic (New ID: desktop-back-to-chat)
   // Also keep support for old btn just in case, though we removed it from HTML
   const backButtons = [
     document.getElementById('desktop-back-to-chat'),
-    document.getElementById('control-panel-back-btn')
+    document.getElementById('control-panel-back-btn'),
+    document.getElementById('mobile-back-to-chat')
   ];
 
   backButtons.forEach(btn => {
@@ -533,11 +634,19 @@ function attachEventListeners() {
       ui.elements.controlPanelView.classList.add('hidden');
       ui.elements.chatView.classList.remove('hidden');
 
-      // SHOW Sidebar Logic
+      // SHOW Sidebar Logic (Restore Desktop)
       const sidebar = document.getElementById('sidebar');
-      // Restore default classes. 'hidden' (mobile default), 'md:flex' (desktop default)
-      // Just removing our manual 'hidden' class should let md:flex take over on desktop.
-      if (sidebar) sidebar.classList.remove('hidden');
+      if (sidebar) {
+        sidebar.classList.add('md:flex'); // Restore desktop display
+        // Note: We leave 'hidden' class alone as it's the default state for mobile (toggled by ui.js)
+        // But if we forced it added above, we might not need to remove it if md:flex overrides it.
+        // Yet to be safe for mobile consistency:
+        // sidebar.classList.add('hidden'); // Ensure it starts hidden on mobile until toggled
+      }
+
+      // Restore margin to main wrapper
+      const wrapper = document.getElementById('main-layout-wrapper');
+      if (wrapper) wrapper.classList.add('md:ml-72');
     });
   });
 
@@ -547,6 +656,19 @@ function attachEventListeners() {
       hapticImpactLight();
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
+
+      // HIDE Sidebar entirely
+      ui.closeSidebar();
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('md:flex');
+      }
+
+      // Remove margin from main wrapper
+      const wrapper = document.getElementById('main-layout-wrapper');
+      if (wrapper) wrapper.classList.remove('md:ml-72');
+
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
   }
@@ -555,6 +677,19 @@ function attachEventListeners() {
       hapticImpactLight();
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
+
+      // HIDE Sidebar entirely
+      ui.closeSidebar();
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('md:flex');
+      }
+
+      // Remove margin from main wrapper
+      const wrapper = document.getElementById('main-layout-wrapper');
+      if (wrapper) wrapper.classList.remove('md:ml-72');
+
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
   }
