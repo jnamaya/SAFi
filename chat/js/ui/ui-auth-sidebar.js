@@ -44,7 +44,7 @@ export function updateUIForAuthState(user) {
           <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
               <div class="app-logo h-10 w-10">
-                <img src="assets/chat-logo.svg" alt="SAFi Logo" class="rounded-lg w-full h-full" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
+                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
               </div>
               <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
             </div>
