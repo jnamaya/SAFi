@@ -54,34 +54,48 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         </div>
         ` : ''}
         
-        <div class="space-y-4" role="radiogroup">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
             ${profiles.map(profile => {
         const avatarUrl = getAvatarForProfile(profile.name);
-        // Clean description logic if needed
         const description = profile.description_short || profile.description || '';
-        // Truncate logic if needed
+        const isActive = profile.key === activeProfileKey;
+
+        // Card Styling
+        // Active: Green border, slight green tint
+        const activeClasses = `border-green-500 bg-green-50/50 dark:bg-green-900/10 ring-2 ring-green-500 ring-offset-2 dark:ring-offset-neutral-900`;
+        const inactiveClasses = `border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:border-green-300 dark:hover:border-green-700 hover:shadow-md`;
 
         return `
-                <div class="p-4 border ${profile.key === activeProfileKey ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg transition-colors relative group">
-                    <label class="flex items-center justify-between cursor-pointer relative z-0">
-                        <div class="flex items-center gap-3">
-                            <img src="${avatarUrl}" alt="${profile.name} Avatar" class="w-8 h-8 rounded-lg">
-                            <span class="font-semibold text-base text-neutral-800 dark:text-neutral-200">${profile.name}</span>
-                        </div>
-                        <input type="radio" name="ethical-profile" value="${profile.key}" class="form-radio text-green-600 focus:ring-green-500" ${profile.key === activeProfileKey ? 'checked' : ''}>
-                    </label>
-                    <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-2 relative z-0">${description}</p>
+                <div class="group relative flex flex-col rounded-2xl border transition-all duration-200 ${isActive ? activeClasses : inactiveClasses}">
                     
-                    <!-- FIX: Added relative positioning and z-index to ensure button sits on top -->
-                    <div class="mt-3 relative z-10 flex gap-2">
-                        <button type="button" data-key="${profile.key}" class="view-profile-details-btn text-sm font-medium text-green-600 dark:text-green-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
-                            View Details
+                    <!-- Selection Logic (Hidden Radio) -->
+                    <label class="absolute inset-0 z-0 cursor-pointer">
+                        <input type="radio" name="ethical-profile" value="${profile.key}" class="sr-only" ${isActive ? 'checked' : ''}>
+                    </label>
+
+                    <!-- Active Indicator Badge -->
+                    ${isActive ? `
+                    <div class="absolute top-3 right-3 z-10 bg-green-500 text-white p-1 rounded-full shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    ` : ''}
+
+                    <div class="p-6 flex flex-col items-center text-center flex-1 z-1 pointer-events-none">
+                        <img src="${avatarUrl}" alt="${profile.name}" class="w-20 h-20 rounded-2xl shadow-sm object-cover mb-4 bg-gray-100 dark:bg-neutral-700">
+                        <h3 class="font-bold text-lg text-gray-900 dark:text-white mb-2 line-clamp-1">${profile.name}</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-3 leading-relaxed">${description}</p>
+                    </div>
+
+                    <!-- Actions Footer -->
+                    <div class="mt-auto pt-4 pb-4 px-6 border-t border-gray-100 dark:border-neutral-700/50 flex justify-center gap-2 z-10 relative">
+                        <button type="button" data-key="${profile.key}" class="view-profile-details-btn px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700/50 hover:bg-gray-200 dark:hover:bg-neutral-700 rounded-lg transition-colors">
+                            Details
                         </button>
                         ${(profile.is_custom && currentUser && (currentUser.role === 'admin' || currentUser.id === profile.created_by)) ? `
-                        <button type="button" data-key="${profile.key}" class="edit-agent-btn text-sm font-medium text-blue-600 dark:text-blue-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                        <button type="button" data-key="${profile.key}" class="edit-agent-btn px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors">
                             Edit
                         </button>
-                         <button type="button" data-key="${profile.key}" class="delete-agent-btn text-sm font-medium text-red-600 dark:text-red-500 hover:underline focus:outline-none px-1 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        <button type="button" data-key="${profile.key}" class="delete-agent-btn px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">
                             Delete
                         </button>
                         ` : ''}
@@ -92,18 +106,11 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     `;
 
     // Attach event listeners for radio buttons
+    // Note: We listen on the container for capture or change events bubbling up
     container.querySelectorAll('input[name="ethical-profile"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             const newProfileKey = e.target.value;
             onProfileChange(newProfileKey);
-            // Update styles to show selection
-            container.querySelectorAll('.p-4').forEach(div => {
-                div.classList.remove('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
-                div.classList.add('border-neutral-300', 'dark:border-neutral-700');
-            });
-            const parentDiv = radio.closest('.p-4');
-            parentDiv.classList.add('border-green-600', 'bg-green-50', 'dark:bg-green-900/30');
-            parentDiv.classList.remove('border-neutral-300', 'dark:border-neutral-700');
         });
     });
 
