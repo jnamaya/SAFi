@@ -101,71 +101,91 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
         };
     }
 
-    ensureWizardModalExists();
+    ensureWizardInlineExists();
+
+    // store active tab to restore later
+    const activeTab = document.querySelector('.tab-content:not(.hidden):not(#agent-wizard-view)');
+    if (activeTab) {
+        document.body.dataset.wizardPreviousTab = activeTab.id;
+        activeTab.classList.add('hidden');
+    }
 
     const title = document.getElementById('wizard-title');
     if (title) title.innerText = existingAgent ? "Edit Agent" : "Create New Agent";
 
     renderStep(1);
 
-    document.getElementById('agent-wizard-modal').classList.remove('hidden');
+    document.getElementById('agent-wizard-view').classList.remove('hidden');
+    document.getElementById('agent-wizard-view').classList.add('flex'); // Ensure flex display
 }
 
 export function closeWizard() {
-    document.getElementById('agent-wizard-modal').classList.add('hidden');
+    const wizardView = document.getElementById('agent-wizard-view');
+    wizardView.classList.add('hidden');
+    wizardView.classList.remove('flex');
+
+    // Restore previous tab
+    const prevTabId = document.body.dataset.wizardPreviousTab;
+    if (prevTabId) {
+        const prevTab = document.getElementById(prevTabId);
+        if (prevTab) prevTab.classList.remove('hidden');
+        document.body.removeAttribute('data-wizardPreviousTab');
+    } else {
+        // Fallback: Show agents tab if nothing stored
+        const agentsTab = document.getElementById('tab-agents');
+        if (agentsTab) agentsTab.classList.remove('hidden');
+    }
 }
 
 // --- DOM & NAV ---
 
-function ensureWizardModalExists() {
-    if (document.getElementById('agent-wizard-modal')) return;
+function ensureWizardInlineExists() {
+    // Check if the specific content we need exists, not just any HTML (which might be comments)
+    if (document.getElementById('wizard-progress-track')) return;
+
+    const container = document.getElementById('agent-wizard-view');
+    if (!container) return;
 
     const html = `
-    <div id="agent-wizard-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
-        <div class="fixed inset-0 bg-gray-500/75 dark:bg-black/80 transition-opacity backdrop-blur-sm"></div>
-        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
-            <div class="flex min-h-full items-center justify-center p-4">
-                <div class="relative w-full max-w-3xl transform overflow-hidden rounded-xl bg-white dark:bg-neutral-900 shadow-2xl transition-all border border-neutral-200 dark:border-neutral-800 flex flex-col max-h-[90vh]">
-                    
-                    <!-- Header -->
-                    <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center shrink-0">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900 dark:text-white" id="wizard-title">Create New Agent</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Step <span id="wizard-step-num">1</span> of ${TOTAL_STEPS}</p>
-                        </div>
-                        <button id="close-wizard-btn" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
-                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                    </div>
-
-                    <!-- Progress Bar -->
-                    <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
-                        <div id="wizard-progress-track" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
-                    </div>
-                    <!-- Step Labels (Optional enhancement) -->
-                    <div class="flex justify-between px-6 py-2 text-[10px] text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
-                        <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
-                        <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Capabilities</span>
-                        <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Intellect</span>
-                        <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
-                        <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Rules</span>
-                        <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
-                    </div>
-
-                    <!-- Content Area -->
-                    <div id="wizard-content" class="p-8 overflow-y-auto flex-1 min-h-[400px]"></div>
-
-                    <!-- Footer -->
-                    <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
-                        <button id="wizard-back-btn" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50">Back</button>
-                        <button id="wizard-next-btn" class="px-6 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
-                    </div>
+        <div class="w-full h-full flex flex-col bg-white dark:bg-black">
+            
+            <!-- Header -->
+            <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center shrink-0">
+                <div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white" id="wizard-title">Create New Agent</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Step <span id="wizard-step-num">1</span> of ${TOTAL_STEPS}</p>
                 </div>
+                <button id="close-wizard-btn" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
+                <div id="wizard-progress-track" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+            </div>
+            
+            <!-- Step Labels -->
+            <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
+                <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
+                <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Capabilities</span>
+                <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Intellect</span>
+                <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
+                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Rules</span>
+                <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
+            </div>
+
+            <!-- Content Area - Scrollable -->
+            <div id="wizard-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-5xl mx-auto w-full"></div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
+                <button id="wizard-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
+                <button id="wizard-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
             </div>
         </div>
-    </div>
     `;
-    document.body.insertAdjacentHTML('beforeend', html);
+    container.innerHTML = html;
 
     document.getElementById('close-wizard-btn').addEventListener('click', closeWizard);
     document.getElementById('wizard-back-btn').addEventListener('click', prevStep);

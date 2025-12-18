@@ -98,6 +98,18 @@ export function setupControlPanelTabs() {
             // 1. Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
 
+            // 1.5 Force Close Inline Wizard if open
+            const wizardView = document.getElementById('agent-wizard-view');
+            if (wizardView) {
+                wizardView.classList.add('hidden');
+                wizardView.classList.remove('flex');
+            }
+            const pwView = document.getElementById('policy-wizard-view');
+            if (pwView) {
+                pwView.classList.add('hidden');
+                pwView.classList.remove('flex');
+            }
+
             // 2. Show selected tab content
             const selectedContent = document.getElementById('tab-' + tabId);
             if (selectedContent) selectedContent.classList.remove('hidden');

@@ -67,17 +67,43 @@ export function openPolicyWizard(existingPolicy = null) {
         }
     }
 
-    ensureWizardModalExists();
+    ensureWizardInlineExists();
+
+    // Store active tab
+    const activeTab = document.querySelector('.tab-content:not(.hidden):not(#policy-wizard-view)');
+    if (activeTab) {
+        document.body.dataset.pwPreviousTab = activeTab.id;
+        activeTab.classList.add('hidden');
+    }
+
     const title = document.getElementById('policy-wizard-title');
     if (title) title.innerText = existingPolicy ? "Edit Policy" : "Create Governance Policy";
 
     renderStep(currentStep);
-    document.getElementById('policy-wizard-modal').classList.remove('hidden');
+    const view = document.getElementById('policy-wizard-view');
+    view.classList.remove('hidden');
+    view.classList.add('flex');
 }
 
 export function closeWizard(skipReload = false) {
-    const modal = document.getElementById('policy-wizard-modal');
-    if (modal) modal.classList.add('hidden');
+    const view = document.getElementById('policy-wizard-view');
+    if (view) {
+        view.classList.add('hidden');
+        view.classList.remove('flex');
+    }
+
+    // Restore previous tab
+    const prevTabId = document.body.dataset.pwPreviousTab;
+    if (prevTabId) {
+        const prevTab = document.getElementById(prevTabId);
+        if (prevTab) prevTab.classList.remove('hidden');
+        document.body.removeAttribute('data-pwPreviousTab');
+    } else {
+        // Fallback: Show governance tab
+        const govTab = document.getElementById('tab-governance');
+        if (govTab) govTab.classList.remove('hidden');
+    }
+
     if (generatedCredentials && !skipReload) {
         window.location.reload();
     }
@@ -174,42 +200,51 @@ async function submitPolicy() {
 }
 
 // --- DOM SKELETON ---
-function ensureWizardModalExists() {
-    if (document.getElementById('policy-wizard-modal')) return;
+// --- DOM SKELETON ---
+function ensureWizardInlineExists() {
+    // Check for specific content, to avoid false positives with whitespace/comments
+    if (document.getElementById('pw-progress')) return;
+
+    const container = document.getElementById('policy-wizard-view');
+    if (!container) return; // Should exist in index.html
+
     const html = `
-    <div id="policy-wizard-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
-        <div class="fixed inset-0 bg-gray-500/75 dark:bg-black/80 transition-opacity backdrop-blur-sm"></div>
-        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
-            <div class="flex min-h-full items-center justify-center p-4">
-                <div class="relative w-full max-w-4xl transform overflow-hidden rounded-xl bg-white dark:bg-neutral-900 shadow-2xl transition-all border border-neutral-200 dark:border-neutral-800 flex flex-col max-h-[90vh]">
-                    <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center shrink-0">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900 dark:text-white" id="policy-wizard-title">Create Governance Policy</h3>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Step <span id="pw-step-num">1</span> of ${TOTAL_STEPS}</p>
-                        </div>
-                        <button id="close-pw-btn" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
-                             <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                    </div>
-                    <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
-                        <div id="pw-progress" class="bg-blue-600 h-full transition-all duration-300" style="width: 20%"></div>
-                    </div>
-                     <div class="flex justify-between px-6 py-2 text-[10px] text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950">
-                        <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Context</span>
-                        <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Constitution</span>
-                        <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Rules</span>
-                        <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Review</span>
-                    </div>
-                    <div id="pw-content" class="p-8 overflow-y-auto flex-1 min-h-[400px]"></div>
-                    <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
-                        <button id="pw-back-btn" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50">Back</button>
-                        <button id="pw-next-btn" class="px-6 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
-                    </div>
-                </div>
+    <div class="w-full h-full flex flex-col bg-white dark:bg-black">
+        <!-- Header -->
+        <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center shrink-0">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white" id="policy-wizard-title">Create Governance Policy</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Step <span id="pw-step-num">1</span> of ${TOTAL_STEPS}</p>
             </div>
+            <button id="close-pw-btn" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
+            <div id="pw-progress" class="bg-blue-600 h-full transition-all duration-300" style="width: 20%"></div>
+        </div>
+
+        <!-- Labels -->
+        <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
+            <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Context</span>
+            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Constitution</span>
+            <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Rules</span>
+            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Review</span>
+        </div>
+
+        <!-- Content Area -->
+        <div id="pw-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-5xl mx-auto w-full"></div>
+
+        <!-- Footer -->
+        <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0 footer-container">
+            <button id="pw-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
+            <button id="pw-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
         </div>
     </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
+
+    container.innerHTML = html;
     document.getElementById('close-pw-btn').addEventListener('click', () => closeWizard(false));
     document.getElementById('pw-back-btn').addEventListener('click', prevStep);
     document.getElementById('pw-next-btn').addEventListener('click', nextStep);
@@ -232,16 +267,17 @@ function updateProgress() {
         nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
     }
 
-    // Hide borders on success
-    const modal = document.getElementById('policy-wizard-modal');
+    // Hide borders on success (Using class matching inside the view now)
+    const view = document.getElementById('policy-wizard-view');
+    const footer = view.querySelector('.footer-container');
     if (currentStep > TOTAL_STEPS) {
-        modal.querySelector('.border-t').style.display = 'none';
+        if (footer) footer.style.display = 'none';
     } else {
-        modal.querySelector('.border-t').style.display = 'flex';
+        if (footer) footer.style.display = 'flex';
     }
 
     // Highlight labels
-    const labels = document.querySelectorAll('#policy-wizard-modal .text-\\[10px\\] span');
+    const labels = document.querySelectorAll('#policy-wizard-view .text-xs span');
     labels.forEach((el, idx) => {
         if (idx + 1 <= currentStep) el.classList.add('text-blue-600');
         else el.classList.remove('text-blue-600');
