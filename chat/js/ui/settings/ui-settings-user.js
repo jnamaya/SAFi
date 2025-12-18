@@ -69,7 +69,7 @@ function _buildProfileUI(container) {
         </div>
 
         <div class="mt-8 flex justify-end pt-4 border-t border-neutral-200 dark:border-neutral-700">
-            <button id="save-my-profile-btn" class="px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors shadow-sm">
+            <button id="save-my-profile-btn" class="px-5 py-2 rounded-lg font-semibold bg-black text-white hover:bg-gray-800 text-sm transition-colors shadow-sm">
                 Save Changes
             </button>
         </div>

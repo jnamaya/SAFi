@@ -114,7 +114,7 @@ function renderOrganizationUI(container, org) {
         <div class="mb-6 border-b border-neutral-200 dark:border-neutral-800 pb-4">
             <div class="flex items-center justify-between">
                 <div id="org-name-display-container" class="group flex items-center gap-3">
-                    <h3 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                    <h3 class="text-2xl font-bold text-neutral-900 dark:text-white">
                         ${org.name}
                     </h3>
                     <button id="btn-edit-org-name" class="p-1 text-gray-400 hover:text-blue-600 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Rename Organization">
