@@ -548,9 +548,12 @@ export async function sendMessage(activeProfileData, user) {
 
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
+    const aiMessageId = crypto.randomUUID();
+    pollForAuditResults(aiMessageId); // Start polling for reasoning immediately
+
     try {
-        // PASS SIGNAL HERE
-        const initialResponse = await api.processUserMessage(userMessage, currentConversationId, currentAbortController.signal);
+        // PASS SIGNAL AND MESSAGE_ID HERE
+        const initialResponse = await api.processUserMessage(userMessage, currentConversationId, currentAbortController.signal, aiMessageId);
 
         ui.clearLoadingInterval();
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
@@ -568,7 +571,7 @@ export async function sendMessage(activeProfileData, user) {
         const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
-        const messageId = initialResponse.messageId || crypto.randomUUID();
+        const messageId = initialResponse.messageId || aiMessageId;
         const profileName = initialResponse.activeProfile || activeProfileData.name || null;
         const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
@@ -650,7 +653,8 @@ export async function sendMessage(activeProfileData, user) {
         await cache.updateConvoInList(currentConversationId, updateMeta);
 
         if (messageId && !isBlocked) {
-            pollForAuditResults(messageId);
+            // Already polling, but ensure we keep polling if needed
+            // pollForAuditResults(messageId); 
         }
 
     } catch (error) {
@@ -709,6 +713,16 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
 
             // --- START FIX: Check for ledger OR suggestions ---
 
+            // --- NEW: Live Reasoning Update ---
+            if (auditResult.reasoning_log) {
+                let log = auditResult.reasoning_log;
+                if (typeof log === 'string') log = JSON.parse(log);
+                if (log.length > 0) {
+                    const lastStep = log[log.length - 1].step;
+                    uiMessages.updateThinkingStatus(lastStep);
+                }
+            }
+
             // Check if the auditResult is valid and has *something* new
             const rawLedger = auditResult?.ledger;
             const rawSuggestions = auditResult?.suggested_prompts;
@@ -719,7 +733,7 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             // We update the UI if the audit is complete and has *either* a ledger *or* suggestions *or* a spirit score
             const hasScore = auditResult.spirit_score !== null && auditResult.spirit_score !== undefined;
 
-            if (auditResult && (hasLedger || hasSuggestions || hasScore)) {
+            if (auditResult && auditResult.status === 'complete' && (hasLedger || hasSuggestions || hasScore)) {
 
                 // Process Ledger (if it exists)
                 let parsedLedger = []; // Default to empty

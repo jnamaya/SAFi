@@ -162,8 +162,8 @@ export const togglePinConversation = (id, isPinned) =>
 // Chat flow
 export const fetchHistory = (id, limit = 50, offset = 0) =>
     httpGet(urls.HISTORY(id, limit, offset));
-export const processUserMessage = (message, conversation_id, signal = null) =>
-    httpJSON(urls.PROCESS, 'POST', { message, conversation_id }, { signal });
+export const processUserMessage = (message, conversation_id, signal = null, message_id = null) =>
+    httpJSON(urls.PROCESS, 'POST', { message, conversation_id, message_id }, { signal });
 export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
 export const deleteAccount = () =>

@@ -388,7 +388,8 @@ async def process_prompt_endpoint():
         data['message'], 
         user_id, 
         conversation_id,
-        user_name=user_name
+        user_name=user_name,
+        override_message_id=data.get('message_id')
     )
     return jsonify(result)
 

@@ -212,6 +212,10 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE chat_history ADD COLUMN suggested_prompts JSON DEFAULT NULL")
 
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'reasoning_log'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN reasoning_log JSON DEFAULT NULL")
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -531,6 +535,38 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
         cursor.close()
         conn.close()
 
+def update_message_reasoning(msg_id, step_text):
+    """
+    Appends a new reasoning step to the message's reasoning_log.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # 1. Fetch existing log
+        cursor.execute("SELECT reasoning_log FROM chat_history WHERE message_id=%s", (msg_id,))
+        row = cursor.fetchone()
+        if not row: return
+        
+        current_log = row['reasoning_log']
+        if isinstance(current_log, str): 
+            current_log = json.loads(current_log)
+        if not isinstance(current_log, list):
+            current_log = []
+            
+        # 2. Append new step with timestamp
+        new_step = {
+            "step": step_text,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        current_log.append(new_step)
+        
+        # 3. Save back
+        cursor.execute("UPDATE chat_history SET reasoning_log=%s WHERE message_id=%s", (json.dumps(current_log), msg_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_audit_result(msg_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -545,7 +581,8 @@ def get_audit_result(msg_id):
                 "spirit_note": row['spirit_note'],
                 "profile": row['profile_name'],
                 "values": row['profile_values'],
-                "suggested_prompts": row['suggested_prompts']
+                "suggested_prompts": row['suggested_prompts'],
+                "reasoning_log": row['reasoning_log']
             }
         return None
     finally:
@@ -1229,11 +1266,7 @@ def delete_oauth_token(user_id, provider):
         cursor.close()
         conn.close()
 
-# -------------------------------------------------------------------------
-# OAUTH TOKEN MANAGEMENT
-# -------------------------------------------------------------------------
-
-def upsert_oauth_token(user_id, provider, access_token, refresh_token, expires_at, scope):
+def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expires_at=None, scope=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1241,10 +1274,10 @@ def upsert_oauth_token(user_id, provider, access_token, refresh_token, expires_a
             INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, expires_at, scope)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                access_token=VALUES(access_token),
-                refresh_token=VALUES(refresh_token),
-                expires_at=VALUES(expires_at),
-                scope=VALUES(scope)
+                access_token = VALUES(access_token),
+                refresh_token = VALUES(refresh_token),
+                expires_at = VALUES(expires_at),
+                scope = VALUES(scope)
         """
         cursor.execute(sql, (user_id, provider, access_token, refresh_token, expires_at, scope))
         conn.commit()

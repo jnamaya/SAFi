@@ -229,12 +229,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         user_prompt: str, 
         user_id: str, 
         conversation_id: str,
-        user_name: Optional[str] = None
+        user_name: Optional[str] = None,
+        override_message_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         The main entrypoint for processing a user's prompt.
         """
-        message_id = str(uuid.uuid4()) 
+        message_id = override_message_id if override_message_id else str(uuid.uuid4()) 
         now_utc = datetime.now(timezone.utc)
         current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
@@ -283,6 +284,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             drift=self.last_drift,
             recent_mu=list(self.mu_history)
         )
+        
+        # --- 0. Initial Status ---
+        db.update_message_reasoning(message_id, "Connecting to Intellect Faculty...")
 
         # --- 1. First Pass: Intellect Generation ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
@@ -291,7 +295,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
             user_profile_json=current_profile_json,
-            user_name=user_name
+            user_name=user_name,
+            user_id=user_id,
+            message_id=message_id
         )
         
         history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
@@ -305,6 +311,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
         # --- 2. First Pass: Will Evaluation ---
+        db.update_message_reasoning(message_id, "Evaluating ethical compliance (Will Faculty)...")
         D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
 
         # --- Retry Metadata Tracking ---
@@ -317,6 +324,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- 3. Reflexion Loop (Single Retry) ---
         if D_t == "violation":
             self.log.info(f"Will blocked first draft. Reason: {E_t}. Attempting Reflexion Retry.")
+            db.update_message_reasoning(message_id, "Policy violation detected. Retrying with reflexion...")
             
             # Record that we are retrying
             retry_metadata["was_retried"] = True
@@ -348,7 +356,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 spirit_feedback=spirit_feedback,
                 plugin_context=plugin_context_data, 
                 user_profile_json=current_profile_json,
-                user_name=user_name
+
+                user_name=user_name,
+                user_id=user_id,
+                message_id=message_id
             )
             
             if a_t_retry:

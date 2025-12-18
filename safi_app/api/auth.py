@@ -444,6 +444,96 @@ def microsoft_tool_callback():
         return redirect(f'/?error=microsoft_auth_failed&details={str(e)}')
 
 
+# --- GITHUB TOOL ---
+@auth_bp.route('/auth/github/login')
+def github_tool_login():
+    try:
+        user_id = session.get('user_id')
+        if not user_id: return jsonify({"error": "Not logged in"}), 401
+
+        # DEBUG: Log what we see
+        gh_id = current_app.config.get('GITHUB_CLIENT_ID')
+        current_app.logger.info(f"DEBUG: Attempting GitHub Login. Client ID present? {bool(gh_id)} (Value: {gh_id if gh_id else 'None'})")
+
+        client_id = gh_id
+        if not client_id:
+            return jsonify({"error": "GitHub Client ID not configured"}), 500
+
+        # Scopes: repo (full control) or read:user (just identity). 
+        # For our MCP, we need 'repo' to read private code/issues.
+        scope = "repo read:user"
+        state = secrets.token_urlsafe(16)
+        session['github_state'] = state
+        
+        base_url = "https://github.com/login/oauth/authorize"
+        redirect_uri = url_for('auth.github_tool_callback', _external=True, _scheme='https')
+        
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "state": state
+        }
+        
+        import urllib.parse
+        url = f"{base_url}?{urllib.parse.urlencode(params)}"
+        return redirect(url)
+    except Exception as e:
+        current_app.logger.error(f"GitHub Auth Start Failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@auth_bp.route('/auth/github/callback')
+def github_tool_callback():
+    user_id = session.get('user_id')
+    if not user_id: return redirect('/?error=session_expired')
+    
+    code = request.args.get('code')
+    state = request.args.get('state')
+    
+    if state != session.get('github_state'):
+        return redirect('/?error=state_mismatch')
+        
+    client_id = current_app.config.get('GITHUB_CLIENT_ID')
+    client_secret = current_app.config.get('GITHUB_CLIENT_SECRET')
+    
+    token_url = "https://github.com/login/oauth/access_token"
+    
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code
+    }
+    
+    try:
+        # GitHub returns form-encoded by default unless Accept header set
+        headers = {"Accept": "application/json"}
+        r = requests.post(token_url, json=data, headers=headers)
+        r.raise_for_status()
+        token_data = r.json()
+        
+        access_token = token_data.get('access_token')
+        if not access_token:
+            return redirect(f"/?error=github_token_missing&details={token_data}")
+            
+        # GitHub tokens don't always expire (unless configured), but we set a far future date if missing
+        expires_in = token_data.get('expires_in', 31536000) # Default 1 year
+        expires_at = datetime.now() + timedelta(seconds=int(expires_in))
+        
+        db.upsert_oauth_token(
+            user_id,
+            'github',
+            access_token,
+            None, # GitHub (classic) doesn't use refresh tokens usually
+            expires_at,
+            token_data.get('scope', '')
+        )
+        return redirect('/?status=github_connected')
+        
+    except Exception as e:
+         current_app.logger.error(f"GitHub Callback Error: {e}")
+         return redirect(f"/?error=github_callback_failed&details={str(e)}")
+
+
 # =================================================================
 # USER & SESSION MANAGEMENT
 # =================================================================
