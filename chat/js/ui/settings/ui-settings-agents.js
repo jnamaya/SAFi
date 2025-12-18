@@ -1,5 +1,5 @@
 import * as ui from '../ui.js';
-import * as api from '../api.js';
+import * as api from '../../core/api.js';
 import { getAvatarForProfile } from '../ui-auth-sidebar.js'; // Need to check path adjustment? Yes, one level deeper.
 import { openAgentWizard } from '../ui-agent-wizard.js';
 import { ensureProfileModalExists } from './ui-settings-core.js'; // Circular dependency risk? Core depends on this for render? No, core imports render. This imports generic helper.

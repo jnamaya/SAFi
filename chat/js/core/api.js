@@ -7,7 +7,7 @@ import {
     clearAuthToken // Function specifically for clearing the token
 } from './cache.js';
 
-import offlineManager from './offline-manager.js';
+import offlineManager from '../services/offline-manager.js';
 
 const Cap = typeof window !== "undefined" ? window.Capacitor : null;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());

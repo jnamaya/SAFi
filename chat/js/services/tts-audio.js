@@ -1,8 +1,8 @@
 // tts-audio.js
 
-import * as ui from './ui.js'; // For access to showToast
-import * as api from './api.js'; // Import API for TTS call
-import { iconPlay, iconPause, iconLoading } from './ui-render-constants.js'; // Assuming icons are moved to a constants file
+import * as ui from '../ui/ui.js'; // For access to showToast
+import * as api from '../core/api.js'; // Import API for TTS call
+import { iconPlay, iconPause, iconLoading } from '../ui/ui-render-constants.js'; // Assuming icons are moved to a constants file
 
 // --- GLOBAL STATE FOR AUDIO ---
 let audio = null;
@@ -19,7 +19,7 @@ export async function playSpeech(text, buttonElement) {
     if (currentPlaybackElement && currentPlaybackElement !== buttonElement) {
         resetAudioState();
     }
-    
+
     // Set the button element for the current interaction
     currentPlaybackElement = buttonElement;
 
@@ -30,7 +30,7 @@ export async function playSpeech(text, buttonElement) {
         buttonElement.classList.remove('text-green-500', 'animate-pulse');
         return;
     }
-    
+
     // Case 2: Audio exists AND is paused -> RESUME
     if (audio && audio.paused) {
         audio.play().catch(e => {
@@ -44,7 +44,7 @@ export async function playSpeech(text, buttonElement) {
     }
 
     // Case 3: No audio loaded yet -> FETCH AND PLAY
-    
+
     // Set loading state
     buttonElement.innerHTML = iconLoading;
     buttonElement.classList.add('text-green-500', 'animate-pulse');
@@ -52,15 +52,15 @@ export async function playSpeech(text, buttonElement) {
     try {
         ui.showToast('Generating audio...', 'info', 1500);
         const audioBlob = await api.fetchTTSAudio(text);
-        
+
         // Clear any old audio object reference
         if (audio) {
-             URL.revokeObjectURL(audio.src);
+            URL.revokeObjectURL(audio.src);
         }
-        
+
         const audioUrl = URL.createObjectURL(audioBlob);
         audio = new Audio(audioUrl);
-        
+
         audio.oncanplaythrough = () => {
             // Start playback
             audio.play().catch(e => {
@@ -69,7 +69,7 @@ export async function playSpeech(text, buttonElement) {
                 resetAudioState();
             });
             // Update button to Pause icon
-            currentPlaybackElement.innerHTML = iconPause; 
+            currentPlaybackElement.innerHTML = iconPause;
             currentPlaybackElement.classList.remove('animate-pulse');
             currentPlaybackElement.classList.add('text-green-500');
         };
@@ -99,7 +99,7 @@ export function resetAudioState() {
     if (audio) {
         audio.pause();
         // Clean up the object URL to free memory
-        URL.revokeObjectURL(audio.src); 
+        URL.revokeObjectURL(audio.src);
         audio = null;
     }
     if (currentPlaybackElement) {

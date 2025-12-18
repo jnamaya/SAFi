@@ -1,9 +1,9 @@
 // ui-messages.js
 
-import { formatTime } from './utils.js';
+import { formatTime } from '../core/utils.js';
 import * as ui from './ui.js';
 import { getAvatarForProfile } from './ui-auth-sidebar.js';
-import { playSpeech } from './tts-audio.js';
+import { playSpeech } from '../services/tts-audio.js';
 import { iconPlay } from './ui-render-constants.js';
 
 // --- ICONS ---

@@ -1,5 +1,5 @@
 import * as ui from '../ui.js';
-import * as api from '../api.js';
+import * as api from '../../core/api.js';
 
 let currentUser = null; // We need to set this if we want to check "isSelf"
 // But how? 

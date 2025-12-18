@@ -1,5 +1,5 @@
 import * as ui from '../ui.js';
-import * as api from '../api.js';
+import * as api from '../../core/api.js';
 import { openPolicyWizard } from '../ui-policy-wizard.js';
 import { renderProfileDetailsModal } from './ui-settings-agents.js';
 

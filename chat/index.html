@@ -8,10 +8,10 @@
 
   <title>SAFi - The Governance Engine For AI</title>
 
-  <script src="js/marked.min.js"></script>
-  <script src="js/purify.min.js"></script>
+  <script src="js/lib/marked.min.js"></script>
+  <script src="js/lib/purify.min.js"></script>
   <link rel="stylesheet" href="css/highlight-theme.css">
-  <script src="js/highlight.min.js"></script>
+  <script src="js/lib/highlight.min.js"></script>
   <link href="css/main.css" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
   <script>
@@ -89,8 +89,9 @@
               Sign in with Google
             </button>
 
-            <button id="login-microsoft-button" type="button"
-              class="mt-4 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
+            <!-- Microsoft Login (Link) -->
+            <a href="/api/login/microsoft" id="login-microsoft-button"
+              class="mt-4 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0 no-underline text-current">
               <svg class="w-5 h-5" viewBox="0 0 23 23" aria-hidden="true">
                 <path fill="#f35325" d="M1 1h10v10H1z" />
                 <path fill="#81bc06" d="M12 1h10v10H12z" />
@@ -98,7 +99,7 @@
                 <path fill="#ffba08" d="M12 12h10v10H12z" />
               </svg>
               Sign in with Microsoft
-            </button>
+            </a>
 
             <a href="https://selfalignmentframework.com/safi/" target="_blank" rel="noopener noreferrer"
               class="mt-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 hover:underline transition-colors shrink-0">
@@ -445,7 +446,7 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/core/app.js"></script>
 </body>
 
 </html>

@@ -1,4 +1,4 @@
-import * as api from './../api.js';
+import * as api from '../../core/api.js';
 
 export async function renderIdentityStep(container, agentData) {
     container.innerHTML = `

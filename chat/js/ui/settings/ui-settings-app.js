@@ -1,5 +1,5 @@
 import * as ui from '../ui.js';
-import * as api from '../api.js';
+import * as api from '../../core/api.js';
 
 /**
  * Renders the App Settings tab (Theme, Logout, Delete Account).
