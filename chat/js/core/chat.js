@@ -1,9 +1,9 @@
 // Conversation Management Logic:chat.js
 
 import * as api from './api.js';
-import * as ui from './ui.js';
-import * as uiAuthSidebar from './ui-auth-sidebar.js';
-import * as uiMessages from './ui-messages.js';
+import * as ui from '../ui/ui.js';
+import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
+import * as uiMessages from '../ui/ui-messages.js';
 import * as cache from './cache.js'; // Use cache for optimistic updates
 // CHANGE: Import the utility function
 import { formatRelativeTime } from './utils.js';

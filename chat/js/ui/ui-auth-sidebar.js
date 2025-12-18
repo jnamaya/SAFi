@@ -2,7 +2,7 @@
 
 import * as ui from './ui.js';
 // Assuming formatRelativeTime is in utils.js
-import { formatRelativeTime } from './utils.js';
+import { formatRelativeTime } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
 
 /**

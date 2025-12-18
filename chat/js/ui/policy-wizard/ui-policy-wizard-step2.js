@@ -1,4 +1,4 @@
-import * as api from './../api.js';
+import * as api from '../../core/api.js';
 import * as ui from './../ui.js';
 
 export function renderConstitutionStep(container, policyData) {

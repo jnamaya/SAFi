@@ -1,4 +1,4 @@
-import * as api from '../api.js';
+import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 
 import { renderDefinitionStep, validateDefinitionStep } from './ui-policy-wizard-step1.js';

@@ -1,10 +1,10 @@
 import * as api from './api.js';
-import * as ui from './ui.js';
-import * as uiAuthSidebar from './ui-auth-sidebar.js';
-import * as uiMessages from './ui-messages.js';
-import * as uiSettingsModals from './ui-settings-modals.js';
+import * as ui from '../ui/ui.js';
+import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
+import * as uiMessages from '../ui/ui-messages.js';
+import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import * as chat from './chat.js';
-import offlineManager from './offline-manager.js';
+import offlineManager from '../services/offline-manager.js';
 
 // --- CAPACITOR GLOBAL STATE & PLUGINS ---
 const Cap = typeof window !== 'undefined' ? window.Capacitor : undefined;
