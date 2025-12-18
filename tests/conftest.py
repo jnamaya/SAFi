@@ -1,3 +1,29 @@
+import sys
+from unittest.mock import MagicMock
+
+# Mock ML/SDK dependencies if missing (for CI/Test environments)
+MODULES_TO_MOCK = [
+    "faiss", 
+    "sentence_transformers", 
+    "google.generativeai", 
+    "openai", 
+    "anthropic", 
+    "groq",
+    "bs4",
+    "yfinance",
+    "google_auth_oauthlib",
+    "google_auth_oauthlib.flow"
+]
+
+for mod_name in MODULES_TO_MOCK:
+    try:
+        __import__(mod_name)
+    except ImportError:
+        sys.modules[mod_name] = MagicMock()
+
+import os
+os.environ["FLASK_SECRET_KEY"] = "fake_test_key_for_ci"
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from safi_app.core.services import LLMProvider

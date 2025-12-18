@@ -249,6 +249,54 @@ class MCPManager:
                 }
             })
 
+        # --- GITHUB ---
+        if "github" in allowed_tools:
+            tools.append({
+                "name": "github_search_repos",
+                "description": "Search for GitHub repositories.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search keywords (e.g. 'machine learning python')."}
+                    },
+                    "required": ["query"]
+                }
+            })
+            tools.append({
+                "name": "github_get_repo",
+                "description": "Get details and README snippet for a repo.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repo_name": {"type": "string", "description": "Full repo name (e.g. 'microsoft/vscode')."}
+                    },
+                    "required": ["repo_name"]
+                }
+            })
+            tools.append({
+                "name": "github_list_issues",
+                "description": "List recent open issues for a repo.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repo_name": {"type": "string", "description": "Full repo name (e.g. 'microsoft/vscode')."}
+                    },
+                    "required": ["repo_name"]
+                }
+            })
+            tools.append({
+                "name": "github_read_file",
+                "description": "Read content of a specific file in a repo.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repo_name": {"type": "string", "description": "Full repo name (e.g. 'microsoft/vscode')."},
+                        "file_path": {"type": "string", "description": "Path to file (e.g. 'src/main.py')."}
+                    },
+                    "required": ["repo_name", "file_path"]
+                }
+            })
+
         return tools
 
     def list_all_tools(self) -> List[Dict[str, Any]]:
@@ -316,10 +364,22 @@ class MCPManager:
                         "icon": "office-building"
                     }
                 ]
+            },
+            # --- CODING & REPOS ---
+            {
+                "category": "Coding & Development",
+                "tools": [
+                     {
+                        "name": "github",
+                        "label": "GitHub",
+                        "description": "Search repos, read code/issues.",
+                        "icon": "code"
+                    }
+                ]
             }
         ]
 
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], user_id: Optional[str] = None) -> str:
         """
         Executes a named tool. 
         For the PoC, we will route directly to the local python implementation 
@@ -381,5 +441,17 @@ class MCPManager:
                 return await sharepoint.list_folders(arguments.get("folder_path", "root"))
             if tool_name == "sharepoint_get_tree":
                 return await sharepoint.get_tree(arguments.get("max_depth", 2))
+
+        # -- GITHUB --
+        if tool_name.startswith("github_"):
+            from ..mcp_servers import github
+            if tool_name == "github_search_repos":
+                return await github.search_repositories(arguments["query"], user_id=user_id)
+            if tool_name == "github_get_repo":
+                return await github.get_repository_details(arguments["repo_name"], user_id=user_id)
+            if tool_name == "github_list_issues":
+                return await github.list_issues(arguments["repo_name"], user_id=user_id)
+            if tool_name == "github_read_file":
+                return await github.read_file_content(arguments["repo_name"], arguments["file_path"], user_id=user_id)
 
         return json.dumps({"error": f"Tool '{tool_name}' not found."})

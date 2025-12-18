@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from ..retriever import Retriever
+from ...persistence import database as db
 
 class IntellectEngine:
     """
@@ -49,6 +50,9 @@ class IntellectEngine:
         spirit_feedback: str,
         user_profile_json: str,
         user_name: Optional[str] = None,
+
+        user_id: Optional[str] = None,
+        message_id: Optional[str] = None,
         plugin_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
@@ -137,8 +141,8 @@ class IntellectEngine:
         formatting_reminder = self.prompt_config.get("formatting_reminder", "")
         
         # --- 3. Tool Loop Execution ---
-        # We allow up to 5 turns of tool use
-        max_tool_turns = 5
+        # We allow up to 15 turns of tool use to support deep research flows
+        max_tool_turns = 15
         current_user_prompt = user_prompt + formatting_reminder
         final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
         
@@ -195,7 +199,10 @@ class IntellectEngine:
                              tool_results_text += f"\n[TOOL ERROR: Tool '{name}' is not enabled for this agent.]\n"
                              self.log.warning(f"BLOCKED tool execution '{name}' for agent (not in allowed list {allowed_tool_names})")
                          else:
-                             result = await self.mcp_manager.execute_tool(name, args)
+                             if message_id:
+                                 db.update_message_reasoning(message_id, f"Executing tool: {name}")
+                             
+                             result = await self.mcp_manager.execute_tool(name, args, user_id=user_id)
                              tool_results_text += f"\n[TOOL EXECUTION: {name}({args}) => {result}]\n"
                      else:
                          tool_results_text += f"\n[TOOL EXECUTION FAILED: No Manager]\n"
@@ -206,5 +213,7 @@ class IntellectEngine:
                 self.log.info(f"Intellect: Appending tool results: {tool_results_text[:100]}...")
                 continue
         
+        
         # If we exit loop without returning, fallback
-        return "I tried to use tools but got stuck in a loop.", "System Loop Error", final_context_for_audit
+        self.log.error(f"Intellect: Hit max tool turns ({max_tool_turns}). Returning fallback.")
+        return "I'm sorry, I was unable to complete the request within the reasoning limit. The task might be too complex or blocked by safety rules.", "System Loop Limit", final_context_for_audit

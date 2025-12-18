@@ -520,6 +520,20 @@ export function showLoadingIndicator(profileName) {
     return container;
 }
 
+export function updateThinkingStatus(text) {
+    const statusSpan = document.getElementById('thinking-status');
+    if (statusSpan && statusSpan.textContent !== text) {
+        // Stop the generic "Thinking..." rotator to prioritize real reasoning
+        ui.clearLoadingInterval();
+
+        statusSpan.style.opacity = '0';
+        setTimeout(() => {
+            statusSpan.textContent = text;
+            statusSpan.style.opacity = '1';
+        }, 200);
+    }
+}
+
 export function resetChatView() {
     ui._ensureElements();
     stopTyping(); // stop any active animation when switching
