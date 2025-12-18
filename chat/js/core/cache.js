@@ -37,15 +37,22 @@ const NativeStorage = {
     } catch (e) {
       if (e.name === 'QuotaExceededError' || e.code === 22) {
         console.warn(`Storage quota exceeded while saving ${key}. Attempting eviction...`);
-        const evicted = await evictOldCache();
+        const evicted = await evictOldCache(10); // Remove 10 items
         if (evicted) {
-          // Retry once
+          // Retry save
           try {
             const data = JSON.stringify(value);
             localStorage.setItem(key, data);
             console.log(`Retry save of ${key} successful after eviction.`);
           } catch (retryErr) {
-            console.error(`Failed to save ${key} even after eviction:`, retryErr);
+            console.warn(`Failed to save ${key} after 10-item eviction. Trying scorched earth...`);
+            await evictOldCache(25); // Remove 25 items
+            try {
+              localStorage.setItem(key, JSON.stringify(value));
+              console.log(`Retry save of ${key} successful after aggressive eviction.`);
+            } catch (finalErr) {
+              console.error(`Could not evict enough space for ${key}. Storage might be fundamentally full.`, getStorageUsage());
+            }
           }
         } else {
           console.error(`Could not evict enough space for ${key}.`);
@@ -69,57 +76,77 @@ const NativeStorage = {
 };
 
 /**
- * Evicts cached conversation histories to free up space.
- * Strategy: Iterates from oldest to newest, checking for cached history.
- * Stops once 5 items are successfully removed.
+ * Utility to calculate current localStorage usage.
  */
-async function evictOldCache() {
+function getStorageUsage() {
+  let total = 0;
+  for (const x in localStorage) {
+    if (!localStorage.hasOwnProperty(x)) continue;
+    total += ((localStorage[x].length + x.length) * 2);
+  }
+  return {
+    totalBytes: total,
+    totalKB: (total / 1024).toFixed(2),
+    totalMB: (total / (1024 * 1024)).toFixed(2),
+    count: localStorage.length
+  };
+}
+
+/**
+ * Evicts cached items to free up space.
+ * targetCount: How many items to attempt to remove.
+ */
+async function evictOldCache(targetCount = 5) {
   try {
     const convos = await loadConvoList();
-    if (!convos || convos.length === 0) return false;
-
-    // Sort by last_updated (oldest first)
-    convos.sort((a, b) => (a.last_updated || '').localeCompare(b.last_updated || ''));
-
     let spacesCleared = 0;
-    const TARGET_EVICTION = 5;
 
-    // Iterate ALL conversations, not just a slice
-    for (const c of convos) {
-      if (spacesCleared >= TARGET_EVICTION) break; // Stop if we freed enough
+    // 1. Sort convos by last_updated (oldest first)
+    const sortedConvos = [...convos].sort((a, b) => (a.last_updated || '').localeCompare(b.last_updated || ''));
 
+    // 2. Remove oldest conversation histories (the bulk of our custom cache)
+    for (const c of sortedConvos) {
+      if (spacesCleared >= targetCount) break;
       const historyKey = CACHE_KEYS.CONVO_PREFIX + c.id;
       if (localStorage.getItem(historyKey)) {
         localStorage.removeItem(historyKey);
         spacesCleared++;
-        console.log(`[Cache Eviction] Removed history for ${c.id} (Oldest accessible)`);
       }
     }
 
-    // If still nothing cleared, we attempt to delete orphaned keys
-    if (spacesCleared === 0) {
-      console.warn("[Cache Eviction] No history found in tracked list. Attempting orphaned key cleanup.");
-      // We can't easily iterate keys in native, but for web localStorage we can
-      if (!isNative && typeof localStorage !== 'undefined') {
-        const keysToDelete = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith(CACHE_KEYS.CONVO_PREFIX)) {
-            // Check if this key belongs to a known convo
-            const id = key.replace(CACHE_KEYS.CONVO_PREFIX, '');
-            // Using simple lookup
-            const exists = convos.some(cv => cv.id === id);
-            if (!exists) {
-              keysToDelete.push(key);
-            }
+    // 3. Remove offline-manager cached GET requests (safi_cache_v1)
+    if (spacesCleared < targetCount && !isNative && typeof localStorage !== 'undefined') {
+      const cacheKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('safi_cache_v1:') || key.startsWith('safi_cache:'))) {
+          cacheKeys.push(key);
+        }
+      }
+
+      for (const k of cacheKeys) {
+        if (spacesCleared >= targetCount) break;
+        localStorage.removeItem(k);
+        spacesCleared++;
+      }
+    }
+
+    // 4. Orphaned key cleanup (fallback)
+    if (spacesCleared === 0 && !isNative && typeof localStorage !== 'undefined') {
+      const keysToDelete = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(CACHE_KEYS.CONVO_PREFIX)) {
+          const id = key.replace(CACHE_KEYS.CONVO_PREFIX, '');
+          if (!convos.some(cv => cv.id === id)) {
+            keysToDelete.push(key);
           }
         }
-
-        for (const k of keysToDelete) {
-          localStorage.removeItem(k);
-          spacesCleared++;
-          console.log(`[Cache Eviction] Removed orphaned key: ${k}`);
-        }
+      }
+      for (const k of keysToDelete) {
+        if (spacesCleared >= targetCount) break;
+        localStorage.removeItem(k);
+        spacesCleared++;
       }
     }
 

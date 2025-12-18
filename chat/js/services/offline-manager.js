@@ -119,7 +119,9 @@ async function fetchWithCache(request) {
     }
 
     // For other non-2xx statuses, throw the raw server message or generic status error
-    throw new Error(msg || `Request failed with status ${status}`);
+    const err = new Error(msg || `Request failed with status ${status}`);
+    err.status = status;
+    throw err;
   }
 
   // --- CRITICAL FIX START: Check Content-Type for 2xx responses ---
@@ -205,7 +207,7 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
     } catch (e) {
       // AbortError should NOT be queued?
       if (e.name === 'AbortError') {
-          throw e; // Propagate abort up
+        throw e; // Propagate abort up
       }
       console.warn("Fetch failed, queuing:", e);
       await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });

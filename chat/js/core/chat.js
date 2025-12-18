@@ -400,6 +400,14 @@ function renderHistory(history, user, showModal, activeProfileData) {
 // --- ABORT CONTROLLER STATE ---
 let currentAbortController = null;
 
+function generateUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
+
 export async function sendMessage(activeProfileData, user) {
     // 1. Check if we are currently sending (and thus can cancel)
     if (currentAbortController) {
@@ -548,7 +556,7 @@ export async function sendMessage(activeProfileData, user) {
 
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
-    const aiMessageId = crypto.randomUUID();
+    const aiMessageId = generateUUID();
     pollForAuditResults(aiMessageId); // Start polling for reasoning immediately
 
     try {
@@ -697,7 +705,7 @@ export async function sendMessage(activeProfileData, user) {
     }
 }
 
-function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
+function pollForAuditResults(messageId, maxAttempts = 100, interval = 2000) {
     let attempts = 0;
 
     const executePoll = async (resolve, reject) => {
@@ -714,9 +722,11 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             // --- START FIX: Check for ledger OR suggestions ---
 
             // --- NEW: Live Reasoning Update ---
+            // --- NEW: Live Reasoning Update ---
             if (auditResult.reasoning_log) {
                 let log = auditResult.reasoning_log;
                 if (typeof log === 'string') log = JSON.parse(log);
+
                 if (log.length > 0) {
                     const lastStep = log[log.length - 1].step;
                     uiMessages.updateThinkingStatus(lastStep);
@@ -818,8 +828,9 @@ function pollForAuditResults(messageId, maxAttempts = 10, interval = 2000) {
             }
         } catch (error) {
             const msg = error.message || '';
-            if (msg.includes('404') || msg.includes('UNAUTHORIZED')) {
-                // Not ready yet, retry
+            const status = error.status;
+            if (status === 404 || status === 401 || msg.includes('not_found') || msg.includes('404')) {
+                // Not ready yet or transient error, retry
                 setTimeout(() => executePoll(resolve, reject), interval);
             } else {
                 console.error(`Error polling for audit on ${messageId}:`, error);

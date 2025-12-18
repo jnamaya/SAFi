@@ -535,6 +535,24 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
         cursor.close()
         conn.close()
 
+def update_message_content(msg_id, content, audit_status=None):
+    """
+    Updates the content and optionally the audit_status of an existing message.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        if audit_status:
+            sql = "UPDATE chat_history SET content=%s, audit_status=%s WHERE message_id=%s"
+            cursor.execute(sql, (content, audit_status, msg_id))
+        else:
+            sql = "UPDATE chat_history SET content=%s WHERE message_id=%s"
+            cursor.execute(sql, (content, msg_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 def update_message_reasoning(msg_id, step_text):
     """
     Appends a new reasoning step to the message's reasoning_log.

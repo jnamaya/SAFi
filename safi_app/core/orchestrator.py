@@ -239,6 +239,25 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         now_utc = datetime.now(timezone.utc)
         current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
+
+        # --- 0. Pre-insertion for Live Reasoning ---
+        try:
+            # Ensure messages exist in DB so reasoning poller can find them IMMEDIATELLY
+            history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
+            new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
+            
+            db.insert_memory_entry(conversation_id, "user", user_prompt)
+            # Create the AI message placeholder immediately
+            db.insert_memory_entry(conversation_id, "ai", "", message_id=message_id, audit_status="pending")
+            
+            # --- Initial Status ---
+            db.update_message_reasoning(message_id, "Connecting to Intellect Faculty...")
+        except Exception as e:
+            import traceback
+            trace = traceback.format_exc()
+            msg = f"DEBUG: Pre-Insert CRASH: {str(e)} | Trace: {trace}"
+            self.log.error(msg)
+            return { "finalOutput": msg, "messageId": message_id }
         
         # Plugins
         plugin_context_data = {}
@@ -285,8 +304,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             recent_mu=list(self.mu_history)
         )
         
-        # --- 0. Initial Status ---
-        db.update_message_reasoning(message_id, "Connecting to Intellect Faculty...")
+        
 
         # --- 1. First Pass: Intellect Generation ---
         a_t, r_t, retrieved_context = await self.intellect_engine.generate(
@@ -300,14 +318,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             message_id=message_id
         )
         
-        history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
-        new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
-
-        db.insert_memory_entry(conversation_id, "user", user_prompt)
-
         if not a_t:
             msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
-            db.insert_memory_entry(conversation_id, "ai", msg, message_id=message_id, audit_status="complete")
+            db.update_message_content(message_id, msg, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
         # --- 2. First Pass: Will Evaluation ---
@@ -382,7 +395,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         if D_t == "violation":
             suppression_message = f"🛑 **Blocked**\n\nReason: {E_t}"
             S_p = await self._get_prompt_suggestions(user_prompt, (self.profile or {}).get("will_rules", []))
-            db.insert_memory_entry(conversation_id, "ai", suppression_message, message_id=message_id, audit_status="complete") 
+            db.update_message_content(message_id, suppression_message, audit_status="complete") 
             self._append_log({
                 "userPrompt": user_prompt, 
                 "blockedDraft": a_t,
@@ -397,8 +410,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
 
-        # --- 5. Success: Save and Audit ---
-        db.insert_memory_entry(conversation_id, "ai", a_t, message_id=message_id, audit_status="pending")
+        # --- 5. Success: Update and Audit ---
+        db.update_message_content(message_id, a_t, audit_status="pending")
         
         snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context }
         
