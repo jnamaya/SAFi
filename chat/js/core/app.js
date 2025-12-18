@@ -3,6 +3,7 @@ import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
+import { initDataSources } from '../ui/ui-data-sources.js';
 import * as chat from './chat.js';
 import offlineManager from '../services/offline-manager.js';
 
@@ -216,6 +217,9 @@ async function checkLoginStatus() {
         ui.showModal,
         true // Explicitly set shouldSwitchChat=true on initial load
       );
+
+      // Initialize Data Sources UI (Dropdown)
+      initDataSources();
     }
     // Attach all global event listeners
     attachEventListeners();

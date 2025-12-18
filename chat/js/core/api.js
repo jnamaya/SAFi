@@ -128,7 +128,17 @@ export async function logout() {
     return { ok: true };
 }
 
-export const getMe = () => httpGet(urls.ME);
+export const getMe = async () => {
+    try {
+        return await httpGet(urls.ME);
+    } catch (e) {
+        // Suppress 401/Unauthorized errors for the 'me' check to avoid console noise
+        if (e.message && e.message.includes('UNAUTHORIZED')) {
+            return { ok: false, user: null };
+        }
+        throw e;
+    }
+};
 
 // User/Profile/Model management
 export const fetchAvailableProfiles = () => httpGet(urls.PROFILES);
@@ -158,6 +168,9 @@ export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
 export const deleteAccount = () =>
     httpJSON(urls.DELETE_ACCOUNT, 'DELETE', {});
+
+// Auth & Third-party Tools
+export const fetchAuthStatus = () => httpGet(j('/api/auth/status'));
 
 // TTS audio
 export const fetchTTSAudio = async (text) => {
