@@ -62,6 +62,18 @@ export async function handleTogglePin(id, isPinned, activeProfileData, user) {
 }
 
 
+// --- HELPER: Create Prompt Handler ---
+// This ensures that "New Chat" buttons always have a working prompt click handler
+function createDefaultPromptHandler(activeProfileData, user) {
+    return (promptText) => {
+        if (!ui.elements.messageInput) return;
+        ui.elements.messageInput.value = promptText;
+        autoSize();
+        ui.elements.sendButton.disabled = false;
+        sendMessage(activeProfileData, user);
+    };
+}
+
 // --- CORE CONVERSATION MANAGEMENT ---
 
 /**
@@ -205,7 +217,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         `;
         newChatBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            startNewConversation(false, activeProfileData, user, () => { });
+            startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
             if (window.innerWidth < 768) ui.closeSidebar();
         });
 
@@ -237,7 +249,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
          `;
         newChatBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            startNewConversation(false, activeProfileData, user, () => { });
+            startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
             if (window.innerWidth < 768) ui.closeSidebar();
         });
 
@@ -310,12 +322,8 @@ export async function switchConversation(id, activeProfileData, user, showModal,
         // ADDED NULL CHECK: Safely get first name
         const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
         uiMessages.displaySimpleGreeting(firstName);
-        uiMessages.displayEmptyState(activeProfileData, (text) => {
-            ui.elements.messageInput.value = text;
-            ui.elements.sendButton.disabled = false;
-            autoSize();
-            sendMessage(activeProfileData, user);
-        });
+        uiMessages.displaySimpleGreeting(firstName);
+        uiMessages.displayEmptyState(activeProfileData, createDefaultPromptHandler(activeProfileData, user));
     }
 
     try {
@@ -967,16 +975,8 @@ export async function handleConfirmDelete(activeProfileData, user) {
             // If deleted chat was the active one, start a fresh view
 
             // --- THIS IS THE FIX ---
-            // Define the click handler locally, since we can't access the one from app.js
-            // This handler does what app.js's handleExamplePromptClick does.
-            const newChatPromptHandler = (promptText) => {
-                ui.elements.messageInput.value = promptText;
-                autoSize();
-                ui.elements.sendButton.disabled = false;
-                sendMessage(activeProfileData, user);
-            };
-            // Pass the *real* handler, not the empty dummy function
-            await startNewConversation(false, activeProfileData, user, newChatPromptHandler);
+            // Use the shared helper
+            await startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
             // --- END FIX ---
         }
 
