@@ -187,15 +187,63 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     }
 
     if (unpinnedConversations.length > 0) {
+        // Container for Header + New Chat
+        const headerContainer = document.createElement('div');
+        headerContainer.className = 'flex items-center justify-between px-2 pt-2 mb-2 group';
+
         const allHeader = document.createElement('h3');
-        allHeader.className = 'px-2 pt-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2';
+        allHeader.className = 'text-xs font-semibold text-neutral-400 uppercase tracking-wider';
         allHeader.textContent = 'All Conversations';
-        convoList.appendChild(allHeader);
+
+        // Inline New Chat Button
+        const newChatBtn = document.createElement('button');
+        newChatBtn.type = 'button';
+        newChatBtn.className = 'flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500 transition-colors';
+        newChatBtn.innerHTML = `
+            <span>New Chat</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        `;
+        newChatBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startNewConversation(false, activeProfileData, user, () => { });
+            if (window.innerWidth < 768) ui.closeSidebar();
+        });
+
+        headerContainer.appendChild(allHeader);
+        headerContainer.appendChild(newChatBtn);
+        convoList.appendChild(headerContainer);
 
         unpinnedConversations.forEach(convo => {
             const link = uiAuthSidebar.renderConversationLink(convo, handlers);
             convoList.appendChild(link);
         });
+    } else {
+        // Fallback: List is empty (or all pinned). Show Header + Button anyway.
+        const headerContainer = document.createElement('div');
+        // Add margin top if there are pinned items
+        const mt = pinnedConversations.length > 0 ? 'mt-2 border-t border-gray-100 dark:border-gray-800' : '';
+        headerContainer.className = `flex items-center justify-between px-2 pt-2 mb-2 group ${mt}`;
+
+        const allHeader = document.createElement('h3');
+        allHeader.className = 'text-xs font-semibold text-neutral-400 uppercase tracking-wider';
+        allHeader.textContent = 'All Conversations';
+
+        const newChatBtn = document.createElement('button');
+        newChatBtn.type = 'button';
+        newChatBtn.className = 'flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500 transition-colors';
+        newChatBtn.innerHTML = `
+             <span>New Chat</span>
+             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+         `;
+        newChatBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startNewConversation(false, activeProfileData, user, () => { });
+            if (window.innerWidth < 768) ui.closeSidebar();
+        });
+
+        headerContainer.appendChild(allHeader);
+        headerContainer.appendChild(newChatBtn);
+        convoList.appendChild(headerContainer);
     }
     // --- END NEW: Sorting Logic ---
 
