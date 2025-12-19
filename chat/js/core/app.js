@@ -305,14 +305,25 @@ function renderControlPanel() {
   const canSeeGovernance = ['admin', 'editor', 'auditor'].includes(user.role);
   // Dashboard: Admin, Editor, Auditor (Member = No Access)
   // Dashboard: Admin, Editor, Auditor (Member = No Access)
+  // Dashboard: Admin, Editor, Auditor (Member = No Access)
   const canSeeDashboard = ['admin', 'editor', 'auditor'].includes(user.role);
 
-  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard });
+  // Models: Admin, Editor, Auditor (Member = No Access)
+  const canSeeModels = ['admin', 'editor', 'auditor'].includes(user.role);
+
+  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels });
 
   const navOrg = document.getElementById('nav-organization'); // NEW ID
   if (navOrg) {
     if (canSeeOrg) navOrg.classList.remove('hidden');
     else navOrg.classList.add('hidden');
+  }
+
+  // Hide AI Models Tab if not authorized
+  const navModels = document.getElementById('nav-models');
+  if (navModels) {
+    if (canSeeModels) navModels.classList.remove('hidden');
+    else navModels.classList.add('hidden');
   }
 
   const navGov = document.getElementById('nav-governance'); // NEW ID
@@ -326,6 +337,16 @@ function renderControlPanel() {
   if (navDash) {
     if (canSeeDashboard) navDash.classList.remove('hidden');
     else navDash.classList.add('hidden');
+  }
+
+  // --- NEW: Hide entire Management Group if no children are visible ---
+  const navGroupManagement = document.getElementById('nav-group-management');
+  if (navGroupManagement) {
+    if (canSeeOrg || canSeeGovernance || canSeeDashboard) {
+      navGroupManagement.classList.remove('hidden');
+    } else {
+      navGroupManagement.classList.add('hidden');
+    }
   }
   // ----------------------------------------
 
@@ -387,21 +408,19 @@ function renderControlPanel() {
   // We prioritize: Agents (Profile) > Organization > Dashboard
   const orgTab = document.getElementById('nav-organization');
   const agentsTab = document.getElementById('nav-agents'); // "Agents" tab
+  const modelsTab = document.getElementById('nav-models'); // "Models" tab
 
   // Safety fallback logic
-  if (orgTab && orgTab.classList.contains('hidden')) {
-    if (agentsTab) agentsTab.click();
-  } else if (orgTab) {
-    // If Org tab is visible (Admin), and nothing else is active...
-    // Note: Our sidebar items use .active class just like old tabs
-    const anyActive = document.querySelector('.sidebar-item.active');
-    if (!anyActive) {
+  // If the *currently active* tab is now hidden, switch to a safe default.
+  const currentActive = document.querySelector('.sidebar-item.active');
+  let activeIsVisible = currentActive && !currentActive.classList.contains('hidden');
+
+  if (!activeIsVisible) {
+    if (agentsTab && !agentsTab.classList.contains('hidden')) {
+      agentsTab.click();
+    } else if (orgTab && !orgTab.classList.contains('hidden')) {
       orgTab.click();
     }
-  } else if (agentsTab) {
-    // Fallback if org tab totally missing
-    const anyActive = document.querySelector('.sidebar-item.active');
-    if (!anyActive) agentsTab.click();
   }
   // --------------------------------------------------
 
