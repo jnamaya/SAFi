@@ -176,7 +176,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     if (pinnedConversations.length > 0) {
         const pinnedHeader = document.createElement('h3');
-        pinnedHeader.className = 'px-2 pt-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2';
+        pinnedHeader.className = 'px-3 mt-2 mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider';
         pinnedHeader.textContent = 'Pinned Conversations';
         convoList.appendChild(pinnedHeader);
 
@@ -189,10 +189,10 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     if (unpinnedConversations.length > 0) {
         // Container for Header + New Chat
         const headerContainer = document.createElement('div');
-        headerContainer.className = 'flex items-center justify-between px-2 pt-2 mb-2 group';
+        headerContainer.className = 'flex items-center justify-between px-3 mt-6 mb-2 group';
 
         const allHeader = document.createElement('h3');
-        allHeader.className = 'text-xs font-semibold text-neutral-400 uppercase tracking-wider';
+        allHeader.className = 'text-xs font-medium text-gray-500 uppercase tracking-wider';
         allHeader.textContent = 'All Conversations';
 
         // Inline New Chat Button
@@ -221,11 +221,11 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         // Fallback: List is empty (or all pinned). Show Header + Button anyway.
         const headerContainer = document.createElement('div');
         // Add margin top if there are pinned items
-        const mt = pinnedConversations.length > 0 ? 'mt-2 border-t border-gray-100 dark:border-gray-800' : '';
-        headerContainer.className = `flex items-center justify-between px-2 pt-2 mb-2 group ${mt}`;
+        const mt = pinnedConversations.length > 0 ? 'mt-6 border-t border-gray-100 dark:border-gray-800 pt-4' : 'mt-2';
+        headerContainer.className = `flex items-center justify-between px-3 mb-2 group ${mt}`;
 
         const allHeader = document.createElement('h3');
-        allHeader.className = 'text-xs font-semibold text-neutral-400 uppercase tracking-wider';
+        allHeader.className = 'text-xs font-medium text-gray-500 uppercase tracking-wider';
         allHeader.textContent = 'All Conversations';
 
         const newChatBtn = document.createElement('button');
