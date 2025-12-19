@@ -59,9 +59,6 @@ test.
 =======
 test.pysafi_app/config.py
 
-# config files 
-safi_app/config.py
-
 # benchmarks
 /benchmarks
 
