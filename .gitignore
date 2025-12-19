@@ -13,7 +13,6 @@ safi_memory.db
 
 # Any local environment files (if you create them later)
 .env
-.env.*
 
 # Python
 __pycache__/
