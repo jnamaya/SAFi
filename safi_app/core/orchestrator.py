@@ -230,7 +230,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         user_id: str, 
         conversation_id: str,
         user_name: Optional[str] = None,
-        override_message_id: Optional[str] = None
+        override_message_id: Optional[str] = None,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         The main entrypoint for processing a user's prompt.
@@ -405,7 +406,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 "willReason": E_t, 
                 "retryMetadata": retry_metadata, 
                 "policyId": (self.profile or {}).get("policy_id"),
-                "orgId": (self.profile or {}).get("org_id"),
+                "userId": user_id,
+                "orgId": org_id or (self.profile or {}).get("org_id"),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
@@ -413,7 +415,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- 5. Success: Update and Audit ---
         db.update_message_content(message_id, a_t, audit_status="pending")
         
-        snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context }
+        snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context, "user_id": user_id, "org_id": org_id }
         
         # Pass retry_metadata to the audit thread
         self.executor.submit(self._run_audit_thread, snapshot, D_t, E_t, message_id, spirit_feedback, retry_metadata)

@@ -139,7 +139,8 @@ class BackgroundTasksMixin:
                 "retrievedContext": snapshot.get("retrieved_context", ""),
                 "retryMetadata": retry_metadata, # Added metadata
                 "policyId": (self.profile or {}).get("policy_id"),
-                "orgId": (self.profile or {}).get("org_id")
+                "orgId": snapshot.get("org_id") or (self.profile or {}).get("org_id"),
+                "userId": snapshot.get("user_id")
             }
             self._append_log(log_entry)
 

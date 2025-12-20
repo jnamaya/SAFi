@@ -54,6 +54,8 @@ def get_dashboard_token():
         payload = {
             "sub": user_id,
             "role": role,
+            "org_id": user.get('org_id'),
+            "email": user.get('email'),
             "type": "dashboard_access",
             "exp": datetime.utcnow() + timedelta(minutes=30)
         }

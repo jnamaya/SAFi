@@ -95,8 +95,9 @@ class SafiInstanceCache:
                     # Pass dynamic Governance Weight
                     prof = assemble_agent(prof, gov, governance_weight=gov_weight)
                     
-                    # CRITICAL: Stamp Policy ID on the profile for auditing
+                    # CRITICAL: Stamp Policy ID and Org ID on the profile for auditing
                     prof['policy_id'] = policy_id
+                    prof['org_id'] = p_data.get('org_id')
                 
                 instance = SAFi(
                     config=Config,
@@ -221,11 +222,13 @@ async def bot_process_prompt_endpoint():
         )
 
         # 5. Process Prompt
+        org_id = user_details.get('org_id') if user_details else None
         result = await saf_system.process_prompt(
             user_prompt, 
             user_id, 
             conversation_id,
-            user_name="Colleague"
+            user_name="Colleague",
+            org_id=org_id
         )
         
         return jsonify(result)
@@ -300,13 +303,15 @@ async def public_process_prompt_endpoint():
 
     anonymous_user_id = data['conversation_id']
     
-    if not db.get_user_details(anonymous_user_id):
+    user_details = db.get_user_details(anonymous_user_id)
+    if not user_details:
         db.upsert_user({
             "sub": anonymous_user_id,
             "name": "Public User",
             "email": f"{anonymous_user_id}@public.chat",
             "picture": "" 
         })
+        user_details = {"org_id": None}
     
     # NOTE: Public chats are less secure by design, but we still ensure consistency
     new_convo = db.create_conversation(anonymous_user_id)
@@ -318,7 +323,8 @@ async def public_process_prompt_endpoint():
         Config.CONSCIENCE_MODEL
     )
     
-    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'], user_name="Guest")
+    org_id = user_details.get('org_id')
+    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'], user_name="Guest", org_id=org_id)
     return jsonify(result)
 
 
@@ -401,12 +407,14 @@ async def process_prompt_endpoint():
     )
     
     # 3. Process
+    org_id = user_details.get('org_id')
     result = await saf_system.process_prompt(
         data['message'], 
         user_id, 
         conversation_id,
         user_name=user_name,
-        override_message_id=data.get('message_id')
+        override_message_id=data.get('message_id'),
+        org_id=org_id
     )
     return jsonify(result)
 
