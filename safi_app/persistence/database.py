@@ -1334,3 +1334,45 @@ def get_connected_providers(user_id):
     finally:
         cursor.close()
         conn.close()
+
+def cleanup_old_demo_users():
+    """
+    Deletes demo users AND their private organizations created more than 24 hours ago.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Identify Expired Demo Users and their Orgs
+        # We need to explicitly find orgs created by these users (or linked to them)
+        # Since we create a unique org per demo user, we can just grab their org_id.
+        select_sql = "SELECT id, org_id FROM users WHERE id LIKE 'demo_%' AND created_at < NOW() - INTERVAL 24 HOUR"
+        cursor.execute(select_sql)
+        expired_users = cursor.fetchall() # List of tuples (user_id, org_id)
+        
+        if not expired_users:
+            return
+
+        expired_user_ids = [u[0] for u in expired_users]
+        expired_org_ids = [u[1] for u in expired_users if u[1]] # Filter None
+        
+        # 2. Delete Users (Cascades to history)
+        if expired_user_ids:
+            format_strings = ','.join(['%s'] * len(expired_user_ids))
+            delete_users_sql = f"DELETE FROM users WHERE id IN ({format_strings})"
+            cursor.execute(delete_users_sql, tuple(expired_user_ids))
+            logging.info(f"Cleaned up {cursor.rowcount} expired demo users.")
+            
+        # 3. Delete their Organizations
+        # We only delete orgs that were gathered from these specific expiring users.
+        if expired_org_ids:
+            format_strings = ','.join(['%s'] * len(expired_org_ids))
+            delete_orgs_sql = f"DELETE FROM organizations WHERE id IN ({format_strings})"
+            cursor.execute(delete_orgs_sql, tuple(expired_org_ids))
+            logging.info(f"Cleaned up {cursor.rowcount} expired demo organizations.")
+
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Failed to cleanup demo users/orgs: {e}")
+    finally:
+        cursor.close()
+        conn.close()

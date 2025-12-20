@@ -332,6 +332,23 @@ async def process_prompt_endpoint():
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
+    # --- DEMO LIMIT ENFORCEMENT ---
+    if user_id.startswith('demo_'):
+        try:
+            demo_count = db.get_todays_prompt_count(user_id)
+            if demo_count >= 10:
+                return jsonify({
+                    "error": "Demo limit reached.",
+                    "code": "DEMO_LIMIT_REACHED"
+                }), 429
+        except Exception as e:
+            current_app.logger.error(f"Demo limit check failed: {e}")
+            # Fail safe: If we can't check, assume limit reached to prevent abuse & prompt login
+            return jsonify({
+                "error": "Demo limit reached (Verification Failed).",
+                "code": "DEMO_LIMIT_REACHED"
+            }), 429
+            
     limit = Config.DAILY_PROMPT_LIMIT
     if limit > 0:
         count = db.get_todays_prompt_count(user_id)
@@ -351,7 +368,7 @@ async def process_prompt_endpoint():
     # ----------------------------------
     # ----------------------------------
 
-    if limit > 0:
+    if limit > 0 or user_id.startswith('demo_'):
         db.record_prompt_usage(user_id)
     
     # 1. Resolve User Configuration

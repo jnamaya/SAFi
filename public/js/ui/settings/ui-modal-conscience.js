@@ -125,11 +125,13 @@ function renderScoreAndTrend(payload) {
                 </svg>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center md:text-left">Recent score history (${scores.length} turns)</p>
                 
+                ${payload.user_role === 'member' ? '' : `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
                     <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-500 hover:underline">
                         View Full Dashboard &rarr;
                     </a>
                 </p>
+                `}
             </div>
         `;
     }
@@ -221,7 +223,7 @@ function renderLedgerItem(item, key) {
     return `
         <div class="bg-white dark:bg-gray-800/60 p-4 rounded-lg border ${borderColor}">
             <div class="flex flex-col md:flex-row justify-between md:items-center gap-2 mb-2">
-                <div class="font-semibold text-gray-800 dark:text-gray-100">${item.value}</div>
+                <div class="font-semibold text-gray-800 dark:text-gray-100">${item.value || item.name || item.Value || 'Unknown Value'}</div>
                 ${confidenceDisplayHtml}
             </div>
             <div class="prose prose-sm text-gray-600 dark:text-gray-400 max-w-none">

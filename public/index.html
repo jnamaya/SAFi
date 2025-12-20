@@ -101,6 +101,18 @@
               Sign in with Microsoft
             </a>
 
+            <!-- Demo Login Button -->
+            <a href="/api/login/demo" id="login-demo-button"
+              class="mt-4 flex items-center justify-center gap-3 bg-white dark:bg-black border border-neutral-300 dark:border-neutral-700 font-medium text-neutral-600 dark:text-neutral-400 px-6 py-3 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-900 transition w-full max-w-xs shrink-0 no-underline text-current">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              Try Demo (Admin)
+            </a>
+
             <a href="https://selfalignmentframework.com/safi/" target="_blank" rel="noopener noreferrer"
               class="mt-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 hover:underline transition-colors shrink-0">
               Learn More About SAFi
@@ -560,6 +572,36 @@
         class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
       <button id="confirm-delete-convo-btn" type="button"
         class="px-4 py-2 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-500">Delete</button>
+    </div>
+  </div>
+  </div>
+
+  <div id="demo-limit-modal" role="dialog" aria-modal="true" aria-labelledby="demo-limit-modal-title"
+    class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-full">
+        <svg class="w-6 h-6 text-yellow-600 dark:text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+          </path>
+        </svg>
+      </div>
+      <h3 id="demo-limit-modal-title" class="text-lg font-bold">Please Sign In</h3>
+    </div>
+    <p class="text-base text-neutral-600 dark:text-neutral-300 mb-6 leading-relaxed">
+      You've reached the limit of <span class="font-semibold text-black dark:text-white">10 free prompts</span>.
+      <br><br>
+      To continue chatting, please sign in. It's free and unlimited!
+    </p>
+    <div class="flex flex-col sm:flex-row justify-end gap-3 mt-4">
+      <button id="close-demo-limit-btn" type="button"
+        class="px-4 py-2.5 rounded-lg font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+        Cancel
+      </button>
+      <button id="demo-limit-signin-btn" type="button"
+        class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-center shadow-lg hover:shadow-xl transition-all">
+        Sign In
+      </button>
     </div>
   </div>
 

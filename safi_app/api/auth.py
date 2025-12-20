@@ -15,6 +15,7 @@ import requests
 import base64
 import os
 import json
+import uuid
 from datetime import datetime, timedelta
 from ..extensions import oauth
 from ..persistence import database as db
@@ -126,6 +127,87 @@ def callback():
     except Exception as e:
         current_app.logger.error(f"Web callback error: {str(e)}", exc_info=True)
         return redirect('/?error=auth_failed')
+
+
+# =================================================================
+# DEMO LOGIN (Auditor Role, Disposable)
+# =================================================================
+
+@auth_bp.route('/login/demo')
+def login_demo():
+    """
+    [GET /api/login/demo]
+    Creates 'Auditor' account for demo purposes.
+    - RESUMABLE: Checks for 'safi_demo_id' cookie to reuse existing session.
+    - CLEANUP: Triggers cleanup of old accounts.
+    """
+    try:
+        # 1. Lazy Cleanup
+        db.cleanup_old_demo_users()
+        
+        # 2. Check for Existing Demo Session (Resumable)
+        existing_demo_id = request.cookies.get('safi_demo_id')
+        user_to_login = None
+        
+        if existing_demo_id:
+            # Verify if this user still exists in DB
+            existing_user = db.get_user_details(existing_demo_id)
+            if existing_user:
+                current_app.logger.info(f"Resuming demo session for {existing_demo_id}")
+                user_to_login = existing_user
+                
+        # 3. Create New User if needed
+        if not user_to_login:
+            demo_id = f"demo_{uuid.uuid4()}"
+            
+            # Create Private Sandbox Organization
+            # We use the last 4 chars of ID to make it readable but unique
+            org_name = f"Contoso ({demo_id[-4:]})"
+            org_id = db.create_organization(org_name)
+            
+            user_info = {
+                'sub': demo_id,
+                'id': demo_id,
+                'email': f"{demo_id}@demo.local",
+                'name': "Demo Admin",
+                'picture': "", 
+                'role': 'admin',
+                'org_id': org_id
+            }
+            db.upsert_user(user_info)
+            
+            # Initialize Profile
+            default_profile = Config.DEFAULT_PROFILE
+            db.update_user_profile(demo_id, default_profile)
+            
+            # Prepare for session
+            user_to_login = user_info
+            user_to_login['active_profile'] = default_profile
+            
+            current_app.logger.info(f"Created new demo user {demo_id}")
+
+        # 4. Create Session
+        session_user = {
+            'id': user_to_login['id'],
+            'email': user_to_login.get('email'),
+            'name': user_to_login.get('name'),
+            'active_profile': user_to_login.get('active_profile', Config.DEFAULT_PROFILE),
+            'role': user_to_login.get('role', 'admin'),
+            'org_id': user_to_login.get('org_id'),
+            'is_demo': True 
+        }
+        session['user'] = session_user
+        session['user_id'] = user_to_login['id']
+        
+        # 5. Return Response with Cookie
+        resp = redirect('/')
+        # Set cookie for 24 hours (86400 seconds)
+        resp.set_cookie('safi_demo_id', user_to_login['id'], max_age=86400, httponly=True, samesite='Lax')
+        return resp
+        
+    except Exception as e:
+        current_app.logger.error(f"Demo login failed: {str(e)}", exc_info=True)
+        return redirect('/?error=demo_failed')
 
 
 # =================================================================

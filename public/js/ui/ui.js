@@ -59,7 +59,12 @@ export function _initElements() {
 
     deleteConvoModal: document.getElementById('delete-convo-modal'),
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
+    deleteConvoModal: document.getElementById('delete-convo-modal'),
+    confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
     cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
+
+    demoLimitModal: document.getElementById('demo-limit-modal'),
+    closeDemoLimitBtn: document.getElementById('close-demo-limit-btn'),
 
     activeProfileChip: document.getElementById('active-profile-chip'),
     activeProfileChipMobile: document.getElementById('active-profile-chip-mobile'),
@@ -273,6 +278,11 @@ export function showModal(kind, data) {
   else if (kind === 'profile') {
     elements.profileModal.classList.remove('hidden');
   }
+  else if (kind === 'demo_limit') {
+    elements.demoLimitModal.classList.remove('hidden');
+    // Ensure the close button works
+    elements.closeDemoLimitBtn.onclick = closeModal;
+  }
 
   elements.modalBackdrop.classList.remove('hidden');
 }
@@ -284,6 +294,7 @@ export function closeModal() {
   elements.deleteAccountModal.classList.add('hidden');
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
+  if (elements.demoLimitModal) elements.demoLimitModal.classList.add('hidden');
 
   if (elements.profileModal) {
     elements.profileModal.classList.add('hidden');
