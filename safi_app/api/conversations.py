@@ -209,8 +209,6 @@ async def bot_process_prompt_endpoint():
         selected_will = Config.WILL_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
 
-        if persona_key == "accion_admin":
-            selected_intellect = "claude-haiku-4-5-20251001" 
         
         # 4. Get Safi Instance (Cached) with Policy Injection
         saf_system = global_safi_cache.get_or_create(
