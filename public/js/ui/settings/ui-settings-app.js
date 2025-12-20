@@ -36,7 +36,7 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
             
             <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mt-8 mb-2">Account</h4>
             <div class="space-y-3">
-                <button id="cp-logout-btn" class="w-full text-left px-4 py-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
+                <button id="cp-logout-btn" data-tab="logout" class="w-full text-left px-4 py-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
                     Sign Out
                 </button>
                 <button id="cp-delete-account-btn" class="w-full text-left px-4 py-3 text-sm font-medium text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg border border-red-300 dark:border-red-700 transition-colors">
@@ -62,7 +62,6 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
         });
     });
 
-    document.getElementById('cp-logout-btn').addEventListener('click', onLogout);
     document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
 
     // Fetch and render connected accounts

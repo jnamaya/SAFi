@@ -607,10 +607,6 @@ function attachEventListeners() {
   }
 
   // --- Control Panel Logout Button ---
-  const navLogoutBtn = document.getElementById('nav-logout');
-  if (navLogoutBtn) {
-    navLogoutBtn.addEventListener('click', handleLogout);
-  }
 
   // --- Control Panel Mobile Menu (Delegated for robustness) ---
   // Using delegation to ensure it works even if elements aren't immediately found/bound
@@ -748,6 +744,13 @@ function attachEventListeners() {
     const convoMenuButton = event.target.closest('.convo-menu-button');
     if (!convoMenuButton) {
       ui.closeAllConvoMenus();
+    }
+
+    // --- NEW: Delegated Logout Handler (Mobile & Desktop) ---
+    const logoutBtn = event.target.closest('[data-tab="logout"]');
+    if (logoutBtn) {
+      event.preventDefault();
+      handleLogout();
     }
   });
 
