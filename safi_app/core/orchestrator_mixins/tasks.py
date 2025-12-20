@@ -137,7 +137,9 @@ class BackgroundTasksMixin:
                 "memorySummary": snapshot.get("memory_summary") or "",
                 "spiritFeedback": spirit_feedback,
                 "retrievedContext": snapshot.get("retrieved_context", ""),
-                "retryMetadata": retry_metadata # Added metadata
+                "retryMetadata": retry_metadata, # Added metadata
+                "policyId": (self.profile or {}).get("policy_id"),
+                "orgId": (self.profile or {}).get("org_id")
             }
             self._append_log(log_entry)
 

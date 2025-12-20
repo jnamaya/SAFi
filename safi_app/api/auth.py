@@ -23,8 +23,49 @@ from ..config import Config
 from ..core.values import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
 from google_auth_oauthlib.flow import Flow # For Tool Auth
+import jwt
 
 auth_bp = Blueprint('auth', __name__)
+
+# =================================================================
+# DASHBOARD AUTHENTICATION (Token Issuance)
+# =================================================================
+
+@auth_bp.route('/auth/dashboard-token', methods=['POST'])
+def get_dashboard_token():
+    """
+    Generates a short-lived JWT for accessing the Streamlit Dashboard.
+    RBAC: Only 'admin', 'editor', 'auditor' roles allowed.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    user = db.get_user_details(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    role = user.get('role', 'member')
+    if role not in ['admin', 'editor', 'auditor']:
+        return jsonify({"error": "Access denied: Insufficient permissions."}), 403
+
+    try:
+        # Generate Token (5 minute expiry)
+        payload = {
+            "sub": user_id,
+            "role": role,
+            "type": "dashboard_access",
+            "exp": datetime.utcnow() + timedelta(minutes=30)
+        }
+        
+        token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
+        if isinstance(token, bytes):
+            token = token.decode('utf-8')
+            
+        return jsonify({"token": token})
+    except Exception as e:
+        current_app.logger.error(f"Token generation failed: {e}")
+        return jsonify({"error": "Internal error generating token"}), 500
 
 # =================================================================
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
