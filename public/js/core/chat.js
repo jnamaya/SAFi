@@ -613,7 +613,7 @@ export async function sendMessage(activeProfileData, user) {
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     const aiMessageId = generateUUID();
-    pollForAuditResults(aiMessageId); // Start polling for reasoning immediately
+    pollForAuditResults(aiMessageId, user); // Start polling for reasoning immediately
 
     try {
         // PASS SIGNAL AND MESSAGE_ID HERE
@@ -627,6 +627,7 @@ export async function sendMessage(activeProfileData, user) {
             // Remove user message from display/cache as it will be resent on flush.
             const userMsgElement = document.querySelector(`[data-message-id="${userMessageId}"]`);
             if (userMsgElement) userMsgElement.remove();
+            cancelPolling(aiMessageId); // FIX: Cancel polling if queued
             return;
         }
 
@@ -726,15 +727,34 @@ export async function sendMessage(activeProfileData, user) {
             // Handled by the abort logic at top of function? No, confusing.
             // If we aborted, we probably already handled UI cleanup.
             // BUT, fetch throws AbortError. So we land here.
-            console.log('Fetch aborted in catch block.');
+            // BUT, fetch throws AbortError. So we land here.
+            cancelPolling(aiMessageId); // FIX: Cancel polling on abort
             return; // Exit cleanly
         }
 
-        uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
+        // STOP ZOMBIE POLLING
+        if (typeof cancelPolling === 'function') cancelPolling(aiMessageId);
+
+        // FIX: Ensure loading indicator is removed on error
+        if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
+        ui.clearLoadingInterval();
+
+        // Check for 429 status OR error message
+        if (error.status === 429 || (error.message && error.message.includes('DEMO_LIMIT_REACHED'))) {
+            ui.showModal('demo_limit');
+            const failedMsg = document.querySelector(`[data-message-id="${userMessageId}"]`);
+            if (failedMsg) failedMsg.remove();
+        } else {
+            console.error("Message send failed:", error); // Keep log
+            uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
+            ui.showToast(error.message || 'An unknown error occurred.', 'error');
+        }
+
         ui.elements.messageInput.value = originalMessage;
         autoSize();
-        ui.showToast(error.message || 'An unknown error occurred.', 'error');
     } finally {
+        // Double check loading indicator removal in case of other exit paths (though catch covers errors)
+        if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
         // Reset Button Style
         buttonIcon.classList.remove('hidden');
         buttonIcon.innerHTML = `
@@ -761,74 +781,83 @@ export async function sendMessage(activeProfileData, user) {
     }
 }
 
-function pollForAuditResults(messageId, maxAttempts = 100, interval = 2000) {
+const pollingRegistry = {};
+
+function cancelPolling(messageId) {
+    if (pollingRegistry[messageId]) {
+        pollingRegistry[messageId].cancelled = true;
+    }
+}
+
+function pollForAuditResults(messageId, user, maxAttempts = 100, interval = 2000) {
     let attempts = 0;
+    pollingRegistry[messageId] = { cancelled: false };
 
     const executePoll = async (resolve, reject) => {
+        // CHECK CANCELLATION
+        if (pollingRegistry[messageId]?.cancelled) {
+            console.log(`Polling cancelled for ${messageId}`);
+            delete pollingRegistry[messageId]; // Cleanup
+            return;
+        }
+
         if (!currentConversationId) {
             // Polling stopped, conversation switched/deleted
             return;
         }
 
         attempts++;
-
         try {
             const auditResult = await api.fetchAuditResult(messageId);
 
-            // --- START FIX: Check for ledger OR suggestions ---
-
             // --- NEW: Live Reasoning Update ---
-            // --- NEW: Live Reasoning Update ---
-            if (auditResult.reasoning_log) {
+            if (auditResult && auditResult.reasoning_log) {
                 let log = auditResult.reasoning_log;
-                if (typeof log === 'string') log = JSON.parse(log);
-
-                if (log.length > 0) {
-                    const lastStep = log[log.length - 1].step;
-                    uiMessages.updateThinkingStatus(lastStep);
-                }
+                try {
+                    if (typeof log === 'string') log = JSON.parse(log);
+                    if (Array.isArray(log) && log.length > 0) {
+                        const lastStep = log[log.length - 1].step;
+                        uiMessages.updateThinkingStatus(lastStep);
+                    }
+                } catch (e) { }
             }
 
-            // Check if the auditResult is valid and has *something* new
-            const rawLedger = auditResult?.ledger;
-            const rawSuggestions = auditResult?.suggested_prompts;
+            // Should have at least one meaningful field: ledger, suggestions, or spirit score
+            // FIX: Check for both key formats (API vs DB)
+            const rawLedger = auditResult.conscienceLedger || auditResult.ledger;
+            const rawSuggestions = auditResult.suggestedPrompts || auditResult.suggested_prompts;
+            const rawValues = auditResult.profileValues || auditResult.values;
 
-            const hasLedger = rawLedger && (Array.isArray(rawLedger) || typeof rawLedger === 'string');
-            const hasSuggestions = rawSuggestions && (Array.isArray(rawSuggestions) || typeof rawSuggestions === 'string');
-
-            // We update the UI if the audit is complete and has *either* a ledger *or* suggestions *or* a spirit score
+            const hasLedger = rawLedger && rawLedger !== '[]';
+            const hasSuggestions = rawSuggestions && rawSuggestions.length > 0;
             const hasScore = auditResult.spirit_score !== null && auditResult.spirit_score !== undefined;
 
-            if (auditResult && auditResult.status === 'complete' && (hasLedger || hasSuggestions || hasScore)) {
+            if (auditResult && (auditResult.status === 'complete' || hasLedger || hasSuggestions || hasScore)) {
 
-                // Process Ledger (if it exists)
-                let parsedLedger = []; // Default to empty
-                if (rawLedger) {
-                    if (typeof rawLedger === 'string') {
-                        try { parsedLedger = JSON.parse(rawLedger); } catch (e) { parsedLedger = []; }
-                    } else if (Array.isArray(rawLedger)) {
-                        parsedLedger = rawLedger;
-                    }
+                // --- Safe Parsing ---
+                let parsedLedger = [];
+                try {
+                    parsedLedger = typeof rawLedger === 'string'
+                        ? JSON.parse(rawLedger)
+                        : (rawLedger || []);
+                } catch (e) {
+                    // console.warn('Failed to parse ledger from audit', e);
                 }
 
-                // --- THIS IS THE FIX ---
-                // Process Suggestions (if they exist)
-                let parsedSuggestions = []; // Default to empty
-                if (rawSuggestions) {
-                    if (typeof rawSuggestions === 'string') {
-                        try { parsedSuggestions = JSON.parse(rawSuggestions); } catch (e) { parsedSuggestions = []; }
-                    } else if (Array.isArray(rawSuggestions)) {
-                        parsedSuggestions = rawSuggestions;
-                    }
+                let parsedSuggestions = [];
+                try {
+                    parsedSuggestions = typeof rawSuggestions === 'string'
+                        ? JSON.parse(rawSuggestions)
+                        : (rawSuggestions || []);
+                } catch (e) {
+                    // console.warn('Failed to parse suggestions', e);
                 }
-                // --- END FIX ---
 
-
-                // 1. Update local cache with *all* audit data
+                // 1. Update history cache so if we navigate away and back, it's there
                 const history = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = history.findIndex(m => m.message_id === messageId);
-                if (msgIndex > -1) {
 
+                if (msgIndex > -1) {
                     history[msgIndex] = {
                         ...history[msgIndex], // Keeps old `content`
                         ...auditResult,       // Adds new audit data (ledger, score, etc.)
@@ -841,36 +870,38 @@ function pollForAuditResults(messageId, maxAttempts = 100, interval = 2000) {
                     await cache.saveConvoHistory(currentConversationId, history);
                 }
 
-                // 2. Load updated history for accurate trend line
-                const updatedHistory = await cache.loadConvoHistory(currentConversationId);
+                // 2. Use the in-memory history for trend line (avoids stale cache if save failed)
+                const updatedHistory = history; // We just updated this object above
 
-                // --- THIS IS THE FIX ---
                 // Filter out null/undefined scores *before* passing to the trend line.
                 const spiritScoresHistory = updatedHistory
                     .map(t => t.spirit_score)
                     .filter(s => s !== null && s !== undefined);
-                // --- END FIX ---
 
                 // 3. Build the payload for the UI
                 const payload = {
-                    ...auditResult, // This will include spirit_score, note
+                    ...auditResult, // This will include spirit_score
                     ledger: parsedLedger, // Pass parsed array
                     suggested_prompts: parsedSuggestions, // Pass parsed array
                     spirit_scores_history: spiritScoresHistory,
-                    message_id: messageId // Ensure message_id is in payload
+                    message_id: messageId, // Ensure message_id is in payload
+                    user_role: user?.role // Pass user role for UI permission checks
                 };
 
-                // 4. Update the UI
+                // 4. Update the UI - Use captured history in closure to avoid stale cache reads
                 uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
-                    // --- FIX: Fetch fresh history on click ---
-                    const freshHistory = await cache.loadConvoHistory(currentConversationId);
-                    const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
+                    // Use the in-memory history we already have.
+                    // If we re-fetched from cache, we might get old data if the save failed (Quota Exceeded).
+                    const msgIndex = updatedHistory.findIndex(m => m.message_id === p.message_id);
 
                     let freshScores = [];
                     if (msgIndex > -1) {
-                        freshScores = freshHistory.slice(0, msgIndex + 1)
+                        freshScores = updatedHistory.slice(0, msgIndex + 1)
                             .map(t => t.spirit_score)
                             .filter(s => s !== null && s !== undefined);
+                    } else {
+                        // Fallback: Use current payload history + current score
+                        freshScores = [...spiritScoresHistory];
                     }
 
                     ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
@@ -885,16 +916,23 @@ function pollForAuditResults(messageId, maxAttempts = 100, interval = 2000) {
         } catch (error) {
             const msg = error.message || '';
             const status = error.status;
+            // Retry on 404/401 as it might be transient/not ready
             if (status === 404 || status === 401 || msg.includes('not_found') || msg.includes('404')) {
-                // Not ready yet or transient error, retry
                 setTimeout(() => executePoll(resolve, reject), interval);
             } else {
                 console.error(`Error polling for audit on ${messageId}:`, error);
+                reject(error);
             }
         }
     };
 
-    return new Promise(executePoll);
+    return new Promise((resolve, reject) => {
+        // DELAY FIRST POLL to avoid race condition with prompt failing
+        setTimeout(() => {
+            if (pollingRegistry[messageId]?.cancelled) return;
+            executePoll(resolve, reject);
+        }, 500);
+    });
 }
 
 

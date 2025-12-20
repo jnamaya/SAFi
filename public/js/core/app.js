@@ -245,6 +245,7 @@ async function checkLoginStatus() {
 // --- LOGIC HANDLERS ---
 
 async function handleLogout() {
+  console.log('[LOGOUT] Handle logout triggered.');
   hapticImpactLight();
   if (isNative && GoogleAuth) {
     try { await GoogleAuth.signOut(); } catch (e) { console.warn('Google signOut error:', e); }
@@ -259,7 +260,10 @@ async function handleLogout() {
   localStorage.removeItem('theme'); // Reset theme
   await api.clearAuthToken(); // Clear local token
 
-  window.location.reload(); // Reload the app
+  console.log('[LOGOUT] Local state cleared. Reloading...');
+
+  // FIX: Force reload processing to clear any memory states
+  setTimeout(() => window.location.reload(), 100);
 }
 
 async function handleDeleteAccount() {
@@ -737,6 +741,8 @@ function attachEventListeners() {
   ui.elements.confirmDeleteConvoBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmDelete(activeProfileData, user); });
 
   // --- Global Click Listeners ---
+  document.getElementById('demo-limit-signin-btn')?.addEventListener('click', handleLogout);
+
   document.addEventListener('click', (event) => {
     // Close convo menu if clicking outside
     const convoMenuButton = event.target.closest('.convo-menu-button');

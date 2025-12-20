@@ -196,7 +196,9 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
       if (!res.ok) {
         if (res.status >= 400 && res.status < 500) {
           const msg = await res.text();
-          throw new Error(msg || res.statusText);
+          const err = new Error(msg || res.statusText);
+          err.status = res.status; // Attach status code!
+          throw err;
         }
 
         // Queue on 5xx errors or network failures
@@ -208,6 +210,10 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
       // AbortError should NOT be queued?
       if (e.name === 'AbortError') {
         throw e; // Propagate abort up
+      }
+      // CRITICAL FIX: Do not queue client errors (4xx)
+      if (e.status && e.status >= 400 && e.status < 500) {
+        throw e;
       }
       console.warn("Fetch failed, queuing:", e);
       await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
