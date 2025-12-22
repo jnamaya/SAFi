@@ -300,10 +300,23 @@ function attachModalEventListeners(container, payload) {
             // 1. Close this modal
             ui.closeModal();
             // 2. Hide the chat view
+            ui.elements.chatView.style.display = 'none';
             ui.elements.chatView.classList.add('hidden');
+
             // 3. Show the control panel
             ui.elements.controlPanelView.classList.remove('hidden');
-            // 4. Programmatically click the dashboard tab
+
+            // 4. HIDE Sidebar entirely & Fix Layout (Match app.js Control Panel logic)
+            ui.closeSidebar();
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.add('hidden');
+                sidebar.classList.remove('md:flex');
+            }
+            const wrapper = document.getElementById('main-layout-wrapper');
+            if (wrapper) wrapper.classList.remove('md:ml-72');
+
+            // 5. Programmatically click the dashboard tab
             if (ui.elements.cpNavDashboard) {
                 ui.elements.cpNavDashboard.click();
             }
