@@ -1217,3 +1217,24 @@ button[type="submit"] {
 .dark .input-scrollbar::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.2);
 }
+
+/* --- Sidebar Active State (Control Panel) --- */
+/* --- Sidebar Active State (Control Panel) --- */
+.sidebar-item.active {
+  background-color: #dddddd;
+  color: #000000;
+  border-radius: 0.5rem;
+}
+
+.dark .sidebar-item.active {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.sidebar-item.active svg {
+  color: #000000;
+}
+
+.dark .sidebar-item.active svg {
+  color: #000000;
+}

@@ -651,6 +651,7 @@ function attachEventListeners() {
     btn.addEventListener('click', () => {
       hapticImpactLight();
       ui.elements.controlPanelView.classList.add('hidden');
+      ui.elements.chatView.style.display = '';
       ui.elements.chatView.classList.remove('hidden');
 
       // SHOW Sidebar Logic (Restore Desktop)
