@@ -60,6 +60,7 @@ def get_dashboard_token():
             "exp": datetime.utcnow() + timedelta(minutes=30)
         }
         
+        token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
         if isinstance(token, bytes):
             token = token.decode('utf-8')
             
@@ -187,8 +188,11 @@ def login_demo():
     - CLEANUP: Triggers cleanup of old accounts.
     """
     try:
-        # 1. Lazy Cleanup
-        db.cleanup_old_demo_users()
+        # 1. Lazy Cleanup (Probabilistic: 5% chance)
+        # Prevents "thundering herd" where every login triggers a DB-heavy cleanup
+        import random
+        if random.random() < 0.05:
+            db.cleanup_old_demo_users()
         
         # 2. Check for Existing Demo Session (Resumable)
         existing_demo_id = request.cookies.get('safi_demo_id')

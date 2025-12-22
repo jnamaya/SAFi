@@ -50,7 +50,8 @@ class Config:
 
     # --- Session Security ---
     # FIX: Automatically enforce Secure cookies if the Base URL is HTTPS.
-    SESSION_COOKIE_SECURE = WEB_BASE_URL.startswith("https")
+    # Allow override via environment variable for local testing (HTTP)
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true" and WEB_BASE_URL.startswith("https")
     
     SESSION_COOKIE_NAME = 'safi_session'
     SESSION_COOKIE_HTTPONLY = True
