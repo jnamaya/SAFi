@@ -60,11 +60,13 @@ def get_dashboard_token():
             "exp": datetime.utcnow() + timedelta(minutes=30)
         }
         
-        token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
         if isinstance(token, bytes):
             token = token.decode('utf-8')
             
-        return jsonify({"token": token})
+        return jsonify({
+            "token": token,
+            "url": Config.DASHBOARD_URL
+        })
     except Exception as e:
         current_app.logger.error(f"Token generation failed: {e}")
         return jsonify({"error": "Internal error generating token"}), 500

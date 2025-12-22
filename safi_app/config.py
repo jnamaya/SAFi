@@ -45,6 +45,9 @@ class Config:
     # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"
 
+    # 4. External Services URLs
+    DASHBOARD_URL = os.environ.get("SAFI_DASHBOARD_URL")
+
     # --- Session Security ---
     # FIX: Automatically enforce Secure cookies if the Base URL is HTTPS.
     SESSION_COOKIE_SECURE = WEB_BASE_URL.startswith("https")
