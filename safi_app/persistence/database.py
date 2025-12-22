@@ -23,7 +23,7 @@ def get_db_connection():
             logging.info("Connection pool not found. Attempting to create a new one...")
             db_pool = mysql.connector.pooling.MySQLConnectionPool(
                 pool_name="safi_pool",
-                pool_size=20,
+                pool_size=32,
                 host=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
@@ -1358,8 +1358,30 @@ def cleanup_old_demo_users():
         # 2. Delete Users (Cascades to history)
         if expired_user_ids:
             format_strings = ','.join(['%s'] * len(expired_user_ids))
+            tuple_ids = tuple(expired_user_ids)
+            
+            # --- MANUALLY DELETE DEPENDENCIES TO PREVENT FK ERRORS ---
+            # Even if CASCADE is set, strict SQL modes or missing permissions can block it.
+            
+            # A. Conversations (Cascades to chat_history usually, but good to be sure)
+            cursor.execute(f"DELETE FROM conversations WHERE user_id IN ({format_strings})", tuple_ids)
+            
+            # B. Prompt Usage
+            cursor.execute(f"DELETE FROM prompt_usage WHERE user_id IN ({format_strings})", tuple_ids)
+            
+            # C. OAuth Tokens
+            cursor.execute(f"DELETE FROM oauth_tokens WHERE user_id IN ({format_strings})", tuple_ids)
+
+            # D. User Profiles
+            cursor.execute(f"DELETE FROM user_profiles WHERE user_id IN ({format_strings})", tuple_ids)
+            
+            # E. Agents (Created by these users)
+            cursor.execute(f"DELETE FROM agents WHERE created_by IN ({format_strings})", tuple_ids)
+
+            # ---------------------------------------------------------
+
             delete_users_sql = f"DELETE FROM users WHERE id IN ({format_strings})"
-            cursor.execute(delete_users_sql, tuple(expired_user_ids))
+            cursor.execute(delete_users_sql, tuple_ids)
             logging.info(f"Cleaned up {cursor.rowcount} expired demo users.")
             
         # 3. Delete their Organizations

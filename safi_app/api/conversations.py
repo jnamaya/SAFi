@@ -405,16 +405,22 @@ async def process_prompt_endpoint():
     )
     
     # 3. Process
-    org_id = user_details.get('org_id')
-    result = await saf_system.process_prompt(
-        data['message'], 
-        user_id, 
-        conversation_id,
-        user_name=user_name,
-        override_message_id=data.get('message_id'),
-        org_id=org_id
-    )
-    return jsonify(result)
+    # 3. Process
+    try:
+        org_id = user_details.get('org_id')
+        result = await saf_system.process_prompt(
+            data['message'], 
+            user_id, 
+            conversation_id,
+            user_name=user_name,
+            override_message_id=data.get('message_id'),
+            org_id=org_id
+        )
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        current_app.logger.error(f"Process Prompt Failed: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Internal Error: {str(e)}", "trace": traceback.format_exc()}), 500
 
 
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
