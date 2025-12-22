@@ -21,7 +21,7 @@ export async function renderSettingsDashboardTab() {
         <div class="flex items-center justify-center w-full h-full text-neutral-500">
             <div class="flex flex-col items-center gap-2">
                 <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-8 w-8"></div>
-                <span>Securing connection to dashboard...</span>
+                <span>Securing connection to Audit Hub...</span>
             </div>
         </div>
     `;
@@ -47,7 +47,7 @@ export async function renderSettingsDashboardTab() {
         const iframe = document.createElement('iframe');
         iframe.src = `https://dashboard.selfalignmentframework.com/?embed=true&token=${encodeURIComponent(result.token)}`;
         iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0";
-        iframe.title = "SAFi Dashboard";
+        iframe.title = "SAFi Audit Hub";
         iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
 
         iframeContainer.appendChild(iframe);

@@ -388,7 +388,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     E_t = E_t_retry
                 else:
                     self.log.info(f"Reflexion Retry Failed. Still blocked. Reason: {E_t_retry}")
-                    E_t = f"Original violation: {E_t}. Retry violation: {E_t_retry}"
+                    E_t = f"{E_t} Additionally: {E_t_retry}"
             else:
                 self.log.warning("Reflexion Retry failed to generate text.")
 

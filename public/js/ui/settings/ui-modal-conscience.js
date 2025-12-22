@@ -128,7 +128,7 @@ function renderScoreAndTrend(payload) {
                 ${payload.user_role === 'member' ? '' : `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
                     <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-500 hover:underline">
-                        View Full Dashboard &rarr;
+                        View Full Audit Hub &rarr;
                     </a>
                 </p>
                 `}
