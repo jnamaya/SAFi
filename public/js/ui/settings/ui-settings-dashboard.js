@@ -45,7 +45,15 @@ export async function renderSettingsDashboardTab() {
         iframeContainer.className = "w-full flex-1 relative min-h-0";
 
         const iframe = document.createElement('iframe');
-        iframe.src = `https://dashboard.selfalignmentframework.com/?embed=true&token=${encodeURIComponent(result.token)}`;
+        // Use URL from backend (SAFI_DASHBOARD_URL)
+        const dashboardUrl = result.url;
+
+        if (!dashboardUrl) {
+            throw new Error("Dashboard URL not configured");
+        }
+
+        // Ensure we handle trailing slashes gracefully-ish (browser handles // fine)
+        iframe.src = `${dashboardUrl}/?embed=true&token=${encodeURIComponent(result.token)}`;
         iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0";
         iframe.title = "SAFi Audit Hub";
         iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
