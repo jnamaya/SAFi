@@ -10,7 +10,7 @@ export function setupConscienceModalContent(payload) {
     if (!container) return;
     container.innerHTML = ''; // Clear previous content
 
-    const profileName = payload.profile ? `<strong>${payload.profile}</strong>` : 'the current';
+    const profileName = payload.profile ? `<strong>${payload.profile}</strong>` : 'current';
 
     // 1. Group ledger items
     const ledger = payload.ledger || [];
@@ -27,7 +27,7 @@ export function setupConscienceModalContent(payload) {
     // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
         <p class="text-base text-gray-600 dark:text-gray-300 mb-6">
-            This response was shaped by the ${profileName} ethical profile. Here’s a breakdown of the reasoning:
+            This response aligns with the ${profileName} profile and organizational values. Here’s the reasoning breakdown:
         </p>
         
         ${renderScoreAndTrend(payload)}

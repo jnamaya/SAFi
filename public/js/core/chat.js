@@ -637,7 +637,16 @@ export async function sendMessage(activeProfileData, user) {
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
         const messageId = initialResponse.messageId || aiMessageId;
-        const profileName = initialResponse.activeProfile || activeProfileData.name || null;
+        // Resolve human-readable profile name
+        let profileName = initialResponse.activeProfile;
+        // If the returned profile matches the current active profile key, use the readable name
+        if (activeProfileData && activeProfileData.key === profileName) {
+            profileName = activeProfileData.name;
+        }
+        // Fallback if initialResponse.activeProfile was null
+        if (!profileName && activeProfileData) {
+            profileName = activeProfileData.name;
+        }
         const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
         // --- END BUG FIX ---
