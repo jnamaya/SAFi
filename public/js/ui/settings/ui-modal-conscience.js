@@ -27,7 +27,7 @@ export function setupConscienceModalContent(payload) {
     // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
         <p class="text-base text-gray-600 dark:text-gray-300 mb-6">
-            This response aligns with the ${profileName} profile and organizational values. Here’s the reasoning breakdown:
+            Audit Report: Verification that this response complies with both the ${profileName} ethical and organizational safety rules & values.
         </p>
         
         ${renderScoreAndTrend(payload)}
@@ -85,7 +85,7 @@ function renderScoreAndTrend(payload) {
                 </div>
             </div>
             <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200">Alignment Score</h4>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center max-w-[180px]">Reflects alignment with the active value set.</p>
+
         </div>
     `;
 
@@ -128,7 +128,7 @@ function renderScoreAndTrend(payload) {
                 ${payload.user_role === 'member' ? '' : `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
                     <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-500 hover:underline">
-                        View Full Audit Hub &rarr;
+                        View Full Audit Report &rarr;
                     </a>
                 </p>
                 `}
