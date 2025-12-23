@@ -35,7 +35,7 @@ export function renderIntellectStep(container, agentData, availableModels) {
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-instructions" class="w-full h-40 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${agentData.instructions}</textarea>
+                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${agentData.instructions}</textarea>
             </div>
 
             <div>
@@ -49,13 +49,10 @@ export function renderIntellectStep(container, agentData, availableModels) {
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-style" class="w-full h-24 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${agentData.style}</textarea>
+                <textarea id="wiz-style" class="w-full h-40 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${agentData.style}</textarea>
             </div>
-
-            <div class="mt-6 pt-6 border-t border-gray-200 dark:border-neutral-700">
-                <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Capabilities</label>
-                <div id="intellect-tools-container">Loading...</div>
-            </div>
+            
+            <!-- Capabilities removed as requested -->
         </div>
     `;
 

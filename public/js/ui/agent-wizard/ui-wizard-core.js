@@ -176,7 +176,7 @@ function ensureWizardInlineExists() {
             </div>
 
             <!-- Content Area - Scrollable -->
-            <div id="wizard-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-5xl mx-auto w-full"></div>
+            <div id="wizard-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-7xl mx-auto w-full"></div>
 
             <!-- Footer -->
             <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
