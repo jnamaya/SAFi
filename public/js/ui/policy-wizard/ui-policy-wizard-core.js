@@ -3,13 +3,14 @@ import * as ui from '../ui.js';
 
 import { renderDefinitionStep, validateDefinitionStep } from './ui-policy-wizard-step1.js';
 import { renderConstitutionStep, validateConstitutionStep } from './ui-policy-wizard-step2.js';
-import { renderRulesStep, validateRulesStep } from './ui-policy-wizard-step3.js';
-import { renderReviewStep, validateReviewStep } from './ui-policy-wizard-review.js';
-import { renderSuccessStep } from './ui-policy-wizard-success.js';
+import { renderValuesStep, validateValuesStep } from './ui-policy-wizard-step3.js';
+import { renderRulesStep, validateRulesStep } from './ui-policy-wizard-step4.js';
+import { renderReviewStep, validateReviewStep } from './ui-policy-wizard-step5.js';
+import { renderSuccessStep } from './ui-policy-wizard-step6.js';
 
 // --- STATE ---
 let currentStep = 1;
-const TOTAL_STEPS = 4; // Steps 1-4 are input, Step 5 is Success (Virtual)
+const TOTAL_STEPS = 5; // Updated from 4 -> 5
 const STORAGE_KEY = 'safi_policy_wizard_draft';
 
 let policyData = getInitialState();
@@ -133,10 +134,11 @@ function renderStep(step) {
 
     switch (step) {
         case 1: renderDefinitionStep(container, policyData); break;
-        case 2: renderConstitutionStep(container, policyData); break;
-        case 3: renderRulesStep(container, policyData); break;
-        case 4: renderReviewStep(container, policyData); break;
-        case 5: renderSuccessStep(container, policyData, generatedCredentials); break;
+        case 2: renderConstitutionStep(container, policyData); break; // Worldview only now
+        case 3: renderValuesStep(container, policyData); break;    // New Step
+        case 4: renderRulesStep(container, policyData); break;        // Shifted
+        case 5: renderReviewStep(container, policyData); break;       // Shifted
+        case 6: renderSuccessStep(container, policyData, generatedCredentials); break; // Shifted logic handles > TOTAL
     }
 }
 
@@ -164,8 +166,9 @@ function validateCurrentStep() {
     switch (currentStep) {
         case 1: return validateDefinitionStep(policyData);
         case 2: return validateConstitutionStep(policyData);
-        case 3: return validateRulesStep(policyData);
-        case 4: return validateReviewStep(policyData);
+        case 3: return validateValuesStep(policyData); // New
+        case 4: return validateRulesStep(policyData);
+        case 5: return validateReviewStep(policyData);
         default: return true;
     }
 }
@@ -186,8 +189,9 @@ async function submitPolicy() {
             localStorage.removeItem(STORAGE_KEY);
             ui.showToast("Policy Saved!", "success");
             generatedCredentials = res.credentials || { policy_id: "unknown", api_key: "unknown" };
-            currentStep = 5;
-            renderStep(5);
+            currentStep = TOTAL_STEPS + 1; // Move to success "step"
+            renderSuccessStep(document.getElementById('pw-content'), policyData, generatedCredentials);
+            updateProgress(); // To hide footer
         } else {
             throw new Error(res.error || "Failed to save policy");
         }
@@ -199,7 +203,6 @@ async function submitPolicy() {
     }
 }
 
-// --- DOM SKELETON ---
 // --- DOM SKELETON ---
 function ensureWizardInlineExists() {
     // Check for specific content, to avoid false positives with whitespace/comments
@@ -227,15 +230,16 @@ function ensureWizardInlineExists() {
         </div>
 
         <!-- Labels -->
-        <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
+        <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto gap-4">
             <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Context</span>
-            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Constitution</span>
-            <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Rules</span>
-            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Review</span>
+            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Worldview</span>
+            <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Values</span>
+            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Rules</span>
+            <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Review</span>
         </div>
 
-        <!-- Content Area -->
-        <div id="pw-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-5xl mx-auto w-full"></div>
+        <!-- Content Area: INCREASED MAX WIDTH -->
+        <div id="pw-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 max-w-7xl mx-auto w-full"></div>
 
         <!-- Footer -->
         <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0 footer-container">
