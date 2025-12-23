@@ -34,8 +34,8 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
 
     // Generate the HTML for the profile list
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">Choose an Agent</h3>
-        <p class="text-sm text-gray-400 mt-1 mb-6">Select a persona to define the AI's values, worldview, and capabilities. Switching agents will start a new conversation.</p>
+        <h3 class="text-xl font-semibold mb-4">Agents</h3>
+        <p class="text-sm text-gray-400 mt-1 mb-6">Select an agent from the list below to start chatting. Switching agents will start a new conversation.</p>
         
         <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->
         ${(currentUser && ['admin', 'editor'].includes(currentUser.role)) ? `
@@ -47,8 +47,8 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                     </svg>
                 </div>
                 <div class="text-left">
-                    <h4 class="font-semibold text-gray-700 dark:text-gray-200 group-hover:text-green-700 dark:group-hover:text-green-300">Create Custom Agent</h4>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-green-600/70">Design a unique persona with custom values & rules</p>
+                    <h4 class="font-semibold text-gray-700 dark:text-gray-200 group-hover:text-green-700 dark:group-hover:text-green-300">Create an Agent</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 group-hover:text-green-600/70">Create a unique agent with its unique values & rules</p>
                 </div>
             </button>
         </div>
