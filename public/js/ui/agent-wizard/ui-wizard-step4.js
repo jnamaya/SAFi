@@ -86,16 +86,16 @@ export function renderConscienceStep(container, agentData, availableModels) {
             const res = await api.suggestValues(context);
 
             if (res.ok && res.values) {
-                // Auto-populate directly
+                // Auto-populate with rubrics from API (editable by user)
                 agentData.values = res.values.map(v => ({
                     name: v.name,
                     weight: 0.2, // Default weight
                     description: v.description,
-                    rubric: null
+                    rubric: v.rubric || null // Use rubric from API, fallback to null
                 }));
 
                 renderValuesList(agentData);
-                ui.showToast("Values generated!", "success");
+                ui.showToast("Values and rubrics generated!", "success");
             } else {
                 ui.showToast("Failed to generate suggestions.", "error");
             }

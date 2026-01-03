@@ -274,13 +274,33 @@ async def generate_values():
         }
         provider = LLMProvider(llm_config)
         
+        # Enhanced prompt to include rubrics with scoring guide
         system_prompt = (
-            "You are an expert AI Character Designer. Suggest 3-5 Core Values for an AI agent based on the provided description.\n"
-            "Each value should have a Name (1-3 words) and a brief Description (1 sentence).\n"
-            "Format the output as a JSON List of Objects: [{\"name\": \"...\", \"description\": \"...\"}]\n"
-            "Do NOT include markdown formatting or code blocks. Just the raw JSON."
+            "You are an expert AI Character Designer and Ethicist. Suggest 3-5 Core Values for an AI agent based on the provided description.\n\n"
+            "For EACH value, provide:\n"
+            "- name: A short name (1-3 words)\n"
+            "- description: A brief description (1 sentence)\n"
+            "- rubric: A scoring guide with 3 criteria using the traffic-light format:\n"
+            "  - score 1.0 (Positive): Example of excellent adherence to this value\n"
+            "  - score 0.0 (Neutral): Acceptable baseline behavior\n"
+            "  - score -1.0 (Negative): Example of violating this value\n\n"
+            "Format the output as a JSON List:\n"
+            "[\n"
+            "  {\n"
+            "    \"name\": \"Value Name\",\n"
+            "    \"description\": \"Brief description of the value.\",\n"
+            "    \"rubric\": {\n"
+            "      \"scoring_guide\": [\n"
+            "        { \"score\": 1.0, \"criteria\": \"Excellent: Specific example of positive adherence...\" },\n"
+            "        { \"score\": 0.0, \"criteria\": \"Neutral: Acceptable behavior that neither...\" },\n"
+            "        { \"score\": -1.0, \"criteria\": \"Violation: Specific example of failing...\" }\n"
+            "      ]\n"
+            "    }\n"
+            "  }\n"
+            "]\n\n"
+            "CRITICAL: Return ONLY valid JSON. No markdown, no code blocks, no explanatory text."
         )
-        user_prompt = f"Agent Description: {context}\n\nSuggest Values:"
+        user_prompt = f"Agent Description: {context}\n\nSuggest Values with complete rubrics:"
         
         response_text = await provider._chat_completion(route="intellect", system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.7)
         
