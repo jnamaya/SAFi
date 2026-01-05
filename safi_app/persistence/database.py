@@ -287,11 +287,59 @@ def init_db():
 
         conn.commit()
         logging.info("Database initialized.")
+        
+        # Ensure demo policy exists
+        _ensure_demo_policy_exists()
+        
     except Exception as e:
         logging.error(f"DB Init Failed: {e}")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+
+def _ensure_demo_policy_exists():
+    """
+    Ensures the official Contoso demo policy exists in the database.
+    This prevents the demo policy from disappearing if accidentally deleted.
+    """
+    from ..core.governance.contoso.policy import CONTOSO_GLOBAL_POLICY
+    
+    DEMO_POLICY_ID = "contoso_demo_policy"
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Check if demo policy exists
+        cursor.execute("SELECT id FROM policies WHERE id = %s", (DEMO_POLICY_ID,))
+        if cursor.fetchone():
+            logging.info("Demo policy already exists.")
+            return
+        
+        # Create the demo policy from the Contoso template
+        logging.info("Creating demo policy from Contoso template...")
+        
+        worldview = CONTOSO_GLOBAL_POLICY.get("global_worldview", "")
+        will_rules = CONTOSO_GLOBAL_POLICY.get("global_will_rules", [])
+        values = CONTOSO_GLOBAL_POLICY.get("global_values", [])
+        
+        cursor.execute("""
+            INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by, is_demo)
+            VALUES (%s, NULL, %s, %s, %s, %s, NULL, TRUE)
+        """, (
+            DEMO_POLICY_ID,
+            "Contoso Corporate AI Policy",
+            worldview,
+            json.dumps(will_rules),
+            json.dumps(values)
+        ))
+        conn.commit()
+        logging.info("Demo policy created successfully.")
+        
+    except Exception as e:
+        logging.error(f"Failed to ensure demo policy: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 # -------------------------------------------------------------------------
 # SPIRIT MEMORY FUNCTIONS (These were missing!)
