@@ -63,7 +63,7 @@ Where:
 - $a_t$ is the draft response
 - $r_t$ is a short internal reflection (used for audit logging)
 
-**Code Reference:** [`intellect.py#generate()`](safi_app/core/faculties/intellect.py)
+**Code Reference:** [`intellect.py#generate()`](../safi_app/core/faculties/intellect.py)
 
 ---
 
@@ -80,7 +80,7 @@ $$D_t, E_t = W(a_t, x_t, V)$$
 **If $D_t = \text{violation}$:**
 - Proceed to Stage 2.1 (Reflexion Retry)
 
-**Code Reference:** [`will.py#evaluate()`](safi_app/core/faculties/will.py)
+**Code Reference:** [`will.py#evaluate()`](../safi_app/core/faculties/will.py)
 
 ---
 
@@ -106,7 +106,7 @@ $$D'_t, E'_t = W(a'_t, x_t, V)$$
 - Record event: $\{t, x_t, a_t, a'_t, D_t, E_t, D'_t, E'_t\}$
 - Abort downstream stages
 
-**Code Reference:** [`orchestrator.py#L339-393`](safi_app/core/orchestrator.py)
+**Code Reference:** [`orchestrator.py#L339-393`](../safi_app/core/orchestrator.py)
 
 ---
 
@@ -120,7 +120,7 @@ The complete ledger is composed as:
 
 $$L_t = \{(v_i, s_{i,t}, c_{i,t})\}$$
 
-**Code Reference:** [`conscience.py#evaluate()`](safi_app/core/faculties/conscience.py)
+**Code Reference:** [`conscience.py#evaluate()`](../safi_app/core/faculties/conscience.py)
 
 ---
 
@@ -156,7 +156,7 @@ $$M_{t+1} = U(M_t, L_t, S_t, \mu_t, d_t)$$
 
 A natural-language coaching note $f_t$ is generated from $S_t$ and $d_t$ to steer the next turn.
 
-**Code Reference:** [`spirit.py#compute()`](safi_app/core/faculties/spirit.py)
+**Code Reference:** [`spirit.py#compute()`](../safi_app/core/faculties/spirit.py)
 
 ---
 
