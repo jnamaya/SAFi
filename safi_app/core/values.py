@@ -16,6 +16,7 @@ from .personas.safi_steward import THE_SAFI_STEWARD_PERSONA
 from .personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
 from .personas.vault import THE_VAULT_PERSONA
 from .personas.negotiator import THE_NEGOTIATOR_PERSONA
+from .personas.philosopher import THE_PHILOSOPHER_PERSONA
 
 # 3. Define the Persona Registry
 PERSONAS: Dict[str, Dict[str, Any]] = {
@@ -27,6 +28,7 @@ PERSONAS: Dict[str, Dict[str, Any]] = {
     "tutor": THE_SOCRATIC_TUTOR_PERSONA,
     "vault": THE_VAULT_PERSONA,
     "negotiator": THE_NEGOTIATOR_PERSONA,
+    "philosopher": THE_PHILOSOPHER_PERSONA,
 }
 
 # 4. Governance Mapping

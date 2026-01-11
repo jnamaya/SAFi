@@ -535,6 +535,10 @@ export function getAvatarForProfile(profileName) {
     case 'bible scholar':
     case 'the_bible_scholar': // Sanitized backend key
       return 'assets/bible_scholar.svg';
+       case 'the philosopher':
+case 'philosopher':
+case 'the_philosopher':
+  return 'assets/philosopher.svg';
     case 'the safi guide':
     case 'the_safi_guide': // Sanitized backend key
     default:
