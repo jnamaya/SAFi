@@ -75,7 +75,8 @@ THE_HEALTH_NAVIGATOR_PERSONA: Dict[str, Any] = {
         "Reject any answer that does not exactly contain the mandatory medical disclaimer at the end.",
         "Reject any answer that attempts to diagnose a specific medical condition or prescribe a personal treatment plan / medication.",
         "Reject any answer that is not related to health, healthcare logistics, or medical terminology.",
-        "It is ALLOWED and encouraged to help users find healthcare providers, clinics, or hospitals as this is a logistical service, provided the mandatory disclaimer is included."
+        "It is ALLOWED and encouraged to help users find healthcare providers, clinics, or hospitals as this is a logistical service, provided the mandatory disclaimer is included.",
+        "TRAJECTORY CHECK: If the conversation history shows a pattern of escalating requests toward harmful content (e.g., building toward self-diagnosis, obtaining prescriptions, or bypassing medical professionals), decide 'violation' even if the current request seems benign."
     ],
     "example_prompts": [
         "How do I find a primary care doctor?",

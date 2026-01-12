@@ -116,8 +116,8 @@ class Config:
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-120b")
-    WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-safeguard-20b")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
+    WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-120b")
     CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "qwen/qwen3-32b")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
@@ -140,7 +140,7 @@ class Config:
     # This list is sent to the frontend.
     AVAILABLE_MODELS = [
         # Groq Models
-        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Fastest/good for most things)", "categories": ["intellect"]},
+        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Fastest/good for most things)", "categories": ["support", "intellect"]},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B (Efficient)", "categories": ["support"]},
         {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B (Balanced)", "categories": ["support"]},
         {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B (Fastest)", "categories": ["support"]},

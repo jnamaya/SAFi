@@ -417,6 +417,41 @@ def save_spirit_memory(agent_id, mu, turn, score=None, drift=None):
         cursor.close()
         conn.close()
 
+
+def reset_spirit_memory(agent_id: str) -> bool:
+    """
+    Resets the Spirit memory for a specific agent.
+    
+    Use this when:
+    - An agent's value structure has changed (added/removed values)
+    - Spirit memory is corrupted (dimension mismatch)
+    - You want to start fresh with a clean ethical baseline
+    
+    Args:
+        agent_id: The profile_name/agent_key to reset (e.g., 'contoso_admin')
+        
+    Returns:
+        True if a row was deleted, False if the agent had no Spirit memory.
+        
+    Example usage:
+        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('contoso_admin'))"
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM spirit_memory WHERE profile_name = %s", (agent_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        if deleted:
+            logging.info(f"Spirit memory reset for agent: {agent_id}")
+        else:
+            logging.info(f"No Spirit memory found for agent: {agent_id}")
+        return deleted
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # -------------------------------------------------------------------------
 # USER & CHAT FUNCTIONS
 # -------------------------------------------------------------------------

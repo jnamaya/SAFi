@@ -326,7 +326,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # --- 2. First Pass: Will Evaluation ---
         db.update_message_reasoning(message_id, "Evaluating ethical compliance (Will Faculty)...")
-        D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t)
+        D_t, E_t = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t, conversation_summary=memory_summary)
 
         # --- Retry Metadata Tracking ---
         retry_metadata = {
@@ -377,7 +377,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
             
             if a_t_retry:
-                D_t_retry, E_t_retry = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t_retry)
+                D_t_retry, E_t_retry = await self.will_gate.evaluate(user_prompt=user_prompt, draft_answer=a_t_retry, conversation_summary=memory_summary)
                 
                 if D_t_retry == "approve":
                     self.log.info("Reflexion Retry Successful. Proceeding with safe response.")
