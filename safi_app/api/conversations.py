@@ -420,7 +420,7 @@ async def process_prompt_endpoint():
     except Exception as e:
         import traceback
         current_app.logger.error(f"Process Prompt Failed: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": f"Internal Error: {str(e)}", "trace": traceback.format_exc()}), 500
+        return jsonify({"error": "An internal error occurred. Please try again."}), 500
 
 
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])

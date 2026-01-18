@@ -118,7 +118,7 @@ class Config:
     # Model assignments for each faculty (defaults)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
     WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-120b")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "qwen/qwen3-32b")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "llama-3.3-70b-versatile")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
