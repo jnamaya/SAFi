@@ -7,7 +7,7 @@ SAFi is an enterprise-level, closed-loop governance engine for AI, designed to b
 | Principle | What It Means | How SAFi Delivers It |
 | :--- | :--- | :--- |
 | **🛡️ Policy Enforcement** | You define the operational boundaries your AI must follow, protecting your brand reputation.| Custom policies are enforced at the runtime layer, ensuring your rules override the underlying model's defaults.  |
-| **🔍 Full Traceability** | Every response is transparent, logged, and auditable. No more "black boxes." | A complete audit trail captures every decision, veto, and reasoning step. |
+| **🔍 Full Traceability** | Every response is transparent, logged, and auditable. No more "black boxes." | Granular logging captures every governance decision, veto, and reasoning step across all faculties, creating a complete forensic audit trail. |
 | **🔄 Model Independence** | Switch or upgrade models without losing your governance layer. | A modular architecture that supports GPT, Claude, Llama, and other major providers. |
 | **📈 Long-Term Consistency** | Maintain your AI’s ethical identity over time and detect behavioral drift. | SAFi introduces stateful memory to track alignment trends, detect drift, and auto-correct behavior. |
 
