@@ -38,7 +38,7 @@ export async function renderSettingsDashboardTab() {
         headerDiv.className = "p-6 shrink-0";
         headerDiv.innerHTML = `
             <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
-            <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze ethical alignment and trace decisions across all conversations.</p>
+            <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
         `;
 
         const iframeContainer = document.createElement('div');
