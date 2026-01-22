@@ -49,7 +49,7 @@ safi_app/dashboard/
 /var/www/safi/safi_app/dashboard/
 vector_store/
 tts_cache/
-
+tests/
 
 #test file
 <<<<<<< HEAD
