@@ -304,7 +304,26 @@ async def generate_policy_content_endpoint():
         
         elif gen_type == 'rules':
              sys_prompt += " Output JSON List only."
-             prompt = f"Generate 5 hard constraints for: '{context}'. Return JSON list of strings."
+             prompt = (
+                 f"Generate 5 Will Rules for an AI agent. Context: '{context}'.\n\n"
+                 "IMPORTANT: These rules are for a GATEKEEPING MODEL (the 'Will') that EVALUATES responses.\n"
+                 "The Will gate reads the Intellect's draft response and checks if it violates any rules.\n"
+                 "Rules should describe what makes a response UNACCEPTABLE (grounds for rejection).\n\n"
+                 "RULES FORMAT:\n"
+                 "- Write rules as evaluation criteria (what to check for)\n"
+                 "- Start with: 'The response must not...', 'Reject if...', 'Block any response that...'\n"
+                 "- Focus on what makes a response FAIL the check\n\n"
+                 "CORRECT examples (evaluation criteria):\n"
+                 '- "The response must not contain personally identifiable information about donors."\n'
+                 '- "Reject if the response provides specific medical diagnoses or treatment plans."\n'
+                 '- "Block any response that includes instructions for illegal activities."\n'
+                 '- "The response must not make claims without citing provided source documents."\n'
+                 '- "Reject if the response engages in political campaigning or endorses candidates."\n\n'
+                 "WRONG examples (these are instructions, not evaluation criteria):\n"
+                 '- "You must prioritize the mission..." <- WRONG, this is an instruction\n'
+                 '- "Always provide accurate information..." <- WRONG, too vague for evaluation\n\n'
+                 "Return a JSON array of exactly 5 rule strings. Each rule describes grounds for rejection."
+             )
         
         # --- IMPROVED CONCISE PERSONA PROMPT ---
         elif gen_type == 'persona':

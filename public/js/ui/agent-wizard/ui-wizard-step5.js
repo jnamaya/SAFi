@@ -106,22 +106,11 @@ function parseRulesOutput(content) {
             }
         }
 
-        // Standardize format (Action-First)
+        // Accept evaluation criteria rules as-is
+        // Valid formats: "The response must not...", "Reject if...", "Block any..."
         return newRules.map(r => {
             let clean = r.trim();
-            clean = clean.replace(/^(The AI should|The AI must|The agent should|The agent must|Must|Will|Always)\s+/i, "");
-
-            if (clean.match(/^(Refuse|Decline|Deny)\s+to\s+/i)) {
-                clean = clean.replace(/^(Refuse|Decline|Deny)\s+to\s+/i, "Reject requests to ");
-            }
-            else if (clean.match(/^Never\s+/i)) {
-                clean = clean.replace(/^Never\s+/i, "Reject requests to ");
-            }
-
-            if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) {
-                return "Reject " + clean;
-            }
-
+            // Capitalize first letter
             return clean.charAt(0).toUpperCase() + clean.slice(1);
         });
     } catch (e) {
