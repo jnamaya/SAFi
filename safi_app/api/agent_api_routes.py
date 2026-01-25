@@ -8,6 +8,17 @@ from .conversations import global_safi_cache  # Import Cache
 
 agent_api_bp = Blueprint('agent_api', __name__)
 
+def _detect_provider(model_name: str) -> str:
+    """Auto-detect provider from model name."""
+    if not model_name: return "groq"
+    model_lower = model_name.lower()
+    if model_lower.startswith("gpt-") or model_lower.startswith("o1-"): return "openai"
+    if model_lower.startswith("claude-"): return "anthropic"
+    if model_lower.startswith("gemini-"): return "gemini"
+    if model_lower.startswith("deepseek-"): return "deepseek"
+    if model_lower.startswith("mistral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
+    return "groq"
+
 def validate_agent_data(data):
     # Enforce at least one value and one rule
     values = data.get('values', [])
@@ -209,9 +220,20 @@ async def generate_rubric():
 
         from safi_app.core.services.llm_provider import LLMProvider
         
+        # Hardcoded: Use cheap fast GPT-OSS 120B model for wizard tasks
+        model = "openai/gpt-oss-120b"
+        detected_provider = _detect_provider(model)
+        
         llm_config = {
-            "providers": { "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY }, "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" } },
-            "routes": { "intellect": { "provider": "groq", "model": Config.INTELLECT_MODEL or "llama-3.1-8b-instant" } }
+            "providers": {
+                "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY },
+                "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" },
+                "anthropic": { "type": "anthropic", "api_key": Config.ANTHROPIC_API_KEY },
+                "gemini": { "type": "gemini", "api_key": Config.GEMINI_API_KEY },
+                "deepseek": { "type": "openai", "api_key": getattr(Config, 'DEEPSEEK_API_KEY', ''), "base_url": "https://api.deepseek.com" },
+                "mistral": { "type": "openai", "api_key": getattr(Config, 'MISTRAL_API_KEY', ''), "base_url": "https://api.mistral.ai/v1" }
+            },
+            "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
         provider = LLMProvider(llm_config)
         
@@ -267,10 +289,21 @@ async def generate_values():
         context = data.get('context', '')
         
         from safi_app.core.services.llm_provider import LLMProvider
-        # Re-use config logic using Groq/Llama for speed/quality
+        
+        # Hardcoded: Use cheap fast GPT-OSS 120B model for wizard tasks
+        model = "openai/gpt-oss-120b"
+        detected_provider = _detect_provider(model)
+        
         llm_config = {
-            "providers": { "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY }, "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" } },
-            "routes": { "intellect": { "provider": "groq", "model": Config.INTELLECT_MODEL or "llama-3.1-8b-instant" } }
+            "providers": {
+                "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY },
+                "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" },
+                "anthropic": { "type": "anthropic", "api_key": Config.ANTHROPIC_API_KEY },
+                "gemini": { "type": "gemini", "api_key": Config.GEMINI_API_KEY },
+                "deepseek": { "type": "openai", "api_key": getattr(Config, 'DEEPSEEK_API_KEY', ''), "base_url": "https://api.deepseek.com" },
+                "mistral": { "type": "openai", "api_key": getattr(Config, 'MISTRAL_API_KEY', ''), "base_url": "https://api.mistral.ai/v1" }
+            },
+            "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
         provider = LLMProvider(llm_config)
         
