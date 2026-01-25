@@ -17,7 +17,7 @@ export function renderRulesStep(container, policyData) {
                 </div>
                 
                 <div class="flex gap-4 mb-6">
-                    <input type="text" id="pw-rule-input" class="flex-1 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-neutral-800 focus:ring-2 focus:ring-red-500 placeholder-gray-400" placeholder="e.g. Reject financial advice.">
+                    <input type="text" id="pw-rule-input" class="flex-1 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-neutral-800 focus:ring-2 focus:ring-red-500 placeholder-gray-400" placeholder="e.g. The response must not provide financial advice.">
                     <button id="pw-add-rule-btn" class="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">
                         Add
                     </button>
@@ -76,9 +76,11 @@ export function renderRulesStep(container, policyData) {
                 }
 
                 if (Array.isArray(json)) {
+                    // Accept evaluation criteria rules as-is
+                    // Valid formats: "The response must not...", "Reject if...", "Block any..."
                     const processedRules = json.map(r => {
-                        let clean = r.trim().replace(/^(The AI should|The AI must|Must|Will|Always)\s+/i, "");
-                        if (!clean.match(/^(Reject|Require|Flag|Do not)/i)) return "Reject " + clean;
+                        let clean = r.trim();
+                        // Capitalize first letter
                         return clean.charAt(0).toUpperCase() + clean.slice(1);
                     });
                     policyData.will_rules = [...new Set([...policyData.will_rules, ...processedRules])];
