@@ -1,4 +1,4 @@
-# SAFi: The Governance Engine for AI
+# SAFi: The Runtime Governance Engine for AI
 
 ## Introduction
 
