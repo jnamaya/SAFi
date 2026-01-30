@@ -1,3 +1,8 @@
+[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Docker](https://img.shields.io/docker/pulls/amayanelson/safi)](https://hub.docker.com/r/amayanelson/safi)
+[![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
+
 # SAFi: The Open-Source Runtime Governance Engine for AI
 
 **SAFi turns any LLM into a verifiably aligned, auditable agent — enforcing your values at runtime with zero black boxes.**
@@ -5,6 +10,28 @@
 <p align="center">
   <img src="public/assets/safi_github.png" alt="SAFi Screenshot" />
 </p>
+
+## Quick Start with Docker
+
+```bash
+# 1. Pull the image
+docker pull amayanelson/safi:v1.2
+
+# 2. Run with your database and API keys
+docker run -d -p 5000:5000 \
+  -e DB_HOST=your_db_host \
+  -e DB_USER=your_db_user \
+  -e DB_PASSWORD=your_db_password \
+  -e DB_NAME=safi \
+  -e OPENAI_API_KEY=your_openai_key \
+  --name safi amayanelson/safi:v1.2
+
+# 3. Open http://localhost:5000
+```
+
+> **Note:** Requires an external MySQL 8.0+ database. See [Installation](#installation-on-your-own-server) for full setup.
+
+---
 
 ## Introduction
 
@@ -17,7 +44,7 @@ It is built upon four core principles:
 | **🛡️ Policy Enforcement** | You define the operational boundaries your AI must follow, protecting your brand reputation.| Custom policies are enforced at the runtime layer, ensuring your rules override the underlying model's defaults.  |
 | **🔍 Full Traceability** | Every response is transparent, logged, and auditable. No more "black boxes." | Granular logging captures every governance decision, veto, and reasoning step across all faculties, creating a complete forensic audit trail. |
 | **🔄 Model Independence** | Switch or upgrade models without losing your governance layer. | A modular architecture that supports GPT, Claude, Llama, and other major providers. |
-| **📈 Long-Term Consistency** | Maintain your AI’s ethical identity over time and detect behavioral drift. | SAFi introduces stateful memory to track alignment trends, detect drift, and auto-correct behavior. |
+| **📈 Long-Term Consistency** | Maintain your AI's ethical identity over time and detect behavioral drift. | SAFi introduces stateful memory to track alignment trends, detect drift, and auto-correct behavior. |
 
 ## Table of Contents
 
@@ -30,10 +57,9 @@ It is built upon four core principles:
 7.  [Headless Governance Layer](#headless-governance-layer)
 8.  [Agent Capabilities](#agent-capabilities)
 9.  [Developer Guide](#developer-guide)
-10. [Quick Start with Docker](#quick-start-with-docker)
-11. [Installation on Your Own Server](#installation-on-your-own-server)
-12. [Live Demo](#live-demos)
-13. [About the Author](#about-the-author)
+10. [Installation on Your Own Server](#installation-on-your-own-server)
+11. [Live Demo](#live-demos)
+12. [About the Author](#about-the-author)
 
 ## How Does It Work?
 
@@ -271,37 +297,7 @@ Use Plugins to run logic *before* the prompt reaches the LLM (e.g., injecting co
 3.  **Context Injection:**
     The returned data is automatically collected into `plugin_context_data` and passed to the Intellect faculty.
 
-## Quick Start with Docker
 
-The fastest way to run SAFi is using our pre-built Docker image from Docker Hub.
-
-### 1. Pull the Image
-
-```bash
-docker pull amayanelson/safi:v1.2
-```
-
-### 2. Run the Container
-
-```bash
-docker run -d \
-  -p 5000:5000 \
-  -e DB_HOST=your_db_host \
-  -e DB_USER=your_db_user \
-  -e DB_PASSWORD=your_db_password \
-  -e DB_NAME=safi \
-  -e OPENAI_API_KEY=your_openai_key \
-  --name safi \
-  amayanelson/safi:v1.2
-```
-
-### 3. Access the Application
-
-Open your browser to `http://localhost:5000`
-
-> **Note:** You still need an external MySQL 8.0+ database. The Docker image contains the application only.
-
----
 
 ## Installation on Your Own Server
 
