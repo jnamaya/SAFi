@@ -362,11 +362,9 @@ You can host SAFi on any standard Linux server (Ubuntu/Debian recommended) or Wi
 > **Note on RAG:** To use the Bible Scholar or other RAG agents, you must generate the vector store first.
 > `python -m safi_app.scripts.build_vector_store`
 
-## Live Demos
+## Live Demo
 
-### 🚀 Try SAFi Yourself
-
-- **DEMO URL**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+[safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
   
 ## About the Author
 
