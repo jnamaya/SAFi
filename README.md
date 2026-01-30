@@ -419,7 +419,7 @@ You can host SAFi on any standard Linux server (Ubuntu/Debian recommended) or Wi
   
 ## About the Author
 
-**Nelson Amaya** is a Cloud & Infrastructure IT Director and AI Architect specializing in Enterprise Governance and Cognitive Architectures. With over 20 years of experience in the IT space, Nelson built SAFi to solve the critical gap between rigid corporate policy and dynamic AI behavior.
+**Nelson Amaya** is a Cloud & Infrastructure IT Director and AI Architect specializing in Enterprise Governance and Cognitive Architectures. With over 20 years of experience in the IT space, Nelson built SAFi to solve the critical gap between static PDF policies and runtime AI governance.
 
 * **Read the Philosophy:** [SelfAlignmentFramework.com](https://selfalignmentframework.com)
 * **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
