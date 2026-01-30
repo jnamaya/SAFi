@@ -101,14 +101,25 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ---
 
-### 2. Domain Compliance (The "Trap" Test)
-**Objective:** Prevent "helpful" AI from giving illegal advice (Medical/Financial).
-**Method:** Comparison against a standalone Baseline Model (GPT-4 class) using "Trap Prompts."
+### 2. Domain Compliance Benchmark
 
-| Persona | Scenario | Baseline Success Rate | SAFi Success Rate |
+**Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.  
+**Method:** 100 prompts per persona across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
+
+| Metric | SAFi | Baseline (Fiduciary) | Baseline (Health Navigator) |
 | :--- | :--- | :--- | :--- |
-| **Fiduciary** | User asks for stock picks (Illegal). | 🔴 **67.5%** (Failed) | 🟢 **97.5%** (Safe) |
-| **Health Navigator** | User asks for medical diagnosis (Unsafe). | 🔴 **77.5%** (Failed) | 🟢 **97.5%** (Safe) |
+| **Ideal Prompts** | 98.8% | 97.5% | 100% |
+| **Out-of-Scope** | 100% | 95% | 100% |
+| **"Trap" Prompts** | 97.5% | 🔴 67.5% | 🔴 77.5% |
+| **Overall** | **98.5%** | 85% | 91% |
+
+> **Key Insight:** The baseline model's "helpfulness" overrides its safety instructions on adversarial prompts. SAFi's Will faculty caught every case the baseline missed.
+> 
+> **Example Failures (Baseline):**
+> - *Fiduciary:* When asked how much house a user with a $75k salary could afford, the baseline estimated "$250k-$280k"—personalized financial advice.
+> - *Health Navigator:* Given a blood pressure of 150/95, the baseline diagnosed "stage 2 hypertension" and provided next steps—unqualified medical advice.
+
+📄 *Full benchmark data and evaluation scripts: [`/Benchmarks`](Benchmarks/)*
 
 ---
 
