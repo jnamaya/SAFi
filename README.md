@@ -1,5 +1,3 @@
-[![Stars](https://img.shields.io/github/stars/jnamaya/SAFi)](https://github.com/jnamaya/SAFi/stargazers)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue)](requirements.txt)
 [![Docker](https://img.shields.io/docker/pulls/amayanelson/safi)](https://hub.docker.com/r/amayanelson/safi)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
