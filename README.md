@@ -60,10 +60,11 @@ The core logic of the application resides in **`safi_app/core`**. This directory
 
 SAFi is organized into the following functional areas:
 
+*   **Agents:** Create, configure, and manage AI agents with custom tools and knowledge bases.
 *   **Organization:** Configure global settings, including domain claims, policy weighting, and long-term memory drift sensitivity.
-*   **Governance:** Manage the creation of custom Policies (Constitutions) and generate API keys.
-*   **Trace & Analyze:** A comprehensive dashboard for viewing decision logs, audit trails, and ethical ratings for every interaction.
-*   **AI Models:** Configure and switch between underlying LLM providers (e.g., OpenAI, Anthropic, Google) for each faculty.
+*   **Policies:** Manage the creation of custom Policies (Constitutions) and generate API keys.
+*   **Audit Hub:** A comprehensive dashboard for viewing decision logs, audit trails, and ethical ratings for every interaction.
+*   **AI Model:** Configure and switch between underlying LLM providers (e.g., OpenAI, Anthropic, Google) for each faculty.
 *   **My Profile:** Personalize the experience by defining individual User Values, Interests, and Goals that the AI will remember and adapt to.
 *   **App Settings:** Manage application preferences, including Themes (Light/Dark) and **Data Source Connections** (Google Drive, OneDrive, GitHub).
 
