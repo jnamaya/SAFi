@@ -1,7 +1,3 @@
-[![Python](https://img.shields.io/badge/Python-3.10+-blue)](requirements.txt)
-[![Docker](https://img.shields.io/docker/pulls/amayanelson/safi)](https://hub.docker.com/r/amayanelson/safi)
-[![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
-
 # SAFi: The Open-Source Runtime Governance Engine for AI
 
 **SAFi turns any LLM into a verifiably aligned, auditable agent — enforcing your values at runtime with zero black boxes.**
