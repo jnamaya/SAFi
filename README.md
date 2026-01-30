@@ -10,7 +10,7 @@
 
 ## Introduction
 
-SAFi is an enterprise-level, closed-loop runtime governance engine for AI, designed to bridge the gap between organizational values and artificial intelligence behavior. It is built upon four core principles:
+SAFi is an open-source runtime governance engine that enforces organizational policies, detects drift, and provides full traceability using a modular cognitive architecture inspired by classical philosophy.
 
 | Principle | What It Means | How SAFi Delivers It |
 | :--- | :--- | :--- |
