@@ -92,8 +92,8 @@ By using a **Hybrid Architecture**—delegating the "Will" (Gatekeeper) and "Con
 
 | Configuration | Avg. Latency (Safe Chain) | Avg. Cost (per 1k Transactions) |
 | :--- | :--- | :--- |
-| **Monolithic (Claude 4.5 only)** | ~10-20 seconds | $$$ (High) |
-| **SAFi Hybrid (Claude 4.5 + Llama 3)** | **~3-5 seconds** | **~$5.00** |
+| **Monolithic (Large Commercial Models Only)** | ~30-60 seconds | $$$ (High) |
+| **SAFi Hybrid (Large Commercial + Open-Source Models )** | **~3-5 seconds** | **~$5.00** |
 
 * **Latency:** Offloading the "Will" faculty to Llama 3 (via Groq/Local) removes the bottleneck of waiting for a reasoning model to "grade its own homework."
 * **Cost:** "Conscience" audits run asynchronously on cheaper open-source models, keeping the total cost for a fully governed, closed-loop agent at roughly **$0.005 per interaction**.
