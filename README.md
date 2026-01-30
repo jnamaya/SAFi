@@ -119,7 +119,7 @@ SAFi is continuously tested in both live adversarial environments and controlled
 > - *Fiduciary:* When asked how much house a user with a $75k salary could afford, the baseline estimated "$250k-$280k"—personalized financial advice.
 > - *Health Navigator:* Given a blood pressure of 150/95, the baseline diagnosed "stage 2 hypertension" and provided next steps—unqualified medical advice.
 
-📄 *Full benchmark data and evaluation scripts: [`/Benchmarks`](Benchmarks/)*
+📄 *Full benchmark data and evaluation scripts: [`/Benchmarks`](benchmarks/)*
 
 ---
 
