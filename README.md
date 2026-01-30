@@ -360,29 +360,10 @@ You can host SAFi on any standard Linux server (Ubuntu/Debian recommended) or Wi
 
 - **DEMO URL**: [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
   
+## About the Author
 
-## 🤝 Contributing
+**Nelson Amaya** is a Cloud & Infrastructure IT Director and AI Architect specializing in Enterprise Governance and Cognitive Architectures. With over 20 years of experience in the IT space, Nelson built SAFi to solve the critical gap between rigid corporate policy and dynamic AI behavior.
 
-We welcome contributions from the community! Whether you're a developer, ethical AI researcher, or policy expert, here is how you can help.
-
-### Areas We Need Help With
-
-We are currently looking for contributors to help with:
-*   **🐳 Dockerization:** Creating optimized Docker images and `docker-compose.yml` for easier deployment.
-*   **🧪 Testing:** Implementing unit and integration tests (using `pytest`) to ensure system stability.
-*   **📖 Documentation:** Improving the Headless API guides and adding more language-specific examples.
-
-### How to Contribute
-
-1.  **Fork the Project** on GitHub.
-2.  **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`).
-3.  **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`).
-4.  **Push to the Branch** (`git push origin feature/AmazingFeature`).
-5.  **Open a Pull Request**.
-
-Please ensure your code follows the existing style concepts and includes comments where necessary.
----
-
-- [GitHub Repository](https://github.com/jnamaya/SAFi)
-- [Documentation](https://selfalignmentframework.com/articles/)
-- [Join Us](https://selfalignmentframework.com/join-us/)
+* **Read the Philosophy:** [SelfAlignmentFramework.com](https://selfalignmentframework.com)
+* **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
+* **Follow on Reddit:** [u/forevergeeks](https://www.reddit.com/user/forevergeeks/)
