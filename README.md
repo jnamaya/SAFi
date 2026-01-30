@@ -148,10 +148,12 @@ SAFi is designed to be extensible, supporting multiple data sources including RA
 
 The demo environment includes several specialized agents to showcase these capabilities:
 
-*   **The Contoso Admin:** Connects directly to **Microsoft SharePoint and OneDrive** via MCP. This agent can search corporate files, read documents, and access the organizational knowledge base in real-time.
+* **The Contoso Admin:** Showcases the application of organizational governance policies. This agent retrieves Standard Operating Procedures (SOPs) from a RAG vector database, demonstrating how SAFi strictly enforces data privacy and prevents PII leaks during document retrieval.
 *   **The Fiduciary:** A financial specialist using **tool-calling** to access live market data and portfolio information, demonstrating secure integration with sensitive APIs.
 *   **The Bible Scholar:** Demonstrates **RAG** capabilities by strictly referencing a fixed corpus (the Bible) to provide accurate citations and theological analysis without hallucination.
-*   **Google & GitHub Integrations:** Standard agents equipped with MCP connectors to search **Google Drive** or interact with **GitHub** repositories, functioning as capable digital co-workers.
+*   **The Health Navigator:** An informational guide using **Geospatial MCP Tools** to find healthcare providers. Demonstrates SAFi's enforcement of safety policies—the Will faculty ensures every response includes the mandatory medical disclaimer and rejects any attempt to provide diagnoses or treatment advice.
+*   **The Socratic Tutor:** A math and science tutor that uses the **Socratic method**—guiding students through questions rather than giving answers. The Will faculty enforces pedagogical integrity by rejecting any response that provides direct solutions, ensuring students learn through productive struggle.
+
 
 ## Developer Guide
 
