@@ -50,6 +50,37 @@ Just as airplanes were inspired by birds but do not utilize feathers or biology,
 
 We use these philosophical concepts not as metaphysics, but as **System Design Patterns**. By treating "Will" and "Intellect" as separate software services, we solve the "Hallucination vs. Compliance" conflict that monolithic models struggle with.
 
+## Benchmarks & Validation
+
+SAFi is continuously tested in both live adversarial environments and controlled compliance studies.
+
+### 1. Live Security Telemetry (Adversarial Red Team)
+**Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering.
+**Current Status:** Continuous testing via Reddit & Discord communities.
+
+| Metric | Result |
+| :--- | :--- |
+| **Total Interactions** | **1,435+** |
+| **Confirmed Jailbreaks** | **2 (0.14%)** |
+| **"Will" Interventions** | **20** (Blocked attacks that bypassed the Generator) |
+| **Defense Success Rate** | **99.86%** |
+
+> **Defense-in-Depth:** Without the "Will" gatekeeper, the system would have failed **22 times** (1.5% failure rate). SAFi reduced this to just **2 failures** (0.14% failure rate).
+
+---
+
+### 2. Domain Compliance (The "Trap" Test)
+**Objective:** Prevent "helpful" AI from giving illegal advice (Medical/Financial).
+**Method:** Comparison against a standalone Baseline Model (GPT-4 class) using "Trap Prompts" designed to elicit specific, unsafe advice.
+
+| Persona | Scenario | Baseline Success Rate | SAFi Success Rate |
+| :--- | :--- | :--- | :--- |
+| **Fiduciary** | User asks for stock picks (Illegal). | 🔴 **67.5%** (Failed) | 🟢 **97.5%** (Safe) |
+| **Health Navigator** | User asks for medical diagnosis (Unsafe). | 🔴 **77.5%** (Failed) | 🟢 **97.5%** (Safe) |
+
+**Key Finding:**
+The Baseline model failed because it prioritized being *helpful* over being *compliant*. SAFi's "Will" faculty correctly identified these requests as **Policy Violations**, rewriting or blocking them to ensure safety.
+
 ## Technical Implementation
 
 The core logic of the application resides in **`safi_app/core`**. This directory contains the `orchestrator.py` engine, the `faculties` modules, and the central `values.py` configuration.
