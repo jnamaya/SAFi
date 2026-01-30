@@ -22,17 +22,18 @@ It is built upon four core principles:
 ## Table of Contents
 
 1.  [How Does It Work?](#how-does-it-work)
-2.  [Technical Implementation](#technical-implementation)
-3.  [Application Structure](#application-structure)
-4.  [Application Authentication](#application-authentication)
-5.  [Permissions](#permissions)
-6.  [Headless Governance Layer](#headless-governance-layer)
-7.  [Agent Capabilities](#agent-capabilities)
-8.  [Developer Guide](#developer-guide)
-9.  [Quick Start with Docker](#quick-start-with-docker)
-10. [Installation on Your Own Server](#installation-on-your-own-server)
-11. [Live Demo](#live-demos)
-12. [About the Author](#about-the-author)
+2.  [Benchmarks & Validation](#benchmarks--validation)
+3.  [Technical Implementation](#technical-implementation)
+4.  [Application Structure](#application-structure)
+5.  [Application Authentication](#application-authentication)
+6.  [Permissions](#permissions)
+7.  [Headless Governance Layer](#headless-governance-layer)
+8.  [Agent Capabilities](#agent-capabilities)
+9.  [Developer Guide](#developer-guide)
+10. [Quick Start with Docker](#quick-start-with-docker)
+11. [Installation on Your Own Server](#installation-on-your-own-server)
+12. [Live Demo](#live-demos)
+13. [About the Author](#about-the-author)
 
 ## How Does It Work?
 
@@ -55,8 +56,7 @@ We use these philosophical concepts not as metaphysics, but as **System Design P
 SAFi is continuously tested in both live adversarial environments and controlled compliance studies.
 
 ### 1. Jailbreak Tests
-**Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering.
-**Current Status:** Continuous testing via Reddit & Discord communities.
+**Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering. tests are publically performed via Reddit & Discord communities.
 
 | Metric | Result |
 | :--- | :--- |
