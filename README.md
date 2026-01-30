@@ -158,7 +158,7 @@ The demo environment includes several specialized agents to showcase these capab
 
 ## Developer Guide
 
-Refere to this guide to extend SAFi with new data sources and capabilities.
+Refer to this guide to extend SAFi with new data sources and capabilities.
 
 ### 1. How to Add a New Data Source (MCP Tool)
 
