@@ -1,10 +1,14 @@
+[![Stars](https://img.shields.io/github/stars/jnamaya/SAFi)](https://github.com/jnamaya/SAFi/stargazers)
+[![Forks](https://img.shields.io/github/forks/jnamaya/SAFi)](https://github.com/jnamaya/SAFi/forks)
+[![License](https://img.shields.io/github/license/jnamaya/SAFi)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
+[![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
+
 # SAFi: The Runtime Governance Engine for AI
 
 <p align="center">
   <img src="public/assets/safi_github.png" alt="SAFi Screenshot" />
 </p>
-
-[![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
 
 ## Introduction
 
