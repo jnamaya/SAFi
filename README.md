@@ -4,6 +4,10 @@
 
 SAFi is an enterprise-level, closed-loop runtime governance engine for AI, designed to bridge the gap between organizational values and artificial intelligence behavior. It is built upon four core principles:
 
+<p align="center">
+  <img src="public/assets/safi_github.png" alt="SAFi Screenshot" />
+</p>
+
 | Principle | What It Means | How SAFi Delivers It |
 | :--- | :--- | :--- |
 | **🛡️ Policy Enforcement** | You define the operational boundaries your AI must follow, protecting your brand reputation.| Custom policies are enforced at the runtime layer, ensuring your rules override the underlying model's defaults.  |
