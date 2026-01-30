@@ -36,7 +36,7 @@ It is built upon four core principles:
 9.  [Quick Start with Docker](#quick-start-with-docker)
 10. [Installation on Your Own Server](#installation-on-your-own-server)
 11. [Live Demos](#live-demos)
-12. [Contributing](#-contributing)
+12. [About the Author](#about-the-author)
 
 ## How Does It Work?
 
