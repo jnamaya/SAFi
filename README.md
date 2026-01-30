@@ -60,7 +60,7 @@ The core logic of the application resides in **`safi_app/core`**. This directory
 
 SAFi is organized into the following functional areas:
 
-*   **Agents:** Create, configure, and manage AI agents with custom tools and knowledge bases.
+*   **Agents:** Create, configure, and manage AI agents with custom tools and policies.
 *   **Organization:** Configure global settings, including domain claims, policy weighting, and long-term memory drift sensitivity.
 *   **Policies:** Manage the creation of custom Policies (Constitutions) and generate API keys.
 *   **Audit Hub:** A comprehensive dashboard for viewing decision logs, audit trails, and ethical ratings for every interaction.
