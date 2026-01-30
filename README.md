@@ -101,14 +101,14 @@ The system utilizes a Role-Based Access Control (RBAC) system:
 
 ## Headless Governance Layer
 
-SAFi functions as a "Governance-as-a-Service" layer for any external application. You can integrate SAFi's ethical engine into Microsoft Teams, Slack, Telegram, or custom apps using the Headless API.
+SAFi can be configured as a **"Governance-as-a-Service"** layer for any external application or existing agent frameworks (such as **LangChain**). It has been tested with Microsoft Teams, Telegram, and WhatsApp.
 
 ### How to use it:
 
 1.  **Generate a Policy Key:**
-    *   Go to **Governance > Policies**.
+    *   Go to **Policies**.
     *   Create or Edit a Policy.
-    *   Click **Generate API Key** to get your credential (e.g., `sk_policy_...`).
+    *   You will get the API key at the end of the wizard or you can generate a new key for existing policies. 
 
 2.  **Call the API:**
     Make a POST request to your SAFi instance from your external bot code.
@@ -123,14 +123,24 @@ SAFi functions as a "Governance-as-a-Service" layer for any external application
     ```json
     {
       "user_id": "teams_user_123",       // Unique ID from your platform
+      "user_name": "John Doe",           // Optional: Display name for audit logs
       "message": "Can I approve this expense?",
       "conversation_id": "chat_456",     // Thread ID for memory context
       "persona": "safi"                  // Optional: Agent profile to use
     }
     ```
 
-3.  **Result:**
-    SAFi will process the prompt, enforcing the Policy associated with the API Key, and return the governed response. Users are automatically registered in the system ("Just-in-Time" provisioning) so you can audit their interactions in the Trace dashboard. 
+3.  **Response:**
+    SAFi will process the prompt, enforcing the Policy associated with the API Key, and return the governed response:
+    ```json
+    {
+      "finalOutput": "Based on company policy, expenses under $500 can be...",
+      "sources": [                       // Optional: RAG references if applicable
+        {"title": "Expense Policy", "url": "https://..."}
+      ]
+    }
+    ```
+    Users are automatically registered in the system ("Just-in-Time" provisioning) so you can audit their interactions in the Audit Hub. 
 
 ## Agent Capabilities
 
