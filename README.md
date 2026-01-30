@@ -82,7 +82,7 @@ We use these philosophical concepts not as metaphysics, but as **System Design P
 SAFi is continuously tested in both live adversarial environments and controlled compliance studies.
 
 ### 1. Jailbreak Tests
-**Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering. tests are publically performed via Reddit & Discord communities.
+**Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering. Tests are publicly performed via Reddit & Discord communities
 
 | Metric | Result |
 | :--- | :--- |
