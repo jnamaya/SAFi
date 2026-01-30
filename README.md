@@ -12,6 +12,8 @@
 
 SAFi is an open-source runtime governance engine that enforces organizational policies, detects drift, and provides full traceability using a modular cognitive architecture inspired by classical philosophy.
 
+It is built upon four core principles:
+
 | Principle | What It Means | How SAFi Delivers It |
 | :--- | :--- | :--- |
 | **🛡️ Policy Enforcement** | You define the operational boundaries your AI must follow, protecting your brand reputation.| Custom policies are enforced at the runtime layer, ensuring your rules override the underlying model's defaults.  |
