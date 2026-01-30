@@ -4,6 +4,8 @@
   <img src="public/assets/safi_github.png" alt="SAFi Screenshot" />
 </p>
 
+[![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
+
 ## Introduction
 
 SAFi is an enterprise-level, closed-loop runtime governance engine for AI, designed to bridge the gap between organizational values and artificial intelligence behavior. It is built upon four core principles:
