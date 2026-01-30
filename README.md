@@ -31,13 +31,19 @@ SAFi is an enterprise-level, closed-loop runtime governance engine for AI, desig
 
 ## How Does It Work?
 
-Drawing inspiration from the faculty psychology of philosophers like Plato, Aristotle, Aquinas, and Kant, SAFi implements a cognitive architecture composed of five distinct faculties:
+SAFi implements a cognitive architecture primarily derived from the **Thomistic faculties of the soul** (Aquinas). It maps the classical concepts of *Synderesis*, *Intellect*, *Will*, and *Conscience* directly to software modules, while adapting the concept of *Habitus* (character formation) into the **Spirit** module.
 
-1.  **Values:** The core constitution (principles and rules) that defines the agent's identity.
-2.  **Intellect:** The generative engine responsible for formulating responses and actions.
-3.  **Will:** The active gatekeeper that decides whether to approve or veto the Intellect's proposed actions.
-4.  **Conscience:** The reflective judge that scores actions against the agent's core values after they occur.
-5.  **Spirit:** The long-term memory that integrates these judgments to track alignment over time, detecting drift and providing coaching for future interactions.
+1.  **Values (Synderesis):** The core constitution (principles and rules) that defines the agent's identity and governs its fundamental axioms.
+2.  **Intellect:** The generative engine responsible for formulating responses and actions based on the available context.
+3.  **Will:** The active gatekeeper that decides whether to approve or veto the Intellect's proposed actions before execution.
+4.  **Conscience:** The reflective judge that scores actions against the agent's core values after they occur (post-action audit).
+5.  **Spirit (Habitus):** The long-term memory that integrates these judgments to track alignment over time, detecting drift and providing coaching for future interactions.
+
+**💡 Note: Philosophy as Architecture**
+
+Just as airplanes were inspired by birds but do not utilize feathers or biology, SAFi is inspired by the **structure** of the human mind but is a concrete software implementation.
+
+We use these philosophical concepts not as metaphysics, but as **System Design Patterns**. By treating "Will" and "Intellect" as separate software services, we solve the "Hallucination vs. Compliance" conflict that monolithic models struggle with.
 
 ## Technical Implementation
 
