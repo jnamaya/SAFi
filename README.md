@@ -1,6 +1,6 @@
 [![Stars](https://img.shields.io/github/stars/jnamaya/SAFi)](https://github.com/jnamaya/SAFi/stargazers)
 [![Forks](https://img.shields.io/github/forks/jnamaya/SAFi)](https://github.com/jnamaya/SAFi/forks)
-[![License](https://img.shields.io/github/license/jnamaya/SAFi)](LICENSE)
+[![License](https://img.shields.io/github/license/jnamaya/SAFi)](License.txt)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Visit-brightgreen)](https://safi.selfalignmentframework.com)
 
