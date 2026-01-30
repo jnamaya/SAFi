@@ -218,6 +218,38 @@ Use Plugins to run logic *before* the prompt reaches the LLM (e.g., injecting co
 3.  **Context Injection:**
     The returned data is automatically collected into `plugin_context_data` and passed to the Intellect faculty.
 
+## Quick Start with Docker
+
+The fastest way to run SAFi is using our pre-built Docker image from Docker Hub.
+
+### 1. Pull the Image
+
+```bash
+docker pull amayanelson/safi:v1.2
+```
+
+### 2. Run the Container
+
+```bash
+docker run -d \
+  -p 5000:5000 \
+  -e DB_HOST=your_db_host \
+  -e DB_USER=your_db_user \
+  -e DB_PASSWORD=your_db_password \
+  -e DB_NAME=safi \
+  -e OPENAI_API_KEY=your_openai_key \
+  --name safi \
+  amayanelson/safi:v1.2
+```
+
+### 3. Access the Application
+
+Open your browser to `http://localhost:5000`
+
+> **Note:** You still need an external MySQL 8.0+ database. The Docker image contains the application only.
+
+---
+
 ## Installation on Your Own Server
 
 You can host SAFi on any standard Linux server (Ubuntu/Debian recommended) or Windows machine.
