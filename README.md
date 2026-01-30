@@ -25,9 +25,10 @@ SAFi is an enterprise-level, closed-loop runtime governance engine for AI, desig
 6.  [Headless Governance Layer](#headless-governance-layer)
 7.  [Agent Capabilities](#agent-capabilities)
 8.  [Developer Guide](#developer-guide)
-9.  [Installation on Your Own Server](#installation-on-your-own-server)
-10. [Live Demos](#live-demos)
-11. [Get Started](#get-started)
+9.  [Quick Start with Docker](#quick-start-with-docker)
+10. [Installation on Your Own Server](#installation-on-your-own-server)
+11. [Live Demos](#live-demos)
+12. [Contributing](#-contributing)
 
 ## How Does It Work?
 
