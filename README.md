@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/safi-demo.gif" alt="SAFi Demo" />
+  <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
 </p>
 
 ## Quick Start with Docker
