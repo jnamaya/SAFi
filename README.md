@@ -30,6 +30,8 @@ docker run -d -p 5000:5000 \
 ```
 
 > **Note:** Requires an external MySQL 8.0+ database. See [Installation](#installation-on-your-own-server) for full setup.
+>
+> **Tip:** SAFi supports multiple LLM providers. Add `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, or `DEEPSEEK_API_KEY` as needed. See [`.env.example`](.env.example) for all options.
 
 ---
 
