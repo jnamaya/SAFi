@@ -11,6 +11,10 @@
   <img src="public/assets/safi_github.png" alt="SAFi Screenshot" />
 </p>
 
+<p align="center">
+  <img src="assets/safi-demo.gif" alt="SAFi Demo" />
+</p>
+
 ## Quick Start with Docker
 
 ```bash
