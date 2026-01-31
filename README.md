@@ -5,7 +5,7 @@
 
 # SAFi: The Open-Source Runtime Governance Engine for AI
 
-**SAFi turns any LLM into a verifiably aligned, auditable agent — enforcing your values at runtime with zero black boxes.**
+**SAFi turns any LLM into a governed, auditable agent — your policies enforced at runtime, every decision logged.**
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
