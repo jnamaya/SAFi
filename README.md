@@ -423,4 +423,5 @@ You can host SAFi on any standard Linux server (Ubuntu/Debian recommended) or Wi
 
 * **Read the Philosophy:** [SelfAlignmentFramework.com](https://selfalignmentframework.com)
 * **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
+* **Follow on X:** [@nelsonamaya_](https://x.com/nelsonamaya_)
 * **Follow on Reddit:** [u/forevergeeks](https://www.reddit.com/user/forevergeeks/)
