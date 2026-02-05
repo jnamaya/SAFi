@@ -1,6 +1,5 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/docker/pulls/amayanelson/safi)](https://hub.docker.com/r/amayanelson/safi)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
 
 # SAFi: The Open-Source Runtime Governance Engine for AI
