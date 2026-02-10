@@ -72,6 +72,30 @@ SAFi implements a cognitive architecture primarily derived from the **Thomistic 
 4.  **Conscience:** The reflective judge that scores actions against the agent's core values after they occur (post-action audit).
 5.  **Spirit (Habitus):** The long-term memory that integrates these judgments to track alignment over time, detecting drift and providing coaching for future interactions.
 
+#### Spirit: The Math Behind Drift Detection
+
+Spirit is the only faculty with no LLM involvement. It uses NumPy to build a rolling ethical profile and detect behavioral drift:
+
+| Step | Formula | What It Does |
+| :--- | :--- | :--- |
+| **Score** | `S_t = σ( Σ wᵢ · sᵢ · cᵢ )` | Weighted sum of virtue scores × confidence, scaled to [1, 10] |
+| **Profile** | `p_t = w ⊙ s_t` | Element-wise product of weights and scores for this turn |
+| **EMA** | `μ_t = β · μ_(t-1) + (1-β) · p_t` | Exponential moving average (β=0.9) smooths the profile over time |
+| **Drift** | `d_t = 1 - cos_sim(p_t, μ_(t-1))` | Cosine distance between current turn and historical baseline |
+
+```python
+# Core computation from spirit.py
+p_t = self.value_weights * scores
+mu_new = self.beta * mu_prev + (1 - self.beta) * p_t
+drift = 1.0 - float(np.dot(p_t, mu_prev) / (np.linalg.norm(p_t) * np.linalg.norm(mu_prev)))
+```
+
+Spirit then generates a coaching note (e.g., *"Coherence 9/10, drift 0.01. Your main area for improvement is 'Justice' (score: 0.21)"*) that feeds back into the next Intellect call, creating a closed-loop feedback system.
+
+<p align="center">
+  <img src="public/assets/spirit-dift.png" alt="SAFi Audit Hub - Spirit Drift Tracking" />
+</p>
+
 **💡 Note: Philosophy as Architecture**
 
 Just as airplanes were inspired by birds but do not utilize feathers or biology, SAFi is inspired by the **structure** of the human mind but is a concrete software implementation.
