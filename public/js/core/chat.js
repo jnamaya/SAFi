@@ -14,6 +14,76 @@ export let currentConversationId = null;
 let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
 
+// --- FILE UPLOAD STATE ---
+let pendingFile = null;
+
+/**
+ * Initializes the file upload button and hidden input.
+ * Call this from app.js after DOM is loaded.
+ */
+export function initFileUpload() {
+    const fileInput = document.getElementById('file-upload-input');
+    const attachBtn = document.getElementById('attach-file-btn');
+
+    if (!attachBtn || !fileInput) return;
+
+    attachBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            pendingFile = file;
+            _showFileChip(file.name, file.size);
+        }
+        fileInput.value = ''; // Reset so the same file can be re-selected
+    });
+}
+
+function _showFileChip(filename, size) {
+    const chipArea = document.getElementById('file-chip-area');
+    if (!chipArea) return;
+
+    const sizeStr = size < 1024 ? `${size}B`
+        : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)}KB`
+        : `${(size / (1024 * 1024)).toFixed(1)}MB`;
+
+    chipArea.innerHTML = `
+        <div class="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm animate-fade-in">
+            <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <span class="text-neutral-700 dark:text-neutral-300 truncate max-w-[200px]">${filename}</span>
+            <span class="text-neutral-400 text-xs">${sizeStr}</span>
+            <button type="button" id="remove-file-btn" class="text-neutral-400 hover:text-red-500 transition-colors ml-1" title="Remove file">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    `;
+    chipArea.classList.remove('hidden');
+
+    document.getElementById('remove-file-btn').addEventListener('click', () => {
+        _clearPendingFile();
+    });
+
+    // Enable send button since we have a file (even if text input is empty)
+    if (ui.elements.sendButton) ui.elements.sendButton.disabled = false;
+}
+
+function _clearPendingFile() {
+    pendingFile = null;
+    const chipArea = document.getElementById('file-chip-area');
+    if (chipArea) {
+        chipArea.innerHTML = '';
+        chipArea.classList.add('hidden');
+    }
+    // Re-evaluate send button state based on text input
+    if (ui.elements.sendButton && ui.elements.messageInput) {
+        ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
+    }
+}
+
 // --- CORE EXPORTED HANDLERS (Fixing ReferenceError) ---
 // Moved declarations of handlers here to ensure they are defined before renderConvoList uses them.
 export function handleRename(id, oldTitle) {
@@ -188,8 +258,8 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     if (pinnedConversations.length > 0) {
         const pinnedHeader = document.createElement('h3');
-        pinnedHeader.className = 'px-3 mt-2 mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider';
-        pinnedHeader.textContent = 'Pinned Conversations';
+        pinnedHeader.className = 'px-3 mt-2 mb-1 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+        pinnedHeader.textContent = 'Pinned';
         convoList.appendChild(pinnedHeader);
 
         pinnedConversations.forEach(convo => {
@@ -199,30 +269,14 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     }
 
     if (unpinnedConversations.length > 0) {
-        // Container for Header + New Chat
         const headerContainer = document.createElement('div');
-        headerContainer.className = 'flex items-center justify-between px-3 mt-6 mb-2 group';
+        headerContainer.className = 'px-3 mt-4 mb-2';
 
         const allHeader = document.createElement('h3');
-        allHeader.className = 'text-xs font-medium text-gray-500 uppercase tracking-wider';
-        allHeader.textContent = 'All Conversations';
-
-        // Inline New Chat Button
-        const newChatBtn = document.createElement('button');
-        newChatBtn.type = 'button';
-        newChatBtn.className = 'flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500 transition-colors';
-        newChatBtn.innerHTML = `
-            <span>New Chat</span>
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-        `;
-        newChatBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
-            if (window.innerWidth < 768) ui.closeSidebar();
-        });
+        allHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+        allHeader.textContent = 'History';
 
         headerContainer.appendChild(allHeader);
-        headerContainer.appendChild(newChatBtn);
         convoList.appendChild(headerContainer);
 
         unpinnedConversations.forEach(convo => {
@@ -230,31 +284,16 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             convoList.appendChild(link);
         });
     } else {
-        // Fallback: List is empty (or all pinned). Show Header + Button anyway.
+        // Fallback: List is empty (or all pinned). Show Header anyway.
         const headerContainer = document.createElement('div');
-        // Add margin top if there are pinned items
-        const mt = pinnedConversations.length > 0 ? 'mt-6 border-t border-gray-100 dark:border-gray-800 pt-4' : 'mt-2';
-        headerContainer.className = `flex items-center justify-between px-3 mb-2 group ${mt}`;
+        const mt = pinnedConversations.length > 0 ? 'mt-4 border-t border-gray-100 dark:border-gray-800 pt-4' : 'mt-2';
+        headerContainer.className = `px-3 mb-2 ${mt}`;
 
         const allHeader = document.createElement('h3');
-        allHeader.className = 'text-xs font-medium text-gray-500 uppercase tracking-wider';
-        allHeader.textContent = 'All Conversations';
-
-        const newChatBtn = document.createElement('button');
-        newChatBtn.type = 'button';
-        newChatBtn.className = 'flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-green-600 dark:text-gray-400 dark:hover:text-green-500 transition-colors';
-        newChatBtn.innerHTML = `
-             <span>New Chat</span>
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-         `;
-        newChatBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
-            if (window.innerWidth < 768) ui.closeSidebar();
-        });
+        allHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+        allHeader.textContent = 'History';
 
         headerContainer.appendChild(allHeader);
-        headerContainer.appendChild(newChatBtn);
         convoList.appendChild(headerContainer);
     }
     // --- END NEW: Sorting Logic ---
@@ -497,7 +536,7 @@ export async function sendMessage(activeProfileData, user) {
     }
 
     const userMessage = ui.elements.messageInput.value.trim();
-    if (!userMessage) return;
+    if (!userMessage && !pendingFile) return;
 
     let isNewConversation = false;
 
@@ -592,9 +631,13 @@ export async function sendMessage(activeProfileData, user) {
         sendMessage(activeProfileData, user);
     };
 
+    // Capture pending file name before extraction (for display in chat bubble)
+    const pendingFileName = pendingFile ? pendingFile.name : null;
+
     uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, {
         avatarUrl: pic,
-        onRetry: retryHandler
+        onRetry: retryHandler,
+        attachedFile: pendingFileName
     });
 
     const userMessageObject = {
@@ -615,9 +658,51 @@ export async function sendMessage(activeProfileData, user) {
     const aiMessageId = generateUUID();
     pollForAuditResults(aiMessageId, user); // Start polling for reasoning immediately
 
+    // --- DOCUMENT UPLOAD: Extract text from pending file ---
+    let documentContext = '';
+    let attachedFileName = '';
+    if (pendingFile) {
+        try {
+            uiMessages.updateThinkingStatus('Extracting document text...');
+            const extracted = await api.extractDocumentText(pendingFile);
+            documentContext = `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.]\n${extracted.text}\n[END DOCUMENT]`;
+            attachedFileName = extracted.filename;
+            if (extracted.was_truncated) {
+                ui.showToast(`Document truncated to fit context window.`, 'info');
+            }
+        } catch (error) {
+            ui.showToast(error.message || 'Failed to process document.', 'error');
+            _clearPendingFile();
+            cancelPolling(aiMessageId);
+            if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
+            ui.clearLoadingInterval();
+            // Reset button
+            buttonIcon.classList.remove('hidden');
+            buttonIcon.innerHTML = `
+               <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd"
+                    d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                    clip-rule="evenodd" />
+                </svg>`;
+            buttonLoader.classList.add('hidden');
+            ui.elements.sendButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+            ui.elements.sendButton.classList.add('bg-green-600', 'hover:bg-green-700');
+            ui.elements.sendButton.style.backgroundColor = '';
+            currentAbortController = null;
+            ui.elements.messageInput.value = originalMessage;
+            autoSize();
+            return;
+        }
+        _clearPendingFile();
+    }
+    // --- END DOCUMENT UPLOAD ---
+
+    // Build the full message: user text + document context (if any)
+    const fullMessage = documentContext ? (userMessage || 'Please analyze the attached document.') + documentContext : userMessage;
+
     try {
         // PASS SIGNAL AND MESSAGE_ID HERE
-        const initialResponse = await api.processUserMessage(userMessage, currentConversationId, currentAbortController.signal, aiMessageId);
+        const initialResponse = await api.processUserMessage(fullMessage, currentConversationId, currentAbortController.signal, aiMessageId);
 
         ui.clearLoadingInterval();
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
@@ -952,7 +1037,8 @@ export function autoSize() {
     const sendButton = ui.elements.sendButton;
 
     const hasText = input.value.trim().length > 0;
-    sendButton.disabled = !hasText;
+    // Enable send if there is text OR a pending file attachment
+    sendButton.disabled = !hasText && !pendingFile;
 
     if (!hasText) {
         input.style.height = '44px'; // Force reset to min-height

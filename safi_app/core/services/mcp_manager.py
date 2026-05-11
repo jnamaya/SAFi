@@ -133,6 +133,31 @@ class MCPManager:
                 }
             })
 
+        # --- WEB SEARCH ---
+        if "web_search" in allowed_tools:
+            tools.append({
+                "name": "web_search",
+                "description": "Search the internet for general information and up-to-date facts.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query (e.g. 'symptoms of flu')."}
+                    },
+                    "required": ["query"]
+                }
+            })
+            tools.append({
+                "name": "web_news",
+                "description": "Search the internet specifically for the latest news articles.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The news topic (e.g. 'latest FDA approvals')."}
+                    },
+                    "required": ["query"]
+                }
+            })
+
         # --- GOOGLE DRIVE ---
         if "google_drive" in allowed_tools:
             tools.append({
@@ -376,6 +401,18 @@ class MCPManager:
                         "icon": "code"
                     }
                 ]
+            },
+            # --- WEB SEARCH ---
+            {
+                "category": "Web Search",
+                "tools": [
+                    {
+                        "name": "web_search",
+                        "label": "Web & News Search",
+                        "description": "Search the internet for up-to-date information and news.",
+                        "icon": "globe"
+                    }
+                ]
             }
         ]
 
@@ -413,6 +450,14 @@ class MCPManager:
         if tool_name == "find_places":
             from ..mcp_servers.google_maps import find_places
             return await find_places(arguments["query"])
+
+        # -- WEB SEARCH IMPLEMENTATION --
+        if tool_name in ["web_search", "web_news"]:
+            from ..mcp_servers.web_search import search_web, get_news
+            if tool_name == "web_search":
+                return await search_web(arguments["query"])
+            if tool_name == "web_news":
+                return await get_news(arguments["query"])
 
         # -- GOOGLE DRIVE --
         if tool_name.startswith("google_"):
