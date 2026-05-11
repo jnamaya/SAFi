@@ -158,71 +158,44 @@
             <footer id="composer-footer" class="w-full max-w-5xl px-0">
               <div class="relative w-full">
                 <!-- Capsule Container -->
-                <div
-                  class="bg-neutral-100 dark:bg-neutral-900 rounded-3xl p-2 transition-all duration-200 border border-neutral-200 dark:border-neutral-700 shadow-xl">
+                <div id="composer-capsule"
+                  class="bg-white dark:bg-neutral-900 rounded-[32px] p-3 transition-all duration-200 border border-neutral-200 dark:border-neutral-800 shadow-lg">
 
                   <!-- Text Area Section -->
-                  <div class="relative px-2 pt-2">
+                  <div class="relative px-3 pt-2">
                     <textarea id="message-input" rows="1" placeholder="Ask anything..."
-                      class="w-full bg-transparent border-none focus:ring-0 text-neutral-900 dark:text-neutral-100 placeholder-neutral-500 text-base resize-none max-h-32 py-2 pr-12 custom-scrollbar"
-                      style="min-height: 44px;"></textarea>
-
-                    <!-- Send Button (Moved into input field) -->
-                    <div class="absolute flex items-center gap-2" style="bottom: 16px; right: 15px;">
-                      <!-- Send Button -->
-                      <button id="send-button" type="submit" aria-label="Send message"
-                        class="w-8 h-8 bg-black hover:bg-gray-800 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-transform hover:scale-105 shadow-md disabled:bg-neutral-400 disabled:cursor-not-allowed disabled:hover:scale-100"
-                        disabled>
-                        <div id="button-icon">
-                          <!-- Solid Arrow Up Icon (Rotated 90deg to point right) -->
-                          <svg class="w-5 h-5 rotate-90" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd"
-                              d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
-                              clip-rule="evenodd" />
-                          </svg>
-                        </div>
-                        <div id="button-loader" class="loader hidden"></div>
-                      </button>
-                    </div>
+                      class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 pr-4 custom-scrollbar input-scrollbar"
+                      style="min-height: 48px;"></textarea>
                   </div>
 
+                  <!-- File Chip Area (shown when a file is attached) -->
+                  <div id="file-chip-area" class="hidden px-3 pt-1"></div>
+
+                  <!-- Hidden File Input -->
+                  <input type="file" id="file-upload-input" class="hidden"
+                    accept=".txt,.md,.pdf,.docx,.csv" />
+
                   <!-- Toolbar Section -->
-                  <div class="flex items-center justify-between px-1 pb-1 mt-1">
+                  <div class="flex items-center justify-between px-2 pt-2">
 
-                    <!-- Agent Selector (Left) -->
+                    <!-- Left: Tools (+ Attach, Data Sources) -->
                     <div class="flex items-center gap-2">
-                      <div class="relative group" id="agent-selector-container">
-                        <button id="agent-selector-btn" type="button"
-                          class="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-black hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-sm font-medium rounded-full transition-colors border border-neutral-200 dark:border-neutral-700 shadow-sm group-hover:border-neutral-300 dark:group-hover:border-neutral-600">
-                          <!-- Icon and Text injected via JS -->
-                          <span class="w-4 h-4 rounded-full bg-neutral-400"></span>
-                          <span>Loading...</span>
-                          <svg class="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                            </path>
-                          </svg>
-                        </button>
-
-                        <!-- Dropdown -->
-                        <div id="agent-selector-dropdown"
-                          class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col max-h-64 overflow-y-auto custom-scrollbar">
-                          <!-- Options injected via JS -->
-                        </div>
-                      </div>
+                      <!-- Attachment Button (+) -->
+                      <button type="button" id="attach-file-btn"
+                        class="flex items-center justify-center w-10 h-10 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        title="Attach a document (.pdf, .docx, .txt, .csv, .md)">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                      </button>
 
                       <!-- Data Sources Dropdown -->
                       <div class="relative group" id="data-sources-container">
                         <button id="data-sources-btn" type="button"
-                          class="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-black hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-sm font-medium rounded-full transition-colors border border-neutral-200 dark:border-neutral-700 shadow-sm group-hover:border-neutral-300 dark:group-hover:border-neutral-600 ml-1">
-                          <svg class="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          class="flex items-center justify-center w-10 h-10 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800" title="Data Sources">
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
-                            </path>
-                          </svg>
-                          <span>Data Sources</span>
-                          <svg class="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
-                            </path>
+                              d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                           </svg>
                         </button>
 
@@ -234,16 +207,35 @@
                       </div>
                     </div>
 
-                    <!-- Action Buttons (Right) -->
+                    <!-- Right: Agent Selector & Send -->
                     <div class="flex items-center gap-2">
-                      <!-- Attachment Button -->
-                      <button type="button"
-                        class="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800"
-                        title="Attach file (Coming Soon)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4">
-                          </path>
-                        </svg>
+                      <div class="relative group" id="agent-selector-container">
+                        <button id="agent-selector-btn" type="button"
+                          class="flex items-center gap-2 px-4 py-2 bg-transparent text-neutral-700 dark:text-neutral-300 text-sm font-medium rounded-full transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                          <span class="max-w-[100px] sm:max-w-none truncate">Loading...</span>
+                          <svg class="w-3.5 h-3.5 text-neutral-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                          </svg>
+                        </button>
+
+                        <!-- Dropdown -->
+                        <div id="agent-selector-dropdown"
+                          class="absolute bottom-full right-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col max-h-64 overflow-y-auto custom-scrollbar">
+                          <!-- Options injected via JS -->
+                        </div>
+                      </div>
+
+                      <!-- Send Button -->
+                      <button id="send-button" type="submit" aria-label="Send message"
+                        class="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        disabled>
+                        <div id="button-icon" class="text-neutral-900 dark:text-white">
+                          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                          </svg>
+                        </div>
+                        <div id="button-loader" class="loader hidden"></div>
                       </button>
                     </div>
 

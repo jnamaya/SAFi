@@ -38,52 +38,60 @@ export function updateUIForAuthState(user) {
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-72 bg-gray-50 dark:bg-black text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-gray-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-64 bg-white dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-neutral-200 dark:border-neutral-800">
           
           <!-- Header Area -->
-          <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
+          <div class="px-4 py-3 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-              <div class="app-logo h-10 w-10">
-                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain" onerror="this.onerror=null; this.src='https://placehold.co/40x40/22c55e/FFFFFF?text=S'">
+              <div class="app-logo h-7 w-7">
+                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
               </div>
-              <p class="app-tagline text-gray-500 dark:text-gray-400 leading-tight">The Governance Engine For AI</p>
+              <span class="font-semibold text-lg tracking-tight">SAFi</span>
             </div>
 
-            <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
             </button>
           </div>
           
           <!-- Search Bar Area -->
-          <div class="px-4 pt-4 shrink-0">
-             <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <div class="px-3 pt-2 shrink-0 space-y-2">
+             <!-- Search Bar (Styled as a flat menu item) -->
+             <div class="relative group cursor-text">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-500 group-hover:text-neutral-700 dark:group-hover:text-neutral-300">
                     ${iconSearch}
                 </div>
-                <input type="text" id="convo-search-input" placeholder="Search chats..." class="w-full pl-10 pr-3 py-2 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:outline-none transition-shadow shadow-sm">
+                <input type="text" id="convo-search-input" placeholder="Search" class="w-full pl-9 pr-3 py-2 bg-transparent rounded-md text-sm text-neutral-900 dark:text-white placeholder-neutral-500 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-900 focus:bg-neutral-100 dark:focus:bg-neutral-900 focus:outline-none transition-colors">
              </div>
+
+             <!-- New Chat Button -->
+             <button id="new-chat-button" type="button" class="w-full flex items-center justify-start gap-3 bg-neutral-100 dark:bg-neutral-900 text-black dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-800 px-4 py-2.5 rounded-full transition-colors text-sm font-bold">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                <span>New Chat</span>
+             </button>
           </div>
 
-
-           
-          <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar min-h-0">
+          <!-- Conversation List -->
+          <nav id="convo-list" aria-label="Conversation history" class="flex-1 overflow-y-auto px-2 py-2 mt-2 space-y-0.5 custom-scrollbar min-h-0">
             <!-- Content generated by renderConvoList -->
           </nav>
           
-            <div id="user-profile-container" class="p-4 border-t border-gray-200 dark:border-gray-800 shrink-0 space-y-3">
-              <!-- User Info Block (Generic, non-clickable for now, or could link to profile) -->
-              <div class="flex items-center gap-3">
-                <img src="${pic}" alt="User Avatar" class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700">
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-semibold truncate text-neutral-900 dark:text-white" title="${name}">${name}</p>
-                  <p class="text-xs text-neutral-500 dark:text-neutral-400 truncate" title="${user.email}">${user.email}</p>
+            <div class="px-3 py-3 shrink-0">
+              <!-- User Info Block (Now acts as Control Panel trigger) -->
+              <button id="control-panel-btn" type="button" class="w-full flex items-center justify-between px-2 py-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors text-left group" aria-label="Open Control Panel">
+                <div class="flex items-center gap-3 min-w-0">
+                  <img src="${pic}" alt="User Avatar" class="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 shrink-0">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium truncate text-neutral-900 dark:text-white leading-tight" title="${name}">${name}</p>
+                    <p class="text-[11px] text-neutral-500 truncate mt-0.5" title="${user.email}">${user.email}</p>
+                  </div>
                 </div>
-              </div>
-
-              <!-- Dedicated Control Panel Button -->
-              <button id="control-panel-btn" type="button" class="w-full flex items-center justify-center gap-2 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white px-3 py-2 rounded-lg transition-all text-sm font-medium shadow-sm" aria-label="Open Control Panel">
-                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                 <span>Control Panel</span>
+                <!-- Three Dots Indicator -->
+                <div class="shrink-0 text-neutral-400 group-hover:text-neutral-600 dark:text-neutral-500 dark:group-hover:text-neutral-300 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                  </svg>
+                </div>
               </button>
             </div>
         </aside>
@@ -262,7 +270,7 @@ export function renderConversationLink(convo, handlers) {
   link.dataset.id = convo.id;
 
   const innerContent = document.createElement('div');
-  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 bg-white dark:bg-black hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors duration-150';
+  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-neutral-50 dark:hover:bg-[#111111] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
@@ -402,21 +410,16 @@ export function setActiveConvoLink(id) {
 
     // -- Active State --
     if (isActive) {
-      // FORCE class list to ensure no specific override - INCREASED CONTRAST
-      // FIX: Light mode uses bg-gray-200 and text-black. Dark mode uses bg-gray-700 and text-white.
-      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 rounded-md transition-all duration-200 bg-white dark:bg-white/10 text-gray-900 dark:text-white font-semibold shadow-sm ring-1 ring-black/5 dark:ring-white/10 my-0.5';
+      // FORCE class list to ensure no specific override - DIMMER ACTIVE STATE
+      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-all duration-200 bg-neutral-100 dark:bg-[#1a1a1a] text-neutral-900 dark:text-neutral-200 font-bold my-0.5';
 
       if (timestamp) {
         // Timestamp text made slightly lighter than main text
-        timestamp.className = "convo-timestamp truncate block text-xs text-gray-600 dark:text-gray-300";
+        timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-500";
       }
     } else {
-      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-2 rounded-md transition-colors duration-150 bg-white dark:bg-black hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-900 dark:text-white';
+      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-neutral-50 dark:hover:bg-[#111111] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
-      // title styling handled via CSS or class if needed, but inner className covers text color
-      // We need to handle title specifically if it has its own font weight class toggles elsewhere?
-      // actually title classes are usually static 'truncate block text-sm', the active weight was toggled.
-      // Let's keep title weight toggle if we can target it.
       if (title) title.className = `convo-title truncate block text-sm ${isActive ? 'font-semibold' : 'font-medium'}`;
     }
 

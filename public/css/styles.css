@@ -785,8 +785,6 @@ html {
   .convo-menu-button:hover {
     background: rgba(120, 120, 120, 0.12);
   }
-}
-
 .convo-item {
   position: relative;
 }
@@ -843,6 +841,8 @@ html {
   white-space: nowrap;
   line-height: 1.2;
   height: 24px;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .trust-score-pill:hover {
@@ -851,39 +851,39 @@ html {
 }
 
 .trust-green {
-  background-color: #dcfce7;
-  color: #166534;
-  border-color: #bbf7d0;
+  background-color: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #bbf7d0 !important;
 }
 
 .trust-yellow {
-  background-color: #fef9c3;
-  color: #854d0e;
-  border-color: #fde047;
+  background-color: #fef9c3 !important;
+  color: #854d0e !important;
+  border-color: #fde047 !important;
 }
 
 .trust-red {
-  background-color: #fee2e2;
-  color: #991b1b;
-  border-color: #fecaca;
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+  border-color: #fecaca !important;
 }
 
 .dark .trust-green {
-  background-color: rgba(22, 163, 74, 0.2);
-  color: #86efac;
-  border-color: rgba(22, 163, 74, 0.4);
+  background-color: #14532d !important;
+  color: #bbf7d0 !important;
+  border-color: #166534 !important;
 }
 
 .dark .trust-yellow {
-  background-color: rgba(234, 179, 8, 0.2);
-  color: #fde047;
-  border-color: rgba(234, 179, 8, 0.4);
+  background-color: #713f12 !important;
+  color: #fef08a !important;
+  border-color: #854d0e !important;
 }
 
 .dark .trust-red {
-  background-color: rgba(220, 38, 38, 0.2);
-  color: #fca5a5;
-  border-color: rgba(220, 38, 38, 0.4);
+  background-color: #7f1d1d !important;
+  color: #fecaca !important;
+  border-color: #991b1b !important;
 }
 
 .meta {
@@ -937,12 +937,21 @@ form {
   gap: 0;
 }
 
-/* 2. The Input Field Itself (The Capsule) */
+/* NEW: Focus glow on the capsule when typing */
+#composer-capsule:focus-within {
+  border-color: rgba(22, 163, 74, 0.4);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.dark #composer-capsule:focus-within {
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* 2. The Input Field Itself */
 #message-input {
-  /* Modern Pill Shape */
   border-radius: 8px;
-  /* Right padding ensures text doesn't go behind the button */
-  padding: 10px 54px 10px 20px;
+  padding: 8px 16px;
 
   /* Surface styling */
   background-color: transparent;
@@ -960,10 +969,10 @@ form {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   resize: none;
   width: 100%;
-  min-height: 60px;
+  min-height: 40px;
   max-height: 150px;
 
-  /* NEW: Ensure it overrides Tailwind utility classes */
+  /* Ensure it overrides Tailwind utility classes */
   margin: 0 !important;
   flex: 1;
 }
@@ -974,8 +983,6 @@ form {
   box-shadow: none;
 }
 
-/* Focus State */
-/* Focus State Removed per user request */
 #message-input:focus {
   outline: none;
 }
@@ -989,24 +996,16 @@ form {
 }
 
 /* 3. The Send Button */
-#send-button,
-#send-btn,
-.send-btn,
-button[type="submit"] {
-  /* Position handled by Tailwind in HTML */
-  /* position: absolute; */
-  /* right: 26px; */
-  /* bottom: 26px; */
-
+#send-button {
   width: 32px;
   height: 32px;
   border-radius: 50%;
 
-  /* Force the Green Circle Look */
+  /* Green accent */
   background-color: #16a34a !important;
   color: white !important;
 
-  /* Center the Icon Perfectly */
+  /* Center the Icon */
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -1016,21 +1015,19 @@ button[type="submit"] {
   margin: 0;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 5px rgba(22, 163, 74, 0.25);
   z-index: 10;
 }
 
-/* Hover State */
 #send-button:hover {
   background-color: #15803d !important;
-  /* Darker green */
   transform: scale(1.05);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
 }
 
-/* Disabled State (When input is empty) */
+/* Disabled State */
 #send-button:disabled {
-  background-color: #e5e7eb !important;
+  background-color: #d1d5db !important;
   color: #9ca3af !important;
   box-shadow: none;
   cursor: default;
@@ -1042,22 +1039,12 @@ button[type="submit"] {
   color: #6b7280 !important;
 }
 
-/* Icon Sizing & Optical Centering */
+/* Icon Sizing */
 #send-button svg {
-  width: 16px;
-  height: 16px;
-
-  /* RESET any inline transforms from HTML */
-  transform: rotate(45deg) !important;
-
-  /* Optical correction: Paper planes look heavy on the left/bottom, 
-       so we nudge it slightly right to make it look centered. */
-  margin-left: 2px;
-  margin-top: 0;
-
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2px;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .profile-section-container {
@@ -1219,22 +1206,21 @@ button[type="submit"] {
 }
 
 /* --- Sidebar Active State (Control Panel) --- */
-/* --- Sidebar Active State (Control Panel) --- */
 .sidebar-item.active {
-  background-color: #dddddd;
-  color: #000000;
+  background-color: #e5e5e5;
+  color: #171717;
   border-radius: 0.5rem;
 }
 
 .dark .sidebar-item.active {
-  background-color: #ffffff;
-  color: #000000;
+  background-color: #262626;
+  color: #e5e5e5;
 }
 
 .sidebar-item.active svg {
-  color: #000000;
+  color: #171717;
 }
 
 .dark .sidebar-item.active svg {
-  color: #000000;
+  color: #e5e5e5;
 }

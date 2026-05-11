@@ -51,6 +51,9 @@ export const urls = {
     ORG_VERIFY_START: j('/api/organizations/domain/start'),
     ORG_VERIFY_CHECK: j('/api/organizations/domain/verify'),
     ORG_VERIFY_CANCEL: j('/api/organizations/domain/cancel'),
+
+    // Document Upload
+    DOCUMENTS_EXTRACT: j('/api/documents/extract'),
 };
 
 
@@ -316,4 +319,39 @@ export async function updateMemberRole(orgId, userId, role) {
 
 export async function removeMember(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}`, 'DELETE', {});
+}
+
+// --- Document Upload ---
+
+/**
+ * Uploads a file and returns the extracted text content.
+ * Uses a direct fetch (not offline manager) since file uploads can't be queued.
+ *
+ * @param {File} file - The File object from an input element.
+ * @returns {Promise<{text: string, filename: string, total_chars: number, was_truncated: boolean}>}
+ */
+export async function extractDocumentText(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const auth = await getAuthToken();
+    const headers = new Headers();
+    // NOTE: Do NOT set Content-Type for FormData — the browser sets it
+    // automatically with the correct multipart boundary.
+    if (auth) headers.append('Authorization', `Bearer ${auth}`);
+
+    const response = await fetch(urls.DOCUMENTS_EXTRACT, {
+        method: 'POST',
+        headers: headers,
+        body: formData,
+        credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || 'Document extraction failed.');
+    }
+
+    return data;
 }

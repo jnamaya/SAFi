@@ -222,6 +222,9 @@ async function checkLoginStatus() {
 
       // Initialize Data Sources UI (Dropdown)
       initDataSources();
+
+      // Initialize File Upload (Attachment Button)
+      chat.initFileUpload();
     }
     // Attach all global event listeners
     attachEventListeners();
