@@ -785,6 +785,8 @@ html {
   .convo-menu-button:hover {
     background: rgba(120, 120, 120, 0.12);
   }
+} /* <-- ADD THIS CLOSING BRACE */
+
 .convo-item {
   position: relative;
 }
