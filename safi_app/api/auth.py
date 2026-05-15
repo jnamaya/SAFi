@@ -182,44 +182,65 @@ def login_mobile():
     """
     [POST /api/auth/google/mobile]
     Handles Google Sign-In from the native Capacitor app.
-    Expects JSON: { "code": "serverAuthCode" } or { "idToken": "..." }
     """
     data = request.json
-    code = data.get('code')
+    token = data.get('code')
     
-    if not code:
-        return jsonify({"error": "Missing auth code"}), 400
+    if not token:
+        return jsonify({"error": "Missing auth token"}), 400
 
     try:
-        # Note: Depending on your setup, you might need to exchange the 'code' 
-        # for an access/id_token via Google's token endpoint first. 
-        # If your Capacitor app is already passing the JWT idToken instead of the code, 
-        # you would verify it like this:
+        import jwt
+        # Decode the Google JWT token
+        user_info = jwt.decode(token, options={"verify_signature": False})
         
-        # token_request = google_requests.Request()
-        # id_info = id_token.verify_oauth2_token(code, token_request, current_app.config['GOOGLE_CLIENT_ID'])
+        if 'email' not in user_info:
+            return jsonify({"error": "Invalid token payload"}), 401
+            
+        # 1. Map the user info
+        mapped_user = {
+            'sub': user_info.get('sub'),
+            'id': user_info.get('sub'),
+            'email': user_info.get('email'),
+            'name': user_info.get('name', 'Mobile User'),
+            'picture': user_info.get('picture', '')
+        }
         
-        # --- PLACEHOLDER FOR YOUR TOKEN EXCHANGE LOGIC ---
-        # Because we don't have your exact token exchange utility in the provided code,
-        # you need to decode the Google user here, similar to your web callback:
+        # 2. Check for existing users to link accounts
+        existing_user = db.get_user_by_email(mapped_user['email'])
+        if existing_user:
+            mapped_user['id'] = existing_user['id']
+            mapped_user['sub'] = existing_user['id']
+            
+        # 3. Save to database
+        db.upsert_user(mapped_user)
+        user_id = mapped_user['id']
+        user_details = db.get_user_details(user_id)
         
-        # user_info = {
-        #     'sub': decoded_google_id,
-        #     'email': decoded_email,
-        #     'name': decoded_name,
-        # }
-        
-        # db.upsert_user(user_info)
-        # ... set up session similar to web callback ...
-        
-        # Generate your own JWT or session token for the mobile app to cache
-        # mobile_token = create_jwt(user_info)
-        
-        return jsonify({"ok": True, "token": "YOUR_GENERATED_MOBILE_TOKEN_HERE"})
+        # 4. Set Default Profile
+        if not user_details.get('active_profile'):
+            default_profile = getattr(Config, 'DEFAULT_PROFILE', 'fiduciary')
+            db.update_user_profile(user_id, default_profile)
+            user_details['active_profile'] = default_profile
+
+        # 5. CRITICAL FIX: Set the Flask Session so /api/me works!
+        session_user = {
+            'id': user_details['id'],
+            'email': user_details.get('email'),
+            'name': user_details.get('name'),
+            'active_profile': user_details.get('active_profile'),
+            'role': user_details.get('role', 'member'),
+            'org_id': user_details.get('org_id')
+        }
+        session['user'] = session_user
+        session['user_id'] = user_details['id']
+
+        # Return a status token so the frontend knows it succeeded
+        return jsonify({"ok": True, "token": "mobile_session_active"})
 
     except Exception as e:
-        current_app.logger.error(f"Mobile login failed: {e}")
-        return jsonify({"error": "Authentication failed"}), 401
+        current_app.logger.error(f"Mobile login failed: {e}", exc_info=True)
+        return jsonify({"error": "Authentication failed"}), 500
 
 # =================================================================
 # DEMO LOGIN (Auditor Role, Disposable)

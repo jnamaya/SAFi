@@ -93,10 +93,12 @@ async function handleNativeLogin() {
   }
   try {
     const googleUser = await GoogleAuth.signIn();
-    const authCode = googleUser?.serverAuthCode;
+    
+    // CRITICAL FIX: Use the idToken instead of the serverAuthCode
+    const authCode = googleUser?.authentication?.idToken || googleUser?.serverAuthCode;
 
     if (!authCode) {
-      ui.showToast('Authentication failed. No server auth code.', 'error');
+      ui.showToast('Authentication failed. No auth token received.', 'error');
       hapticError();
       return;
     }
