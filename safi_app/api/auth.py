@@ -174,6 +174,52 @@ def callback():
         current_app.logger.error(f"Web callback error: {str(e)}", exc_info=True)
         return redirect('/?error=auth_failed')
 
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
+@auth_bp.route('/auth/google/mobile', methods=['POST'])
+def login_mobile():
+    """
+    [POST /api/auth/google/mobile]
+    Handles Google Sign-In from the native Capacitor app.
+    Expects JSON: { "code": "serverAuthCode" } or { "idToken": "..." }
+    """
+    data = request.json
+    code = data.get('code')
+    
+    if not code:
+        return jsonify({"error": "Missing auth code"}), 400
+
+    try:
+        # Note: Depending on your setup, you might need to exchange the 'code' 
+        # for an access/id_token via Google's token endpoint first. 
+        # If your Capacitor app is already passing the JWT idToken instead of the code, 
+        # you would verify it like this:
+        
+        # token_request = google_requests.Request()
+        # id_info = id_token.verify_oauth2_token(code, token_request, current_app.config['GOOGLE_CLIENT_ID'])
+        
+        # --- PLACEHOLDER FOR YOUR TOKEN EXCHANGE LOGIC ---
+        # Because we don't have your exact token exchange utility in the provided code,
+        # you need to decode the Google user here, similar to your web callback:
+        
+        # user_info = {
+        #     'sub': decoded_google_id,
+        #     'email': decoded_email,
+        #     'name': decoded_name,
+        # }
+        
+        # db.upsert_user(user_info)
+        # ... set up session similar to web callback ...
+        
+        # Generate your own JWT or session token for the mobile app to cache
+        # mobile_token = create_jwt(user_info)
+        
+        return jsonify({"ok": True, "token": "YOUR_GENERATED_MOBILE_TOKEN_HERE"})
+
+    except Exception as e:
+        current_app.logger.error(f"Mobile login failed: {e}")
+        return jsonify({"error": "Authentication failed"}), 401
 
 # =================================================================
 # DEMO LOGIN (Auditor Role, Disposable)
@@ -734,7 +780,7 @@ def set_user_models():
     db.update_user_models(user_id, data.get('intellect_model'), data.get('will_model'), data.get('conscience_model'))
     return jsonify({"status": "success"})
 
-@auth_bp.route('/me/delete', methods=['POST'])
+@auth_bp.route('/me/delete', methods=['POST', 'DELETE'])
 def delete_me():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
