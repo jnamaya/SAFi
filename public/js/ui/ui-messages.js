@@ -486,7 +486,69 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     }
 }
 
+// State to track current loading profile name for dynamic status translation
+let currentLoadingProfile = null;
+
+// Helper to translate raw backend developer statuses to sleek, premium user-facing statuses
+function _translateStatus(text, profileName) {
+    if (!text) return "Thinking...";
+    const status = text.trim();
+
+    // 1. Connecting to Intellect
+    if (status.includes("Connecting to Intellect Faculty")) {
+        const agentName = profileName || "Intellect";
+        return `🧠 Consulting ${agentName}...`;
+    }
+
+    // 2. Evaluating compliance
+    if (status.includes("Evaluating ethical compliance (Will Faculty)")) {
+        return `🛡️ Auditing response for safety and compliance...`;
+    }
+
+    // 3. Policy violation / Reflexion
+    if (status.includes("Policy violation detected. Retrying with reflexion")) {
+        return `🔄 Refining response for alignment compliance...`;
+    }
+
+    // 4. Will gating tool request
+    if (status.includes("Will gating tool request")) {
+        return `🛡️ Verifying tool safety parameters...`;
+    }
+
+    // 5. Tool executions: Executing contained tool action (X/Y): Z...
+    if (status.includes("Executing contained tool action")) {
+        const match = status.match(/Executing contained tool action \((\d+)\/(\d+)\):\s*([\w_]+)/);
+        if (match) {
+            const stepNum = match[1];
+            const maxSteps = match[2];
+            const toolName = match[3];
+
+            let toolDisplay = `Fetching data via ${toolName}`;
+            if (toolName === "get_stock_price") {
+                toolDisplay = "Retrieving real-time stock price";
+            } else if (toolName === "get_company_news") {
+                toolDisplay = "Fetching latest company headlines";
+            } else if (toolName === "get_key_metrics") {
+                toolDisplay = "Fetching key financial metrics";
+            } else if (toolName === "get_analyst_consensus") {
+                toolDisplay = "Gathering Wall Street analyst targets";
+            } else if (toolName === "get_earnings_history") {
+                toolDisplay = "Analyzing historical earnings reports";
+            } else if (toolName === "find_places") {
+                toolDisplay = "Searching for nearby locations";
+            } else if (toolName === "web_search") {
+                toolDisplay = "Searching the web for latest info";
+            }
+
+            return `🔍 [Step ${stepNum}/${maxSteps}] ${toolDisplay}...`;
+        }
+    }
+
+    return text;
+}
+
 export function showLoadingIndicator(profileName) {
+    currentLoadingProfile = profileName;
     ui._ensureElements();
     ui.clearLoadingInterval();
     document.querySelector('.empty-state-container')?.remove();
@@ -538,10 +600,12 @@ export function updateThinkingStatus(text) {
     // Always clear the generic rotator if we are receiving real updates
     ui.clearLoadingInterval();
 
-    if (statusSpan && statusSpan.textContent !== text) {
+    const translatedText = _translateStatus(text, currentLoadingProfile);
+
+    if (statusSpan && statusSpan.textContent !== translatedText) {
         statusSpan.style.opacity = '0';
         setTimeout(() => {
-            statusSpan.textContent = text;
+            statusSpan.textContent = translatedText;
             statusSpan.style.opacity = '1';
         }, 200);
     }
