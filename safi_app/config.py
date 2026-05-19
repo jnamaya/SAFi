@@ -148,10 +148,8 @@ class Config:
         {"id": "openai/gpt-oss-safeguard-20b", "label": "Safety GPT OSS 20B (Safety Model)", "categories": ["support"]},
 
         # OpenAI Models
-        {"id": "gpt-3.5-turbo", "label": "GPT-3.5 Turbo (Legacy)", "categories": ["support"]},
         {"id": "gpt-4o-mini", "label": "GPT-4o Mini (Cost Effective)", "categories": ["support", "intellect"]},
         {"id": "gpt-4o", "label": "GPT-4o (High Intelligence)", "categories": ["intellect"]},
-        {"id": "gpt-4.1", "label": "GPT-4.1 (Complex Logic)", "categories": ["intellect"]},
         {"id": "gpt-5.1-2025-11-13", "label": "GPT-5.1 Preview (Next-Gen/Slow)", "categories": ["intellect"]},
         
         # Anthropic (Claude) Models

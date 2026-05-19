@@ -261,7 +261,7 @@ class LLMProvider:
             
             # --- GEMINI FIX: Safe Text Access & Tool Check ---
             try:
-                if resp.function_calls:
+                if getattr(resp, 'function_calls', None):
                     fc = resp.function_calls[0]
                     # args is a dict or mapping depending on SDK
                     args = fc.args if isinstance(fc.args, dict) else (dict(fc.args) if fc.args else {})
@@ -275,9 +275,22 @@ class LLMProvider:
                     }
                     if resp.candidates and resp.candidates[0].content:
                         raw_content = resp.candidates[0].content
-                        payload["_gemini_raw_turn"] = raw_content.model_dump() if hasattr(raw_content, "model_dump") else dict(raw_content)
+                        
+                        # Try to use mode='json' if available (Pydantic v2)
+                        if hasattr(raw_content, "model_dump"):
+                            try:
+                                payload["_gemini_raw_turn"] = raw_content.model_dump(mode="json")
+                            except TypeError:
+                                payload["_gemini_raw_turn"] = raw_content.model_dump()
+                        else:
+                            payload["_gemini_raw_turn"] = dict(raw_content)
                     
-                    return json.dumps(payload)
+                    def safe_serialize(obj):
+                        if isinstance(obj, bytes):
+                            return obj.decode('utf-8', errors='ignore')
+                        return str(obj)
+                        
+                    return json.dumps(payload, default=safe_serialize)
 
                 return resp.text or "{}"
             except Exception as e:

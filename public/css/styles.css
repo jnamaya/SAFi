@@ -76,10 +76,10 @@ html {
   --hint: #4b5563;
   --accent: #16a34a;
 
-  --user-bg: #16a34a;
-  --user-fg: #ffffff;
+  --user-bg: #16a34a; /* Green */
+  --user-fg: #ffffff; /* White text */
   --ai-fg: #111827;
-  --ai-bg: #transparent;
+  --ai-bg: transparent;
 }
 
 .dark {
@@ -89,10 +89,10 @@ html {
   --hint: #d1d5db;
   --accent: #22c55e;
 
-  --user-bg: #166534;
-  --user-fg: #f0fdf4;
-  --ai-fg: #f3f4f6;
-  --ai-bg: #transparent;
+  --user-bg: #166534; /* Dark green */
+  --user-fg: #f0fdf4; /* Light text */
+  --ai-fg: #f9fafb;
+  --ai-bg: transparent;
 }
 
 .message-container {
@@ -152,30 +152,20 @@ html {
 .message.ai .chat-bubble {
   background: var(--ai-bg);
   color: var(--ai-fg);
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 8px 0;
   position: relative;
 }
 
 .message.user .chat-bubble {
   background: var(--user-bg);
   color: var(--user-fg);
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 12px 24px;
+  border-radius: 24px;
   position: relative;
+  font-weight: 400;
 }
 
-.message.user .chat-bubble::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: 14px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 8px 0 8px 10px;
-  border-color: transparent transparent transparent var(--user-bg);
-}
+/* Removed user bubble tail to match Gemini pill design */
 
 .message .chat-bubble {
   box-shadow: none;
@@ -351,7 +341,7 @@ html {
 .message.user .chat-bubble code {
   background: rgba(0, 0, 0, 0.15);
   border-color: rgba(0, 0, 0, 0.2);
-  color: #f0fdf4;
+  color: #ffffff;
 }
 
 .dark .message.user .chat-bubble code {

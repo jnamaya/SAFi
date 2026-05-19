@@ -141,12 +141,17 @@ class IntellectEngine:
         if "{persona_style_rules}" in formatting_instructions:
             formatting_instructions = formatting_instructions.format(persona_style_rules=style)
 
+        tools_injection = ""
+        if tools:
+            tools_injection = "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n" + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+
         system_prompt = "\n\n".join(filter(None, [
             worldview,
             user_name_injection,
             user_profile_injection,
             memory_injection,
             spirit_injection,
+            tools_injection,
             formatting_instructions
         ]))
 
