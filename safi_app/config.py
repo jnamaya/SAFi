@@ -116,7 +116,7 @@ class Config:
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "gemini-3.1-flash-lite")
     WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-120b")
     CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "llama-3.3-70b-versatile")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
@@ -160,8 +160,9 @@ class Config:
 
         # Google Models
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Speed & Context)", "categories": ["intellect"]},
-        {"id": "gemini-3-pro-preview", "label": "Gemini 3 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
+        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
         {"id": "gemini-3-flash-preview", "label": "Gemini 3 flash (Testing/Slow)", "categories": ["intellect"]},
+        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 flash-lite", "categories": ["intellect"]},
 
          # Mistral Models
         {"id": "mistral-large-2512", "label": "Mistral Large 3 (Big and slow)", "categories": ["intellect"]},
