@@ -54,7 +54,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         </div>
         ` : ''}
         
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             ${profiles.map(profile => {
         const avatarUrl = getAvatarForProfile(profile.name);
         const description = profile.description_short || profile.description || '';
@@ -80,14 +80,14 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                     </div>
                     ` : ''}
 
-                    <div class="p-6 flex flex-col items-center text-center flex-1 z-1 pointer-events-none">
-                        <img src="${avatarUrl}" alt="${profile.name}" class="w-20 h-20 rounded-2xl shadow-sm object-cover mb-4 bg-gray-100 dark:bg-neutral-700">
-                        <h3 class="font-bold text-lg text-gray-900 dark:text-white mb-2 line-clamp-1">${profile.name}</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-3 leading-relaxed">${description}</p>
+                    <div class="p-4 flex flex-col items-center text-center flex-1 z-1 pointer-events-none">
+                        <img src="${avatarUrl}" alt="${profile.name}" class="w-14 h-14 rounded-2xl shadow-sm object-cover mb-3 bg-gray-100 dark:bg-neutral-700">
+                        <h3 class="font-bold text-base text-gray-900 dark:text-white mb-1 line-clamp-1">${profile.name}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-3 leading-relaxed">${description}</p>
                     </div>
 
                     <!-- Actions Footer -->
-                    <div class="mt-auto pt-4 pb-4 px-6 border-t border-gray-100 dark:border-neutral-700/50 flex justify-center gap-2 z-10 relative">
+                    <div class="mt-auto pt-3 pb-3 px-4 border-t border-gray-100 dark:border-neutral-700/50 flex justify-center gap-2 z-10 relative">
                         <button type="button" data-key="${profile.key}" class="view-profile-details-btn px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700/50 hover:bg-gray-200 dark:hover:bg-neutral-700 rounded-lg transition-colors">
                             Details
                         </button>
