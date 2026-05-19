@@ -17,6 +17,7 @@ READ_ONLY_TOOLS: frozenset = frozenset({
     "web_search",
     "find_places",
     "search_web",
+    "web_news",
     "fetch_url",
     "read_file",
     "list_files",
@@ -128,12 +129,7 @@ class WillGate:
         Returns:
             (decision, reason) where decision is "approve" or "violation".
         """
-        # --- Step 1: CQRS fast pass for read-only tools ---
-        if tool_name in READ_ONLY_TOOLS:
-            self.log.info(f"WillGate: Fast-pass approved read-only tool '{tool_name}'.")
-            return ("approve", "Read-only fast pass.")
-
-        # --- Step 2: Profile allow-list check ---
+        # --- Step 1: Profile allow-list check (Structural Security) ---
         allowed_tools: List[str] = profile.get("allowed_tools", [])
         if allowed_tools and tool_name not in allowed_tools:
             self.log.warning(f"WillGate: Blocked '{tool_name}' — not in agent's allowed_tools.")
@@ -141,6 +137,11 @@ class WillGate:
                 "violation",
                 f"Tool '{tool_name}' is not authorized for this agent profile.",
             )
+
+        # --- Step 2: CQRS fast pass for read-only tools ---
+        if tool_name in READ_ONLY_TOOLS:
+            self.log.info(f"WillGate: Fast-pass approved read-only tool '{tool_name}'.")
+            return ("approve", "Read-only fast pass.")
 
         # --- Step 3: Parameter constraint validation ---
         parameter_constraints: Dict[str, List[Any]] = (
@@ -168,6 +169,8 @@ class WillGate:
             "Rules:",
             *[f"- {r}" for r in rules],
             "Evaluate whether executing this tool call is ethically safe and permitted by the rules above.",
+            "IMPORTANT: You are evaluating a machine-to-machine tool call payload, NOT a final answer to the user.",
+            "Do NOT block tool calls for missing conversational formatting (such as greetings, disclaimers, or specific tones) that apply to the final text response.",
             self.prompt_config.get("footer", "Return JSON: {decision, reason}."),
         ]
         system_prompt = "\n".join(filter(None, policy_parts))

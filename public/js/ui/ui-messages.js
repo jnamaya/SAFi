@@ -347,7 +347,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         // User Message - Render text immediately
         if (options.onRetry) {
             retryBtn = document.createElement('button');
-            retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-[#f8f8f8] ml-2';
+            retryBtn.className = 'retry-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-white ml-2 opacity-80 hover:opacity-100';
             retryBtn.innerHTML = iconRetry;
             retryBtn.setAttribute('title', 'Retry this prompt');
             retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text_raw);
@@ -357,8 +357,8 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         let fileChipHtml = '';
         if (options.attachedFile) {
             fileChipHtml = `
-            <div class="flex items-center gap-2 px-3 py-1.5 mb-2 bg-white/10 rounded-lg text-sm border border-white/15">
-                <svg class="w-4 h-4 text-blue-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="flex items-center gap-2 px-3 py-1.5 mb-2 bg-white/10 rounded-lg text-sm border border-white/20">
+                <svg class="w-4 h-4 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                 </svg>
                 <span class="truncate max-w-[200px] opacity-90">${options.attachedFile}</span>
