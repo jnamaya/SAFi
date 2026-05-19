@@ -14,7 +14,8 @@ from typing import List, Dict, Any, Tuple, Optional
 # External provider libraries
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # Internal parsing utilities
 from .parsing_utils import (
@@ -60,8 +61,7 @@ class LLMProvider:
                 elif p_type == "anthropic":
                     self.clients[name] = AsyncAnthropic(api_key=api_key)
                 elif p_type == "gemini":
-                    genai.configure(api_key=api_key)
-                    self.clients[name] = "gemini_configured" # Client created on demand
+                    self.clients[name] = genai.Client(api_key=api_key)
                 else:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
             except Exception as e:
@@ -71,7 +71,7 @@ class LLMProvider:
         self, 
         route: str, 
         system_prompt: str, 
-        user_prompt: str, 
+        user_prompt: Any, 
         temperature: float = 1.0, 
         max_tokens: int = 4096,
         tools: Optional[List[Dict[str, Any]]] = None
@@ -97,7 +97,15 @@ class LLMProvider:
         if not client:
             raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
 
-            # --- Dispatch based on Type ---
+        # Serialize user_prompt to string for non-Gemini providers if it's a list (history array)
+        user_prompt_str = user_prompt
+        if isinstance(user_prompt, list) and provider_type != "gemini":
+            str_parts = []
+            for item in user_prompt:
+                str_parts.append(str(item))
+            user_prompt_str = "\n\n".join(str_parts)
+
+        # --- Dispatch based on Type ---
         
         # 1. OpenAI / DeepSeek / Groq / Mistral
         if provider_type == "openai":
@@ -106,7 +114,7 @@ class LLMProvider:
                 "temperature": temperature,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt_str},
                 ]
             }
 
@@ -164,7 +172,7 @@ class LLMProvider:
                 "system": system_prompt,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
-                "messages": [{"role": "user", "content": user_prompt}]
+                "messages": [{"role": "user", "content": user_prompt_str}]
             }
 
             if tools:
@@ -201,37 +209,51 @@ class LLMProvider:
 
         # 3. Google Gemini
         elif provider_type == "gemini":
-            gemini_model = genai.GenerativeModel(model_name)
-            
+            def convert_schema(schema_dict: Dict[str, Any]) -> types.Schema:
+                if not schema_dict:
+                    return types.Schema(type="OBJECT", properties={})
+                schema_type = schema_dict.get("type", "object").upper()
+                properties = {}
+                for k, v in schema_dict.get("properties", {}).items():
+                    properties[k] = convert_schema(v)
+                
+                items = None
+                if "items" in schema_dict:
+                    items = convert_schema(schema_dict["items"])
+                    
+                return types.Schema(
+                    type=schema_type,
+                    description=schema_dict.get("description"),
+                    properties=properties if properties else None,
+                    required=schema_dict.get("required"),
+                    items=items,
+                    enum=schema_dict.get("enum")
+                )
+
             gemini_tools = None
             if tools:
-                # Map to Gemini FunctionDeclaration
                 funcs = []
                 for t in tools:
-                    # Gemini requires strict types, but we'll try to map broadly
-                    # Note: Gemini python SDK uses a specific structure
-                    funcs.append(genai.types.FunctionDeclaration(
+                    funcs.append(types.FunctionDeclaration(
                         name=t["name"],
                         description=t["description"],
-                        parameters=t["input_schema"]
+                        parameters=convert_schema(t.get("input_schema", {}))
                     ))
-                gemini_tools = genai.types.Tool(function_declarations=funcs)
+                gemini_tools = [types.Tool(function_declarations=funcs)]
 
-            generation_config = genai.types.GenerationConfig(
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
+                tools=gemini_tools
             )
-            full_prompt = f"{system_prompt}\n\nUSER PROMPT:\n{user_prompt}"
-            
-            # Pass tools if present
-            kwargs = {"generation_config": generation_config}
-            if gemini_tools:
-                kwargs["tools"] = [gemini_tools]
 
             try:
-                resp = await gemini_model.generate_content_async(
-                    full_prompt, 
-                    **kwargs
+                # user_prompt can be a string or list of types.Content (history array)
+                resp = await client.aio.models.generate_content(
+                    model=model_name, 
+                    contents=user_prompt, 
+                    config=config
                 )
             except Exception as e:
                 self.log.error(f"Gemini generation failed: {e}")
@@ -239,27 +261,27 @@ class LLMProvider:
             
             # --- GEMINI FIX: Safe Text Access & Tool Check ---
             try:
-                # Check for function call in the first candidate's parts
-                if resp.candidates and resp.candidates[0].content and resp.candidates[0].content.parts:
-                    for part in resp.candidates[0].content.parts:
-                        if part.function_call:
-                            # Found a function call
-                            fc = part.function_call
-                            # Gemini arguments are a Map (dict-like)
-                            args = dict(fc.args)
-                            return json.dumps({
-                                "tool_calls": [{
-                                    "id": "gemini_call", # Gemini doesn't give a call ID easily in this mode
-                                    "name": fc.name,
-                                    "arguments": args
-                                }]
-                            })
+                if resp.function_calls:
+                    fc = resp.function_calls[0]
+                    # args is a dict or mapping depending on SDK
+                    args = fc.args if isinstance(fc.args, dict) else (dict(fc.args) if fc.args else {})
+                    
+                    payload = {
+                        "tool_calls": [{
+                            "id": "gemini_call",
+                            "name": fc.name,
+                            "arguments": args
+                        }]
+                    }
+                    if resp.candidates and resp.candidates[0].content:
+                        raw_content = resp.candidates[0].content
+                        payload["_gemini_raw_turn"] = raw_content.model_dump() if hasattr(raw_content, "model_dump") else dict(raw_content)
+                    
+                    return json.dumps(payload)
 
                 return resp.text or "{}"
-            except ValueError:
-                # This catches the "Invalid operation: ... valid Part ... none were returned" error
-                self.log.warning(f"Gemini returned empty response. Finish Reason: {resp.candidates[0].finish_reason if resp.candidates else 'Unknown'}")
-                # Return empty JSON to trigger downstream error handling gracefully
+            except Exception as e:
+                self.log.warning(f"Gemini returned empty response or error: {e}")
                 return "{}"
 
         else:
@@ -268,7 +290,7 @@ class LLMProvider:
 
     # --- Public Faculty Interfaces ---
 
-    async def run_intellect(self, system_prompt: str, user_prompt: str, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str]:
+    async def run_intellect(self, system_prompt: str, user_prompt: Any, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str, Optional[Dict[str, Any]]]:
         """Runs the configured Intellect model and parses the result."""
         try:
             raw_content = await self._chat_completion(
@@ -279,15 +301,29 @@ class LLMProvider:
                 max_tokens=4096,
                 tools=tools
             )
-            # Check for tool calls first (optimization)
-            if raw_content and raw_content.strip().startswith('{') and '"tool_calls"' in raw_content:
-                return raw_content, "Tool Call", context_for_audit
+            raw_content_stripped = raw_content.strip() if raw_content else ""
+            
+            # Robust extraction for chatty models that put text before/after the tool call JSON
+            if '"tool_calls"' in raw_content_stripped:
+                start = raw_content_stripped.find('{')
+                end = raw_content_stripped.rfind('}')
+                if start != -1 and end != -1 and end > start:
+                    json_text = raw_content_stripped[start:end+1]
+                    try:
+                        payload = json.loads(json_text)
+                        if "tool_calls" in payload:
+                            raw_turn = payload.get("_gemini_raw_turn")
+                            return json_text, "Tool Call", context_for_audit, raw_turn
+                    except:
+                        pass
 
-            answer, reflection = parse_intellect_response(raw_content, self.log)
-            return answer, reflection, context_for_audit
+            parsed = parse_intellect_response(raw_content, self.log)
+            answer, reflection = parsed[0], parsed[1]
+            raw_turn = parsed[2] if len(parsed) > 2 else None
+            return answer, reflection, context_for_audit, raw_turn
         except Exception as e:
             self.log.exception("Intellect execution failed")
-            return None, None, context_for_audit
+            return None, None, context_for_audit, None
 
     async def run_will(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
         """Runs the configured Will model and parses the result."""
