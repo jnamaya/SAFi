@@ -99,11 +99,19 @@ class BackgroundTasksMixin:
                 finally:
                     # Explicitly close clients to prevent "Event loop is closed" errors
                     # Iterate through clients in the provider and close them if they have a close method
+                    import inspect
                     for name, client in thread_provider.clients.items():
-                        if hasattr(client, 'close'):
-                            await client.close()
-                        elif hasattr(client, 'aclose'): # httpx clients use aclose
-                            await client.aclose()
+                        try:
+                            if hasattr(client, 'close'):
+                                res = client.close()
+                                if inspect.isawaitable(res):
+                                    await res
+                            elif hasattr(client, 'aclose'):
+                                res = client.aclose()
+                                if inspect.isawaitable(res):
+                                    await res
+                        except Exception:
+                            pass
 
             try:
                 ledger = asyncio.run(run_conscience_safely())

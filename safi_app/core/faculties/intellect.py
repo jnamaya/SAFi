@@ -50,7 +50,7 @@ class IntellectEngine:
     async def generate(
         self,
         *,
-        user_prompt: str,
+        user_prompt: Any,
         memory_summary: str,
         spirit_feedback: str,
         user_profile_json: str,
@@ -151,7 +151,15 @@ class IntellectEngine:
         ]))
 
         formatting_reminder = self.prompt_config.get("formatting_reminder", "")
-        current_user_prompt = user_prompt + formatting_reminder
+        if isinstance(user_prompt, str):
+            current_user_prompt = user_prompt + formatting_reminder
+        elif isinstance(user_prompt, list):
+            current_user_prompt = user_prompt.copy()
+            if formatting_reminder:
+                current_user_prompt.append(formatting_reminder)
+        else:
+            current_user_prompt = user_prompt
+        
         final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
 
         # --- 3. Single LLM Call — No Tool Execution ---
@@ -162,14 +170,18 @@ class IntellectEngine:
             tools=tools
         )
 
-        answer, r_t, context = response_tuple
+        if len(response_tuple) == 4:
+            answer, r_t, context, raw_turn = response_tuple
+        else:
+            answer, r_t, context = response_tuple
+            raw_turn = None
 
         if not answer:
             self.last_error = "LLM provider returned an empty response."
             return None, r_t, final_context_for_audit
 
         # --- 4. Detect and Intercept Tool Call Intent (never execute here) ---
-        if answer.strip().startswith('{') and '"tool_calls"' in answer:
+        if isinstance(answer, str) and answer.strip().startswith('{') and '"tool_calls"' in answer:
             try:
                 payload = json.loads(answer)
                 tool_calls = payload.get("tool_calls")
@@ -178,8 +190,13 @@ class IntellectEngine:
                     tool_name: str = first_tc.get("name", "")
                     parameters: Dict[str, Any] = first_tc.get("arguments") or {}
                     self.log.info(f"Intellect: Tool call intercepted (not executed): {tool_name}")
+                    
+                    intent = {"type": "tool_call", "tool_name": tool_name, "parameters": parameters}
+                    if raw_turn is not None:
+                        intent["_gemini_raw_turn"] = raw_turn
+
                     return (
-                        {"type": "tool_call", "tool_name": tool_name, "parameters": parameters},
+                        intent,
                         r_t,
                         context,
                     )

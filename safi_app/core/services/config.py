@@ -45,9 +45,13 @@ class Config:
     # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"
 
+    # 4. External Services URLs
+    DASHBOARD_URL = os.environ.get("SAFI_DASHBOARD_URL")
+
     # --- Session Security ---
     # FIX: Automatically enforce Secure cookies if the Base URL is HTTPS.
-    SESSION_COOKIE_SECURE = WEB_BASE_URL.startswith("https")
+    # Allow override via environment variable for local testing (HTTP)
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true" and WEB_BASE_URL.startswith("https")
     
     SESSION_COOKIE_NAME = 'safi_session'
     SESSION_COOKIE_HTTPONLY = True
@@ -112,9 +116,9 @@ class Config:
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-120b")
-    WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-safeguard-20b")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "qwen/qwen3-32b")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
+    WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-120b")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "llama-3.3-70b-versatile")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
@@ -136,7 +140,7 @@ class Config:
     # This list is sent to the frontend.
     AVAILABLE_MODELS = [
         # Groq Models
-        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Fastest/good for most things)", "categories": ["intellect"]},
+        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Fastest/good for most things)", "categories": ["support", "intellect"]},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B (Efficient)", "categories": ["support"]},
         {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B (Balanced)", "categories": ["support"]},
         {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B (Fastest)", "categories": ["support"]},
@@ -156,7 +160,9 @@ class Config:
 
         # Google Models
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Speed & Context)", "categories": ["intellect"]},
-        {"id": "gemini-3-pro-preview", "label": "Gemini 3 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
+        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
+        {"id": "gemini-3-flash-preview", "label": "Gemini 3 flash (Testing/Slow)", "categories": ["intellect"]},
+        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 flash-lite", "categories": ["intellect"]},
 
          # Mistral Models
         {"id": "mistral-large-2512", "label": "Mistral Large 3 (Big and slow)", "categories": ["intellect"]},
@@ -164,3 +170,8 @@ class Config:
          # DeekSeek Models
         {"id": "deepseek-chat", "label": "DeepSeek v3 (Experimental)", "categories": ["intellect"]},
     ]
+
+    # --- DOCUMENT UPLOAD CONFIGURATION ---
+    MAX_UPLOAD_SIZE_MB = int(os.environ.get("SAFI_MAX_UPLOAD_MB", "10"))
+    MAX_DOCUMENT_CHARS = int(os.environ.get("SAFI_MAX_DOC_CHARS", "50000"))
+    ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.csv']

@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # --- Import Provider SDKs (Needed for Sync Clients) ---
 from openai import OpenAI
-import google.generativeai as genai
+from google import genai
 
 # --- Import App-Specific Core Modules ---
 from collections import deque
@@ -141,8 +141,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.gemini_client = None
         if config.GEMINI_API_KEY:
             try:
-                genai.configure(api_key=config.GEMINI_API_KEY)
-                self.gemini_client = genai.GenerativeModel 
+                self.gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
             except Exception: pass
 
         # --- 3. Load System Prompts ---
@@ -442,7 +441,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 # sequentially before it has enough information to synthesize a text answer.
                 # Each tool is individually gated by WillGate before execution.
                 MAX_AGENT_TURNS = 5
-                accumulated_observations = ""
+                agent_history = [prompt_with_date]
                 current_tool_name = tool_name
                 current_parameters = parameters
                 next_intent = intent  # start with the initial tool_call intent
@@ -452,6 +451,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         message_id,
                         f"Executing contained tool action ({agent_turn + 1}/{MAX_AGENT_TURNS}): {current_tool_name}..."
                     )
+                    
+                    # 1. Append the model's raw thought signature or generic note
+                    raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
+                    if raw_turn:
+                        from google.genai import types
+                        agent_history.append(types.Content(**raw_turn))
+                    else:
+                        agent_history.append(f"SYSTEM OBSERVATION: Model requested tool {current_tool_name}.")
+
                     try:
                         tool_result = await self.mcp_manager.execute_tool(
                             current_tool_name, current_parameters, user_id=user_id
@@ -464,13 +472,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         f"Orchestrator: Tool '{current_tool_name}' executed. "
                         f"Result snippet: {str(tool_result)[:120]}"
                     )
-                    accumulated_observations += (
-                        f"\nSYSTEM OBSERVATION [{current_tool_name}]: {tool_result}"
-                    )
+                    
+                    # 3. Construct the tool response using the new SDK
+                    from google.genai import types
+                    tool_part = types.Part.from_function_response(name=current_tool_name, response={"result": tool_result})
+                    agent_history.append(types.Content(role="user", parts=[tool_part]))
 
                     # Ask Intellect to synthesize — it may produce text or request another tool
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
-                        user_prompt=f"{prompt_with_date}\n\n{accumulated_observations}",
+                        user_prompt=agent_history,
                         memory_summary=memory_summary,
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
@@ -500,14 +510,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                             f"WillGate blocked follow-up tool '{current_tool_name}'. "
                             f"Reason: {follow_reason}"
                         )
-                        accumulated_observations += (
-                            f"\nSYSTEM OBSERVATION: The Will gatekeeper rejected the follow-up "
+                        agent_history.append(
+                            f"SYSTEM OBSERVATION: The Will gatekeeper rejected the follow-up "
                             f"command '{current_tool_name}'. Reason: {follow_reason}. "
                             f"Synthesize a response using only the information gathered so far."
                         )
                         # Force a final synthesis pass with the block notice appended
                         next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
-                            user_prompt=f"{prompt_with_date}\n\n{accumulated_observations}",
+                            user_prompt=agent_history,
                             memory_summary=memory_summary,
                             spirit_feedback=spirit_feedback,
                             plugin_context=plugin_context_data,
@@ -523,12 +533,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         f"Orchestrator: Hit MAX_AGENT_TURNS ({MAX_AGENT_TURNS}). "
                         f"Forcing final synthesis."
                     )
-                    accumulated_observations += (
-                        "\nSYSTEM OBSERVATION: Maximum tool steps reached. "
+                    agent_history.append(
+                        "SYSTEM OBSERVATION: Maximum tool steps reached. "
                         "Synthesize the best possible answer from information gathered so far."
                     )
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
-                        user_prompt=f"{prompt_with_date}\n\n{accumulated_observations}",
+                        user_prompt=agent_history,
                         memory_summary=memory_summary,
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,

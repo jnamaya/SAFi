@@ -91,7 +91,7 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
 
 # --- Specific Parsers for Each Faculty ---
 
-def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
+def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str, Optional[Dict[str, Any]]]:
     """
     Parses the "Answer---REFLECTION---{...}" format from Intellect.
     
@@ -118,7 +118,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
         if "error" not in json_obj:
             ref_val = json_obj.get("reflection")
             reflection = str(ref_val) if ref_val else "Parsed reflection from delimiter."
-            return answer, reflection
+            return answer, reflection, json_obj.get("_gemini_raw_turn")
     
     # --- Strategy 2: Implicit JSON Block (Regex) ---
     # Look for the LAST JSON-like block in the text.
@@ -147,7 +147,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                 answer = clean_text[:code_block_match.start()].strip()
                 # If answer contains the delimiter symbol but we ignored it (failed split above), clean it
                 answer = answer.replace(delimiter_text, "").strip()
-                return answer, reflection
+                return answer, reflection, json_obj.get("_gemini_raw_turn")
 
         # 2b. Raw JSON at end
         # Find the last occurrence of "{" that might start the reflection object
@@ -165,7 +165,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                      reflection = str(json_obj.get("reflection", "Parsed implicit JSON."))
                      answer = clean_text[:start_search].strip()
                      answer = answer.replace(delimiter_text, "").strip()
-                     return answer, reflection
+                     return answer, reflection, json_obj.get("_gemini_raw_turn")
 
     # --- Strategy 3: Falback (Raw Text) ---
     # If we are here, we couldn't separate the answer from the reflection safely.
@@ -177,7 +177,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
     if not answer:
         answer = "[Model returned empty answer]"
         
-    return answer.replace("\\n", "\n"), reflection.replace("\\n", "\n")
+    return answer.replace("\\n", "\n"), reflection.replace("\\n", "\n"), None
 
 def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """
