@@ -1,6 +1,5 @@
 import * as api from '../../core/api.js';
 import * as ui from './../ui.js';
-import { renderModelSelector } from './ui-wizard-utils.js';
 
 export function renderWillStep(container, agentData, availableModels) {
     container.innerHTML = `
@@ -9,16 +8,10 @@ export function renderWillStep(container, agentData, availableModels) {
                 <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Rules (Non-Negotiable)</h2>
                 <p class="text-gray-500 text-sm">Hard rules. If the Intellect violates these, the Will forces a rewrite.</p>
             </div>
-             <div class="flex flex-col items-end gap-2">
-                <div>
-                     <label class="block text-xs font-bold text-gray-500 uppercase text-right mb-1">AI Model</label>
-                     <div id="will-model-container"></div>
-                </div>
-                <button id="wiz-gen-rules-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    Suggest Rules
-                </button>
-            </div>
+            <button id="wiz-gen-rules-btn" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                Suggest Rules
+            </button>
         </div>
         
         <div class="flex gap-4 mb-6">
@@ -32,13 +25,6 @@ export function renderWillStep(container, agentData, availableModels) {
             <!-- Rules go here -->
         </ul>
     `;
-
-    // Inject Model Selector
-    const modelContainer = document.getElementById('will-model-container');
-    if (modelContainer) {
-        modelContainer.innerHTML = renderModelSelector('wiz-will-model', agentData.will_model || '', 'support', availableModels);
-        document.getElementById('wiz-will-model')?.addEventListener('change', (e) => agentData.will_model = e.target.value);
-    }
 
     renderRulesList(agentData);
 

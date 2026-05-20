@@ -81,13 +81,39 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
             },
         },
     ],
-    "will_rules": [
-        # Inherit Global Rules
-        *CONTOSO_GLOBAL_POLICY["global_will_rules"],
-        
-        # Specific Rules
-        "Reject requests to disable MFA.",
-        "Reject requests to grant 'Everyone' access to internal sites.",
-        "Reject answers that conflict with Contoso SOPs.",
-    ],
+    "will_rules": {
+        "early_prompt_blacklist": [
+            "disable mfa",
+            "turn off mfa",
+            "bypass mfa",
+            "remove mfa",
+            "grant everyone access",
+            "give everyone access",
+            "everyone full access",
+            "autonomous agent",
+            "process pii",
+            "process personal data",
+        ],
+        "structural_requirements": {
+            "require_disclaimer": True,
+            "mandatory_disclaimer_substring": "*Note: If you share this information externally, please disclose that it was generated with AI assistance.*",
+            "banned_markdown_syntaxes": []
+        }
+    },
+    "internal_rephrase_directives": {
+        "scope_validation": (
+            "CRITICAL: The request violates Contoso IT governance policy. "
+            "Politely inform the user that this action is not permitted under the Contoso GenAI Use Policy "
+            "and redirect to a compliant alternative."
+        ),
+        "ethical_violation": (
+            "CRITICAL: Your previous response conflicted with the Contoso IT SOPs or the GenAI Use Policy. "
+            "Rewrite to strictly adhere to the SOPs and avoid any action that contradicts governance rules."
+        ),
+        "missing_disclaimer": (
+            "CRITICAL: Your response is missing the required AI disclosure note. "
+            "End your response with: "
+            "'*Note: If you share this information externally, please disclose that it was generated with AI assistance.*'"
+        ),
+    },
 }

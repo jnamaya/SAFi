@@ -14,17 +14,72 @@ const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBo
 
 // --- CONFIG: Persona-Specific Loading Messages ---
 const LOADING_MESSAGES = {
-    default: ["Consulting with the Intellect...", "Structuring the response...", "Checking against safety guidelines...", "Finalizing output..."],
-    "The Philosopher": ["Consulting Aristotle's Ethics...", "Applying the Golden Mean...", "Analyzing for Eudaimonia...", "Ensuring practical wisdom (Phronesis)..."],
-    "The Bible Scholar": ["Consulting the Berean Standard Bible...", "Analyzing historical context...", "Checking cross-references...", "Synthesizing theological consensus..."],
-    "The Fiduciary": ["Analyzing financial context...", "Checking for fiduciary alignment...", "Ensuring objective, non-advisory tone...", "Verifying disclaimers..."],
-    "The Jurist": ["Reviewing Constitutional precedents...", "Analyzing via the Bill of Rights...", "Checking separation of powers...", "Ensuring legal neutrality..."],
-    "The Health Navigator": ["Reviewing medical terminology...", "Checking patient privacy guidelines...", "Ensuring non-diagnostic tone...", "Structuring clear guidance..."],
-    "The SAFi Guide": ["Searching SAFi documentation...", "Verifying architecture details...", "Checking framework concepts...", "Formatting technical explanation..."],
-    // NEW PERSONAS
-    "The Socratic Tutor": ["Evaluating student's understanding...", "Formulating a guiding question...", "Checking pedagogical constraints...", "Ensuring the answer isn't revealed..."],
-    "The Vault": ["Verifying security clearance...", "Checking for prompt injection...", "Protecting the secret code...", "Formulating a secure refusal..."],
-    "The Negotiator": ["Assessing leverage...", "Checking negotiation history...", "Evaluating trust score...", "Formulating a counter-offer..."]
+    default: [
+        "Reading your message carefully...",
+        "Thinking through the best response...",
+        "Reviewing for accuracy and care...",
+        "Almost ready..."
+    ],
+    "The Philosopher": [
+        "Consulting Aristotle's Ethics...",
+        "Weighing both sides of the question...",
+        "Seeking the virtuous path forward...",
+        "Crafting a thoughtful, balanced reply..."
+    ],
+    "The Bible Scholar": [
+        "Consulting the Berean Standard Bible...",
+        "Analyzing the historical context...",
+        "Checking cross-references...",
+        "Drawing from scholarly consensus..."
+    ],
+    "The Fiduciary": [
+        "Checking the latest market data...",
+        "Reviewing with objectivity and care...",
+        "Making sure no advice slips through...",
+        "Preparing a clear, balanced response..."
+    ],
+    "The Jurist": [
+        "Reviewing Constitutional precedents...",
+        "Analyzing relevant case law...",
+        "Checking for legal balance...",
+        "Preparing a neutral, informed response..."
+    ],
+    "The Health Navigator": [
+        "Looking into your health question...",
+        "Finding relevant care options...",
+        "Making sure guidance is safe and clear...",
+        "Preparing your response..."
+    ],
+    "The SAFi Guide": [
+        "Searching the SAFi documentation...",
+        "Verifying the framework details...",
+        "Pulling together the right explanation...",
+        "Almost ready..."
+    ],
+    "The Socratic Tutor": [
+        "Thinking of the right question to ask you...",
+        "Finding a hint that guides without giving away...",
+        "Planning the next step in your learning...",
+        "Making sure not to spoil the answer..."
+    ],
+    "The Vault": [
+        "Running security protocols...",
+        "Access verification in progress...",
+        "Protecting classified information...",
+        "Preparing a secure response..."
+    ],
+    "The Negotiator": [
+        "Reviewing your offer...",
+        "Considering the negotiation so far...",
+        "Thinking through a counter-position...",
+        "Preparing a response..."
+    ],
+    "The Contoso Governance Officer": [
+        "Reviewing Contoso IT policies...",
+        "Checking compliance requirements...",
+        "Consulting the SOPs...",
+        "Preparing a governance-aligned response..."
+    ],
 };
 
 // --- MARKDOWN SETUP ---
@@ -486,66 +541,8 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     }
 }
 
-// State to track current loading profile name for dynamic status translation
+// State to track current loading profile name
 let currentLoadingProfile = null;
-
-// Helper to translate raw backend developer statuses to sleek, premium user-facing statuses
-function _translateStatus(text, profileName) {
-    if (!text) return "Thinking...";
-    const status = text.trim();
-
-    // 1. Connecting to Intellect
-    if (status.includes("Connecting to Intellect Faculty")) {
-        const agentName = profileName || "Intellect";
-        return `Consulting ${agentName}...`;
-    }
-
-    // 2. Evaluating compliance
-    if (status.includes("Evaluating ethical compliance (Will Faculty)")) {
-        return `Auditing response for safety and compliance...`;
-    }
-
-    // 3. Policy violation / Reflexion
-    if (status.includes("Policy violation detected. Retrying with reflexion")) {
-        return `Refining response for alignment compliance...`;
-    }
-
-    // 4. Will gating tool request
-    if (status.includes("Will gating tool request")) {
-        return `Verifying tool safety parameters...`;
-    }
-
-    // 5. Tool executions: Executing contained tool action (X/Y): Z...
-    if (status.includes("Executing contained tool action")) {
-        const match = status.match(/Executing contained tool action \((\d+)\/(\d+)\):\s*([\w_]+)/);
-        if (match) {
-            const stepNum = match[1];
-            const maxSteps = match[2];
-            const toolName = match[3];
-
-            let toolDisplay = `Fetching data via ${toolName}`;
-            if (toolName === "get_stock_price") {
-                toolDisplay = "Retrieving real-time stock price";
-            } else if (toolName === "get_company_news") {
-                toolDisplay = "Fetching latest company headlines";
-            } else if (toolName === "get_key_metrics") {
-                toolDisplay = "Fetching key financial metrics";
-            } else if (toolName === "get_analyst_consensus") {
-                toolDisplay = "Gathering Wall Street analyst targets";
-            } else if (toolName === "get_earnings_history") {
-                toolDisplay = "Analyzing historical earnings reports";
-            } else if (toolName === "find_places") {
-                toolDisplay = "Searching for nearby locations";
-            } else if (toolName === "web_search") {
-                toolDisplay = "Searching the web for latest info";
-            }
-
-            return `Step ${stepNum}/${maxSteps}: ${toolDisplay}...`;
-        }
-    }
-
-    return text;
-}
 
 export function showLoadingIndicator(profileName) {
     currentLoadingProfile = profileName;
@@ -600,16 +597,12 @@ export function showLoadingIndicator(profileName) {
 
 export function updateThinkingStatus(text) {
     const statusSpan = document.getElementById('thinking-status');
-
-    // Always clear the generic rotator if we are receiving real updates
+    if (!statusSpan || !text) return;
     ui.clearLoadingInterval();
-
-    const translatedText = _translateStatus(text, currentLoadingProfile);
-
-    if (statusSpan && statusSpan.textContent !== translatedText) {
+    if (statusSpan.textContent !== text) {
         statusSpan.style.opacity = '0';
         setTimeout(() => {
-            statusSpan.textContent = translatedText;
+            statusSpan.textContent = text;
             statusSpan.style.opacity = '1';
         }, 200);
     }

@@ -511,8 +511,6 @@ async function handleModelsSave(newModels) {
       ui.showToast('Model changes queued.', 'info');
       // Optimistically update UI
       user.intellect_model = newModels.intellect_model;
-      user.will_model = newModels.will_model;
-      user.conscience_model = newModels.conscience_model;
       ui.closeModal(); // Close the control panel
       return;
     }

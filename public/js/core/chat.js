@@ -473,19 +473,10 @@ function renderHistory(history, user, showModal, activeProfileData) {
             options
         );
 
-        // If audit data is missing, poll for it
-        // --- MODIFIED: Use the parsed array for the check ---
-        const suggestions = parsedSuggestions;
-        const isBlocked = turn.content && turn.content.includes("🛑 **The answer was blocked**");
-
-        // We poll if:
-        // 1. The audit is pending
-        // 2. AND (it's a blocked message OR it's an approved message missing suggestions)
+        // For historical messages that pre-date inline audit data, do a single fetch.
         if (turn.role === 'ai' && turn.message_id && turn.audit_status === 'pending') {
-            // This logic is now handled inside pollForAuditResults, we just need to call it.
-            pollForAuditResults(turn.message_id);
+            fetchAndApplyAuditResult(turn.message_id);
         }
-        // --- END MODIFIED ---
     });
 }
 
@@ -656,7 +647,20 @@ export async function sendMessage(activeProfileData, user) {
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     const aiMessageId = generateUUID();
-    pollForAuditResults(aiMessageId, user); // Start polling for reasoning immediately
+    // Poll for live reasoning status only while the API call is in flight.
+    // Stops automatically in the finally block. Audit data comes from the response itself.
+    let statusPollInterval = setInterval(async () => {
+        try {
+            const result = await api.fetchAuditResult(aiMessageId);
+            if (result && result.reasoning_log) {
+                let log = result.reasoning_log;
+                if (typeof log === 'string') log = JSON.parse(log);
+                if (Array.isArray(log) && log.length > 0) {
+                    uiMessages.updateThinkingStatus(log[log.length - 1].step);
+                }
+            }
+        } catch (e) { /* message may not exist yet — ignore */ }
+    }, 1500);
 
     // --- DOCUMENT UPLOAD: Extract text from pending file ---
     let documentContext = '';
@@ -673,7 +677,6 @@ export async function sendMessage(activeProfileData, user) {
         } catch (error) {
             ui.showToast(error.message || 'Failed to process document.', 'error');
             _clearPendingFile();
-            cancelPolling(aiMessageId);
             if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
             ui.clearLoadingInterval();
             // Reset button
@@ -712,7 +715,6 @@ export async function sendMessage(activeProfileData, user) {
             // Remove user message from display/cache as it will be resent on flush.
             const userMsgElement = document.querySelector(`[data-message-id="${userMessageId}"]`);
             if (userMsgElement) userMsgElement.remove();
-            cancelPolling(aiMessageId); // FIX: Cancel polling if queued
             return;
         }
 
@@ -758,7 +760,7 @@ export async function sendMessage(activeProfileData, user) {
             profile_values: values,
             spirit_score: spiritScore,
             suggested_prompts: suggestions,
-            audit_status: isBlocked ? 'complete' : 'pending'
+            audit_status: 'complete'
         };
 
         await cache.addMessageToHistory(currentConversationId, aiMessageObject);
@@ -811,23 +813,10 @@ export async function sendMessage(activeProfileData, user) {
         }
         await cache.updateConvoInList(currentConversationId, updateMeta);
 
-        if (messageId && !isBlocked) {
-            // Already polling, but ensure we keep polling if needed
-            // pollForAuditResults(messageId); 
-        }
-
     } catch (error) {
         if (error.name === 'AbortError') {
-            // Handled by the abort logic at top of function? No, confusing.
-            // If we aborted, we probably already handled UI cleanup.
-            // BUT, fetch throws AbortError. So we land here.
-            // BUT, fetch throws AbortError. So we land here.
-            cancelPolling(aiMessageId); // FIX: Cancel polling on abort
-            return; // Exit cleanly
+            return;
         }
-
-        // STOP ZOMBIE POLLING
-        if (typeof cancelPolling === 'function') cancelPolling(aiMessageId);
 
         // FIX: Ensure loading indicator is removed on error
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
@@ -858,6 +847,8 @@ export async function sendMessage(activeProfileData, user) {
                  clip-rule="evenodd" />
              </svg>`;
 
+        clearInterval(statusPollInterval);
+
         buttonLoader.classList.add('hidden');
 
         ui.elements.sendButton.classList.remove('bg-red-600', 'hover:bg-red-700'); // Revert Color
@@ -875,158 +866,54 @@ export async function sendMessage(activeProfileData, user) {
     }
 }
 
-const pollingRegistry = {};
+async function fetchAndApplyAuditResult(messageId) {
+    if (!currentConversationId) return;
+    try {
+        const auditResult = await api.fetchAuditResult(messageId);
+        if (!auditResult || auditResult.status === 'not_found') return;
 
-function cancelPolling(messageId) {
-    if (pollingRegistry[messageId]) {
-        pollingRegistry[messageId].cancelled = true;
+        const rawLedger = auditResult.conscienceLedger || auditResult.ledger;
+        const rawSuggestions = auditResult.suggestedPrompts || auditResult.suggested_prompts;
+
+        const parsedLedger = typeof rawLedger === 'string' ? JSON.parse(rawLedger) : (rawLedger || []);
+        const parsedSuggestions = typeof rawSuggestions === 'string' ? JSON.parse(rawSuggestions) : (rawSuggestions || []);
+
+        const history = await cache.loadConvoHistory(currentConversationId);
+        const msgIndex = history.findIndex(m => m.message_id === messageId);
+        if (msgIndex > -1) {
+            history[msgIndex] = {
+                ...history[msgIndex],
+                ...auditResult,
+                content: history[msgIndex].content,
+                conscience_ledger: parsedLedger,
+                suggested_prompts: parsedSuggestions,
+                audit_status: 'complete'
+            };
+            await cache.saveConvoHistory(currentConversationId, history);
+        }
+
+        const spiritScoresHistory = history
+            .map(t => t.spirit_score)
+            .filter(s => s !== null && s !== undefined);
+
+        const payload = {
+            ...auditResult,
+            ledger: parsedLedger,
+            suggested_prompts: parsedSuggestions,
+            spirit_scores_history: spiritScoresHistory,
+            message_id: messageId
+        };
+
+        uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
+            const idx = history.findIndex(m => m.message_id === p.message_id);
+            const freshScores = idx > -1
+                ? history.slice(0, idx + 1).map(t => t.spirit_score).filter(s => s !== null && s !== undefined)
+                : [...spiritScoresHistory];
+            ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+        });
+    } catch (e) {
+        console.warn(`Could not fetch audit result for historical message ${messageId}:`, e);
     }
-}
-
-function pollForAuditResults(messageId, user, maxAttempts = 100, interval = 2000) {
-    let attempts = 0;
-    pollingRegistry[messageId] = { cancelled: false };
-
-    const executePoll = async (resolve, reject) => {
-        // CHECK CANCELLATION
-        if (pollingRegistry[messageId]?.cancelled) {
-            console.log(`Polling cancelled for ${messageId}`);
-            delete pollingRegistry[messageId]; // Cleanup
-            return;
-        }
-
-        if (!currentConversationId) {
-            // Polling stopped, conversation switched/deleted
-            return;
-        }
-
-        attempts++;
-        try {
-            const auditResult = await api.fetchAuditResult(messageId);
-
-            // --- NEW: Live Reasoning Update ---
-            if (auditResult && auditResult.reasoning_log) {
-                let log = auditResult.reasoning_log;
-                try {
-                    if (typeof log === 'string') log = JSON.parse(log);
-                    if (Array.isArray(log) && log.length > 0) {
-                        const lastStep = log[log.length - 1].step;
-                        uiMessages.updateThinkingStatus(lastStep);
-                    }
-                } catch (e) { }
-            }
-
-            // Should have at least one meaningful field: ledger, suggestions, or spirit score
-            // FIX: Check for both key formats (API vs DB)
-            const rawLedger = auditResult.conscienceLedger || auditResult.ledger;
-            const rawSuggestions = auditResult.suggestedPrompts || auditResult.suggested_prompts;
-            const rawValues = auditResult.profileValues || auditResult.values;
-
-            const hasLedger = rawLedger && rawLedger !== '[]';
-            const hasSuggestions = rawSuggestions && rawSuggestions.length > 0;
-            const hasScore = auditResult.spirit_score !== null && auditResult.spirit_score !== undefined;
-
-            if (auditResult && (auditResult.status === 'complete' || hasLedger || hasSuggestions || hasScore)) {
-
-                // --- Safe Parsing ---
-                let parsedLedger = [];
-                try {
-                    parsedLedger = typeof rawLedger === 'string'
-                        ? JSON.parse(rawLedger)
-                        : (rawLedger || []);
-                } catch (e) {
-                    // console.warn('Failed to parse ledger from audit', e);
-                }
-
-                let parsedSuggestions = [];
-                try {
-                    parsedSuggestions = typeof rawSuggestions === 'string'
-                        ? JSON.parse(rawSuggestions)
-                        : (rawSuggestions || []);
-                } catch (e) {
-                    // console.warn('Failed to parse suggestions', e);
-                }
-
-                // 1. Update history cache so if we navigate away and back, it's there
-                const history = await cache.loadConvoHistory(currentConversationId);
-                const msgIndex = history.findIndex(m => m.message_id === messageId);
-
-                if (msgIndex > -1) {
-                    history[msgIndex] = {
-                        ...history[msgIndex], // Keeps old `content`
-                        ...auditResult,       // Adds new audit data (ledger, score, etc.)
-                        content: history[msgIndex].content, // EXPLICITLY preserve content
-                        conscience_ledger: parsedLedger, // Save parsed array
-                        suggested_prompts: parsedSuggestions, // Save parsed array
-                        audit_status: 'complete' // Mark as complete
-                    };
-
-                    await cache.saveConvoHistory(currentConversationId, history);
-                }
-
-                // 2. Use the in-memory history for trend line (avoids stale cache if save failed)
-                const updatedHistory = history; // We just updated this object above
-
-                // Filter out null/undefined scores *before* passing to the trend line.
-                const spiritScoresHistory = updatedHistory
-                    .map(t => t.spirit_score)
-                    .filter(s => s !== null && s !== undefined);
-
-                // 3. Build the payload for the UI
-                const payload = {
-                    ...auditResult, // This will include spirit_score
-                    ledger: parsedLedger, // Pass parsed array
-                    suggested_prompts: parsedSuggestions, // Pass parsed array
-                    spirit_scores_history: spiritScoresHistory,
-                    message_id: messageId, // Ensure message_id is in payload
-                    user_role: user?.role // Pass user role for UI permission checks
-                };
-
-                // 4. Update the UI - Use captured history in closure to avoid stale cache reads
-                uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
-                    // Use the in-memory history we already have.
-                    // If we re-fetched from cache, we might get old data if the save failed (Quota Exceeded).
-                    const msgIndex = updatedHistory.findIndex(m => m.message_id === p.message_id);
-
-                    let freshScores = [];
-                    if (msgIndex > -1) {
-                        freshScores = updatedHistory.slice(0, msgIndex + 1)
-                            .map(t => t.spirit_score)
-                            .filter(s => s !== null && s !== undefined);
-                    } else {
-                        // Fallback: Use current payload history + current score
-                        freshScores = [...spiritScoresHistory];
-                    }
-
-                    ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
-                });
-                resolve(auditResult);
-            } else if (attempts >= maxAttempts) {
-                console.warn(`Polling timed out for message ${messageId}.`);
-                reject(new Error('Polling timed out.'));
-            } else {
-                setTimeout(() => executePoll(resolve, reject), interval);
-            }
-        } catch (error) {
-            const msg = error.message || '';
-            const status = error.status;
-            // Retry on 404/401 as it might be transient/not ready
-            if (status === 404 || status === 401 || msg.includes('not_found') || msg.includes('404')) {
-                setTimeout(() => executePoll(resolve, reject), interval);
-            } else {
-                console.error(`Error polling for audit on ${messageId}:`, error);
-                reject(error);
-            }
-        }
-    };
-
-    return new Promise((resolve, reject) => {
-        // DELAY FIRST POLL to avoid race condition with prompt failing
-        setTimeout(() => {
-            if (pollingRegistry[messageId]?.cancelled) return;
-            executePoll(resolve, reject);
-        }, 500);
-    });
 }
 
 

@@ -209,3 +209,53 @@ class IntellectEngine:
                 pass
 
         return {"type": "text", "content": answer}, r_t, context
+
+    async def generate_forced_response(
+        self,
+        *,
+        user_prompt: str,
+        system_directive: str,
+        conversation_id: str,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Forces a compliant, rephrased response based on a specific system directive.
+        Uses run_intellect under the hood.
+        """
+        self.last_error = None
+        
+        # Build memory injection
+        memory_summary = db.fetch_conversation_summary(conversation_id)
+        memory_injection = (
+            f"CONTEXT: Here is a summary of our conversation so far.\n<summary>{memory_summary}</summary>"
+            if memory_summary else ""
+        )
+        
+        # Build worldview and standard formatting rules but override with directive
+        worldview = self.profile.get("worldview", "")
+        style = self.profile.get("style", "")
+        
+        system_prompt = "\n\n".join(filter(None, [
+            worldview,
+            memory_injection,
+            system_directive,
+            style
+        ]))
+        
+        # We do not pass tools so the model won't attempt tool calls
+        response_tuple = await self.llm_provider.run_intellect(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            context_for_audit="",
+            tools=[]
+        )
+        
+        if len(response_tuple) == 4:
+            answer, r_t, context, raw_turn = response_tuple
+        else:
+            answer, r_t, context = response_tuple
+            
+        if not answer:
+            self.last_error = "LLM provider returned an empty response."
+            return {"type": "text", "content": "I am currently unable to process this request under governance rules."}, r_t
+            
+        return {"type": "text", "content": answer}, r_t

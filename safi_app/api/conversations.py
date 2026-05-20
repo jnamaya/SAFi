@@ -206,15 +206,13 @@ async def bot_process_prompt_endpoint():
 
         # --- MODEL SELECTION LOGIC ---
         selected_intellect = Config.INTELLECT_MODEL
-        selected_will = Config.WILL_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
 
-        
         # 4. Get Safi Instance (Cached) with Policy Injection
         saf_system = global_safi_cache.get_or_create(
-            persona_key, 
-            selected_intellect, 
-            selected_will, 
+            persona_key,
+            selected_intellect,
+            None,
             selected_conscience,
             policy_id=policy_id # <--- INJECT POLICY
         )
@@ -266,13 +264,12 @@ def tts_audio_endpoint():
 
         # PRIORITY: Agent -> User -> System Default
         intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
-        will_model = agent_profile.get('will_model') or user_details.get('will_model') or Config.WILL_MODEL
         conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
-        
+
         saf_system = global_safi_cache.get_or_create(
-            user_profile_name, 
-            intellect_model, 
-            will_model, 
+            user_profile_name,
+            intellect_model,
+            None,
             conscience_model
         )
 
@@ -315,9 +312,9 @@ async def public_process_prompt_endpoint():
     new_convo = db.create_conversation(anonymous_user_id)
 
     saf_system = global_safi_cache.get_or_create(
-        "safi", 
-        Config.INTELLECT_MODEL, 
-        Config.WILL_MODEL, 
+        "safi",
+        Config.INTELLECT_MODEL,
+        None,
         Config.CONSCIENCE_MODEL
     )
     
@@ -390,17 +387,16 @@ async def process_prompt_endpoint():
 
     # PRIORITY: Agent -> User -> System Default
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
-    will_model = agent_profile.get('will_model') or user_details.get('will_model') or Config.WILL_MODEL
     conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
-    
+
     full_name = user_details.get('name', 'User')
     user_name = full_name.split(' ')[0] if full_name else 'User'
 
     # 2. Get Cached Instance
     saf_system = global_safi_cache.get_or_create(
-        user_profile_name, 
-        intellect_model, 
-        will_model, 
+        user_profile_name,
+        intellect_model,
+        None,
         conscience_model
     )
     

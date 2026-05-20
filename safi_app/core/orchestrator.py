@@ -73,18 +73,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return "groq" 
 
         i_model = intellect_model or getattr(config, "INTELLECT_MODEL")
-        w_model = will_model or getattr(config, "WILL_MODEL")
         c_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
 
         # --- 1. Construct LLM Configuration ---
         llm_config = {
             "providers": {
                 "openai": {
-                    "type": "openai", 
+                    "type": "openai",
                     "api_key": config.OPENAI_API_KEY
                 },
                 "groq": {
-                    "type": "openai", 
+                    "type": "openai",
                     "api_key": config.GROQ_API_KEY,
                     "base_url": "https://api.groq.com/openai/v1"
                 },
@@ -109,12 +108,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             },
             "routes": {
                 "intellect": {
-                    "provider": getattr(config, "INTELLECT_PROVIDER", detect_provider(i_model)), 
+                    "provider": getattr(config, "INTELLECT_PROVIDER", detect_provider(i_model)),
                     "model": i_model
-                },
-                "will": {
-                    "provider": getattr(config, "WILL_PROVIDER", detect_provider(w_model)),
-                    "model": w_model
                 },
                 "conscience": {
                     "provider": getattr(config, "CONSCIENCE_PROVIDER", detect_provider(c_model)),
@@ -234,6 +229,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
     ) -> Dict[str, Any]:
         """
         The main entrypoint for processing a user's prompt.
+        Refactored to integrate the six-phase synchronous cybernetic circuit.
         """
         message_id = override_message_id if override_message_id else str(uuid.uuid4()) 
         now_utc = datetime.now(timezone.utc)
@@ -251,21 +247,18 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             db.insert_memory_entry(conversation_id, "ai", "", message_id=message_id, audit_status="pending")
             
             # --- Initial Status ---
-            db.update_message_reasoning(message_id, "Connecting to Intellect Faculty...")
+            db.update_message_reasoning(message_id, "Reading your message...")
         except Exception as e:
             import traceback
             trace = traceback.format_exc()
             msg = f"DEBUG: Pre-Insert CRASH: {str(e)} | Trace: {trace}"
             self.log.error(msg)
             return { "finalOutput": msg, "messageId": message_id }
-        
+
         # Plugins
         plugin_context_data = {}
-        plugin_client = self.clients.get("groq") 
-        
         plugin_tasks = [
             handle_bible_scholar_commands(user_prompt, self.active_profile_name, self.log),
-            # handle_fiduciary_commands(user_prompt, self.active_profile_name, self.log, plugin_client)  # Disabled for MCP
         ]
         plugin_results = await asyncio.gather(*plugin_tasks)
         for _, data in plugin_results:
@@ -277,21 +270,16 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
-             temp_spirit_memory = {}
+             temp_spirit_memory = {"turn": 0, "mu": {}}
         
-        # --- FIX: Resolve Vector from Memory (Dict or List) for Feedback ---
+        # Resolve Vector from Memory (Dict or List) for Feedback
         mu_memory = temp_spirit_memory.get("mu", {})
-
         current_mu = np.zeros(len(self.values))
-        
         if isinstance(mu_memory, (list, np.ndarray)):
-            # Legacy: Padding/Truncation
             old_arr = np.array(mu_memory)
             common_len = min(len(current_mu), old_arr.shape[0])
             current_mu[:common_len] = old_arr[:common_len]
         else:
-            # Modern: Key Lookup
-            # Sanitize value names for lookup
             from .faculties.utils import _norm_label
             for i, v in enumerate(self.values):
                 v_name = v.get("value") or v.get("name") or "Unknown"
@@ -303,10 +291,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             drift=self.last_drift,
             recent_mu=list(self.mu_history)
         )
-        
-        
 
-        # --- 1. Intellect Generation → Intent Proposal (no tool execution) ---
+        # --- PHASE 2: Generate Proposal (Intellect) ---
+        db.update_message_reasoning(message_id, "Thinking through a response...")
         intent, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
             memory_summary=memory_summary,
@@ -323,43 +310,51 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             db.update_message_content(message_id, msg, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
-        # --- Retry Metadata Tracking ---
+        # Retry Metadata Tracking
         retry_metadata: Dict[str, Any] = {
             "was_retried": False,
             "original_draft": None,
             "violation_reason": None
         }
 
-        # Typed variables shared by both execution paths
+        # Typed variables shared by execution paths
         a_t: str = ""
         D_t: str = "approve"
         E_t: str = ""
 
         # --- 2. Dynamic Loop Fork ---
-
         if intent["type"] == "text":
-            # ------------------------------------------------------------------ #
-            # Path A — Chatbot Mode: text response → Will Gate → optional Reflexion
-            # ------------------------------------------------------------------ #
             a_t = intent.get("content") or ""
-
             if not a_t:
                 msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
                 db.update_message_content(message_id, msg, audit_status="complete")
                 return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
-            # Will evaluation of the draft text
-            db.update_message_reasoning(message_id, "Evaluating ethical compliance (Will Faculty)...")
+            # --- PHASE 3: Structural Validation (Will) ---
+            db.update_message_reasoning(message_id, "Reviewing the response...")
+            is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
+            if not is_valid_struct:
+                return await self.trigger_spokesperson_rephrase(
+                    original_prompt=user_prompt,
+                    violation_type=structure_reason,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    new_title=new_title,
+                    user_id=user_id,
+                    org_id=org_id
+                )
+
+            # Let legacy evaluate run for rules compliance (backward compatibility)
             D_t, E_t = await self.will_gate.evaluate(
                 user_prompt=user_prompt,
                 draft_answer=a_t,
                 conversation_summary=memory_summary
             )
 
-            # --- Reflexion Loop (single retry on violation) ---
+            # Reflexion Loop
             if D_t == "violation":
                 self.log.info(f"Will blocked first draft. Reason: {E_t}. Attempting Reflexion Retry.")
-                db.update_message_reasoning(message_id, "Policy violation detected. Retrying with reflexion...")
+                db.update_message_reasoning(message_id, "Refining the response...")
 
                 retry_metadata["was_retried"] = True
                 retry_metadata["original_draft"] = a_t
@@ -395,13 +390,21 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     message_id=message_id
                 )
 
-                a_t_retry: Optional[str] = (
-                    retry_intent.get("content")
-                    if retry_intent and retry_intent.get("type") == "text"
-                    else None
-                )
-
+                a_t_retry = retry_intent.get("content") if retry_intent and retry_intent.get("type") == "text" else None
                 if a_t_retry:
+                    # Validate rephrase structure
+                    is_valid_retry_struct, retry_struct_reason = self.will_gate.evaluate_draft_structure(a_t_retry)
+                    if not is_valid_retry_struct:
+                        return await self.trigger_spokesperson_rephrase(
+                            original_prompt=user_prompt,
+                            violation_type=retry_struct_reason,
+                            conversation_id=conversation_id,
+                            message_id=message_id,
+                            new_title=new_title,
+                            user_id=user_id,
+                            org_id=org_id
+                        )
+
                     D_t_retry, E_t_retry = await self.will_gate.evaluate(
                         user_prompt=user_prompt,
                         draft_answer=a_t_retry,
@@ -422,14 +425,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     self.log.warning("Reflexion Retry failed to generate text.")
 
         elif intent["type"] == "tool_call":
-            # ------------------------------------------------------------------ #
-            # Path B — Agent Mode: intercept tool call → Will Gate → execute/block
-            # ------------------------------------------------------------------ #
-            tool_name: str = intent["tool_name"]
-            parameters: Dict[str, Any] = intent["parameters"]
+            tool_name = intent["tool_name"]
+            parameters = intent["parameters"]
 
-            # Will Gate evaluates the tool intent BEFORE any execution
-            db.update_message_reasoning(message_id, "Will gating tool request...")
+            db.update_message_reasoning(message_id, "Checking tool permissions...")
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
@@ -437,22 +436,18 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
 
             if tool_decision == "approve":
-                # Bounded tool execution loop — the Intellect may request several tools
-                # sequentially before it has enough information to synthesize a text answer.
-                # Each tool is individually gated by WillGate before execution.
                 MAX_AGENT_TURNS = 5
                 agent_history = [prompt_with_date]
                 current_tool_name = tool_name
                 current_parameters = parameters
-                next_intent = intent  # start with the initial tool_call intent
+                next_intent = intent
 
                 for agent_turn in range(MAX_AGENT_TURNS):
                     db.update_message_reasoning(
                         message_id,
-                        f"Executing contained tool action ({agent_turn + 1}/{MAX_AGENT_TURNS}): {current_tool_name}..."
+                        f"Fetching data (step {agent_turn + 1} of {MAX_AGENT_TURNS})..."
                     )
                     
-                    # 1. Append the model's raw thought signature or generic note
                     raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
                     if raw_turn:
                         from google.genai import types
@@ -473,12 +468,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         f"Result snippet: {str(tool_result)[:120]}"
                     )
                     
-                    # 3. Construct the tool response using the new SDK
                     from google.genai import types
                     tool_part = types.Part.from_function_response(name=current_tool_name, response={"result": tool_result})
                     agent_history.append(types.Content(role="user", parts=[tool_part]))
 
-                    # Ask Intellect to synthesize — it may produce text or request another tool
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
                         memory_summary=memory_summary,
@@ -491,14 +484,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     )
 
                     if next_intent is None or next_intent.get("type") == "text":
-                        # Intellect produced a text answer — exit the tool loop
                         break
 
-                    # Intellect wants another tool — gate it before the next iteration
                     current_tool_name = next_intent["tool_name"]
                     current_parameters = next_intent["parameters"]
 
-                    db.update_message_reasoning(message_id, "Will gating tool request...")
+                    db.update_message_reasoning(message_id, "Checking tool permissions...")
                     follow_decision, follow_reason = await self.will_gate.evaluate_tool_intent(
                         tool_name=current_tool_name,
                         parameters=current_parameters,
@@ -515,7 +506,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                             f"command '{current_tool_name}'. Reason: {follow_reason}. "
                             f"Synthesize a response using only the information gathered so far."
                         )
-                        # Force a final synthesis pass with the block notice appended
                         next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                             user_prompt=agent_history,
                             memory_summary=memory_summary,
@@ -528,14 +518,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         )
                         break
                 else:
-                    # Hit MAX_AGENT_TURNS without getting text — force synthesis
-                    self.log.warning(
-                        f"Orchestrator: Hit MAX_AGENT_TURNS ({MAX_AGENT_TURNS}). "
-                        f"Forcing final synthesis."
-                    )
+                    self.log.warning(f"Orchestrator: Hit MAX_AGENT_TURNS ({MAX_AGENT_TURNS}). Forcing final synthesis.")
                     agent_history.append(
-                        "SYSTEM OBSERVATION: Maximum tool steps reached. "
-                        "Synthesize the best possible answer from information gathered so far."
+                        "SYSTEM OBSERVATION: Maximum tool steps reached. Synthesize the best possible answer from information gathered so far."
                     )
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
@@ -548,14 +533,22 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         message_id=message_id
                     )
 
-                a_t = (
-                    next_intent.get("content") or ""
-                    if next_intent and next_intent.get("type") == "text"
-                    else "I was unable to produce a response after executing the requested tools."
-                )
+                a_t = next_intent.get("content") or "" if next_intent and next_intent.get("type") == "text" else "I was unable to produce a response after executing the requested tools."
 
-                # Final Will Gate check on the synthesized text before it reaches the user
-                db.update_message_reasoning(message_id, "Evaluating ethical compliance (Will Faculty)...")
+                # Final Will checks
+                is_valid_tool_struct, tool_struct_reason = self.will_gate.evaluate_draft_structure(a_t)
+                if not is_valid_tool_struct:
+                    return await self.trigger_spokesperson_rephrase(
+                        original_prompt=user_prompt,
+                        violation_type=tool_struct_reason,
+                        conversation_id=conversation_id,
+                        message_id=message_id,
+                        new_title=new_title,
+                        user_id=user_id,
+                        org_id=org_id
+                    )
+
+                db.update_message_reasoning(message_id, "Reviewing the response...")
                 D_t, E_t = await self.will_gate.evaluate(
                     user_prompt=user_prompt,
                     draft_answer=a_t,
@@ -563,13 +556,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 )
 
             else:
-                # Tool blocked — feed rejection back to Intellect for Agentic Reflexion
                 self.log.warning(f"WillGate blocked tool '{tool_name}'. Reason: {tool_reason}")
                 observation = (
                     f"SYSTEM OBSERVATION: The Will gatekeeper rejected the command '{tool_name}'. "
-                    f"Reason: {tool_reason}. "
-                    f"Do not attempt to call this tool again. "
-                    f"Apologize to the user and, if possible, suggest a compliant alternative."
+                    f"Reason: {tool_reason}. Do not attempt to call this tool again. Apologize to the user and suggest a compliant alternative."
                 )
 
                 reflexion_intent, r_t, retrieved_context = await self.intellect_engine.generate(
@@ -583,44 +573,100 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     message_id=message_id
                 )
 
-                a_t = (
-                    reflexion_intent.get("content") or ""
-                    if reflexion_intent and reflexion_intent.get("type") == "text"
-                    else f"I'm sorry, I was unable to complete that action. {tool_reason}"
-                )
-                # Agentic Reflexion text is considered pre-approved; the Will Gate already
-                # intervened upstream.  We mark it approved so the success path runs.
+                a_t = reflexion_intent.get("content") or "" if reflexion_intent and reflexion_intent.get("type") == "text" else f"I'm sorry, I was unable to complete that action. {tool_reason}"
                 D_t = "approve"
-                E_t = f"Tool '{tool_name}' blocked: {tool_reason}. Agentic Reflexion triggered."
+                E_t = f"Tool '{tool_name}' blocked: {tool_reason}."
 
-        # --- 3. Final Decision (Block or Allow) ---
+        # Reject on direct Will violation
         if D_t == "violation":
-            suppression_message = f"🛑 **Blocked**\n\nReason: {E_t}"
-            S_p = await self._get_prompt_suggestions(user_prompt, (self.profile or {}).get("will_rules", []))
-            db.update_message_content(message_id, suppression_message, audit_status="complete") 
-            self._append_log({
-                "userPrompt": user_prompt, 
-                "blockedDraft": a_t,
-                "finalOutput": suppression_message, 
-                "willDecision": D_t, 
-                "willReason": E_t, 
-                "willReason": E_t, 
-                "retryMetadata": retry_metadata, 
-                "policyId": (self.profile or {}).get("policy_id"),
-                "userId": user_id,
-                "orgId": org_id or (self.profile or {}).get("org_id"),
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            return { "finalOutput": suppression_message, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, "activeProfile": self.active_profile_name, "activeValues": self.values, "suggestedPrompts": S_p, "messageId": message_id }
+            return await self.trigger_spokesperson_rephrase(
+                original_prompt=user_prompt,
+                violation_type="ethical_violation",
+                conversation_id=conversation_id,
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id
+            )
 
-        # --- 4. Success: Update and Audit ---
-        db.update_message_content(message_id, a_t, audit_status="pending")
-        
-        snapshot = { "t": int(temp_spirit_memory.get("turn", 0)) + 1, "x_t": user_prompt, "a_t": a_t, "r_t": r_t, "memory_summary": memory_summary, "retrieved_context": retrieved_context, "user_id": user_id, "org_id": org_id }
-        
-        # Pass retry_metadata to the audit thread
-        self.executor.submit(self._run_audit_thread, snapshot, D_t, E_t, message_id, spirit_feedback, retry_metadata)
-        
+        # --- PHASE 4: Deep Analytical Audit (Conscience) [Synchronous] ---
+        db.update_message_reasoning(message_id, "Running a quality check...")
+        try:
+            ledger = await self.conscience.evaluate(
+                final_output=a_t,
+                user_prompt=user_prompt,
+                reflection=r_t or "",
+                retrieved_context=retrieved_context or ""
+            )
+        except Exception as e:
+            self.log.exception(f"ConscienceAuditor.evaluate() failed: {e}")
+            ledger = []
+
+        # --- PHASE 5: Compute Conviction (Spirit Vector Core) [Synchronous] ---
+        db.update_message_reasoning(message_id, "Finalizing...")
+        spirit_assessment = self.spirit.integrate(ledger)
+        D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
+        if D_spirit == "violation":
+            return await self.trigger_spokesperson_rephrase(
+                original_prompt=user_prompt,
+                violation_type=E_spirit,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id
+            )
+
+        # Calculate new mu vector, drift, note, and spirit score
+        S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
+        self.last_drift = drift_val if drift_val is not None else 0.0
+
+        # Save updated Spirit Memory
+        temp_spirit_memory["turn"] = int(temp_spirit_memory.get("turn", 0)) + 1
+        temp_spirit_memory["mu"] = mu_new
+        db.save_spirit_memory(self.active_profile_name, mu_new, temp_spirit_memory["turn"])
+        self.mu_history.append(mu_new_vector)
+
+        # Get Follow-up Suggestions
+        S_p = []
+        try:
+            S_p = self._get_follow_up_suggestions(
+                user_prompt=user_prompt,
+                ai_response=a_t
+            )
+        except Exception:
+            self.log.exception("Follow-up suggester failed")
+
+        # --- PHASE 6: Safe Execution Approval (Will) ---
+        db.update_message_reasoning(message_id, "Almost done...")
+        db.update_message_content(message_id, a_t, audit_status="complete")
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
+
+        # Append safe log entry
+        self._append_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "t": temp_spirit_memory["turn"],
+            "userPrompt": user_prompt,
+            "intellectDraft": a_t,
+            "intellectReflection": r_t or "",
+            "finalOutput": a_t,
+            "willDecision": D_t,
+            "willReason": E_t,
+            "conscienceLedger": ledger,
+            "spiritScore": S_t,
+            "spiritNote": note,
+            "drift": drift_val,
+            "p_t_vector": p_t.tolist() if hasattr(p_t, 'tolist') else p_t,
+            "mu_t_vector": mu_new_vector.tolist() if hasattr(mu_new_vector, 'tolist') else mu_new_vector,
+            "memorySummary": memory_summary or "",
+            "spiritFeedback": spirit_feedback,
+            "retrievedContext": retrieved_context or "",
+            "retryMetadata": retry_metadata,
+            "policyId": (self.profile or {}).get("policy_id"),
+            "orgId": org_id or (self.profile or {}).get("org_id"),
+            "userId": user_id
+        })
+
         if hasattr(self, 'groq_client_sync'):
             self.executor.submit(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
         
@@ -628,9 +674,125 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
                  self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
 
-        return { 
-            "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t, 
-            "activeProfile": self.active_profile_name, "activeValues": self.values, "messageId": message_id, "suggestedPrompts": [] 
+        return {
+            "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t,
+            "activeProfile": self.active_profile_name, "activeValues": self.values, "profileValues": self.values,
+            "messageId": message_id, "suggestedPrompts": S_p,
+            "conscienceLedger": ledger, "spirit_score": S_t, "spiritNote": note,
+            "audit_status": "complete"
+        }
+
+    async def trigger_spokesperson_rephrase(
+        self, 
+        original_prompt: str, 
+        violation_type: str, 
+        conversation_id: str,
+        message_id: str,
+        new_title: Optional[str],
+        user_id: str,
+        org_id: Optional[str]
+    ) -> Dict[str, Any]:
+        """The Spokesperson Protocol: Re-engages the Intellect to handle boundaries gracefully."""
+        self.log.info(f"Governance Intercept active. Reason: {violation_type}. Redirecting to spokesperson.")
+        db.update_message_reasoning(message_id, "Redirecting your request...")
+        
+        # Fetch the exact internal system directive mapped out in the profile
+        directives = self.profile.get("internal_rephrase_directives", {})
+        directive = directives.get(violation_type)
+        if not directive:
+            # Fallback
+            directive = (
+                "CRITICAL: The request could not be fulfilled as it is outside the limits of this agent's instructions. "
+                "Politely inform the user of the boundaries and redirect the conversation back to their goals."
+            )
+        
+        # Order the Intellect to synthesize an instructional explanation
+        safe_intent, _ = await self.intellect_engine.generate_forced_response(
+            user_prompt=original_prompt,
+            system_directive=directive,
+            conversation_id=conversation_id
+        )
+        
+        safe_output = safe_intent.get("content") or "I am currently unable to process this request under governance rules."
+        
+        # Commit the instructional turn to DB—it passed governance by design
+        db.update_message_content(message_id, safe_output, audit_status="complete")
+
+        # --- AUDITING AND MEMORY INTEGRATION FOR SPOKESPERSON RESPONSE ---
+        db.update_message_reasoning(message_id, "Running a quality check...")
+        try:
+            ledger = await self.conscience.evaluate(
+                final_output=safe_output,
+                user_prompt=original_prompt,
+                reflection="",
+                retrieved_context=""
+            )
+        except Exception as e:
+            self.log.exception(f"ConscienceAuditor.evaluate() failed for spokesperson: {e}")
+            ledger = []
+
+        temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
+        if temp_spirit_memory is None:
+             temp_spirit_memory = {"turn": 0, "mu": {}}
+
+        # Calculate new mu vector, drift, note, and spirit score
+        S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
+        self.last_drift = drift_val if drift_val is not None else 0.0
+
+        # Save updated Spirit Memory
+        temp_spirit_memory["turn"] = int(temp_spirit_memory.get("turn", 0)) + 1
+        temp_spirit_memory["mu"] = mu_new
+        db.save_spirit_memory(self.active_profile_name, mu_new, temp_spirit_memory["turn"])
+        self.mu_history.append(mu_new_vector)
+
+        # Get Follow-up Suggestions
+        S_p = []
+        try:
+            S_p = self._get_follow_up_suggestions(
+                user_prompt=original_prompt,
+                ai_response=safe_output
+            )
+        except Exception:
+            self.log.exception("Follow-up suggester failed")
+
+        # Release safe audited response and update audit results
+        db.update_message_reasoning(message_id, "Almost done...")
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
+
+        # Save a clean pass log entry
+        self._append_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "t": temp_spirit_memory["turn"],
+            "userPrompt": original_prompt,
+            "intellectDraft": safe_output,
+            "intellectReflection": "",
+            "finalOutput": safe_output,
+            "willDecision": "redirected",
+            "willReason": violation_type,
+            "conscienceLedger": ledger,
+            "spiritScore": S_t,
+            "spiritNote": note,
+            "drift": drift_val,
+            "p_t_vector": p_t.tolist() if hasattr(p_t, 'tolist') else p_t,
+            "mu_t_vector": mu_new_vector.tolist() if hasattr(mu_new_vector, 'tolist') else mu_new_vector,
+            "memorySummary": "",
+            "spiritFeedback": "",
+            "retrievedContext": "",
+            "policyId": self.profile.get("policy_id"),
+            "orgId": org_id or self.profile.get("org_id"),
+            "userId": user_id
+        })
+        
+        return {
+            "finalOutput": safe_output,
+            "newTitle": new_title,
+            "willDecision": "redirected",
+            "willReason": violation_type,
+            "activeProfile": self.active_profile_name,
+            "activeValues": self.values, "profileValues": self.values,
+            "messageId": message_id, "suggestedPrompts": S_p,
+            "conscienceLedger": ledger, "spirit_score": S_t, "spiritNote": note,
+            "audit_status": "complete"
         }
 
     def _append_log(self, log_entry: Dict[str, Any]):

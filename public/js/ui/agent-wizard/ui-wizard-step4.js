@@ -1,6 +1,5 @@
 import * as api from '../../core/api.js';
 import * as ui from './../ui.js';
-import { renderModelSelector } from './ui-wizard-utils.js';
 
 export function renderConscienceStep(container, agentData, availableModels) {
     container.innerHTML = `
@@ -8,10 +7,6 @@ export function renderConscienceStep(container, agentData, availableModels) {
              <div>
                 <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Core Values</h2>
                 <p class="text-gray-500 text-sm">Define the ethical framework. The AI will score itself against these values.</p>
-             </div>
-             <div class="w-64">
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1 text-right">Ethical Reasoning Model</label>
-                <div id="conscience-model-container"></div>
              </div>
         </div>
 
@@ -60,14 +55,6 @@ export function renderConscienceStep(container, agentData, availableModels) {
             </div>
         </div>
     `;
-
-    // Inject Model Selector
-    const modelContainer = document.getElementById('conscience-model-container');
-    if (modelContainer) {
-        // Use 'minimal' or 'small' if supported, else 'support' is fine
-        modelContainer.innerHTML = renderModelSelector('wiz-conscience-model', agentData.conscience_model || '', 'support', availableModels);
-        document.getElementById('wiz-conscience-model')?.addEventListener('change', (e) => agentData.conscience_model = e.target.value);
-    }
 
     renderValuesList(agentData);
 

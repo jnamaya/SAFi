@@ -46,19 +46,11 @@ export function renderReviewStep(container, agentData) {
 
                 <!-- Models -->
                 <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
-                     <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">AI Models</h4>
+                     <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">AI Model</h4>
                      <ul class="space-y-2 text-sm">
                         <li class="flex justify-between">
-                            <span>Intellect</span>
+                            <span>Generation</span>
                             <span class="font-mono text-xs text-gray-600 dark:text-gray-400">${agentData.intellect_model || 'Default'}</span>
-                        </li>
-                         <li class="flex justify-between">
-                            <span>Conscience</span>
-                            <span class="font-mono text-xs text-gray-600 dark:text-gray-400">${agentData.conscience_model || 'Default'}</span>
-                        </li>
-                         <li class="flex justify-between">
-                            <span>Will</span>
-                            <span class="font-mono text-xs text-gray-600 dark:text-gray-400">${agentData.will_model || 'Default'}</span>
                         </li>
                      </ul>
                 </div>
