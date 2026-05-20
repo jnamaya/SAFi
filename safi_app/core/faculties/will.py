@@ -111,6 +111,29 @@ class WillGate:
         self.cache[key] = res
         return res
 
+    def evaluate_hard_gates(self, ledger: List[Dict[str, Any]]) -> Tuple[str, str]:
+        """
+        Checks hard-gate values in the Conscience ledger before Spirit aggregation.
+        Any hard-gate value scoring -1 triggers an immediate violation, bypassing
+        the Spirit aggregate entirely. Hard-gate values have weight=0.0 and are
+        excluded from the Spirit EMA.
+        """
+        hard_gate_names = {
+            v.get("value") or v.get("name")
+            for v in self.values
+            if v.get("hard_gate")
+        }
+        if not hard_gate_names:
+            return ("approve", "no_hard_gates_defined")
+
+        for entry in ledger:
+            if entry.get("value") in hard_gate_names and float(entry.get("score", 0)) <= -1.0:
+                value_name = entry.get("value", "unknown")
+                self.log.warning(f"WillGate: Hard gate failure on '{value_name}'.")
+                return ("violation", "scope_violation")
+
+        return ("approve", "hard_gates_passed")
+
     def evaluate_spirit_score(self, spirit_assessment: Dict[str, Any]) -> Tuple[str, str]:
         """
         Evaluates Spirit's aggregated alignment assessment and returns a gate decision.
