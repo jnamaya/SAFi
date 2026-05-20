@@ -161,6 +161,7 @@ class Config:
         {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
         {"id": "gemini-3-flash-preview", "label": "Gemini 3 flash (Testing/Slow)", "categories": ["intellect"]},
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 flash-lite", "categories": ["intellect"]},
+        {"id": "gemini-3.5-flash", "label": "Gemini 3.5 flash", "categories": ["intellect"]},
 
          # Mistral Models
         {"id": "mistral-large-2512", "label": "Mistral Large 3 (Big and slow)", "categories": ["intellect"]},

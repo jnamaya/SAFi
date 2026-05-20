@@ -70,22 +70,50 @@ function renderScoreAndTrend(payload) {
         if (s >= 5) return 'text-yellow-500';
         return 'text-red-500';
     };
+    
+    const getGradId = (s) => {
+        if (s >= 8) return 'gauge-grad-green';
+        if (s >= 5) return 'gauge-grad-yellow';
+        return 'gauge-grad-red';
+    };
+    
+    const gradId = getGradId(score);
     const colorClass = getScoreColor(score);
 
     const radialGauge = `
         <div class="flex flex-col items-center justify-center">
             <div class="relative w-32 h-32">
                 <svg class="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                    <circle class="text-gray-200 dark:text-gray-700" stroke-width="10" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
-                    <circle class="${colorClass}" stroke-width="10" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
+                    <defs>
+                        <linearGradient id="gauge-grad-green" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#10b981" />
+                            <stop offset="100%" stop-color="#34d399" />
+                        </linearGradient>
+                        <linearGradient id="gauge-grad-yellow" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#f59e0b" />
+                            <stop offset="100%" stop-color="#fbbf24" />
+                        </linearGradient>
+                        <linearGradient id="gauge-grad-red" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#ef4444" />
+                            <stop offset="100%" stop-color="#f87171" />
+                        </linearGradient>
+                        <filter id="gauge-glow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="2.5" result="blur" />
+                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                        </filter>
+                    </defs>
+                    <circle class="text-gray-200 dark:text-neutral-800" stroke-width="8" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
+                    <!-- Subtle backing glow circle -->
+                    <circle stroke="url(#${gradId})" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" class="opacity-20 blur-[2px]" />
+                    <!-- Primary indicator circle with glow filter -->
+                    <circle stroke="url(#${gradId})" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" filter="url(#gauge-glow)" />
                 </svg>
                 <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
                     <span class="text-4xl font-bold ${colorClass}">${score.toFixed(1)}</span>
                     <span class="text-xs text-gray-500 dark:text-gray-400">/ 10</span>
                 </div>
             </div>
-            <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200">Consistency Score</h4>
-
+            <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200 text-sm">Consistency Score</h4>
         </div>
     `;
 
@@ -108,17 +136,30 @@ function renderScoreAndTrend(payload) {
         }).join(' ');
 
         const lastPoint = points.split(' ').pop().split(',');
+        
+        // Construct closed path for dynamic background gradient fill under trendline
+        const fillPoints = `${points} ${width - padding},${height - padding} ${padding},${height - padding}`;
+
         sparkline = `
             <div class="flex-1">
-                <h4 class="font-semibold mb-2 text-center md:text-left text-gray-800 dark:text-gray-200">Consistency Trend</h4>
+                <h4 class="font-semibold mb-2 text-center md:text-left text-gray-800 dark:text-gray-200 text-sm">Consistency Trend</h4>
                 <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto">
+                    <defs>
+                        <linearGradient id="sparkline-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.2" />
+                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0" />
+                        </linearGradient>
+                    </defs>
                     <!-- Dotted lines at 10, 5, 0 -->
-                    <line x1="0" y1="${padding}" x2="${width}" y2="${padding}" class="stroke-gray-300 dark:stroke-gray-600" stroke-width="1" stroke-dasharray="2 2" />
-                    <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" class="stroke-gray-300 dark:stroke-gray-600" stroke-width="1" stroke-dasharray="2 2" />
-                    <line x1="0" y1="${height - padding}" x2="${width}" y2="${height - padding}" class="stroke-gray-300 dark:stroke-gray-600" stroke-width="1" stroke-dasharray="2 2" />
+                    <line x1="0" y1="${padding}" x2="${width}" y2="${padding}" class="stroke-neutral-300/40 dark:stroke-neutral-700/40" stroke-width="1" stroke-dasharray="2 2" />
+                    <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" class="stroke-neutral-300/40 dark:stroke-neutral-700/40" stroke-width="1" stroke-dasharray="2 2" />
+                    <line x1="0" y1="${height - padding}" x2="${width}" y2="${height - padding}" class="stroke-neutral-300/40 dark:stroke-neutral-700/40" stroke-width="1" stroke-dasharray="2 2" />
                     
+                    <!-- Trend Area Fill -->
+                    <polygon points="${fillPoints}" fill="url(#sparkline-grad)" />
+
                     <!-- Data Line -->
-                    <polyline fill="none" class="stroke-green-500" stroke-width="2" points="${points}" />
+                    <polyline fill="none" class="stroke-emerald-500 dark:stroke-emerald-400" stroke-width="2" points="${points}" />
                     
                     <!-- Last point circle -->
                     <circle fill="currentColor" class="${getScoreColor(scores[scores.length - 1])} stroke-white dark:stroke-gray-900" stroke-width="2" r="4" cx="${lastPoint[0]}" cy="${lastPoint[1]}"></circle>
@@ -127,7 +168,7 @@ function renderScoreAndTrend(payload) {
                 
                 ${payload.user_role === 'member' ? '' : `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
-                    <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-500 hover:underline">
+                    <a href="#" id="view-full-dashboard-link" class="font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
                         View Full Audit Report &rarr;
                     </a>
                 </p>
@@ -136,7 +177,7 @@ function renderScoreAndTrend(payload) {
         `;
     }
 
-    return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center bg-gray-50 dark:bg-gray-900/50 rounded-lg p-5 mb-6 border border-gray-200 dark:border-gray-700">${radialGauge}${sparkline}</div>`;
+    return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center conscience-trend-grid rounded-lg p-5 mb-6">${radialGauge}${sparkline}</div>`;
 }
 
 /**
@@ -150,16 +191,18 @@ function renderTabButton(key, title, count, isActive) {
     };
     const config = groupConfig[key];
 
-    // State Styles (these are toggled by the event listener)
-    const activeClasses = `border-${config.color}-500 text-${config.color}-600 dark:border-${config.color}-500 dark:text-${config.color}-500`;
-    const inactiveClasses = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600';
-
     // Responsive Layout Styles
     const layoutClasses = "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-3 sm:py-4 px-1 sm:px-3 text-center border-b-2 font-medium text-xs sm:text-sm focus:outline-none transition-colors duration-200";
 
+    const badgeColorClass = {
+        green: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+        red: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+        gray: 'bg-gray-100 text-gray-800 dark:bg-neutral-800 dark:text-gray-300',
+    }[config.color];
+
     return `
         <button data-tab-target="#tab-${key}" 
-                class="tab-btn ${isActive ? activeClasses : inactiveClasses} ${layoutClasses}" 
+                class="conscience-tab-btn tab-btn status-${config.color} ${isActive ? 'active' : ''} ${layoutClasses}" 
                 aria-current="${isActive ? 'page' : 'false'}">
             
             <!-- Icon: slightly larger on mobile for touch targets -->
@@ -170,7 +213,7 @@ function renderTabButton(key, title, count, isActive) {
             <!-- Text & Badge Wrapper -->
             <div class="flex items-center gap-1.5">
                 <span>${title}</span>
-                <span class="bg-${config.color}-100 text-${config.color}-800 dark:bg-${config.color}-900 dark:text-${config.color}-300 px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium">
+                <span class="${badgeColorClass} px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium">
                     ${count}
                 </span>
             </div>
@@ -204,24 +247,24 @@ function renderLedgerItem(item, key) {
     const maxLength = 120;
     const isLong = reasonHtml.length > maxLength;
 
-    const borderColor = {
-        upholds: 'border-green-200 dark:border-green-700/80',
-        conflicts: 'border-red-300 dark:border-red-700/80',
-        neutral: 'border-gray-200 dark:border-gray-700/80',
+    const statusCardClass = {
+        upholds: 'audit-card-uphold',
+        conflicts: 'audit-card-conflict',
+        neutral: 'audit-card-neutral',
     }[key];
 
     const confidenceDisplayHtml = item.confidence ? `
         <div class="flex items-center gap-2 w-full md:w-auto md:min-w-[160px]">
             <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Confidence</span>
-            <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-gray-600">
-                <div class="h-full rounded-full bg-green-500" style="width: ${item.confidence * 100}%"></div>
+            <div class="confidence-meter-track flex-1">
+                <div class="confidence-meter-fill" style="width: ${item.confidence * 100}%"></div>
             </div>
             <span class="text-xs font-semibold text-gray-600 dark:text-gray-300 w-9 text-right">${Math.round(item.confidence * 100)}%</span>
         </div>
     ` : '';
 
     return `
-        <div class="bg-white dark:bg-gray-800/60 p-4 rounded-lg border ${borderColor}">
+        <div class="p-4 rounded-lg ${statusCardClass}">
             <div class="flex flex-col md:flex-row justify-between md:items-center gap-2 mb-2">
                 <div class="font-semibold text-gray-800 dark:text-gray-100">${item.value || item.name || item.Value || 'Unknown Value'}</div>
                 ${confidenceDisplayHtml}
@@ -242,29 +285,17 @@ function attachModalEventListeners(container, payload) {
     const tabButtons = container.querySelectorAll('.tab-btn');
     const tabPanels = container.querySelectorAll('.tab-panel');
 
-    const groupConfig = {
-        upholds: { color: 'green' },
-        conflicts: { color: 'red' },
-        neutral: { color: 'gray' },
-    };
-
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const targetId = btn.getAttribute('data-tab-target');
 
             // Update button styles
             tabButtons.forEach(b => {
-                const key = b.getAttribute('data-tab-target').replace('#tab-', '');
-                const config = groupConfig[key];
-                b.classList.remove(`border-${config.color}-500`, `text-${config.color}-600`, `dark:border-${config.color}-500`, `dark:text-${config.color}-500`);
-                b.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300', 'dark:hover:border-gray-600');
+                b.classList.remove('active');
                 b.setAttribute('aria-current', 'false');
             });
 
-            const activeKey = targetId.replace('#tab-', '');
-            const activeConfig = groupConfig[activeKey];
-            btn.classList.add(`border-${activeConfig.color}-500`, `text-${activeConfig.color}-600`, `dark:border-${activeConfig.color}-500`, `dark:text-${activeConfig.color}-500`);
-            btn.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'dark:text-gray-400', 'dark:hover:text-gray-300', 'dark:hover:border-gray-600');
+            btn.classList.add('active');
             btn.setAttribute('aria-current', 'page');
 
             // Show/hide panels

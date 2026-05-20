@@ -287,7 +287,7 @@ function _attachSuggestionHandlers(container) {
 
 function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
     if (!suggestedPrompts?.length) return '';
-    const list = suggestedPrompts.map(p => `<button class="ai-prompt-suggestion-btn text-left w-full p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors border border-neutral-200 dark:border-neutral-700 text-sm italic">"${p}"</button>`).join('');
+    const list = suggestedPrompts.map(p => `<button class="ai-prompt-suggestion-btn">${p}</button>`).join('');
     return `<div class="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2 prompt-suggestions-container"><p class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">${isBlocked ? "Try a different prompt:" : "Suggested follow-ups:"}</p>${list}</div>`;
 }
 
@@ -317,17 +317,17 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     let ttsBtn, copyBtn, retryBtn;
 
     // 1. BUILD BASIC STRUCTURE (No text yet for AI)
-    if (sender === 'ai') {
+        if (sender === 'ai') {
         const profileName = payload?.profile || null;
         const avatarUrl = getAvatarForProfile(profileName);
 
         ttsBtn = document.createElement('button');
-        ttsBtn.className = 'tts-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+        ttsBtn.className = 'tts-btn shrink-0';
         ttsBtn.innerHTML = iconPlay;
         ttsBtn.onclick = () => playSpeech(final_text_raw, ttsBtn);
 
         copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-btn flex items-center justify-center p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors shrink-0';
+        copyBtn.className = 'copy-btn shrink-0';
         copyBtn.innerHTML = iconCopy;
         copyBtn.onclick = () => {
             navigator.clipboard.writeText(_markdownToPlainText(final_text_raw)).then(() => {
@@ -338,7 +338,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         };
 
         messageDiv.innerHTML = `
-      <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-lg"></div>
+      <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
       <div class="ai-content-wrapper">
         <div class="chat-bubble cursor-pointer"><div class="meta"></div></div>
       </div>
@@ -370,7 +370,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         <div class="user-content-wrapper">
            <div class="chat-bubble">${fileChipHtml}${final_html}<div class="meta"></div></div>
         </div>
-        <div class="user-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-full"></div>
+        <div class="user-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
     `;
     }
 
@@ -497,22 +497,22 @@ function _translateStatus(text, profileName) {
     // 1. Connecting to Intellect
     if (status.includes("Connecting to Intellect Faculty")) {
         const agentName = profileName || "Intellect";
-        return `🧠 Consulting ${agentName}...`;
+        return `Consulting ${agentName}...`;
     }
 
     // 2. Evaluating compliance
     if (status.includes("Evaluating ethical compliance (Will Faculty)")) {
-        return `🛡️ Auditing response for safety and compliance...`;
+        return `Auditing response for safety and compliance...`;
     }
 
     // 3. Policy violation / Reflexion
     if (status.includes("Policy violation detected. Retrying with reflexion")) {
-        return `🔄 Refining response for alignment compliance...`;
+        return `Refining response for alignment compliance...`;
     }
 
     // 4. Will gating tool request
     if (status.includes("Will gating tool request")) {
-        return `🛡️ Verifying tool safety parameters...`;
+        return `Verifying tool safety parameters...`;
     }
 
     // 5. Tool executions: Executing contained tool action (X/Y): Z...
@@ -540,7 +540,7 @@ function _translateStatus(text, profileName) {
                 toolDisplay = "Searching the web for latest info";
             }
 
-            return `🔍 [Step ${stepNum}/${maxSteps}] ${toolDisplay}...`;
+            return `Step ${stepNum}/${maxSteps}: ${toolDisplay}...`;
         }
     }
 
@@ -561,11 +561,15 @@ export function showLoadingIndicator(profileName) {
 
     container.innerHTML = `
     <div class="message ai">
-        <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full rounded-lg"></div>
+        <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
         <div class="ai-content-wrapper">
-            <div class="flex items-center gap-3">
-              <div class="thinking-spinner"></div>
-              <span id="thinking-status" class="text-gray-500 dark:text-gray-400 italic transition-opacity duration-200">Thinking...</span>
+            <div class="thinking-container">
+                <div class="thinking-pulse-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span id="thinking-status" class="transition-opacity duration-200">Thinking...</span>
             </div>
         </div>
     </div>`;
