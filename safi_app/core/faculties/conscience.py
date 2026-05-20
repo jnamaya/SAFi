@@ -37,9 +37,6 @@ class ConscienceAuditor:
         """
         Scores the final output against each configured value.
         """
-        if len(user_prompt) < 100 and len(final_output) < 100:
-            return []
-
         prompt_template = self.prompt_config.get("prompt_template")
         if not prompt_template:
             return []

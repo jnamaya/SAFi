@@ -602,6 +602,19 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.exception(f"ConscienceAuditor.evaluate() failed: {e}")
             ledger = []
 
+        # --- PHASE 4.5: Will Hard Gate Check ---
+        D_hard, E_hard = self.will_gate.evaluate_hard_gates(ledger)
+        if D_hard == "violation":
+            return await self.trigger_spokesperson_rephrase(
+                original_prompt=user_prompt,
+                violation_type=E_hard,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id
+            )
+
         # --- PHASE 5: Compute Conviction (Spirit Vector Core) [Synchronous] ---
         db.update_message_reasoning(message_id, "Finalizing...")
         spirit_assessment = self.spirit.integrate(ledger)
