@@ -86,10 +86,15 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     )
 
     # B. Merge Will Rules (Gov First)
-    final_profile["will_rules"] = (
-        governance.get("global_will_rules", []) + 
-        final_profile.get("will_rules", [])
-    )
+    persona_rules = final_profile.get("will_rules", [])
+    if isinstance(persona_rules, dict):
+        # Modern dict format: preserve as-is; governance rules already encoded in blacklist
+        final_profile["will_rules"] = persona_rules
+    else:
+        final_profile["will_rules"] = (
+            governance.get("global_will_rules", []) +
+            persona_rules
+        )
 
     # C. Merge Values & Math (Enforce Configurable Split)
     # AUTOMATIC DISTRIBUTION LOGIC:

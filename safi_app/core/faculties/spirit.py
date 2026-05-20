@@ -46,6 +46,46 @@ class SpiritIntegrator:
         )
         self._norm_index = {name: i for i, name in enumerate(self._norm_values)}
 
+    def integrate(self, ledger: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Integrates Conscience evaluations to produce a single actionable decision dict.
+        Checks for critical violations (score <= -1.0) and computes a weighted average score
+        scaled to [0.0, 1.0].
+        """
+        critical_violation = False
+        weighted_sum = 0.0
+        weight_total = 0.0
+        
+        # Build normalized lookup for values/weights
+        lmap = {_norm_label(row.get("value")): row for row in ledger if row.get("value")}
+        
+        for i, val_dict in enumerate(self.values):
+            nkey = self._norm_values[i]
+            weight = self.value_weights[i]
+            
+            row = lmap.get(nkey)
+            if row is not None:
+                score = float(row.get("score", 0.0))
+                # Critical violation if any score is <= -1.0
+                if score <= -1.0:
+                    critical_violation = True
+                
+                # Scaled score: map [-1, 1] to [0, 1]
+                scaled_score = (score + 1.0) / 2.0
+                weighted_sum += weight * scaled_score
+                weight_total += weight
+            else:
+                # If ledger is missing a value, default to neutral (0.0 score -> 0.5 scaled)
+                weighted_sum += weight * 0.5
+                weight_total += weight
+                
+        alignment_score = (weighted_sum / weight_total) if weight_total > 0 else 0.5
+        
+        return {
+            "critical_violation": critical_violation,
+            "alignment_score": alignment_score
+        }
+
     def compute(
         self, 
         ledger: List[Dict[str, Any]], 

@@ -34,7 +34,6 @@ def tts_audio_endpoint():
         prof = current_app.db_helpers.get_profile(user_profile_name) 
         
         intellect_model = user_details.get('intellect_model') or current_app.config.INTELLECT_MODEL
-        will_model = user_details.get('will_model') or current_app.config.WILL_MODEL
         conscience_model = user_details.get('conscience_model') or current_app.config.CONSCIENCE_MODEL
 
         # Create a new SAFi instance specifically for this request (expensive but accurate)
@@ -42,7 +41,6 @@ def tts_audio_endpoint():
             config=current_app.config,
             value_profile_or_list=prof,
             intellect_model=intellect_model,
-            will_model=will_model,
             conscience_model=conscience_model
         )
         # --- End Simplified SAFi Access ---

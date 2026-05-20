@@ -29,6 +29,7 @@ READ_ONLY_TOOLS: frozenset = frozenset({
 class WillGate:
     """
     An ethical gatekeeper that evaluates a draft response against a set of values.
+    Refactored to be purely deterministic in Python with zero LLM calls.
     """
 
     def __init__(
@@ -49,62 +50,77 @@ class WillGate:
     def _key(self, x_t: str, a_t: str) -> str:
         return dict_sha256({"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values})
 
+    def evaluate_draft_structure(self, draft_output: str) -> Tuple[bool, str]:
+        """Validates structural invariants of the generated draft without an LLM."""
+        rules = self.profile.get("will_rules", {})
+        
+        if isinstance(rules, dict):
+            struct = rules.get("structural_requirements", {})
+            
+            # 1. Enforce Disclaimer Presence
+            if struct.get("require_disclaimer"):
+                if struct["mandatory_disclaimer_substring"] not in draft_output:
+                    return False, "missing_disclaimer"
+            
+            # 2. Enforce Execution Syntax Sanity
+            for syntax in struct.get("banned_markdown_syntaxes", []):
+                if syntax in draft_output:
+                    return False, "ethical_violation"
+        else:
+            # Legacy list fallback
+            draft_lower = draft_output.lower()
+            has_disclaimer_rule = any("disclaimer" in str(r).lower() for r in rules)
+            if has_disclaimer_rule:
+                style_text = self.profile.get("style", "")
+                if "Disclaimer:" in style_text:
+                    if "Disclaimer: I am an AI guide, not a doctor" in style_text:
+                        expected = "Disclaimer: I am an AI guide, not a doctor"
+                    elif "Disclaimer: This information is for educational" in style_text:
+                        expected = "Disclaimer: This information is for educational"
+                    else:
+                        expected = "Disclaimer:"
+                    
+                    if expected not in draft_output:
+                        return False, "missing_disclaimer"
+            
+            has_disclosure_rule = any("disclose" in str(r).lower() or "note" in str(r).lower() for r in rules)
+            if has_disclosure_rule:
+                if "AI assistance" in self.profile.get("style", ""):
+                    expected_note = "*Note: If you share this information externally, please disclose that it was generated with AI assistance.*"
+                    if expected_note not in draft_output:
+                        return False, "missing_disclaimer"
+                        
+        return True, "pass"
+
     async def evaluate(self, *, user_prompt: str, draft_answer: str, conversation_summary: Optional[str] = None) -> Tuple[str, str]:
         """
         Evaluates a draft answer. Returns (decision, reason).
-
-        Args:
-            user_prompt: The current user prompt
-            draft_answer: The Intellect's proposed response
-            conversation_summary: Optional summary of conversation history for trajectory analysis
+        Purely deterministic Python implementation.
         """
         key = self._key(user_prompt, draft_answer)
         if key in self.cache:
             return self.cache[key]
 
-        rules = self.profile.get("will_rules") or []
-        name = self.profile.get("name", "")
-        if not rules:
-            joined = ", ".join(v["value"] for v in self.values)
-            rules = [f"Do not approve drafts that reduce alignment with: {joined}."]
+        is_valid_struct, struct_reason = self.evaluate_draft_structure(draft_answer)
+        if not is_valid_struct:
+            res = ("violation", struct_reason)
+            self.cache[key] = res
+            return res
 
-        # Add trajectory-aware rule if conversation history is provided
-        trajectory_rule = (
-            "IMPORTANT: Analyze the CONVERSATION HISTORY for patterns of escalation or manipulation. "
-            "If the conversation shows a trajectory toward harmful content (e.g., innocent setup → borderline questions → harmful request), "
-            "decide 'violation' even if the current draft seems acceptable in isolation."
-        )
+        res = ("approve", "pass")
+        self.cache[key] = res
+        return res
 
-        policy_parts = [
-            self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
-            f"Tradition: {name}" if name else "",
-            "Rules:",
-            *[f"- {r}" for r in rules],
-            f"- {trajectory_rule}" if conversation_summary else "",
-            # Removed Value Set per user request to restrict Will to Rules only.
-            self.prompt_config.get("footer", "Return JSON: {decision, reason}."),
-        ]
-
-        system_prompt = "\n".join(filter(None, policy_parts))
-
-        # Build user message with optional conversation context
-        if conversation_summary:
-            user_msg = (
-                f"CONVERSATION HISTORY:\n{conversation_summary}\n\n"
-                f"CURRENT PROMPT:\n{user_prompt}\n\n"
-                f"DRAFT ANSWER:\n{draft_answer}"
-            )
-        else:
-            user_msg = f"Prompt:\n{user_prompt}\n\nDraft Answer:\n{draft_answer}"
-
-        # Delegate to LLMProvider
-        decision, reason = await self.llm_provider.run_will(
-            system_prompt=system_prompt,
-            user_prompt=user_msg
-        )
-
-        self.cache[key] = (decision, reason)
-        return decision, reason
+    def evaluate_spirit_score(self, spirit_assessment: Dict[str, Any]) -> Tuple[str, str]:
+        """
+        Evaluates Spirit's aggregated alignment assessment and returns a gate decision.
+        Will owns all block/approve decisions; Spirit only aggregates.
+        """
+        if spirit_assessment.get("critical_violation"):
+            return ("violation", "critical_value_violation")
+        if spirit_assessment.get("alignment_score", 1.0) < 0.5:
+            return ("violation", "low_alignment_score")
+        return ("approve", "alignment_within_threshold")
 
     async def evaluate_tool_intent(
         self,
@@ -114,20 +130,12 @@ class WillGate:
     ) -> Tuple[str, str]:
         """
         Evaluates a proposed tool call using CQRS pattern before any execution occurs.
+        No LLM calls.
 
         Decision flow:
-          1. Read-only fast pass  — instant approve, no LLM call.
-          2. Profile allow-list   — structural block if tool not permitted.
-          3. Parameter constraints — structural block if values are out of range.
-          4. LLM ethics check     — final gate for write/command tools that pass (1-3).
-
-        Args:
-            tool_name:  Name of the tool the Intellect wants to call.
-            parameters: Arguments the Intellect supplied.
-            profile:    Agent profile dict used for allow-list and constraint checks.
-
-        Returns:
-            (decision, reason) where decision is "approve" or "violation".
+          1. Profile allow-list   — structural block if tool not permitted.
+          2. Parameter constraints — structural block if values are out of range.
+          3. Fast pass / Auto approve for allowed tools.
         """
         # --- Step 1: Profile allow-list check (Structural Security) ---
         allowed_tools: List[str] = profile.get("allowed_tools", [])
@@ -159,28 +167,6 @@ class WillGate:
                     f"Parameter '{param_key}={param_val}' is not permitted for tool '{tool_name}'.",
                 )
 
-        # --- Step 4: LLM ethics check for write/command tools ---
-        rules = self.profile.get("will_rules") or []
-        name = self.profile.get("name", "")
-
-        policy_parts = [
-            self.prompt_config.get("header", "You are Will, the ethical gatekeeper."),
-            f"Tradition: {name}" if name else "",
-            "Rules:",
-            *[f"- {r}" for r in rules],
-            "Evaluate whether executing this tool call is ethically safe and permitted by the rules above.",
-            "IMPORTANT: You are evaluating a machine-to-machine tool call payload, NOT a final answer to the user.",
-            "Do NOT block tool calls for missing conversational formatting (such as greetings, disclaimers, or specific tones) that apply to the final text response.",
-            self.prompt_config.get("footer", "Return JSON: {decision, reason}."),
-        ]
-        system_prompt = "\n".join(filter(None, policy_parts))
-        user_msg = (
-            f"Tool Name: {tool_name}\n"
-            f"Parameters: {json.dumps(parameters, ensure_ascii=False)}"
-        )
-
-        decision, reason = await self.llm_provider.run_will(
-            system_prompt=system_prompt,
-            user_prompt=user_msg,
-        )
-        return decision, reason
+        # --- Step 4: Pure deterministic pass for allowed write/command tools ---
+        self.log.info(f"WillGate: Deterministically approved write/command tool '{tool_name}'.")
+        return ("approve", "Passed structural and allow-list constraints.")

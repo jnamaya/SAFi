@@ -762,7 +762,6 @@ def get_me():
             user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
     
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
-        user_details['will_model'] = user_details.get('will_model') or Config.WILL_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
         # Ensure role/org are present

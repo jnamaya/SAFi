@@ -117,8 +117,7 @@ class Config:
 
     # Model assignments for each faculty (defaults)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
-    WILL_MODEL = os.environ.get("SAFI_WILL_MODEL", "openai/gpt-oss-120b")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "llama-3.3-70b-versatile")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "openai/gpt-oss-120b")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
@@ -140,33 +139,32 @@ class Config:
     # This list is sent to the frontend.
     AVAILABLE_MODELS = [
         # Groq Models
-        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B (Fastest/good for most things)", "categories": ["support", "intellect"]},
-        {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B (Efficient)", "categories": ["support"]},
-        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B (Balanced)", "categories": ["support"]},
-        {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B (Fastest)", "categories": ["support"]},
-        {"id": "qwen/qwen3-32b", "label": "Qwen 3 32B (Strong Reasoning)", "categories": ["support"]},
-        {"id": "openai/gpt-oss-safeguard-20b", "label": "Safety GPT OSS 20B (Safety Model)", "categories": ["support"]},
+        {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
+        {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
+        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B"},
+        {"id": "qwen/qwen3-32b", "label": "Qwen 3 32B"},
 
         # OpenAI Models
-        {"id": "gpt-4o-mini", "label": "GPT-4o Mini (Cost Effective)", "categories": ["support", "intellect"]},
-        {"id": "gpt-4o", "label": "GPT-4o (High Intelligence)", "categories": ["intellect"]},
-        {"id": "gpt-5.1-2025-11-13", "label": "GPT-5.1 Preview (Next-Gen/Slow)", "categories": ["intellect"]},
-        
+        {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
+        {"id": "gpt-4o", "label": "GPT-4o"},
+        {"id": "gpt-5.1-2025-11-13", "label": "GPT-5.1 Preview"},
+
         # Anthropic (Claude) Models
-        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 (Creative/Slow)", "categories": ["intellect"]},
-        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet (Nuanced)", "categories": ["support"]},
+        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
+        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet"},
 
         # Google Models
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (Speed & Context)", "categories": ["intellect"]},
-        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro (Deep Reasoning/Slow)", "categories": ["intellect"]},
-        {"id": "gemini-3-flash-preview", "label": "Gemini 3 flash (Testing/Slow)", "categories": ["intellect"]},
-        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 flash-lite", "categories": ["intellect"]},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
+        {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
+        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
+        {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
 
-         # Mistral Models
-        {"id": "mistral-large-2512", "label": "Mistral Large 3 (Big and slow)", "categories": ["intellect"]},
+        # Mistral Models
+        {"id": "mistral-large-2512", "label": "Mistral Large 3"},
 
-         # DeekSeek Models
-        {"id": "deepseek-chat", "label": "DeepSeek v3 (Experimental)", "categories": ["intellect"]},
+        # DeepSeek Models
+        {"id": "deepseek-chat", "label": "DeepSeek v3"},
     ]
 
     # --- DOCUMENT UPLOAD CONFIGURATION ---
