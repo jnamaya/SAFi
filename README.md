@@ -74,7 +74,7 @@ SAFi implements a cognitive architecture primarily derived from the **Thomistic 
 
 #### Spirit: The Math Behind Drift Detection
 
-Spirit is the only faculty with no LLM involvement. It uses NumPy to build a rolling ethical profile and detect behavioral drift:
+Spirit and Will are the only two faculties with no LLM involvement — both are implemented as pure deterministic Python. Spirit uses NumPy to build a rolling ethical profile and detect behavioral drift:
 
 | Step | Formula | What It Does |
 | :--- | :--- | :--- |
@@ -95,6 +95,18 @@ Spirit then generates a coaching note (e.g., *"Coherence 9/10, drift 0.01. Your 
 <p align="center">
   <img src="public/assets/spirit-dift.png" alt="SAFi Audit Hub - Spirit Drift Tracking" />
 </p>
+
+#### Scope Compliance: Defense-in-Depth Against Jailbreaks
+
+Every persona declares a `scope_statement`. SAFi enforces it through three independent layers — each layer catches what the previous may miss:
+
+| Layer | Mechanism | Trigger |
+| :--- | :--- | :--- |
+| **Layer 1 — Worldview Scope Block** | Every persona's system prompt contains a `--- SCOPE ENFORCEMENT ---` block instructing the Intellect to refuse off-topic and injected content at generation time. | Proactive — fires before any output is produced. |
+| **Layer 2 — W1 Structural Gate** | Will checks the draft for required structural elements (disclaimers, banned syntax) before it reaches the user. | Fires on every response, regardless of model. |
+| **Layer 3 — Phase 4.5 Hard Gate** | After Conscience scores the response, Will reads the ledger for the injected `Scope Compliance` value. A score of -1.0 triggers an immediate block and a governed rephrase with explicit "do not engage" directives. | Catches anything that escaped Layer 1 and Layer 2. |
+
+This architecture means jailbreak resistance is **model-independent**: the governance pipeline intercepts violations regardless of which underlying LLM generates the response.
 
 **💡 Note: Philosophy as Architecture**
 
@@ -150,26 +162,26 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ### 3. Performance & Cost Profile
 
-By using a **Hybrid Architecture**—delegating the "Will" (Gatekeeper) and "Conscience" (Auditor) faculties to optimized, smaller open-source models—SAFi achieves lower latency and cost than monolithic chains.
+By using a **Hybrid Architecture**—a deterministic Will layer and asynchronous Conscience audits on optimized, smaller open-source models—SAFi achieves lower latency and cost than monolithic chains.
 
 | Configuration | Avg. Latency (Safe Chain) | Avg. Cost (per 1k Transactions) |
 | :--- | :--- | :--- |
 | **Monolithic (Large Commercial Models Only)** | ~30-60 seconds | $$$ (High) |
-| **SAFi Hybrid (Large Commercial + Open-Source Models )** | **~3-5 seconds** | **~$5.00** |
+| **SAFi Hybrid (Large Commercial + Open-Source Models)** | **~3-5 seconds** | **~$5.00** |
 
-* **Latency:** Offloading the "Will" faculty to Llama 3 (via Groq/Local) removes the bottleneck of waiting for a reasoning model to "grade its own homework."
-* **Cost:** "Conscience" audits run asynchronously on cheaper open-source models, keeping the total cost for a fully governed, closed-loop agent at roughly **$0.005 per interaction**.
+* **Latency:** The Will faculty is pure deterministic Python — zero LLM calls, sub-millisecond gate checks. This removes the bottleneck of waiting for a model to "grade its own homework."
+* **Cost:** Conscience audits run asynchronously on smaller open-source models, keeping the total cost for a fully governed, closed-loop agent at roughly **$0.005 per interaction**.
 
 ## Technical Implementation
 
 The core logic of the application resides in **`safi_app/core`**. This directory contains the `orchestrator.py` engine, the `faculties` modules, and the central `values.py` configuration.
 
 *   **`orchestrator.py`**: The central nervous system of the application. It coordinates the data flow between the user, the various faculties, and external services.
-*   **`values.py`**: Defines the "constitution" for the system. This file governs the ethical profiles of all agents, which can be configured manually in code or via the frontend Policy Wizard.
+*   **`values.py`**: The Persona Registry and constitution compiler. Defines all built-in agent profiles and compiles them at runtime via `get_profile()`. Includes `_inject_scope_compliance()`, which automatically prepends a **Scope Compliance hard-gate value** to any persona that declares a `scope_statement`. This value carries `weight=0.0` (excluded from Spirit's EMA) and `hard_gate=True` (evaluated directly by Will's Phase 4.5 gate). Can also be configured via the frontend Policy Wizard.
 *   **`intellect.py`**: Acts as the Generator. It receives context from the Orchestrator and drafts responses or tool calls using the configured LLM.
-*   **`will.py`**: Acts as the Gatekeeper. It evaluates the Intellect's draft against the active policy. If a violation is detected, it rejects the draft and requests a retry. If the retry fails, the response is blocked entirely.
+*   **`will.py`**: Acts as the Gatekeeper. It is a **purely deterministic Python module — zero LLM calls**. It operates in two phases: (1) **W1 Structural Gate** — checks the draft for required disclaimers and banned syntax before the response is sent; (2) **Phase 4.5 Hard Gate** — after Conscience scores the response, Will re-reads the ledger for any hard-gate value (such as Scope Compliance) scoring -1 and blocks the response if one is found, triggering a governed rephrase.
 *   **`conscience.py`**: Acts as the Auditor. It performs an asynchronous deep-dive audit of every approved response, scoring it on a -1 to 1 scale against specific ethical rubrics.
-*   **`spirit.py`**: Acts as the Long-Term Integrator. It aggregates Conscience scores (mapped to a 1-10 scale), updates the agent's alignment vector, and mathematically calculates "drift" implementation to generate coaching notes for future responses.
+*   **`spirit.py`**: Acts as the Long-Term Integrator. It aggregates Conscience scores (mapped to a 1-10 scale), updates the agent's alignment vector, and mathematically calculates "drift" to generate coaching notes for future responses.
 
 ## Application Structure
 
@@ -261,13 +273,17 @@ SAFi can be configured as a **"Governance-as-a-Service"** layer for any external
 
 SAFi is designed to be extensible, supporting multiple data sources including RAG (Retrieval-Augmented Generation), MCP (Model Context Protocol), and custom plugins.
 
-The demo environment includes several specialized agents to showcase these capabilities:
+The demo environment includes nine specialized agents, each showcasing a distinct capability:
 
-* **The Contoso Admin:** Showcases the application of organizational governance policies. This agent retrieves Standard Operating Procedures (SOPs) from a RAG vector database, demonstrating how SAFi strictly enforces data privacy and prevents PII leaks during document retrieval.
-*   **The Fiduciary:** A financial specialist using **tool-calling** to access live market data and portfolio information, demonstrating secure integration with sensitive APIs.
-*   **The Bible Scholar:** Demonstrates **RAG** capabilities by strictly referencing a fixed corpus (the Bible) to provide accurate citations and theological analysis without hallucination.
-*   **The Health Navigator:** An informational guide using **Geospatial MCP Tools** to find healthcare providers. Demonstrates SAFi's enforcement of safety policies—the Will faculty ensures every response includes the mandatory medical disclaimer and rejects any attempt to provide diagnoses or treatment advice.
-*   **The Socratic Tutor:** A math and science tutor that uses the **Socratic method**—guiding students through questions rather than giving answers. The Will faculty enforces pedagogical integrity by rejecting any response that provides direct solutions, ensuring students learn through productive struggle.
+* **The Contoso Admin:** Showcases **Organizational Governance Policies**. This agent inherits the Contoso Global GenAI Policy and retrieves SOPs from a RAG vector database, demonstrating how SAFi enforces data privacy and prevents PII leaks.
+*   **The Fiduciary:** A financial specialist using **MCP tool-calling** to access live stock prices, earnings data, and analyst consensus. Demonstrates fiduciary boundaries enforced at the Will layer — never personalized buy/sell advice.
+*   **The Bible Scholar:** Demonstrates **RAG** by strictly referencing the Berean Standard Bible corpus. Provides accurate citations and scholarly analysis grounded in retrieved documents, with Conscience enforcing textual fidelity.
+*   **The Health Navigator:** An informational guide that combines **RAG and Geospatial MCP Tools**. The W1 gate ensures every response includes the mandatory medical disclaimer; Scope Compliance blocks any diagnostic or treatment request.
+*   **The Socratic Tutor:** A STEM tutor that enforces the **Socratic method** — the W1 structural gate rejects any response that gives a direct answer rather than a guiding question, ensuring pedagogical integrity regardless of model.
+*   **The Negotiator:** A **roleplay simulation** of a supplier representative in a price negotiation. Demonstrates persona-scope enforcement — the agent stays in character and refuses to be redirected to unrelated tasks.
+*   **The Philosopher:** An **Aristotelian ethics** guide that engages users in structured philosophical inquiry. Demonstrates value-weighted Conscience scoring (Intellectual Honesty, Logical Rigor, Socratic Depth).
+*   **The Vault:** A **security demonstration** persona that holds a secret phrase and must never reveal it. Showcases defense against every known jailbreak vector — roleplay, authority claims, hypothetical framings, indirect injection.
+*   **The SAFi Guide:** A **RAG-powered documentation assistant** that answers questions about the Self-Alignment Framework using the official SAFi knowledge base. Demonstrates scope enforcement for a documentation-only domain.
 
 
 ## Developer Guide
