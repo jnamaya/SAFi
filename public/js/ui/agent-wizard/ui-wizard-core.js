@@ -14,7 +14,7 @@ import {
     renderConscienceStep, validateConscienceStep
 } from './ui-wizard-step4.js';
 import {
-    renderWillStep, validateWillStep
+    renderSafetyStep, validateSafetyStep
 } from './ui-wizard-step5.js';
 import {
     renderReviewStep
@@ -25,15 +25,24 @@ import { setAvailableModels, availableModelsCache } from './ui-wizard-utils.js';
 // --- WIZARD STATE ---
 let currentStep = 1;
 const TOTAL_STEPS = 6;
+
+const DEFAULT_WILL_RULES = () => ({
+    structural_requirements: {
+        require_disclaimer: false,
+        mandatory_disclaimer_substring: "",
+        banned_markdown_syntaxes: []
+    },
+    early_prompt_blacklist: []
+});
+
 export let agentData = {
     key: "",
     name: "",
     description: "",
     avatar: "",
-    instructions: "", // Worldview
+    instructions: "",
     style: "",
     values: [],
-    rules: [],
     policy_id: "standalone",
     is_update_mode: false,
     visibility: "private",
@@ -42,7 +51,8 @@ export let agentData = {
     conscience_model: "",
     rag_knowledge_base: "",
     rag_format_string: "",
-    tools: []
+    tools: [],
+    will_rules: DEFAULT_WILL_RULES()
 };
 
 // --- MAIN ENTRANCE ---
@@ -60,18 +70,18 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             instructions: (existingAgent.worldview || "").replace("--- Organizational Policy ---\n", "").split("--- SPECIFIC ROLE ---\n").pop() || "",
             style: existingAgent.style || "",
             values: existingAgent.values || [],
-            rules: existingAgent.will_rules || [],
             policy_id: existingAgent.policy_id || "standalone",
             visibility: existingAgent.visibility || "private",
             is_update_mode: true,
-
             intellect_model: existingAgent.intellect_model || "",
             will_model: existingAgent.will_model || "",
             conscience_model: existingAgent.conscience_model || "",
             rag_knowledge_base: existingAgent.rag_knowledge_base || "",
-            rag_knowledge_base: existingAgent.rag_knowledge_base || "",
             rag_format_string: existingAgent.rag_format_string || "",
-            tools: existingAgent.tools || []
+            tools: existingAgent.tools || [],
+            will_rules: (existingAgent.will_rules && !Array.isArray(existingAgent.will_rules))
+                ? existingAgent.will_rules
+                : DEFAULT_WILL_RULES()
         };
         // Fallback checks
         if (existingAgent.worldview && !agentData.instructions) {
@@ -87,7 +97,6 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             instructions: "",
             style: "",
             values: [],
-            rules: [],
             policy_id: "standalone",
             visibility: "private",
             is_update_mode: false,
@@ -95,9 +104,9 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             will_model: "",
             conscience_model: "",
             rag_knowledge_base: "",
-            rag_knowledge_base: "",
             rag_format_string: "",
-            tools: []
+            tools: [],
+            will_rules: DEFAULT_WILL_RULES()
         };
     }
 
@@ -171,7 +180,7 @@ function ensureWizardInlineExists() {
                 <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Capabilities</span>
                 <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Intellect</span>
                 <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
-                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Rules</span>
+                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Safety</span>
                 <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
             </div>
 
@@ -231,10 +240,9 @@ async function renderStep(step) {
             case 2: renderKnowledgeStep(container, agentData); break;
             case 3: renderIntellectStep(container, agentData, availableModelsCache); break;
             case 4: renderConscienceStep(container, agentData, availableModelsCache); break;
-            case 5: renderWillStep(container, agentData, availableModelsCache); break;
+            case 5: renderSafetyStep(container, agentData); break;
             case 6:
                 // Auto-generate key for review visualization
-                // Naming Convention: [org_prefix]_[agent_name]
                 if (!agentData.key && agentData.name) {
                     let prefix = "org";
                     try {
@@ -286,7 +294,7 @@ function validateCurrentStep() {
         case 2: return validateKnowledgeStep(agentData);
         case 3: return validateIntellectStep(agentData);
         case 4: return validateConscienceStep(agentData);
-        case 5: return validateWillStep(agentData);
+        case 5: return validateSafetyStep(agentData);
         case 6: return true; // Review always valid
         default: return true;
     }

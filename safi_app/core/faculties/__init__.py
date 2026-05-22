@@ -10,10 +10,12 @@ from .intellect import IntellectEngine
 from .will import WillGate
 from .conscience import ConscienceAuditor
 from .spirit import SpiritIntegrator
+from .phase_zero import PhaseZeroGate
 
 __all__ = [
     "IntellectEngine",
     "WillGate",
     "ConscienceAuditor",
     "SpiritIntegrator",
+    "PhaseZeroGate",
 ]

@@ -9,8 +9,8 @@ body {
   -webkit-font-feature-settings: "calt" on, "liga" on;
   font-feature-settings: "calt" on, "liga" on;
 
-  /* CRITICAL CHANGE: Disable body scroll for Fixed App Layout */
   overflow: hidden;
+  overscroll-behavior: none;
   height: 100%;
   width: 100%;
 }
@@ -28,10 +28,11 @@ body {
 }
 
 html {
-  height: 100%;
+  height: 100vh;   /* fallback for browsers without svh */
+  height: 100svh;  /* small viewport height — always fits even with browser UI visible */
   width: 100%;
   overflow: hidden;
-  /* Lock html scroll too */
+  overscroll-behavior: none;
 }
 
 #app-container {
@@ -1697,3 +1698,55 @@ form {
 
 .audit-card-neutral:hover { border-color: rgba(0, 0, 0, 0.12) !important; }
 .dark .audit-card-neutral:hover { border-color: rgba(255, 255, 255, 0.12) !important; }
+
+/* ============================================================
+   MOBILE CHAT LAYOUT FIXES  (max-width: 767px)
+   ============================================================ */
+@media (max-width: 767px) {
+
+    /* Smaller avatars — 42px eats into the narrow content area */
+    .ai-avatar,
+    .user-avatar {
+        width: 32px;
+        height: 32px;
+        margin-top: 4px;
+    }
+
+    /* Tighter gap between avatar and message text */
+    .message.ai {
+        gap: 10px;
+    }
+
+    /* User bubbles shouldn't span nearly 100% — looks like a wall of green */
+    .message.user {
+        max-width: 82%;
+    }
+
+    /* Slimmer padding inside user bubbles */
+    .message.user .chat-bubble {
+        padding: 10px 16px;
+        border-radius: 20px;
+    }
+
+    /* Composer footer — the CSS rule adds padding: 16px on all sides,
+       which stacks with the wrapper's own pt-4/pb-3 and makes the
+       composer area too tall on mobile. */
+    #composer-footer {
+        padding: 4px 0 0 0;
+    }
+
+    /* iOS safe area: keep the composer above the home indicator */
+    .composer-bg-wrapper {
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+
+    /* Hide model selector text label — icon alone is enough on small screens */
+    #model-selector-label {
+        display: none;
+    }
+
+    /* Slightly tighter message container side padding */
+    .message-container {
+        padding: 0 12px;
+    }
+}

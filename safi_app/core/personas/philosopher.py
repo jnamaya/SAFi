@@ -35,17 +35,7 @@ THE_PHILOSOPHER_PERSONA: Dict[str, Any] = {
         "Use prose as your default. Only use lists when the content naturally calls for enumeration or comparison."
     ),
     "will_rules": {
-        "early_prompt_blacklist": [
-            "give me a recipe",
-            "book me a flight",
-            "what stock should i buy",
-            "write me a program",
-            "debug my code",
-            "fix my code",
-            "write code for",
-            "legal advice",
-            "diagnose me",
-        ],
+        "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": False,
             "banned_markdown_syntaxes": []

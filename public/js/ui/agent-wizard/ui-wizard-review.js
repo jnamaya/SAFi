@@ -1,7 +1,11 @@
 export function renderReviewStep(container, agentData) {
     const valuesCount = agentData.values.length;
-    const rulesCount = agentData.rules.length;
     const hasRAG = !!agentData.rag_knowledge_base;
+
+    const sr = (agentData.will_rules && agentData.will_rules.structural_requirements) || {};
+    const requireDisclaimer = !!sr.require_disclaimer;
+    const bannedCount = (sr.banned_markdown_syntaxes || []).length;
+    const hardGateCount = (agentData.values || []).filter(v => v.hard_gate).length;
 
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Review & Create</h2>
@@ -34,10 +38,6 @@ export function renderReviewStep(container, agentData) {
                             <span class="font-mono font-bold">${valuesCount}</span>
                         </li>
                         <li class="flex justify-between">
-                            <span>Rules</span>
-                            <span class="font-mono font-bold">${rulesCount}</span>
-                        </li>
-                        <li class="flex justify-between">
                             <span>Knowledge Base</span>
                             <span class="font-mono font-bold ${hasRAG ? 'text-green-600' : 'text-gray-400'}">${hasRAG ? 'Active' : 'None'}</span>
                         </li>
@@ -56,6 +56,25 @@ export function renderReviewStep(container, agentData) {
                 </div>
             </div>
             
+            <!-- Safety Summary -->
+            <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
+                <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Safety (Will Checks)</h4>
+                <ul class="space-y-2 text-sm">
+                    <li class="flex justify-between">
+                        <span>Mandatory Disclaimer</span>
+                        <span class="font-mono font-bold ${requireDisclaimer ? 'text-green-600' : 'text-gray-400'}">${requireDisclaimer ? 'Required' : 'None'}</span>
+                    </li>
+                    <li class="flex justify-between">
+                        <span>Blocked Code Syntaxes</span>
+                        <span class="font-mono font-bold ${bannedCount > 0 ? 'text-orange-600' : 'text-gray-400'}">${bannedCount > 0 ? bannedCount : 'None'}</span>
+                    </li>
+                    <li class="flex justify-between">
+                        <span>Hard Gates</span>
+                        <span class="font-mono font-bold ${hardGateCount > 0 ? 'text-red-600' : 'text-gray-400'}">${hardGateCount > 0 ? hardGateCount : 'None'}</span>
+                    </li>
+                </ul>
+            </div>
+
             <!-- Instructions Preview -->
             <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
                 <h4 class="font-bold text-sm text-gray-500 uppercase mb-2">System Instructions (Preview)</h4>

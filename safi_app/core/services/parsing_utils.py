@@ -104,8 +104,15 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
     answer = ""
     reflection = ""
     delimiter_text = "---REFLECTION---"
-    
+
     clean_text = raw_text.strip()
+
+    # Normalize delimiter variants produced by models that drop the leading or trailing dashes
+    # e.g. Mistral outputs "REFLECTION---" instead of "---REFLECTION---"
+    for variant in (r"\bREFLECTION---", r"---REFLECTION\b"):
+        if re.search(variant, clean_text) and delimiter_text not in clean_text:
+            clean_text = re.sub(variant, delimiter_text, clean_text)
+            break
 
     # --- Strategy 1: Explicit Delimiter ---
     if delimiter_text in clean_text:
@@ -167,17 +174,15 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                      answer = answer.replace(delimiter_text, "").strip()
                      return answer, reflection, json_obj.get("_gemini_raw_turn")
 
-    # --- Strategy 3: Falback (Raw Text) ---
-    # If we are here, we couldn't separate the answer from the reflection safely.
-    # We treat the whole text as the answer and log a soft failure for the reflection.
-    
-    answer = clean_text
-    reflection = "Salvaged raw output; model failed to format."
+    # --- Strategy 3: Fallback (Raw Text) ---
+    # Model didn't include the delimiter or a reflection JSON block; surface the raw text as the answer.
+    answer = re.sub(r'-*REFLECTION-*', '', clean_text).strip()
+    log.info("parse_intellect_response: Strategy 3 fallback — model omitted reflection format.")
 
     if not answer:
         answer = "[Model returned empty answer]"
-        
-    return answer.replace("\\n", "\n"), reflection.replace("\\n", "\n"), None
+
+    return answer.replace("\\n", "\n"), "", None
 
 def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
     """

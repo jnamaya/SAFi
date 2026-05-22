@@ -4,6 +4,7 @@ import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import { initDataSources } from '../ui/ui-data-sources.js';
+import { initModelSelector } from '../ui/ui-model-selector.js';
 import * as chat from './chat.js';
 import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-settings-core.js';
 
@@ -224,6 +225,9 @@ async function checkLoginStatus() {
 
       // Initialize Data Sources UI (Dropdown)
       initDataSources();
+
+      // Initialize Model Selector
+      initModelSelector(availableModels, user.intellect_model, handleQuickModelSwitch);
 
       // Initialize File Upload (Attachment Button)
       chat.initFileUpload();
@@ -499,6 +503,18 @@ async function handleProfileChange(newProfileKey) {
     console.error('Failed to switch profile:', error);
     ui.showToast('Could not switch agent.', 'error');
     hapticError();
+  }
+}
+
+async function handleQuickModelSwitch(modelId) {
+  try {
+    await api.updateUserModels({ intellect_model: modelId });
+    user.intellect_model = modelId;
+    const model = availableModels.find(m => m.id === modelId);
+    ui.showToast(`Switched to ${model?.label || modelId}`, 'success');
+  } catch(e) {
+    console.error('Model switch failed:', e);
+    ui.showToast('Could not switch model.', 'error');
   }
 }
 

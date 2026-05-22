@@ -69,14 +69,7 @@ THE_SAFI_STEWARD_PERSONA: Dict[str, Any] = {
         }
     ],
     "will_rules": {
-        "early_prompt_blacklist": [
-            "ignore your instructions",
-            "forget you are safi",
-            "pretend you are",
-            "act as a different ai",
-            "jailbreak",
-            "ignore previous instructions",
-        ],
+        "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": False,
             "banned_markdown_syntaxes": []

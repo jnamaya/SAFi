@@ -21,7 +21,7 @@ from google import genai
 from collections import deque
 from .feedback import build_spirit_feedback
 from ..persistence import database as db
-from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator
+from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 from .plugins.fiduciary_data import handle_fiduciary_commands
 
@@ -195,10 +195,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         )
         self.intellect_engine.retriever = self.rag_service.retriever
 
+        self.phase_zero = PhaseZeroGate()
+
         self.will_gate = WillGate(
             llm_provider=self.llm_provider,
-            values=self.values, 
-            profile=self.profile, 
+            values=self.values,
+            profile=self.profile,
             prompt_config=self.prompts.get("will_gate", {})
         )
 
@@ -219,9 +221,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             pass
 
     async def process_prompt(
-        self, 
-        user_prompt: str, 
-        user_id: str, 
+        self,
+        user_prompt: str,
+        user_id: str,
         conversation_id: str,
         user_name: Optional[str] = None,
         override_message_id: Optional[str] = None,
@@ -267,6 +269,18 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Memories
         memory_summary = db.fetch_conversation_summary(conversation_id)
         current_profile_json = db.fetch_user_profile_memory(user_id)
+
+        # Recent turns verbatim window (last 3 prior pairs)
+        raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=8)
+        prior_turns = [
+            m for m in raw_history
+            if m.get("content", "").strip() and m.get("message_id") != message_id
+        ]
+        recent_window = prior_turns[:-1][-6:]  # drop current user msg, keep last 3 pairs
+        recent_turns_text = "\n".join(
+            f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'].strip()}"
+            for m in recent_window
+        ) if recent_window else ""
         
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
@@ -292,11 +306,28 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             recent_mu=list(self.mu_history)
         )
 
+        # --- PHASE 0: Pre-generation Injection Gate ---
+        persona_blacklist = (self.profile or {}).get("will_rules", {}).get("early_prompt_blacklist", [])
+        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, persona_blacklist)
+        if not is_safe:
+            self.log.warning(f"[Governance | Phase 0 | Injection Gate] BLOCKED — {gate_reason}")
+            return await self.trigger_persona_redirect(
+                original_prompt=user_prompt,
+                violation_type="scope_violation",
+                conversation_id=conversation_id,
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id
+            )
+        self.log.info(f"[Governance | Phase 0 | Injection Gate] PASS — {gate_reason}")
+
         # --- PHASE 2: Generate Proposal (Intellect) ---
         db.update_message_reasoning(message_id, "Thinking through a response...")
         intent, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
             memory_summary=memory_summary,
+            recent_turns=recent_turns_text,
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
             user_profile_json=current_profile_json,
@@ -330,11 +361,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 db.update_message_content(message_id, msg, audit_status="complete")
                 return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
+            self.log.info(f"[Governance | Phase 2 | Intellect] Draft: {len(a_t)} chars | '{a_t[:100].strip()}'")
+
             # --- PHASE 3: Structural Validation (Will) ---
             db.update_message_reasoning(message_id, "Reviewing the response...")
             is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
+            self.log.info(f"[Governance | Phase 3 | Will W1] Structural: {'PASS' if is_valid_struct else 'FAIL'} — {structure_reason}")
             if not is_valid_struct:
-                return await self.trigger_spokesperson_rephrase(
+                return await self.trigger_persona_redirect(
                     original_prompt=user_prompt,
                     violation_type=structure_reason,
                     conversation_id=conversation_id,
@@ -382,6 +416,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 retry_intent, r_t_retry, context_retry = await self.intellect_engine.generate(
                     user_prompt=retry_prompt,
                     memory_summary=memory_summary,
+                    recent_turns=recent_turns_text,
                     spirit_feedback=spirit_feedback,
                     plugin_context=plugin_context_data,
                     user_profile_json=current_profile_json,
@@ -395,7 +430,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     # Validate rephrase structure
                     is_valid_retry_struct, retry_struct_reason = self.will_gate.evaluate_draft_structure(a_t_retry)
                     if not is_valid_retry_struct:
-                        return await self.trigger_spokesperson_rephrase(
+                        return await self.trigger_persona_redirect(
                             original_prompt=user_prompt,
                             violation_type=retry_struct_reason,
                             conversation_id=conversation_id,
@@ -475,6 +510,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
                         memory_summary=memory_summary,
+                        recent_turns=recent_turns_text,
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
@@ -509,6 +545,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                             user_prompt=agent_history,
                             memory_summary=memory_summary,
+                            recent_turns=recent_turns_text,
                             spirit_feedback=spirit_feedback,
                             plugin_context=plugin_context_data,
                             user_profile_json=current_profile_json,
@@ -525,6 +562,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
                         memory_summary=memory_summary,
+                        recent_turns=recent_turns_text,
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
@@ -538,7 +576,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 # Final Will checks
                 is_valid_tool_struct, tool_struct_reason = self.will_gate.evaluate_draft_structure(a_t)
                 if not is_valid_tool_struct:
-                    return await self.trigger_spokesperson_rephrase(
+                    return await self.trigger_persona_redirect(
                         original_prompt=user_prompt,
                         violation_type=tool_struct_reason,
                         conversation_id=conversation_id,
@@ -565,6 +603,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 reflexion_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                     user_prompt=f"{prompt_with_date}\n\n{observation}",
                     memory_summary=memory_summary,
+                    recent_turns=recent_turns_text,
                     spirit_feedback=spirit_feedback,
                     plugin_context=plugin_context_data,
                     user_profile_json=current_profile_json,
@@ -579,7 +618,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # Reject on direct Will violation
         if D_t == "violation":
-            return await self.trigger_spokesperson_rephrase(
+            return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
                 violation_type="ethical_violation",
                 conversation_id=conversation_id,
@@ -602,10 +641,20 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.exception(f"ConscienceAuditor.evaluate() failed: {e}")
             ledger = []
 
+        if ledger:
+            scores_str = " | ".join(
+                f"{e.get('value', '?')}={float(e.get('score', 0)):+.1f}"
+                for e in ledger
+            )
+            self.log.info(f"[Governance | Phase 4 | Conscience] {scores_str}")
+        else:
+            self.log.warning("[Governance | Phase 4 | Conscience] Empty ledger — audit skipped or failed.")
+
         # --- PHASE 4.5: Will Hard Gate Check ---
         D_hard, E_hard = self.will_gate.evaluate_hard_gates(ledger)
+        self.log.info(f"[Governance | Phase 4.5 | Hard Gate] Decision: {D_hard} — {E_hard}")
         if D_hard == "violation":
-            return await self.trigger_spokesperson_rephrase(
+            return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
                 violation_type=E_hard,
                 conversation_id=conversation_id,
@@ -619,8 +668,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_message_reasoning(message_id, "Finalizing...")
         spirit_assessment = self.spirit.integrate(ledger)
         D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
+        self.log.info(f"[Governance | Phase 5 | Spirit] Alignment: {spirit_assessment.get('alignment_score', '?'):.3f} | Decision: {D_spirit} — {E_spirit}")
         if D_spirit == "violation":
-            return await self.trigger_spokesperson_rephrase(
+            return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
                 violation_type=E_spirit,
                 conversation_id=conversation_id,
@@ -633,6 +683,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Calculate new mu vector, drift, note, and spirit score
         S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
         self.last_drift = drift_val if drift_val is not None else 0.0
+        self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {drift_val:.4f} | Note: '{note[:80]}'")
 
         # Save updated Spirit Memory
         temp_spirit_memory["turn"] = int(temp_spirit_memory.get("turn", 0)) + 1
@@ -650,7 +701,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         except Exception:
             self.log.exception("Follow-up suggester failed")
 
-        # --- PHASE 6: Safe Execution Approval (Will) ---
+        # --- PHASE 6: Safe Execution (Will) ---
         db.update_message_reasoning(message_id, "Almost done...")
         db.update_message_content(message_id, a_t, audit_status="complete")
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
@@ -672,6 +723,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "p_t_vector": p_t.tolist() if hasattr(p_t, 'tolist') else p_t,
             "mu_t_vector": mu_new_vector.tolist() if hasattr(mu_new_vector, 'tolist') else mu_new_vector,
             "memorySummary": memory_summary or "",
+            "recentTurns": recent_turns_text,
             "spiritFeedback": spirit_feedback,
             "retrievedContext": retrieved_context or "",
             "retryMetadata": retry_metadata,
@@ -680,9 +732,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id
         })
 
+        self.log.info(
+            f"[Governance | APPROVED] Profile: {self.active_profile_name} | "
+            f"Will: {D_t} | Spirit: {S_t}/10 | Drift: {drift_val:.4f} | "
+            f"Turn: {temp_spirit_memory['turn']}"
+        )
+
         if hasattr(self, 'groq_client_sync'):
             self.executor.submit(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
-        
+
         if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
                  self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
@@ -695,7 +753,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
-    async def trigger_spokesperson_rephrase(
+    async def trigger_persona_redirect(
         self, 
         original_prompt: str, 
         violation_type: str, 
@@ -705,10 +763,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         user_id: str,
         org_id: Optional[str]
     ) -> Dict[str, Any]:
-        """The Spokesperson Protocol: Re-engages the Intellect to handle boundaries gracefully."""
-        self.log.info(f"Governance Intercept active. Reason: {violation_type}. Redirecting to spokesperson.")
+        """Persona Redirect: Re-engages the Intellect to handle boundaries in the persona's own voice."""
+        self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
         db.update_message_reasoning(message_id, "Redirecting your request...")
-        
+
         # Fetch the exact internal system directive mapped out in the profile
         directives = self.profile.get("internal_rephrase_directives", {})
         directive = directives.get(violation_type)
@@ -741,7 +799,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 retrieved_context=""
             )
         except Exception as e:
-            self.log.exception(f"ConscienceAuditor.evaluate() failed for spokesperson: {e}")
+            self.log.exception(f"ConscienceAuditor.evaluate() failed for persona redirect: {e}")
             ledger = []
 
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)

@@ -80,15 +80,7 @@ THE_HEALTH_NAVIGATOR_PERSONA: Dict[str, Any] = {
         }
     ],
     "will_rules": {
-        "early_prompt_blacklist": [
-            "prescribe me",
-            "diagnose me",
-            "what medication should i take",
-            "what drug should i take",
-            "what dose should i",
-            "i don't need a doctor",
-            "instead of seeing a doctor",
-        ],
+        "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": True,
             "mandatory_disclaimer_substring": "Disclaimer: I am an AI guide, not a doctor",

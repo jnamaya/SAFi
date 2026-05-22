@@ -327,6 +327,5 @@ export function renderProfileDetailsModal(profile) {
     container.insertAdjacentHTML('beforeend', createModalSection('Worldview', profile.worldview));
     container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
     container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values));
-    container.insertAdjacentHTML('beforeend', createModalSection('Rules (Non-Negotiable)', profile.will_rules));
 
 }

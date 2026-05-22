@@ -52,7 +52,7 @@
   </style>
 </head>
 
-<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300">
+<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
 
   <div id="offline-banner"
     class="fixed top-0 left-0 right-0 z-50 bg-yellow-500 text-black text-center text-sm p-1.5 hidden">
@@ -65,7 +65,7 @@
     </div>
 
     <div id="main-layout-wrapper" class="md:ml-72 flex flex-col h-full w-full overflow-hidden relative">
-      <section class="w-full flex flex-col flex-1 h-full px-0 overflow-hidden">
+      <section class="w-full flex flex-col flex-1 min-h-0 px-0 overflow-hidden">
 
         <!-- Login View -->
         <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
@@ -125,7 +125,7 @@
 
         <!-- Chat View -->
         <div id="chat-view"
-          class="w-full hidden flex flex-col h-full bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
+          class="w-full hidden flex flex-col flex-1 min-h-0 bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
 
           <!-- Floating Mobile Menu Toggle -->
           <!-- Restored Mobile Header (Visible only on mobile) -->
@@ -152,7 +152,7 @@
           </header>
 
           <div id="chat-window"
-            class="flex-1 overflow-y-auto custom-scrollbar pt-4 pb-4 flex flex-col justify-start gap-5">
+            class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pt-2 md:pt-10 pb-4 flex flex-col justify-start gap-3 md:gap-5">
             <!-- Chat messages dynamically generated -->
           </div>
 
@@ -206,6 +206,21 @@
                         <div id="data-sources-dropdown"
                           class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
                           <!-- Items injected via JS -->
+                        </div>
+                      </div>
+
+                      <!-- Model Selector -->
+                      <div class="relative" id="model-selector-container">
+                        <button id="model-selector-btn" type="button"
+                          class="flex items-center gap-1.5 h-10 px-3 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-medium"
+                          title="Switch AI model">
+                          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                          </svg>
+                          <span id="model-selector-label">Model</span>
+                        </button>
+                        <div id="model-selector-dropdown"
+                          class="absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
                         </div>
                       </div>
                     </div>

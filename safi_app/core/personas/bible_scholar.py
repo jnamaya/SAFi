@@ -70,16 +70,7 @@ THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
         }
     ],
     "will_rules": {
-        "early_prompt_blacklist": [
-            "convert to",
-            "which religion is correct",
-            "best religion",
-            "which denomination is right",
-            "prove that christianity",
-            "prove that islam",
-            "prove that judaism",
-            "only true religion",
-        ],
+        "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": False,
             "banned_markdown_syntaxes": []

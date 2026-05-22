@@ -142,7 +142,8 @@ class Config:
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
         {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B"},
-        {"id": "qwen/qwen3-32b", "label": "Qwen 3 32B"},
+        {"id": "llama-3.1-8b-instant", "label": "llama-3.1-8b"},
+
 
         # OpenAI Models
         {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
@@ -162,9 +163,12 @@ class Config:
 
         # Mistral Models
         {"id": "mistral-large-2512", "label": "Mistral Large 3"},
+        {"id": "mistral-small-2603", "label": "Mistral Small 4"},
+        {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
 
         # DeepSeek Models
-        {"id": "deepseek-chat", "label": "DeepSeek v3"},
+        {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
+        {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
     ]
 
     # --- DOCUMENT UPLOAD CONFIGURATION ---

@@ -52,7 +52,8 @@ class IntellectEngine:
         *,
         user_prompt: Any,
         memory_summary: str,
-        spirit_feedback: str,
+        recent_turns: str = "",
+        spirit_feedback: str = "",
         user_profile_json: str,
         user_name: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -121,6 +122,11 @@ class IntellectEngine:
             if memory_summary else ""
         )
 
+        recent_turns_injection = (
+            f"RECENT CONVERSATION (last few turns verbatim):\n<recent_turns>{recent_turns}</recent_turns>"
+            if recent_turns else ""
+        )
+
         spirit_injection = ""
         if spirit_feedback:
             template = self.prompt_config.get("coaching_note", "")
@@ -150,6 +156,7 @@ class IntellectEngine:
             user_name_injection,
             user_profile_injection,
             memory_injection,
+            recent_turns_injection,
             spirit_injection,
             tools_injection,
             formatting_instructions

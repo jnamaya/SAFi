@@ -88,18 +88,7 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
         },
     ],
     "will_rules": {
-        "early_prompt_blacklist": [
-            "disable mfa",
-            "turn off mfa",
-            "bypass mfa",
-            "remove mfa",
-            "grant everyone access",
-            "give everyone access",
-            "everyone full access",
-            "autonomous agent",
-            "process pii",
-            "process personal data",
-        ],
+        "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": True,
             "mandatory_disclaimer_substring": "*Note: If you share this information externally, please disclose that it was generated with AI assistance.*",
