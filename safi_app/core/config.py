@@ -165,6 +165,7 @@ class Config:
         {"id": "mistral-large-2512", "label": "Mistral Large 3"},
         {"id": "mistral-small-2603", "label": "Mistral Small 4"},
         {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
+        {"id": "ministral-8b-latest", "label": "Ministral 3 8B"},
 
         # DeepSeek Models
         {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},

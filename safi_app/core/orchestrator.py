@@ -69,7 +69,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             if model_lower.startswith("claude-"): return "anthropic"
             if model_lower.startswith("gemini-"): return "gemini"
             if model_lower.startswith("deepseek-"): return "deepseek"
-            if model_lower.startswith("mistral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
+            if model_lower.startswith("mistral-") or model_lower.startswith("ministral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
             return "groq" 
 
         i_model = intellect_model or getattr(config, "INTELLECT_MODEL")
