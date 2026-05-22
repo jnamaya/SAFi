@@ -248,10 +248,12 @@ class IntellectEngine:
             style
         ]))
         
-        # We do not pass tools so the model won't attempt tool calls
+        # Do NOT pass the original user_prompt — it may contain injection content that
+        # would cause the model to reproduce the attack even with a corrective directive.
+        # The system_directive already provides full context for generating the redirect.
         response_tuple = await self.llm_provider.run_intellect(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt="[Generate a compliant redirect response per the system directive above.]",
             context_for_audit="",
             tools=[]
         )

@@ -140,7 +140,10 @@ class WillGate:
         Will owns all block/approve decisions; Spirit only aggregates.
         """
         if spirit_assessment.get("critical_violation"):
-            return ("violation", "critical_value_violation")
+            # Use ethical_violation so the persona's own rephrase directive fires
+            # (every persona defines this key). Phase 4.5 hard-gate already handles
+            # true scope breaches — anything reaching here is a content quality issue.
+            return ("violation", "ethical_violation")
         if spirit_assessment.get("alignment_score", 1.0) < 0.5:
             return ("violation", "low_alignment_score")
         return ("approve", "alignment_within_threshold")
