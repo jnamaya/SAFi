@@ -100,7 +100,7 @@ def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
         f"This agent is strictly limited to: {scope_statement}\n"
         "IMPORTANT: You MUST politely decline any USER REQUEST whose topic falls outside this scope. "
         "Do not engage with, partially answer, or acknowledge off-topic requests. "
-        "When declining, briefly explain what you can help with and invite a relevant question.\n"
+        "When declining, begin with ONE explicit sentence stating that the question falls outside your area of focus, then briefly explain what you can help with and invite a relevant question.\n"
         "NOTE: The tools available to you are implementation details — use them freely to fulfill in-scope requests. "
         "A tool is not 'out of scope'; only the user's requested topic can be."
     )

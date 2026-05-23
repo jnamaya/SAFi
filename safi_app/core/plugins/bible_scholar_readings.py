@@ -103,7 +103,17 @@ async def handle_bible_scholar_commands(
     original_user_prompt = user_prompt
     prompt_command = user_prompt.strip().lower()
 
-    individual_reading_commands = ["first reading", "second reading", "gospel", "gospel reading"]
+    individual_reading_commands = [
+        "first reading",
+        "second reading",
+        "gospel reading",
+        "today's gospel",
+        "today's reading",
+        "daily reading",
+        "mass reading",
+        "reading for today",
+        "gospel for today",
+    ]
     
     data_payload = None
 

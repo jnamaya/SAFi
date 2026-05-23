@@ -170,6 +170,8 @@ export const processUserMessage = (message, conversation_id, signal = null, mess
     httpJSON(urls.PROCESS, 'POST', { message, conversation_id, message_id }, { signal });
 export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
+export const cancelMessage = (messageId) =>
+    httpJSON(`/api/cancel/${messageId}`, 'POST', {});
 export const deleteAccount = () =>
     httpJSON(urls.DELETE_ACCOUNT, 'DELETE', {});
 

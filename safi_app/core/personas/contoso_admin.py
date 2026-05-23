@@ -184,4 +184,12 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
             "'*Note: If you share this information externally, please disclose that it was generated with AI assistance.*'"
         ),
     },
+
+    # -- UI --------------------------------------------------------------------
+    # Starter questions shown in the persona selector card.
+    "example_prompts": [
+        "What is the SOP for submitting a hardware procurement request?",
+        "How should I name a new virtual machine under Contoso standards?",
+        "What approval is required before deploying a new AI tool?"
+    ]
 }

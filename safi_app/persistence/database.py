@@ -612,6 +612,29 @@ def insert_memory_entry(cid, role, content, message_id=None, audit_status=None):
         cursor.close()
         conn.close()
 
+def cancel_message(msg_id):
+    """Marks a message as cancelled so the pipeline skips further processing."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE chat_history SET audit_status='cancelled' WHERE message_id=%s", (msg_id,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def is_message_cancelled(msg_id):
+    """Returns True if the message has been cancelled by the client."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT audit_status FROM chat_history WHERE message_id=%s", (msg_id,))
+        row = cursor.fetchone()
+        return row is not None and row[0] == 'cancelled'
+    finally:
+        cursor.close()
+        conn.close()
+
 def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None):
     conn = get_db_connection()
     cursor = conn.cursor()

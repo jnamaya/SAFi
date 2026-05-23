@@ -22,7 +22,8 @@ def create_app():
     # Initialize Flask app, pointing static files to the '../public' directory
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
-    
+    Config.validate()
+
     # Apply ProxyFix middleware to correctly handle headers from a reverse proxy
     # (e.g., Nginx, Heroku) for things like HTTPS and client IP.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)

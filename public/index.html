@@ -49,6 +49,20 @@
         display: none !important;
       }
     }
+
+    /* FIX: Force audit modal to true full-screen on mobile (iOS Safari inset-0 quirk) */
+    @media (max-width: 639px) {
+      #conscience-modal {
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-height: none !important;
+        border-radius: 0 !important;
+      }
+    }
   </style>
 </head>
 
@@ -181,69 +195,104 @@
                   <!-- Toolbar Section -->
                   <div class="flex items-center justify-between px-2 pt-2">
 
-                    <!-- Left: Tools (+ Attach, Data Sources) -->
-                    <div class="flex items-center gap-2">
-                      <!-- Attachment Button (+) -->
-                      <button type="button" id="attach-file-btn"
+                    <!-- Left: + Button + Model Label -->
+                    <div class="flex items-center gap-1.5">
+                    <div class="relative flex items-center gap-1.5" id="composer-plus-container">
+
+                      <!-- + Button -->
+                      <button type="button" id="composer-plus-btn"
                         class="flex items-center justify-center w-10 h-10 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                        title="Attach a document (.pdf, .docx, .txt, .csv, .md)">
+                        title="Actions">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                         </svg>
                       </button>
 
-                      <!-- Data Sources Dropdown -->
-                      <div class="relative group" id="data-sources-container">
-                        <button id="data-sources-btn" type="button"
-                          class="flex items-center justify-center w-10 h-10 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800" title="Data Sources">
-                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-                          </svg>
+                      <!-- Action Menu Popover -->
+                      <div id="composer-plus-menu"
+                        class="hidden absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5 space-y-0.5">
+
+                        <!-- Attach File -->
+                        <button id="plus-attach-btn" type="button"
+                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                          <div class="p-1.5 bg-gray-100 dark:bg-neutral-700 rounded-lg shrink-0">
+                            <svg class="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+                            </svg>
+                          </div>
+                          <div>
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Attach File</div>
+                            <div class="text-xs text-gray-400">PDF, DOCX, TXT, CSV</div>
+                          </div>
                         </button>
 
-                        <!-- Dropdown Menu -->
-                        <div id="data-sources-dropdown"
-                          class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
-                          <!-- Items injected via JS -->
-                        </div>
+                        <!-- Switch Agent -->
+                        <button id="plus-agent-btn" type="button"
+                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                          <div class="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
+                            <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2"></path>
+                            </svg>
+                          </div>
+                          <div class="min-w-0">
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Switch Agent</div>
+                            <div id="plus-agent-current" class="text-xs text-gray-400 truncate">Loading…</div>
+                          </div>
+                        </button>
+
+                        <!-- Change Model -->
+                        <button id="plus-model-btn" type="button"
+                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                          <div class="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
+                            <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                          </div>
+                          <div class="min-w-0">
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Change Model</div>
+                            <div id="plus-model-current" class="text-xs text-gray-400 truncate">Loading…</div>
+                          </div>
+                        </button>
+
+                        <!-- Connect Data -->
+                        <button id="plus-data-btn" type="button"
+                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                          <div class="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg shrink-0">
+                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                            </svg>
+                          </div>
+                          <div>
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Connect Data</div>
+                            <div class="text-xs text-gray-400">Google Drive, OneDrive…</div>
+                          </div>
+                        </button>
                       </div>
 
-                      <!-- Model Selector -->
-                      <div class="relative" id="model-selector-container">
-                        <button id="model-selector-btn" type="button"
-                          class="flex items-center gap-1.5 h-10 px-3 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-medium"
-                          title="Switch AI model">
-                          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                          </svg>
-                          <span id="model-selector-label">Model</span>
-                        </button>
-                        <div id="model-selector-dropdown"
-                          class="absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
-                        </div>
+                      <!-- Dropdowns (all anchored to + container) -->
+                      <div id="agent-selector-dropdown"
+                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col max-h-64 overflow-y-auto custom-scrollbar">
                       </div>
+                      <div id="model-selector-dropdown"
+                        class="absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
+                      </div>
+                      <div id="data-sources-dropdown"
+                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
+                      </div>
+
+                      <!-- Model Label Pill (clickable) -->
+                      <button id="composer-model-btn" type="button"
+                        class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer">
+                        <svg class="w-3 h-3 text-neutral-400 dark:text-neutral-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        <span id="composer-model-label" class="text-xs font-medium text-neutral-500 dark:text-neutral-400 truncate max-w-[140px]"></span>
+                      </button>
+                    </div>
                     </div>
 
-                    <!-- Right: Agent Selector & Send -->
-                    <div class="flex items-center gap-2">
-                      <div class="relative group" id="agent-selector-container">
-                        <button id="agent-selector-btn" type="button"
-                          class="flex items-center gap-2 px-4 py-2 bg-transparent text-neutral-700 dark:text-neutral-300 text-sm font-medium rounded-full transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                          <span class="max-w-[100px] sm:max-w-none truncate">Loading...</span>
-                          <svg class="w-3.5 h-3.5 text-neutral-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                          </svg>
-                        </button>
-
-                        <!-- Dropdown -->
-                        <div id="agent-selector-dropdown"
-                          class="absolute bottom-full right-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col max-h-64 overflow-y-auto custom-scrollbar">
-                          <!-- Options injected via JS -->
-                        </div>
-                      </div>
-
-                      <!-- Send Button -->
+                    <!-- Right: Send Button -->
+                    <div class="flex items-center gap-1">
                       <button id="send-button" type="submit" aria-label="Send message"
                         class="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         disabled>
@@ -505,7 +554,7 @@
   <div id="modal-backdrop" class="fixed inset-0 bg-black/60 z-40 hidden"></div>
 
   <div id="conscience-modal" role="dialog" aria-modal="true" aria-labelledby="conscience-modal-title"
-    class="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-auto sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 hidden flex flex-col sm:max-h-[85vh] h-full">
+    class="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-auto sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 hidden flex flex-col h-full sm:max-h-[85vh]">
     <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
       <div class="flex items-center gap-3">
         <span class="p-2 bg-green-100 dark:bg-green-900/40 rounded-full">

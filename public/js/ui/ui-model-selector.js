@@ -6,26 +6,26 @@ export function initModelSelector(models, activeModelId, onModelChange) {
     _models = models || [];
     _activeModelId = activeModelId || null;
     _onModelChange = onModelChange;
-    _renderLabel();
     _renderDropdown();
-    _attachListeners();
+    _attachDropdownListener();
+}
+
+export function toggleModelDropdown() {
+    document.getElementById('model-selector-dropdown')?.classList.toggle('hidden');
+}
+
+export function getActiveModelLabel() {
+    const active = _models.find(m => m.id === _activeModelId);
+    return active ? _label(active) : null;
 }
 
 export function setActiveModel(modelId) {
     _activeModelId = modelId;
-    _renderLabel();
     _renderDropdown();
 }
 
 function _label(model) {
     return model.label || model.name || model.id;
-}
-
-function _renderLabel() {
-    const el = document.getElementById('model-selector-label');
-    if (!el) return;
-    const active = _models.find(m => m.id === _activeModelId);
-    el.textContent = active ? _label(active) : 'Model';
 }
 
 function _renderDropdown() {
@@ -46,15 +46,9 @@ function _renderDropdown() {
     }).join('');
 }
 
-function _attachListeners() {
-    const btn = document.getElementById('model-selector-btn');
+function _attachDropdownListener() {
     const dropdown = document.getElementById('model-selector-dropdown');
-    if (!btn || !dropdown) return;
-
-    btn.addEventListener('click', e => {
-        e.stopPropagation();
-        dropdown.classList.toggle('hidden');
-    });
+    if (!dropdown) return;
 
     dropdown.addEventListener('click', e => {
         const option = e.target.closest('.model-option');
@@ -62,16 +56,9 @@ function _attachListeners() {
         const modelId = option.dataset.modelId;
         if (modelId && modelId !== _activeModelId) {
             _activeModelId = modelId;
-            _renderLabel();
             _renderDropdown();
             dropdown.classList.add('hidden');
             if (_onModelChange) _onModelChange(modelId);
-        }
-    });
-
-    document.addEventListener('click', e => {
-        if (!document.getElementById('model-selector-container')?.contains(e.target)) {
-            dropdown.classList.add('hidden');
         }
     });
 }

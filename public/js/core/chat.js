@@ -23,11 +23,7 @@ let pendingFile = null;
  */
 export function initFileUpload() {
     const fileInput = document.getElementById('file-upload-input');
-    const attachBtn = document.getElementById('attach-file-btn');
-
-    if (!attachBtn || !fileInput) return;
-
-    attachBtn.addEventListener('click', () => fileInput.click());
+    if (!fileInput) return;
 
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -35,8 +31,12 @@ export function initFileUpload() {
             pendingFile = file;
             _showFileChip(file.name, file.size);
         }
-        fileInput.value = ''; // Reset so the same file can be re-selected
+        fileInput.value = '';
     });
+}
+
+export function triggerFilePicker() {
+    document.getElementById('file-upload-input')?.click();
 }
 
 function _showFileChip(filename, size) {
@@ -317,10 +317,8 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
 
         uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
 
-        // ADDED NULL CHECK: Safely get first name
-        const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-        uiMessages.displaySimpleGreeting(firstName);
-        uiMessages.displayEmptyState(activeProfileData, promptClickHandler);
+        const firstName = user && user.name ? user.name.split(' ')[0] : '';
+        uiMessages.displayEmptyState(activeProfileData, promptClickHandler, firstName);
     }
     // We rely on sendMessage to create the conversation when the user types the first message.
 }
@@ -358,11 +356,8 @@ export async function switchConversation(id, activeProfileData, user, showModal,
         renderHistory(cachedHistory, user, showModal, activeProfileData);
         if (shouldScroll) ui.scrollToBottom(); // Scroll only if requested
     } else {
-        // ADDED NULL CHECK: Safely get first name
-        const firstName = user && user.name ? user.name.split(' ')[0] : 'There';
-        uiMessages.displaySimpleGreeting(firstName);
-        uiMessages.displaySimpleGreeting(firstName);
-        uiMessages.displayEmptyState(activeProfileData, createDefaultPromptHandler(activeProfileData, user));
+        const firstName = user && user.name ? user.name.split(' ')[0] : '';
+        uiMessages.displayEmptyState(activeProfileData, createDefaultPromptHandler(activeProfileData, user), firstName);
     }
 
     try {
@@ -397,6 +392,8 @@ function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
 
     history.forEach((turn, i) => {
+        if (turn.audit_status === 'cancelled') return;
+
         const date = turn.timestamp ? new Date(turn.timestamp) : new Date();
         const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
         const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
@@ -422,7 +419,9 @@ function renderHistory(history, user, showModal, activeProfileData) {
 
         const payload = {
             ledger: ledger || [],
-            profile: turn.profile_name,
+            profile: (activeProfileData && activeProfileData.key === turn.profile_name)
+                ? activeProfileData.name
+                : turn.profile_name,
             values: values || [],
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
@@ -485,6 +484,7 @@ function renderHistory(history, user, showModal, activeProfileData) {
 
 // --- ABORT CONTROLLER STATE ---
 let currentAbortController = null;
+let currentAiMessageId = null;
 
 function generateUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -501,7 +501,12 @@ export async function sendMessage(activeProfileData, user) {
         currentAbortController.abort();
         currentAbortController = null;
 
-        // UI Reset is handled in the catch block or manually here if needed immediately
+        // Tell the backend to stop the pipeline
+        if (currentAiMessageId) {
+            api.cancelMessage(currentAiMessageId).catch(() => {});
+            currentAiMessageId = null;
+        }
+
         ui.showToast('Request cancelled.', 'info');
 
         // Reset button immediately
@@ -642,11 +647,13 @@ export async function sendMessage(activeProfileData, user) {
 
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
-    autoSize();
+    autoSize(); // resets disabled=true (empty input) — re-enable immediately for cancel
+    ui.elements.sendButton.disabled = false;
 
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
 
     const aiMessageId = generateUUID();
+    currentAiMessageId = aiMessageId;
     // Poll for live reasoning status only while the API call is in flight.
     // Stops automatically in the finally block. Audit data comes from the response itself.
     let statusPollInterval = setInterval(async () => {
@@ -858,6 +865,7 @@ export async function sendMessage(activeProfileData, user) {
         ui.elements.sendButton.disabled = false;
 
         currentAbortController = null;
+        currentAiMessageId = null;
 
         // Re-focus and check input state
         ui.elements.messageInput.focus();

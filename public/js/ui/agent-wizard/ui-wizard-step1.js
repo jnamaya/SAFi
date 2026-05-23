@@ -13,11 +13,9 @@ export async function renderIdentityStep(container, agentData) {
                     <label class="block text-sm font-bold text-blue-900 dark:text-blue-100">Governing Policy</label>
                 </div>
                 
-                <div class="flex gap-4">
-                    <select id="wiz-policy" class="flex-1 p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
-                        <option value="standalone">Loading Policies...</option>
-                    </select>
-                </div>
+                <select id="wiz-policy" class="w-full p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                    <option value="standalone">Loading Policies...</option>
+                </select>
                 <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
                     Policies define your organization's mission and values. This agent will inherit them automatically.
                 </p>

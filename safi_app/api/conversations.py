@@ -419,6 +419,14 @@ async def process_prompt_endpoint():
         return jsonify({"error": "An internal error occurred. Please try again."}), 500
 
 
+@conversations_bp.route('/cancel/<message_id>', methods=['POST'])
+def cancel_message_endpoint(message_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    db.cancel_message(message_id)
+    return jsonify({"status": "cancelled"})
+
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
 def get_audit_result_endpoint(message_id):
     current_app.logger.info(f"AUDIT CHECK: Looking for message_id={message_id}")

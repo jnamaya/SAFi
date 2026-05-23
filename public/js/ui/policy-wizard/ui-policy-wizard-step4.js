@@ -10,7 +10,7 @@ export function renderRulesStep(container, policyData) {
                         <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Guardrails</h2>
                         <p class="text-gray-500 text-sm">Absolute boundaries the Will gate enforces on every response — outputs that cross these lines are intercepted before reaching the user.</p>
                      </div>
-                     <button id="btn-gen-rules" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
+                     <button id="btn-gen-rules" class="shrink-0 text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         Suggest Guardrails
                      </button>

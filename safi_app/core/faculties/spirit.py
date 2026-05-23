@@ -6,7 +6,7 @@ long-term ethical alignment vector (mu).
 """
 from __future__ import annotations
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 # Relative import from within the 'faculties' package
 from .utils import _norm_label
@@ -169,6 +169,27 @@ class SpiritIntegrator:
         drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1_vector) / denom)
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
-        
+
         # Return the DICTIONARY memory for storage, AND the vector for in-memory history
         return spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector
+
+    def compute_redirect(self, ledger: List[Dict[str, Any]]) -> Tuple[int, str]:
+        """
+        Computes a spirit quality score from a redirect audit ledger.
+        Does NOT update spirit memory — redirect quality is evaluated separately
+        from content value alignment so the EMA is not polluted with non-content scores.
+        Returns: (spirit_score 1-10, note)
+        """
+        if not ledger:
+            return 1, "No redirect rubric data."
+
+        scores = [float(r.get("score", 0.0)) for r in ledger if r.get("value")]
+        if not scores:
+            return 1, "No redirect rubric data."
+
+        avg = sum(scores) / len(scores)
+        # Map [-1, 1] → [0, 1] → [1, 10]
+        spirit_score = int(round((avg + 1) / 2 * 9 + 1))
+        spirit_score = max(1, min(10, spirit_score))
+        note = f"Redirect quality {spirit_score}/10 ({len(scores)} rubrics; spirit memory unchanged)."
+        return spirit_score, note

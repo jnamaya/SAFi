@@ -11,16 +11,9 @@ export function renderIntellectStep(container, agentData, availableModels) {
     // But since I'm writing files, I can assume Core exists.
 
     container.innerHTML = `
-        <div class="flex justify-between items-start mb-4">
-             <div>
-                <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Personality & Style</h2>
-                <p class="text-gray-500 text-sm mb-4">How does this agent think and speak?</p>
-             </div>
-             <div>
-                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">AI Model</label>
-                <!-- Placeholder for Model Selector, populated via JS helper or direct HTML if passed -->
-                <div id="intellect-model-container"></div>
-            </div>
+        <div class="mb-4">
+            <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Personality & Style</h2>
+            <p class="text-gray-500 text-sm">How does this agent think and speak?</p>
         </div>
         
         <div class="space-y-6">
@@ -55,14 +48,6 @@ export function renderIntellectStep(container, agentData, availableModels) {
             <!-- Capabilities removed as requested -->
         </div>
     `;
-
-    // Inject Model Selector
-    const modelContainer = document.getElementById('intellect-model-container');
-    if (modelContainer) {
-        modelContainer.innerHTML = renderModelSelector('wiz-intellect-model', agentData.intellect_model || '', 'intellect', availableModels);
-        // Bind change event manually since it's injected
-        document.getElementById('wiz-intellect-model')?.addEventListener('change', (e) => agentData.intellect_model = e.target.value);
-    }
 
     // Attach Text Listeners
     document.getElementById('wiz-instructions')?.addEventListener('input', (e) => agentData.instructions = e.target.value);

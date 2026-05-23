@@ -3,8 +3,10 @@ import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
-import { initDataSources } from '../ui/ui-data-sources.js';
-import { initModelSelector } from '../ui/ui-model-selector.js';
+import { initDataSources, toggleDataDropdown } from '../ui/ui-data-sources.js';
+import { initModelSelector, toggleModelDropdown, getActiveModelLabel } from '../ui/ui-model-selector.js';
+import { initComposerMenu, updateAgentLabel, updateModelLabel } from '../ui/ui-composer-menu.js';
+import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
 import * as chat from './chat.js';
 import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-settings-core.js';
 
@@ -223,14 +225,28 @@ async function checkLoginStatus() {
         true // Explicitly set shouldSwitchChat=true on initial load
       );
 
-      // Initialize Data Sources UI (Dropdown)
+      // Initialize Data Sources UI
       initDataSources();
 
       // Initialize Model Selector
-      initModelSelector(availableModels, user.intellect_model, handleQuickModelSwitch);
+      initModelSelector(availableModels, user.intellect_model, (modelId) => {
+        handleQuickModelSwitch(modelId);
+        updateModelLabel(getActiveModelLabel());
+      });
 
-      // Initialize File Upload (Attachment Button)
+      // Initialize File Upload
       chat.initFileUpload();
+
+      // Initialize + Composer Menu
+      initComposerMenu({
+        onAttachFile: () => chat.triggerFilePicker(),
+        onToggleAgent: () => uiAuthSidebar.toggleAgentDropdown(),
+        onToggleModel: () => toggleModelDropdown(),
+        onToggleData: () => toggleDataDropdown(),
+      });
+
+      // Set initial labels in + menu
+      updateModelLabel(getActiveModelLabel());
     }
     // Attach all global event listeners
     attachEventListeners();
@@ -389,6 +405,7 @@ function renderControlPanel() {
     activeProfileData.key,
     handleProfileChange
   );
+  updateAgentLabel(activeProfileData.name, activeProfileData.avatar || getAvatarForProfile(activeProfileData.name));
 
   // --- NEW: Push State to UI Settings Module ---
   // This ensures the sidebar click handlers work correctly even if data changes
@@ -493,6 +510,7 @@ async function handleProfileChange(newProfileKey) {
     }
 
     const selectedProfile = availableProfiles.find(p => p.key === newProfileKey);
+    updateAgentLabel(selectedProfile?.name, selectedProfile?.avatar || getAvatarForProfile(selectedProfile?.name));
     ui.showToast(`Agent switched to ${selectedProfile.name}. Reloading...`, 'success');
 
     // Set a flag to force a new chat window after the reload

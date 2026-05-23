@@ -615,36 +615,52 @@ export function resetChatView() {
     ui.elements.chatWindow.innerHTML = '';
 }
 
-export function displayEmptyState(activeProfile, promptClickHandler) {
+export function displayEmptyState(activeProfile, promptClickHandler, firstName = '') {
     ui._ensureElements();
     document.querySelector('.empty-state-container')?.remove();
     if (!activeProfile) return;
 
-    const valuesHtml = (activeProfile.values || []).map(v => `<span class="value-chip">${v.value}</span>`).join(' ');
-    const promptsHtml = (activeProfile.example_prompts || []).map(p => `<button class="example-prompt-btn">"${p}"</button>`).join('');
+    const valuesHtml = (activeProfile.values || [])
+        .map(v => `<span class="value-chip">${v.value || v.name || ''}</span>`)
+        .join('');
+    const promptsHtml = (activeProfile.example_prompts || [])
+        .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
+        .join('');
     const avatarUrl = getAvatarForProfile(activeProfile.name);
 
     const container = document.createElement('div');
     container.className = 'empty-state-container';
     container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
 
-    // --- UPDATED INSTRUCTION TEXT AND ICON ---
+    const greetingHtml = firstName
+        ? `<h1 class="text-4xl font-bold text-neutral-800 dark:text-neutral-200 mb-6">Hi ${firstName}</h1>`
+        : '';
+
+    const descriptionHtml = activeProfile.description
+        ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 max-w-lg mx-auto mb-4">${activeProfile.description}</p>`
+        : '';
+
+    const promptsSectionHtml = promptsHtml
+        ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Try asking:</p>
+           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>`
+        : '';
+
     container.innerHTML = `
-      <div class="text-center pt-2">
-        <p class="text-lg text-neutral-500 dark:text-neutral-400">SAFi is currently set with the</p>
-        <h2 class="text-2xl font-semibold my-2">${activeProfile.name || 'Default'}</h2>
-        <img src="${avatarUrl}" class="w-20 h-20 rounded-lg mx-auto mt-4">
-        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-4">agent, which includes these values:</p>
-        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
-        <p class="text-base text-neutral-600 dark:text-neutral-300 mt-4 max-w-2xl mx-auto">${activeProfile.description || ''}</p>
-        
-        <!-- CHANGED: Updated text to refer to "Control Panel" button -->
-        <div class="mt-6 text-sm text-neutral-700 dark:text-neutral-300 flex items-center justify-center gap-1">
-            To choose a different agent, click on the <span class="font-semibold">Control Panel</span> button in the sidebar.
+      <div class="text-center pt-8 pb-4">
+        ${greetingHtml}
+        <div class="inline-flex items-center gap-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl px-4 py-3 mb-4">
+          <img src="${avatarUrl}" alt="${activeProfile.name}" class="w-10 h-10 rounded-lg object-cover shrink-0">
+          <div class="text-left">
+            <p class="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Active Agent</p>
+            <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">${activeProfile.name || 'Default'}</p>
+          </div>
         </div>
-        
-        <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6 mb-3">To begin, type below or pick an example prompt:</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>
+        ${descriptionHtml}
+        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
+        <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
+          Switch agents anytime from your profile at the bottom of the sidebar.
+        </p>
+        ${promptsSectionHtml}
       </div>`;
 
     ui.elements.chatWindow.appendChild(container);

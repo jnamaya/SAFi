@@ -1,9 +1,9 @@
 // ui-auth-sidebar.js
 
 import * as ui from './ui.js';
-// Assuming formatRelativeTime is in utils.js
 import { formatRelativeTime } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
+import { updateAgentLabel } from './ui-composer-menu.js';
 
 /**
  * Icons (for pin feature)
@@ -561,42 +561,19 @@ case 'the_philosopher':
  */
 export function initAgentSelector(profiles, activeProfileKey, onSelect) {
   ui._ensureElements();
-  const { agentSelectorBtn, agentSelectorDropdown, agentSelectorContainer } = ui.elements;
+  const { agentSelectorDropdown } = ui.elements;
+  if (!agentSelectorDropdown) return;
 
-  if (!agentSelectorBtn || !agentSelectorDropdown) return;
-
-  // 1. Render Options
   renderAgentSelectorOptions(profiles, activeProfileKey, onSelect);
 
-  // 2. Set Initial Button State
   const activeProfile = profiles.find(p => p.key === activeProfileKey) || profiles[0];
   updateAgentSelectorButton(activeProfile);
-
-  // 3. Toggle Logic
-  // Remove old listener if any (simple way: clone node, or just assume init is called once)
-  // We'll stick to adding a listener, assuming init is called once per app load or we handle deduping
-  agentSelectorBtn.onclick = (e) => {
-    e.stopPropagation();
-    const isHidden = agentSelectorDropdown.classList.contains('hidden');
-    if (isHidden) {
-      showAgentSelector();
-    } else {
-      hideAgentSelector();
-    }
-  };
-
-  // Close when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!agentSelectorContainer.contains(e.target)) {
-      hideAgentSelector();
-    }
-  });
 }
 
-function showAgentSelector() {
+export function toggleAgentDropdown() {
   ui._ensureElements();
   const { agentSelectorDropdown } = ui.elements;
-  if (agentSelectorDropdown) agentSelectorDropdown.classList.remove('hidden');
+  if (agentSelectorDropdown) agentSelectorDropdown.classList.toggle('hidden');
 }
 
 function hideAgentSelector() {
@@ -609,20 +586,9 @@ function hideAgentSelector() {
  * Updates the text and icon of the selector button.
  */
 export function updateAgentSelectorButton(profile) {
-  ui._ensureElements();
-  const { agentSelectorBtn } = ui.elements;
-  if (!agentSelectorBtn) return;
   if (!profile) return;
-
   const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);
-
-  agentSelectorBtn.innerHTML = `
-    <img src="${avatarUrl}" alt="Agent" class="w-4 h-4 rounded-full object-cover">
-    <span>${profile.name}</span>
-    <svg class="w-3 h-3 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-    </svg>
-  `;
+  updateAgentLabel(profile.name, avatarUrl);
 }
 
 /**

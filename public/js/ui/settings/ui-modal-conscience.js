@@ -10,7 +10,7 @@ export function setupConscienceModalContent(payload) {
     if (!container) return;
     container.innerHTML = ''; // Clear previous content
 
-    const profileName = payload.profile ? `<strong>${payload.profile}</strong>` : 'current';
+    const profileName = payload.profile || null;
 
     // 1. Group ledger items
     const ledger = payload.ledger || [];
@@ -26,8 +26,8 @@ export function setupConscienceModalContent(payload) {
     // 2. Build the new HTML structure
     // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
-        <p class="text-base text-gray-600 dark:text-gray-300 mb-6">
-            Audit Report: Verification that this response complies with both the ${profileName} ethical profile and organizational safety rules & values.
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            This report shows how this response was evaluated against ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${profileName}</strong>'s` : "this agent's"} values and governance rules.
         </p>
         
         ${renderScoreAndTrend(payload)}
