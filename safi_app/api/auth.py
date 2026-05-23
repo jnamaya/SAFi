@@ -406,7 +406,8 @@ def callback_microsoft():
                         user_details['org_id'] = existing_org['id']
                         user_details['role'] = 'member'
                         db.update_user_org_and_role(user_id, existing_org['id'], 'member')
-            except Exception: pass # logging handled elsewhere
+            except Exception as e:
+                current_app.logger.warning(f"Domain auto-join failed for Microsoft user {user_id}: {e}")
 
         # Create session
         session_user = {
@@ -651,7 +652,7 @@ def github_tool_login():
 
         # DEBUG: Log what we see
         gh_id = current_app.config.get('GITHUB_CLIENT_ID')
-        current_app.logger.info(f"DEBUG: Attempting GitHub Login. Client ID present? {bool(gh_id)} (Value: {gh_id if gh_id else 'None'})")
+        current_app.logger.info(f"Attempting GitHub Login. Client ID present? {bool(gh_id)}")
 
         client_id = gh_id
         if not client_id:

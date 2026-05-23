@@ -137,7 +137,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         if config.GEMINI_API_KEY:
             try:
                 self.gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
-            except Exception: pass
+            except Exception as e:
+                self.log.warning(f"Gemini client initialization failed: {e}")
 
         # --- 3. Load System Prompts ---
         prompts_path = Path(__file__).parent / "system_prompts.json"
@@ -741,7 +742,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Calculate new mu vector, drift, note, and spirit score
         S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
         self.last_drift = drift_val if drift_val is not None else 0.0
-        self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {drift_val:.4f} | Note: '{note[:80]}'")
+        self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {self.last_drift:.4f} | Note: '{(note or '')[:80]}'")
 
         # Save updated Spirit Memory
         temp_spirit_memory["turn"] = int(temp_spirit_memory.get("turn", 0)) + 1
@@ -792,7 +793,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         self.log.info(
             f"[Governance | APPROVED] Profile: {self.active_profile_name} | "
-            f"Will: {D_t} | Spirit: {S_t}/10 | Drift: {drift_val:.4f} | "
+            f"Will: {D_t} | Spirit: {S_t}/10 | Drift: {self.last_drift:.4f} | "
             f"Turn: {temp_spirit_memory['turn']}"
         )
 

@@ -13,7 +13,7 @@ export function renderIntellectStep(container, agentData, availableModels) {
     container.innerHTML = `
         <div class="flex justify-between items-start mb-4">
              <div>
-                <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Intellect & Style</h2>
+                <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Personality & Style</h2>
                 <p class="text-gray-500 text-sm mb-4">How does this agent think and speak?</p>
              </div>
              <div>

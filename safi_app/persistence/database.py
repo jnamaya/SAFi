@@ -147,6 +147,7 @@ def init_db():
                 visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private',
                 rag_knowledge_base VARCHAR(255),
                 rag_format_string TEXT,
+                scope_statement TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
@@ -167,6 +168,10 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'tools_json'")
         if not cursor.fetchone():
              cursor.execute("ALTER TABLE agents ADD COLUMN tools_json JSON")
+
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'scope_statement'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN scope_statement TEXT")
 
         # --- Check for AI Model Columns (Missing in initial migration) ---
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'intellect_model'")
@@ -815,19 +820,19 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # NEW: AGENT MANAGEMENT
 # -------------------------------------------------------------------------
 
-def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private', 
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None):
+def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private',
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """INSERT INTO agents (
             agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (
             key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or [])
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or ''
         ))
         conn.commit()
     finally:
@@ -835,18 +840,18 @@ def create_agent(key, name, description, avatar, worldview, style, values, rules
         conn.close()
 
 def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
-        sql = """UPDATE agents SET 
+        sql = """UPDATE agents SET
             name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
-            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s
+            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s, scope_statement=%s
             WHERE agent_key=%s"""
         cursor.execute(sql, (
             name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []),
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
             key
         ))
         conn.commit()

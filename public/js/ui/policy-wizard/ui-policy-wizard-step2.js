@@ -8,8 +8,8 @@ export function renderConstitutionStep(container, policyData) {
                  <div>
                     <div class="flex justify-between items-end mb-4">
                          <div>
-                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Global Worldview</label>
-                            <p class="text-base text-gray-500 mb-4">The AI's core persona, tone, and your organization's mission.</p>
+                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Mission</label>
+                            <p class="text-base text-gray-500 mb-4">Define your organization's purpose and voice. Every agent bound to this policy will use this as its guiding context.</p>
                          </div>
                          <button id="btn-gen-worldview" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-colors shadow-sm text-sm font-medium">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -17,13 +17,14 @@ export function renderConstitutionStep(container, policyData) {
                          </button>
                     </div>
                     <div class="relative">
-                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 shadow-sm resize-y" placeholder="You are an AI assistant governed by...
-                        
-Mission:
-To serve the user while strictly adhering to safety protocols...
+                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 shadow-sm resize-y" placeholder="Mission:
+We exist to [what you do] for [who you serve], guided by [core principle].
 
-Tone:
-Professional, concise, and objective...">${policyData.worldview}</textarea>
+Voice & Tone:
+[e.g. Professional and empathetic — clear without being cold.]
+
+Context:
+[Any additional context agents should always keep in mind.]">${policyData.worldview}</textarea>
                         
 
                     </div>
@@ -37,12 +38,16 @@ Professional, concise, and objective...">${policyData.worldview}</textarea>
                 </h4>
                 <ul class="space-y-6 text-sm text-gray-600 dark:text-gray-400">
                     <li>
-                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">The "Job Description"</strong>
-                        This is the first prompt the AI sees. It defines who it is (e.g. "a helpful medical assistant") and who it serves.
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Your Mission Statement</strong>
+                        This is the first thing every agent reads. A clear mission keeps all agents aligned — even ones created months from now.
                     </li>
                     <li>
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Tone & Voice</strong>
-                         Be specific. "Friendly but professional" is better than just "Nice".
+                        Be specific. "Empathetic but concise" is more useful than "friendly."
+                    </li>
+                    <li>
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Already have one?</strong>
+                        Paste your existing mission statement and let the AI expand it into a full policy context.
                     </li>
                 </ul>
             </div>
@@ -64,7 +69,7 @@ Professional, concise, and objective...">${policyData.worldview}</textarea>
             if (res.ok && res.content) {
                 document.getElementById('pw-worldview').value = res.content;
                 policyData.worldview = res.content;
-                ui.showToast("Worldview generated!", "success");
+                ui.showToast("Mission drafted!", "success");
             } else {
                 ui.showToast("Failed to generate worldview", "error");
             }
@@ -76,7 +81,7 @@ Professional, concise, and objective...">${policyData.worldview}</textarea>
 
 export function validateConstitutionStep(policyData) {
     if (!policyData.worldview || policyData.worldview.length < 10) {
-        ui.showToast("A Worldview is required (at least 10 chars).", "error");
+        ui.showToast("A Mission statement is required (at least 10 chars).", "error");
         return false;
     }
     return true;

@@ -7,17 +7,17 @@ export function renderRulesStep(container, policyData) {
             <div class="md:col-span-2">
                 <div class="flex justify-between items-center mb-4">
                      <div>
-                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Rules (Non-Negotiable)</h2>
-                        <p class="text-gray-500 text-sm">These are absolute boundaries. The AI will strictly reject any user request that violates these rules.</p>
+                        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Guardrails</h2>
+                        <p class="text-gray-500 text-sm">Absolute boundaries the Will gate enforces on every response — outputs that cross these lines are intercepted before reaching the user.</p>
                      </div>
                      <button id="btn-gen-rules" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-full flex items-center gap-1 transition-colors shadow">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                        Suggest Rules
+                        Suggest Guardrails
                      </button>
                 </div>
                 
                 <div class="flex gap-4 mb-6">
-                    <input type="text" id="pw-rule-input" class="flex-1 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-neutral-800 focus:ring-2 focus:ring-red-500 placeholder-gray-400" placeholder="e.g. The response must not provide financial advice.">
+                    <input type="text" id="pw-rule-input" class="flex-1 p-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-white dark:bg-neutral-800 focus:ring-2 focus:ring-red-500 placeholder-gray-400" placeholder="e.g. The response must not include specific financial advice.">
                     <button id="pw-add-rule-btn" class="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">
                         Add
                     </button>
@@ -32,10 +32,10 @@ export function renderRulesStep(container, policyData) {
                     When to use this?
                 </h4>
                 <p class="text-xs text-red-800/80 dark:text-red-200/80 mb-4 leading-relaxed">
-                    <strong>Rules (Non-Negotiable)</strong> are hard stops.
+                    <strong>Guardrails</strong> are enforced deterministically by the Will gate — no AI judgment involved.
                 </p>
                 <p class="text-xs text-red-800/80 dark:text-red-200/80 leading-relaxed">
-                    If a user asks the AI to break a rule here, the system <strong>intercepts and blocks</strong> the request entirely. Use this for legal or safety boundaries where no flexibility is allowed.
+                    When a response crosses a guardrail, the Will gate <strong>intercepts it</strong> before it reaches the user. Use this for legal, compliance, or ethical boundaries where no flexibility is allowed.
                 </p>
             </div>
         </div>
@@ -99,7 +99,7 @@ function renderRulesList(policyData) {
     list.innerHTML = '';
 
     if (policyData.will_rules.length === 0) {
-        list.innerHTML = `<p class="text-sm text-gray-400 text-center italic py-2">No hard rules yet.</p>`;
+        list.innerHTML = `<p class="text-sm text-gray-400 text-center italic py-2">No guardrails yet.</p>`;
         return;
     }
 
@@ -113,8 +113,8 @@ function renderRulesList(policyData) {
                 <input type="text" 
                     id="pw-rule-val-${idx}"
                     class="w-full bg-transparent border-none focus:ring-0 p-1 text-sm font-medium text-red-900 dark:text-red-200 placeholder-red-300" 
-                    value="${rule}" 
-                    placeholder="Rule definition...">
+                    value="${rule}"
+                    placeholder="Guardrail definition...">
             </div>
             <button class="text-red-300 hover:text-red-600 dark:hover:text-red-400 transition-colors" onclick="window.removePolicyRule(${idx})">
                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -133,7 +133,7 @@ function renderRulesList(policyData) {
 
 export function validateRulesStep(policyData) {
     if (!policyData.will_rules || policyData.will_rules.length === 0) {
-        ui.showToast("At least one Rule is required to proceed.", "error");
+        ui.showToast("At least one guardrail is required to proceed.", "error");
         return false;
     }
     return true;

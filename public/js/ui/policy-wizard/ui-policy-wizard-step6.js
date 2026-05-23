@@ -46,16 +46,16 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
              <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
                  <h4 class="font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                     How to Get Started
+                     Next Steps
                  </h4>
                  <p class="text-sm text-blue-800 dark:text-blue-200 mt-2">
-                     You can start using this policy immediately!
+                     Your policy is live and ready to use.
                  </p>
                  <ol class="list-decimal list-inside text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
                      <li>Go to the <strong>Agents</strong> tab.</li>
-                     <li>Create a <strong>New Agent</strong> (or edit an existing one).</li>
-                     <li>In Step 1 (Profile & Governance), select this Policy from the dropdown.</li>
-                     <li>The agent will now be governed by your new Constitution!</li>
+                     <li>Create a new agent or edit an existing one.</li>
+                     <li>In the <strong>Identity</strong> step, select this policy from the dropdown.</li>
+                     <li>Every agent using this policy will reflect your organization's mission and values.</li>
                  </ol>
              </div>
 

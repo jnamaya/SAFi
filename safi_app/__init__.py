@@ -98,6 +98,35 @@ def create_app():
     app.register_blueprint(model_api_bp, url_prefix='/api')
     app.register_blueprint(documents_bp, url_prefix='/api')
 
+    @app.after_request
+    def add_security_headers(response):
+        # HSTS: enforce HTTPS for 1 year; only active when served over TLS
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        # Prevent MIME-type sniffing
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        # Block this app from being embedded in iframes (clickjacking)
+        response.headers['X-Frame-Options'] = 'DENY'
+        # Limit referrer info sent to third-party sites
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        # Restrict access to sensitive browser APIs
+        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        # CSP: unsafe-inline is required by the existing inline scripts/styles in index.html;
+        # remove it once those are refactored to use nonces.
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self' https:; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self' https://accounts.google.com "
+                "https://login.microsoftonline.com https://github.com; "
+            "object-src 'none'"
+        )
+        return response
+
     # Catch-all route to serve the Single Page Application (SPA) frontend
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')

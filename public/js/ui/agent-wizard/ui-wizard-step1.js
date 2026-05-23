@@ -2,7 +2,7 @@ import * as api from '../../core/api.js';
 
 export async function renderIdentityStep(container, agentData) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Profile & Governance</h2>
+        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Identity</h2>
         <p class="text-gray-500 mb-6">Define the agent's identity and attach it to a compliance policy.</p>
         
         <div class="grid grid-cols-1 gap-6">
@@ -19,7 +19,7 @@ export async function renderIdentityStep(container, agentData) {
                     </select>
                 </div>
                 <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
-                    Policies define the "Constitution" (Values & Rules) that this agent must obey.
+                    Policies define your organization's mission and values. This agent will inherit them automatically.
                 </p>
                 <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
                     <!-- Preview populated by JS -->
@@ -95,37 +95,42 @@ async function loadPolicies(agentData) {
 
             // Change Listener
             select.addEventListener('change', () => {
-                agentData.policy_id = select.value; // Save selection
+                agentData.policy_id = select.value;
                 const pid = select.value;
                 const preview = document.getElementById('wiz-policy-preview');
 
                 if (pid === 'standalone') {
+                    agentData._policyData = null;
                     preview.classList.add('hidden');
                     return;
                 }
 
                 const policy = policies.find(p => p.id === pid);
                 if (policy) {
-                    preview.innerHTML = `
-                        <strong class="block mb-1 text-blue-800 dark:text-blue-200">Policy: ${policy.name}</strong>
-                        <div class="grid grid-cols-2 gap-4 mt-2">
-                            <div>
-                                <span class="uppercase text-[10px] font-bold text-gray-400">Values</span>
-                                <ul class="list-disc list-inside mt-1">
-                                    ${(policy.values_weights || []).slice(0, 2).map(v => {
-                        const label = (typeof v === 'object' ? (v.name || v.value || 'Untitled') : v);
+                    agentData._policyData = policy; // Store for Values step to read
+
+                    const missionSnippet = policy.worldview
+                        ? policy.worldview.replace(/<!-- CONTEXT:.*?-->\n?/, '').trim().substring(0, 120) + '…'
+                        : 'No mission defined.';
+
+                    const policyValues = policy.values_weights || [];
+                    const valuesHtml = policyValues.slice(0, 3).map(v => {
+                        const label = typeof v === 'object' ? (v.name || v.value || 'Untitled') : v;
                         return `<li>${label}</li>`;
-                    }).join('')}
-                                </ul>
+                    }).join('');
+                    const moreHtml = policyValues.length > 3
+                        ? `<li class="text-gray-400">+${policyValues.length - 3} more</li>` : '';
+
+                    preview.innerHTML = `
+                        <strong class="block mb-2 text-blue-800 dark:text-blue-200">${policy.name}</strong>
+                        <div class="space-y-2">
+                            <div>
+                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Mission</span>
+                                <p class="italic">${missionSnippet}</p>
                             </div>
                             <div>
-                                <span class="uppercase text-[10px] font-bold text-gray-400">Rules</span>
-                                <ul class="list-disc list-inside mt-1 text-red-600 dark:text-red-400">
-                                    ${(policy.will_rules || []).slice(0, 2).map(r => {
-                        const text = (typeof r === 'object' ? (r.name || r.text || JSON.stringify(r)) : r);
-                        return `<li>${String(text).substring(0, 30)}...</li>`;
-                    }).join('')}
-                                </ul>
+                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Core Values (inherited)</span>
+                                <ul class="list-disc list-inside">${valuesHtml}${moreHtml}</ul>
                             </div>
                         </div>
                     `;

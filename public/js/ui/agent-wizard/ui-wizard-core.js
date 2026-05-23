@@ -79,6 +79,7 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             rag_knowledge_base: existingAgent.rag_knowledge_base || "",
             rag_format_string: existingAgent.rag_format_string || "",
             tools: existingAgent.tools || [],
+            scope_statement: existingAgent.scope_statement || "",
             will_rules: (existingAgent.will_rules && !Array.isArray(existingAgent.will_rules))
                 ? existingAgent.will_rules
                 : DEFAULT_WILL_RULES()
@@ -106,6 +107,7 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             rag_knowledge_base: "",
             rag_format_string: "",
             tools: [],
+            scope_statement: "",
             will_rules: DEFAULT_WILL_RULES()
         };
     }
@@ -177,10 +179,10 @@ function ensureWizardInlineExists() {
             <!-- Step Labels -->
             <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
                 <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
-                <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Capabilities</span>
-                <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Intellect</span>
+                <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Tools</span>
+                <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Personality</span>
                 <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
-                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Safety</span>
+                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Guardrails</span>
                 <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
             </div>
 

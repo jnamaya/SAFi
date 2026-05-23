@@ -1,6 +1,7 @@
 export function renderReviewStep(container, agentData) {
     const valuesCount = agentData.values.length;
     const hasRAG = !!agentData.rag_knowledge_base;
+    const hasScope = !!(agentData.scope_statement && agentData.scope_statement.trim());
 
     const sr = (agentData.will_rules && agentData.will_rules.structural_requirements) || {};
     const requireDisclaimer = !!sr.require_disclaimer;
@@ -58,8 +59,12 @@ export function renderReviewStep(container, agentData) {
             
             <!-- Safety Summary -->
             <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
-                <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Safety (Will Checks)</h4>
+                <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Guardrails (Will Checks)</h4>
                 <ul class="space-y-2 text-sm">
+                    <li class="flex justify-between">
+                        <span>Scope Compliance</span>
+                        <span class="font-mono font-bold ${hasScope ? 'text-blue-600' : 'text-gray-400'}">${hasScope ? 'Active' : 'None'}</span>
+                    </li>
                     <li class="flex justify-between">
                         <span>Mandatory Disclaimer</span>
                         <span class="font-mono font-bold ${requireDisclaimer ? 'text-green-600' : 'text-gray-400'}">${requireDisclaimer ? 'Required' : 'None'}</span>
@@ -73,6 +78,7 @@ export function renderReviewStep(container, agentData) {
                         <span class="font-mono font-bold ${hardGateCount > 0 ? 'text-red-600' : 'text-gray-400'}">${hardGateCount > 0 ? hardGateCount : 'None'}</span>
                     </li>
                 </ul>
+                ${hasScope ? `<div class="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-700 text-xs text-gray-500 italic">"${(agentData.scope_statement || '').substring(0, 100)}${(agentData.scope_statement || '').length > 100 ? '…' : ''}"</div>` : ''}
             </div>
 
             <!-- Instructions Preview -->

@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from typing import List
 
@@ -62,13 +63,7 @@ class Config:
 
     # --- Secrets & Keys ---
 
-    # Secret key for Flask session management
-    # CRITICAL SECURITY FIX: Fail in production if secret key is missing
-    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY")
-    if APP_ENV == 'production' and not SECRET_KEY:
-        raise ValueError("FATAL: FLASK_SECRET_KEY is not set in production environment.")
-    if not SECRET_KEY:
-        SECRET_KEY = "dev-secret-key-should-be-changed"
+    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-should-be-changed")
 
     # Bot API Secret
     # Moved from hardcoded string to environment variable
@@ -86,12 +81,6 @@ class Config:
     GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
     
-    # DEBUG STARTUP
-    print(f"--- CONFIG STARTUP ---")
-    print(f"Loading .env from: {dotenv_path}")
-    print(f"GITHUB_CLIENT_ID found in env? { 'GITHUB_CLIENT_ID' in os.environ }")
-    print(f"GITHUB_CLIENT_ID value: {GITHUB_CLIENT_ID}")
-    print(f"----------------------")
 
     # API keys for all providers
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -165,7 +154,7 @@ class Config:
         {"id": "mistral-large-2512", "label": "Mistral Large 3"},
         {"id": "mistral-small-2603", "label": "Mistral Small 4"},
         {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
-        {"id": "ministral-8b-2512", "label": "Ministral 3 8B"},
+        {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
 
         # DeepSeek Models
         {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
@@ -176,3 +165,43 @@ class Config:
     MAX_UPLOAD_SIZE_MB = int(os.environ.get("SAFI_MAX_UPLOAD_MB", "10"))
     MAX_DOCUMENT_CHARS = int(os.environ.get("SAFI_MAX_DOC_CHARS", "50000"))
     ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.csv']
+
+    @classmethod
+    def validate(cls) -> None:
+        """
+        Called once at app startup. Raises ValueError listing all missing required
+        variables so operators see every problem in a single deploy, not one at a time.
+        """
+        _log = logging.getLogger(__name__)
+        errors: List[str] = []
+
+        if cls.APP_ENV == 'production':
+            if cls.SECRET_KEY == "dev-secret-key-should-be-changed":
+                errors.append("FLASK_SECRET_KEY must be set to a strong random value in production")
+            if not cls.DB_PASSWORD:
+                errors.append("DB_PASSWORD is required")
+            if not cls.GOOGLE_CLIENT_ID or not cls.GOOGLE_CLIENT_SECRET:
+                errors.append("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for user login")
+
+        # At least one LLM provider key must be present in any environment
+        llm_keys = [
+            cls.GROQ_API_KEY, cls.OPENAI_API_KEY, cls.ANTHROPIC_API_KEY,
+            cls.GEMINI_API_KEY, cls.MISTRAL_API_KEY, cls.DEEPSEEK_API_KEY,
+        ]
+        if not any(llm_keys):
+            errors.append(
+                "No LLM API key is configured — set at least one of: "
+                "GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, "
+                "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY"
+            )
+
+        if errors:
+            msg = "SAFi startup aborted — fix the following configuration errors:\n" + \
+                  "".join(f"\n  • {e}" for e in errors)
+            raise ValueError(msg)
+
+        # Non-fatal warnings
+        if cls.BOT_API_SECRET == "safi-bot-secret-123":
+            _log.warning("SAFI_BOT_API_SECRET is using the insecure default value — set it in .env")
+        if cls.APP_ENV != 'production' and cls.SECRET_KEY == "dev-secret-key-should-be-changed":
+            _log.warning("FLASK_SECRET_KEY is using the insecure default value")

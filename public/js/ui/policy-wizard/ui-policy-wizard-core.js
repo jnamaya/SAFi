@@ -4,13 +4,12 @@ import * as ui from '../ui.js';
 import { renderDefinitionStep, validateDefinitionStep } from './ui-policy-wizard-step1.js';
 import { renderConstitutionStep, validateConstitutionStep } from './ui-policy-wizard-step2.js';
 import { renderValuesStep, validateValuesStep } from './ui-policy-wizard-step3.js';
-import { renderRulesStep, validateRulesStep } from './ui-policy-wizard-step4.js';
 import { renderReviewStep, validateReviewStep } from './ui-policy-wizard-step5.js';
 import { renderSuccessStep } from './ui-policy-wizard-step6.js';
 
 // --- STATE ---
 let currentStep = 1;
-const TOTAL_STEPS = 5; // Updated from 4 -> 5
+const TOTAL_STEPS = 4;
 const STORAGE_KEY = 'safi_policy_wizard_draft';
 
 let policyData = getInitialState();
@@ -134,11 +133,10 @@ function renderStep(step) {
 
     switch (step) {
         case 1: renderDefinitionStep(container, policyData); break;
-        case 2: renderConstitutionStep(container, policyData); break; // Worldview only now
-        case 3: renderValuesStep(container, policyData); break;    // New Step
-        case 4: renderRulesStep(container, policyData); break;        // Shifted
-        case 5: renderReviewStep(container, policyData); break;       // Shifted
-        case 6: renderSuccessStep(container, policyData, generatedCredentials); break; // Shifted logic handles > TOTAL
+        case 2: renderConstitutionStep(container, policyData); break;
+        case 3: renderValuesStep(container, policyData); break;
+        case 4: renderReviewStep(container, policyData); break;
+        case 5: renderSuccessStep(container, policyData, generatedCredentials); break;
     }
 }
 
@@ -166,9 +164,8 @@ function validateCurrentStep() {
     switch (currentStep) {
         case 1: return validateDefinitionStep(policyData);
         case 2: return validateConstitutionStep(policyData);
-        case 3: return validateValuesStep(policyData); // New
-        case 4: return validateRulesStep(policyData);
-        case 5: return validateReviewStep(policyData);
+        case 3: return validateValuesStep(policyData);
+        case 4: return validateReviewStep(policyData);
         default: return true;
     }
 }
@@ -226,16 +223,15 @@ function ensureWizardInlineExists() {
 
         <!-- Progress Bar -->
         <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
-            <div id="pw-progress" class="bg-blue-600 h-full transition-all duration-300" style="width: 20%"></div>
+            <div id="pw-progress" class="bg-blue-600 h-full transition-all duration-300" style="width: 25%"></div>
         </div>
 
         <!-- Labels -->
         <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto gap-4">
-            <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Context</span>
-            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Worldview</span>
+            <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Identity</span>
+            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Mission</span>
             <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Values</span>
-            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Rules</span>
-            <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Review</span>
+            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Review</span>
         </div>
 
         <!-- Content Area: INCREASED MAX WIDTH -->

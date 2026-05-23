@@ -99,7 +99,8 @@ async def get_repository_details(repo_name: str, user_id: Optional[str] = None) 
         try:
              readme = repo.get_readme()
              readme_content = readme.decoded_content.decode("utf-8")[:1000] + "... (truncated)"
-        except: pass
+        except Exception:
+            pass  # README is optional; absence is not an error
 
         data = {
             "name": repo.full_name,

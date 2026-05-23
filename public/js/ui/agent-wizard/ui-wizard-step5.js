@@ -1,3 +1,6 @@
+import * as api from '../../core/api.js';
+import * as ui from '../ui.js';
+
 const CODE_BLOCK_OPTIONS = [
     { label: "Python",          value: "```python" },
     { label: "JavaScript",      value: "```javascript" },
@@ -26,6 +29,7 @@ export function renderSafetyStep(container, agentData) {
     const disclaimerSubstring = sr.mandatory_disclaimer_substring || "";
     const bannedSyntaxes = sr.banned_markdown_syntaxes || [];
     const hasValues = agentData.values && agentData.values.length > 0;
+    const scopeStatement = agentData.scope_statement || "";
 
     // Build code-block checkboxes separately to avoid deep template nesting
     const codeCheckboxesHtml = CODE_BLOCK_OPTIONS.map(function(opt) {
@@ -65,10 +69,31 @@ export function renderSafetyStep(container, agentData) {
     }
 
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Safety &amp; Governance</h2>
+        <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Guardrails &amp; Governance</h2>
         <p class="text-gray-500 mb-6">Deterministic checks Will enforces on every response — these run before any AI evaluation.</p>
 
         <div class="space-y-5">
+
+            <!-- Scope Compliance -->
+            <div class="border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-5">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <div>
+                            <h4 class="font-semibold text-blue-900 dark:text-blue-100">Scope Compliance</h4>
+                            <p class="text-xs text-blue-700 dark:text-blue-300 mt-0.5">Define what this agent is allowed to discuss. Off-topic requests are blocked before any LLM call — no tokens wasted, no jailbreaks possible through out-of-scope framing.</p>
+                        </div>
+                    </div>
+                    <button id="btn-generate-scope" class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        Generate
+                    </button>
+                </div>
+                <textarea id="scope-statement-input" rows="3"
+                    class="w-full px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-blue-200 dark:border-blue-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                    placeholder="e.g. HR policy questions, benefits enrollment, and employee handbook topics only. No medical, legal, or financial advice.">${scopeStatement}</textarea>
+                <p class="text-xs text-blue-600 dark:text-blue-400 mt-1.5">Leave blank to allow any topic. When set, Conscience scores every response against this boundary as a hard gate.</p>
+            </div>
 
             <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-5">
                 <div class="flex items-center justify-between">
@@ -104,6 +129,41 @@ export function renderSafetyStep(container, agentData) {
     `;
 
     // --- Event Listeners ---
+
+    const scopeInput = container.querySelector('#scope-statement-input');
+    if (scopeInput) {
+        scopeInput.addEventListener('input', function() {
+            agentData.scope_statement = scopeInput.value;
+        });
+    }
+
+    const generateScopeBtn = container.querySelector('#btn-generate-scope');
+    if (generateScopeBtn) {
+        generateScopeBtn.addEventListener('click', async function() {
+            const personality = (agentData.instructions || '').trim();
+            if (!personality) {
+                ui.showToast('Add a personality description in Step 3 first.', 'error');
+                return;
+            }
+            generateScopeBtn.disabled = true;
+            generateScopeBtn.innerHTML = `<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg> Generating…`;
+            try {
+                const res = await api.generateScope(personality);
+                if (res.ok && res.scope) {
+                    scopeInput.value = res.scope;
+                    agentData.scope_statement = res.scope;
+                    ui.showToast('Scope generated!', 'success');
+                } else {
+                    ui.showToast(res.error || 'Generation failed. Try again.', 'error');
+                }
+            } catch (e) {
+                ui.showToast('Error: ' + e.message, 'error');
+            } finally {
+                generateScopeBtn.disabled = false;
+                generateScopeBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> Generate`;
+            }
+        });
+    }
 
     const toggle = container.querySelector('#require-disclaimer-toggle');
     const disclaimerSection = container.querySelector('#disclaimer-text-section');

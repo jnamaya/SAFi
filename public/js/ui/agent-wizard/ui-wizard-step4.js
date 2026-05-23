@@ -6,7 +6,7 @@ export function renderConscienceStep(container, agentData, availableModels) {
         <div class="flex justify-between items-start mb-5">
              <div>
                 <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Core Values</h2>
-                <p class="text-gray-500 text-sm">Define the ethical framework. The AI will score itself against these values.</p>
+                <p class="text-gray-500 text-sm">Add agent-specific values. Values from your governing policy are inherited automatically and always evaluated first.</p>
              </div>
         </div>
 
@@ -24,8 +24,10 @@ export function renderConscienceStep(container, agentData, availableModels) {
                         </button>
                      </div>
                      
+                     <div id="wiz-inherited-values" class="mb-6"></div>
+
                      <div id="wiz-values-list" class="space-y-6 mb-8">
-                         <!-- Values rendered here -->
+                         <!-- Agent-specific values rendered here -->
                      </div>
                      
                      <button id="wiz-manual-val-btn" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl text-base font-medium text-gray-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors flex justify-center items-center gap-2">
@@ -43,19 +45,20 @@ export function renderConscienceStep(container, agentData, availableModels) {
                 </h4>
                 <ul class="space-y-4 text-xs text-gray-600 dark:text-gray-400">
                     <li>
-                        <strong>Identity vs Values:</strong> Use System Instructions for who the agent is. Use Core Values for the agent to grade itself (ethically).
+                        <strong>Inherited values</strong> come from your governing policy and always apply. You can't remove them here — edit them in the Policy instead.
                     </li>
                     <li>
-                        <strong>Rubrics:</strong> Each value has a scoring rubric. The AI uses this to "grade" its own alignment with company values.
+                        <strong>Agent values</strong> are role-specific additions on top of the policy. Use them for behaviors unique to this agent.
                     </li>
                     <li class="p-3 bg-white dark:bg-neutral-900 rounded border border-blue-200 dark:border-neutral-600 shadow-sm">
-                        <strong>Tip:</strong> Click <span class="font-bold text-blue-600">⚡ Generate Rubric</span> on a card to have the AI write the detailed grading logic for you.
+                        <strong>Tip:</strong> Click <span class="font-bold text-blue-600">⚡ Generate Rubric</span> on a card to have the AI write the scoring criteria for you.
                     </li>
                 </ul>
             </div>
         </div>
     `;
 
+    renderInheritedValues(agentData);
     renderValuesList(agentData);
 
     // --- EVENT LISTENERS ---
@@ -110,9 +113,44 @@ export function renderConscienceStep(container, agentData, availableModels) {
 }
 
 
-// --- LIST RENDERER (Updated with Generate Rubric Logic) ---
+function renderInheritedValues(agentData) {
+    const container = document.getElementById('wiz-inherited-values');
+    if (!container) return;
 
-// --- LIST RENDERER (Updated with TRAFFIC LIGHT Rubric Builder) ---
+    const policyValues = agentData._policyData?.values_weights || [];
+    if (policyValues.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const rows = policyValues.map(v => {
+        const name = typeof v === 'object' ? (v.name || v.value || 'Untitled') : v;
+        const desc = typeof v === 'object' ? (v.description || '') : '';
+        return `
+            <div class="bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg px-4 py-3 flex justify-between items-center">
+                <div>
+                    <span class="font-semibold text-sm text-gray-700 dark:text-gray-300">${name}</span>
+                    ${desc ? `<p class="text-xs text-gray-500 mt-0.5">${desc}</p>` : ''}
+                </div>
+                <span class="text-xs text-gray-400 bg-gray-100 dark:bg-neutral-800 px-2 py-1 rounded shrink-0 ml-4">From Policy</span>
+            </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="mb-4">
+            <div class="flex items-center gap-2 mb-2">
+                <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                <span class="text-sm font-bold text-gray-500 dark:text-gray-400">Inherited from policy: ${agentData._policyData.name}</span>
+            </div>
+            <div class="space-y-2">${rows}</div>
+        </div>
+        <div class="border-t border-gray-200 dark:border-neutral-700 mb-4 pt-4">
+            <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Agent-specific values</span>
+            <p class="text-xs text-gray-400 mt-0.5">Optional — add values unique to this agent's role.</p>
+        </div>`;
+}
 
 function renderValuesList(agentData) {
     const list = document.getElementById('wiz-values-list');
@@ -279,8 +317,9 @@ function renderValuesList(agentData) {
 }
 
 export function validateConscienceStep(agentData) {
-    if (agentData.values.length === 0) {
-        ui.showToast("Please add at least one value to define the agent's ethical framework.", "error");
+    const policyValues = agentData._policyData?.values_weights || [];
+    if (agentData.values.length === 0 && policyValues.length === 0) {
+        ui.showToast("Add at least one value, or attach a policy that defines values.", "error");
         return false;
     }
     return true;

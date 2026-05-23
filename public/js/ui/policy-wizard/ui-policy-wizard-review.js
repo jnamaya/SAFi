@@ -1,6 +1,6 @@
 export function renderReviewStep(container, policyData) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Review & Create</h2>
+        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Review</h2>
         <p class="text-gray-500 mb-6">Review your policy rules before enabling this governance layer.</p>
 
         <div class="space-y-6">

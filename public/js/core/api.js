@@ -40,6 +40,7 @@ export const urls = {
     TOOLS: j('/api/agents/tools'),
     RUBRIC_GEN: j('/api/generate/rubric'), // Fixed: No trailing slash
     VALUES_GEN: j('/api/generate/values'),
+    SCOPE_GEN: j('/api/generate/scope'),
     POLICIES: j('/api/policies'),
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
@@ -229,6 +230,10 @@ export async function generateRubric(valueName, context) {
 
 export async function suggestValues(context) {
     return httpJSON(urls.VALUES_GEN, 'POST', { context });
+}
+
+export async function generateScope(personality) {
+    return httpJSON(urls.SCOPE_GEN, 'POST', { personality });
 }
 
 export async function getAuthStatus() {

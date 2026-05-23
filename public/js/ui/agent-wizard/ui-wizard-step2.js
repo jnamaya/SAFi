@@ -3,7 +3,7 @@ import * as ui from './../ui.js';
 
 export async function renderKnowledgeStep(container, agentData) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Capabilities & Tools</h2>
+        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools</h2>
         <p class="text-gray-500 mb-6">Select the tools and data sources this agent can access.</p>
         
         <div id="wiz-tools-loading" class="flex items-center gap-2 text-gray-500">
@@ -43,10 +43,18 @@ function renderToolsList(categories, agentData) {
         const catDiv = document.createElement('div');
         catDiv.className = "bg-white dark:bg-neutral-800 p-6 rounded-xl border border-gray-200 dark:border-neutral-700";
 
+        const isOfficeCategory = cat.category === 'Office & Productivity';
+
         catDiv.innerHTML = `
             <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 border-b border-gray-100 dark:border-neutral-700 pb-2">
                 ${cat.category}
             </h3>
+            ${isOfficeCategory ? `
+            <div class="mb-4 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <p class="text-xs text-amber-800 dark:text-amber-300">These tools require a connected data source. Go to <strong>App Settings</strong> to connect before using them in a conversation.</p>
+            </div>
+            ` : ''}
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="cat-grid-${cat.category.replace(/\s+/g, '-')}">
             </div>
         `;

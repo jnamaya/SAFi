@@ -268,11 +268,15 @@ function renderValuesSection(values) {
                         </li>`;
             }).join('');
 
+            const descriptionHtml = (description && description !== 'N/A')
+                ? `<h6 class="font-semibold text-neutral-700 dark:text-neutral-300">Rubric Description:</h6>
+                   <p class="italic text-sm mb-3">${description}</p>`
+                : '';
+
             rubricHtml = `
                 <div class="mt-3 pl-4 border-l-2 border-neutral-200 dark:border-neutral-700">
-                    <h6 class="font-semibold text-neutral-700 dark:text-neutral-300">Rubric Description:</h6>
-                    <p class="italic text-sm">${description}</p>
-                    <h6 class="font-semibold text-neutral-700 dark:text-neutral-300 mt-3">Scoring Guide:</h6>
+                    ${descriptionHtml}
+                    <h6 class="font-semibold text-neutral-700 dark:text-neutral-300">Scoring Guide:</h6>
                     <ul class="list-none pl-0 mt-2">${scoringGuideHtml}</ul>
                 </div>
             `;

@@ -67,19 +67,20 @@ def save_agent():
         if request.method == 'POST':
             if db.get_agent(key): return jsonify({"error": "Agent exists"}), 409
             db.create_agent(
-                key=key, name=str(data['name']), 
+                key=key, name=str(data['name']),
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
                 values=data.get('values', []), rules=data.get('will_rules') or data.get('rules', []),
                 policy_id=data.get('policy_id', 'standalone'), created_by=user_id,
-                org_id=user.get('org_id'), 
+                org_id=user.get('org_id'),
                 visibility=data.get('visibility', 'private'),
                 intellect_model=data.get('intellect_model'),
                 will_model=data.get('will_model'),
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=data.get('rag_format_string'),
-                tools=data.get('tools', [])
+                tools=data.get('tools', []),
+                scope_statement=str(data.get('scope_statement') or '')
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -98,7 +99,7 @@ def save_agent():
                  return jsonify({"error": "Unauthorized"}), 403
             
             db.update_agent(
-                key=key, name=str(data['name']), 
+                key=key, name=str(data['name']),
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
                 worldview=str(data.get('worldview') or ''), style=str(data.get('style') or ''),
                 values=data.get('values', []), rules=data.get('will_rules') or data.get('rules', []),
@@ -109,7 +110,8 @@ def save_agent():
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=data.get('rag_format_string'),
-                tools=data.get('tools', [])
+                tools=data.get('tools', []),
+                scope_statement=str(data.get('scope_statement') or '')
             )
 
         # Invalidate Cache to ensure runtime uses new config
@@ -182,9 +184,9 @@ def get_agent(key):
              agent['values'] = raw.get('values', [])
              agent['will_rules'] = raw.get('will_rules', [])
              agent['worldview'] = raw.get('worldview', '')
-             # handle 'rules' alias if used by frontend
              agent['rules'] = agent['will_rules']
              agent['tools'] = raw.get('tools', [])
+             agent['scope_statement'] = raw.get('scope_statement', '')
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:
@@ -351,6 +353,61 @@ async def generate_values():
         
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+@agent_api_bp.route('/generate/scope', methods=['POST'], strict_slashes=False)
+async def generate_scope():
+    user = session.get('user')
+    if not user: return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        data = request.get_json(force=True, silent=True)
+        personality = data.get('personality', '').strip()
+        if not personality:
+            return jsonify({"ok": False, "error": "Personality is required"}), 400
+
+        from safi_app.core.services.llm_provider import LLMProvider
+
+        model = "openai/gpt-oss-120b"
+        detected_provider = _detect_provider(model)
+
+        llm_config = {
+            "providers": {
+                "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY },
+                "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" },
+                "anthropic": { "type": "anthropic", "api_key": Config.ANTHROPIC_API_KEY },
+                "gemini": { "type": "gemini", "api_key": Config.GEMINI_API_KEY },
+                "deepseek": { "type": "openai", "api_key": getattr(Config, 'DEEPSEEK_API_KEY', ''), "base_url": "https://api.deepseek.com" },
+                "mistral": { "type": "openai", "api_key": getattr(Config, 'MISTRAL_API_KEY', ''), "base_url": "https://api.mistral.ai/v1" }
+            },
+            "routes": { "intellect": { "provider": detected_provider, "model": model } }
+        }
+        provider = LLMProvider(llm_config)
+
+        system_prompt = (
+            "You are an expert AI governance architect. Given an AI agent's personality and instructions, "
+            "write a concise Scope Compliance statement that defines exactly what topics and tasks this agent "
+            "is authorized to handle.\n\n"
+            "Rules:\n"
+            "- One to three sentences maximum.\n"
+            "- Be specific about what IS in scope, not what is out of scope.\n"
+            "- Use plain language — no jargon.\n"
+            "- Do not include caveats, explanations, or bullet points.\n"
+            "- Return only the scope statement text, nothing else."
+        )
+        user_prompt = f"Agent personality and instructions:\n\n{personality}"
+
+        scope_text = await provider._chat_completion(
+            route="intellect",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.4
+        )
+
+        return jsonify({"ok": True, "scope": scope_text.strip()})
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @agent_api_bp.route('/agents/tools', methods=['GET'], strict_slashes=False)
 def list_available_tools():

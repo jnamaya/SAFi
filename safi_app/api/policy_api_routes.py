@@ -32,12 +32,8 @@ def validate_policy_data(data):
         elif len(data['values']) < 1:
             errors.append("At least one Core Value is required.")
     
-    # Enforce Rules
-    if 'will_rules' in data:
-        if not isinstance(data['will_rules'], list):
-            errors.append("will_rules must be a list.")
-        elif len(data['will_rules']) < 1:
-            errors.append("At least one Will Rule (hard constraint) is required.")
+    if 'will_rules' in data and not isinstance(data['will_rules'], list):
+        errors.append("will_rules must be a list.")
 
     if errors: return False, "; ".join(errors)
     return True, None

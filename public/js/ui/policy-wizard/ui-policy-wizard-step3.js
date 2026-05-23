@@ -8,8 +8,8 @@ export function renderValuesStep(container, policyData) {
                  <div>
                     <div class="flex justify-between items-end mb-4">
                          <div>
-                            <label class="block text-lg font-bold text-gray-700 dark:text-gray-300">Core Values & Rubrics</label>
-                            <p class="text-sm text-gray-500">Define the ethical standards used to grade every response.</p>
+                            <label class="block text-lg font-bold text-gray-700 dark:text-gray-300">Core Values</label>
+                            <p class="text-sm text-gray-500">Define the principles your organization stands for. Every agent response will be measured against these.</p>
                          </div>
                          <button id="btn-gen-values" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-colors shadow-sm">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -30,19 +30,19 @@ export function renderValuesStep(container, policyData) {
             <div class="bg-blue-50 dark:bg-neutral-800 p-8 rounded-2xl border border-blue-100 dark:border-neutral-700 h-fit sticky top-6">
                 <h4 class="font-bold text-xl text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
                     <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                    How Grading Works
+                    How Values Work
                 </h4>
                 <div class="space-y-6 text-sm text-gray-600 dark:text-gray-400">
                     <p class="leading-relaxed">
-                        Every time the agent replies, it "audits" itself against these values.
+                        Every response is measured against your core values. The scoring criteria tell the AI what living each value looks like in practice.
                     </p>
                     <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
-                        <strong class="block text-green-600 mb-1">Pass (+1.0)</strong>
+                        <strong class="block text-green-600 mb-1">Upheld (+1.0)</strong>
                         The response actively demonstrates the value.
                     </div>
                     <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
-                         <strong class="block text-red-600 mb-1">Violation (-1.0)</strong>
-                        The response breaks the rule.
+                         <strong class="block text-red-600 mb-1">Violated (-1.0)</strong>
+                        The response acts against this value.
                     </div>
                 </div>
             </div>
@@ -72,7 +72,7 @@ export function renderValuesStep(container, policyData) {
                 }
                 policyData.values = json.map(v => ({ ...v, weight: v.weight || 0.2 }));
                 renderValuesList(policyData);
-                ui.showToast("Values & Rubrics Generated!", "success");
+                ui.showToast("Core Values generated!", "success");
             }
         } catch (err) {
             console.error(err);
@@ -97,8 +97,8 @@ function renderValuesList(policyData) {
     if (policyData.values.length === 0) {
         list.innerHTML = `
             <div class="text-center py-12 bg-gray-50 dark:bg-neutral-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-800">
-                <p class="text-gray-400 text-lg mb-2">No values yet.</p>
-                <p class="text-sm text-gray-500">Click "Suggest Values" to let AI draft them for you.</p>
+                <p class="text-gray-400 text-lg mb-2">No core values defined yet.</p>
+                <p class="text-sm text-gray-500">Click "Suggest Values" to generate them from your mission, or add your own.</p>
             </div>`;
         return;
     }
@@ -113,7 +113,7 @@ function renderValuesList(policyData) {
         }
 
         const rubricBadge = hasRubric
-            ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold border border-green-200">✅ Rubric Ready</span>`
+            ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold border border-green-200">✅ Criteria Set</span>`
             : `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold border border-yellow-200">⚠️ Needs Criteria</span>`;
 
         const card = document.createElement('div');
@@ -125,7 +125,7 @@ function renderValuesList(policyData) {
         card.innerHTML = `
             <div class="flex justify-between items-start mb-4 gap-4">
                 <input type="text" id="${nameId}" class="flex-1 font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 px-1 py-1 transition-all" 
-                    value="${v.name}" placeholder="Value Name (e.g. Safety)">
+                    value="${v.name}" placeholder="e.g. Integrity, Transparency, Patient Safety">
                     
                 <button class="text-gray-400 hover:text-red-500 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="window.removePolicyValue(${idx})">
                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
