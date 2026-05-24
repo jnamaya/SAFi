@@ -69,12 +69,12 @@ a database of known attack patterns grouped by category
 (`persona_swap`, `instruction_override`, `jailbreak_archetypes`,
 `multilingual_persona_swap`, etc.):
 
-$$\text{safe} = \neg \exists\, p \in \text{INJECTION\_SIGNATURES} : p \subseteq \text{lower}(x_t)$$
+$$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lower}(x_t)$$
 
 **2. Persona blacklist scan** — checks per-agent keywords defined in the policy's
 `early_prompt_blacklist`:
 
-$$\text{safe} = \neg \exists\, p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
+$$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
 
 **3. Entropy heuristic** — flags high-entropy payloads followed by embedded instruction
 markers (catches obfuscated injections that evade signature matching):
@@ -202,7 +202,7 @@ Where $\beta = 0.9$ by default (configurable via `SPIRIT_BETA`).
 
 ### Drift Calculation
 
-$$d_t = 1 - \cos\text{-sim}(p_t,\, \mu_{t-1}) = 1 - \frac{p_t \cdot \mu_{t-1}}{\|p_t\| \cdot \|\mu_{t-1}\|}$$
+$$d_t = 1 - \cos\text{-sim}(p_t,\ \mu_{t-1}) = 1 - \frac{p_t \cdot \mu_{t-1}}{\|p_t\| \cdot \|\mu_{t-1}\|}$$
 
 A numerical guard $\epsilon = 10^{-8}$ prevents division by zero when either vector
 has near-zero norm; drift is reported as `null` in that case.
