@@ -14,8 +14,6 @@
 
 ## Quick Start
 
-### Option A: Docker Compose (Recommended)
-
 The fastest way to run SAFi locally. Includes MySQL — no external database needed.
 
 ```bash
