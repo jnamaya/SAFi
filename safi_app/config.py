@@ -103,6 +103,10 @@ class Config:
     DB_PASSWORD = os.environ.get("DB_PASSWORD")
     DB_NAME = os.environ.get("DB_NAME", "safi")
 
+    # Comma-separated list of emails that have super-admin access to the Audit Hub
+    # (can see all orgs' logs). Leave blank to disable super-admin access entirely.
+    SUPER_ADMIN_EMAILS = [e.strip() for e in os.environ.get("SAFI_SUPER_ADMINS", "").split(",") if e.strip()]
+
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
@@ -170,7 +174,6 @@ class Config:
 
         # Mistral Models
         {"id": "mistral-small-2603", "label": "Mistral Small 4"},
-        {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
         {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
 
         # DeepSeek Models
