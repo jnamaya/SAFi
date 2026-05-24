@@ -1,6 +1,6 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.3  
+> **Version:** 1.4  
 > **Last Updated:** 2026-05-24  
 > **Status:** Aligned with code implementation
 
@@ -177,17 +177,18 @@ $$x'_t = x_t \oplus E_t$$
 **Step 2:** Generate corrected draft:
 $$a'_t, r'_t = I(x'_t, V, M_t)$$
 
-**Step 3:** Re-evaluate with Will:
-$$D'_t, E'_t = W(a'_t, x_t, V)$$
+**Step 3:** Re-evaluate with Will Pass 1:
+$$D'^1_t, E'^1_t = W_1(a'_t, x_t, V)$$
 
-**If $D'_t = \text{approve}$:**
+**If $D'^1_t = \text{approve}$:**
 - Adopt corrected response: $a_t \leftarrow a'_t$
-- Proceed to return and enqueue audit
+- Proceed to **Stage 3 (Conscience)** — the corrected draft continues through
+  the full remaining pipeline: Conscience → $W_2$ → Spirit → $W_3$
 
-**If $D'_t = \text{violation}$:**
+**If $D'^1_t = \text{violation}$:**
 - Call `trigger_persona_redirect()` — the user always receives a governed
   redirect response; SAFi never returns a hard rejection or silence.
-- Record event: $\{t, x_t, a_t, a'_t, D_t, E_t, D'_t, E'_t\}$
+- Record event: $\{t, x_t, a_t, a'_t, D_t, E_t, D'^1_t, E'^1_t\}$
 - Abort downstream stages
 
 **Code Reference:** [`orchestrator.py#L339-393`](../safi_app/core/orchestrator.py)
