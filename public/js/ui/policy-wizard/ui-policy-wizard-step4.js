@@ -32,10 +32,10 @@ export function renderRulesStep(container, policyData) {
                     When to use this?
                 </h4>
                 <p class="text-xs text-red-800/80 dark:text-red-200/80 mb-4 leading-relaxed">
-                    <strong>Guardrails</strong> are enforced deterministically by the Will gate — no AI judgment involved.
+                    <strong>Guardrails</strong> are enforced as hard rules on every response — no AI judgment involved.
                 </p>
                 <p class="text-xs text-red-800/80 dark:text-red-200/80 leading-relaxed">
-                    When a response crosses a guardrail, the Will gate <strong>intercepts it</strong> before it reaches the user. Use this for legal, compliance, or ethical boundaries where no flexibility is allowed.
+                    When a response crosses a guardrail, it is <strong>automatically intercepted</strong> before it reaches the user. Use this for legal, compliance, or ethical boundaries where no flexibility is allowed.
                 </p>
             </div>
         </div>
