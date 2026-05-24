@@ -1,8 +1,11 @@
 """
-Defines the PhaseZeroGate class.
+Phase Zero Gate — the pre-generation injection barrier.
 
-A pre-generation injection gate that evaluates the raw user prompt
-before the Intellect faculty runs. Zero LLM calls — purely deterministic Python.
+Before the Intellect is ever invoked, this gate evaluates the raw user prompt against
+known attack signatures, per-persona blacklists, and an entropy-based embedded-instruction
+heuristic. It is entirely deterministic (zero LLM calls): if a threat is detected the
+orchestrator short-circuits immediately to a governed redirect, ensuring the Intellect is
+never exposed to adversarial content.
 """
 from __future__ import annotations
 import math

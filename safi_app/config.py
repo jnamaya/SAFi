@@ -23,25 +23,31 @@ class Config:
     APP_ENV = os.environ.get('FLASK_ENV', 'production')
 
     # 2. Set URLs based on the environment
+    # WEB_BASE_URL can be overridden via env for Docker/self-hosted deployments.
     if APP_ENV == 'development':
-        # Development URLs (Dev Server)
-        WEB_BASE_URL = "https://chat.selfalignmentframework.com"
-        ALLOWED_ORIGINS = [
+        _default_base_url = "https://chat.selfalignmentframework.com"
+        _default_origins = [
             "https://chat.selfalignmentframework.com",
             "capacitor://localhost",
             "http://localhost",
             "ionic://localhost"
         ]
     else:
-        # Production URLs (Live Server)
-        WEB_BASE_URL = "https://safi.selfalignmentframework.com"
-        ALLOWED_ORIGINS = [
+        _default_base_url = "https://safi.selfalignmentframework.com"
+        _default_origins = [
             "https://safi.selfalignmentframework.com",
             "https://selfalignmentframework.com",
             "capacitor://localhost",
             "http://localhost",
             "ionic://localhost"
         ]
+
+    WEB_BASE_URL = os.environ.get("WEB_BASE_URL", _default_base_url)
+
+    # ALLOWED_ORIGINS can be a comma-separated list in the env variable.
+    # e.g. ALLOWED_ORIGINS=http://localhost:5000,https://yourdomain.com
+    _origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+    ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or _default_origins
 
     # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"

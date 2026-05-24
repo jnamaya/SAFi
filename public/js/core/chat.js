@@ -270,13 +270,21 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     if (unpinnedConversations.length > 0) {
         const headerContainer = document.createElement('div');
-        headerContainer.className = 'px-3 mt-4 mb-2';
+        headerContainer.className = 'px-3 mt-4 mb-2 flex items-center justify-between';
 
         const allHeader = document.createElement('h3');
         allHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
         allHeader.textContent = 'History';
 
+        const clearBtn = document.createElement('button');
+        clearBtn.id = 'clear-all-convos-button';
+        clearBtn.type = 'button';
+        clearBtn.title = 'Clear all chats';
+        clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
+        clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+
         headerContainer.appendChild(allHeader);
+        headerContainer.appendChild(clearBtn);
         convoList.appendChild(headerContainer);
 
         unpinnedConversations.forEach(convo => {
@@ -287,13 +295,21 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         // Fallback: List is empty (or all pinned). Show Header anyway.
         const headerContainer = document.createElement('div');
         const mt = pinnedConversations.length > 0 ? 'mt-4 border-t border-gray-100 dark:border-gray-800 pt-4' : 'mt-2';
-        headerContainer.className = `px-3 mb-2 ${mt}`;
+        headerContainer.className = `px-3 mb-2 ${mt} flex items-center justify-between`;
 
         const allHeader = document.createElement('h3');
         allHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
         allHeader.textContent = 'History';
 
+        const clearBtn = document.createElement('button');
+        clearBtn.id = 'clear-all-convos-button';
+        clearBtn.type = 'button';
+        clearBtn.title = 'Clear all chats';
+        clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
+        clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+
         headerContainer.appendChild(allHeader);
+        headerContainer.appendChild(clearBtn);
         convoList.appendChild(headerContainer);
     }
     // --- END NEW: Sorting Logic ---
@@ -1026,4 +1042,20 @@ export async function handleConfirmDelete(activeProfileData, user) {
 
     ui.closeModal();
     convoToDelete = null;
+}
+
+export async function handleConfirmClearAll(activeProfileData, user) {
+    try {
+        await cache.saveConvoList([]); // Optimistic UI update
+        currentConversationId = null;
+        await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+        await startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
+
+        await api.clearAllConversations();
+        ui.showToast('All conversations deleted.', 'success');
+        await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+    } catch (error) {
+        ui.showToast('Could not clear conversations.', 'error');
+    }
+    ui.closeModal();
 }

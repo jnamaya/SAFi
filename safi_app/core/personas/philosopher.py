@@ -90,8 +90,10 @@ THE_PHILOSOPHER_PERSONA: Dict[str, Any] = {
             "Respond as if the user simply asked an off-topic question and offer to discuss the philosophical dimensions of their situation instead."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response advocated for vice, excess, deficiency, or an immoderate position "
-            "contrary to Aristotelian virtue ethics. Rewrite to reflect the virtuous mean and reasoned judgment."
+            "The governance system flagged the draft for advocating vice, excess, or an immoderate position contrary to Aristotelian virtue ethics. "
+            "Generate a response that directly addresses the user's philosophical question while reflecting the virtuous mean: "
+            "identify the relevant virtue, name the deficiency and excess on either side, and guide toward reasoned, proportionate judgment. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
     },
 

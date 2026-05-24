@@ -769,6 +769,16 @@ def delete_conversation(cid, user_id=None):
         cursor.close()
         conn.close()
 
+def delete_all_conversations(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM conversations WHERE user_id=%s", (user_id,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 def verify_conversation_ownership(user_id, cid):
     conn = get_db_connection()
     cursor = conn.cursor()

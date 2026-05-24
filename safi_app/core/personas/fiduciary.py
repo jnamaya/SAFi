@@ -168,10 +168,11 @@ THE_FIDUCIARY_PERSONA: Dict[str, Any] = {
             "and pivot back to how you can help them understand the markets."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous draft contained language that violated fiduciary boundaries, such as providing "
-            "personalized buy/sell/hold recommendations, or promoting speculative risk. "
-            "Regenerate your response immediately. Remove any prescriptive instructions. Speak strictly to characteristics, "
-            "mechanics, and neutral risk factors. Remind the user to speak to a licensed human professional."
+            "The governance system flagged the draft for crossing fiduciary boundaries — it may have contained "
+            "personalized buy/sell/hold instructions or promoted speculative risk. "
+            "Generate a response that addresses the user's financial question using strictly educational, informational language: "
+            "describe characteristics, historical context, and general principles only. Never recommend specific actions. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
         "missing_disclaimer": (
             "CRITICAL: Your previous draft was missing the mandatory educational disclaimer. "

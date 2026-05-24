@@ -1,7 +1,24 @@
 """
-Defines the WillGate class.
+Will — the executive faculty and absolute gatekeeper.
 
-An ethical gatekeeper that evaluates a draft response.
+In Thomistic psychology, the Will is the faculty that chooses and commands action based on
+the Intellect's apprehension. Here it is the sole decision-making authority — but it
+operates under three structurally necessary philosophical limitations:
+
+  No Moral Apprehension (The Will is Blind): Following nihil volitum nisi praecognitum
+  ("nothing is willed unless first known"), the Will has no LLM of its own. It cannot read
+  semantic meaning or evaluate morality. It relies entirely on the mathematical judgments
+  handed down by the Conscience and Spirit to "see" whether an action is aligned.
+
+  No Body: The system has no physical form, drives, or passions — the Will operates in a
+  sterile computational vacuum, free from the sensitive appetites that constantly pull
+  against human volition.
+
+  Deontological rather than Teleological (The Kantian Engine): A human Will has a
+  teleological hunger for flourishing. An AI cannot possess genuine desire. The WillGate
+  therefore acts as a strictly Kantian construct — enforcing structural invariants
+  (disclaimers, parameter constraints, allowed-tool lists, hard-gate thresholds) purely
+  out of duty to the law, without context, nuance, or orientation toward the Good.
 """
 from __future__ import annotations
 import json

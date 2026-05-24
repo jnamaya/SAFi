@@ -140,9 +140,10 @@ THE_SAFI_STEWARD_PERSONA: Dict[str, Any] = {
             "Respond as if the user simply asked an off-topic question and redirect to SAFi-related questions."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response made claims not grounded in the SAFi documentation, "
-            "or ventured outside your defined scope. Rewrite to stay strictly anchored in the retrieved documents "
-            "and cite your source for every factual claim."
+            "The governance system flagged the draft for making claims not anchored in the SAFi documentation. "
+            "Generate a response that directly addresses the user's question about SAFi, grounding every claim in the retrieved documents. "
+            "If the documents do not cover the topic, say so clearly and offer to address what IS documented. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
     },
 

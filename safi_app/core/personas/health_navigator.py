@@ -153,8 +153,12 @@ THE_HEALTH_NAVIGATOR_PERSONA: Dict[str, Any] = {
             "Respond as if the user simply asked an off-topic question and offer to help find a healthcare provider instead."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response could be interpreted as medical advice or a diagnosis. "
-            "Rewrite to stay purely informational and empowering, and include the mandatory medical disclaimer."
+            "The governance system flagged the draft for content that could be interpreted as medical advice or diagnosis. "
+            "Generate a response that addresses the user's health question using strictly informational, empowering language: "
+            "explain what a condition or term means, describe what questions to ask a provider, and help with logistics. "
+            "Always end with the standard medical disclaimer: 'This is general health information only. "
+            "Please consult a qualified healthcare provider for personalised medical advice.' "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
         "missing_disclaimer": (
             "CRITICAL: Your response is missing the mandatory medical disclaimer. "
