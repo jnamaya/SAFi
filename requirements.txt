@@ -1,0 +1,44 @@
+# ── Core Framework ────────────────────────────────────────────────────────────
+Flask==3.1.3
+gunicorn==21.2.0
+Werkzeug==3.1.3
+
+# ── Database ───────────────────────────────────────────────────────────────────
+mysql-connector-python==9.1.0
+numpy>=2.0.0
+
+# ── AI Providers ──────────────────────────────────────────────────────────────
+# Groq, OpenAI, DeepSeek, and Mistral all use the OpenAI-compatible client
+openai>=1.30.0
+anthropic>=0.30.0
+# google-genai is the new unified Google AI SDK (replaces google-generativeai)
+google-genai>=1.0.0
+
+# ── RAG / Embeddings ──────────────────────────────────────────────────────────
+# torch is installed via the CPU-only wheel index in the Dockerfile for a lean image
+sentence-transformers>=3.0.0
+faiss-cpu>=1.8.0
+
+# ── Authentication ─────────────────────────────────────────────────────────────
+authlib>=1.3.0
+flask-cors>=4.0.0
+PyJWT>=2.8.0
+requests>=2.31.0
+google-auth>=2.29.0
+google-auth-oauthlib>=1.2.0
+
+# ── Document Processing ────────────────────────────────────────────────────────
+PyPDF2>=3.0.1
+python-docx>=1.1.0
+lxml>=5.0.0
+
+# ── MCP Protocol ──────────────────────────────────────────────────────────────
+mcp>=1.0.0
+
+# ── Config & Utils ────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── Dashboard (Streamlit) ─────────────────────────────────────────────────────
+streamlit>=1.35.0
+pandas>=2.0.0
+plotly>=5.20.0
