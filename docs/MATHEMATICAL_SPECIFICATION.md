@@ -1,10 +1,17 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.1  
+> **Version:** 1.2  
 > **Last Updated:** 2026-05-24  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
+
+> **Implementation note:** This specification is **implementation-agnostic**. It defines
+> SAFi as a cognitive architecture — a set of abstract functions with defined signatures,
+> information flow, and scoring semantics. The reference implementation uses large language
+> models for the Intellect and Conscience faculties, but any function satisfying the defined
+> signature may be substituted (a rules engine, a different model, a human reviewer, etc.).
+> The math makes no assumptions about the underlying technology.
 
 ---
 
