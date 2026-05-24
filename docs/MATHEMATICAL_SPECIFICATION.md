@@ -79,7 +79,7 @@ $$\text{safe} = \neg \exists\, p \in \text{blacklist} : p \subseteq \text{lower}
 **3. Entropy heuristic** — flags high-entropy payloads followed by embedded instruction
 markers (catches obfuscated injections that evade signature matching):
 
-$$H(x_t) = -\sum_c P(c) \log_2 P(c) > \tau_H \;\land\; \text{has\_instruction\_marker}(x_t)$$
+$$H(x_t) = -\sum_c P(c) \log_2 P(c) > \tau_H \quad \wedge \quad \text{has-instr-marker}(x_t)$$
 
 Where $\tau_H = 4.5$ bits/char (configurable via `ENTROPY_THRESHOLD`).
 
@@ -161,7 +161,7 @@ $$D'_t, E'_t = W(a'_t, x_t, V)$$
 For each value $v_i$ in $V$, the Conscience evaluates alignment via LLM and returns
 a continuous score:
 
-$$s_{i,t}, c_{i,t} = G_i(a_t, x_t, v_i), \quad s_{i,t} \in [-1.0, 1.0],\; c_{i,t} \in [0, 1]$$
+$$s_{i,t}, c_{i,t} = G_i(a_t, x_t, v_i), \quad s_{i,t} \in [-1.0, 1.0], \quad c_{i,t} \in [0, 1]$$
 
 The complete ledger is composed as:
 
@@ -185,7 +185,7 @@ $$p_t = w \odot s_t$$
 
 The raw aggregate is clipped to $[-1, 1]$ and linearly rescaled to $[1, 10]$:
 
-$$\text{raw}_t = \text{clip}\!\left(\sum_i w_i \cdot s_{i,t} \cdot c_{i,t},\; -1,\; 1\right)$$
+$$\text{raw}_t = \text{clip}\!\left(\sum_i w_i \cdot s_{i,t} \cdot c_{i,t},\ -1,\ 1\right)$$
 
 $$S_t = \text{round}\!\left(\frac{\text{raw}_t + 1}{2} \cdot 9 + 1\right)$$
 
@@ -202,7 +202,7 @@ Where $\beta = 0.9$ by default (configurable via `SPIRIT_BETA`).
 
 ### Drift Calculation
 
-$$d_t = 1 - \cos\_\text{sim}(p_t,\, \mu_{t-1}) = 1 - \frac{p_t \cdot \mu_{t-1}}{\|p_t\|\;\|\mu_{t-1}\|}$$
+$$d_t = 1 - \cos\text{-sim}(p_t,\, \mu_{t-1}) = 1 - \frac{p_t \cdot \mu_{t-1}}{\|p_t\| \cdot \|\mu_{t-1}\|}$$
 
 A numerical guard $\epsilon = 10^{-8}$ prevents division by zero when either vector
 has near-zero norm; drift is reported as `null` in that case.
@@ -226,7 +226,7 @@ non-content scores.
 
 | Faculty | Signature |
 |---------|-----------|
-| Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\; \text{reason})$ |
+| Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
 | Intellect | $I: (x_t, V, M_t) \rightarrow (a_t, r_t)$ |
 | Will | $W: (a_t, x_t, V) \rightarrow (D_t, E_t)$ |
 | Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
