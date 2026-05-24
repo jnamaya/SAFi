@@ -1,6 +1,6 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.2  
+> **Version:** 1.3  
 > **Last Updated:** 2026-05-24  
 > **Status:** Aligned with code implementation
 
@@ -36,29 +36,34 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 ## Timing Model
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  SYNCHRONOUS (User Waits for All of This)                            │
-│                                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────┐  ┌───────────┐  ┌────────┐  │
-│  │Phase Zero│─▶│ Intellect│─▶│ Will │─▶│ Conscience│─▶│ Spirit │  │
-│  └──────────┘  └──────────┘  └──────┘  └───────────┘  └────────┘  │
-│                      │            │                         │        │
-│                      │       [violation]                    │        │
-│                      │            ▼                    [violation]  │
-│                      │      ┌──────────┐                    ▼        │
-│                      └─────▶│ Reflexion│──▶ Retry once  Rephrase    │
-│                             └──────────┘                    │        │
-│                                                             ▼        │
-│                                                      Return to User  │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  SYNCHRONOUS (User Waits for All of This)                                      │
+│                                                                                │
+│ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────────┐ ┌────────┐ ┌────────┐    │
+│ │Phase Zero│─▶│Intellect │─▶│Will P1 │─▶│Conscience │─▶│Will P2 │─▶│Spirit  │ │
+│ └──────────┘ └──────────┘ │structur│ └───────────┘ │hard-   │ └────────┘    │
+│                   │       │-al     │               │gate    │      │         │
+│                   │       └────────┘               └────────┘      │         │
+│                   │           │                         │      ┌────────┐    │
+│                   │      [violation]               [violation] │Will P3 │    │
+│                   │           ▼                               │alignmnt│    │
+│                   │     ┌──────────┐                          └────────┘    │
+│                   └────▶│Reflexion │──▶ Retry once                │         │
+│                         └──────────┘                         [violation]    │
+│                                                                    ▼         │
+│                                                               Rephrase       │
+│                                                                    │         │
+│                                                                    ▼         │
+│                                                             Return to User   │
+└────────────────────────────────────────────────────────────────────────────────┘
                          │
                          ▼ (ThreadPoolExecutor — fire and forget)
-┌──────────────────────────────────────────────────────────────────────┐
-│  ASYNCHRONOUS (Background)                                           │
-│  ┌─────────────────────────┐   ┌──────────────────────────────────┐ │
-│  │ Conversation Summarizer │   │ Profile Extraction (if enabled)  │ │
-│  └─────────────────────────┘   └──────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  ASYNCHRONOUS (Background)                                                     │
+│  ┌─────────────────────────┐   ┌──────────────────────────────────┐           │
+│  │ Conversation Summarizer │   │ Profile Extraction (if enabled)  │           │
+│  └─────────────────────────┘   └──────────────────────────────────┘           │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -84,11 +89,15 @@ $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lo
 $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
 
 **3. Entropy heuristic** — flags high-entropy payloads followed by embedded instruction
-markers (catches obfuscated injections that evade signature matching):
+markers (catches obfuscated injections that evade signature matching). A minimum length
+guard prevents false positives on short strings where entropy is statistically unstable:
 
-$$H(x_t) = -\sum_c P(c) \log_2 P(c) > \tau_H \quad \wedge \quad \text{has-instr-marker}(x_t)$$
+$$|x_t| > \tau_{\text{len}} \quad \wedge \quad H(x_t) > \tau_H \quad \wedge \quad \text{has-instr-marker}(x_t)$$
 
-Where $\tau_H = 4.5$ bits/char (configurable via `ENTROPY_THRESHOLD`).
+$$H(x_t) = -\sum_c P(c) \log_2 P(c)$$
+
+Where $\tau_{\text{len}} = 150$ chars (configurable via `MIN_LENGTH_FOR_ENTROPY_CHECK`)
+and $\tau_H = 4.5$ bits/char (configurable via `ENTROPY_THRESHOLD`).
 
 **If any check fails** → `trigger_persona_redirect(violation_type=gate_reason)` and return.  
 **If all pass** → proceed to Stage 1.
@@ -115,24 +124,46 @@ Where:
 
 ## Stage 2: Will
 
-The Will makes a binary governance decision:
+The Will is entirely deterministic (zero LLM calls) and runs **three separate passes**
+interleaved with Conscience and Spirit. Each pass is binary: approve or violation.
 
-$$D_t, E_t = W(a_t, x_t, V)$$
+### Pass 1 — Structural Check (before Conscience)
 
-The Will is entirely deterministic (zero LLM calls). It checks in order:
+Evaluates the Intellect's draft directly against structural invariants:
 
-1. **Structural invariants** — required disclaimers, banned markdown syntax
-2. **Hard-gate values** — any value in $L_t$ flagged `hard_gate=true` scoring $\leq -1$ triggers immediate violation
-3. **Spirit alignment threshold** — $S_t < 0.5$ triggers violation
+$$D^1_t, E^1_t = W_1(a_t, x_t, V)$$
 
-**If $D_t = \text{approve}$:**
-- Return $a_t$ to the user immediately
-- Enqueue background audit: $J_t = \{t, x_t, a_t, V, M_t\}$
+Checks in order:
+1. Required disclaimers present in $a_t$
+2. No banned markdown syntax in $a_t$
 
-**If $D_t = \text{violation}$:**
-- Proceed to Stage 2.1 (Reflexion Retry)
+**If $D^1_t = \text{violation}$** → proceed to Stage 2.1 (Reflexion Retry).  
+**If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
 
-**Code Reference:** [`will.py#evaluate()`](../safi_app/core/faculties/will.py)
+### Pass 2 — Hard-Gate Check (after Conscience, before Spirit)
+
+Evaluates the Conscience ledger for hard-gate failures:
+
+$$D^2_t, E^2_t = W_2(L_t)$$
+
+Any value flagged `hard_gate=true` with score $\leq -1$ triggers immediate violation.
+
+**If $D^2_t = \text{violation}$** → call `trigger_persona_redirect()`.  
+**If $D^2_t = \text{approve}$** → proceed to Stage 4 (Spirit).
+
+### Pass 3 — Alignment Check (after Spirit)
+
+Evaluates Spirit's aggregate alignment assessment:
+
+$$D^3_t, E^3_t = W_3(S_t)$$
+
+Triggers violation if `critical_violation` flag is set or alignment score $< 0.5$.
+
+**If $D^3_t = \text{violation}$** → Intellect rephrases once under Spirit's directive;
+if rephrase also fails, call `trigger_persona_redirect()`.  
+**If $D^3_t = \text{approve}$** → return $a_t$ to user.
+
+**Code Reference:** [`will.py`](../safi_app/core/faculties/will.py)
 
 ---
 
@@ -207,6 +238,11 @@ $$\mu_t = \beta \mu_{t-1} + (1-\beta) p_t$$
 
 Where $\beta = 0.9$ by default (configurable via `SPIRIT_BETA`).
 
+**Initial state:** $\mu_0 = \mathbf{0}$ (zero vector). On the first interaction the
+epsilon guard in the drift calculation returns `null` rather than dividing by zero
+(see Drift Calculation below). The EMA converges toward the agent's true alignment
+profile over subsequent turns.
+
 ### Drift Calculation
 
 $$d_t = 1 - \cos\text{-sim}(p_t,\ \mu_{t-1}) = 1 - \frac{p_t \cdot \mu_{t-1}}{\|p_t\| \cdot \|\mu_{t-1}\|}$$
@@ -235,9 +271,11 @@ non-content scores.
 |---------|-----------|
 | Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
 | Intellect | $I: (x_t, V, M_t) \rightarrow (a_t, r_t)$ |
-| Will | $W: (a_t, x_t, V) \rightarrow (D_t, E_t)$ |
+| Will — Pass 1 | $W_1: (a_t, x_t, V) \rightarrow (D^1_t, E^1_t)$ |
 | Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
+| Will — Pass 2 | $W_2: L_t \rightarrow (D^2_t, E^2_t)$ |
 | Spirit | $S: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
+| Will — Pass 3 | $W_3: S_t \rightarrow (D^3_t, E^3_t)$ |
 
 ---
 
