@@ -35,7 +35,7 @@ docker compose up
 # Open http://localhost:5000
 ```
 
-> **Tip:** [Groq](https://console.groq.com) offers a generous free tier — it's the easiest way to get a working API key in under 2 minutes.
+> **Tip:** [Groq](https://console.groq.com) offers a generous free tier — it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and `DEEPSEEK_API_KEY`. See [`.env.example`](.env.example) for all options.
 
 #### Local Admin Account (No OAuth Required)
 
@@ -47,24 +47,6 @@ SAFI_LOCAL_ADMIN_PASSWORD=yourpassword
 ```
 
 SAFi will create the account automatically on first startup. The login form appears on the login page alongside the OAuth buttons.
-
----
-
-### Option B: Docker (bring your own MySQL 8.0+)
-
-```bash
-docker pull amayanelson/safi:v1.2
-
-docker run -d -p 5000:5000 \
-  -e DB_HOST=your_db_host \
-  -e DB_USER=your_db_user \
-  -e DB_PASSWORD=your_db_password \
-  -e DB_NAME=safi \
-  -e OPENAI_API_KEY=your_openai_key \
-  --name safi amayanelson/safi:v1.2
-```
-
-> **Note:** SAFi supports multiple LLM providers. You can pass `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, or `DEEPSEEK_API_KEY` instead of or in addition to OpenAI. See [`.env.example`](.env.example) for all options.
 
 ---
 
