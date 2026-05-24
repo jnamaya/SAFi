@@ -28,6 +28,22 @@ import jwt
 auth_bp = Blueprint('auth', __name__)
 
 # =================================================================
+# PUBLIC APP CONFIG (non-sensitive feature flags for the frontend)
+# =================================================================
+
+@auth_bp.route('/app-config', methods=['GET'])
+def app_config():
+    """
+    [GET /api/app-config]
+    Returns non-sensitive feature flags so the frontend can adapt its UI
+    without requiring the user to be logged in.
+    """
+    return jsonify({
+        "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
+        "local_login_enabled": Config.ENABLE_LOCAL_LOGIN,
+    })
+
+# =================================================================
 # DASHBOARD AUTHENTICATION (Token Issuance)
 # =================================================================
 
@@ -243,6 +259,52 @@ def login_mobile():
         return jsonify({"error": "Authentication failed"}), 500
 
 # =================================================================
+# LOCAL LOGIN (Persistent Admin, No OAuth Required)
+# =================================================================
+
+@auth_bp.route('/login/local', methods=['POST'])
+def login_local():
+    """
+    [POST /api/login/local]
+    Authenticates against the persistent local admin account configured
+    via SAFI_LOCAL_ADMIN_EMAIL / SAFI_LOCAL_ADMIN_PASSWORD.
+    Only available when SAFI_ENABLE_LOCAL_LOGIN is true (both vars set).
+    """
+    from werkzeug.security import check_password_hash
+
+    if not Config.ENABLE_LOCAL_LOGIN:
+        return jsonify({"error": "Local login is not enabled on this instance."}), 404
+
+    data     = request.get_json(silent=True) or {}
+    email    = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required."}), 400
+
+    user = db.get_user_by_email(email)
+    if not user or not user.get('password_hash'):
+        return jsonify({"error": "Invalid credentials."}), 401
+
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({"error": "Invalid credentials."}), 401
+
+    session_user = {
+        'id':             user['id'],
+        'email':          user.get('email'),
+        'name':           user.get('name'),
+        'active_profile': user.get('active_profile') or Config.DEFAULT_PROFILE,
+        'role':           user.get('role', 'admin'),
+        'org_id':         user.get('org_id'),
+    }
+    session['user']       = session_user
+    session['user_id']    = user['id']
+    session['user_email'] = user.get('email')
+
+    current_app.logger.info(f"Local admin login: {email}")
+    return jsonify({"ok": True})
+
+# =================================================================
 # DEMO LOGIN (Auditor Role, Disposable)
 # =================================================================
 
@@ -253,7 +315,11 @@ def login_demo():
     Creates 'Auditor' account for demo purposes.
     - RESUMABLE: Checks for 'safi_demo_id' cookie to reuse existing session.
     - CLEANUP: Triggers cleanup of old accounts.
+    - DISABLED: Returns 404 if SAFI_ENABLE_DEMO is false.
     """
+    if not Config.ENABLE_DEMO_LOGIN:
+        return jsonify({"error": "Demo login is not available on this instance."}), 404
+
     try:
         # 1. Lazy Cleanup (Probabilistic: 5% chance)
         # Prevents "thundering herd" where every login triggers a DB-heavy cleanup

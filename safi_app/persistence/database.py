@@ -67,6 +67,11 @@ def init_db():
             cursor.execute("ALTER TABLE users ADD COLUMN role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'")
             cursor.execute("CREATE INDEX idx_user_org ON users(org_id)")
 
+        # Add password_hash column for local account login
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL")
+
         # --- Conversations ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS conversations (
@@ -292,10 +297,13 @@ def init_db():
 
         conn.commit()
         logging.info("Database initialized.")
-        
+
         # Ensure demo policy exists
         _ensure_demo_policy_exists()
-        
+
+        # Seed persistent local admin account (if configured)
+        _seed_local_admin()
+
     except Exception as e:
         logging.error(f"DB Init Failed: {e}")
     finally:
@@ -342,6 +350,61 @@ def _ensure_demo_policy_exists():
         
     except Exception as e:
         logging.error(f"Failed to ensure demo policy: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# LOCAL ADMIN SEEDING
+# -------------------------------------------------------------------------
+
+def _seed_local_admin():
+    """
+    Creates or updates the persistent local admin account from env config.
+    Called once at startup. Safe to call repeatedly — always converges to
+    the current SAFI_LOCAL_ADMIN_EMAIL / SAFI_LOCAL_ADMIN_PASSWORD values.
+    """
+    if not Config.ENABLE_LOCAL_LOGIN:
+        return
+
+    from werkzeug.security import generate_password_hash
+
+    email    = Config.LOCAL_ADMIN_EMAIL
+    password = Config.LOCAL_ADMIN_PASSWORD
+
+    conn   = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        password_hash = generate_password_hash(password)
+
+        # Check if local admin already exists
+        cursor.execute("SELECT id, org_id FROM users WHERE id = 'local_admin'")
+        existing = cursor.fetchone()
+
+        if existing:
+            # Sync email and password in case env vars changed
+            cursor.execute(
+                "UPDATE users SET email=%s, name='Local Admin', password_hash=%s WHERE id='local_admin'",
+                (email, password_hash)
+            )
+            logging.info("Local admin account updated.")
+        else:
+            # Create a dedicated persistent org for the local admin
+            org_id = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO organizations (id, name) VALUES (%s, %s)",
+                (org_id, "Local Admin Organization")
+            )
+            cursor.execute(
+                """INSERT INTO users (id, email, name, picture, role, org_id, password_hash, active_profile)
+                   VALUES ('local_admin', %s, 'Local Admin', '', 'admin', %s, %s, %s)""",
+                (email, org_id, password_hash, Config.DEFAULT_PROFILE)
+            )
+            logging.info("Local admin account created.")
+
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Failed to seed local admin: {e}")
     finally:
         cursor.close()
         conn.close()

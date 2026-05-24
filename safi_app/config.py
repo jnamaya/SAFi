@@ -106,6 +106,21 @@ class Config:
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
+    # Show or hide the "Try Demo (Admin)" button on the login page.
+    # Set to false for private/self-hosted instances that don't need a public demo.
+    ENABLE_DEMO_LOGIN = os.environ.get("SAFI_ENABLE_DEMO", "false").lower() == "true"
+
+    # Local admin account for dev/self-hosted instances (no OAuth required).
+    # When both vars are set, a persistent admin account is auto-created on startup.
+    LOCAL_ADMIN_EMAIL    = os.environ.get("SAFI_LOCAL_ADMIN_EMAIL", "").strip()
+    LOCAL_ADMIN_PASSWORD = os.environ.get("SAFI_LOCAL_ADMIN_PASSWORD", "").strip()
+    ENABLE_LOCAL_LOGIN   = bool(LOCAL_ADMIN_EMAIL and LOCAL_ADMIN_PASSWORD)
+
+    # Maximum number of sequential tool-call turns the orchestrator will take
+    # before forcing a final synthesis response. Raise this if your tools
+    # need more hops to complete a task.
+    MAX_AGENT_TURNS = int(os.environ.get("SAFI_MAX_AGENT_TURNS", "5"))
+
     # Logging configuration
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
@@ -143,7 +158,6 @@ class Config:
         # OpenAI Models
         {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
         {"id": "gpt-4o", "label": "GPT-4o"},
-        {"id": "gpt-5.4", "label": "gpt-5.4"},
 
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
@@ -151,13 +165,10 @@ class Config:
 
         # Google Models
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
-        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
-        {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
         {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
 
         # Mistral Models
-        {"id": "mistral-large-2512", "label": "Mistral Large 3"},
         {"id": "mistral-small-2603", "label": "Mistral Small 4"},
         {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
         {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
