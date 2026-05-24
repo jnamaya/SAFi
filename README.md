@@ -2,7 +2,7 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
 
-# SAFi: The Open-Source Runtime Governance Engine for AI
+# SAFi: The Open-Source Runtime Governance Engine for AI Agents
 
 **SAFi turns any LLM into a governed, auditable agent — your policies enforced at runtime, every decision logged.**
 
