@@ -64,6 +64,7 @@ SAFi is an open-source runtime governance engine that enforces organizational po
 ## Table of Contents
 
 - [How Does It Work?](#how-does-it-work)
+- [Mathematical Specification](#mathematical-specification)
 - [Benchmarks & Validation](#benchmarks--validation)
 - [Technical Implementation](#technical-implementation)
 - [Application Structure](#application-structure)
@@ -101,7 +102,7 @@ Spirit and Will are the only two faculties with **no LLM involvement** — both 
 
 | Step | Formula | What It Does |
 | :--- | :--- | :--- |
-| **Score** | `S_t = σ( Σ wᵢ · sᵢ · cᵢ )` | Weighted sum of virtue scores × confidence, scaled to [1, 10] |
+| **Score** | `S_t = clip( Σ wᵢ · sᵢ · cᵢ, −1, 1 ) → [1, 10]` | Weighted sum of scores × confidence, clipped then linearly rescaled |
 | **Profile** | `p_t = w ⊙ s_t` | Element-wise product of weights and scores for this turn |
 | **EMA** | `μ_t = β · μ_(t-1) + (1-β) · p_t` | Exponential moving average (β=0.9) smooths the profile over time |
 | **Drift** | `d_t = 1 - cos_sim(p_t, μ_(t-1))` | Cosine distance between current turn and historical baseline |
@@ -151,6 +152,14 @@ This architecture means jailbreak resistance is **model-independent**: the gover
 
 ---
 
+## Mathematical Specification
+
+The formal mathematical foundation of SAFi's five-stage cognitive architecture — including the full type system, Spirit EMA and drift formulas, Will's three-pass gate logic, and Phase Zero entropy heuristics — is documented in:
+
+📐 **[`docs/MATHEMATICAL_SPECIFICATION.md`](docs/MATHEMATICAL_SPECIFICATION.md)**
+
+---
+
 ## Benchmarks & Validation
 
 SAFi is continuously tested in both live adversarial environments and controlled compliance studies.
@@ -192,7 +201,7 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ### 3. Performance & Cost Profile
 
-By using a **Hybrid Architecture** — a deterministic Will layer and asynchronous Conscience audits on smaller open-source models — SAFi achieves lower latency and cost than monolithic chains.
+By using a **Hybrid Architecture** — a deterministic Will layer and a lightweight Conscience auditor on smaller open-source models — SAFi achieves lower latency and cost than monolithic chains.
 
 | Configuration | Avg. Latency | Avg. Cost (per 1k interactions) |
 | :--- | :--- | :--- |
@@ -200,7 +209,7 @@ By using a **Hybrid Architecture** — a deterministic Will layer and asynchrono
 | **SAFi Hybrid (large + open-source models)** | **~3–5 seconds** | **~$5.00** |
 
 - **Latency:** The Will faculty is pure deterministic Python — sub-millisecond gate checks, no waiting for a model to "grade its own homework."
-- **Cost:** Conscience audits run asynchronously on smaller models, keeping fully governed interactions at roughly **$0.005 each**.
+- **Cost:** Conscience runs on smaller open-source models, keeping fully governed interactions at roughly **$0.005 each**.
 
 ---
 
@@ -214,7 +223,7 @@ The core logic resides in **`safi_app/core/`**:
 | `synderesis.py` | Persona registry and constitution compiler. Defines all built-in agent profiles, injects scope gates and value weights. |
 | `faculties/intellect.py` | The Generator. Receives context from the Orchestrator and drafts responses or tool proposals. |
 | `faculties/will.py` | The Gatekeeper. Pure deterministic Python — zero LLM calls. |
-| `faculties/conscience.py` | The Auditor. Asynchronous deep-dive audit of every approved response. |
+| `faculties/conscience.py` | The Auditor. Scores every response against the agent's rubrics, synchronously, before the user receives it. |
 | `faculties/spirit.py` | The Long-Term Integrator. Aggregates Conscience scores and updates the agent's alignment vector. |
 
 ---
