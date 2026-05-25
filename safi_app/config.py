@@ -130,8 +130,8 @@ class Config:
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "openai/gpt-oss-120b")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "llama-3.1-8b-instant")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.1-flash-lite")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
@@ -177,7 +177,6 @@ class Config:
         {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
 
         # DeepSeek Models
-        {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
     ]
 
