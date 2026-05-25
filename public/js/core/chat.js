@@ -537,6 +537,7 @@ export async function sendMessage(activeProfileData, user) {
             </svg>`;
         buttonLoader.classList.add('hidden');
 
+        ui.elements.sendButton.classList.remove('canceling');
         // Re-evaluate disabled state based on input text (likely empty if just sent)
         // But the input was cleared! So we should keep it focused.
         ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
@@ -620,11 +621,8 @@ export async function sendMessage(activeProfileData, user) {
     // Stop icon is already set above.
     ui.elements.sendButton.disabled = false; // ENABLED so we can click to cancel!
 
-    // FORCE STYLE to ensure it turns red, overriding any CSS specificity issues
-    ui.elements.sendButton.classList.remove('bg-green-600', 'hover:bg-green-700');
-    ui.elements.sendButton.classList.add('bg-red-600', 'hover:bg-red-700');
-    ui.elements.sendButton.style.backgroundColor = '#dc2626'; // tailwind red-600
-    ui.elements.sendButton.style.color = '#ffffff';
+    // Turn button red while the request is in flight
+    ui.elements.sendButton.classList.add('canceling');
 
     // Init AbortController
     currentAbortController = new AbortController();
@@ -711,9 +709,7 @@ export async function sendMessage(activeProfileData, user) {
                     clip-rule="evenodd" />
                 </svg>`;
             buttonLoader.classList.add('hidden');
-            ui.elements.sendButton.classList.remove('bg-red-600', 'hover:bg-red-700');
-            ui.elements.sendButton.classList.add('bg-green-600', 'hover:bg-green-700');
-            ui.elements.sendButton.style.backgroundColor = '';
+            ui.elements.sendButton.classList.remove('canceling');
             currentAbortController = null;
             ui.elements.messageInput.value = originalMessage;
             autoSize();
@@ -874,9 +870,7 @@ export async function sendMessage(activeProfileData, user) {
 
         buttonLoader.classList.add('hidden');
 
-        ui.elements.sendButton.classList.remove('bg-red-600', 'hover:bg-red-700'); // Revert Color
-        ui.elements.sendButton.classList.add('bg-green-600', 'hover:bg-green-700');
-        ui.elements.sendButton.style.backgroundColor = ''; // Remove inline style
+        ui.elements.sendButton.classList.remove('canceling'); // Revert to green
 
         ui.elements.sendButton.disabled = false;
 
