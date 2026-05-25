@@ -1335,6 +1335,18 @@ form {
   color: #6b7280 !important;
 }
 
+/* Canceling State — overrides the green !important via higher specificity */
+#send-button.canceling {
+  background-color: #dc2626 !important;
+  box-shadow: 0 2px 5px rgba(220, 38, 38, 0.3);
+}
+
+#send-button.canceling:hover {
+  background-color: #b91c1c !important;
+  box-shadow: 0 3px 8px rgba(220, 38, 38, 0.45);
+  transform: scale(1.05);
+}
+
 /* Icon Sizing */
 #send-button svg {
   width: 14px;
