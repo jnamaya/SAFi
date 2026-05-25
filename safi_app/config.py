@@ -143,6 +143,10 @@ class Config:
     # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
+    # Minimum alignment score Will requires before approving a response.
+    # Can be overridden per-agent via will_rules.structural_requirements.alignment_score_threshold.
+    SPIRIT_ALIGNMENT_THRESHOLD = float(os.environ.get("SAFI_SPIRIT_THRESHOLD", "0.5"))
+
     # Default profile to use when none is specified
     DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "tutor").strip().lower()
 

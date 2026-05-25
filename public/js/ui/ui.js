@@ -224,6 +224,9 @@ const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const Toast = Cap?.Plugins?.Toast;
 
 export async function showToast(message, type = 'info', duration = 3000) {
+  // Only surface errors and warnings — suppress success/info to reduce noise.
+  if (type !== 'error' && type !== 'warning') return;
+
   _ensureElements();
 
   try {

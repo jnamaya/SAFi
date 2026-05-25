@@ -203,7 +203,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             llm_provider=self.llm_provider,
             values=self.values,
             profile=self.profile,
-            prompt_config=self.prompts.get("will_gate", {})
+            prompt_config=self.prompts.get("will_gate", {}),
+            alignment_threshold=getattr(config, "SPIRIT_ALIGNMENT_THRESHOLD", 0.5),
         )
 
         self.conscience = ConscienceAuditor(

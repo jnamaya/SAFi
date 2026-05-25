@@ -22,6 +22,7 @@ operates under three structurally necessary philosophical limitations:
 """
 from __future__ import annotations
 import json
+import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from ...utils import normalize_text, dict_sha256
@@ -56,11 +57,13 @@ class WillGate:
         values: List[Dict[str, Any]],
         profile: Optional[Dict[str, Any]] = None,
         prompt_config: Optional[Dict[str, Any]] = None,
+        alignment_threshold: float = 0.5,
     ):
         self.llm_provider = llm_provider
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
+        self.alignment_threshold = alignment_threshold
         self.cache: Dict[str, Tuple[str, str]] = {}
         self.log = logging.getLogger(self.__class__.__name__)
 
@@ -79,10 +82,21 @@ class WillGate:
                 if struct["mandatory_disclaimer_substring"] not in draft_output:
                     return False, "missing_disclaimer"
             
-            # 2. Enforce Execution Syntax Sanity
-            for syntax in struct.get("banned_markdown_syntaxes", []):
-                if syntax in draft_output:
-                    return False, "ethical_violation"
+            # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)
+            allowed = struct.get("allowed_markdown_syntaxes")
+            if allowed is not None:
+                # Zero-trust whitelist: block any code fence not explicitly permitted.
+                # "```" in the allowed list = permit all code blocks.
+                if "```" in draft_output and "```" not in allowed:
+                    fences = re.findall(r'```[a-zA-Z]*', draft_output)
+                    for fence in fences:
+                        if fence not in allowed:
+                            return False, "ethical_violation"
+            else:
+                # Legacy blacklist: block only the explicitly banned syntaxes.
+                for syntax in struct.get("banned_markdown_syntaxes", []):
+                    if syntax in draft_output:
+                        return False, "ethical_violation"
         else:
             # Legacy list fallback
             draft_lower = draft_output.lower()
@@ -155,13 +169,23 @@ class WillGate:
         """
         Evaluates Spirit's aggregated alignment assessment and returns a gate decision.
         Will owns all block/approve decisions; Spirit only aggregates.
+
+        Threshold priority (highest to lowest):
+          1. Agent-level: will_rules.structural_requirements.alignment_score_threshold
+          2. Instance-level: alignment_threshold (set from Config.SPIRIT_ALIGNMENT_THRESHOLD)
         """
         if spirit_assessment.get("critical_violation"):
             # Use ethical_violation so the persona's own rephrase directive fires
             # (every persona defines this key). Phase 4.5 hard-gate already handles
             # true scope breaches — anything reaching here is a content quality issue.
             return ("violation", "ethical_violation")
-        if spirit_assessment.get("alignment_score", 1.0) < 0.5:
+
+        # Resolve threshold: agent-specific override → instance default
+        rules = self.profile.get("will_rules", {})
+        struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
+        threshold = float(struct.get("alignment_score_threshold", self.alignment_threshold))
+
+        if spirit_assessment.get("alignment_score", 1.0) < threshold:
             return ("violation", "low_alignment_score")
         return ("approve", "alignment_within_threshold")
 
