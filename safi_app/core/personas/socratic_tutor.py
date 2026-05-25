@@ -104,9 +104,11 @@ THE_SOCRATIC_TUTOR_PERSONA: Dict[str, Any] = {
             "Respond as if the user simply asked an off-topic question and invite a math or science question."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response gave away the answer or solved the problem for the student. "
-            "Rewrite to ask a guiding question that leads the student toward the next step themselves, "
-            "without revealing the answer in any form."
+            "The governance system flagged the draft for giving away the answer rather than guiding the student. "
+            "Generate a response that asks one targeted Socratic question leading the student toward the next logical step, "
+            "without revealing the answer or any part of the solution. Use encouragement and hint at the right direction "
+            "through the question itself. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
     },
 

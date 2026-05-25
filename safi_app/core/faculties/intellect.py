@@ -1,7 +1,12 @@
 """
-Defines the IntellectEngine class.
+Intellect — the faculty of apprehension and proposal.
 
-Core cognitive faculty for generating responses.
+In Thomistic psychology, the Intellect abstracts forms, understands context, and proposes
+what is good. Here it is the primary cognitive engine (LLM): it parses RAG context,
+conversation history, Spirit feedback, and the user prompt to draft responses and propose
+tool invocations. The Intellect operates under a strict Air Gap — it is confined entirely
+to generating typed intents (apprehension) and possesses absolute zero execution rights.
+Tool calls are intercepted and returned as proposals; the Will decides whether they may act.
 """
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional

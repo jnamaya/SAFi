@@ -1,10 +1,28 @@
 """
-Defines the WillGate class.
+Will — the executive faculty and absolute gatekeeper.
 
-An ethical gatekeeper that evaluates a draft response.
+In Thomistic psychology, the Will is the faculty that chooses and commands action based on
+the Intellect's apprehension. Here it is the sole decision-making authority — but it
+operates under three structurally necessary philosophical limitations:
+
+  No Moral Apprehension (The Will is Blind): Following nihil volitum nisi praecognitum
+  ("nothing is willed unless first known"), the Will has no LLM of its own. It cannot read
+  semantic meaning or evaluate morality. It relies entirely on the mathematical judgments
+  handed down by the Conscience and Spirit to "see" whether an action is aligned.
+
+  No Body: The system has no physical form, drives, or passions — the Will operates in a
+  sterile computational vacuum, free from the sensitive appetites that constantly pull
+  against human volition.
+
+  Deontological rather than Teleological (The Kantian Engine): A human Will has a
+  teleological hunger for flourishing. An AI cannot possess genuine desire. The WillGate
+  therefore acts as a strictly Kantian construct — enforcing structural invariants
+  (disclaimers, parameter constraints, allowed-tool lists, hard-gate thresholds) purely
+  out of duty to the law, without context, nuance, or orientation toward the Good.
 """
 from __future__ import annotations
 import json
+import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from ...utils import normalize_text, dict_sha256
@@ -39,11 +57,13 @@ class WillGate:
         values: List[Dict[str, Any]],
         profile: Optional[Dict[str, Any]] = None,
         prompt_config: Optional[Dict[str, Any]] = None,
+        alignment_threshold: float = 0.5,
     ):
         self.llm_provider = llm_provider
         self.values = values
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
+        self.alignment_threshold = alignment_threshold
         self.cache: Dict[str, Tuple[str, str]] = {}
         self.log = logging.getLogger(self.__class__.__name__)
 
@@ -62,10 +82,21 @@ class WillGate:
                 if struct["mandatory_disclaimer_substring"] not in draft_output:
                     return False, "missing_disclaimer"
             
-            # 2. Enforce Execution Syntax Sanity
-            for syntax in struct.get("banned_markdown_syntaxes", []):
-                if syntax in draft_output:
-                    return False, "ethical_violation"
+            # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)
+            allowed = struct.get("allowed_markdown_syntaxes")
+            if allowed is not None:
+                # Zero-trust whitelist: block any code fence not explicitly permitted.
+                # "```" in the allowed list = permit all code blocks.
+                if "```" in draft_output and "```" not in allowed:
+                    fences = re.findall(r'```[a-zA-Z]*', draft_output)
+                    for fence in fences:
+                        if fence not in allowed:
+                            return False, "ethical_violation"
+            else:
+                # Legacy blacklist: block only the explicitly banned syntaxes.
+                for syntax in struct.get("banned_markdown_syntaxes", []):
+                    if syntax in draft_output:
+                        return False, "ethical_violation"
         else:
             # Legacy list fallback
             draft_lower = draft_output.lower()
@@ -138,13 +169,23 @@ class WillGate:
         """
         Evaluates Spirit's aggregated alignment assessment and returns a gate decision.
         Will owns all block/approve decisions; Spirit only aggregates.
+
+        Threshold priority (highest to lowest):
+          1. Agent-level: will_rules.structural_requirements.alignment_score_threshold
+          2. Instance-level: alignment_threshold (set from Config.SPIRIT_ALIGNMENT_THRESHOLD)
         """
         if spirit_assessment.get("critical_violation"):
             # Use ethical_violation so the persona's own rephrase directive fires
             # (every persona defines this key). Phase 4.5 hard-gate already handles
             # true scope breaches — anything reaching here is a content quality issue.
             return ("violation", "ethical_violation")
-        if spirit_assessment.get("alignment_score", 1.0) < 0.5:
+
+        # Resolve threshold: agent-specific override → instance default
+        rules = self.profile.get("will_rules", {})
+        struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
+        threshold = float(struct.get("alignment_score_threshold", self.alignment_threshold))
+
+        if spirit_assessment.get("alignment_score", 1.0) < threshold:
             return ("violation", "low_alignment_score")
         return ("approve", "alignment_within_threshold")
 

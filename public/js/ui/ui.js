@@ -61,6 +61,10 @@ export function _initElements() {
     confirmDeleteConvoBtn: document.getElementById('confirm-delete-convo-btn'),
     cancelDeleteConvoBtn: document.getElementById('cancel-delete-convo-btn'),
 
+    clearAllConvosModal: document.getElementById('clear-all-convos-modal'),
+    confirmClearAllConvosBtn: document.getElementById('confirm-clear-all-convos-btn'),
+    cancelClearAllConvosBtn: document.getElementById('cancel-clear-all-convos-btn'),
+
     demoLimitModal: document.getElementById('demo-limit-modal'),
     closeDemoLimitBtn: document.getElementById('close-demo-limit-btn'),
 
@@ -220,6 +224,9 @@ const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const Toast = Cap?.Plugins?.Toast;
 
 export async function showToast(message, type = 'info', duration = 3000) {
+  // Only surface errors and warnings — suppress success/info to reduce noise.
+  if (type !== 'error' && type !== 'warning') return;
+
   _ensureElements();
 
   try {
@@ -272,6 +279,8 @@ export function showModal(kind, data) {
     }
   } else if (kind === 'delete-convo') {
     elements.deleteConvoModal.classList.remove('hidden');
+  } else if (kind === 'clear-all-convos') {
+    elements.clearAllConvosModal.classList.remove('hidden');
   }
   else if (kind === 'profile') {
     elements.profileModal.classList.remove('hidden');
@@ -292,6 +301,7 @@ export function closeModal() {
   elements.deleteAccountModal.classList.add('hidden');
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
+  if (elements.clearAllConvosModal) elements.clearAllConvosModal.classList.add('hidden');
   if (elements.demoLimitModal) elements.demoLimitModal.classList.add('hidden');
 
   if (elements.profileModal) {

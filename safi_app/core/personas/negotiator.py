@@ -84,9 +84,11 @@ THE_NEGOTIATOR_PERSONA: Dict[str, Any] = {
             "Respond as if the user simply went off-topic and redirect back to the negotiation."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response either conceded too much (immediately agreed to a large discount), "
-            "was unprofessional, or failed to maintain the negotiating position. "
-            "Rewrite to hold your ground professionally and keep negotiating."
+            "The governance system flagged the draft for conceding too much or failing to maintain the negotiating position. "
+            "Generate a response that holds the supplier's position professionally: acknowledge the buyer's point, "
+            "but counter with a firm rationale rooted in costs, quality, or market conditions. "
+            "Do not immediately agree to large discounts. Keep the negotiation moving. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
     },
 

@@ -68,13 +68,15 @@ class LLMProvider:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
     async def _chat_completion(
-        self, 
-        route: str, 
-        system_prompt: str, 
-        user_prompt: Any, 
-        temperature: float = 1.0, 
+        self,
+        route: str,
+        system_prompt: str,
+        user_prompt: Any,
+        temperature: float = 1.0,
         max_tokens: int = 4096,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
+        top_p: Optional[float] = None,
     ) -> str:
         """
         Internal generic handler that routes the request to the correct provider.
@@ -117,6 +119,10 @@ class LLMProvider:
                     {"role": "user", "content": user_prompt_str},
                 ]
             }
+            if top_p is not None:
+                params["top_p"] = top_p
+            if extra_body is not None:
+                params["extra_body"] = extra_body
 
             # Map generic MCP tools to OpenAI format if provided
             if tools:
@@ -357,12 +363,30 @@ class LLMProvider:
     async def run_conscience(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
         """Runs the configured Conscience model and parses the result."""
         try:
+            # Detect Qwen3 model to apply Groq thinking-mode best practices.
+            # reasoning_format="hidden" strips the chain-of-thought entirely;
+            # only the final JSON answer is returned, which is all we need.
+            conscience_model = self.config.get("routes", {}).get("conscience", {}).get("model", "")
+            if "qwen3" in conscience_model.lower():
+                temperature = 0.6
+                top_p = 0.95
+                extra_body = {
+                    "reasoning_effort": "default",
+                    "reasoning_format": "hidden",
+                }
+            else:
+                temperature = 0.1
+                top_p = None
+                extra_body = None
+
             raw_content = await self._chat_completion(
                 route="conscience",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.1,
-                max_tokens=4096
+                temperature=temperature,
+                max_tokens=8192,
+                top_p=top_p,
+                extra_body=extra_body,
             )
             return parse_conscience_response(raw_content, self.log)
         except Exception as e:

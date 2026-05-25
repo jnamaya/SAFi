@@ -551,6 +551,14 @@ def handle_pin_conversation(conversation_id):
     db.toggle_conversation_pin(conversation_id, is_pinned, user_id=user_id)
     return jsonify({"status": "success", "is_pinned": is_pinned})
 
+@conversations_bp.route('/conversations', methods=['DELETE'])
+def handle_clear_all_conversations():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    db.delete_all_conversations(user_id)
+    return jsonify({"status": "success"})
+
 @conversations_bp.route('/conversations/<conversation_id>', methods=['DELETE'])
 def handle_delete_conversation(conversation_id):
     user_id = get_user_id()

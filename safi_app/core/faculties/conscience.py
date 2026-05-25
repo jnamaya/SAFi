@@ -1,7 +1,12 @@
 """
-Defines the ConscienceAuditor class.
+Conscience — the deep analytical auditor of specific acts.
 
-Audits the final output for ethical alignment.
+In Thomistic philosophy, Conscientia is the application of Synderesis's universal first
+principles to a specific, contingent act. Here it takes the draft produced by the Intellect
+and evaluates it against the rubrics established by Synderesis. Via a secondary LLM call,
+it scores the output on each configured value to produce a precise compliance ledger
+(scores from -1.0 to 1.0 with confidence intervals) — the mathematical judgment that the
+Will and Spirit depend on to make their decisions.
 """
 from __future__ import annotations
 import json

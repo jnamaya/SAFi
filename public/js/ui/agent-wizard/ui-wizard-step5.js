@@ -13,27 +13,34 @@ const CODE_BLOCK_OPTIONS = [
 function getWillRules(agentData) {
     if (!agentData.will_rules || typeof agentData.will_rules !== 'object' || Array.isArray(agentData.will_rules)) {
         agentData.will_rules = {
-            structural_requirements: { require_disclaimer: false, mandatory_disclaimer_substring: "", banned_markdown_syntaxes: [] },
+            structural_requirements: { require_disclaimer: false, mandatory_disclaimer_substring: "", allowed_markdown_syntaxes: [] },
             early_prompt_blacklist: []
         };
     }
     if (!agentData.will_rules.structural_requirements) {
-        agentData.will_rules.structural_requirements = { require_disclaimer: false, mandatory_disclaimer_substring: "", banned_markdown_syntaxes: [] };
+        agentData.will_rules.structural_requirements = { require_disclaimer: false, mandatory_disclaimer_substring: "", allowed_markdown_syntaxes: [] };
     }
-    return agentData.will_rules.structural_requirements;
+    // Migrate legacy banned_markdown_syntaxes agents on first open
+    const sr = agentData.will_rules.structural_requirements;
+    if (sr.banned_markdown_syntaxes !== undefined && sr.allowed_markdown_syntaxes === undefined) {
+        sr.allowed_markdown_syntaxes = [];
+        delete sr.banned_markdown_syntaxes;
+    }
+    return sr;
 }
 
 export function renderSafetyStep(container, agentData) {
     const sr = getWillRules(agentData);
     const requireDisclaimer = !!sr.require_disclaimer;
     const disclaimerSubstring = sr.mandatory_disclaimer_substring || "";
-    const bannedSyntaxes = sr.banned_markdown_syntaxes || [];
+    const allowedSyntaxes = sr.allowed_markdown_syntaxes || [];
+    const alignmentThreshold = sr.alignment_score_threshold !== undefined ? sr.alignment_score_threshold : '';
     const hasValues = agentData.values && agentData.values.length > 0;
     const scopeStatement = agentData.scope_statement || "";
 
-    // Build code-block checkboxes separately to avoid deep template nesting
+    // Build code-block checkboxes (zero-trust whitelist: checked = ALLOWED)
     const codeCheckboxesHtml = CODE_BLOCK_OPTIONS.map(function(opt) {
-        const checked = bannedSyntaxes.indexOf(opt.value) !== -1 ? 'checked' : '';
+        const checked = allowedSyntaxes.indexOf(opt.value) !== -1 ? 'checked' : '';
         const safeValue = opt.value.replace(/"/g, '&quot;');
         return '<label class="flex items-center gap-2.5 text-sm cursor-pointer p-2.5 rounded-lg border border-transparent hover:border-gray-200 dark:hover:border-neutral-700 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors">'
              + '<input type="checkbox" class="code-block-check w-4 h-4 rounded accent-blue-600" data-value="' + safeValue + '" ' + checked + '>'
@@ -116,10 +123,21 @@ export function renderSafetyStep(container, agentData) {
             </div>
 
             <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-5">
-                <h4 class="font-semibold text-gray-800 dark:text-white mb-1">Block Code in Responses</h4>
-                <p class="text-xs text-gray-500 mb-4">Prevent the agent from including code blocks. Useful for non-technical or compliance-sensitive agents.</p>
+                <h4 class="font-semibold text-gray-800 dark:text-white mb-1">Allowed Code in Responses</h4>
+                <p class="text-xs text-gray-500 mb-4">Zero-trust: all code blocks are blocked by default. Check each language you want this agent to be allowed to output. Leave all unchecked to prohibit all code.</p>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="code-block-options">
                     ${codeCheckboxesHtml}
+                </div>
+            </div>
+
+            <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-5">
+                <h4 class="font-semibold text-gray-800 dark:text-white mb-1">Alignment Score Threshold</h4>
+                <p class="text-xs text-gray-500 mb-3">Minimum Spirit alignment score (0.0–1.0) required to approve a response. Responses scoring below this are blocked. Leave blank to use the platform default (0.5).</p>
+                <div class="flex items-center gap-3">
+                    <input type="number" id="alignment-threshold-input" min="0" max="1" step="0.05"
+                        class="w-28 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="0.5" value="${alignmentThreshold}">
+                    <span class="text-xs text-gray-400">Platform default: 0.5 — raise for stricter agents, lower for more permissive ones.</span>
                 </div>
             </div>
 
@@ -184,11 +202,23 @@ export function renderSafetyStep(container, agentData) {
 
     container.querySelectorAll('.code-block-check').forEach(function(cb) {
         cb.addEventListener('change', function() {
-            agentData.will_rules.structural_requirements.banned_markdown_syntaxes = Array.from(
+            agentData.will_rules.structural_requirements.allowed_markdown_syntaxes = Array.from(
                 container.querySelectorAll('.code-block-check:checked')
             ).map(function(c) { return c.dataset.value; });
         });
     });
+
+    const thresholdInput = container.querySelector('#alignment-threshold-input');
+    if (thresholdInput) {
+        thresholdInput.addEventListener('input', function() {
+            const val = parseFloat(thresholdInput.value);
+            if (!isNaN(val) && val >= 0 && val <= 1) {
+                agentData.will_rules.structural_requirements.alignment_score_threshold = val;
+            } else if (thresholdInput.value === '') {
+                delete agentData.will_rules.structural_requirements.alignment_score_threshold;
+            }
+        });
+    }
 
     container.querySelectorAll('.hard-gate-check').forEach(function(cb) {
         cb.addEventListener('change', function() {

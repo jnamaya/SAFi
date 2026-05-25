@@ -159,6 +159,8 @@ export const renameConversation = (id, title) =>
     httpJSON(urls.CONVERSATION(id), 'PUT', { title });
 export const deleteConversation = (id) =>
     httpJSON(urls.CONVERSATION(id), 'DELETE', {});
+export const clearAllConversations = () =>
+    httpJSON(urls.CONVERSATIONS, 'DELETE', {});
 
 export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });

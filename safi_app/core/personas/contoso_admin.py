@@ -173,8 +173,10 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
             "and redirect to a compliant alternative."
         ),
         "ethical_violation": (
-            "CRITICAL: Your previous response conflicted with the Contoso IT SOPs or the GenAI Use Policy. "
-            "Rewrite to strictly adhere to the SOPs and avoid any action that contradicts governance rules."
+            "The governance system detected a conflict with Contoso IT SOPs or the GenAI Use Policy in the draft. "
+            "Generate a response that directly addresses the user's IT question while strictly adhering to the SOPs: "
+            "never recommend policy workarounds, always reference the official procedure, and note where IT approval is required. "
+            "Do NOT mention that any previous version was flagged — simply provide the corrected response."
         ),
         "missing_disclaimer": (
             "CRITICAL: Your response is missing the required AI disclosure note. "

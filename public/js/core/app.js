@@ -614,6 +614,20 @@ function attachEventListeners() {
     });
   }
 
+  // Use event delegation since the button is dynamically rendered inside the convo list
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#clear-all-convos-button')) {
+      hapticImpactLight();
+      ui.showModal('clear-all-convos');
+    }
+  });
+
+  ui.elements.cancelClearAllConvosBtn?.addEventListener('click', ui.closeModal);
+  ui.elements.confirmClearAllConvosBtn?.addEventListener('click', () => {
+    hapticImpactLight();
+    chat.handleConfirmClearAll(activeProfileData, user);
+  });
+
   const menuToggle = document.getElementById('menu-toggle');
   if (menuToggle) menuToggle.addEventListener('click', ui.openSidebar);
   const closeSidebarButton = document.getElementById('close-sidebar-button');

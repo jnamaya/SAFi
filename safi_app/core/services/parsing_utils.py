@@ -257,7 +257,15 @@ def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict
                     return possible_list
             except:
                 pass
-        return [{"error": "Internal evaluation error (JSON parse failed)"}]
+        # Return a neutral evaluation so Spirit has a scorable entry and
+        # doesn't fall back to "Ledger missing". Score 0.0 (neutral) is
+        # safer than 1.0 (which would reward a failed evaluation).
+        log.warning(f"parse_conscience_response: JSON parse failed; returning neutral evaluation. Raw: {raw_text[:120]!r}")
+        return [{
+            "value": "Evaluation Quality",
+            "score": 0.0,
+            "reason": "Conscience returned a non-JSON response; neutral score applied. Check model output above."
+        }]
     
     evaluations = obj.get("evaluations", [])
     

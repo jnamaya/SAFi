@@ -203,7 +203,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             llm_provider=self.llm_provider,
             values=self.values,
             profile=self.profile,
-            prompt_config=self.prompts.get("will_gate", {})
+            prompt_config=self.prompts.get("will_gate", {}),
+            alignment_threshold=getattr(config, "SPIRIT_ALIGNMENT_THRESHOLD", 0.5),
         )
 
         self.conscience = ConscienceAuditor(
@@ -476,7 +477,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
-            db.update_message_reasoning(message_id, "Checking tool permissions...")
+            db.update_message_reasoning(message_id, "Looking something up...")
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
@@ -484,7 +485,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
 
             if tool_decision == "approve":
-                MAX_AGENT_TURNS = 5
+                MAX_AGENT_TURNS = self.config.MAX_AGENT_TURNS
                 agent_history = [prompt_with_date]
                 current_tool_name = tool_name
                 current_parameters = parameters
@@ -493,7 +494,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 for agent_turn in range(MAX_AGENT_TURNS):
                     db.update_message_reasoning(
                         message_id,
-                        f"Fetching data (step {agent_turn + 1} of {MAX_AGENT_TURNS})..."
+                        "Looking something up..." if agent_turn == 0 else "Gathering more information..."
                     )
                     
                     raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
@@ -538,7 +539,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     current_tool_name = next_intent["tool_name"]
                     current_parameters = next_intent["parameters"]
 
-                    db.update_message_reasoning(message_id, "Checking tool permissions...")
+                    db.update_message_reasoning(message_id, "Gathering more information...")
                     follow_decision, follow_reason = await self.will_gate.evaluate_tool_intent(
                         tool_name=current_tool_name,
                         parameters=current_parameters,

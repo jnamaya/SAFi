@@ -23,25 +23,31 @@ class Config:
     APP_ENV = os.environ.get('FLASK_ENV', 'production')
 
     # 2. Set URLs based on the environment
+    # WEB_BASE_URL can be overridden via env for Docker/self-hosted deployments.
     if APP_ENV == 'development':
-        # Development URLs (Dev Server)
-        WEB_BASE_URL = "https://chat.selfalignmentframework.com"
-        ALLOWED_ORIGINS = [
+        _default_base_url = "https://chat.selfalignmentframework.com"
+        _default_origins = [
             "https://chat.selfalignmentframework.com",
             "capacitor://localhost",
             "http://localhost",
             "ionic://localhost"
         ]
     else:
-        # Production URLs (Live Server)
-        WEB_BASE_URL = "https://safi.selfalignmentframework.com"
-        ALLOWED_ORIGINS = [
+        _default_base_url = "https://safi.selfalignmentframework.com"
+        _default_origins = [
             "https://safi.selfalignmentframework.com",
             "https://selfalignmentframework.com",
             "capacitor://localhost",
             "http://localhost",
             "ionic://localhost"
         ]
+
+    WEB_BASE_URL = os.environ.get("WEB_BASE_URL", _default_base_url)
+
+    # ALLOWED_ORIGINS can be a comma-separated list in the env variable.
+    # e.g. ALLOWED_ORIGINS=http://localhost:5000,https://yourdomain.com
+    _origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+    ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or _default_origins
 
     # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"
@@ -97,16 +103,35 @@ class Config:
     DB_PASSWORD = os.environ.get("DB_PASSWORD")
     DB_NAME = os.environ.get("DB_NAME", "safi")
 
+    # Comma-separated list of emails that have super-admin access to the Audit Hub
+    # (can see all orgs' logs). Leave blank to disable super-admin access entirely.
+    SUPER_ADMIN_EMAILS = [e.strip() for e in os.environ.get("SAFI_SUPER_ADMINS", "").split(",") if e.strip()]
+
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
+
+    # Show or hide the "Try Demo (Admin)" button on the login page.
+    # Set to false for private/self-hosted instances that don't need a public demo.
+    ENABLE_DEMO_LOGIN = os.environ.get("SAFI_ENABLE_DEMO", "false").lower() == "true"
+
+    # Local admin account for dev/self-hosted instances (no OAuth required).
+    # When both vars are set, a persistent admin account is auto-created on startup.
+    LOCAL_ADMIN_EMAIL    = os.environ.get("SAFI_LOCAL_ADMIN_EMAIL", "").strip()
+    LOCAL_ADMIN_PASSWORD = os.environ.get("SAFI_LOCAL_ADMIN_PASSWORD", "").strip()
+    ENABLE_LOCAL_LOGIN   = bool(LOCAL_ADMIN_EMAIL and LOCAL_ADMIN_PASSWORD)
+
+    # Maximum number of sequential tool-call turns the orchestrator will take
+    # before forcing a final synthesis response. Raise this if your tools
+    # need more hops to complete a task.
+    MAX_AGENT_TURNS = int(os.environ.get("SAFI_MAX_AGENT_TURNS", "5"))
 
     # Logging configuration
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "claude-haiku-4-5-20251001")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "openai/gpt-oss-120b")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "llama-3.1-8b-instant")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.1-flash-lite")
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
@@ -117,6 +142,10 @@ class Config:
 
     # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
+
+    # Minimum alignment score Will requires before approving a response.
+    # Can be overridden per-agent via will_rules.structural_requirements.alignment_score_threshold.
+    SPIRIT_ALIGNMENT_THRESHOLD = float(os.environ.get("SAFI_SPIRIT_THRESHOLD", "0.5"))
 
     # Default profile to use when none is specified
     DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "tutor").strip().lower()
@@ -137,7 +166,6 @@ class Config:
         # OpenAI Models
         {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
         {"id": "gpt-4o", "label": "GPT-4o"},
-        {"id": "gpt-5.4", "label": "gpt-5.4"},
 
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
@@ -145,19 +173,14 @@ class Config:
 
         # Google Models
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
-        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
-        {"id": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
         {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
 
         # Mistral Models
-        {"id": "mistral-large-2512", "label": "Mistral Large 3"},
         {"id": "mistral-small-2603", "label": "Mistral Small 4"},
-        {"id": "mistral-medium-3-5", "label": "Mistral Medium-3-5"},
         {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
 
         # DeepSeek Models
-        {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
     ]
 

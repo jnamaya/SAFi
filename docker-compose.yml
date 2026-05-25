@@ -1,0 +1,54 @@
+services:
+
+  # ── MySQL Database ────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-safi}
+      MYSQL_USER: ${DB_USER:-safi}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # ── SAFi Application ──────────────────────────────────────────────────────────
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    env_file: .env
+    environment:
+      # Override DB_HOST so the app connects to the compose db service, not localhost
+      DB_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+    restart: unless-stopped
+
+  # ── SAFi Dashboard (Streamlit) ────────────────────────────────────────────────
+  dashboard:
+    build: .
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    env_file: .env
+    environment:
+      DB_HOST: db
+      SERVICE: dashboard
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  db_data:

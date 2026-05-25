@@ -44,25 +44,23 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
-# a simple dashboard created in streamit
-dashboard/
-safi_app/dashboard/
-/var/www/safi/safi_app/dashboard/
 vector_store/
 tts_cache/
 tests/
 
-#test file
-<<<<<<< HEAD
-test.
-=======
-test.pysafi_app/config.py
+# Test files
+test.py
 
-# benchmarks
+# Benchmarks
 /benchmarks
 
-/var/www/safi/chat/node_modules
-/var/www/safi/chat/package.json 
-/var/www/safi/chat/tailwind.config.js
-/var/www/safi/chat/tailwindcss
-/var/www/safi/chat/package-lock.json
+# Chat sub-project dependencies
+chat/node_modules/
+chat/package.json
+chat/package-lock.json
+chat/tailwind.config.js
+chat/tailwindcss/
+
+# Claude Code — local config and instructions (not for version control)
+.claude/
+CLAUDE.md
