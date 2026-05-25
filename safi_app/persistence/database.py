@@ -298,8 +298,8 @@ def init_db():
         conn.commit()
         logging.info("Database initialized.")
 
-        # Ensure demo policy exists
-        _ensure_demo_policy_exists()
+        # Ensure the SAFi default policy template exists (system-wide seed)
+        _ensure_safi_policy_exists()
 
         # Seed persistent local admin account (if configured)
         _seed_local_admin()
@@ -310,46 +310,40 @@ def init_db():
         if cursor: cursor.close()
         if conn: conn.close()
 
-def _ensure_demo_policy_exists():
+def _ensure_safi_policy_exists():
     """
-    Ensures the official Contoso demo policy exists in the database.
-    This prevents the demo policy from disappearing if accidentally deleted.
+    Ensures the SAFi default policy template exists in the database.
+    This is the system-wide seed used as the starting point for new organizations.
     """
-    from ..core.governance.contoso.policy import CONTOSO_GLOBAL_POLICY
-    
-    DEMO_POLICY_ID = "contoso_demo_policy"
-    
+    from ..core.governance.safi.policy import SAFI_DEFAULT_POLICY
+
+    SAFI_POLICY_ID = "safi_default_policy"
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Check if demo policy exists
-        cursor.execute("SELECT id FROM policies WHERE id = %s", (DEMO_POLICY_ID,))
+        cursor.execute("SELECT id FROM policies WHERE id = %s", (SAFI_POLICY_ID,))
         if cursor.fetchone():
-            logging.info("Demo policy already exists.")
+            logging.info("SAFi default policy already exists.")
             return
-        
-        # Create the demo policy from the Contoso template
-        logging.info("Creating demo policy from Contoso template...")
-        
-        worldview = CONTOSO_GLOBAL_POLICY.get("global_worldview", "")
-        will_rules = CONTOSO_GLOBAL_POLICY.get("global_will_rules", [])
-        values = CONTOSO_GLOBAL_POLICY.get("global_values", [])
-        
+
+        logging.info("Seeding SAFi default policy...")
+
         cursor.execute("""
             INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by, is_demo)
             VALUES (%s, NULL, %s, %s, %s, %s, NULL, TRUE)
         """, (
-            DEMO_POLICY_ID,
-            "Contoso Corporate AI Policy",
-            worldview,
-            json.dumps(will_rules),
-            json.dumps(values)
+            SAFI_POLICY_ID,
+            "SAFi Default Policy",
+            SAFI_DEFAULT_POLICY.get("global_worldview", ""),
+            json.dumps(SAFI_DEFAULT_POLICY.get("global_will_rules", [])),
+            json.dumps(SAFI_DEFAULT_POLICY.get("global_values", [])),
         ))
         conn.commit()
-        logging.info("Demo policy created successfully.")
-        
+        logging.info("SAFi default policy seeded.")
+
     except Exception as e:
-        logging.error(f"Failed to ensure demo policy: {e}")
+        logging.error(f"Failed to seed SAFi default policy: {e}")
     finally:
         cursor.close()
         conn.close()
@@ -1084,21 +1078,35 @@ def delete_agent(key):
 # -------------------------------------------------------------------------
 
 def create_organization_atomic(org_name, user_id):
+    from ..core.governance.safi.policy import SAFI_DEFAULT_POLICY
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         conn.start_transaction()
         oid = str(uuid.uuid4())
-        
-        # FIX: Include owner_id and settings
+
         cursor.execute("""
-            INSERT INTO organizations (id, name, owner_id, settings, created_at) 
+            INSERT INTO organizations (id, name, owner_id, settings, created_at)
             VALUES (%s, %s, %s, %s, NOW())
         """, (oid, org_name, user_id, json.dumps({'allow_auto_join': False})))
-        
+
+        # Seed the new org's policy from the SAFi default template so it
+        # starts with a complete, well-structured governance baseline rather
+        # than an empty shell.
         pid = str(uuid.uuid4())
-        cursor.execute("INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by) VALUES (%s, %s, %s, %s, '[]', '[]', %s)", (pid, oid, "Default Policy", f"AI for {org_name}", user_id))
-        
+        cursor.execute("""
+            INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            pid, oid,
+            "SAFi Default Policy",
+            SAFI_DEFAULT_POLICY.get("global_worldview", ""),
+            json.dumps(SAFI_DEFAULT_POLICY.get("global_will_rules", [])),
+            json.dumps(SAFI_DEFAULT_POLICY.get("global_values", [])),
+            user_id,
+        ))
+
         cursor.execute("UPDATE organizations SET global_policy_id=%s WHERE id=%s", (pid, oid))
         conn.commit()
         return {"org_id": oid, "policy_id": pid}
