@@ -367,12 +367,25 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 v_name = v.get("value") or v.get("name") or "Unknown"
                 current_mu[i] = mu_memory.get(_norm_label(v_name), 0.0)
 
+        # Derive last turn's raw scores (p_t) via EMA inversion: p_t = (mu_t - beta*mu_{t-1}) / (1-beta)
+        last_pt = None
+        if len(self.mu_history) >= 2:
+            beta = getattr(self.spirit, 'beta', 0.9)
+            prev_mu = np.array(list(self.mu_history)[-2])
+            if prev_mu.shape == current_mu.shape and np.any(current_mu != 0):
+                last_pt = np.clip(
+                    (current_mu - beta * prev_mu) / max(1 - beta, 1e-6),
+                    0.0, 1.0
+                )
+
         spirit_feedback = build_spirit_feedback(
             mu=current_mu,
             value_names=[v.get('value') or v.get('name') for v in self.values],
             drift=self.last_drift,
             recent_mu=list(self.mu_history),
-            value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values]
+            value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values],
+            value_descriptions=[v.get('description', '') for v in self.values],
+            last_pt=last_pt
         )
 
         # --- PHASE 0: Pre-generation Injection Gate ---
