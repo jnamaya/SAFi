@@ -2,19 +2,69 @@
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
 
-# SAFi: The Open-Source Runtime Governance Engine for AI Agents
+# SAFi: Self-Alignment Framework Interface
 
-**SAFi turns any LLM into a governed, auditable agent — your policies enforced at runtime, every decision logged.**
+### The Problem
+Every AI agent you deploy today is a black box with a smile. You set a system prompt, hope the model stays in bounds, and pray no one jailbreaks it. When something goes wrong (a hallucinated financial recommendation, a leak of regulated advice, a prompt injection that slips past) you only find out after the damage is done.
+
+The industry response? Wrap the model in more LLM calls to police itself. Monolithic guardrails that are slow, expensive, and just as vulnerable as the model they are trying to constrain.
+
+There is a better way.
+
+### What SAFi Is
+SAFi is an open-source runtime governance engine that does not just watch what your AI does; it enforces, audits, and shapes every decision *before* it reaches a user. Think of it as the **separation of powers for AI agents.**
+
+Instead of a single model trying to be smart, compliant, and ethical all at once, SAFi splits cognition into five specialized faculties -- each with a distinct job, each operating in its own security layer:
+
+| Faculty | Role | Security Property |
+| :--- | :--- | :--- |
+| **Synderesis** | The constitution compiler: defines immutable rules and value weights. | Read-only after deployment. |
+| **Intellect** | The generative engine: drafts responses and tool proposals. | Air-gapped from execution. |
+| **Will** | The deterministic gatekeeper: pure Python, zero LLM. | Immune to prompt injection. |
+| **Conscience** | The analytical auditor: scores every draft against rubrics. | Secondary validation layer. |
+| **Spirit** | The long-term memory: detects drift using exponential moving averages. | Non-LLM mathematical integrity. |
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
 </p>
 
+### Why This Changes Everything
+**99.86% jailbreak defense** in live adversarial testing. **98.5% overall compliance** vs. an 85% baseline. Sub-5-second latency at roughly **$0.005 per interaction**.
+
+Those are not marketing numbers -- they are published benchmark results from 1,435+ adversarial interactions. SAFi's **Will** faculty (a blind, deterministic gatekeeper that never touches an LLM) caught every single attack that the baseline model missed.
+
+*Because you can't socially engineer pure Python.*
+
+### What You Get
+
+| Principle | What It Means | SAFi Delivers |
+| :--- | :--- | :--- |
+| 🛡️ **Policy Enforcement** | Your rules, not the model's defaults, govern every response. | Runtime-layer enforcement: custom policies override the underlying LLM. |
+| 🔍 **Full Traceability** | Every decision logged, every veto recorded, every drift tracked. | Granular audit trail across all five faculties -- a black box no more. |
+| 🔄 **Model Independence** | Swap LLMs without rewriting governance. | Modular architecture supporting GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. |
+| 📈 **Long-Term Consistency** | Your AI's ethical identity stays stable over months of use. | Spirit's EMA-based drift detection auto-corrects behavioral drift. |
+
+### The Architecture That Makes It Possible
+SAFi's innovation is a separation of concerns inspired by classical Thomistic philosophy, mapped directly to software modules.
+
+The **Intent Air Gap** severs the generative Intellect from the execution environment. The **Blind Will** enforces structural invariants with no semantic vulnerability. The **Spirit** tracks alignment as a mathematical vector, not a subjective vibe.
+
+This is not philosophical decoration -- it is a security architecture that makes your governance model-independent. Whether your underlying LLM is GPT-5 or an open-source fine-tune, SAFi's pipeline intercepts violations at the exact same deterministic gates.
+
+### Next Steps
+🚀 **Try the live demo** → [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+🐙 **Star the repo** → `git clone https://github.com/jnamaya/SAFi.git`
+📖 **Read the math** → [docs/MATHEMATICAL_SPECIFICATION.md](docs/MATHEMATICAL_SPECIFICATION.md)
+🛠️ **Use it headless** → Plug into LangChain, AutoGen, Teams, Telegram, or WhatsApp.
+
+**SAFi turns any LLM into a governed, auditable agent -- your policies enforced at runtime, every decision logged.** The demo is live. The benchmarks are public. The architecture is open source.
+**Try it. Fork it. Govern it.**
+
 ---
 
 ## Quick Start
 
-The fastest way to run SAFi locally. Includes MySQL — no external database needed.
+The fastest way to run SAFi locally. Includes MySQL. No external database needed.
 
 ```bash
 # 1. Clone and enter the repo
@@ -33,7 +83,7 @@ docker compose up
 # Open http://localhost:5000
 ```
 
-> **Tip:** [Groq](https://console.groq.com) offers a generous free tier — it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and `DEEPSEEK_API_KEY`. See [`.env.example`](.env.example) for all options.
+> **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and `DEEPSEEK_API_KEY`. See [`.env.example`](.env.example) for all options.
 
 #### Local Admin Account (No OAuth Required)
 
@@ -45,19 +95,6 @@ SAFI_LOCAL_ADMIN_PASSWORD=yourpassword
 ```
 
 SAFi will create the account automatically on first startup. The login form appears on the login page alongside the OAuth buttons.
-
----
-
-## Introduction
-
-SAFi is an open-source runtime governance engine that enforces organizational policies, detects drift, and provides full traceability using a modular cognitive architecture inspired by classical philosophy.
-
-| Principle | What It Means | How SAFi Delivers It |
-| :--- | :--- | :--- |
-| **🛡️ Policy Enforcement** | You define the operational boundaries your AI must follow, protecting your brand and reputation. | Custom policies are enforced at the runtime layer, ensuring your rules override the underlying model's defaults. |
-| **🔍 Full Traceability** | Every response is transparent, logged, and auditable. No more "black boxes." | Granular logging captures every governance decision, veto, and reasoning step across all faculties, creating a complete forensic audit trail. |
-| **🔄 Model Independence** | Switch or upgrade models without losing your governance layer. | A modular architecture that supports GPT, Claude, Gemini, Llama, and other major providers. |
-| **📈 Long-Term Consistency** | Maintain your AI's ethical identity over time and detect behavioral drift. | SAFi introduces stateful memory to track alignment trends, detect drift, and auto-correct behavior. |
 
 ---
 
@@ -84,21 +121,21 @@ SAFi is an open-source runtime governance engine that enforces organizational po
 
 SAFi implements a cognitive architecture derived from the **Thomistic faculties of the soul** (Aquinas). It maps the classical concepts of *Synderesis*, *Intellect*, *Will*, and *Conscience* directly to software modules, while adapting *Habitus* (character formation) into the **Spirit** module.
 
-> **Philosophy as Architecture:** Just as airplanes were inspired by birds but don't use feathers, SAFi is inspired by the *structure* of the human mind but is a concrete software implementation. These philosophical concepts are used as **system design patterns** — treating "Will" and "Intellect" as separate software services solves the "hallucination vs. compliance" conflict that monolithic models struggle with.
+> **Philosophy as Architecture:** Just as airplanes were inspired by birds but don't use feathers, SAFi is inspired by the *structure* of the human mind but is a concrete software implementation. These philosophical concepts are used as **system design patterns**: treating "Will" and "Intellect" as separate software services solves the "hallucination vs. compliance" conflict that monolithic models struggle with.
 
 ### The Five Faculties
 
 | Faculty | Module | Role |
 | :--- | :--- | :--- |
 | **Synderesis** | `synderesis.py` | The foundational compiler. Establishes immutable baseline rules, governance policies, scope boundaries, and value weights for every agent. |
-| **Intellect** | `intellect.py` | The generative engine. Drafts responses or proposes tool calls. Operates entirely within an **Air Gap** — it can only produce *intents*, never execute them directly. |
-| **Will** | `will.py` | The blind gatekeeper. Pure deterministic Python — zero LLM calls. Approves or vetoes the Intellect's proposals based on structural checks and the Conscience's mathematical ledger. |
+| **Intellect** | `intellect.py` | The generative engine. Drafts responses or proposes tool calls. Operates entirely within an **Air Gap**: it can only produce *intents*, never execute them directly. |
+| **Will** | `will.py` | The blind gatekeeper. Pure deterministic Python: zero LLM calls. Approves or vetoes the Intellect's proposals based on structural checks and the Conscience's mathematical ledger. |
 | **Conscience** | `conscience.py` | The analytical auditor. A secondary LLM call that scores the Intellect's draft against the agent's rubrics, generating a precise compliance ledger (−1.0 to +1.0 per value). |
 | **Spirit** | `spirit.py` | The long-term memory. Integrates Conscience scores into a rolling alignment vector using an EMA, detecting behavioral drift over time and generating coaching for future turns. |
 
 ### Spirit: The Math Behind Drift Detection
 
-Spirit and Will are the only two faculties with **no LLM involvement** — both are implemented as pure deterministic Python. Spirit uses NumPy to build a rolling ethical profile and detect drift:
+Spirit and Will are the only two faculties with **no LLM involvement**; both are implemented as pure deterministic Python. Spirit uses NumPy to build a rolling ethical profile and detect drift:
 
 | Step | Formula | What It Does |
 | :--- | :--- | :--- |
@@ -135,7 +172,7 @@ Every user prompt flows through a strict, synchronous pipeline:
 
 ### Security Architecture: The Air Gap & The Blind Will
 
-- **Zero-LLM Execution (The Blind Will):** The WillGate is purely deterministic Python with no LLM attached. Prompt injections that bypass the Intellect cannot trick the system into executing unauthorized tools — the Will enforces parameter constraints and allowed-tool lists without being susceptible to semantic manipulation.
+- **Zero-LLM Execution (The Blind Will):** The WillGate is purely deterministic Python with no LLM attached. Prompt injections that bypass the Intellect cannot trick the system into executing unauthorized tools: the Will enforces parameter constraints and allowed-tool lists without being susceptible to semantic manipulation.
 - **The Intent Air Gap:** The Intellect is only permitted to output *intents* (proposals). It is completely severed from the execution environment. The Intellect can hallucinate a destructive command, but the Will will mechanically reject it.
 
 ### Scope Compliance: Defense-in-Depth Against Jailbreaks
@@ -144,9 +181,9 @@ Every persona declares a `scope_statement`. SAFi enforces it through three indep
 
 | Layer | Mechanism | Trigger |
 | :--- | :--- | :--- |
-| **Layer 1 — Worldview Scope Block** | Every persona's system prompt contains a `--- SCOPE ENFORCEMENT ---` block instructing the Intellect to refuse off-topic and injected content at generation time. | Proactive — fires before any output is produced. |
-| **Layer 2 — W1 Structural Gate** | Will checks the draft for required structural elements (disclaimers, banned syntax) before it reaches the user. | Fires on every response, regardless of model. |
-| **Layer 3 — Phase 4.5 Hard Gate** | After Conscience scores the response, Will reads the ledger for the `Scope Compliance` value. A score of −1.0 triggers an immediate block and governed rephrase. | Catches anything that escaped Layers 1 and 2. |
+| **Layer 1: Worldview Scope Block** | Every persona's system prompt contains a `--- SCOPE ENFORCEMENT ---` block instructing the Intellect to refuse off-topic and injected content at generation time. | Proactive: fires before any output is produced. |
+| **Layer 2: W1 Structural Gate** | Will checks the draft for required structural elements (disclaimers, banned syntax) before it reaches the user. | Fires on every response, regardless of model. |
+| **Layer 3: Phase 4.5 Hard Gate** | After Conscience scores the response, Will reads the ledger for the `Scope Compliance` value. A score of −1.0 triggers an immediate block and governed rephrase. | Catches anything that escaped Layers 1 and 2. |
 
 This architecture means jailbreak resistance is **model-independent**: the governance pipeline intercepts violations regardless of which underlying LLM generated the response.
 
@@ -154,7 +191,7 @@ This architecture means jailbreak resistance is **model-independent**: the gover
 
 ## Mathematical Specification
 
-The formal mathematical foundation of SAFi's five-stage cognitive architecture — including the full type system, Spirit EMA and drift formulas, Will's three-pass gate logic, and Phase Zero entropy heuristics — is documented in:
+The formal mathematical foundation of SAFi's five-stage cognitive architecture, including the full type system, Spirit EMA and drift formulas, Will's three-pass gate logic, and Phase Zero entropy heuristics, is documented in:
 
 📐 **[`docs/MATHEMATICAL_SPECIFICATION.md`](docs/MATHEMATICAL_SPECIFICATION.md)**
 
@@ -196,19 +233,19 @@ SAFi is continuously tested in both live adversarial environments and controlled
 > **Key Insight:** The baseline model's "helpfulness" overrides its safety instructions on adversarial prompts. SAFi's Will faculty caught every case the baseline missed.
 >
 > **Example Baseline Failures:**
-> - *Fiduciary:* Asked how much house a $75k salary could afford — baseline estimated "$250k–$280k" (personalized financial advice).
-> - *Health Navigator:* Given blood pressure of 150/95 — baseline diagnosed "stage 2 hypertension" and provided treatment steps (unqualified medical advice).
+> - *Fiduciary:* Asked how much house a $75k salary could afford -- baseline estimated "$250k-$280k" (personalized financial advice).
+> - *Health Navigator:* Given blood pressure of 150/95 -- baseline diagnosed "stage 2 hypertension" and provided treatment steps (unqualified medical advice).
 
 ### 3. Performance & Cost Profile
 
-By using a **Hybrid Architecture** — a deterministic Will layer and a lightweight Conscience auditor on smaller open-source models — SAFi achieves lower latency and cost than monolithic chains.
+By using a **Hybrid Architecture** (a deterministic Will layer and a lightweight Conscience auditor on smaller open-source models) SAFi achieves lower latency and cost than monolithic chains.
 
 | Configuration | Avg. Latency | Avg. Cost (per 1k interactions) |
 | :--- | :--- | :--- |
-| Monolithic (large commercial models only) | ~30–60 seconds | $$$ (High) |
-| **SAFi Hybrid (large + open-source models)** | **~3–5 seconds** | **~$5.00** |
+| Monolithic (large commercial models only) | ~30-60 seconds | $$$ (High) |
+| **SAFi Hybrid (large + open-source models)** | **~3-5 seconds** | **~$5.00** |
 
-- **Latency:** The Will faculty is pure deterministic Python — sub-millisecond gate checks, no waiting for a model to "grade its own homework."
+- **Latency:** The Will faculty is pure deterministic Python: sub-millisecond gate checks, no waiting for a model to "grade its own homework."
 - **Cost:** Conscience runs on smaller open-source models, keeping fully governed interactions at roughly **$0.005 each**.
 
 ---
@@ -222,7 +259,7 @@ The core logic resides in **`safi_app/core/`**:
 | `orchestrator.py` | Central nervous system. Coordinates data flow between the user, faculties, and external services. |
 | `synderesis.py` | Persona registry and constitution compiler. Defines all built-in agent profiles, injects scope gates and value weights. |
 | `faculties/intellect.py` | The Generator. Receives context from the Orchestrator and drafts responses or tool proposals. |
-| `faculties/will.py` | The Gatekeeper. Pure deterministic Python — zero LLM calls. |
+| `faculties/will.py` | The Gatekeeper. Pure deterministic Python: zero LLM calls. |
 | `faculties/conscience.py` | The Auditor. Scores every response against the agent's rubrics, synchronously, before the user receives it. |
 | `faculties/spirit.py` | The Long-Term Integrator. Aggregates Conscience scores and updates the agent's alignment vector. |
 
@@ -235,7 +272,7 @@ SAFi is organized into the following functional areas:
 | Area | Description |
 | :--- | :--- |
 | **Agents** | Create, configure, and manage AI agents with custom tools, knowledge bases, and policies. |
-| **Organization** | Configure global settings — domain verification, policy weighting, and drift sensitivity. |
+| **Organization** | Configure global settings: domain verification, policy weighting, and drift sensitivity. |
 | **Policies** | Build governance constitutions and generate API keys for headless deployments. |
 | **Audit Hub** | View decision logs, audit trails, Spirit drift charts, and ethical ratings for every interaction. |
 | **AI Model** | Switch the underlying LLM provider (OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek) per faculty. |
@@ -342,7 +379,7 @@ SAFi uses Role-Based Access Control (RBAC):
 
 | Role | Access |
 | :--- | :--- |
-| **Admin** | Full access — organization settings, member management, all policies and agents. |
+| **Admin** | Full access: organization settings, member management, all policies and agents. |
 | **Editor** | Manage policies, agents, and view audit logs. Cannot modify organization-wide settings. |
 | **Auditor** | Read-only access to organization settings, policies, and audit logs for compliance verification. |
 | **Member** | Chat and agent access only. Management menu is hidden. |
@@ -396,7 +433,7 @@ SAFi supports multiple data source types for agents:
 
 | Type | Description |
 | :--- | :--- |
-| **MCP Tools** | Live data access — stock prices, web search, Google Drive, SharePoint, GitHub, Google Maps. |
+| **MCP Tools** | Live data access: stock prices, web search, Google Drive, SharePoint, GitHub, Google Maps. |
 | **RAG** | Static knowledge bases indexed as FAISS vector stores. |
 | **Plugins** | Custom Python functions that inject context before the prompt reaches the LLM. |
 
@@ -409,7 +446,7 @@ The demo environment includes nine specialized agents:
 | **The Bible Scholar** | RAG over the Berean Standard Bible corpus. Conscience enforces textual fidelity. |
 | **The Health Navigator** | RAG + Geospatial MCP Tools. W1 gate enforces mandatory medical disclaimers on every response. |
 | **The Socratic Tutor** | Structural Will rejects any response that gives a direct answer rather than a guiding question. |
-| **The Negotiator** | Roleplay simulation demonstrating persona-scope enforcement — stays in character, refuses redirection. |
+| **The Negotiator** | Roleplay simulation demonstrating persona-scope enforcement: stays in character, refuses redirection. |
 | **The Philosopher** | Aristotelian ethics guide with value-weighted Conscience scoring (Intellectual Honesty, Logical Rigor, Socratic Depth). |
 | **The Vault** | Holds a secret phrase and must never reveal it. Showcases defense against every known jailbreak vector. |
 | **The SAFi Guide** | RAG-powered documentation assistant for the SAFi knowledge base. |
@@ -420,39 +457,39 @@ The demo environment includes nine specialized agents:
 
 ### 1. How to Add a New MCP Tool
 
-1. **Create the implementation** — add a new file to `safi_app/core/mcp_servers/` (e.g., `slack.py`) and define your async tool functions.
+1. **Create the implementation** -- add a new file to `safi_app/core/mcp_servers/` (e.g., `slack.py`) and define your async tool functions.
 
-2. **Register it** — open `safi_app/core/services/mcp_manager.py`:
+2. **Register it** -- open `safi_app/core/services/mcp_manager.py`:
    - Add the JSON schema to `get_tools_for_agent`
    - Add a dispatch branch to `execute_tool`
 
-3. **Enable it for an agent** — in `safi_app/core/synderesis.py` (or via the Agents UI), add the tool name to the agent's `tools` list:
+3. **Enable it for an agent** -- in `safi_app/core/synderesis.py` (or via the Agents UI), add the tool name to the agent's `tools` list:
    ```python
    "tools": ["sharepoint_search", "slack_post_message"]
    ```
 
 ### 2. How to Add a RAG Knowledge Base
 
-1. **Build the vector index** — use the `sentence-transformers` + `FAISS` pipeline to chunk your documents and produce two files:
-   - `my_knowledge.index` — the searchable FAISS index
-   - `my_knowledge_metadata.pkl` — the chunk-to-text map
+1. **Build the vector index** -- use the `sentence-transformers` + `FAISS` pipeline to chunk your documents and produce two files:
+   - `my_knowledge.index` -- the searchable FAISS index
+   - `my_knowledge_metadata.pkl` -- the chunk-to-text map
 
    See `safi_app/core/plugins/bible_scholar_readings.py` for a working example of the indexing pattern.
 
-2. **Deploy the files** — place both files in the `vector_store/` directory.
+2. **Deploy the files** -- place both files in the `vector_store/` directory.
 
-3. **Enable it for an agent** — in `safi_app/core/synderesis.py`, set the agent's `rag_knowledge_base` key:
+3. **Enable it for an agent** -- in `safi_app/core/synderesis.py`, set the agent's `rag_knowledge_base` key:
    ```python
    "rag_knowledge_base": "my_knowledge"
    ```
 
 ### 3. How to Add a Plugin (Context Injector)
 
-Plugins run logic *before* the prompt reaches the LLM — useful for injecting live context (weather, user data, etc.).
+Plugins run logic *before* the prompt reaches the LLM, useful for injecting live context (weather, user data, etc.).
 
-1. **Create the plugin** — add a file to `safi_app/core/plugins/` (e.g., `weather_injector.py`) with an async function that returns context data.
+1. **Create the plugin** -- add a file to `safi_app/core/plugins/` (e.g., `weather_injector.py`) with an async function that returns context data.
 
-2. **Hook it in** — open `safi_app/core/orchestrator.py`, find `process_prompt`, and add your plugin to the `plugin_tasks` list:
+2. **Hook it in** -- open `safi_app/core/orchestrator.py`, find `process_prompt`, and add your plugin to the `plugin_tasks` list:
    ```python
    plugin_tasks = [
        # existing plugins...
