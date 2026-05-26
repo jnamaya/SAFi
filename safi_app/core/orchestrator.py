@@ -37,6 +37,65 @@ from .services import LLMProvider, RAGService, MCPManager
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+# ---------------------------------------------------------------------------
+# Friendly status labels for tool calls shown in the thinking indicator
+# ---------------------------------------------------------------------------
+_TOOL_LABELS: Dict[str, str] = {
+    # Web
+    "web_search":              "Searching the web",
+    "search_web":              "Searching the web",
+    "browser_search":          "Searching the web",
+    # Finance / Markets
+    "get_stock_price":         "Fetching stock data",
+    "get_earnings_data":       "Pulling earnings data",
+    "get_financial_data":      "Fetching financial data",
+    "get_market_data":         "Fetching market data",
+    # Cloud Storage
+    "sharepoint_search":       "Searching SharePoint",
+    "google_drive_search":     "Searching Google Drive",
+    "onedrive_search":         "Searching OneDrive",
+    # GitHub
+    "github_search":           "Searching GitHub",
+    "github_get_file":         "Reading from GitHub",
+    "github_list_files":       "Browsing GitHub",
+    # Maps / Location
+    "google_maps_search":      "Looking up location data",
+    "nearby_search":           "Finding nearby locations",
+    "get_location_info":       "Fetching location data",
+    "geocode":                 "Resolving location",
+    # Knowledge / RAG
+    "knowledge_search":        "Searching knowledge base",
+    "bible_search":            "Searching the scriptures",
+    "document_search":         "Searching documents",
+    # Messaging / Comms
+    "send_email":              "Sending an email",
+    "slack_post_message":      "Posting to Slack",
+    "teams_send_message":      "Sending a Teams message",
+    # Calendar / Tasks
+    "get_calendar_events":     "Checking the calendar",
+    "create_calendar_event":   "Creating a calendar event",
+    "get_tasks":               "Fetching tasks",
+}
+
+def _tool_status(tool_name: str, turn: int = 0) -> str:
+    """Return a human-friendly thinking-indicator message for a tool call."""
+    label = _TOOL_LABELS.get(tool_name)
+    if not label:
+        n = tool_name.lower()
+        if "search" in n:
+            label = "Searching for data"
+        elif "get" in n or "fetch" in n or "load" in n:
+            label = "Fetching data"
+        elif "read" in n or "list" in n or "browse" in n:
+            label = "Reading data"
+        elif "send" in n or "post" in n or "create" in n:
+            label = "Taking an action"
+        else:
+            label = tool_name.replace("_", " ").title()
+    suffix = " (step {})...".format(turn + 1) if turn > 0 else "..."
+    return "{}{}".format(label, suffix)
+
+
 class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
     """
     Orchestrates Intellect, Will, Conscience, and Spirit faculties.
@@ -258,7 +317,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             db.insert_memory_entry(conversation_id, "ai", "", message_id=message_id, audit_status="pending")
             
             # --- Initial Status ---
-            db.update_message_reasoning(message_id, "Reading your message...")
+            db.update_message_reasoning(message_id, "Analyzing your request...")
         except Exception as e:
             import traceback
             trace = traceback.format_exc()
@@ -337,7 +396,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
         # --- PHASE 2: Generate Proposal (Intellect) ---
-        db.update_message_reasoning(message_id, "Thinking through a response...")
+        db.update_message_reasoning(message_id, "Drafting a response...")
         intent, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
             memory_summary=memory_summary,
@@ -378,7 +437,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.info(f"[Governance | Phase 2 | Intellect] Draft: {len(a_t)} chars | '{a_t[:100].strip()}'")
 
             # --- PHASE 3: Structural Validation (Will) ---
-            db.update_message_reasoning(message_id, "Reviewing the response...")
+            db.update_message_reasoning(message_id, "Checking response structure...")
             is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
             self.log.info(f"[Governance | Phase 3 | Will W1] Structural: {'PASS' if is_valid_struct else 'FAIL'} — {structure_reason}")
             if not is_valid_struct:
@@ -402,7 +461,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             # Reflexion Loop
             if D_t == "violation":
                 self.log.info(f"Will blocked first draft. Reason: {E_t}. Attempting Reflexion Retry.")
-                db.update_message_reasoning(message_id, "Refining the response...")
+                db.update_message_reasoning(message_id, "Applying policy corrections...")
 
                 retry_metadata["was_retried"] = True
                 retry_metadata["original_draft"] = a_t
@@ -477,7 +536,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
-            db.update_message_reasoning(message_id, "Looking something up...")
+            db.update_message_reasoning(message_id, _tool_status(tool_name))
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
@@ -494,7 +553,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 for agent_turn in range(MAX_AGENT_TURNS):
                     db.update_message_reasoning(
                         message_id,
-                        "Looking something up..." if agent_turn == 0 else "Gathering more information..."
+                        _tool_status(current_tool_name, agent_turn)
                     )
                     
                     raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
@@ -539,7 +598,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     current_tool_name = next_intent["tool_name"]
                     current_parameters = next_intent["parameters"]
 
-                    db.update_message_reasoning(message_id, "Gathering more information...")
+                    db.update_message_reasoning(message_id, _tool_status(current_tool_name, agent_turn + 1))
                     follow_decision, follow_reason = await self.will_gate.evaluate_tool_intent(
                         tool_name=current_tool_name,
                         parameters=current_parameters,
@@ -600,7 +659,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         org_id=org_id
                     )
 
-                db.update_message_reasoning(message_id, "Reviewing the response...")
+                db.update_message_reasoning(message_id, "Verifying tool response...")
                 D_t, E_t = await self.will_gate.evaluate(
                     user_prompt=user_prompt,
                     draft_answer=a_t,
@@ -648,7 +707,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
         # --- PHASE 4: Deep Analytical Audit (Conscience) [Synchronous] ---
-        db.update_message_reasoning(message_id, "Running a quality check...")
+        db.update_message_reasoning(message_id, "Auditing response for compliance...")
         try:
             ledger = await self.conscience.evaluate(
                 final_output=a_t,
@@ -684,7 +743,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
 
         # --- PHASE 5: Compute Conviction (Spirit Vector Core) [Synchronous] ---
-        db.update_message_reasoning(message_id, "Finalizing...")
+        db.update_message_reasoning(message_id, "Computing alignment score...")
         spirit_assessment = self.spirit.integrate(ledger)
         D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
         self.log.info(f"[Governance | Phase 5 | Spirit] Alignment: {spirit_assessment.get('alignment_score', '?'):.3f} | Decision: {D_spirit} — {E_spirit}")
@@ -696,7 +755,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             # trigger_persona_redirect generates in a vacuum and can't fix content
             # issues; it is reserved for scope/injection violations.
             self.log.info("[Governance | Phase 5 | Spirit] Attempting ethical reflexion retry.")
-            db.update_message_reasoning(message_id, "Refining the response...")
+            db.update_message_reasoning(message_id, "Applying ethical corrections...")
 
             spirit_directive = (self.profile or {}).get("internal_rephrase_directives", {}).get("ethical_violation", "")
             spirit_retry_prompt = (
@@ -728,7 +787,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
 
             if a_t_spirit:
-                db.update_message_reasoning(message_id, "Running a quality check...")
+                db.update_message_reasoning(message_id, "Re-auditing corrected response...")
                 ledger = await self.conscience.evaluate(
                     final_output=a_t_spirit,
                     user_prompt=user_prompt,
@@ -779,7 +838,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.exception("Follow-up suggester failed")
 
         # --- PHASE 6: Safe Execution (Will) ---
-        db.update_message_reasoning(message_id, "Almost done...")
+        db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_message_content(message_id, a_t, audit_status="complete")
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
 
@@ -844,7 +903,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
     ) -> Dict[str, Any]:
         """Persona Redirect: Re-engages the Intellect to handle boundaries in the persona's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
-        db.update_message_reasoning(message_id, "Redirecting your request...")
+        db.update_message_reasoning(message_id, "Applying governance policy...")
 
         # Fetch the exact internal system directive mapped out in the profile
         directives = self.profile.get("internal_rephrase_directives", {})
@@ -875,7 +934,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # (see intellect.py), so the redirect is safe to commit immediately.
         db.update_message_content(message_id, safe_output, audit_status="complete")
 
-        db.update_message_reasoning(message_id, "Running a quality check...")
+        db.update_message_reasoning(message_id, "Auditing governance response...")
         try:
             ledger = await self.conscience.evaluate_redirect(
                 redirect_output=safe_output,
@@ -908,7 +967,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.exception("Follow-up suggester failed")
 
         # Release safe audited response and update audit results
-        db.update_message_reasoning(message_id, "Almost done...")
+        db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
 
         # Save a clean pass log entry
