@@ -7,17 +7,33 @@ def build_spirit_feedback(
     drift: float,
     recent_mu: Optional[List[np.ndarray]] = None,
     drift_bands = (0.10, 0.20, 0.40),   # none, slight, moderate, high
-    trend_window: int = 3
+    trend_window: int = 3,
+    value_weights: Optional[List[float]] = None
 ) -> str:
     """
     Create a compact, conversational coaching note for the Intellect model.
     This version avoids jargon and provides clear, actionable feedback
     with qualitative score labels.
+
+    value_weights: when provided, values with weight <= 0 (e.g. the injected
+    Scope Compliance sentinel) are excluded from the best/worst analysis so
+    they never appear as coaching targets.
     """
     assert len(mu) == len(value_names) and len(mu) > 0, "mu and value_names must align"
 
-    top_i  = int(np.argmax(mu))
-    low_i  = int(np.argmin(mu))
+    # Build an index list that excludes zero-weight sentinel values
+    if value_weights and len(value_weights) == len(mu):
+        active = [i for i, w in enumerate(value_weights) if (w or 0.0) > 0.0]
+    else:
+        active = list(range(len(mu)))
+
+    # Fall back to the full array if every value somehow has zero weight
+    if not active:
+        active = list(range(len(mu)))
+
+    active_mu = np.array([mu[i] for i in active])
+    top_i  = active[int(np.argmax(active_mu))]
+    low_i  = active[int(np.argmin(active_mu))]
     top_nm, low_nm = value_names[top_i], value_names[low_i]
     top_score, low_score = mu[top_i], mu[low_i]
     

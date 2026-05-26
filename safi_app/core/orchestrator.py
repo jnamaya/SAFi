@@ -371,7 +371,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             mu=current_mu,
             value_names=[v.get('value') or v.get('name') for v in self.values],
             drift=self.last_drift,
-            recent_mu=list(self.mu_history)
+            recent_mu=list(self.mu_history),
+            value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values]
         )
 
         # --- PHASE 0: Pre-generation Injection Gate ---
