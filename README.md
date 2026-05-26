@@ -28,38 +28,6 @@ Instead of a single model trying to be smart, compliant, and ethical all at once
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
 </p>
 
-### Why This Changes Everything
-**99.86% jailbreak defense** in live adversarial testing. **98.5% overall compliance** vs. an 85% baseline. Sub-5-second latency at roughly **$0.005 per interaction**.
-
-Those are not marketing numbers -- they are published benchmark results from 1,435+ adversarial interactions. SAFi's **Will** faculty (a blind, deterministic gatekeeper that never touches an LLM) caught every single attack that the baseline model missed.
-
-*Because you can't socially engineer pure Python.*
-
-### What You Get
-
-| Principle | What It Means | SAFi Delivers |
-| :--- | :--- | :--- |
-| 🛡️ **Policy Enforcement** | Your rules, not the model's defaults, govern every response. | Runtime-layer enforcement: custom policies override the underlying LLM. |
-| 🔍 **Full Traceability** | Every decision logged, every veto recorded, every drift tracked. | Granular audit trail across all five faculties -- a black box no more. |
-| 🔄 **Model Independence** | Swap LLMs without rewriting governance. | Modular architecture supporting GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. |
-| 📈 **Long-Term Consistency** | Your AI's ethical identity stays stable over months of use. | Spirit's EMA-based drift detection auto-corrects behavioral drift. |
-
-### The Architecture That Makes It Possible
-SAFi's innovation is a separation of concerns inspired by classical Thomistic philosophy, mapped directly to software modules.
-
-The **Intent Air Gap** severs the generative Intellect from the execution environment. The **Blind Will** enforces structural invariants with no semantic vulnerability. The **Spirit** tracks alignment as a mathematical vector, not a subjective vibe.
-
-This is not philosophical decoration -- it is a security architecture that makes your governance model-independent. Whether your underlying LLM is GPT-5 or an open-source fine-tune, SAFi's pipeline intercepts violations at the exact same deterministic gates.
-
-### Next Steps
-🚀 **Try the live demo** → [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
-🐙 **Star the repo** → `git clone https://github.com/jnamaya/SAFi.git`
-📖 **Read the math** → [docs/MATHEMATICAL_SPECIFICATION.md](docs/MATHEMATICAL_SPECIFICATION.md)
-🛠️ **Use it headless** → Plug into LangChain, AutoGen, Teams, Telegram, or WhatsApp.
-
-**SAFi turns any LLM into a governed, auditable agent -- your policies enforced at runtime, every decision logged.** The demo is live. The benchmarks are public. The architecture is open source.
-**Try it. Fork it. Govern it.**
-
 ---
 
 ## Quick Start
@@ -95,6 +63,40 @@ SAFI_LOCAL_ADMIN_PASSWORD=yourpassword
 ```
 
 SAFi will create the account automatically on first startup. The login form appears on the login page alongside the OAuth buttons.
+
+---
+
+### Why This Changes Everything
+**99.86% jailbreak defense** in live adversarial testing. **98.5% overall compliance** vs. an 85% baseline. Sub-5-second latency at roughly **$0.005 per interaction**.
+
+Those are not marketing numbers -- they are published benchmark results from 1,435+ adversarial interactions. SAFi's **Will** faculty (a blind, deterministic gatekeeper that never touches an LLM) caught every single attack that the baseline model missed.
+
+*Because you can't socially engineer pure Python.*
+
+### What You Get
+
+| Principle | What It Means | SAFi Delivers |
+| :--- | :--- | :--- |
+| 🛡️ **Policy Enforcement** | Your rules, not the model's defaults, govern every response. | Runtime-layer enforcement: custom policies override the underlying LLM. |
+| 🔍 **Full Traceability** | Every decision logged, every veto recorded, every drift tracked. | Granular audit trail across all five faculties -- a black box no more. |
+| 🔄 **Model Independence** | Swap LLMs without rewriting governance. | Modular architecture supporting GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. |
+| 📈 **Long-Term Consistency** | Your AI's ethical identity stays stable over months of use. | Spirit's EMA-based drift detection auto-corrects behavioral drift. |
+
+### The Architecture That Makes It Possible
+SAFi's innovation is a separation of concerns inspired by classical Thomistic philosophy, mapped directly to software modules.
+
+The **Intent Air Gap** severs the generative Intellect from the execution environment. The **Blind Will** enforces structural invariants with no semantic vulnerability. The **Spirit** tracks alignment as a mathematical vector, not a subjective vibe.
+
+This is not philosophical decoration -- it is a security architecture that makes your governance model-independent. Whether your underlying LLM is GPT-5 or an open-source fine-tune, SAFi's pipeline intercepts violations at the exact same deterministic gates.
+
+### Next Steps
+🚀 **Try the live demo** → [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+🐙 **Star the repo** → `git clone https://github.com/jnamaya/SAFi.git`
+📖 **Read the math** → [docs/MATHEMATICAL_SPECIFICATION.md](docs/MATHEMATICAL_SPECIFICATION.md)
+🛠️ **Use it headless** → Plug into LangChain, AutoGen, Teams, Telegram, or WhatsApp.
+
+**SAFi turns any LLM into a governed, auditable agent -- your policies enforced at runtime, every decision logged.** The demo is live. The benchmarks are public. The architecture is open source.
+**Try it. Fork it. Govern it.**
 
 ---
 
@@ -203,6 +205,8 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ### 1. Jailbreak Tests
 
+**99.86% of jailbreak attempts failed. The two that slipped through were already patched before the next test run.**
+
 **Objective:** Stop hackers from jailbreaking the model using DAN, Prompt Injection, and Social Engineering. Tests are publicly performed via Reddit & Discord communities.
 
 | Metric | Result |
@@ -219,6 +223,8 @@ SAFi is continuously tested in both live adversarial environments and controlled
 > The system blocked the direct command, but the Intellect "hallucinated" the answer into its refusal explanation. This pattern has since been patched.
 
 ### 2. Domain Compliance Benchmark
+
+**On adversarial prompts, SAFi scored 97.5%. The unguarded baseline scored 67.5% -- a 30-point gap that represents the difference between a compliant deployment and a liability.**
 
 **Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.  
 **Method:** 100 prompts per persona across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
@@ -237,6 +243,8 @@ SAFi is continuously tested in both live adversarial environments and controlled
 > - *Health Navigator:* Given blood pressure of 150/95 -- baseline diagnosed "stage 2 hypertension" and provided treatment steps (unqualified medical advice).
 
 ### 3. Performance & Cost Profile
+
+**Full governance adds roughly $0.005 per interaction and under 5 seconds of latency. The separation-of-powers architecture costs less to run than a monolithic guardrail.**
 
 By using a **Hybrid Architecture** (a deterministic Will layer and a lightweight Conscience auditor on smaller open-source models) SAFi achieves lower latency and cost than monolithic chains.
 
