@@ -1,13 +1,39 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
+[![Good First Issue](https://img.shields.io/github/issues/jnamaya/SAFi/good%20first%20issue?label=good%20first%20issue)](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
 # SAFi: Self-Alignment Framework Interface
 
-### The Problem
-Every AI agent you deploy today is a black box with a smile. You set a system prompt, hope the model stays in bounds, and pray no one jailbreaks it. When something goes wrong (a hallucinated financial recommendation, a leak of regulated advice, a prompt injection that slips past) you only find out after the damage is done.
+> **Built for IT Directors, CTOs, and Engineering VPs** who need governed AI deployment without trading compliance for velocity.
 
-The industry response? Wrap the model in more LLM calls to police itself. Monolithic guardrails that are slow, expensive, and just as vulnerable as the model they are trying to constrain.
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [Quick Start](#quick-start)
+- [How SAFi Compares](#how-safi-compares)
+- [How Does It Work?](#how-does-it-work)
+- [Mathematical Specification](#mathematical-specification)
+- [Benchmarks & Validation](#benchmarks--validation)
+- [Technical Implementation](#technical-implementation)
+- [Application Structure](#application-structure)
+- [Configuration Reference](#configuration-reference)
+- [Authentication Setup](#authentication-setup)
+- [Permissions](#permissions)
+- [Headless Governance Layer](#headless-governance-layer)
+- [Agent Capabilities](#agent-capabilities)
+- [Developer Guide](#developer-guide)
+- [Manual Installation](#manual-installation)
+- [Contributing](#contributing)
+- [Live Demo](#live-demo)
+- [About the Author](#about-the-author)
+
+---
+
+### The Problem
+Your organization is deploying AI agents. Your legal and compliance teams are asking hard questions: What policies govern every response? Who audits the decisions? What happens when the model drifts, gets jailbroken, or gives advice it shouldn't?
+
+The standard answer -- a system prompt and a hope -- is not an answer. The industry's next move was to wrap the model in more LLM calls to police itself: monolithic guardrails that are slow, expensive, and just as susceptible to adversarial prompts as the model they are trying to constrain.
 
 There is a better way.
 
@@ -73,6 +99,23 @@ Those are not marketing numbers -- they are published benchmark results from 1,4
 
 *Because you can't socially engineer pure Python.*
 
+### How SAFi Compares
+
+| | SAFi | Guardrails AI | NVIDIA NeMo Guardrails |
+| :--- | :--- | :--- | :--- |
+| **Gate Architecture** | Deterministic Python (zero LLM) | LLM-based validators | LLM-based Colang rails |
+| **Prompt Injection Risk** | Immune at Will layer | Validator is susceptible | Rail LLM is susceptible |
+| **Jailbreak Defense Rate** | **99.86%** (1,435+ live tests) | Not independently published | Not independently published |
+| **Avg. Latency** | ~3-5 seconds | ~10-30+ seconds | ~10-30+ seconds |
+| **Cost per Interaction** | ~$0.005 | Higher (multiple LLM calls) | Higher (multiple LLM calls) |
+| **Long-term Drift Detection** | Yes (EMA-based Spirit faculty) | No | No |
+| **Full Per-Decision Audit Trail** | Yes (five-faculty logging) | Partial | Partial |
+| **Model Independence** | GPT, Claude, Gemini, Llama, Groq, Mistral, DeepSeek | Model-agnostic | Model-agnostic |
+| **Built-in Governance UI** | Yes | No | No |
+| **Open Source License** | AGPL-3.0 | Apache 2.0 | Apache 2.0 |
+
+> *Competitor data sourced from public documentation as of May 2026. Latency and cost figures for alternatives are architecture-based estimates. Only SAFi figures are from independent adversarial testing.*
+
 ### What You Get
 
 | Principle | What It Means | SAFi Delivers |
@@ -83,11 +126,13 @@ Those are not marketing numbers -- they are published benchmark results from 1,4
 | 📈 **Long-Term Consistency** | Your AI's ethical identity stays stable over months of use. | Spirit's EMA-based drift detection auto-corrects behavioral drift. |
 
 ### The Architecture That Makes It Possible
-SAFi's innovation is a separation of concerns inspired by classical Thomistic philosophy, mapped directly to software modules.
+SAFi's innovation is a **separation of powers** inspired by classical philosophy, mapped directly to software modules. Each faculty has a single job and cannot be overridden by the others.
 
 The **Intent Air Gap** severs the generative Intellect from the execution environment. The **Blind Will** enforces structural invariants with no semantic vulnerability. The **Spirit** tracks alignment as a mathematical vector, not a subjective vibe.
 
 This is not philosophical decoration -- it is a security architecture that makes your governance model-independent. Whether your underlying LLM is GPT-5 or an open-source fine-tune, SAFi's pipeline intercepts violations at the exact same deterministic gates.
+
+> Want the full design rationale? Read [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
 
 ### Next Steps
 🚀 **Try the live demo** → [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
@@ -100,30 +145,9 @@ This is not philosophical decoration -- it is a security architecture that makes
 
 ---
 
-## Table of Contents
-
-- [How Does It Work?](#how-does-it-work)
-- [Mathematical Specification](#mathematical-specification)
-- [Benchmarks & Validation](#benchmarks--validation)
-- [Technical Implementation](#technical-implementation)
-- [Application Structure](#application-structure)
-- [Configuration Reference](#configuration-reference)
-- [Authentication Setup](#authentication-setup)
-- [Permissions](#permissions)
-- [Headless Governance Layer](#headless-governance-layer)
-- [Agent Capabilities](#agent-capabilities)
-- [Developer Guide](#developer-guide)
-- [Manual Installation](#manual-installation)
-- [Live Demo](#live-demo)
-- [About the Author](#about-the-author)
-
----
-
 ## How Does It Work?
 
-SAFi implements a cognitive architecture derived from the **Thomistic faculties of the soul** (Aquinas). It maps the classical concepts of *Synderesis*, *Intellect*, *Will*, and *Conscience* directly to software modules, while adapting *Habitus* (character formation) into the **Spirit** module.
-
-> **Philosophy as Architecture:** Just as airplanes were inspired by birds but don't use feathers, SAFi is inspired by the *structure* of the human mind but is a concrete software implementation. These philosophical concepts are used as **system design patterns**: treating "Will" and "Intellect" as separate software services solves the "hallucination vs. compliance" conflict that monolithic models struggle with.
+SAFi implements a cognitive architecture derived from five specialized faculties -- each a separate software module with a distinct role and security boundary. The design is inspired by classical philosophy's separation of cognitive powers; the full rationale is in [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
 
 ### The Five Faculties
 
@@ -589,6 +613,17 @@ For deploying SAFi on a bare Linux server without Docker.
    ```
 
 8. **Open** `http://localhost:5000` (or your server's domain).
+
+---
+
+## Contributing
+
+Contributions are welcome -- bug reports, new MCP tools, governance policy examples, documentation, and faculty improvements.
+
+- 📋 **Browse open issues:** [github.com/jnamaya/SAFi/issues](https://github.com/jnamaya/SAFi/issues)
+- 🟢 **Good first issues:** [issues labeled `good first issue`](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- 💬 **Ask questions & propose features:** [GitHub Discussions](https://github.com/jnamaya/SAFi/discussions)
+- 📖 **Read the contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
