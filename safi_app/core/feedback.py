@@ -63,7 +63,9 @@ def build_spirit_feedback(
         d = descs[i].strip() if i < len(descs) else ""
         if not d:
             return ""
-        return d[:110].rsplit(" ", 1)[0] + ("..." if len(d) > 110 else "")
+        if len(d) <= 110:
+            return d
+        return d[:110].rsplit(" ", 1)[0] + "..."
 
     # --- Build per-value records ---
     records = []
