@@ -16,6 +16,7 @@ import { renderSettingsModelsTab } from './ui-settings-models.js';
 import { renderSettingsMyProfileTab } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
+import { renderSettingsHelpTab } from './ui-settings-help.js';
 // I'll add dashboard here to be safe and create the file later.
 // Note: Imports might fail until files exist, but that's fine as long as I create them all before running.
 
@@ -155,6 +156,8 @@ export function setupControlPanelTabs() {
                     settingsState.onLogout,
                     settingsState.onDeleteAccount
                 );
+            } else if (tabId === 'help') {
+                renderSettingsHelpTab();
             }
         });
     });

@@ -1,7 +1,7 @@
 /* CHANGE: Switched to a more modern, professional font */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -15,10 +15,8 @@ body {
   width: 100%;
 }
 
-/* CHANGE: Set the base font size for consistency across mobile */
 @media (min-width: 768px) {
   body {
-    font-size: 17px;
     line-height: 1.5;
   }
 
@@ -268,7 +266,7 @@ html {
   display: flex;
   gap: 8px;
   margin-top: 8px;
-  align-items: baseline;
+  align-items: center;
   width: 100%;
   padding-top: 6px;
   border-top: 1px solid rgba(0, 0, 0, 0.05);
@@ -804,7 +802,7 @@ html {
 
 /* Shimmering / Solid Text */
 #thinking-status {
-  font-size: 0.95rem;
+  font-size: 0.875rem; /* text-sm */
   font-weight: 500;
   letter-spacing: -0.01em;
   color: #0a0a0a; /* Solid system black for light theme */
@@ -847,7 +845,7 @@ html {
   /* REMOVED width: 100% - This was forcing tabs to be full width on mobile horizontal scroll */
   text-align: left;
   padding: 0.65rem 0.75rem;
-  font-size: 0.95rem;
+  font-size: 0.875rem; /* text-sm */
   font-weight: 500;
   border-radius: 0.5rem;
   color: #374151;
@@ -988,7 +986,7 @@ html {
 }
 
 .app-tagline {
-  font-size: 14px;
+  font-size: 0.875rem; /* text-sm */
   white-space: nowrap;
   font-weight: bold;
 }
@@ -1038,7 +1036,7 @@ html {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 0.75rem; /* text-xs */
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
@@ -1111,7 +1109,7 @@ html {
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-left: 3px solid rgba(34, 197, 94, 0.4); /* Emerald left active path marker */
   color: var(--fg);
-  font-size: 0.88rem;
+  font-size: 0.875rem; /* text-sm */
   font-weight: 500;
   font-style: normal !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1174,16 +1172,6 @@ html {
 .tts-btn:active,
 .copy-btn:active {
   transform: scale(0.95);
-}
-
-.meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  align-items: center !important;
-  width: 100%;
-  padding-top: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 /* --- NEW: Enhanced Input Styling (The "Conversational Surface") --- */
@@ -1256,7 +1244,7 @@ form {
 
   /* Typography */
   font-family: inherit;
-  font-size: 16px;
+  font-size: 1rem; /* text-base — matches body */
   line-height: 1.5;
   color: var(--fg);
 
