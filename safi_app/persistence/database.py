@@ -185,6 +185,10 @@ def init_db():
             cursor.execute("ALTER TABLE agents ADD COLUMN will_model VARCHAR(100)")
             cursor.execute("ALTER TABLE agents ADD COLUMN conscience_model VARCHAR(100)")
 
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'max_agent_turns'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN max_agent_turns INT DEFAULT NULL")
+
         # --- API Keys ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_keys (
@@ -911,18 +915,19 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # -------------------------------------------------------------------------
 
 def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """INSERT INTO agents (
             agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement, max_agent_turns
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (
             key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or ''
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
+            int(max_agent_turns) if max_agent_turns else None
         ))
         conn.commit()
     finally:
@@ -930,18 +935,20 @@ def create_agent(key, name, description, avatar, worldview, style, values, rules
         conn.close()
 
 def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """UPDATE agents SET
             name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
-            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s, scope_statement=%s
+            intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s, scope_statement=%s,
+            max_agent_turns=%s
             WHERE agent_key=%s"""
         cursor.execute(sql, (
             name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
             intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
+            int(max_agent_turns) if max_agent_turns else None,
             key
         ))
         conn.commit()

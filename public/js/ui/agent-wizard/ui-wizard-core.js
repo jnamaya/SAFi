@@ -82,7 +82,8 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             scope_statement: existingAgent.scope_statement || "",
             will_rules: (existingAgent.will_rules && !Array.isArray(existingAgent.will_rules))
                 ? existingAgent.will_rules
-                : DEFAULT_WILL_RULES()
+                : DEFAULT_WILL_RULES(),
+            max_agent_turns: existingAgent.max_agent_turns || null
         };
         // Fallback checks
         if (existingAgent.worldview && !agentData.instructions) {
@@ -108,7 +109,8 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             rag_format_string: "",
             tools: [],
             scope_statement: "",
-            will_rules: DEFAULT_WILL_RULES()
+            will_rules: DEFAULT_WILL_RULES(),
+            max_agent_turns: null
         };
     }
 
