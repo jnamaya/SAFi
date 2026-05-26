@@ -485,7 +485,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             )
 
             if tool_decision == "approve":
-                MAX_AGENT_TURNS = self.config.MAX_AGENT_TURNS
+                MAX_AGENT_TURNS = self.profile.get('max_agent_turns') or self.config.MAX_AGENT_TURNS
                 agent_history = [prompt_with_date]
                 current_tool_name = tool_name
                 current_parameters = parameters

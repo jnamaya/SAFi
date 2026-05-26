@@ -80,7 +80,8 @@ def save_agent():
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=data.get('rag_format_string'),
                 tools=data.get('tools', []),
-                scope_statement=str(data.get('scope_statement') or '')
+                scope_statement=str(data.get('scope_statement') or ''),
+                max_agent_turns=data.get('max_agent_turns')
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -111,7 +112,8 @@ def save_agent():
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=data.get('rag_format_string'),
                 tools=data.get('tools', []),
-                scope_statement=str(data.get('scope_statement') or '')
+                scope_statement=str(data.get('scope_statement') or ''),
+                max_agent_turns=data.get('max_agent_turns')
             )
 
         # Invalidate Cache to ensure runtime uses new config
