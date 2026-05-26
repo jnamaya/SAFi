@@ -39,11 +39,48 @@ export function renderSettingsHelpTab() {
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-white">What is SAFi?</h2>
                 </div>
                 <div class="pl-11 space-y-3 text-base text-gray-600 dark:text-gray-400">
-                    <p>SAFi (Self-Alignment Framework Interface) is the governance engine powering this application. It acts as a strict safety layer between you and the AI agents.</p>
-                    <p>Rather than hoping an agent behaves appropriately, SAFi structurally forces it to follow a specific set of rules and values. This ensures the agents are reliable, stay strictly on-topic, and actively prevent the generation of harmful or unauthorized content.</p>
+                    <p>SAFi (Self-Alignment Framework Interface) is the governance engine powering this application. Rather than hoping an AI behaves appropriately, SAFi enforces it — applying a strict <strong class="text-gray-900 dark:text-white">separation of powers</strong> between what an agent wants to say and what it is allowed to deliver.</p>
+                    <p>Every response passes through five specialized layers, each with a distinct role:</p>
+                    <div class="space-y-2 mt-1">
+                        <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
+                            <span class="text-base">📜</span>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white text-sm">Synderesis</p>
+                                <p class="text-sm mt-0.5">Defines the immutable rules and values every agent must follow — set once, locked at deployment.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
+                            <span class="text-base">✍️</span>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white text-sm">Intellect</p>
+                                <p class="text-sm mt-0.5">The generative engine that drafts a response — but cannot deliver it directly. Every draft must clear the layers below.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
+                            <span class="text-base">🔍</span>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white text-sm">Conscience</p>
+                                <p class="text-sm mt-0.5">Audits every draft and scores it against the agent’s values, producing a precise compliance report.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
+                            <span class="text-base">🛡️</span>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white text-sm">Will</p>
+                                <p class="text-sm mt-0.5">The final gatekeeper — pure deterministic logic, zero AI. It approves or vetoes based on hard rules and cannot be bypassed through clever wording or prompt tricks.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
+                            <span class="text-base">📈</span>
+                            <div>
+                                <p class="font-medium text-gray-900 dark:text-white text-sm">Spirit</p>
+                                <p class="text-sm mt-0.5">Tracks each agent’s behavior over time, detecting and correcting drift before it becomes a problem.</p>
+                            </div>
+                        </div>
+                    </div>
                     <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mt-2">
                         <p class="text-green-800 dark:text-green-300 font-medium text-xs">💡 Good to know</p>
-                        <p class="text-green-700 dark:text-green-400 text-sm mt-1">If an agent refuses a request or redirects the conversation, it is because SAFi’s safety layer detected a rule violation. This protects the integrity of the workspace.</p>
+                        <p class="text-green-700 dark:text-green-400 text-sm mt-1">If an agent refuses a request or redirects the conversation, SAFi’s governance pipeline detected a policy violation. The agent is not broken — it is working exactly as designed to protect the integrity of your workspace.</p>
                     </div>
                 </div>
             </div>
