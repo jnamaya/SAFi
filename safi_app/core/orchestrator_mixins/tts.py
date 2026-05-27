@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from pathlib import Path
 import hashlib
+import asyncio
 import logging
 
 class TtsMixin:
@@ -14,22 +15,29 @@ class TtsMixin:
         """
         Generates MP3 audio using Sync clients (safe for background threads).
         """
-        tts_model = getattr(self.config, "TTS_MODEL", "gpt-4o-mini-tts")
+        tts_model = getattr(self.config, "TTS_MODEL", "edge-tts")
         cache_dir = getattr(self.config, "TTS_CACHE_DIR", "tts_cache")
-        log = self.log 
-        
+        log = self.log
+
         # 1. Determine Provider
-        provider = "openai" if tts_model.startswith("gpt-") else "gemini" if tts_model.startswith("gemini-") else None
-        if not provider:
+        if tts_model == "edge-tts":
+            provider = "edge"
+        elif tts_model.startswith("gpt-"):
+            provider = "openai"
+        elif tts_model.startswith("gemini-"):
+            provider = "gemini"
+        else:
             log.error(f"Unsupported TTS_MODEL: {tts_model}")
             return None
 
-        tts_voice = getattr(self.config, "TTS_VOICE", "alloy") if provider == "openai" else getattr(self.config, "GEMINI_TTS_VOICE", "Puck")
+        tts_voice = getattr(self.config, "TTS_VOICE", "en-US-AriaNeural")
+        if provider == "gemini":
+            tts_voice = getattr(self.config, "GEMINI_TTS_VOICE", "Puck")
 
         # 2. Check Cache
         cache_hash = hashlib.sha256(f"{text}|{tts_model}|{tts_voice}".encode('utf-8')).hexdigest()
         cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
-        
+
         if cache_path.exists():
             try:
                 with open(cache_path, "rb") as f: return f.read()
@@ -40,7 +48,18 @@ class TtsMixin:
             Path(cache_dir).mkdir(parents=True, exist_ok=True)
             audio_content = None
 
-            if provider == "openai":
+            if provider == "edge":
+                import edge_tts
+                async def _synthesize():
+                    communicate = edge_tts.Communicate(text, tts_voice)
+                    chunks = []
+                    async for chunk in communicate.stream():
+                        if chunk["type"] == "audio":
+                            chunks.append(chunk["data"])
+                    return b"".join(chunks)
+                audio_content = asyncio.run(_synthesize())
+
+            elif provider == "openai":
                 if not getattr(self, 'openai_client_sync', None):
                     log.error("OpenAI Sync client not available.")
                     return None
@@ -55,7 +74,7 @@ class TtsMixin:
                     return None
                 from google.generativeai import types as genai_types
                 from google.generativeai import SpeechConfig, VoiceConfig, PrebuiltVoiceConfig
-                
+
                 resp = self.gemini_client(model_name=tts_model).generate_content(
                    contents=f"Speak: {text}",
                    generation_config=genai_types.GenerationConfig(

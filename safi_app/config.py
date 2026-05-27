@@ -141,9 +141,11 @@ class Config:
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
     # --- TTS CONFIGURATION ---
-    TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "gpt-4o-mini-tts") 
-    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "alloy") 
-    TTS_CACHE_DIR = os.path.join(project_root, "tts_cache") 
+    # Provider: "edge-tts" (free), "gpt-4o-mini-tts" (OpenAI), or "gemini-*"
+    TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "edge-tts")
+    # edge-tts voices: en-US-AriaNeural, en-US-GuyNeural, en-US-JennyNeural
+    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AriaNeural")
+    TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
 
     # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
