@@ -98,7 +98,19 @@ renderer.table = function (token) {
     if (body) body = `<tbody>${body}</tbody>`;
     return `<div class="table-wrapper"><table><thead>${header}</thead>${body}</table></div>`;
 };
-marked.setOptions({ renderer: renderer, breaks: false, gfm: true, mangle: false, headerIds: false });
+marked.setOptions({
+    renderer: renderer,
+    breaks: true,
+    gfm: true,
+    mangle: false,
+    headerIds: false,
+    highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+            return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+    }
+});
 
 function _markdownToPlainText(markdown) {
     try {
