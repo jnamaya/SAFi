@@ -3,6 +3,7 @@ import json
 import time
 import threading
 import hashlib
+import re
 from flask import Blueprint, session, jsonify, request, Response, current_app
 from datetime import datetime, timezone
 
@@ -12,6 +13,21 @@ from ..core.faculties.synderesis import get_profile, list_profiles, assemble_age
 from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
+
+def _strip_markdown(text: str) -> str:
+    """Strip markdown so TTS reads clean prose instead of symbols."""
+    text = re.sub(r'#{1,6}\s*', '', text)          # headings
+    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)  # bold / italic
+    text = re.sub(r'`{1,3}[^`]*`{1,3}', '', text)  # inline & fenced code
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)   # bullet points
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)   # numbered lists
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)  # links → label only
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)       # images
+    text = re.sub(r'^\s*>+\s*', '', text, flags=re.MULTILINE)      # blockquotes
+    text = re.sub(r'[-_*]{3,}', '', text)           # horizontal rules
+    text = re.sub(r'\|[^\n]+\|', '', text)          # table rows
+    text = re.sub(r'\n{3,}', '\n\n', text)          # excess blank lines
+    return text.strip()
 
 # --- CACHING INFRASTRUCTURE ---
 
@@ -273,7 +289,7 @@ def tts_audio_endpoint():
             conscience_model
         )
 
-        audio_content = saf_system.generate_speech_audio(text_to_speak)
+        audio_content = saf_system.generate_speech_audio(_strip_markdown(text_to_speak))
         
         if audio_content is None:
             return jsonify({"error": "TTS generation failed on the backend."}), 500
