@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 import json
 import logging
-from ..retriever import Retriever
+from ..services.retriever import Retriever
 from ...persistence import database as db
 
 class IntellectEngine:

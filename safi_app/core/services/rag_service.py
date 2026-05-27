@@ -13,9 +13,9 @@ from typing import List, Dict, Any
 
 # Import the Retriever from its sibling directory
 try:
-    from ..retriever import Retriever
+    from .retriever import Retriever
 except (ImportError, ValueError) as e:
-    logging.critical(f"Failed to import Retriever: {e}. Ensure safi_app/core/retriever.py exists.")
+    logging.critical(f"Failed to import Retriever: {e}. Ensure safi_app/core/services/retriever.py exists.")
     # Define a mock class if import fails so the app can load but RAG is disabled
     class Retriever:
         def __init__(self, *args, **kwargs):

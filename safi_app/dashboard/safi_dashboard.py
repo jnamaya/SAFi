@@ -24,7 +24,7 @@ try:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    from safi_app.core import values as safi_values
+    from safi_app.core.faculties import synderesis as safi_values
     from safi_app import config as safi_config
 except ImportError as e:
     st.error(
@@ -61,6 +61,8 @@ try:
     
     try:
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise  # Let outer handler show the "Session Expired" message — don't try fallback key
     except jwt.InvalidTokenError:
         # Fallback: Check if backend is using the default dev key?
         fallback_key = "dev-secret-key-should-be-changed"
@@ -90,9 +92,6 @@ try:
     SUPER_ADMIN_EMAILS = [e.strip() for e in os.environ.get("SAFI_SUPER_ADMINS", "").split(",") if e.strip()]
     is_super_admin = (user_role == 'admin' and token_email in SUPER_ADMIN_EMAILS)
     
-except jwt.ExpiredSignatureError:
-    st.error("⚠️ Session Expired: Please return to SAFi and reload the dashboard.")
-    st.stop()
 except jwt.InvalidTokenError as e:
     st.error(f"⚠️ Access Denied: Invalid security token. Error: {e}")
     st.stop()

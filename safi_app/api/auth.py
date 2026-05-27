@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from ..extensions import oauth
 from ..persistence import database as db
 from ..config import Config
-from ..core.values import get_profile, list_profiles
+from ..core.faculties.synderesis import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
 from google_auth_oauthlib.flow import Flow # For Tool Auth
 import jwt
@@ -66,14 +66,12 @@ def get_dashboard_token():
         return jsonify({"error": "Access denied: Insufficient permissions."}), 403
 
     try:
-        # Generate Token (5 minute expiry)
         payload = {
             "sub": user_id,
             "role": role,
             "org_id": user.get('org_id'),
             "email": user.get('email'),
             "type": "dashboard_access",
-            "exp": datetime.utcnow() + timedelta(minutes=30)
         }
         
         token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")

@@ -1,7 +1,7 @@
 import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
-from ..core.values import PERSONAS, get_profile
+from ..core.faculties.synderesis import PERSONAS, get_profile
 from ..core.rbac import check_permission
 from ..config import Config
 from .conversations import global_safi_cache  # Import Cache

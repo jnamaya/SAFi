@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from ..persistence import database as db
 from ..core.orchestrator import SAFi
-from ..core.values import get_profile, list_profiles, assemble_agent
+from ..core.faculties.synderesis import get_profile, list_profiles, assemble_agent
 from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)

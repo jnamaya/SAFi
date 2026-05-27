@@ -14,19 +14,19 @@ import json
 from pathlib import Path
 
 # 1. Import Governance
-from .governance.contoso.policy import CONTOSO_GLOBAL_POLICY
-from ..persistence import database as db
+from ..governance.contoso.policy import CONTOSO_GLOBAL_POLICY
+from ...persistence import database as db
 
 # 2. Import Personas
-from .personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
-from .personas.fiduciary import THE_FIDUCIARY_PERSONA
-from .personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
-from .personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
-from .personas.safi_steward import THE_SAFI_STEWARD_PERSONA
-from .personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
-from .personas.vault import THE_VAULT_PERSONA
-from .personas.negotiator import THE_NEGOTIATOR_PERSONA
-from .personas.philosopher import THE_PHILOSOPHER_PERSONA
+from ..personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
+from ..personas.fiduciary import THE_FIDUCIARY_PERSONA
+from ..personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
+from ..personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
+from ..personas.safi_steward import THE_SAFI_STEWARD_PERSONA
+from ..personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
+from ..personas.vault import THE_VAULT_PERSONA
+from ..personas.negotiator import THE_NEGOTIATOR_PERSONA
+from ..personas.philosopher import THE_PHILOSOPHER_PERSONA
 
 # 3. Define the Persona Registry
 PERSONAS: Dict[str, Dict[str, Any]] = {

@@ -25,7 +25,7 @@ import json
 import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
-from ...utils import normalize_text, dict_sha256
+from ..utils import normalize_text, dict_sha256
 
 # Tools that only read data and carry no write/destructive side-effects.
 # These receive an instant "approve" without an LLM call (CQRS fast path).
