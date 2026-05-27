@@ -1,73 +1,59 @@
 ---
 title: Introduction: Self-Alignment Framework Interface (SAFi)
 slug: intro-SAFi
-tags: ["safi", "intro"]
-summary: High level conceptual framework connecting faculties, values, and governance into a closed loop architecture.
-version: 1.0
+tags: ["safi", "intro", "overview"]
+summary: High-level introduction to SAFi, its five-faculty separation of powers, benchmarks, and how it governs AI at runtime.
+version: 2.0
 ---
 
 # SAFi
 
 ## What is SAFi
-SAFi is the first open source implementation of the Self Alignment Framework, a closed loop ethical reasoning engine. SAFi is not a language model. It is a governor that evaluates and audits the behavior of AI models through a five faculty reasoning loop. The loop provides transparency, accountability, and drift detection.
+SAFi is the first open-source runtime governance engine for AI agents. It is not a language model. It is a governor that enforces, audits, and shapes every decision an AI agent makes before it reaches a user. Think of it as the separation of powers for AI agents.
 
-Values → Intellect → Will → Conscience → Spirit
+SAFi is built on the Self Alignment Framework, a closed-loop ethical reasoning architecture derived from classical philosophy. SAFi is the software implementation of that framework.
 
-## How SAFi works
-SAFi uses a separation of powers design. Each faculty handles a specific part of the alignment process. The result is an internal set of checks and balances that can be inspected and tested.
+## The core problem SAFi solves
+Organizations deploying AI agents face three critical gaps: no policy enforcement at runtime, no audit trail for decisions, and no mechanism to detect when an AI's behavior drifts over time.
 
-## The faculties
-### Intellect engine
-This is the generative core. It uses a general model to reason over the knowledge base and draft a response. It also produces a private reflection about how it reached that draft.
+The standard approach — a system prompt and an instruction — is not governance. The next-generation approach — wrapping the model with more LLM calls — is just adding more unverifiable intelligence on top of the problem. Both fail under adversarial pressure.
 
-### Will gate
-This is a fast safety gatekeeper. It inspects every draft before the user sees it and enforces the non negotiable rules of the active persona. Its function is to block policy violations and protect the brand.
+SAFi solves this by splitting cognition into five specialized faculties, each with a distinct job and a distinct security boundary.
 
-### Conscience auditor
-This is the judicial layer. After approval, it audits the final answer against the weighted values of the persona. It outputs a machine readable ethical ledger for accountability.
+## The five faculties
 
-### Spirit integrator
-This is the historian and identity tracker. It analyzes many audits over time to measure ethical performance and identity drift. It prevents the King Solomon problem. It generates coaching feedback for the Intellect so the system can learn and self correct.
+| Faculty | Role | Security Property |
+| --- | --- | --- |
+| Synderesis | The constitution compiler. Defines immutable rules, value weights, and scope boundaries for every agent. | Read-only after deployment. |
+| Intellect | The generative engine. Drafts responses and proposes tool calls. | Air-gapped from execution: can only produce intents, never execute them directly. |
+| Will | The deterministic gatekeeper. Pure Python, zero LLM calls. Approves or vetoes every Intellect proposal. | Immune to prompt injection. Cannot be manipulated by language. |
+| Conscience | The analytical auditor. Scores every draft against the agent's value rubrics before the user receives it. | Secondary validation layer, synchronous. |
+| Spirit | The long-term memory. Integrates Conscience scores into a rolling alignment vector using exponential moving averages. | Non-LLM mathematical integrity. Detects behavioral drift. |
 
-## Ethical profiles, personas
-SAFi can load different personas so one system adapts to many contexts. A persona defines alignment parameters and operational character.
+This is not philosophical decoration. It is a security architecture. Each faculty has a single job and cannot be overridden by the others.
 
-### Dynamic persona switching
-Users can switch the active persona in the front end. The change applies immediately.
+## The result
+- 99.86% jailbreak defense rate across 1,435+ live adversarial tests
+- 98.5% domain compliance versus an 85% unguarded baseline
+- Sub-5-second latency at approximately $0.005 per interaction
 
-### Profile structure
-Each persona contains:
-- Worldview, a short constitution that sets purpose and reasoning principles
-- Style, guidance for voice, tone, and communication
-- Will rules, guardrails enforced by the Will gate
-- Values, a weighted list used by the Conscience audit
+These numbers come from real testing, not marketing. SAFi's Will faculty — a blind deterministic gatekeeper that never calls an LLM — caught every attack the baseline model missed. You cannot social-engineer pure Python.
 
-### Prebuilt personas
-Examples include a virtue ethics guide, a cautious finance educator, and a healthcare navigator.
+## How it works
+Every user prompt flows through a strict six-phase synchronous pipeline. Nothing reaches the user until the Will has approved it and the Conscience has scored it.
 
-## Use cases
-SAFi ships as a complete web app suitable for enterprise use.
+Phase 0 evaluates the prompt against persona blacklists before any generation begins. Phase 2 is where the Intellect drafts a response. Phase 3 is where the Will checks it. Phase 4 is where the Conscience audits it. Phase 5 is where Spirit integrates the audit into long-term memory. Phase 6 is where the verified response is delivered to the user.
 
-### Authentication
-Users sign in securely, for example with Google OAuth.
+## Model agnostic design
+SAFi supports GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. Switching the underlying LLM does not require changing governance. The pipeline intercepts violations at the same deterministic gates regardless of which model is generating.
 
-### Conversation history
-All chats are stored in MySQL so users can continue across sessions and devices.
+## Who it is for
+SAFi is built for organizations that need governed AI: healthcare, finance, legal, compliance, education, and any context where an AI agent must stay inside defined boundaries. It ships as a complete web application with a governance UI, audit hub, role-based access control, and a headless API for external integrations.
 
-### Long term conversation memory
-A background job maintains a running summary. The AI keeps context across long discussions and recalls prior details.
-
-### Asynchronous auditing
-Users get a fast initial answer from Intellect and Will. Conscience and Spirit perform a deeper audit in the background. Results are logged without slowing the experience.
-
-### Model agnostic design
-Different models can be assigned to different faculties. For example a fast model for Will and a high capacity model for Intellect.
-
-### Transparent logging
-Each turn is logged to JSONL, including Intellect drafts, Will decisions, the Conscience ledger, and Spirit vectors. Audits are inspectable.
-
-### Durable storage
-Critical data, such as users, chats, and long term Spirit memory vectors, are stored in MySQL.
-
-### Deployment and configuration
-Environment variables control API keys, database settings, and model assignment. This helps manage development, staging, and production.
+## Cross references
+- 10 SAFi Technical Workflow
+- 08 SAFi Technical Math Specification
+- 18 Separation of Powers
+- 19 What is SAF
+- 23 SAFi Synderesis
+- 24 SAFi Benchmarks Validation

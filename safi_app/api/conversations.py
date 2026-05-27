@@ -291,35 +291,61 @@ def tts_audio_endpoint():
 async def public_process_prompt_endpoint():
     """
     Process a user prompt from the public WordPress chatbot.
+    Conversation context is preserved across turns using the plugin-supplied
+    conversation_id. Rate-limited per IP using the existing prompt_usage table.
     """
     data = request.json
-    if 'message' not in data or 'conversation_id' not in data:
+    if not data or 'message' not in data or 'conversation_id' not in data:
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
 
-    anonymous_user_id = data['conversation_id']
-    
-    user_details = db.get_user_details(anonymous_user_id)
-    if not user_details:
+    incoming_convo_id = data['conversation_id']
+    # Stable, namespaced user identity so public users don't collide with real accounts
+    anonymous_user_id = f"public_{incoming_convo_id}"
+
+    # --- IP-based rate limiting (reuses existing prompt_usage DB functions) ---
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+    ip_key = f"ip_{hashlib.md5(client_ip.encode()).hexdigest()[:16]}"
+    public_limit = Config.DAILY_PROMPT_LIMIT if Config.DAILY_PROMPT_LIMIT > 0 else 20
+    if db.get_todays_prompt_count(ip_key) >= public_limit:
+        return jsonify({"error": "Daily message limit reached.", "code": "LIMIT_REACHED"}), 429
+
+    # --- Ensure user exists (idempotent) ---
+    # Email must be globally unique — use the full anonymous_user_id so two
+    # public users created in the same time window never collide on the
+    # UNIQUE email constraint (which would cause upsert_user to silently
+    # update the wrong row and leave this user_id with no users table entry).
+    if not db.get_user_details(anonymous_user_id):
         db.upsert_user({
             "sub": anonymous_user_id,
             "name": "Public User",
             "email": f"{anonymous_user_id}@public.chat",
-            "picture": "" 
+            "picture": ""
         })
-        user_details = {"org_id": None}
-    
-    # NOTE: Public chats are less secure by design, but we still ensure consistency
-    new_convo = db.create_conversation(anonymous_user_id)
+    user_details = db.get_user_details(anonymous_user_id) or {"org_id": None}
+
+    # --- Ensure conversation row exists, reuse it on subsequent turns ---
+    # ensure_conversation_access() creates the row only if it doesn't exist yet,
+    # preserving history and Spirit EMA memory across the full session.
+    db.ensure_conversation_access(anonymous_user_id, incoming_convo_id)
+
+    # Record usage against the IP key for rate limiting
+    db.record_prompt_usage(ip_key)
 
     saf_system = global_safi_cache.get_or_create(
         "safi",
-        Config.INTELLECT_MODEL,
+        Config.PUBLIC_INTELLECT_MODEL,   # isolated from the main app's model selection
         None,
-        Config.CONSCIENCE_MODEL
+        Config.PUBLIC_CONSCIENCE_MODEL
     )
-    
+
     org_id = user_details.get('org_id')
-    result = await saf_system.process_prompt(data['message'], anonymous_user_id, new_convo['id'], user_name="Guest", org_id=org_id)
+    result = await saf_system.process_prompt(
+        data['message'],
+        anonymous_user_id,
+        incoming_convo_id,   # real conversation ID — context now persists across turns
+        user_name="Guest",
+        org_id=org_id
+    )
     return jsonify(result)
 
 

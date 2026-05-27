@@ -129,9 +129,14 @@ class Config:
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
-    # Model assignments for each faculty (defaults)
+    # Model assignments for each faculty (defaults — apply to authenticated users and bots)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "llama-3.1-8b-instant")
     CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.1-flash-lite")
+
+    # Models used exclusively by the public WordPress chatbot endpoint.
+    # Falls back to the global defaults above if not set.
+    PUBLIC_INTELLECT_MODEL = os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
+    PUBLIC_CONSCIENCE_MODEL = os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
