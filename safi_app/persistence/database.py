@@ -267,6 +267,17 @@ def init_db():
             )
         ''')
 
+        # --- Agent Context Memory (per-user, per-agent long-term work memory) ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_context_memory (
+                user_id VARCHAR(255) NOT NULL,
+                agent_id VARCHAR(255) NOT NULL,
+                context_json TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, agent_id)
+            )
+        ''')
+
         # --- OAuth Tokens (NEW) ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -871,6 +882,37 @@ def upsert_user_profile_memory(uid, data):
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO user_profiles (user_id, profile_json) VALUES (%s, %s) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)", (uid, data))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
+    """Load the per-agent work context memory for a user. Returns '{}' if none exists."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT context_json FROM agent_context_memory WHERE user_id=%s AND agent_id=%s",
+            (user_id, agent_id)
+        )
+        row = cursor.fetchone()
+        return row['context_json'] if row and row['context_json'] else "{}"
+    finally:
+        cursor.close()
+        conn.close()
+
+def upsert_agent_context_memory(user_id: str, agent_id: str, context_json: str) -> None:
+    """Create or update the per-agent work context memory for a user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """INSERT INTO agent_context_memory (user_id, agent_id, context_json)
+               VALUES (%s, %s, %s)
+               ON DUPLICATE KEY UPDATE context_json=VALUES(context_json)""",
+            (user_id, agent_id, context_json)
+        )
         conn.commit()
     finally:
         cursor.close()

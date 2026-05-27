@@ -299,6 +299,31 @@ function forceFinishTyping() {
     }
 }
 
+// --- FILE TYPE CONFIG (mirrors chat.js — used for in-chat attachment cards) ---
+function _getFileTypeConfig(filename) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const configs = {
+        pdf:  { label: 'PDF' },
+        docx: { label: 'DOC' },
+        doc:  { label: 'DOC' },
+        xlsx: { label: 'XLS' },
+        xls:  { label: 'XLS' },
+        csv:  { label: 'CSV' },
+        txt:  { label: 'TXT' },
+        md:   { label: 'MD'  },
+        pptx: { label: 'PPT' },
+        ppt:  { label: 'PPT' },
+    };
+    return configs[ext] || { label: ext.toUpperCase() || 'FILE' };
+}
+
+function _formatFileSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // --- MESSAGE RENDERING ---
 let lastRenderedDay = '';
 
@@ -408,16 +433,35 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             retryBtn.onclick = () => options.onRetry(typeof text === 'string' ? text : final_text_raw);
         }
 
-        // Build file attachment chip if a file was attached
+        // Build file attachment cards — supports multiple files
         let fileChipHtml = '';
-        if (options.attachedFile) {
-            fileChipHtml = `
-            <div class="flex items-center gap-2 px-3 py-1.5 mb-2 bg-white/10 rounded-lg text-sm border border-white/20">
-                <svg class="w-4 h-4 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                <span class="truncate max-w-[200px] opacity-90">${options.attachedFile}</span>
-            </div>`;
+        // Normalise: new `attachedFiles` (array) or legacy `attachedFile` (string / object)
+        const attachedFilesArr = options.attachedFiles
+            ? options.attachedFiles
+            : (options.attachedFile ? [options.attachedFile] : []);
+
+        if (attachedFilesArr.length > 0) {
+            const cards = attachedFilesArr.map(af => {
+                const fname    = typeof af === 'string' ? af : (af.name || '');
+                const fsize    = (typeof af === 'object' && af !== null) ? af.size : null;
+                const cfg      = _getFileTypeConfig(fname);
+                const sizeStr  = _formatFileSize(fsize);
+                return `
+                <div class="inline-flex items-center gap-2.5 px-3 py-2 bg-white/15 rounded-xl border border-white/25 max-w-[280px]">
+                    <div class="flex flex-col items-center justify-center w-9 h-11 rounded-lg shrink-0 border bg-white/10 border-white/30">
+                        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-[9px] font-bold leading-none mt-0.5 text-white/90">${cfg.label}</span>
+                    </div>
+                    <div class="flex flex-col min-w-0 flex-1">
+                        <span class="text-sm font-medium text-white truncate leading-snug">${fname}</span>
+                        ${sizeStr ? `<span class="text-xs text-white/65 mt-0.5">${sizeStr}</span>` : ''}
+                    </div>
+                </div>`;
+            });
+            fileChipHtml = `<div class="flex flex-wrap gap-2 mb-2">${cards.join('')}</div>`;
         }
 
         const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;

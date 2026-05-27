@@ -337,6 +337,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Memories
         memory_summary = db.fetch_conversation_summary(conversation_id)
         current_profile_json = db.fetch_user_profile_memory(user_id)
+        current_agent_context_json = db.fetch_agent_context_memory(user_id, self.active_profile_name)
 
         # Recent turns verbatim window (last 3 prior pairs)
         raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=8)
@@ -418,6 +419,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
             user_profile_json=current_profile_json,
+            agent_context_json=current_agent_context_json,
             user_name=user_name,
             user_id=user_id,
             message_id=message_id
@@ -564,14 +566,21 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 current_parameters = parameters
                 next_intent = intent
 
+                # Determine whether the intellect provider is Gemini so we can
+                # format the tool-result history correctly. Gemini needs native
+                # Content/Part objects; every other provider wants plain strings.
+                _intellect_provider_name = self.llm_provider.config.get("routes", {}).get("intellect", {}).get("provider", "groq")
+                _intellect_provider_type = self.llm_provider.config.get("providers", {}).get(_intellect_provider_name, {}).get("type", "openai")
+                _use_gemini_history = (_intellect_provider_type == "gemini")
+
                 for agent_turn in range(MAX_AGENT_TURNS):
                     db.update_message_reasoning(
                         message_id,
                         _tool_status(current_tool_name, agent_turn)
                     )
-                    
+
                     raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
-                    if raw_turn:
+                    if raw_turn and _use_gemini_history:
                         from google.genai import types
                         agent_history.append(types.Content(**raw_turn))
                     else:
@@ -589,10 +598,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         f"Orchestrator: Tool '{current_tool_name}' executed. "
                         f"Result snippet: {str(tool_result)[:120]}"
                     )
-                    
-                    from google.genai import types
-                    tool_part = types.Part.from_function_response(name=current_tool_name, response={"result": tool_result})
-                    agent_history.append(types.Content(role="user", parts=[tool_part]))
+
+                    if _use_gemini_history:
+                        from google.genai import types
+                        tool_part = types.Part.from_function_response(name=current_tool_name, response={"result": tool_result})
+                        agent_history.append(types.Content(role="user", parts=[tool_part]))
+                    else:
+                        agent_history.append(f"TOOL RESULT for {current_tool_name}:\n{tool_result}")
 
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
@@ -895,7 +907,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
-                 self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
+                self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
+
+        self.executor.submit(
+            self._run_agent_context_update_thread,
+            user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t
+        )
 
         return {
             "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t,

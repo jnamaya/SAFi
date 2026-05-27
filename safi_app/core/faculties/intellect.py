@@ -60,6 +60,7 @@ class IntellectEngine:
         recent_turns: str = "",
         spirit_feedback: str = "",
         user_profile_json: str,
+        agent_context_json: str = "{}",
         user_name: Optional[str] = None,
         user_id: Optional[str] = None,
         message_id: Optional[str] = None,
@@ -148,6 +149,21 @@ class IntellectEngine:
             template = self.prompt_config.get("user_profile_template", "CONTEXT: User Profile:\n{user_profile_json}")
             user_profile_injection = template.format(user_profile_json=user_profile_json)
 
+        agent_context_injection = ""
+        if agent_context_json and agent_context_json not in ("{}", "null", ""):
+            try:
+                import json as _json
+                parsed = _json.loads(agent_context_json)
+                # Only inject if the context has at least one non-empty array
+                if any(v for v in parsed.values() if isinstance(v, list) and v):
+                    template = self.prompt_config.get(
+                        "agent_context_template",
+                        "WORK CONTEXT MEMORY (accumulated across all past conversations with this agent):\n<agent_context>{agent_context_json}</agent_context>\nUse this memory to maintain continuity — do not ask the user for information already captured here."
+                    )
+                    agent_context_injection = template.format(agent_context_json=agent_context_json)
+            except Exception:
+                pass
+
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
         if "{persona_style_rules}" in formatting_instructions:
             formatting_instructions = formatting_instructions.format(persona_style_rules=style)
@@ -160,6 +176,7 @@ class IntellectEngine:
             worldview,
             user_name_injection,
             user_profile_injection,
+            agent_context_injection,
             memory_injection,
             recent_turns_injection,
             spirit_injection,

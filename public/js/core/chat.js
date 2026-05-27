@@ -15,21 +15,21 @@ let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
 
 // --- FILE UPLOAD STATE ---
-let pendingFile = null;
+let pendingFiles = [];   // array — supports multiple attachments
 
 /**
  * Initializes the file upload button and hidden input.
- * Call this from app.js after DOM is loaded.
+ * Each pick appends to pendingFiles so users can add files from multiple dialogs.
  */
 export function initFileUpload() {
     const fileInput = document.getElementById('file-upload-input');
     if (!fileInput) return;
 
     fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            pendingFile = file;
-            _showFileChip(file.name, file.size);
+        const picked = Array.from(e.target.files);
+        if (picked.length) {
+            pendingFiles.push(...picked);
+            _renderFileChips();
         }
         fileInput.value = '';
     });
@@ -39,49 +39,87 @@ export function triggerFilePicker() {
     document.getElementById('file-upload-input')?.click();
 }
 
-function _showFileChip(filename, size) {
+/** Returns type-specific colour tokens for the file card. */
+function _getFileTypeConfig(filename) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    const configs = {
+        pdf:  { label: 'PDF', bg: 'bg-red-50 dark:bg-red-900/20',       border: 'border-red-200 dark:border-red-800',       text: 'text-red-500' },
+        docx: { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
+        doc:  { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
+        csv:  { label: 'CSV', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800', text: 'text-emerald-500' },
+        txt:  { label: 'TXT', bg: 'bg-neutral-100 dark:bg-neutral-700',  border: 'border-neutral-200 dark:border-neutral-600', text: 'text-neutral-500' },
+        md:   { label: 'MD',  bg: 'bg-violet-50 dark:bg-violet-900/20',  border: 'border-violet-200 dark:border-violet-800',  text: 'text-violet-500' },
+    };
+    return configs[ext] || {
+        label: ext.toUpperCase() || 'FILE',
+        bg: 'bg-neutral-100 dark:bg-neutral-700',
+        border: 'border-neutral-200 dark:border-neutral-600',
+        text: 'text-neutral-500'
+    };
+}
+
+function _fmtSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Re-renders all pending file chips. Called after any add/remove. */
+function _renderFileChips() {
     const chipArea = document.getElementById('file-chip-area');
     if (!chipArea) return;
 
-    const sizeStr = size < 1024 ? `${size}B`
-        : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)}KB`
-        : `${(size / (1024 * 1024)).toFixed(1)}MB`;
+    if (pendingFiles.length === 0) {
+        chipArea.innerHTML = '';
+        chipArea.classList.add('hidden');
+        if (ui.elements.sendButton && ui.elements.messageInput) {
+            ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
+        }
+        return;
+    }
 
-    chipArea.innerHTML = `
-        <div class="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm animate-fade-in">
-            <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-            </svg>
-            <span class="text-neutral-700 dark:text-neutral-300 truncate max-w-[200px]">${filename}</span>
-            <span class="text-neutral-400 text-xs">${sizeStr}</span>
-            <button type="button" id="remove-file-btn" class="text-neutral-400 hover:text-red-500 transition-colors ml-1" title="Remove file">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+    const cards = pendingFiles.map((file, i) => {
+        const cfg = _getFileTypeConfig(file.name);
+        const sizeStr = _fmtSize(file.size);
+        return `
+        <div class="inline-flex items-center gap-3 pl-2 pr-3 py-2 bg-white dark:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 shadow-sm max-w-[260px] animate-fade-in">
+            <div class="flex flex-col items-center justify-center w-9 h-11 rounded-lg shrink-0 border ${cfg.bg} ${cfg.border}">
+                <svg class="w-4 h-4 ${cfg.text}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span class="text-[9px] font-bold leading-none mt-0.5 ${cfg.text}">${cfg.label}</span>
+            </div>
+            <div class="flex flex-col min-w-0 flex-1">
+                <span class="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate leading-snug">${file.name}</span>
+                <span class="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">${sizeStr}</span>
+            </div>
+            <button type="button" class="remove-file-btn shrink-0 p-1 rounded-lg text-neutral-300 dark:text-neutral-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    data-index="${i}" title="Remove file">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
             </button>
-        </div>
-    `;
-    chipArea.classList.remove('hidden');
-
-    document.getElementById('remove-file-btn').addEventListener('click', () => {
-        _clearPendingFile();
+        </div>`;
     });
 
-    // Enable send button since we have a file (even if text input is empty)
+    chipArea.innerHTML = `<div class="flex flex-wrap gap-2">${cards.join('')}</div>`;
+    chipArea.classList.remove('hidden');
+
+    chipArea.querySelectorAll('.remove-file-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.index, 10);
+            pendingFiles.splice(idx, 1);
+            _renderFileChips();
+        });
+    });
+
     if (ui.elements.sendButton) ui.elements.sendButton.disabled = false;
 }
 
-function _clearPendingFile() {
-    pendingFile = null;
-    const chipArea = document.getElementById('file-chip-area');
-    if (chipArea) {
-        chipArea.innerHTML = '';
-        chipArea.classList.add('hidden');
-    }
-    // Re-evaluate send button state based on text input
-    if (ui.elements.sendButton && ui.elements.messageInput) {
-        ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
-    }
+function _clearAllPendingFiles() {
+    pendingFiles = [];
+    _renderFileChips();
 }
 
 // --- CORE EXPORTED HANDLERS (Fixing ReferenceError) ---
@@ -403,6 +441,16 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     }
 }
 
+/**
+ * Strips injected document context blocks from a user message before display.
+ * The backend appends [UPLOADED DOCUMENT: ...]...[END DOCUMENT] to the stored
+ * turn content; we never want to render that wall of text in the chat bubble.
+ */
+function _stripDocumentContext(content) {
+    if (typeof content !== 'string') return content;
+    return content.replace(/\n\n\[UPLOADED DOCUMENT:[\s\S]*?\[END DOCUMENT\]/g, '').trim();
+}
+
 // Updated signature to accept activeProfileData
 function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
@@ -465,9 +513,14 @@ function renderHistory(history, user, showModal, activeProfileData) {
         // --- MODIFIED: Use the parsed array ---
         options.suggestedPrompts = parsedSuggestions;
 
+        // Strip injected document context from user messages before rendering
+        const displayContent = turn.role === 'user'
+            ? _stripDocumentContext(turn.content)
+            : turn.content;
+
         uiMessages.displayMessage(
             turn.role,
-            turn.content,
+            displayContent,
             date,
             turn.message_id,
             payload,
@@ -549,7 +602,7 @@ export async function sendMessage(activeProfileData, user) {
     }
 
     const userMessage = ui.elements.messageInput.value.trim();
-    if (!userMessage && !pendingFile) return;
+    if (!userMessage && pendingFiles.length === 0) return;
 
     let isNewConversation = false;
 
@@ -641,13 +694,13 @@ export async function sendMessage(activeProfileData, user) {
         sendMessage(activeProfileData, user);
     };
 
-    // Capture pending file name before extraction (for display in chat bubble)
-    const pendingFileName = pendingFile ? pendingFile.name : null;
+    // Capture pending file infos before extraction (for display in chat bubble)
+    const pendingFileInfos = pendingFiles.map(f => ({ name: f.name, size: f.size }));
 
     uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, {
         avatarUrl: pic,
         onRetry: retryHandler,
-        attachedFile: pendingFileName
+        attachedFiles: pendingFileInfos
     });
 
     const userMessageObject = {
@@ -683,39 +736,40 @@ export async function sendMessage(activeProfileData, user) {
         } catch (e) { /* message may not exist yet — ignore */ }
     }, 1500);
 
-    // --- DOCUMENT UPLOAD: Extract text from pending file ---
+    // --- DOCUMENT UPLOAD: Extract text from all pending files ---
     let documentContext = '';
-    let attachedFileName = '';
-    if (pendingFile) {
-        try {
-            uiMessages.updateThinkingStatus('Extracting document text...');
-            const extracted = await api.extractDocumentText(pendingFile);
-            documentContext = `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.]\n${extracted.text}\n[END DOCUMENT]`;
-            attachedFileName = extracted.filename;
-            if (extracted.was_truncated) {
-                ui.showToast(`Document truncated to fit context window.`, 'info');
+    if (pendingFiles.length > 0) {
+        const filesToProcess = [...pendingFiles];
+        _clearAllPendingFiles();
+        for (const file of filesToProcess) {
+            try {
+                uiMessages.updateThinkingStatus(`Extracting ${file.name}…`);
+                const extracted = await api.extractDocumentText(file);
+                documentContext += `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.]\n${extracted.text}\n[END DOCUMENT]`;
+                if (extracted.was_truncated) {
+                    ui.showToast(`${file.name} truncated to fit context window.`, 'info');
+                }
+            } catch (error) {
+                ui.showToast(error.message || `Failed to process ${file.name}.`, 'error');
+                _clearAllPendingFiles();
+                if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
+                ui.clearLoadingInterval();
+                // Reset button
+                buttonIcon.classList.remove('hidden');
+                buttonIcon.innerHTML = `
+                   <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd"
+                        d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                        clip-rule="evenodd" />
+                    </svg>`;
+                buttonLoader.classList.add('hidden');
+                ui.elements.sendButton.classList.remove('canceling');
+                currentAbortController = null;
+                ui.elements.messageInput.value = originalMessage;
+                autoSize();
+                return;
             }
-        } catch (error) {
-            ui.showToast(error.message || 'Failed to process document.', 'error');
-            _clearPendingFile();
-            if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
-            ui.clearLoadingInterval();
-            // Reset button
-            buttonIcon.classList.remove('hidden');
-            buttonIcon.innerHTML = `
-               <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd"
-                    d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
-                    clip-rule="evenodd" />
-                </svg>`;
-            buttonLoader.classList.add('hidden');
-            ui.elements.sendButton.classList.remove('canceling');
-            currentAbortController = null;
-            ui.elements.messageInput.value = originalMessage;
-            autoSize();
-            return;
         }
-        _clearPendingFile();
     }
     // --- END DOCUMENT UPLOAD ---
 
@@ -942,8 +996,8 @@ export function autoSize() {
     const sendButton = ui.elements.sendButton;
 
     const hasText = input.value.trim().length > 0;
-    // Enable send if there is text OR a pending file attachment
-    sendButton.disabled = !hasText && !pendingFile;
+    // Enable send if there is text OR at least one pending file attachment
+    sendButton.disabled = !hasText && pendingFiles.length === 0;
 
     if (!hasText) {
         input.style.height = '44px'; // Force reset to min-height
