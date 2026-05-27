@@ -144,7 +144,7 @@ class Config:
     # Provider: "edge-tts" (free), "gpt-4o-mini-tts" (OpenAI), or "gemini-*"
     TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "edge-tts")
     # edge-tts voices: en-US-AriaNeural, en-US-GuyNeural, en-US-JennyNeural
-    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AriaNeural")
+    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-GuyNeural")
     TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
 
     # Spirit computation parameters
