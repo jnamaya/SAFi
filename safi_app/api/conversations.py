@@ -14,6 +14,53 @@ from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
 
+def _tts_stream_generator(text: str, voice: str, cache_path):
+    """
+    Sync generator that yields MP3 chunks from edge-tts as they arrive,
+    then writes the complete audio to disk cache when done.
+    Uses a background thread + queue to bridge the async edge-tts stream.
+    """
+    import edge_tts
+    import queue
+    import threading
+    from pathlib import Path
+
+    q = queue.Queue(maxsize=20)
+
+    async def _producer():
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    q.put(chunk["data"])
+        except Exception as exc:
+            q.put(exc)
+        finally:
+            q.put(None)
+
+    t = threading.Thread(target=lambda: asyncio.run(_producer()), daemon=True)
+    t.start()
+
+    accumulated = []
+    try:
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                raise item
+            accumulated.append(item)
+            yield item
+    finally:
+        t.join(timeout=10)
+        if accumulated:
+            try:
+                Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(cache_path, "wb") as f:
+                    f.write(b"".join(accumulated))
+            except Exception:
+                pass
+
 def _strip_markdown(text: str) -> str:
     """Strip markdown so TTS reads clean prose instead of symbols."""
     text = re.sub(r'#{1,6}\s*', '', text)          # headings
@@ -252,51 +299,41 @@ async def bot_process_prompt_endpoint():
 
 @conversations_bp.route('/tts_audio', methods=['POST'])
 def tts_audio_endpoint():
-    """
-    Handles POST request to generate TTS audio.
-    """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    
+
     try:
         data = request.get_json()
         text_to_speak = data.get('text')
-        
         if not text_to_speak:
             return jsonify({"error": "Missing 'text' in request body."}), 400
-        
-        user_details = db.get_user_details(user_id)
-        if not user_details:
-             return jsonify({"error": "User not found."}), 404
 
-        user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-        
-        # FETCH AGENT PROFILE FIRST to check for overrides
-        try:
-            agent_profile = get_profile(user_profile_name)
-        except Exception:
-            agent_profile = {}
+        text_clean = _strip_markdown(text_to_speak)
+        voice     = getattr(Config, "TTS_VOICE",     "en-US-AndrewNeural")
+        model     = getattr(Config, "TTS_MODEL",     "edge-tts")
+        cache_dir = getattr(Config, "TTS_CACHE_DIR", "tts_cache")
 
-        # PRIORITY: Agent -> User -> System Default
-        intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
-        conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
+        from pathlib import Path
+        cache_hash = hashlib.sha256(f"{text_clean}|{model}|{voice}".encode()).hexdigest()
+        cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
 
-        saf_system = global_safi_cache.get_or_create(
-            user_profile_name,
-            intellect_model,
-            None,
-            conscience_model
+        # Cache hit: serve immediately with Content-Length so browser knows duration
+        if cache_path.exists():
+            try:
+                audio_bytes = cache_path.read_bytes()
+                resp = Response(audio_bytes, mimetype='audio/mpeg')
+                resp.headers['Content-Length'] = len(audio_bytes)
+                return resp
+            except IOError:
+                pass
+
+        # Cache miss: stream chunks as they arrive, cache on completion
+        return Response(
+            _tts_stream_generator(text_clean, voice, cache_path),
+            mimetype='audio/mpeg',
+            headers={'X-Accel-Buffering': 'no'},
         )
-
-        audio_content = saf_system.generate_speech_audio(_strip_markdown(text_to_speak))
-        
-        if audio_content is None:
-            return jsonify({"error": "TTS generation failed on the backend."}), 500
-
-        response = Response(audio_content, mimetype='audio/mpeg')
-        response.headers['Content-Disposition'] = 'attachment; filename=speech.mp3'
-        return response
 
     except Exception as e:
         current_app.logger.error(f"Error processing TTS request: {e}")

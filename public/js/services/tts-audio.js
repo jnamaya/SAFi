@@ -1,111 +1,206 @@
 // tts-audio.js
 
-import * as ui from '../ui/ui.js'; // For access to showToast
-import * as api from '../core/api.js'; // Import API for TTS call
-import { iconPlay, iconPause, iconLoading } from '../ui/ui-render-constants.js'; // Assuming icons are moved to a constants file
+import * as api from '../core/api.js';
+import { iconPlay, iconLoading } from '../ui/ui-render-constants.js';
+import * as ui from '../ui/ui.js';
 
-// --- GLOBAL STATE FOR AUDIO ---
+const MSE_SUPPORTED = (() => {
+    try { return typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg'); }
+    catch { return false; }
+})();
+
+const CIRCUMFERENCE = 439.8; // 2π × 70
+
+// --- DOM refs (lazy) ---
+let _player, _loading, _controls, _playpause, _playIcon, _pauseIcon;
+let _ring, _current, _duration, _closeBtn, _closeLoadingBtn;
+
+function els() {
+    if (_player) return;
+    _player          = document.getElementById('audio-player');
+    _loading         = document.getElementById('audio-player-loading');
+    _controls        = document.getElementById('audio-player-controls');
+    _playpause       = document.getElementById('audio-player-playpause');
+    _playIcon        = document.getElementById('audio-pp-play-icon');
+    _pauseIcon       = document.getElementById('audio-pp-pause-icon');
+    _ring            = document.getElementById('audio-player-ring');
+    _current         = document.getElementById('audio-player-current');
+    _duration        = document.getElementById('audio-player-duration');
+    _closeBtn        = document.getElementById('audio-player-close');
+    _closeLoadingBtn = document.getElementById('audio-player-close-loading');
+
+    _playpause.addEventListener('click', togglePlayPause);
+    _closeBtn.addEventListener('click', closePlayer);
+    _closeLoadingBtn.addEventListener('click', closePlayer);
+}
+
+// --- State ---
 let audio = null;
-let currentPlaybackElement = null; // Stores the button element currently playing
+let mediaSource = null;
+let currentTriggerBtn = null;
+let rafId = null;
 
-// --- TTS HELPER FUNCTION ---
-/**
- * Fetches and plays TTS audio for the given text, managing the playback button state.
- * @param {string} text - The text to speak.
- * @param {HTMLElement} buttonElement - The button element triggering playback.
- */
-export async function playSpeech(text, buttonElement) {
-    // Case A: A different message's audio is currently active (playing or paused). Stop and reset it.
-    if (currentPlaybackElement && currentPlaybackElement !== buttonElement) {
-        resetAudioState();
+// --- Visibility (scale/fade pop) ---
+function showPlayer(loadingState) {
+    els();
+    _loading.classList.toggle('hidden', !loadingState);
+    _controls.classList.toggle('hidden', loadingState);
+    _player.classList.remove('scale-75', 'opacity-0', 'pointer-events-none');
+    _player.classList.add('scale-100', 'opacity-100', 'pointer-events-auto');
+}
+
+function hidePlayer() {
+    els();
+    _player.classList.remove('scale-100', 'opacity-100', 'pointer-events-auto');
+    _player.classList.add('scale-75', 'opacity-0', 'pointer-events-none');
+}
+
+// --- Time formatting ---
+function fmt(s) {
+    if (!isFinite(s) || isNaN(s)) return '--:--';
+    const m = Math.floor(s / 60);
+    return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+}
+
+// --- Progress ring ---
+function startProgressLoop() {
+    cancelAnimationFrame(rafId);
+    function tick() {
+        if (!audio) return;
+        updateProgress();
+        if (!audio.paused) rafId = requestAnimationFrame(tick);
     }
+    rafId = requestAnimationFrame(tick);
+}
 
-    // Set the button element for the current interaction
-    currentPlaybackElement = buttonElement;
+function updateProgress() {
+    if (!audio) return;
+    const cur = audio.currentTime;
+    const dur = audio.duration;
+    const known = isFinite(dur) && dur > 0;
+    const pct   = known ? cur / dur : 0;
+    _ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+    _current.textContent  = fmt(cur);
+    _duration.textContent = known ? fmt(dur) : '--:--';
+}
 
-    // Case 1: Audio exists AND is playing -> PAUSE
-    if (audio && !audio.paused) {
-        audio.pause();
-        buttonElement.innerHTML = iconPlay; // Change icon to Play (Ready to Resume)
-        buttonElement.classList.remove('text-green-500', 'animate-pulse');
-        return;
-    }
+// --- Controls ---
+function togglePlayPause() {
+    if (!audio) return;
+    if (audio.paused) { audio.play(); setPauseIcon(); startProgressLoop(); }
+    else              { audio.pause(); setPlayIcon(); }
+}
 
-    // Case 2: Audio exists AND is paused -> RESUME
-    if (audio && audio.paused) {
-        audio.play().catch(e => {
-            console.error("Audio playback failed (resume):", e);
-            ui.showToast('Audio playback blocked by browser.', 'error');
-            resetAudioState();
-        });
-        buttonElement.innerHTML = iconPause; // Change icon to Pause (Currently Playing)
-        buttonElement.classList.add('text-green-500');
-        return;
-    }
+function setPlayIcon()  { _playIcon.classList.remove('hidden'); _pauseIcon.classList.add('hidden'); }
+function setPauseIcon() { _playIcon.classList.add('hidden');    _pauseIcon.classList.remove('hidden'); }
 
-    // Case 3: No audio loaded yet -> FETCH AND PLAY
+function closePlayer() { resetAudioState(); hidePlayer(); }
 
-    // Set loading state
-    buttonElement.innerHTML = iconLoading;
-    buttonElement.classList.add('text-green-500', 'animate-pulse');
-
-    try {
-        ui.showToast('Generating audio...', 'info', 1500);
-        const audioBlob = await api.fetchTTSAudio(text);
-
-        // Clear any old audio object reference
-        if (audio) {
-            URL.revokeObjectURL(audio.src);
-        }
-
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audio = new Audio(audioUrl);
-
-        audio.oncanplaythrough = () => {
-            // Start playback
-            audio.play().catch(e => {
-                console.error("Audio playback failed (initial):", e);
-                ui.showToast('Audio playback blocked by browser.', 'error');
-                resetAudioState();
-            });
-            // Update button to Pause icon
-            currentPlaybackElement.innerHTML = iconPause;
-            currentPlaybackElement.classList.remove('animate-pulse');
-            currentPlaybackElement.classList.add('text-green-500');
-        };
-
-        audio.onended = () => {
-            // Audio finished playing
-            resetAudioState();
-        };
-
-        audio.onerror = (e) => {
-            console.error("Audio error:", e);
-            ui.showToast('Error playing audio.', 'error');
-            resetAudioState();
-        };
-
-    } catch (error) {
-        console.error('TTS generation failed:', error);
-        ui.showToast('TTS service unavailable.', 'error');
-        resetAudioState();
+function resetTriggerBtn() {
+    if (currentTriggerBtn) {
+        currentTriggerBtn.innerHTML = iconPlay;
+        currentTriggerBtn.classList.remove('text-green-500', 'animate-pulse');
+        currentTriggerBtn = null;
     }
 }
 
-/**
- * Stops current audio playback and resets the global state and button UI.
- */
+function startPlayback() {
+    showPlayer(false);
+    setPauseIcon();
+    updateProgress();
+    audio.play().catch(() => { ui.showToast('Audio playback blocked by browser.', 'error'); closePlayer(); });
+    startProgressLoop();
+    resetTriggerBtn();
+}
+
+function onEnded() {
+    cancelAnimationFrame(rafId);
+    setPlayIcon();
+    updateProgress();
+    resetTriggerBtn();
+}
+
+function onAudioError() {
+    ui.showToast('Error playing audio.', 'error');
+    closePlayer();
+}
+
+// --- MSE streaming ---
+async function loadStreaming(text) {
+    mediaSource = new MediaSource();
+    audio = new Audio(URL.createObjectURL(mediaSource));
+    audio.addEventListener('ended',          onEnded);
+    audio.addEventListener('error',          onAudioError);
+    audio.addEventListener('durationchange', updateProgress);
+
+    await new Promise(r => mediaSource.addEventListener('sourceopen', r, { once: true }));
+
+    const sb        = mediaSource.addSourceBuffer('audio/mpeg');
+    const waitUpdate = () => new Promise(r => sb.addEventListener('updateend', r, { once: true }));
+    const response  = await api.fetchTTSStream(text);
+    const reader    = response.body.getReader();
+    let started = false;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            if (mediaSource && mediaSource.readyState === 'open') mediaSource.endOfStream();
+            break;
+        }
+        if (sb.updating) await waitUpdate();
+        sb.appendBuffer(value);
+        await waitUpdate();
+        if (!started) { started = true; startPlayback(); }
+    }
+}
+
+// --- Blob fallback ---
+async function loadBlob(text) {
+    const blob = await api.fetchTTSAudio(text);
+    if (audio) URL.revokeObjectURL(audio.src);
+    audio = new Audio(URL.createObjectURL(blob));
+    audio.addEventListener('ended',          onEnded);
+    audio.addEventListener('error',          onAudioError);
+    audio.addEventListener('canplaythrough', startPlayback, { once: true });
+}
+
+// --- Public ---
+export async function playSpeech(text, buttonElement) {
+    els();
+
+    if (currentTriggerBtn === buttonElement && audio) { togglePlayPause(); return; }
+
+    resetAudioState();
+    currentTriggerBtn = buttonElement;
+    buttonElement.innerHTML = iconLoading;
+    buttonElement.classList.add('text-green-500', 'animate-pulse');
+    showPlayer(true);
+
+    try {
+        if (MSE_SUPPORTED) await loadStreaming(text);
+        else               await loadBlob(text);
+    } catch (err) {
+        console.error('TTS failed:', err);
+        ui.showToast('TTS service unavailable.', 'error');
+        closePlayer();
+        resetTriggerBtn();
+    }
+}
+
 export function resetAudioState() {
+    cancelAnimationFrame(rafId);
     if (audio) {
         audio.pause();
-        // Clean up the object URL to free memory
-        URL.revokeObjectURL(audio.src);
+        try { URL.revokeObjectURL(audio.src); } catch {}
         audio = null;
     }
-    if (currentPlaybackElement) {
-        // Reset the button to 'Play' icon
-        currentPlaybackElement.innerHTML = iconPlay;
-        currentPlaybackElement.classList.remove('text-green-500', 'animate-pulse');
-        currentPlaybackElement = null;
+    if (mediaSource) {
+        try { if (mediaSource.readyState === 'open') mediaSource.endOfStream(); } catch {}
+        mediaSource = null;
     }
+    resetTriggerBtn();
+    if (_ring)     _ring.style.strokeDashoffset = CIRCUMFERENCE;
+    if (_current)  _current.textContent  = '0:00';
+    if (_duration) _duration.textContent = '--:--';
+    if (_playIcon) setPlayIcon();
 }

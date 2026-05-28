@@ -198,6 +198,19 @@ export const fetchTTSAudio = async (text) => {
     return response.blob();
 };
 
+// Returns the raw Response so the caller can stream the body
+export const fetchTTSStream = async (text) => {
+    const headers = await createHeaders();
+    const response = await fetch(urls.TTS, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text }),
+        credentials: 'include'
+    });
+    if (!response.ok) throw new Error('TTS stream failed.');
+    return response;
+};
+
 // --- NEW: API functions for "My Profile" tab ---
 export async function fetchUserProfileMemory() {
     return httpGet(urls.MY_PROFILE);
