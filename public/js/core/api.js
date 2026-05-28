@@ -254,16 +254,15 @@ export async function generateScope(personality) {
 }
 
 export async function getAuthStatus() {
-    // FIX: Force fresh fetch to avoid caching old status
-    return httpGet(`/api/auth/status?_t=${Date.now()}`);
+    return httpGet(j(`/api/auth/status?_t=${Date.now()}`));
 }
 
 export async function disconnectProvider(provider) {
-    return httpJSON(`/api/auth/${provider}/disconnect`, 'POST', {});
+    return httpJSON(j(`/api/auth/${provider}/disconnect`), 'POST', {});
 }
 
 export async function getDashboardToken() {
-    return httpJSON('/api/auth/dashboard-token', 'POST', {});
+    return httpJSON(j('/api/auth/dashboard-token'), 'POST', {});
 }
 
 // --- GOVERNANCE API Functions ---

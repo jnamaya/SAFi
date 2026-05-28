@@ -1,21 +1,16 @@
 import * as ui from '../ui.js';
-
-/**
- * Renders the embedded dashboard iframe in the Control Panel.
- */
 import * as api from '../../core/api.js';
 
-/**
- * Renders the embedded dashboard iframe in the Control Panel.
- * Now Secured: Fetches an ephemeral access token first.
- */
+const _Cap = typeof window !== 'undefined' ? window.Capacitor : null;
+const _isNative = !!(_Cap?.isNativePlatform?.());
+const _Browser = _Cap?.Plugins?.Browser;
+
 export async function renderSettingsDashboardTab() {
     ui._ensureElements();
     const container = ui.elements.cpTabDashboard;
     if (!container) return;
 
-    // Don't re-render if iframe already exists
-    if (container.querySelector('iframe')) return;
+    if (container.querySelector('iframe') || container.querySelector('#open-dashboard-btn')) return;
 
     container.innerHTML = `
         <div class="flex items-center justify-center w-full h-full text-neutral-500">
@@ -32,36 +27,50 @@ export async function renderSettingsDashboardTab() {
             throw new Error(result.error || 'Access denied');
         }
 
-        container.innerHTML = ''; // Clear loading state
-
-        const headerDiv = document.createElement('div');
-        headerDiv.className = "p-6 shrink-0";
-        headerDiv.innerHTML = `
-            <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
-            <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
-        `;
-
-        const iframeContainer = document.createElement('div');
-        iframeContainer.className = "w-full flex-1 relative min-h-0";
-
-        const iframe = document.createElement('iframe');
-        // Use URL from backend (SAFI_DASHBOARD_URL)
-        const dashboardUrl = result.url;
-
-        if (!dashboardUrl) {
+        if (!result.url) {
             throw new Error("Dashboard URL not configured");
         }
 
-        // Ensure we handle trailing slashes gracefully-ish (browser handles // fine)
-        iframe.src = `${dashboardUrl}/?embed=true&token=${encodeURIComponent(result.token)}`;
-        iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0";
-        iframe.title = "SAFi Audit Hub";
-        iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
+        const dashboardUrl = `${result.url}/?embed=true&token=${encodeURIComponent(result.token)}`;
 
-        iframeContainer.appendChild(iframe);
+        if (_isNative) {
+            // Iframes are unreliable in Android WebView — open in the Capacitor in-app browser
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center w-full h-full text-center p-8 gap-4">
+                    <h3 class="text-xl font-semibold">Trace & Analyze</h3>
+                    <p class="text-neutral-500 dark:text-neutral-400 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
+                    <button id="open-dashboard-btn"
+                        class="mt-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition">
+                        Open Audit Hub
+                    </button>
+                </div>
+            `;
+            document.getElementById('open-dashboard-btn').addEventListener('click', () => {
+                _Browser?.open({ url: dashboardUrl, windowName: '_blank' });
+            });
+        } else {
+            container.innerHTML = '';
 
-        container.appendChild(headerDiv);
-        container.appendChild(iframeContainer);
+            const headerDiv = document.createElement('div');
+            headerDiv.className = "p-6 shrink-0";
+            headerDiv.innerHTML = `
+                <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
+                <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
+            `;
+
+            const iframeContainer = document.createElement('div');
+            iframeContainer.className = "w-full flex-1 relative min-h-0";
+
+            const iframe = document.createElement('iframe');
+            iframe.src = dashboardUrl;
+            iframe.className = "absolute inset-0 w-full h-full rounded-lg border-0";
+            iframe.title = "SAFi Audit Hub";
+            iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-downloads";
+
+            iframeContainer.appendChild(iframe);
+            container.appendChild(headerDiv);
+            container.appendChild(iframeContainer);
+        }
 
     } catch (error) {
         console.error('Dashboard Access Error:', error);

@@ -751,8 +751,12 @@
 
   <!-- Login page feature flags + local account form handler -->
   <script>
+    // Native detection — mirrors api.js logic without needing an import
+    const _isNative = !!(window.Capacitor?.isNativePlatform?.());
+    const _HOST = _isNative ? 'https://safi.selfalignmentframework.com' : '';
+
     // Apply server-side feature flags to the login page
-    fetch('/api/app-config')
+    fetch(`${_HOST}/api/app-config`)
       .then(r => r.json())
       .then(cfg => {
         if (!cfg.demo_enabled) {
@@ -779,15 +783,38 @@
       submitBtn.textContent = 'Signing in…';
 
       try {
-        const res = await fetch('/api/login/local', {
+        const res = await fetch(`${_HOST}/api/login/local`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
+          credentials: _isNative ? 'include' : 'same-origin',
           body: JSON.stringify({ email, password })
         });
 
         if (res.ok) {
-          window.location.href = '/';
+          const data = await res.json().catch(() => ({}));
+          if (data.token) {
+            // Server returned a bearer token — store it and reload
+            const TOKEN_KEY = 'safi_auth_token';
+            if (_isNative && window.Capacitor?.Plugins?.Preferences) {
+              await window.Capacitor.Plugins.Preferences.set({ key: TOKEN_KEY, value: data.token });
+            } else {
+              localStorage.setItem(TOKEN_KEY, data.token);
+            }
+            window.location.reload();
+          } else {
+            // Server may have used a cookie session (redirect-based flow).
+            // Verify it actually works before reloading, so we can show a clear
+            // error instead of silently bouncing back to the login screen.
+            const meRes = await fetch(`${_HOST}/api/me`, { credentials: 'include' }).catch(() => null);
+            if (meRes && meRes.ok) {
+              window.location.reload();
+            } else {
+              errorEl.textContent = 'Login succeeded on the server but the session could not be established. Make sure local accounts are configured correctly.';
+              errorEl.classList.remove('hidden');
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Sign In';
+            }
+          }
         } else {
           const data = await res.json().catch(() => ({}));
           errorEl.textContent = data.error || 'Invalid credentials.';

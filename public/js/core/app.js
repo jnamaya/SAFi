@@ -21,8 +21,8 @@ const SplashScreen = Plugins?.SplashScreen;
 const Haptics = Plugins?.Haptics;
 const StatusBar = Plugins?.StatusBar;
 const Network = Plugins?.Network;
-// ADDED: Import App Plugin
 const App = Plugins?.App;
+const Browser = Plugins?.Browser;
 
 const WEB_CLIENT_ID = '391499357887-ggqkfpcqptcr93raffcv5mhgufmlu92v.apps.googleusercontent.com';
 
@@ -123,6 +123,24 @@ async function handleNativeLogin() {
   }
 }
 
+/** Opens Microsoft OAuth in the Capacitor in-app browser and waits for the deep link callback. */
+async function handleNativeMicrosoftLogin() {
+  if (!Browser) {
+    ui.showToast('Browser plugin not available.', 'error');
+    return;
+  }
+  try {
+    const redirectUri = encodeURIComponent('com.safi.app://auth');
+    await Browser.open({
+      url: `https://safi.selfalignmentframework.com/api/login/microsoft?redirect_uri=${redirectUri}`,
+      windowName: '_self'
+    });
+  } catch (err) {
+    console.error('[MS] Browser open failed:', err);
+    ui.showToast('Could not open Microsoft login.', 'error');
+  }
+}
+
 /** Show/hide the offline banner and update UI for native status */
 function updateOfflineUI(isOnline) {
   const banner = document.getElementById('offline-banner');
@@ -177,7 +195,23 @@ function applyTheme(theme) {
 async function checkLoginStatus() {
   try {
     await api.awaitAuthInit();
-    const me = await api.getMe();
+    let me = await api.getMe();
+
+    // If the stored token is expired, attempt a silent Google refresh before giving up
+    if ((!me || !me.ok) && isNative && GoogleAuth) {
+      try {
+        const refreshed = await GoogleAuth.refresh();
+        const newToken = refreshed?.authentication?.idToken || refreshed?.idToken;
+        if (newToken) {
+          console.log('[AUTH] Silent token refresh succeeded.');
+          await api.mobileLogin(newToken);
+          me = await api.getMe();
+        }
+      } catch (refreshErr) {
+        console.log('[AUTH] Silent refresh failed, showing login screen.', refreshErr);
+      }
+    }
+
     user = (me && me.ok) ? me.user : null;
 
     // Render the sidebar/login view based on auth state
@@ -583,12 +617,19 @@ function attachEventListeners() {
     }
   }
 
-  // 2. Microsoft Login (FIXED: Added Listener)
+  // 2. Microsoft Login
   const microsoftBtn = document.getElementById('login-microsoft-button');
   if (microsoftBtn) {
-    microsoftBtn.addEventListener('click', () => {
-      window.location.href = '/api/login/microsoft';
-    });
+    if (isNative) {
+      microsoftBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await handleNativeMicrosoftLogin();
+      });
+    } else {
+      microsoftBtn.addEventListener('click', () => {
+        window.location.href = '/api/login/microsoft';
+      });
+    }
   }
 
   // --- Chat Composer ---
@@ -827,14 +868,35 @@ function attachEventListeners() {
       Network.getStatus().then(status => updateOfflineUI(status.connected));
     }
 
-    // --- NEW: Refresh conversations when app resumes from background ---
+    // Refresh conversations when app resumes from background
     if (isNative && App) {
+      let _lastActiveTime = Date.now();
       App.addListener('appStateChange', ({ isActive }) => {
         if (isActive && user) {
-          // Only reload if the app is active and the user is logged in
-          console.log('App resumed, reloading conversations...');
-          // This call should switch and scroll to the bottom of the active chat
-          chat.loadConversations(activeProfileData, user, handleExamplePromptClick, ui.showModal, true);
+          const awayMs = Date.now() - _lastActiveTime;
+          // Only refresh the sidebar list (not the active chat) if away for more than 5 minutes
+          if (awayMs > 5 * 60 * 1000) {
+            chat.refreshConvoListOnly(activeProfileData, user, ui.showModal);
+          }
+        } else {
+          _lastActiveTime = Date.now();
+        }
+      });
+
+      // Handle OAuth deep link callbacks (e.g. Microsoft login → com.safi.app://auth?token=...)
+      App.addListener('appUrlOpen', async ({ url }) => {
+        if (!url || !url.startsWith('com.safi.app://auth')) return;
+        try { await Browser?.close(); } catch (_) {}
+        const params = new URL(url);
+        const token = params.searchParams.get('token');
+        if (token) {
+          await api.setAuthToken(token);
+          hapticImpactLight();
+          ui.showToast('Login successful!', 'success');
+          setTimeout(() => window.location.reload(), 400);
+        } else {
+          ui.showToast('Microsoft login failed. No token received.', 'error');
+          hapticError();
         }
       });
     }
