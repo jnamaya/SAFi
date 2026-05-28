@@ -72,14 +72,22 @@ def create_policy():
         slug = re.sub(r'[^a-z0-9]', '_', data.get("name", "").lower()).strip('_')
         readable_id = f"{org_prefix}_{slug}"
 
+        policy_config = {
+            "business_unit":   data.get("business_unit", ""),
+            "scope_statement": data.get("scope_statement", ""),
+            "guardrails":      data.get("guardrails", []),
+            "org_authority":   data.get("org_authority", 0.60),
+            "ethical_memory":  data.get("ethical_memory", 0.90),
+        }
         pid = db.create_policy(
-            name=data.get("name"), 
-            worldview=data.get("worldview", ""), 
-            will_rules=data.get("will_rules", []), 
-            values=data.get("values", []), 
+            name=data.get("name"),
+            worldview=data.get("worldview", ""),
+            will_rules=data.get("will_rules", []),
+            values=data.get("values", []),
             created_by=user_id,
-            org_id=user.get('org_id'), # FIX: Link to Org
-            policy_id=readable_id
+            org_id=user.get('org_id'),
+            policy_id=readable_id,
+            policy_config=policy_config
         )
         
         # Auto-generate credentials for immediate use
@@ -135,12 +143,20 @@ def update_policy(policy_id):
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
 
+        policy_config = {
+            "business_unit":   data.get("business_unit", ""),
+            "scope_statement": data.get("scope_statement", ""),
+            "guardrails":      data.get("guardrails", []),
+            "org_authority":   data.get("org_authority", 0.60),
+            "ethical_memory":  data.get("ethical_memory", 0.90),
+        }
         db.update_policy(
-            policy_id, 
+            policy_id,
             name=data.get('name'),
             worldview=data.get('worldview'),
             will_rules=data.get('will_rules'),
-            values=data.get('values')
+            values=data.get('values'),
+            policy_config=policy_config
         )
         
         # Return existing (or new) credentials for UI convenience
@@ -314,6 +330,33 @@ async def generate_policy_content_endpoint():
                  "Return a JSON array of exactly 5 rule strings. Each rule describes grounds for rejection."
              )
         
+        elif gen_type == 'scope':
+            sys_prompt = "You are an AI Governance Consultant. Output a single sentence only — no quotes, no formatting."
+            prompt = (
+                f"Write a single-sentence scope statement for an AI agent serving this context: '{context}'.\n\n"
+                "Format: '[topic area] only — [specific subtopics]. No [excluded areas].'\n\n"
+                "Examples:\n"
+                "- STEM education only — math, physics, chemistry, biology, engineering. No homework completion.\n"
+                "- HR employee questions only — benefits, PTO, onboarding, workplace policies. No legal or medical advice.\n"
+                "- Financial education and market analysis only. No personalized investment advice.\n\n"
+                "Return ONLY the sentence. No quotes, no preamble, no markdown."
+            )
+
+        elif gen_type == 'guardrails':
+            sys_prompt += " Output JSON List only."
+            prompt = (
+                f"Generate 4-6 behavioral guardrails for an AI agent. Context: '{context}'.\n\n"
+                "Guardrails are softer behavioral boundaries — not hard rejections, but guidance on how the agent should handle edge cases.\n"
+                "Unlike hard rules, guardrails allow the agent to use judgment. Use phrases like:\n"
+                "'Always recommend...', 'Avoid...', 'When uncertain...', 'Prefer...'\n\n"
+                "Examples:\n"
+                '- "Always recommend consulting a licensed professional for complex legal or financial decisions."\n'
+                '- "Avoid speculative language when discussing outcomes or predictions."\n'
+                '- "When uncertain about a fact, acknowledge the uncertainty rather than guessing."\n'
+                '- "Prefer plain language over technical jargon unless the user demonstrates expertise."\n\n'
+                "Return a JSON array of guardrail strings."
+            )
+
         # --- IMPROVED CONCISE PERSONA PROMPT ---
         elif gen_type == 'persona':
              sys_prompt = "You are a creative writer. Output a single, concise paragraph."

@@ -51,7 +51,10 @@ export async function renderSettingsOrganizationTab() {
             return;
         }
 
-        renderOrganizationUI(container, org);
+        const charterRes = await api.getCharter(org.id).catch(() => null);
+        const charter = charterRes ? charterRes.charter : null;
+
+        renderOrganizationUI(container, org, charter);
 
     } catch (error) {
         container.innerHTML = `<p class="text-red-500">Error loading organization: ${error.message}</p>`;
@@ -59,7 +62,7 @@ export async function renderSettingsOrganizationTab() {
 }
 
 
-function renderOrganizationUI(container, org) {
+function renderOrganizationUI(container, org, charter) {
     const isVerified = org.domain_verified;
     const verificationSection = isVerified
         ? `
@@ -110,6 +113,8 @@ function renderOrganizationUI(container, org) {
             </div>
         `;
 
+    const charterValuesData = charter ? (charter.core_values || []) : [];
+
     container.innerHTML = `
         <div class="mb-6 border-b border-neutral-200 dark:border-neutral-800 pb-4">
             <div class="flex items-center justify-between">
@@ -133,6 +138,57 @@ function renderOrganizationUI(container, org) {
                     </button>
                     <button id="btn-cancel-org-name" class="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- CHARTER SECTION -->
+        <div class="mb-8 border-b border-neutral-200 dark:border-neutral-800 pb-8">
+            <div class="flex items-start justify-between mb-4">
+                <div>
+                    <h4 class="text-lg font-semibold">Organization Identity / Charter</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">The mission and core values of your organization. Once set, it applies to all agents. This will force all agents to speak with your brand and culture.</p>
+                </div>
+                ${charter
+                    ? '<span class="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full mt-1 shrink-0">Active</span>'
+                    : '<span class="px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 text-gray-500 text-xs font-semibold rounded-full mt-1 shrink-0">Not set</span>'
+                }
+            </div>
+
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mission</label>
+                    <textarea id="charter-mission" rows="3"
+                        class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-green-500 outline-none resize-none"
+                        placeholder="Why your organization exists and what it stands for..."
+                    >${charter ? (charter.mission || '') : ''}</textarea>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Core Values & Rubrics</label>
+                        <div class="flex items-center gap-2">
+                            <button id="btn-gen-charter-values" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                Generate Values
+                            </button>
+                            <button id="btn-add-charter-value" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                                Add value
+                            </button>
+                        </div>
+                    </div>
+                    <div id="charter-values-list" class="space-y-4"></div>
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    ${charter
+                        ? `<button id="btn-delete-charter" class="text-sm text-red-500 hover:text-red-600 hover:underline">Delete charter</button>`
+                        : '<span></span>'
+                    }
+                    <button id="btn-save-charter" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                        Save Charter
                     </button>
                 </div>
             </div>
@@ -204,6 +260,71 @@ function renderOrganizationUI(container, org) {
     `;
 
     // Attach Listeners
+
+    // --- Charter ---
+    const valuesList = document.getElementById('charter-values-list');
+    renderCharterValues(charterValuesData, valuesList);
+
+    document.getElementById('btn-gen-charter-values')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const mission = document.getElementById('charter-mission')?.value.trim() || org.name;
+        const original = btn.innerHTML;
+        btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block mr-1"></span> Generating...`;
+        btn.disabled = true;
+        try {
+            const res = await api.generatePolicyContent('values', mission);
+            if (res.ok && res.content) {
+                let json = typeof res.content === 'string' ? JSON.parse(res.content.trim()) : res.content;
+                if (!Array.isArray(json)) json = [json];
+                charterValuesData.length = 0;
+                json.forEach(v => charterValuesData.push({ ...v, weight: v.weight || 1.0 }));
+                renderCharterValues(charterValuesData, valuesList);
+                ui.showToast('Values generated!', 'success');
+            }
+        } catch (err) {
+            ui.showToast('Generation failed — try again', 'error');
+        }
+        btn.innerHTML = original;
+        btn.disabled = false;
+    });
+
+    document.getElementById('btn-add-charter-value')?.addEventListener('click', () => {
+        charterValuesData.push({ name: '', description: '', weight: 1.0, rubric: { scoring_guide: [] } });
+        renderCharterValues(charterValuesData, valuesList);
+    });
+
+    document.getElementById('btn-save-charter')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-save-charter');
+        const mission = document.getElementById('charter-mission')?.value.trim() || '';
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        try {
+            const res = await api.saveCharter(org.id, { mission, core_values: charterValuesData.filter(v => v.name) });
+            if (res && res.status === 'saved') {
+                ui.showToast('Charter saved', 'success');
+                renderSettingsOrganizationTab();
+            } else {
+                throw new Error(res.error || 'Save failed');
+            }
+        } catch (e) {
+            ui.showToast(e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Save Charter';
+        }
+    });
+
+    document.getElementById('btn-delete-charter')?.addEventListener('click', async () => {
+        if (!confirm('Delete the organizational charter? This cannot be undone.')) return;
+        try {
+            const res = await api.deleteCharter(org.id);
+            if (res && res.status === 'deleted') {
+                ui.showToast('Charter deleted', 'success');
+                renderSettingsOrganizationTab();
+            }
+        } catch (e) {
+            ui.showToast(e.message, 'error');
+        }
+    });
 
     // --- Org Name Editing ---
     const editBtn = document.getElementById('btn-edit-org-name');
@@ -374,6 +495,112 @@ function renderOrganizationUI(container, org) {
 
     // --- Load Members ---
     loadOrganizationMembers(org.id);
+}
+
+function renderCharterValues(valuesData, container) {
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!valuesData.length) {
+        container.innerHTML = `
+            <div class="text-center py-10 bg-gray-50 dark:bg-neutral-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-800">
+                <p class="text-gray-400 mb-1">No values defined yet.</p>
+                <p class="text-xs text-gray-400">Click <strong>Generate Values</strong> to let AI draft them from your mission.</p>
+            </div>`;
+        return;
+    }
+
+    valuesData.forEach((v, idx) => {
+        if (!v.rubric) v.rubric = { scoring_guide: [] };
+        if (Array.isArray(v.rubric)) v.rubric = { scoring_guide: v.rubric };
+        if (!v.rubric.scoring_guide) v.rubric.scoring_guide = [];
+
+        const hasRubric = v.rubric.scoring_guide.length > 0;
+        const weightPct = v.weight <= 1.0 ? Math.round(v.weight * 100) : (v.weight || 100);
+
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 shadow-sm';
+        card.innerHTML = `
+            <div class="flex items-start justify-between gap-4 mb-3">
+                <input type="text" value="${v.name || ''}" placeholder="Value name (e.g. Integrity)"
+                    class="cv-name flex-1 font-semibold text-base bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none text-gray-900 dark:text-white px-1 py-0.5 transition-all"/>
+                <button class="btn-remove-cv p-1.5 text-gray-400 hover:text-red-500 rounded transition-colors shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <textarea placeholder="Brief description of this value..." rows="2"
+                class="cv-desc w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg p-2.5 resize-none outline-none focus:border-green-500 mb-3">${v.description || ''}</textarea>
+
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    ${hasRubric
+                        ? `<span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium">✓ Rubric ready</span>`
+                        : `<span class="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 px-2 py-0.5 rounded-full font-medium">Needs rubric</span>`
+                    }
+                    <button class="btn-toggle-rubric text-xs text-blue-600 dark:text-blue-400 hover:underline">View / Edit Rubric</button>
+                </div>
+                <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
+                    <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
+                    <input type="range" min="1" max="100" value="${weightPct}" class="cv-weight-slider w-20 h-1.5 accent-green-600 cursor-pointer"/>
+                    <span class="cv-weight-lbl text-xs font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${weightPct}%</span>
+                </div>
+            </div>
+
+            <div class="cv-rubric-panel hidden mt-4 pt-4 border-t border-dashed border-gray-200 dark:border-neutral-700 space-y-2">
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Scoring criteria (traffic light)</p>
+                ${[
+                    { score: 1.0,  icon: '✅', label: 'Positive (+1)', color: 'green',  bg: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900' },
+                    { score: 0.0,  icon: '⚪', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700' },
+                    { score: -1.0, icon: '🚫', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900' }
+                ].map(def => {
+                    const item = v.rubric.scoring_guide.find(g => Math.abs(g.score - def.score) < 0.1);
+                    const text = item ? (item.criteria || item.descriptor || '') : '';
+                    return `
+                        <div class="flex gap-3 items-start">
+                            <span class="w-28 shrink-0 text-xs font-bold text-gray-500 pt-2.5 text-right">${def.icon} ${def.label}</span>
+                            <textarea data-score="${def.score}" rows="2"
+                                class="cv-rubric-text flex-1 text-sm p-2.5 rounded-lg border resize-none outline-none focus:ring-2 focus:ring-green-500 ${def.bg}"
+                                placeholder="Describe this outcome...">${text}</textarea>
+                        </div>`;
+                }).join('')}
+            </div>
+        `;
+
+        container.appendChild(card);
+
+        // Bind name/description changes
+        card.querySelector('.cv-name').addEventListener('input', e => { valuesData[idx].name = e.target.value; });
+        card.querySelector('.cv-desc').addEventListener('input', e => { valuesData[idx].description = e.target.value; });
+
+        // Weight slider
+        const slider = card.querySelector('.cv-weight-slider');
+        const lbl    = card.querySelector('.cv-weight-lbl');
+        slider.addEventListener('input', e => {
+            const pct = parseInt(e.target.value);
+            valuesData[idx].weight = pct / 100;
+            lbl.textContent = pct + '%';
+        });
+
+        // Rubric toggle
+        const rubricPanel = card.querySelector('.cv-rubric-panel');
+        card.querySelector('.btn-toggle-rubric').addEventListener('click', () => rubricPanel.classList.toggle('hidden'));
+
+        // Rubric text changes
+        card.querySelectorAll('.cv-rubric-text').forEach(ta => {
+            ta.addEventListener('input', e => {
+                const score = parseFloat(e.target.dataset.score);
+                const text  = e.target.value.trim();
+                valuesData[idx].rubric.scoring_guide = valuesData[idx].rubric.scoring_guide.filter(g => Math.abs(g.score - score) >= 0.1);
+                if (text) valuesData[idx].rubric.scoring_guide.push({ score, criteria: text });
+            });
+        });
+
+        // Remove
+        card.querySelector('.btn-remove-cv').addEventListener('click', () => {
+            valuesData.splice(idx, 1);
+            renderCharterValues(valuesData, container);
+        });
+    });
 }
 
 async function loadOrganizationMembers(orgId) {

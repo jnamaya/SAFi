@@ -69,10 +69,9 @@ export async function renderSettingsGovernanceTab() {
         container.innerHTML = `
             <div class="mb-8">
                 <div class="mb-4">
-                     <h3 class="text-xl font-bold">Organizational Policies</h3>
+                     <h3 class="text-xl font-bold">Policies</h3>
                      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-3xl">
-                        Organizational AI policies are defined by Legal or IT departments to enforce strict behavioral governance across all agents built under this policy. 
-                        These policies act as an immutable "Constitution" for your AI workforce.
+                        Create policies for specific business units, teams, or use cases — HR, Finance, Legal, Customer Service, and so on. Each agent is assigned one policy that defines its worldview, values, scope, and rules.
                      </p>
                 </div>
                 ${canEditPolicy ? `

@@ -263,10 +263,72 @@ def remove_organization_member(org_id, user_id):
     """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
-        
+
     try:
         db.remove_member_from_org(user_id, org_id)
         return jsonify({"status": "removed", "user_id": user_id})
     except Exception as e:
         current_app.logger.error(f"Error removing member: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+# -------------------------------------------------------------------------
+# CHARTER ROUTES
+# -------------------------------------------------------------------------
+
+@organizations_bp.route('/organizations/<org_id>/charter', methods=['GET'])
+def get_charter(org_id):
+    """
+    [GET /api/organizations/<org_id>/charter]
+    Returns the org charter, or null if none has been written.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    try:
+        charter = db.get_charter(org_id)
+        return jsonify({"charter": charter})
+    except Exception as e:
+        current_app.logger.error(f"Error fetching charter: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+@organizations_bp.route('/organizations/<org_id>/charter', methods=['PUT'])
+@require_role('admin')
+def upsert_charter(org_id):
+    """
+    [PUT /api/organizations/<org_id>/charter]
+    Creates or updates the org charter (Admin only).
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.json or {}
+    mission = data.get('mission', '')
+    core_values = data.get('core_values', [])
+
+    if not isinstance(core_values, list):
+        return jsonify({"error": "core_values must be an array"}), 400
+
+    try:
+        user = session.get('user', {})
+        db.upsert_charter(org_id, mission, core_values, created_by=user.get('id'))
+        return jsonify({"status": "saved", "org_id": org_id})
+    except Exception as e:
+        current_app.logger.error(f"Error saving charter: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+@organizations_bp.route('/organizations/<org_id>/charter', methods=['DELETE'])
+@require_role('admin')
+def delete_charter(org_id):
+    """
+    [DELETE /api/organizations/<org_id>/charter]
+    Deletes the org charter (Admin only).
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    try:
+        db.delete_charter(org_id)
+        return jsonify({"status": "deleted", "org_id": org_id})
+    except Exception as e:
+        current_app.logger.error(f"Error deleting charter: {e}")
         return jsonify({"error": "An internal error occurred."}), 500

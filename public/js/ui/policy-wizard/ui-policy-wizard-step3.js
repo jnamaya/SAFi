@@ -9,7 +9,7 @@ export function renderValuesStep(container, policyData) {
                     <div class="flex justify-between items-end mb-4">
                          <div>
                             <label class="block text-lg font-bold text-gray-700 dark:text-gray-300">Core Values</label>
-                            <p class="text-sm text-gray-500">Define the principles your organization stands for. Every agent response will be measured against these.</p>
+                            <p class="text-sm text-gray-500">The principles this business unit holds itself to. Every response from agents using this policy is scored against these.</p>
                          </div>
                          <button id="btn-gen-values" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -34,7 +34,7 @@ export function renderValuesStep(container, policyData) {
                 </h4>
                 <div class="space-y-6 text-sm text-gray-600 dark:text-gray-400">
                     <p class="leading-relaxed">
-                        Every response is measured against your core values. The scoring criteria tell the AI what living each value looks like in practice.
+                        Every response is scored against this policy's values. The scoring criteria tell the AI what living each value looks like in this team's context.
                     </p>
                     <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
                         <strong class="block text-green-600 mb-1">Upheld (+1.0)</strong>
@@ -59,7 +59,7 @@ export function renderValuesStep(container, policyData) {
         btn.disabled = true;
 
         try {
-            const ctx = policyData.context || policyData.name || "General Organization";
+            const ctx = policyData.context || policyData.business_unit || policyData.name || "General business unit";
             const res = await api.generatePolicyContent('values', ctx);
             if (res.ok && res.content) {
                 let json;

@@ -107,6 +107,19 @@ def init_db():
             cursor.execute("ALTER TABLE organizations ADD COLUMN settings JSON")
             cursor.execute("ALTER TABLE organizations ADD CONSTRAINT fk_org_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL")
 
+        # --- Org Charter ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS org_charter (
+                org_id CHAR(36) PRIMARY KEY,
+                mission TEXT,
+                core_values JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_by VARCHAR(255),
+                FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+            )
+        ''')
+
         # --- Policies ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS policies (
@@ -123,6 +136,10 @@ def init_db():
                 FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE SET NULL
             )
         ''')
+
+        cursor.execute("SHOW COLUMNS FROM policies LIKE 'policy_config'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE policies ADD COLUMN policy_config JSON")
 
         # --- Schema Migration for Readable Policy IDs (CHAR 36 -> VARCHAR 255) ---
         cursor.execute("SHOW COLUMNS FROM policies LIKE 'id'")
@@ -1166,27 +1183,31 @@ def create_organization_atomic(org_name, user_id):
         cursor.close()
         conn.close()
 
-def create_policy(name, worldview, will_rules, values, org_id=None, created_by=None, policy_id=None):
+def create_policy(name, worldview, will_rules, values, org_id=None, created_by=None, policy_id=None, policy_config=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         pid = policy_id or str(uuid.uuid4())
-        cursor.execute("INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by) VALUES (%s, %s, %s, %s, %s, %s, %s)", (pid, org_id, name, worldview, json.dumps(will_rules), json.dumps(values), created_by))
+        cursor.execute(
+            "INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by, policy_config) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (pid, org_id, name, worldview, json.dumps(will_rules), json.dumps(values), created_by, json.dumps(policy_config or {}))
+        )
         conn.commit()
         return pid
     finally:
         cursor.close()
         conn.close()
 
-def update_policy(policy_id, name=None, worldview=None, will_rules=None, values=None):
+def update_policy(policy_id, name=None, worldview=None, will_rules=None, values=None, policy_config=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         fields, params = [], []
-        if name: fields.append("name=%s"); params.append(name)
-        if worldview: fields.append("worldview=%s"); params.append(worldview)
-        if will_rules: fields.append("will_rules=%s"); params.append(json.dumps(will_rules))
-        if values: fields.append("values_weights=%s"); params.append(json.dumps(values))
+        if name is not None:         fields.append("name=%s");          params.append(name)
+        if worldview is not None:    fields.append("worldview=%s");     params.append(worldview)
+        if will_rules is not None:   fields.append("will_rules=%s");    params.append(json.dumps(will_rules))
+        if values is not None:       fields.append("values_weights=%s"); params.append(json.dumps(values))
+        if policy_config is not None: fields.append("policy_config=%s"); params.append(json.dumps(policy_config))
         params.append(policy_id)
         if fields:
             cursor.execute(f"UPDATE policies SET {', '.join(fields)} WHERE id=%s", tuple(params))
@@ -1202,9 +1223,9 @@ def get_policy(pid):
         cursor.execute("SELECT * FROM policies WHERE id=%s", (pid,))
         row = cursor.fetchone()
         if row:
-            # FIX: Ensure list is returned even if NULL or None
-            row['will_rules'] = json.loads(row['will_rules']) if isinstance(row['will_rules'], str) else row['will_rules'] or []
-            row['values_weights'] = json.loads(row['values_weights']) if isinstance(row['values_weights'], str) else row['values_weights'] or []
+            row['will_rules']      = json.loads(row['will_rules'])      if isinstance(row['will_rules'], str)      else row['will_rules']      or []
+            row['values_weights']  = json.loads(row['values_weights'])  if isinstance(row['values_weights'], str)  else row['values_weights']  or []
+            row['policy_config']   = json.loads(row['policy_config'])   if isinstance(row['policy_config'], str)   else row['policy_config']   or {}
         return row
     finally:
         cursor.close()
@@ -1373,6 +1394,51 @@ def update_organization_settings(oid, settings):
         current_settings.update(settings)
         
         cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s", (json.dumps(current_settings), oid))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# ORG CHARTER
+# -------------------------------------------------------------------------
+
+def upsert_charter(org_id, mission, core_values, created_by=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            INSERT INTO org_charter (org_id, mission, core_values, created_by)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                mission = VALUES(mission),
+                core_values = VALUES(core_values),
+                updated_at = CURRENT_TIMESTAMP
+        """
+        cursor.execute(sql, (org_id, mission, json.dumps(core_values), created_by))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_charter(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM org_charter WHERE org_id = %s", (org_id,))
+        row = cursor.fetchone()
+        if row:
+            row['core_values'] = json.loads(row['core_values']) if isinstance(row['core_values'], str) else row['core_values'] or []
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_charter(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM org_charter WHERE org_id = %s", (org_id,))
         conn.commit()
     finally:
         cursor.close()

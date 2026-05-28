@@ -59,7 +59,7 @@ export function renderValuesStep(container, policyData) {
         btn.disabled = true;
 
         try {
-            const ctx = policyData.context || policyData.name || "General Organization";
+            const ctx = policyData.context || policyData.business_unit || policyData.name || "General business unit";
             const res = await api.generatePolicyContent('values', ctx);
             if (res.ok && res.content) {
                 let json;

@@ -4,12 +4,14 @@ import * as ui from '../ui.js';
 import { renderDefinitionStep, validateDefinitionStep } from './ui-policy-wizard-step1.js';
 import { renderConstitutionStep, validateConstitutionStep } from './ui-policy-wizard-step2.js';
 import { renderValuesStep, validateValuesStep } from './ui-policy-wizard-step3.js';
-import { renderReviewStep, validateReviewStep } from './ui-policy-wizard-step5.js';
+import { renderScopeStep, validateScopeStep } from './ui-policy-wizard-step4.js';
+import { renderRulesStep, validateRulesStep } from './ui-policy-wizard-step5.js';
+import { renderGovernanceStep, validateGovernanceStep } from './ui-policy-wizard-governance.js';
 import { renderSuccessStep } from './ui-policy-wizard-step6.js';
 
 // --- STATE ---
 let currentStep = 1;
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'safi_policy_wizard_draft';
 
 let policyData = getInitialState();
@@ -17,12 +19,17 @@ let generatedCredentials = null;
 
 function getInitialState() {
     return {
-        policy_id: null,
-        name: "",
-        context: "",
-        worldview: "",
-        values: [],
-        will_rules: []
+        policy_id:      null,
+        name:           "",
+        business_unit:  "",
+        context:        "",
+        worldview:      "",
+        values:         [],
+        will_rules:     [],
+        guardrails:     [],
+        scope_statement: "",
+        org_authority:  0.60,
+        ethical_memory: 0.90
     };
 }
 
@@ -54,13 +61,19 @@ export function openPolicyWizard(existingPolicy = null) {
 
     if (!useDraft) {
         if (existingPolicy) {
+            const cfg = existingPolicy.policy_config || {};
             policyData = {
-                policy_id: existingPolicy.id,
-                name: existingPolicy.name,
-                context: existingPolicy.context || extractContext(existingPolicy.worldview) || "",
-                worldview: cleanWorldview(existingPolicy.worldview),
-                values: existingPolicy.values_weights || [],
-                will_rules: existingPolicy.will_rules || []
+                policy_id:      existingPolicy.id,
+                name:           existingPolicy.name,
+                business_unit:  cfg.business_unit  || "",
+                context:        existingPolicy.context || extractContext(existingPolicy.worldview) || "",
+                worldview:      cleanWorldview(existingPolicy.worldview),
+                values:         existingPolicy.values_weights || [],
+                will_rules:     existingPolicy.will_rules || [],
+                guardrails:      cfg.guardrails      || [],
+                scope_statement: cfg.scope_statement || "",
+                org_authority:   cfg.org_authority   ?? 0.60,
+                ethical_memory: cfg.ethical_memory ?? 0.90
             };
         } else {
             policyData = getInitialState();
@@ -77,7 +90,7 @@ export function openPolicyWizard(existingPolicy = null) {
     }
 
     const title = document.getElementById('policy-wizard-title');
-    if (title) title.innerText = existingPolicy ? "Edit Policy" : "Create Governance Policy";
+    if (title) title.innerText = existingPolicy ? "Edit Policy" : "Create Policy";
 
     renderStep(currentStep);
     const view = document.getElementById('policy-wizard-view');
@@ -132,11 +145,13 @@ function renderStep(step) {
     container.innerHTML = '';
 
     switch (step) {
-        case 1: renderDefinitionStep(container, policyData); break;
+        case 1: renderDefinitionStep(container, policyData);   break;
         case 2: renderConstitutionStep(container, policyData); break;
-        case 3: renderValuesStep(container, policyData); break;
-        case 4: renderReviewStep(container, policyData); break;
-        case 5: renderSuccessStep(container, policyData, generatedCredentials); break;
+        case 3: renderScopeStep(container, policyData);        break;
+        case 4: renderValuesStep(container, policyData);       break;
+        case 5: renderRulesStep(container, policyData);        break;
+        case 6: renderGovernanceStep(container, policyData);   break;
+        case 7: renderSuccessStep(container, policyData, generatedCredentials); break;
     }
 }
 
@@ -164,8 +179,10 @@ function validateCurrentStep() {
     switch (currentStep) {
         case 1: return validateDefinitionStep(policyData);
         case 2: return validateConstitutionStep(policyData);
-        case 3: return validateValuesStep(policyData);
-        case 4: return validateReviewStep(policyData);
+        case 3: return validateScopeStep(policyData);
+        case 4: return validateValuesStep(policyData);
+        case 5: return validateRulesStep(policyData);
+        case 6: return validateGovernanceStep(policyData);
         default: return true;
     }
 }
@@ -177,16 +194,23 @@ async function submitPolicy() {
     btn.disabled = true;
 
     try {
-        // Embed context
         const finalWorldview = `<!-- CONTEXT: ${policyData.context} -->\n${policyData.worldview}`;
-        const payload = { ...policyData, worldview: finalWorldview };
+        const payload = {
+            ...policyData,
+            worldview:       finalWorldview,
+            business_unit:   policyData.business_unit,
+            scope_statement: policyData.scope_statement,
+            guardrails:      policyData.guardrails,
+            org_authority:   policyData.org_authority,
+            ethical_memory:  policyData.ethical_memory,
+        };
 
         const res = await api.savePolicy(payload);
         if (res.ok) {
             localStorage.removeItem(STORAGE_KEY);
             ui.showToast("Policy Saved!", "success");
             generatedCredentials = res.credentials || { policy_id: "unknown", api_key: "unknown" };
-            currentStep = TOTAL_STEPS + 1; // Move to success "step"
+            currentStep = TOTAL_STEPS + 1;
             renderSuccessStep(document.getElementById('pw-content'), policyData, generatedCredentials);
             updateProgress(); // To hide footer
         } else {
@@ -213,7 +237,7 @@ function ensureWizardInlineExists() {
         <!-- Header -->
         <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center shrink-0">
             <div>
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white" id="policy-wizard-title">Create Governance Policy</h3>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white" id="policy-wizard-title">Create Policy</h3>
                 <p class="text-sm text-gray-500 dark:text-gray-400">Step <span id="pw-step-num">1</span> of ${TOTAL_STEPS}</p>
             </div>
             <button id="close-pw-btn" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 p-2 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors">
@@ -229,9 +253,11 @@ function ensureWizardInlineExists() {
         <!-- Labels -->
         <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto gap-4">
             <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Identity</span>
-            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Mission</span>
-            <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Values</span>
-            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Review</span>
+            <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Worldview</span>
+            <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Scope</span>
+            <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
+            <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Rules</span>
+            <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
         </div>
 
         <!-- Content Area: INCREASED MAX WIDTH -->

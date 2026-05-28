@@ -341,6 +341,18 @@ export async function removeMember(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}`, 'DELETE', {});
 }
 
+export async function getCharter(orgId) {
+    return httpGet(`/api/organizations/${orgId}/charter`);
+}
+
+export async function saveCharter(orgId, data) {
+    return httpJSON(`/api/organizations/${orgId}/charter`, 'PUT', data);
+}
+
+export async function deleteCharter(orgId) {
+    return httpJSON(`/api/organizations/${orgId}/charter`, 'DELETE', {});
+}
+
 // --- Document Upload ---
 
 /**
