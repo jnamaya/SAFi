@@ -86,7 +86,7 @@ def create_policy():
         default_key = db.create_api_key(pid, "Initial Key")
         
         return jsonify({
-            "ok": True, 
+            "ok": True,
             "policy_id": pid,
             "credentials": {
                 "policy_id": pid,
@@ -94,7 +94,8 @@ def create_policy():
             }
         }), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"create_policy error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies', methods=['GET'], strict_slashes=False)
 def list_policies():
@@ -104,24 +105,11 @@ def list_policies():
     
     if not user_id: return jsonify({"error": "Unauthorized"}), 401
     try:
-        # DEBUG LOGGING
-        print(f"DEBUG: list_policies called for User: {user_id}, Org: {org_id}")
         policies = db.list_policies(user_id=user_id, org_id=org_id)
-        print(f"DEBUG: Found {len(policies)} policies.")
-        
-        return jsonify({
-            "ok": True, 
-            "policies": policies,
-            "debug_info": {
-                "user_id": user_id,
-                "org_id": org_id,
-                "count": len(policies),
-                "db_host": current_app.config.get('DB_HOST') # Check if it's hitting the right DB
-            }
-        })
+        return jsonify({"ok": True, "policies": policies})
     except Exception as e:
-        print(f"DEBUG: list_policies ERROR: {e}")
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"list_policies error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['GET'], strict_slashes=False)
 def get_policy(policy_id):
@@ -171,7 +159,8 @@ def update_policy(policy_id):
             }
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"update_policy error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/rotate_key', methods=['POST'], strict_slashes=False)
 @require_role('editor')
@@ -199,7 +188,8 @@ def rotate_key(policy_id):
             }
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"rotate_key error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['DELETE'], strict_slashes=False)
 @require_role('editor')
@@ -212,7 +202,8 @@ def delete_policy(policy_id):
         db.delete_policy(policy_id)
         return jsonify({"ok": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"delete_policy error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['POST'], strict_slashes=False)
 @require_role('editor')
@@ -224,7 +215,8 @@ def generate_key(policy_id):
         raw_key = db.create_api_key(policy_id, label)
         return jsonify({"ok": True, "api_key": raw_key}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"generate_key error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['GET'], strict_slashes=False)
 def list_keys(policy_id):
@@ -233,7 +225,8 @@ def list_keys(policy_id):
         keys = db.get_policy_keys(policy_id)
         return jsonify({"ok": True, "keys": keys})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"list_keys error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/ai/generate', methods=['POST'], strict_slashes=False)
 async def generate_policy_content_endpoint():
@@ -372,10 +365,10 @@ async def generate_policy_content_endpoint():
                  parsed = json.loads(cleaned)
                  return jsonify({"ok": True, "content": parsed}) # Return object, not string
              except json.JSONDecodeError:
-                 return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again.", "raw": response_text}), 422
-        
+                 return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
+
         return jsonify({"ok": True, "content": cleaned})
 
     except Exception as e:
         current_app.logger.error(f"Gen Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500

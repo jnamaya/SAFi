@@ -563,7 +563,7 @@ def google_tool_login():
         return redirect(authorization_url)
     except Exception as e:
         current_app.logger.error(f"Google Drive Login Start Logic Failed: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Authentication failed. Please try again."}), 500
 
 @auth_bp.route('/auth/google/callback')
 def google_tool_callback():
@@ -653,7 +653,7 @@ def microsoft_tool_login():
         return redirect(url)
     except Exception as e:
         current_app.logger.error(f"MS Tool Login Start Failed: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Authentication failed. Please try again."}), 500
 
 @auth_bp.route('/auth/microsoft/callback')
 def microsoft_tool_callback():
@@ -743,7 +743,7 @@ def github_tool_login():
         return redirect(url)
     except Exception as e:
         current_app.logger.error(f"GitHub Auth Start Failed: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Authentication failed. Please try again."}), 500
 
 @auth_bp.route('/auth/github/callback')
 def github_tool_callback():

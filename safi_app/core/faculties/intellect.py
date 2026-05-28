@@ -65,6 +65,7 @@ class IntellectEngine:
         user_id: Optional[str] = None,
         message_id: Optional[str] = None,
         plugin_context: Optional[Dict[str, Any]] = None,
+        precomputed_retrieved_context: Optional[str] = None,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
         """
         Generates a typed intent proposal without executing any tools.
@@ -85,25 +86,29 @@ class IntellectEngine:
             tools = await self.mcp_manager.get_tools_for_agent(self.profile)
 
         # --- 1. RAG & Plugin Context Logic ---
-        query_for_rag = user_prompt
-        if plugin_context and plugin_context.get("rag_query_override"):
-            query_for_rag = plugin_context["rag_query_override"]
+        if precomputed_retrieved_context is not None:
+            # Reuse context from the first Intellect call (retry / tool-agent follow-up).
+            retrieved_context_string = precomputed_retrieved_context
+        else:
+            query_for_rag = user_prompt
+            if plugin_context and plugin_context.get("rag_query_override"):
+                query_for_rag = plugin_context["rag_query_override"]
 
-        retrieved_context_string = ""
-        if self.retriever:
-            retrieved_docs = self.retriever.search(query_for_rag)
-            if retrieved_docs:
-                format_string = self.profile.get("rag_format_string", "{text_chunk}")
-                formatted_chunks = []
-                for doc in retrieved_docs:
-                    try:
-                        formatted_chunks.append(format_string.format(**doc))
-                    except KeyError:
-                        if "text_chunk" in doc:
-                            formatted_chunks.append(doc["text_chunk"])
-                retrieved_context_string = "\n\n".join(formatted_chunks)
-            else:
-                retrieved_context_string = "[NO DOCUMENTS FOUND]"
+            retrieved_context_string = ""
+            if self.retriever:
+                retrieved_docs = self.retriever.search(query_for_rag)
+                if retrieved_docs:
+                    format_string = self.profile.get("rag_format_string", "{text_chunk}")
+                    formatted_chunks = []
+                    for doc in retrieved_docs:
+                        try:
+                            formatted_chunks.append(format_string.format(**doc))
+                        except KeyError:
+                            if "text_chunk" in doc:
+                                formatted_chunks.append(doc["text_chunk"])
+                    retrieved_context_string = "\n\n".join(formatted_chunks)
+                else:
+                    retrieved_context_string = "[NO DOCUMENTS FOUND]"
 
         plugin_context_string = ""
         if plugin_context:

@@ -155,7 +155,7 @@ def create_organization():
         })
     except Exception as e:
         current_app.logger.error(f"Error creating org: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @organizations_bp.route('/organizations/<org_id>/policy', methods=['POST'])
 @require_role('admin')
@@ -169,7 +169,8 @@ def update_organization_policy(org_id):
         db.set_organization_global_policy(org_id, policy_id)
         return jsonify({"status": "updated", "global_policy_id": policy_id})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        current_app.logger.error(f"update_organization_policy error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @organizations_bp.route('/organizations/me', methods=['GET'])
 def get_my_organization():
@@ -210,7 +211,7 @@ def update_organization(org_id):
         return jsonify({"status": "updated", "id": org_id, "name": name})
     except Exception as e:
         current_app.logger.error(f"Error updating org: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 
 @organizations_bp.route('/organizations/<org_id>/members', methods=['GET'])
@@ -227,7 +228,7 @@ def list_organization_members(org_id):
         return jsonify({"members": members})
     except Exception as e:
         current_app.logger.error(f"Error listing members: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>/role', methods=['PUT'])
 @require_role('admin')
@@ -251,7 +252,7 @@ def update_user_role(org_id, user_id):
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
     except Exception as e:
         current_app.logger.error(f"Error updating role: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>', methods=['DELETE'])
 @require_role('admin')
@@ -268,4 +269,4 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"status": "removed", "user_id": user_id})
     except Exception as e:
         current_app.logger.error(f"Error removing member: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500

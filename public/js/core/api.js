@@ -12,7 +12,6 @@ import offlineManager from '../services/offline-manager.js';
 const Cap = typeof window !== "undefined" ? window.Capacitor : null;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 
-console.log("SAFI API Loaded v2.3 (Fixes 405 & Verbose AI)");
 
 // Use the fixed host for Capacitor builds
 const HOST = "https://safi.selfalignmentframework.com";

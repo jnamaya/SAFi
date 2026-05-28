@@ -166,7 +166,7 @@ async function _renderConnectedAccounts(container) {
                 }
             } catch (e) {
                 console.error("Disconnect failed", e);
-                alert("Failed to disconnect: " + e.message);
+                alert("Failed to disconnect. Please try again.");
                 btn.innerHTML = 'Disconnect';
                 btn.disabled = false;
             }

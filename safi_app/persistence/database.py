@@ -1429,13 +1429,13 @@ def get_policy_id_by_api_key(raw_key):
                 conn.commit()
                 return row[0]
             
-            logging.error(f"DEBUG_KEY_CHECK: FAIL. No match for hash {h[:10]}...")
+            logging.warning(f"API key verification failed (no hash match).")
             return None
         finally:
             cursor.close()
             conn.close()
     except Exception as e:
-        print(f"DEBUG: Verification CRASH: {e}")
+        logging.error(f"API key verification error: {e}")
         return None
 
 def delete_policy_keys(pid):

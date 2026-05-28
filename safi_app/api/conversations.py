@@ -294,7 +294,7 @@ async def bot_process_prompt_endpoint():
         
     except Exception as e:
         current_app.logger.error(f"Bot Processing Error: {str(e)}")
-        return jsonify({"error": str(e), "finalOutput": "I encountered an internal error processing your request."}), 500
+        return jsonify({"finalOutput": "I encountered an internal error processing your request."}), 500
 
 
 @conversations_bp.route('/tts_audio', methods=['POST'])
@@ -337,7 +337,7 @@ def tts_audio_endpoint():
 
     except Exception as e:
         current_app.logger.error(f"Error processing TTS request: {e}")
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+        return jsonify({"error": "Failed to process audio request."}), 500
 
 
 @conversations_bp.route('/public/process_prompt', methods=['POST'])

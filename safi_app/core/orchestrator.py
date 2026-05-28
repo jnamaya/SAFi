@@ -311,19 +311,21 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             # Ensure messages exist in DB so reasoning poller can find them IMMEDIATELLY
             history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
             new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
-            
+
             db.insert_memory_entry(conversation_id, "user", user_prompt)
             # Create the AI message placeholder immediately
             db.insert_memory_entry(conversation_id, "ai", "", message_id=message_id, audit_status="pending")
-            
+
             # --- Initial Status ---
             db.update_message_reasoning(message_id, "Analyzing your request...")
         except Exception as e:
+            # Duplicate message_id means a retry/double-submit for the same request — drop silently
+            if "Duplicate entry" in str(e) and "message_id" in str(e):
+                self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
+                return { "finalOutput": "", "messageId": message_id, "duplicate": True }
             import traceback
-            trace = traceback.format_exc()
-            msg = f"DEBUG: Pre-Insert CRASH: {str(e)} | Trace: {trace}"
-            self.log.error(msg)
-            return { "finalOutput": msg, "messageId": message_id }
+            self.log.error(f"Pre-Insert CRASH: {str(e)}\n{traceback.format_exc()}")
+            return { "finalOutput": "An internal error occurred. Please try again.", "messageId": message_id }
 
         # Plugins
         plugin_context_data = {}
@@ -509,9 +511,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     spirit_feedback=spirit_feedback,
                     plugin_context=plugin_context_data,
                     user_profile_json=current_profile_json,
+                    agent_context_json=current_agent_context_json,
                     user_name=user_name,
                     user_id=user_id,
-                    message_id=message_id
+                    message_id=message_id,
+                    precomputed_retrieved_context=retrieved_context,
                 )
 
                 a_t_retry = retry_intent.get("content") if retry_intent and retry_intent.get("type") == "text" else None
@@ -613,9 +617,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
+                        agent_context_json=current_agent_context_json,
                         user_name=user_name,
                         user_id=user_id,
-                        message_id=message_id
+                        message_id=message_id,
+                        precomputed_retrieved_context=retrieved_context,
                     )
 
                     if next_intent is None or next_intent.get("type") == "text":
@@ -648,9 +654,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                             spirit_feedback=spirit_feedback,
                             plugin_context=plugin_context_data,
                             user_profile_json=current_profile_json,
+                            agent_context_json=current_agent_context_json,
                             user_name=user_name,
                             user_id=user_id,
-                            message_id=message_id
+                            message_id=message_id,
+                            precomputed_retrieved_context=retrieved_context,
                         )
                         break
                 else:
@@ -665,9 +673,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
+                        agent_context_json=current_agent_context_json,
                         user_name=user_name,
                         user_id=user_id,
-                        message_id=message_id
+                        message_id=message_id,
+                        precomputed_retrieved_context=retrieved_context,
                     )
 
                 a_t = next_intent.get("content") or "" if next_intent and next_intent.get("type") == "text" else "I was unable to produce a response after executing the requested tools."
@@ -801,9 +811,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 spirit_feedback=spirit_feedback,
                 plugin_context=plugin_context_data,
                 user_profile_json=current_profile_json,
+                agent_context_json=current_agent_context_json,
                 user_name=user_name,
                 user_id=user_id,
-                message_id=message_id
+                message_id=message_id,
+                precomputed_retrieved_context=retrieved_context,
             )
 
             a_t_spirit = (

@@ -123,7 +123,7 @@ def save_agent():
         
     except Exception as e:
         current_app.logger.error(f"Agent Save Exception: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @agent_api_bp.route('/agents/all', methods=['GET'], strict_slashes=False)
 def list_all_agents():
@@ -274,14 +274,11 @@ async def generate_rubric():
             result_json = json.loads(clean_text)
             return jsonify({"ok": True, "rubric": result_json})
         except json.JSONDecodeError:
-             return jsonify({
-                 "ok": False, 
-                 "error": "Failed to parse AI response. Try again.",
-                 "raw": response_text
-             }), 422
+             return jsonify({"ok": False, "error": "Failed to parse AI response. Try again."}), 422
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.error(f"generate_rubric error: {e}")
+        return jsonify({"ok": False, "error": "An internal error occurred."}), 500
 
 @agent_api_bp.route('/generate/values', methods=['POST'], strict_slashes=False)
 async def generate_values():
@@ -352,9 +349,10 @@ async def generate_values():
             
         result_json = json.loads(clean_text)
         return jsonify({"ok": True, "values": result_json})
-        
+
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.error(f"generate_values error: {e}")
+        return jsonify({"ok": False, "error": "An internal error occurred."}), 500
 
 @agent_api_bp.route('/generate/scope', methods=['POST'], strict_slashes=False)
 async def generate_scope():
@@ -408,17 +406,17 @@ async def generate_scope():
         return jsonify({"ok": True, "scope": scope_text.strip()})
 
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        current_app.logger.error(f"generate_scope error: {e}")
+        return jsonify({"ok": False, "error": "An internal error occurred."}), 500
 
 
 @agent_api_bp.route('/agents/tools', methods=['GET'], strict_slashes=False)
 def list_available_tools():
     try:
         from ..core.services.mcp_manager import MCPManager
-        # Config not strictly needed just for listing static tools list
         mcp = MCPManager(current_app.config)
         tools = mcp.list_all_tools()
         return jsonify({"ok": True, "tools": tools})
     except Exception as e:
         current_app.logger.error(f"List Tools Error: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": "An internal error occurred."}), 500

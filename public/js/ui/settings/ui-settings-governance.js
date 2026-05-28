@@ -138,10 +138,10 @@ export async function renderSettingsGovernanceTab() {
                             await navigator.clipboard.writeText(key);
                             alert(`Secure Key Generated & Copied to Clipboard!\n\n${key}\n\nPlease paste this immediately.`);
                         } else {
-                            alert("Error: " + res.error);
+                            alert("Failed to generate key. Please try again.");
                         }
                     } catch (e) {
-                        alert(e.message);
+                        alert("An error occurred. Please try again.");
                     }
                 }
             });
