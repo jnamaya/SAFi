@@ -24,6 +24,12 @@
     } else {
       document.documentElement.classList.remove('dark');
     }
+    // Tag the native (Capacitor) app so CSS can scale the UI down on phones.
+    // window.Capacitor is injected into the WebView before page scripts run.
+    if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+        && window.Capacitor.isNativePlatform()) {
+      document.documentElement.classList.add('native');
+    }
   </script>
 
   <script>
