@@ -21,9 +21,11 @@ def get_db_connection():
     if db_pool is None:
         try:
             logging.info("Connection pool not found. Attempting to create a new one...")
+            pool_size = getattr(Config, "DB_POOL_SIZE", 10)
+            logging.info(f"Creating MySQL connection pool (size={pool_size}).")
             db_pool = mysql.connector.pooling.MySQLConnectionPool(
                 pool_name="safi_pool",
-                pool_size=32,
+                pool_size=pool_size,
                 host=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,

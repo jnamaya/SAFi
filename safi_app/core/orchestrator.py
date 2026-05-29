@@ -288,6 +288,42 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         except Exception:
             return False
 
+    def _ledger_covers_values(self, ledger: List[Dict[str, Any]]) -> bool:
+        """True if the audit scored at least one of this agent's defined values.
+        A ledger that covers none of them signals a failed/garbled Conscience
+        pass, which the caller treats as a fail-closed condition."""
+        if not ledger:
+            return False
+        from .faculties.utils import _norm_label
+        defined = {_norm_label(v.get("value") or v.get("name")) for v in self.values}
+        scored = {_norm_label(e.get("value")) for e in ledger if e.get("value")}
+        return bool(defined & scored)
+
+    async def _run_conscience_audit(self, a_t, user_prompt, r_t, retrieved_context, message_id):
+        """Run the Conscience audit, retrying once if it errors or returns a
+        ledger that scores none of this agent's values (transient LLM failure /
+        garbled output). Returns the ledger — possibly still degraded, in which
+        case the caller fails closed."""
+        ledger: List[Dict[str, Any]] = []
+        for attempt in (1, 2):
+            try:
+                ledger = await self.conscience.evaluate(
+                    final_output=a_t,
+                    user_prompt=user_prompt,
+                    reflection=r_t or "",
+                    retrieved_context=retrieved_context or "",
+                )
+            except Exception as e:
+                self.log.exception(f"ConscienceAuditor.evaluate() failed (attempt {attempt}): {e}")
+                ledger = []
+            # Ungoverned agent (no values) has nothing to audit — accept as-is.
+            if not self.values or self._ledger_covers_values(ledger):
+                return ledger
+            if attempt == 1:
+                self.log.warning("[Governance | Phase 4] Audit degraded — retrying Conscience once.")
+                db.update_message_reasoning(message_id, "Re-auditing response...")
+        return ledger
+
     async def process_prompt(
         self,
         user_prompt: str,
@@ -656,16 +692,23 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # --- PHASE 4: Deep Analytical Audit (Conscience) [Synchronous] ---
         db.update_message_reasoning(message_id, "Auditing response for compliance...")
-        try:
-            ledger = await self.conscience.evaluate(
-                final_output=a_t,
-                user_prompt=user_prompt,
-                reflection=r_t or "",
-                retrieved_context=retrieved_context or ""
+        ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id)
+
+        # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
+        # errored, timed out, or returned a ledger that scored none of this
+        # agent's values, redirect to a safe reply rather than ship an unaudited
+        # response. (Previously an empty/garbled ledger sailed through approved.)
+        if self.values and not self._ledger_covers_values(ledger):
+            self.log.error("[Governance | Phase 4] Audit unavailable/degraded — failing closed.")
+            return await self.trigger_persona_redirect(
+                original_prompt=user_prompt,
+                violation_type="audit_unavailable",
+                conversation_id=conversation_id,
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id
             )
-        except Exception as e:
-            self.log.exception(f"ConscienceAuditor.evaluate() failed: {e}")
-            ledger = []
 
         if ledger:
             scores_str = " | ".join(
@@ -673,8 +716,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 for e in ledger
             )
             self.log.info(f"[Governance | Phase 4 | Conscience] {scores_str}")
-        else:
-            self.log.warning("[Governance | Phase 4 | Conscience] Empty ledger — audit skipped or failed.")
 
         # --- PHASE 4.5: Will Hard Gate Check ---
         D_hard, E_hard = self.will_gate.evaluate_hard_gates(ledger)

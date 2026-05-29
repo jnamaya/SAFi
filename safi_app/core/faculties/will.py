@@ -157,6 +157,15 @@ class WillGate:
         if not hard_gate_names:
             return ("approve", "no_hard_gates_defined")
 
+        # Fail-closed: a hard gate that the audit did not score cannot be
+        # assumed compliant. A missing entry (Conscience omitted it, returned a
+        # garbled/empty ledger, etc.) is treated as a violation, not a pass.
+        ledger_names = {e.get("value") for e in ledger if e.get("value") is not None}
+        for name in hard_gate_names:
+            if name not in ledger_names:
+                self.log.warning(f"WillGate: Hard gate '{name}' missing from ledger — failing closed.")
+                return ("violation", "hard_gate_unscored")
+
         for entry in ledger:
             if entry.get("value") in hard_gate_names and float(entry.get("score", 0)) <= -1.0:
                 value_name = entry.get("value", "unknown")

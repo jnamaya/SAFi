@@ -102,6 +102,12 @@ class Config:
     DB_USER = os.environ.get("DB_USER", "safi")
     DB_PASSWORD = os.environ.get("DB_PASSWORD")
     DB_NAME = os.environ.get("DB_NAME", "safi")
+    # Connections per worker process. Total app connections = this × gunicorn
+    # workers, which must stay safely under MySQL's max_connections (default 151).
+    # Default 10 → 3 workers = 30, leaving comfortable headroom. The old hardcoded
+    # 32 (× workers) idled near the cap and exhausted it under any extra load.
+    # MySQL connector caps pool_size at 32; values above that are clamped.
+    DB_POOL_SIZE = max(1, min(32, int(os.environ.get("SAFI_DB_POOL_SIZE", "10"))))
 
     # Comma-separated list of emails that have super-admin access to the Audit Hub
     # (can see all orgs' logs). Leave blank to disable super-admin access entirely.

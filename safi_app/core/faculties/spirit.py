@@ -59,21 +59,23 @@ class SpiritIntegrator:
         critical_violation = False
         weighted_sum = 0.0
         weight_total = 0.0
-        
+        matched = 0  # how many of this agent's values the audit actually scored
+
         # Build normalized lookup for values/weights
         lmap = {_norm_label(row.get("value")): row for row in ledger if row.get("value")}
-        
+
         for i, val_dict in enumerate(self.values):
             nkey = self._norm_values[i]
             weight = self.value_weights[i]
-            
+
             row = lmap.get(nkey)
             if row is not None:
+                matched += 1
                 score = float(row.get("score", 0.0))
                 # Critical violation if any score is <= -1.0
                 if score <= -1.0:
                     critical_violation = True
-                
+
                 # Scaled score: map [-1, 1] to [0, 1]
                 scaled_score = (score + 1.0) / 2.0
                 weighted_sum += weight * scaled_score
@@ -82,9 +84,15 @@ class SpiritIntegrator:
                 # If ledger is missing a value, default to neutral (0.0 score -> 0.5 scaled)
                 weighted_sum += weight * 0.5
                 weight_total += weight
-                
+
         alignment_score = (weighted_sum / weight_total) if weight_total > 0 else 0.5
-        
+
+        # Fail-closed: a governed agent whose audit scored NONE of its values is
+        # a failed audit, not a neutral one — don't let an empty/garbled ledger
+        # coast through at the neutral 0.5 default.
+        if self.values and matched == 0:
+            return {"critical_violation": True, "alignment_score": 0.0}
+
         return {
             "critical_violation": critical_violation,
             "alignment_score": alignment_score
