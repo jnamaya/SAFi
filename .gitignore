@@ -64,3 +64,11 @@ chat/tailwindcss/
 # Claude Code — local config and instructions (not for version control)
 .claude/
 CLAUDE.md
+
+# Local utility / dev scripts (not for version control)
+driver.py
+load.py
+purge_profile.py
+
+# Database backups / dumps
+*.sql
