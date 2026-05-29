@@ -3,6 +3,11 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   font-size: 16px;
   line-height: 1.6;
+  /* Stop mobile WebViews (Capacitor/Android font-boosting, iOS auto-adjust)
+     from inflating text so 16px renders as 16px on phones too. */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-variant-ligatures: common-ligatures contextual;

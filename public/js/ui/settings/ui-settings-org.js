@@ -123,16 +123,16 @@ function renderOrganizationUI(container, org, charter) {
 
         <div class="settings-card">
             <div class="flex items-center justify-between">
-                <div id="org-name-display-container" class="group flex items-center gap-3">
+                <div id="org-name-display-container" class="group flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
                     <h3 class="text-2xl font-bold text-neutral-900 dark:text-white">
                         ${org.name}
                     </h3>
-                    <button id="btn-edit-org-name" class="p-1 text-gray-400 hover:text-green-600 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Rename Organization">
+                    <button id="btn-edit-org-name" class="p-1 text-gray-400 hover:text-green-600 rounded opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="Rename Organization">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
-                    <div class="flex items-center gap-2 text-sm text-neutral-500 ml-2">
-                        <span>ID:</span>
-                        <code class="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded select-all">${org.id}</code>
+                    <div class="flex items-center gap-2 text-sm text-neutral-500 min-w-0 w-full sm:w-auto">
+                        <span class="shrink-0">ID:</span>
+                        <code class="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded select-all break-all min-w-0">${org.id}</code>
                     </div>
                 </div>
 
