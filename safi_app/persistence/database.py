@@ -823,7 +823,14 @@ def get_audit_result(msg_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM chat_history WHERE message_id=%s", (msg_id,))
+        # Only the columns this endpoint returns — it's polled frequently, so
+        # avoid pulling the full row (content + large JSON blobs) every time.
+        cursor.execute(
+            """SELECT audit_status, conscience_ledger, spirit_score, spirit_note,
+                      profile_name, profile_values, suggested_prompts, reasoning_log
+               FROM chat_history WHERE message_id=%s""",
+            (msg_id,),
+        )
         row = cursor.fetchone()
         if row:
             return {
