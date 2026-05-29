@@ -27,7 +27,7 @@ export function setupConscienceModalContent(payload) {
     // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            This report shows how this response was evaluated against ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${profileName}</strong>'s` : "this agent's"} values and governance rules.
+            This report shows how this response was evaluated against ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${profileName}</strong>'s` : "this agent's"} values and standards.
         </p>
         
         ${renderScoreAndTrend(payload)}
@@ -345,7 +345,7 @@ function attachModalEventListeners(container, payload) {
                 sidebar.classList.remove('md:flex');
             }
             const wrapper = document.getElementById('main-layout-wrapper');
-            if (wrapper) wrapper.classList.remove('md:ml-72');
+            if (wrapper) wrapper.classList.remove('md:ml-64');
 
             // 5. Programmatically click the dashboard tab
             if (ui.elements.cpNavDashboard) {

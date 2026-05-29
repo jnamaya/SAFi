@@ -176,16 +176,24 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
         f"{final_profile.get('worldview', '')}"
     )
 
-    # B. Merge Will Rules (Gov First)
+    # A2. Policy scope_statement overrides persona's. Wizard policies define
+    # their own boundary; without this _inject_scope_compliance never sees it.
+    gov_scope = governance.get("scope_statement")
+    if gov_scope:
+        final_profile["scope_statement"] = gov_scope
+
+    # B. Merge Will Rules. Three input shapes:
+    #   - persona dict   + gov list/dict  → keep persona dict (modern)
+    #   - persona list   + gov dict       → use gov dict (wizard-driven policy)
+    #   - persona list   + gov list       → concatenate
     persona_rules = final_profile.get("will_rules", [])
+    gov_rules = governance.get("global_will_rules", [])
     if isinstance(persona_rules, dict):
-        # Modern dict format: preserve as-is; governance rules already encoded in blacklist
         final_profile["will_rules"] = persona_rules
+    elif isinstance(gov_rules, dict):
+        final_profile["will_rules"] = gov_rules
     else:
-        final_profile["will_rules"] = (
-            governance.get("global_will_rules", []) +
-            persona_rules
-        )
+        final_profile["will_rules"] = (gov_rules or []) + (persona_rules or [])
 
     # C. Merge Values & Math (Enforce Configurable Split)
     # AUTOMATIC DISTRIBUTION LOGIC:
@@ -207,6 +215,86 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
 
     final_profile["values"] = final_combined
     return final_profile
+
+
+def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], policy_values: Optional[List[Dict[str, Any]]] = None, charter_weight: float = 0.40) -> Dict[str, Any]:
+    """
+    Finalizes an agent's governed profile under the two-tier value model.
+
+    The Organizational Charter (mission + core values) binds every agent in the
+    org. Scored values come ONLY from two tiers — the Charter (org-wide) and the
+    business-unit Policy — split by `charter_weight` (Charter share). The agent
+    itself contributes no scored values; whatever scored values are already on
+    `profile` are discarded and rebuilt from the authoritative charter/policy
+    sources. Hard gates (e.g. Scope Compliance, weight 0) are always preserved.
+
+    Behaviour:
+      - Mission + charter value names are prepended to the worldview as a
+        constitutional preamble.
+      - charter + policy values  -> charter@charter_weight + policy@(1-weight)
+      - charter only             -> charter@1.0   (policy-less org agent)
+      - policy only (no charter) -> policy@1.0
+      - neither (built-ins / standalone custom agents) -> keep existing values,
+        no preamble. Effectively a no-op.
+    """
+    profile = copy.deepcopy(profile)
+    charter = charter or {}
+    policy_values = policy_values or []
+
+    mission = (charter.get("mission") or "").strip()
+    charter_values_raw = charter.get("core_values") or []
+
+    # --- Worldview preamble (Charter sits above Policy + Role) ---
+    # Descriptive self-knowledge ONLY — deliberately no "you must reflect these
+    # values" directive. The Intellect reasons freely; the Conscience and Spirit
+    # measure alignment independently after generation. Coercing the generator
+    # here would bias output and make the audit self-fulfilling.
+    if mission or charter_values_raw:
+        names = [v.get("name") or v.get("value") for v in charter_values_raw]
+        names = [n for n in names if n]
+        lines = ["--- ORGANIZATION CONTEXT ---"]
+        if mission:
+            lines.append(f"Mission: {mission}")
+        if names:
+            lines.append(f"This organization's core values: {', '.join(names)}.")
+        profile["worldview"] = "\n".join(lines) + "\n\n" + profile.get("worldview", "")
+
+    # --- Two-tier scored value set ---
+    def _mapname(vals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        out = copy.deepcopy(vals)
+        for v in out:
+            if "value" not in v and "name" in v:
+                v["value"] = v["name"]
+        return out
+
+    charter_vals = _mapname(charter_values_raw)
+    policy_vals = _mapname(policy_values)
+
+    # Preserve all hard gates at weight 0 (Scope Compliance + any gate-flagged
+    # charter/policy values). Only scored values get the weight split.
+    existing_gates = [v for v in profile.get("values", []) if v.get("hard_gate")]
+    c_gates = [v for v in charter_vals if v.get("hard_gate")]
+    c_scored = [v for v in charter_vals if not v.get("hard_gate")]
+    p_gates = [v for v in policy_vals if v.get("hard_gate")]
+    p_scored = [v for v in policy_vals if not v.get("hard_gate")]
+
+    hard_gates = existing_gates + c_gates + p_gates
+
+    cw = max(0.0, min(1.0, float(charter_weight)))
+    if c_scored and p_scored:
+        scored = _normalize_weights(c_scored, target_sum=cw) + _normalize_weights(p_scored, target_sum=1.0 - cw)
+    elif c_scored:
+        scored = _normalize_weights(c_scored, target_sum=1.0)
+    elif p_scored:
+        scored = _normalize_weights(p_scored, target_sum=1.0)
+    else:
+        # No governance values at all -> keep whatever scored values the profile
+        # already had (built-in personas / standalone custom agents).
+        scored = [v for v in profile.get("values", []) if not v.get("hard_gate")]
+
+    profile["values"] = hard_gates + scored
+    return profile
+
 
 # 6. Loading Helpers (DB UPDATED)
 
@@ -267,53 +355,100 @@ def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> 
     all_profiles = builtins + customs
     return sorted(all_profiles, key=lambda x: x["name"])
 
-def get_profile(name: str) -> Dict[str, Any]:
+def _standalone_base(raw_persona: Dict[str, Any]) -> Dict[str, Any]:
+    """Standalone (no policy): normalize the persona's own values to sum to 1.0."""
+    normalized = copy.deepcopy(raw_persona)
+    normalized["values"] = _normalize_weights(normalized.get("values", []), target_sum=1.0)
+    return _inject_scope_compliance(normalized)
+
+
+def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Retrieves a persona. Checks DB first, then built-ins.
+    THE sole governance compiler.
+
+    Given an agent name (and optionally an externally-supplied `policy_id`, e.g.
+    the API-key path), returns the COMPLETE governed profile — role + business-unit
+    Policy + org Charter — with scored values rebuilt under the two-tier model, the
+    scope hard-gate injected, and the worldview layered (Charter context → Policy →
+    role). It also stamps `policy_id`, `org_id`, and the effective `spirit_beta` so
+    the runtime needn't re-resolve them.
+
+    The agent's own policy_id is used unless `policy_id` is passed to override it.
+    Built-ins (no org_id) skip the Charter layer entirely, preserving their behavior.
     """
     key = (name or "").lower().strip()
 
-    # 1. Check Built-ins
+    # 1. Resolve the base persona (built-in or DB).
     if key in PERSONAS:
         raw_persona = PERSONAS[key]
     else:
-        # 2. Check DB
         raw_persona = load_custom_persona(key)
         if not raw_persona:
             raise KeyError(f"Unknown persona '{name}'.")
 
-    # --- GOVERNANCE LOGIC ---
+    # 2. Effective policy: explicit override (API-key path) else the agent's own.
+    effective_policy_id = policy_id or raw_persona.get("policy_id")
+    org_id = raw_persona.get("org_id")
+    policy_values: List[Dict[str, Any]] = []
+    policy_cfg: Dict[str, Any] = {}
 
-    # A. Dynamic Policy from DB
-    policy_id = raw_persona.get("policy_id")
-    if policy_id and policy_id != "standalone":
+    # 3. Policy + role layer.
+    if effective_policy_id and effective_policy_id != "standalone":
+        db_policy = None
         try:
-            db_policy = db.get_policy(policy_id)
-            if db_policy:
-                gov_dict = {
-                    "global_worldview": db_policy.get("worldview", ""),
-                    "global_will_rules": db_policy.get("will_rules", []),
-                    "global_values": db_policy.get("values_weights", [])
-                }
-                # Fix field names for DB values
-                for v in gov_dict["global_values"]:
-                     if "name" in v and "value" not in v:
-                         v["value"] = v["name"]
-
-                return _inject_scope_compliance(assemble_agent(raw_persona, gov_dict))
+            db_policy = db.get_policy(effective_policy_id)
         except Exception as e:
-            print(f"Error applying policy {policy_id}: {e}")
+            print(f"Error loading policy {effective_policy_id}: {e}")
+        if db_policy:
+            policy_cfg = db_policy.get("policy_config") or {}
+            policy_values = db_policy.get("values_weights", []) or []
+            for v in policy_values:
+                if "name" in v and "value" not in v:
+                    v["value"] = v["name"]
+            gov_dict = {
+                "global_worldview": db_policy.get("worldview", ""),
+                "global_will_rules": db_policy.get("will_rules", []),
+                "global_values": policy_values,
+                "scope_statement": policy_cfg.get("scope_statement", "") or None,
+            }
+            base = _inject_scope_compliance(assemble_agent(raw_persona, gov_dict))
+            org_id = db_policy.get("org_id") or org_id
+        else:
+            base = _standalone_base(raw_persona)
+    elif key in GOVERNANCE_MAP:
+        base = _inject_scope_compliance(assemble_agent(raw_persona, GOVERNANCE_MAP[key]))
+    else:
+        base = _standalone_base(raw_persona)
 
-    # B. Legacy Hardcoded Map
-    if key in GOVERNANCE_MAP:
-        return _inject_scope_compliance(assemble_agent(raw_persona, GOVERNANCE_MAP[key]))
+    # 4. Resolve org governance context once (Charter + weight + β).
+    charter = None
+    charter_weight = 0.40
+    spirit_beta = 0.90
+    if org_id:
+        try:
+            org = db.get_organization(org_id)
+            if org and org.get("settings"):
+                settings = org["settings"]
+                if isinstance(settings, str):
+                    settings = json.loads(settings)
+                charter_weight = float(settings.get("governance_split", 0.40))
+                spirit_beta = float(settings.get("spirit_beta", 0.90))
+            charter = db.get_charter(org_id)
+        except Exception as e:
+            print(f"Error resolving org governance for {org_id}: {e}")
+    # Policy-level β override (wizard "Ethical Memory" / Consistency slider).
+    pol_beta = policy_cfg.get("ethical_memory")
+    if pol_beta is not None:
+        try:
+            spirit_beta = float(pol_beta)
+        except (TypeError, ValueError):
+            pass
 
-    # C. Standalone Agent (No Policy) - NEW NORMALIZATION LOGIC
-    # Ensure values sum to 100% (1.0) automatically
-    normalized_persona = copy.deepcopy(raw_persona)
-    normalized_persona["values"] = _normalize_weights(
-        normalized_persona.get("values", []),
-        target_sum=1.0
-    )
+    # 5. Charter layer (two-tier value rebuild + descriptive preamble).
+    final = apply_charter(base, charter, policy_values=policy_values, charter_weight=charter_weight)
 
-    return _inject_scope_compliance(normalized_persona)
+    # 6. Stamp governance metadata for the runtime + auditing.
+    final["policy_id"] = effective_policy_id or "standalone"
+    final["org_id"] = org_id
+    final["spirit_beta"] = spirit_beta
+    return final

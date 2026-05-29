@@ -381,15 +381,21 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     0.0, 1.0
                 )
 
-        spirit_feedback = build_spirit_feedback(
-            mu=current_mu,
-            value_names=[v.get('value') or v.get('name') for v in self.values],
-            drift=self.last_drift,
-            recent_mu=list(self.mu_history),
-            value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values],
-            value_descriptions=[v.get('description', '') or v.get('definition', '') for v in self.values],
-            last_pt=last_pt
-        )
+        # An agent with no scored values (no Charter and no Policy) has nothing to
+        # coach against — skip Spirit feedback rather than crash. It still runs;
+        # it is simply ungoverned until a Charter or Policy gives it values.
+        if self.values:
+            spirit_feedback = build_spirit_feedback(
+                mu=current_mu,
+                value_names=[v.get('value') or v.get('name') for v in self.values],
+                drift=self.last_drift,
+                recent_mu=list(self.mu_history),
+                value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values],
+                value_descriptions=[v.get('description', '') or v.get('definition', '') for v in self.values],
+                last_pt=last_pt
+            )
+        else:
+            spirit_feedback = ""
 
         # --- PHASE 0: Pre-generation Injection Gate ---
         persona_blacklist = (self.profile or {}).get("will_rules", {}).get("early_prompt_blacklist", [])

@@ -10,9 +10,9 @@ export function renderSettingsHelpTab() {
     container.innerHTML = `
         <div class="max-w-3xl">
 
-            <div class="mb-8 p-6 rounded-2xl bg-gradient-to-br from-green-50 to-gray-50 dark:from-green-900/20 dark:to-neutral-800/50 border border-green-100 dark:border-green-900/30">
-                <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Help & User Guide</h1>
-                <p class="text-gray-500 dark:text-gray-400 text-sm">Everything you need to know to get the most out of SAFi.</p>
+            <div class="settings-page-header">
+                <h1>Help &amp; User Guide</h1>
+                <p>Everything you need to know to get the most out of SAFi.</p>
             </div>
 
             <div class="bg-gray-50 dark:bg-neutral-800 rounded-xl p-4 mb-6 border border-gray-200 dark:border-neutral-700">
@@ -59,7 +59,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">How it works</p>
-                        <p>SAFi sits between the user and the AI model. Every message goes through the engine, which checks whether the agent is staying within its defined scope, evaluates each response against your organization's values, and blocks or retries anything that doesn't meet the standard. The result is an AI that behaves consistently — not just most of the time, but every time.</p>
+                        <p>SAFi sits between the user and the AI model. Every message goes through the engine, which checks whether the agent is staying within its defined scope, evaluates each response against your organization's values and standards, and blocks or retries anything that doesn't meet the standard. The result is an AI that behaves consistently — not just most of the time, but every time.</p>
                     </div>
 
                     <div>
@@ -134,7 +134,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 1 — Pick an agent</p>
-                        <p>From the chat icon in the sidebar or <strong class="text-gray-900 dark:text-white">Settings → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and values. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
+                        <p>From the chat icon in the sidebar or <strong class="text-gray-900 dark:text-white">Settings → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
                     </div>
 
                     <div>
@@ -145,7 +145,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 3 — Send your first message</p>
-                        <p>Type a question related to the agent's topic and press <strong class="text-gray-900 dark:text-white">Enter</strong> to send. The agent will respond based on its defined purpose and values. If your question is outside its scope, it will let you know.</p>
+                        <p>Type a question related to the agent's topic and press <strong class="text-gray-900 dark:text-white">Enter</strong> to send. The agent will respond based on its defined purpose and scope. If your question is outside its scope, it will let you know.</p>
                     </div>
 
                     <div>
@@ -155,7 +155,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 5 — Check the compliance score</p>
-                        <p>After the agent responds, expand the response details to see the compliance score. This shows how well the response aligned with the agent's values. A green score means it passed cleanly — anything lower triggered an automatic retry before you saw the result.</p>
+                        <p>After the agent responds, expand the response details to see the compliance score. This shows how well the response aligned with the agent's values and standards. A green score means it passed cleanly — anything lower triggered an automatic retry before you saw the result.</p>
                     </div>
 
                     <div>
@@ -203,18 +203,23 @@ export function renderSettingsHelpTab() {
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Charter</p>
+                            <p class="mt-0.5">Your organization's mission and <strong class="text-gray-700 dark:text-gray-300">core values</strong>. The Charter applies to every agent in the organization, so its values are scored on every response — it's the culture all agents share.</p>
+                        </div>
+
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
                             <p class="font-medium text-gray-900 dark:text-white">Policy</p>
-                            <p class="mt-0.5">The constitution of an agent. A policy defines its mission, values, scope limits, guardrails, and the rules it must follow in every interaction. Every agent is linked to a policy, and every response is evaluated against it.</p>
+                            <p class="mt-0.5">A business unit's rulebook. A policy defines the <strong class="text-gray-700 dark:text-gray-300">standards</strong> it holds agents to, plus their scope, required disclaimers, and rules. An agent inherits its scored criteria from the Charter (core values) and its Policy (standards). One policy can govern many agents.</p>
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Worldview</p>
-                            <p class="mt-0.5">The guiding principles written into a policy that shape the way an agent interprets questions and frames its responses. It is the philosophical foundation the agent operates from — before any specific rules apply.</p>
+                            <p class="font-medium text-gray-900 dark:text-white">Purpose &amp; Voice</p>
+                            <p class="mt-0.5">The perspective and tone written into a policy that shape how an agent interprets questions and frames its responses. It is the foundation the agent reasons from — before any specific rules apply.</p>
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Organizational Authority</p>
-                            <p class="mt-0.5">The weight given to your organization's policies relative to the agent's own rules. A higher setting means the organization's guidelines take precedence; a lower setting gives the agent more autonomy in how it responds.</p>
+                            <p class="font-medium text-gray-900 dark:text-white">Charter vs Policy weighting</p>
+                            <p class="mt-0.5">How much of an agent's scored ethics comes from the organization's Charter (core values) versus the business-unit Policy (standards). A higher setting gives the org-wide Charter more weight; a lower setting favors the specific Policy.</p>
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
@@ -251,7 +256,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Sending a message</p>
-                        <p>Type your message in the input box at the bottom of the screen and press <strong class="text-gray-900 dark:text-white">Enter</strong> or click the send button. The agent will respond based on its defined purpose and values.</p>
+                        <p>Type your message in the input box at the bottom of the screen and press <strong class="text-gray-900 dark:text-white">Enter</strong> or click the send button. The agent will respond based on its defined purpose and scope.</p>
                     </div>
 
                     <div>
@@ -281,7 +286,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Compliance Audits</p>
-                        <p>Each response includes a compliance score indicating how well it aligned with the agent's values. You can view this by expanding the response details. Scores range from excellent to neutral to violation — violations trigger a retry or a redirect.</p>
+                        <p>Each response includes a compliance score indicating how well it aligned with the agent's values and standards. You can view this by expanding the response details. Scores range from excellent to neutral to violation — violations trigger a retry or a redirect.</p>
                     </div>
 
                 </div>
@@ -304,7 +309,7 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
-                    <p>An <strong class="text-gray-900 dark:text-white">Agent</strong> is an AI assistant designed for a specific purpose. Each agent has a name, a description, a defined scope, and a set of values that guide how it responds.</p>
+                    <p>An <strong class="text-gray-900 dark:text-white">Agent</strong> is an AI assistant built for a specific role — its name, purpose, tone, the tools and knowledge it can use, and the model that powers it. An agent does not define its own values; it inherits its scored criteria from your organization's <strong class="text-gray-900 dark:text-white">Charter</strong> (core values) and the <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to (standards).</p>
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Types of agents</p>
@@ -330,7 +335,7 @@ export function renderSettingsHelpTab() {
                         <p class="font-medium text-gray-900 dark:text-white mb-2">How to select an agent</p>
                         <ol class="list-decimal list-inside space-y-1">
                             <li>Open the Settings panel and go to <strong class="text-gray-900 dark:text-white">Agents</strong>.</li>
-                            <li>Browse the available agent cards. Each card shows the agent's name, description, and its core values.</li>
+                            <li>Browse the available agent cards. Each card shows the agent's name, description, and purpose.</li>
                             <li>Click <strong class="text-gray-900 dark:text-white">Select</strong> on the agent you want to use.</li>
                             <li>Return to the chat — your selected agent will be active immediately.</li>
                         </ol>
@@ -338,14 +343,14 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Creating a custom agent <span class="text-xs font-normal text-gray-400">(Admins & Editors only)</span></p>
-                        <p>Click <strong class="text-gray-900 dark:text-white">Create Agent</strong> on the Agents page to open the Agent Wizard. You'll be guided through:</p>
+                        <p>Click <strong class="text-gray-900 dark:text-white">Create Agent</strong> on the Agents page to open the Agent Wizard. Because values and standards live in the Charter and the Policy, the agent builder focuses on the agent's <em>role</em>:</p>
                         <ul class="list-disc list-inside mt-1 space-y-0.5">
-                            <li><strong class="text-gray-900 dark:text-white">Identity</strong> — Name, description, and avatar</li>
-                            <li><strong class="text-gray-900 dark:text-white">Purpose</strong> — What the agent is for and what topics it covers</li>
-                            <li><strong class="text-gray-900 dark:text-white">Values</strong> — The principles the agent is evaluated against</li>
-                            <li><strong class="text-gray-900 dark:text-white">Guardrails</strong> — Specific rules and boundaries for the agent's behavior</li>
-                            <li><strong class="text-gray-900 dark:text-white">Policy</strong> — The governance policy that governs the agent</li>
+                            <li><strong class="text-gray-900 dark:text-white">Profile</strong> — Name, description, avatar, and the governing <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to</li>
+                            <li><strong class="text-gray-900 dark:text-white">Tools &amp; Knowledge</strong> — Any tools the agent may use and an optional knowledge base</li>
+                            <li><strong class="text-gray-900 dark:text-white">Personality</strong> — The AI model that generates its responses</li>
+                            <li><strong class="text-gray-900 dark:text-white">Settings</strong> — Operational limits, then a final review</li>
                         </ul>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">An agent needs at least a Charter or an attached Policy — otherwise it has no values or standards to be governed by.</p>
                     </div>
 
                 </div>
@@ -368,29 +373,33 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
-                    <p>A <strong class="text-gray-900 dark:text-white">Policy</strong> is the set of values, rules, and principles that an agent is held to. Every agent is linked to a policy, and every response is evaluated against it before it reaches you.</p>
+                    <p>A <strong class="text-gray-900 dark:text-white">Policy</strong> is a business unit's rulebook — the <strong class="text-gray-900 dark:text-white">standards</strong>, scope, and rules an agent is held to. Together with your organization's <strong class="text-gray-900 dark:text-white">Charter</strong> (core values), it defines what every response is evaluated against before it reaches you.</p>
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">What's in a policy?</p>
                         <div class="space-y-2">
                             <div class="flex gap-2">
                                 <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Worldview</strong> — A description of the principles that should guide every response.</div>
+                                <div><strong class="text-gray-900 dark:text-white">Purpose &amp; Voice</strong> — The perspective and tone every agent under the policy reasons from.</div>
                             </div>
                             <div class="flex gap-2">
                                 <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Values</strong> — Specific dimensions the agent is scored on (e.g., Accuracy, Integrity, Safety). Each value has a weight that reflects its importance.</div>
+                                <div><strong class="text-gray-900 dark:text-white">Scope</strong> — The topics the agent is allowed to handle; anything outside is declined.</div>
                             </div>
                             <div class="flex gap-2">
                                 <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Rules</strong> — Hard lines the agent will never cross, regardless of how a request is framed.</div>
+                                <div><strong class="text-gray-900 dark:text-white">Standards</strong> — Specific dimensions a response is scored on (e.g., Accuracy, Data Privacy, Compliance). Each standard has a weight that reflects its importance, and can be marked non-negotiable.</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
+                                <div><strong class="text-gray-900 dark:text-white">Response Rules</strong> — Hard requirements like required disclaimers, prohibited formatting, and permitted tools.</div>
                             </div>
                         </div>
                     </div>
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Creating and managing policies <span class="text-xs font-normal text-gray-400">(Admins & Editors only)</span></p>
-                        <p>Go to <strong class="text-gray-900 dark:text-white">Policies</strong> in the sidebar to view, create, or edit policies. When creating a policy, you can define its values and rules from scratch or start from the default SAFi template.</p>
+                        <p>Go to <strong class="text-gray-900 dark:text-white">Policies</strong> in the sidebar to view, create, or edit policies. When creating a policy, you can define its standards and rules from scratch or start from the default SAFi template.</p>
                     </div>
 
                     <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
@@ -425,7 +434,7 @@ export function renderSettingsHelpTab() {
                         </div>
                         <div class="flex gap-2">
                             <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                            <div><strong class="text-gray-900 dark:text-white">AI Governance</strong> — Sliders to configure global AI behavior. You can adjust the <em>Organizational Authority</em> (Agent Autonomy vs. Strict Compliance) and <em>Ethical Memory</em> (how heavily the AI weighs past interactions).</div>
+                            <div><strong class="text-gray-900 dark:text-white">AI Governance</strong> — This is also where you set your organization's <em>Charter</em> (mission + core values). Sliders configure global AI behavior: <em>Charter vs Policy weighting</em> (how much of an agent's scored ethics comes from the Charter vs the business-unit Policy) and <em>Ethical Memory</em> (how heavily the AI weighs past interactions).</div>
                         </div>
                         <div class="flex gap-2">
                             <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
@@ -547,7 +556,7 @@ export function renderSettingsHelpTab() {
                         "Each agent is designed for a specific purpose, so it works best when you stick to its intended topic area. If you need help with something different, check whether another agent covers that topic or ask your admin about creating a new one.")}
 
                     ${faqItem("What does the compliance score mean?",
-                        "After each response, SAFi scores it against the agent's values on a scale from excellent (+1) to violation (-1). A high score means the response aligned well with the agent's purpose and principles. A low score would have triggered a retry — you only see responses that passed.")}
+                        "After each response, SAFi scores it against the agent's values and standards on a scale from excellent (+1) to violation (-1). A high score means the response aligned well with the agent's purpose and principles. A low score would have triggered a retry — you only see responses that passed.")}
 
                     ${faqItem("How do I invite someone to my organization?",
                         "If your organization has verified its domain, users with a matching email address will join automatically when they sign up. You can also review current members in the Organization tab (Admins only).")}

@@ -34,9 +34,11 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
 
     // Generate the HTML for the profile list
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">Agents</h3>
-        <p class="text-sm text-gray-400 mt-1 mb-6">Select an agent from the list below to start chatting. Switching agents will start a new conversation.</p>
-        
+        <div class="settings-page-header">
+            <h1>Agents</h1>
+            <p>Select an agent to start chatting. Switching agents will start a new conversation.</p>
+        </div>
+
         <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->
         ${(currentUser && ['admin', 'editor'].includes(currentUser.role)) ? `
         <div class="mb-6">
@@ -92,7 +94,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                             Details
                         </button>
                         ${(profile.is_custom && currentUser && (currentUser.role === 'admin' || currentUser.id === profile.created_by)) ? `
-                        <button type="button" data-key="${profile.key}" class="edit-agent-btn px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors">
+                        <button type="button" data-key="${profile.key}" class="edit-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
                             Edit
                         </button>
                         <button type="button" data-key="${profile.key}" class="delete-agent-btn px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">
@@ -221,7 +223,7 @@ function createModalSection(title, content) {
  * Creates the HTML for the "Values" section, including rubrics.
  * @param {Array} values - The list of value objects
  */
-function renderValuesSection(values) {
+function renderValuesSection(values, title = 'Values &amp; Standards') {
     if (!values || values.length === 0) return '';
 
     const valuesHtml = values.map(v => {
@@ -298,7 +300,7 @@ function renderValuesSection(values) {
 
     return `
         <div class="mb-6">
-            <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">Values</h3>
+            <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">${title}</h3>
             <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300">
                 ${valuesHtml}
             </div>
@@ -310,7 +312,8 @@ function renderValuesSection(values) {
  * Populates the Profile Details modal with the given profile data.
  * @param {object} profile - The full profile object
  */
-export function renderProfileDetailsModal(profile) {
+export function renderProfileDetailsModal(profile, options = {}) {
+    const isPolicy = !!options.isPolicy;
     ui._ensureElements();
 
     // FIX: Ensure modal exists in DOM before grabbing reference
@@ -328,8 +331,11 @@ export function renderProfileDetailsModal(profile) {
     container.innerHTML = '';
 
     container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
-    container.insertAdjacentHTML('beforeend', createModalSection('Worldview', profile.worldview));
-    container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
-    container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values));
+    container.insertAdjacentHTML('beforeend', createModalSection('Purpose &amp; Voice', profile.worldview));
+    // Policies don't enforce style; only show Style for agents that set one.
+    if (profile.style && !String(profile.style).startsWith('N/A')) {
+        container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
+    }
+    container.insertAdjacentHTML('beforeend', renderValuesSection(profile.values, isPolicy ? 'Standards' : 'Values &amp; Standards'));
 
 }

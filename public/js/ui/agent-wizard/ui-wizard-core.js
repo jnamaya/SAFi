@@ -11,9 +11,6 @@ import {
     renderIntellectStep, validateIntellectStep
 } from './ui-wizard-step3.js';
 import {
-    renderConscienceStep, validateConscienceStep
-} from './ui-wizard-step4.js';
-import {
     renderSafetyStep, validateSafetyStep
 } from './ui-wizard-step5.js';
 import {
@@ -24,7 +21,7 @@ import { setAvailableModels, availableModelsCache } from './ui-wizard-utils.js';
 
 // --- WIZARD STATE ---
 let currentStep = 1;
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 
 const DEFAULT_WILL_RULES = () => ({
     structural_requirements: {
@@ -183,9 +180,8 @@ function ensureWizardInlineExists() {
                 <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
                 <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Tools</span>
                 <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Personality</span>
-                <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Values</span>
-                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Guardrails</span>
-                <span class="${currentStep >= 6 ? 'text-blue-600' : ''}">Review</span>
+                <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Settings</span>
+                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Review</span>
             </div>
 
             <!-- Content Area - Scrollable -->
@@ -243,9 +239,8 @@ async function renderStep(step) {
             case 1: renderIdentityStep(container, agentData); break;
             case 2: renderKnowledgeStep(container, agentData); break;
             case 3: renderIntellectStep(container, agentData, availableModelsCache); break;
-            case 4: renderConscienceStep(container, agentData, availableModelsCache); break;
-            case 5: renderSafetyStep(container, agentData); break;
-            case 6:
+            case 4: renderSafetyStep(container, agentData); break;
+            case 5:
                 // Auto-generate key for review visualization
                 if (!agentData.key && agentData.name) {
                     let prefix = "org";
@@ -297,9 +292,8 @@ function validateCurrentStep() {
         case 1: return validateIdentityStep(agentData);
         case 2: return validateKnowledgeStep(agentData);
         case 3: return validateIntellectStep(agentData);
-        case 4: return validateConscienceStep(agentData);
-        case 5: return validateSafetyStep(agentData);
-        case 6: return true; // Review always valid
+        case 4: return validateSafetyStep(agentData);
+        case 5: return true; // Review always valid
         default: return true;
     }
 }

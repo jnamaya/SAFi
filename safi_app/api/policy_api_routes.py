@@ -24,16 +24,18 @@ def validate_policy_data(data):
     errors = []
     if 'name' in data and not isinstance(data['name'], str):
         errors.append("Name must be a string.")
-    
+
     # Enforce Values
     if 'values' in data:
         if not isinstance(data['values'], list):
             errors.append("Values must be a list.")
         elif len(data['values']) < 1:
             errors.append("At least one Core Value is required.")
-    
-    if 'will_rules' in data and not isinstance(data['will_rules'], list):
-        errors.append("will_rules must be a list.")
+
+    # will_rules may be either a legacy list of strings or a structured dict
+    # ({structural_requirements, early_prompt_blacklist, allowed_tools, rules}).
+    if 'will_rules' in data and not isinstance(data['will_rules'], (list, dict)):
+        errors.append("will_rules must be a list or dict.")
 
     if errors: return False, "; ".join(errors)
     return True, None
@@ -73,11 +75,10 @@ def create_policy():
         readable_id = f"{org_prefix}_{slug}"
 
         policy_config = {
-            "business_unit":   data.get("business_unit", ""),
-            "scope_statement": data.get("scope_statement", ""),
-            "guardrails":      data.get("guardrails", []),
-            "org_authority":   data.get("org_authority", 0.60),
-            "ethical_memory":  data.get("ethical_memory", 0.90),
+            "business_unit":      data.get("business_unit", ""),
+            "scope_statement":    data.get("scope_statement", ""),
+            "ethical_memory":     data.get("ethical_memory", 0.90),
+            "alignment_threshold": data.get("alignment_threshold", 0.5),
         }
         pid = db.create_policy(
             name=data.get("name"),
@@ -144,11 +145,10 @@ def update_policy(policy_id):
         if not valid: return jsonify({"error": msg}), 400
 
         policy_config = {
-            "business_unit":   data.get("business_unit", ""),
-            "scope_statement": data.get("scope_statement", ""),
-            "guardrails":      data.get("guardrails", []),
-            "org_authority":   data.get("org_authority", 0.60),
-            "ethical_memory":  data.get("ethical_memory", 0.90),
+            "business_unit":      data.get("business_unit", ""),
+            "scope_statement":    data.get("scope_statement", ""),
+            "ethical_memory":     data.get("ethical_memory", 0.90),
+            "alignment_threshold": data.get("alignment_threshold", 0.5),
         }
         db.update_policy(
             policy_id,

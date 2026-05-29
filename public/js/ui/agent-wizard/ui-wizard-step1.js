@@ -1,4 +1,5 @@
 import * as api from '../../core/api.js';
+import * as ui from '../ui.js';
 
 export async function renderIdentityStep(container, agentData) {
     container.innerHTML = `
@@ -17,10 +18,14 @@ export async function renderIdentityStep(container, agentData) {
                     <option value="standalone">Loading Policies...</option>
                 </select>
                 <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
-                    Policies define your organization's mission and values. This agent will inherit them automatically.
+                    A policy gives this agent its business-unit standards and rules. With no policy, the agent is governed by your Organization's Charter alone — so you need <strong>at least a Charter or a Policy</strong> for the agent to be governed.
                 </p>
                 <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
                     <!-- Preview populated by JS -->
+                </div>
+                <div id="wiz-gov-warning" class="hidden mt-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 rounded-lg">
+                    <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
+                    <p class="text-xs text-amber-800 dark:text-amber-300">This agent would have <strong>no governance</strong>: your organization has no Charter and no policy is attached. Set an Organization Charter (<strong>Settings → Organization</strong>) or choose a policy above before continuing.</p>
                 </div>
             </div>
 
@@ -64,6 +69,40 @@ export async function renderIdentityStep(container, agentData) {
 
     // Load Policies
     await loadPolicies(agentData);
+
+    // Resolve charter status so we can warn early if the agent would be ungoverned
+    await refreshCharterStatus(agentData);
+}
+
+// An agent must inherit governance from either a Policy or the org Charter.
+// Mirror the backend guard (agent_api_routes.py) so we fail fast on Step 1
+// instead of at save time.
+async function refreshCharterStatus(agentData) {
+    try {
+        const orgRes = await api.getMyOrganization();
+        const org = orgRes && orgRes.organization;
+        if (org && org.id) {
+            const cRes = await api.getCharter(org.id).catch(() => null);
+            agentData._hasCharter = !!(cRes && cRes.charter);
+        } else {
+            agentData._hasCharter = false;
+        }
+    } catch (e) {
+        // Unknown — leave undefined so we neither warn nor block prematurely.
+        agentData._hasCharter = undefined;
+    }
+    updateGovernanceWarning(agentData);
+}
+
+function isUngoverned(agentData) {
+    const standalone = !agentData.policy_id || agentData.policy_id === 'standalone';
+    return standalone && agentData._hasCharter === false;
+}
+
+function updateGovernanceWarning(agentData) {
+    const warn = document.getElementById('wiz-gov-warning');
+    if (!warn) return;
+    warn.classList.toggle('hidden', !isUngoverned(agentData));
 }
 
 function attachListeners(agentData) {
@@ -80,7 +119,7 @@ async function loadPolicies(agentData) {
         const select = document.getElementById('wiz-policy');
 
         if (select) {
-            select.innerHTML = `<option value="standalone">No Governance (Standalone)</option>`;
+            select.innerHTML = `<option value="standalone">Charter only — no specific policy</option>`;
             policies.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
@@ -100,8 +139,11 @@ async function loadPolicies(agentData) {
                 if (pid === 'standalone') {
                     agentData._policyData = null;
                     preview.classList.add('hidden');
+                    updateGovernanceWarning(agentData);
                     return;
                 }
+
+                updateGovernanceWarning(agentData);
 
                 const policy = policies.find(p => p.id === pid);
                 if (policy) {
@@ -123,11 +165,11 @@ async function loadPolicies(agentData) {
                         <strong class="block mb-2 text-blue-800 dark:text-blue-200">${policy.name}</strong>
                         <div class="space-y-2">
                             <div>
-                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Mission</span>
+                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Purpose</span>
                                 <p class="italic">${missionSnippet}</p>
                             </div>
                             <div>
-                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Core Values (inherited)</span>
+                                <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Standards (inherited)</span>
                                 <ul class="list-disc list-inside">${valuesHtml}${moreHtml}</ul>
                             </div>
                         </div>
@@ -149,6 +191,11 @@ export function validateIdentityStep(agentData) {
     const name = document.getElementById('wiz-name')?.value;
     if (!name || !name.trim()) {
         alert("Agent Name is required");
+        return false;
+    }
+    if (isUngoverned(agentData)) {
+        updateGovernanceWarning(agentData);
+        ui.showToast("This agent would have no governance. Set an Organization Charter (Settings → Organization) or attach a Policy to continue.", "error");
         return false;
     }
     return true;

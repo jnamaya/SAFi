@@ -67,15 +67,13 @@ export async function renderSettingsGovernanceTab() {
         `;
 
         container.innerHTML = `
+            <div class="settings-page-header">
+                <h1>Policies</h1>
+                <p>Create policies for specific business units, teams, or use cases — HR, Finance, Legal, Customer Service, and so on. Each agent is assigned one policy that defines its purpose &amp; voice, standards, scope, and rules.</p>
+            </div>
             <div class="mb-8">
-                <div class="mb-4">
-                     <h3 class="text-xl font-bold">Policies</h3>
-                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-3xl">
-                        Create policies for specific business units, teams, or use cases — HR, Finance, Legal, Customer Service, and so on. Each agent is assigned one policy that defines its worldview, values, scope, and rules.
-                     </p>
-                </div>
                 ${canEditPolicy ? `
-                <button id="btn-create-policy" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm">
+                <button id="btn-create-policy" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                     Create New Policy
                 </button>` : ''}
@@ -159,7 +157,7 @@ export async function renderSettingsGovernanceTab() {
                         values: policy.values_weights,
                         will_rules: policy.will_rules
                     };
-                    renderProfileDetailsModal(policyAsProfile);
+                    renderProfileDetailsModal(policyAsProfile, { isPolicy: true });
                     // Open the modal
                     const modal = document.getElementById('profile-details-modal');
                     if (modal) modal.classList.remove('hidden');

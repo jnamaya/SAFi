@@ -167,11 +167,9 @@ function _buildProfileUI(container) {
     const inlineSections = CHIP_SECTIONS.filter(s =>  s.fullWidth);
 
     container.innerHTML = `
-        <div class="mb-5">
-            <h3 class="text-xl font-semibold">My Profile</h3>
-            <p class="text-neutral-500 dark:text-neutral-400 text-sm mt-1">
-                Tell SAFi about yourself. Everything here shapes how it responds to you.
-            </p>
+        <div class="settings-page-header">
+            <h1>My Profile</h1>
+            <p>Tell SAFi about yourself. Everything here shapes how it responds to you.</p>
         </div>
 
         ${_buildCompletenessBar()}
@@ -191,7 +189,7 @@ function _buildProfileUI(container) {
 
         <div class="mt-8 flex justify-end pt-4 border-t border-neutral-200 dark:border-neutral-700">
             <button id="save-my-profile-btn"
-                class="px-5 py-2 rounded-lg font-semibold bg-black text-white hover:bg-gray-800 text-sm transition-colors shadow-sm">
+                class="px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors shadow-sm">
                 Save Changes
             </button>
         </div>

@@ -121,40 +121,53 @@ function _markdownToPlainText(markdown) {
     } catch (e) { return markdown; }
 }
 
-// --- HELPER: Create Trust Score Pill ---
-function _createTrustPill(score, onClick) {
-    const button = document.createElement('button');
-    button.className = 'trust-score-pill';
+// --- HELPER: Score segment for the unified action bar ---
+const iconChevronRight = `<svg class="score-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>`;
 
+function _makeDivider() {
+    const d = document.createElement('span');
+    d.className = 'actionbar-divider';
+    return d;
+}
+
+function _createScoreSegment(score, onClick) {
     const numScore = (score === null || score === undefined) ? 10.0 : parseFloat(score);
 
-    let colorClass = 'trust-green';
+    let tier = 'seg-green';
     let label = 'Aligned';
-
     if (numScore < 5.0) {
-        colorClass = 'trust-red';
+        tier = 'seg-red';
         label = 'Concern';
     } else if (numScore < 8.0) {
-        colorClass = 'trust-yellow';
+        tier = 'seg-yellow';
         label = 'Caution';
     }
 
-    button.classList.add(colorClass);
-
-    button.setAttribute('aria-label', `Trust Score: ${numScore.toFixed(1)} out of 10. Click to view reasoning.`);
-    button.setAttribute('title', 'View Ethical Reasoning');
-
+    const button = document.createElement('button');
+    button.className = `score-seg ${tier}`;
+    button.setAttribute('aria-label', `Alignment score ${numScore.toFixed(1)} out of 10, ${label}. Click to view reasoning.`);
+    button.setAttribute('title', 'View alignment reasoning');
     button.innerHTML = `
-        ${iconShield}
-        <span>${numScore.toFixed(1)}/10 ${label}</span>
+        <span class="score-dot"></span>
+        <span class="score-val">${numScore.toFixed(1)}</span>
+        <span class="score-label">${label}</span>
+        ${iconChevronRight}
     `;
-
     button.addEventListener('click', (e) => {
         e.stopPropagation();
         onClick();
     });
-
     return button;
+}
+
+// Score segment + trailing divider, grouped so it can be injected/replaced
+// atomically when the audit score arrives after the bar is first rendered.
+function _createScoreWrap(score, onClick) {
+    const wrap = document.createElement('div');
+    wrap.className = 'score-wrap';
+    wrap.appendChild(_createScoreSegment(score, onClick));
+    wrap.appendChild(_makeDivider());
+    return wrap;
 }
 
 // --- TYPEWRITER STATE ---
@@ -487,29 +500,38 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 
     // 2. POPULATE META FOOTER (Before Animation Logic)
     const metaDiv = messageDiv.querySelector('.meta');
-    const leftMeta = document.createElement('div');
-    const rightMeta = document.createElement('div');
-    rightMeta.className = 'flex items-center gap-2 ml-auto';
-
-    const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
-    if (hasScore && whyHandler) {
-        const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
-        leftMeta.appendChild(pill);
-    }
-
-    const stamp = document.createElement('div');
-    stamp.className = 'stamp text-xs';
-    stamp.textContent = formatTime(date);
 
     if (sender === 'ai') {
-        if (copyBtn) rightMeta.prepend(copyBtn);
-        if (ttsBtn) rightMeta.prepend(ttsBtn);
-    } else if (sender === 'user' && retryBtn) {
-        rightMeta.prepend(retryBtn);
+        // Unified action bar: [score segment | copy · audio · time]
+        const bar = document.createElement('div');
+        bar.className = 'msg-actionbar';
+
+        const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
+        if (hasScore && whyHandler) {
+            bar.appendChild(_createScoreWrap(payload.spirit_score, () => whyHandler(payload)));
+        }
+        if (copyBtn) bar.appendChild(copyBtn);
+        if (ttsBtn) bar.appendChild(ttsBtn);
+
+        const stamp = document.createElement('div');
+        stamp.className = 'stamp actionbar-time';
+        stamp.textContent = formatTime(date);
+        bar.appendChild(stamp);
+
+        metaDiv.appendChild(bar);
+    } else {
+        // User message: optional retry button + timestamp, right-aligned.
+        const rightMeta = document.createElement('div');
+        rightMeta.className = 'flex items-center gap-2 ml-auto';
+
+        const stamp = document.createElement('div');
+        stamp.className = 'stamp text-xs';
+        stamp.textContent = formatTime(date);
+
+        if (retryBtn) rightMeta.prepend(retryBtn);
+        rightMeta.appendChild(stamp);
+        metaDiv.appendChild(rightMeta);
     }
-    rightMeta.appendChild(stamp);
-    metaDiv.appendChild(leftMeta);
-    metaDiv.appendChild(rightMeta);
 
 
     // 3. HANDLE CONTENT & ANIMATION (AI Only)
@@ -575,18 +597,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
     if (hasScore) {
         const metaDiv = container.querySelector('.meta');
-        if (metaDiv) {
-            metaDiv.querySelectorAll('.why-btn').forEach(el => el.remove());
-            metaDiv.querySelectorAll('.trust-score-pill').forEach(el => el.remove());
-
-            const pill = _createTrustPill(payload.spirit_score, () => whyHandler(payload));
-
-            let leftMeta = metaDiv.querySelector('div:first-child');
-            if (!leftMeta || leftMeta.classList.contains('flex')) {
-                leftMeta = document.createElement('div');
-                metaDiv.prepend(leftMeta);
-            }
-            leftMeta.prepend(pill);
+        const bar = metaDiv?.querySelector('.msg-actionbar');
+        if (bar) {
+            // Replace any existing score (idempotent) and inject at the front.
+            bar.querySelector('.score-wrap')?.remove();
+            bar.prepend(_createScoreWrap(payload.spirit_score, () => whyHandler(payload)));
         }
     }
 

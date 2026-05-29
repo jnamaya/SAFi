@@ -55,7 +55,7 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
                      <li>Go to the <strong>Agents</strong> tab.</li>
                      <li>Create a new agent or edit an existing one.</li>
                      <li>In the <strong>Identity</strong> step, select this policy from the dropdown.</li>
-                     <li>Every agent using this policy will follow its worldview, values, and rules.</li>
+                     <li>Every agent using this policy will follow its purpose, standards, and rules.</li>
                  </ol>
              </div>
 

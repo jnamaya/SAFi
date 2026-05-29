@@ -37,10 +37,21 @@ def get_db_connection():
 def init_db():
     conn = None
     cursor = None
+    got_lock = False
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         logging.info("Initializing database schema...")
+
+        # Serialize schema creation/migration + seeding across concurrent
+        # gunicorn workers. On a fresh DB all workers would otherwise race on the
+        # CREATE TABLE / guarded ALTER migrations and leave a partial schema.
+        try:
+            cursor.execute("SELECT GET_LOCK('safi_schema_init', 60)")
+            rows = cursor.fetchall()  # fully drain the result set
+            got_lock = bool(rows and rows[0][0])
+        except Exception:
+            got_lock = False
 
         # --- Users ---
         cursor.execute('''
@@ -94,7 +105,7 @@ def init_db():
                 domain_verified BOOLEAN DEFAULT FALSE,
                 domain_to_verify VARCHAR(255),
                 verification_token VARCHAR(255),
-                global_policy_id CHAR(36),
+                global_policy_id VARCHAR(255),
                 settings JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
@@ -123,7 +134,7 @@ def init_db():
         # --- Policies ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS policies (
-                id CHAR(36) PRIMARY KEY,
+                id VARCHAR(255) PRIMARY KEY,
                 org_id CHAR(36),
                 name VARCHAR(255) NOT NULL,
                 worldview TEXT,
@@ -210,7 +221,7 @@ def init_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_keys (
                 key_hash VARCHAR(64) PRIMARY KEY,
-                policy_id CHAR(36) NOT NULL,
+                policy_id VARCHAR(255) NOT NULL,
                 label VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_used_at TIMESTAMP NULL,
@@ -339,6 +350,14 @@ def init_db():
     except Exception as e:
         logging.error(f"DB Init Failed: {e}")
     finally:
+        try:
+            if got_lock and conn:
+                rel = conn.cursor()
+                rel.execute("SELECT RELEASE_LOCK('safi_schema_init')")
+                rel.fetchall()
+                rel.close()
+        except Exception:
+            pass
         if cursor: cursor.close()
         if conn: conn.close()
 

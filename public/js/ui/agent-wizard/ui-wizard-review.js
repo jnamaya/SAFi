@@ -1,12 +1,8 @@
 export function renderReviewStep(container, agentData) {
-    const valuesCount = agentData.values.length;
     const hasRAG = !!agentData.rag_knowledge_base;
-    const hasScope = !!(agentData.scope_statement && agentData.scope_statement.trim());
-
-    const sr = (agentData.will_rules && agentData.will_rules.structural_requirements) || {};
-    const requireDisclaimer = !!sr.require_disclaimer;
-    const bannedCount = (sr.banned_markdown_syntaxes || []).length;
-    const hardGateCount = (agentData.values || []).filter(v => v.hard_gate).length;
+    const hasPolicy = !!(agentData.policy_id && agentData.policy_id !== 'standalone');
+    const policyLabel = hasPolicy ? (agentData._policyData?.name || agentData.policy_id) : 'None (Charter only)';
+    const maxTurns = agentData.max_agent_turns || 'Default';
 
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Review & Create</h2>
@@ -35,12 +31,16 @@ export function renderReviewStep(container, agentData) {
                      <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Configuration</h4>
                      <ul class="space-y-2 text-sm">
                         <li class="flex justify-between">
-                            <span>Values</span>
-                            <span class="font-mono font-bold">${valuesCount}</span>
+                            <span>Governing Policy</span>
+                            <span class="font-mono font-bold ${hasPolicy ? 'text-blue-600' : 'text-gray-400'}">${policyLabel}</span>
                         </li>
                         <li class="flex justify-between">
                             <span>Knowledge Base</span>
                             <span class="font-mono font-bold ${hasRAG ? 'text-green-600' : 'text-gray-400'}">${hasRAG ? 'Active' : 'None'}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span>Max Tool Turns</span>
+                            <span class="font-mono font-bold">${maxTurns}</span>
                         </li>
                      </ul>
                 </div>
@@ -57,28 +57,14 @@ export function renderReviewStep(container, agentData) {
                 </div>
             </div>
             
-            <!-- Safety Summary -->
-            <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
-                <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Guardrails (Will Checks)</h4>
-                <ul class="space-y-2 text-sm">
-                    <li class="flex justify-between">
-                        <span>Scope Compliance</span>
-                        <span class="font-mono font-bold ${hasScope ? 'text-blue-600' : 'text-gray-400'}">${hasScope ? 'Active' : 'None'}</span>
-                    </li>
-                    <li class="flex justify-between">
-                        <span>Mandatory Disclaimer</span>
-                        <span class="font-mono font-bold ${requireDisclaimer ? 'text-green-600' : 'text-gray-400'}">${requireDisclaimer ? 'Required' : 'None'}</span>
-                    </li>
-                    <li class="flex justify-between">
-                        <span>Blocked Code Syntaxes</span>
-                        <span class="font-mono font-bold ${bannedCount > 0 ? 'text-orange-600' : 'text-gray-400'}">${bannedCount > 0 ? bannedCount : 'None'}</span>
-                    </li>
-                    <li class="flex justify-between">
-                        <span>Hard Gates</span>
-                        <span class="font-mono font-bold ${hardGateCount > 0 ? 'text-red-600' : 'text-gray-400'}">${hardGateCount > 0 ? hardGateCount : 'None'}</span>
-                    </li>
-                </ul>
-                ${hasScope ? `<div class="mt-3 pt-3 border-t border-gray-100 dark:border-neutral-700 text-xs text-gray-500 italic">"${(agentData.scope_statement || '').substring(0, 100)}${(agentData.scope_statement || '').length > 100 ? '…' : ''}"</div>` : ''}
+            <!-- Governance Summary -->
+            <div class="border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-4">
+                <h4 class="font-bold text-sm text-blue-800 dark:text-blue-200 uppercase mb-2">Governance</h4>
+                <p class="text-sm text-blue-700 dark:text-blue-300">
+                    ${hasPolicy
+                        ? `This agent is governed by the <strong>${policyLabel}</strong> policy plus your Organization's Charter. Its values, standards, scope, required disclaimers, and permitted tools are inherited from them.`
+                        : `This agent has no policy attached, so it is governed by your Organization's Charter alone. Attach a policy in Step 1 to give it business-unit standards and rules.`}
+                </p>
             </div>
 
             <!-- Instructions Preview -->

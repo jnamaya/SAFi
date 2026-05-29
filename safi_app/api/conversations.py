@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from ..persistence import database as db
 from ..core.orchestrator import SAFi
-from ..core.faculties.synderesis import get_profile, list_profiles, assemble_agent
+from ..core.faculties.synderesis import get_profile, list_profiles
 from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
@@ -108,28 +108,30 @@ class SafiInstanceCache:
         return f"{norm_name}|{rest_hash}"
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
-        # 1. Pre-fetch Org Settings
-        org_settings = {}
-        gov_weight = 0.60
-        spirit_beta = 0.90
-        p_data = None  # Ensure scope
+        # The fully-governed profile is compiled in ONE place: synderesis.get_profile()
+        # resolves role + Policy + Charter (+ weights and β) and stamps policy_id /
+        # org_id / spirit_beta. Here we only handle caching and SAFi instantiation.
+        # `policy_id`, when given (e.g. the API-key path), overrides the agent's own.
+        prof = get_profile(profile_name, policy_id=policy_id)
+        spirit_beta = float(prof.get("spirit_beta", 0.90))
 
-        if policy_id:
-             try:
-                 p_data = db.get_policy(policy_id)
-                 if p_data and p_data.get('org_id'):
-                     org = db.get_organization(p_data['org_id'])
-                     if org and org.get('settings'):
-                         org_settings = org['settings']
-                         if isinstance(org_settings, str): org_settings = json.loads(org_settings)
-                         
-                         gov_weight = float(org_settings.get('governance_split', 0.60))
-                         spirit_beta = float(org_settings.get('spirit_beta', 0.90))
-             except Exception:
-                 pass
-
-        config_hash = hashlib.md5(json.dumps(org_settings, sort_keys=True).encode()).hexdigest()
-        key = self._generate_key(profile_name, intellect_model, will_model, conscience_model, policy_id, config_hash)
+        # The cache key folds in the governing config: any Charter / Policy / weight
+        # edit changes the compiled profile, which changes this hash and busts the
+        # cached instance on the next request.
+        gov_fingerprint = {
+            "worldview": prof.get("worldview", ""),
+            "values": prof.get("values", []),
+            "will_rules": prof.get("will_rules", []),
+            "scope_statement": prof.get("scope_statement", ""),
+            "spirit_beta": spirit_beta,
+        }
+        config_hash = hashlib.md5(
+            json.dumps(gov_fingerprint, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        key = self._generate_key(
+            profile_name, intellect_model, will_model, conscience_model,
+            prof.get("policy_id"), config_hash
+        )
         now = time.time()
 
         with self._lock:
@@ -145,41 +147,20 @@ class SafiInstanceCache:
                 return entry['instance']
 
             # 3. Create new if missing
-            try:
-                prof = get_profile(profile_name)
-                
-                # --- Dynamic Policy Injection ---
-                if policy_id and p_data: # p_data cached from above
-                    gov = {
-                        "global_worldview": p_data.get('worldview', ''),
-                        "global_will_rules": p_data.get('will_rules', []),
-                        "global_values": p_data.get('values_weights', [])
-                    }
-                    # Pass dynamic Governance Weight
-                    prof = assemble_agent(prof, gov, governance_weight=gov_weight)
-                    
-                    # CRITICAL: Stamp Policy ID and Org ID on the profile for auditing
-                    prof['policy_id'] = policy_id
-                    prof['org_id'] = p_data.get('org_id')
-                
-                instance = SAFi(
-                    config=Config,
-                    value_profile_or_list=prof,
-                    intellect_model=intellect_model,
-                    will_model=will_model,
-                    conscience_model=conscience_model,
-                    spirit_beta=spirit_beta # Dynamic Beta
-                )
-                
-                self._cache[key] = {
-                    'instance': instance,
-                    'created_at': now,
-                    'last_used': now
-                }
-                return instance
-            except Exception as e:
-                # Don't cache failed initializations
-                raise e
+            instance = SAFi(
+                config=Config,
+                value_profile_or_list=prof,
+                intellect_model=intellect_model,
+                will_model=will_model,
+                conscience_model=conscience_model,
+                spirit_beta=spirit_beta  # from the compiled profile
+            )
+            self._cache[key] = {
+                'instance': instance,
+                'created_at': now,
+                'last_used': now
+            }
+            return instance
 
     def invalidate_profile(self, profile_name):
         """

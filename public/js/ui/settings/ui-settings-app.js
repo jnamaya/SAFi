@@ -21,10 +21,13 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
 
     // Generate HTML for the settings
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">App Settings</h3>
-        
-        <div class="space-y-4">
-            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Theme</h4>
+        <div class="settings-page-header">
+            <h1>App Settings</h1>
+            <p>Manage your appearance, account, and connected data sources.</p>
+        </div>
+
+        <div class="settings-card">
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Theme</h4>
             <div class="space-y-2" role="radiogroup">
                 ${themes.map(theme => `
                     <label class="flex items-center gap-3 p-3 border ${theme.key === currentTheme ? 'border-green-600 bg-green-50 dark:bg-green-900/30' : 'border-neutral-300 dark:border-neutral-700'} rounded-lg cursor-pointer hover:border-green-500 dark:hover:border-green-400 transition-colors">
@@ -33,8 +36,10 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
                     </label>
                 `).join('')}
             </div>
-            
-            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mt-8 mb-2">Account</h4>
+        </div>
+
+        <div class="settings-card">
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Account</h4>
             <div class="space-y-3">
                 <button id="cp-logout-btn" data-tab="logout" class="w-full text-left px-4 py-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
                     Sign Out
@@ -71,7 +76,7 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
 async function _renderConnectedAccounts(container) {
     const list = document.createElement('div');
     list.id = "connected-accounts-section";
-    list.className = "mt-8";
+    list.className = "settings-card";
 
     // Default Providers List
     const providers = [

@@ -99,8 +99,7 @@ html {
   /* Center the messages inside the full-width scroll view */
   margin: 0 auto;
   padding: 0 16px;
-  max-w-64rem: 64rem !important; /* 5xl size (1024px) */
-  max-width: 64rem !important;
+  max-width: 48rem !important; /* tighter, centered reading column (~768px) */
 
   /* Modern slide-and-fade entrance */
   animation: fade-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -992,20 +991,29 @@ html {
 }
 
 .convo-item-inner {
-  background-color: white !important;
+  /* Transparent at rest so rows sit on the rail; hover/active add fills. */
   position: relative;
 }
 
-.dark .convo-item-inner {
-  background-color: black !important;
+/* Active conversation: subtle tint + green left accent bar (no white card). */
+.convo-item-inner.is-active {
+  background-color: rgba(0, 0, 0, 0.06);
 }
 
-.convo-item-inner.bg-green-600 {
-  background-color: #16a34a !important;
+.dark .convo-item-inner.is-active {
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
-.dark .convo-item-inner.dark\:bg-green-600 {
-  background-color: #16a34a !important;
+.convo-item-inner.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 3px 3px 0;
+  background: #16a34a;
 }
 
 .convo-pin-icon {
@@ -1030,72 +1038,118 @@ html {
   70% { transform: scale(1); }
 }
 
-.trust-score-pill {
+/* --- Unified message action bar (AI answers) --- */
+.message.ai .meta {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 6px;
+}
+
+.msg-actionbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.dark .msg-actionbar {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.score-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.actionbar-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 4px 0 2px;
+}
+
+.dark .actionbar-divider {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.score-seg {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 8px 4px 10px;
   border-radius: 999px;
-  font-size: 0.75rem; /* text-xs */
+  font-size: 0.75rem;
   font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  margin-right: 8px;
-  white-space: nowrap;
   line-height: 1.2;
-  height: 24px;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  animation: pulse-heartbeat 1.2s ease-in-out both;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.2s ease;
 }
 
-.trust-score-pill:hover {
-  transform: scale(1.05);
+.score-seg:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
-.trust-green {
-  background: rgba(34, 197, 94, 0.08) !important;
-  color: #15803d !important;
-  border-color: rgba(34, 197, 94, 0.25) !important;
-  box-shadow: 0 0 10px rgba(34, 197, 94, 0.1) !important;
+.dark .score-seg:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.trust-yellow {
-  background: rgba(234, 179, 8, 0.08) !important;
-  color: #a16207 !important;
-  border-color: rgba(234, 179, 8, 0.25) !important;
-  box-shadow: 0 0 10px rgba(234, 179, 8, 0.1) !important;
+.score-seg .score-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.trust-red {
-  background: rgba(239, 68, 68, 0.08) !important;
-  color: #b91c1c !important;
-  border-color: rgba(239, 68, 68, 0.25) !important;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.1) !important;
+.score-seg .score-label {
+  font-weight: 500;
+  opacity: 0.85;
 }
 
-.dark .trust-green {
-  background: rgba(34, 197, 94, 0.12) !important;
-  color: #4ade80 !important;
-  border-color: rgba(34, 197, 94, 0.3) !important;
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.25) !important;
+.score-seg .score-chevron {
+  width: 14px;
+  height: 14px;
+  opacity: 0.4;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-.dark .trust-yellow {
-  background: rgba(234, 179, 8, 0.12) !important;
-  color: #facc15 !important;
-  border-color: rgba(234, 179, 8, 0.3) !important;
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.25) !important;
+.score-seg:hover .score-chevron {
+  opacity: 0.85;
+  transform: translateX(2px);
 }
 
-.dark .trust-red {
-  background: rgba(239, 68, 68, 0.12) !important;
-  color: #f87171 !important;
-  border-color: rgba(239, 68, 68, 0.3) !important;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.25) !important;
+/* tiers — colored dot + value text, calm (no glow/pulse on the bar itself) */
+.score-seg.seg-green  { color: #15803d; }
+.score-seg.seg-green  .score-dot { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.55); }
+.score-seg.seg-yellow { color: #a16207; }
+.score-seg.seg-yellow .score-dot { background: #eab308; box-shadow: 0 0 6px rgba(234, 179, 8, 0.55); }
+.score-seg.seg-red    { color: #b91c1c; }
+.score-seg.seg-red    .score-dot { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.55); }
+
+.dark .score-seg.seg-green  { color: #4ade80; }
+.dark .score-seg.seg-yellow { color: #facc15; }
+.dark .score-seg.seg-red    { color: #f87171; }
+
+.actionbar-time {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 8px 0 4px;
+}
+
+/* compact the action buttons so they sit neatly inside the bar */
+.msg-actionbar .tts-btn,
+.msg-actionbar .copy-btn {
+  width: 26px;
+  height: 26px;
 }
 
 /* Premium Sliding Follow-Up prompt suggestion buttons */
@@ -1499,6 +1553,51 @@ form {
 
 .dark .input-scrollbar::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* --- Control Panel / Settings design system --- */
+.settings-page-header {
+  margin-bottom: 1.5rem;
+}
+
+.settings-page-header h1 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.settings-page-header p {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  max-width: 42rem;
+}
+
+/* Reusable white card for grouping settings sections on the grey canvas. */
+.settings-card {
+  background: #ffffff;
+  border: 1px solid #ececec;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.dark .settings-card {
+  background: #111111;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.settings-card .settings-card-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.settings-card .settings-card-subtitle {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-top: 0.125rem;
 }
 
 /* --- Sidebar Active State (Control Panel) --- */

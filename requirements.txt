@@ -43,3 +43,4 @@ streamlit>=1.35.0
 pandas>=2.0.0
 plotly>=5.20.0
 pycryptodome
+edge-tts==7.2.8

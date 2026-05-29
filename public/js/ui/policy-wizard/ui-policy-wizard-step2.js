@@ -8,7 +8,7 @@ export function renderConstitutionStep(container, policyData) {
                  <div>
                     <div class="flex justify-between items-end mb-4">
                          <div>
-                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Worldview</label>
+                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose &amp; Voice</label>
                             <p class="text-base text-gray-500 mb-4">The perspective and voice every agent using this policy will reason from. Describe how they should think, talk, and approach their work.</p>
                          </div>
                          <button id="btn-gen-worldview" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
@@ -39,7 +39,7 @@ Context:
                 <ul class="space-y-6 text-sm text-gray-600 dark:text-gray-400">
                     <li>
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Set the perspective</strong>
-                        Worldview shapes how agents interpret and respond. Be intentional — a clear worldview keeps every agent consistent.
+                        Purpose &amp; voice shapes how agents interpret and respond. Be intentional — a clear statement keeps every agent consistent.
                     </li>
                     <li>
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Tone & Voice</strong>
@@ -47,7 +47,7 @@ Context:
                     </li>
                     <li>
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Already have guidelines?</strong>
-                        Paste them in and let the AI expand them into a structured worldview.
+                        Paste them in and let the AI expand them into a structured statement.
                     </li>
                 </ul>
             </div>
@@ -70,9 +70,9 @@ Context:
             if (res.ok && res.content) {
                 document.getElementById('pw-worldview').value = res.content;
                 policyData.worldview = res.content;
-                ui.showToast("Worldview drafted!", "success");
+                ui.showToast("Purpose & Voice drafted!", "success");
             } else {
-                ui.showToast("Failed to generate worldview", "error");
+                ui.showToast("Failed to generate Purpose & Voice", "error");
             }
         } catch (err) { console.error(err); }
         btn.innerHTML = original;
@@ -82,7 +82,7 @@ Context:
 
 export function validateConstitutionStep(policyData) {
     if (!policyData.worldview || policyData.worldview.length < 10) {
-        ui.showToast("A Worldview is required (at least 10 chars).", "error");
+        ui.showToast("A Purpose & Voice statement is required (at least 10 chars).", "error");
         return false;
     }
     return true;

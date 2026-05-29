@@ -93,7 +93,7 @@ function renderOrganizationUI(container, org, charter) {
                             TXT Record: <strong>${org.verification_token}</strong>
                         </div>
                         <div class="flex gap-2">
-                             <button id="btn-check-verify" data-org-id="${org.id}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                             <button id="btn-check-verify" data-org-id="${org.id}" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">
                                 Check DNS Records
                             </button>
                             <button id="btn-cancel-verify" data-org-id="${org.id}" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-300 rounded-lg text-sm font-semibold transition-colors">
@@ -104,7 +104,7 @@ function renderOrganizationUI(container, org, charter) {
             : `
                         <div class="flex gap-2">
                              <input type="text" id="domain-verify-input" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm" placeholder="e.g. acme.com">
-                             <button id="btn-start-verify" data-org-id="${org.id}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold whitespace-nowrap transition-colors">
+                             <button id="btn-start-verify" data-org-id="${org.id}" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold whitespace-nowrap transition-colors">
                                 Verify
                              </button>
                         </div>
@@ -116,13 +116,18 @@ function renderOrganizationUI(container, org, charter) {
     const charterValuesData = charter ? (charter.core_values || []) : [];
 
     container.innerHTML = `
-        <div class="mb-6 border-b border-neutral-200 dark:border-neutral-800 pb-4">
+        <div class="settings-page-header">
+            <h1>Organization</h1>
+            <p>Your organization's identity, charter, domain, and members — applied across all agents.</p>
+        </div>
+
+        <div class="settings-card">
             <div class="flex items-center justify-between">
                 <div id="org-name-display-container" class="group flex items-center gap-3">
                     <h3 class="text-2xl font-bold text-neutral-900 dark:text-white">
                         ${org.name}
                     </h3>
-                    <button id="btn-edit-org-name" class="p-1 text-gray-400 hover:text-blue-600 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Rename Organization">
+                    <button id="btn-edit-org-name" class="p-1 text-gray-400 hover:text-green-600 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Rename Organization">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
                     <div class="flex items-center gap-2 text-sm text-neutral-500 ml-2">
@@ -132,7 +137,7 @@ function renderOrganizationUI(container, org, charter) {
                 </div>
 
                 <div id="org-name-edit-container" class="hidden flex items-center gap-2 w-full max-w-md">
-                    <input type="text" id="input-org-name" value="${org.name}" class="flex-1 px-3 py-2 bg-gray-50 dark:bg-neutral-800 border border-gray-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    <input type="text" id="input-org-name" value="${org.name}" class="flex-1 px-3 py-2 bg-gray-50 dark:bg-neutral-800 border border-gray-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
                     <button id="btn-save-org-name" class="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                     </button>
@@ -144,7 +149,7 @@ function renderOrganizationUI(container, org, charter) {
         </div>
 
         <!-- CHARTER SECTION -->
-        <div class="mb-8 border-b border-neutral-200 dark:border-neutral-800 pb-8">
+        <div class="settings-card">
             <div class="flex items-start justify-between mb-4">
                 <div>
                     <h4 class="text-lg font-semibold">Organization Identity / Charter</h4>
@@ -196,26 +201,26 @@ function renderOrganizationUI(container, org, charter) {
 
         ${verificationSection}
 
-        <div class="mb-8 border-b border-neutral-200 dark:border-neutral-800 pb-8">
+        <div class="settings-card">
              <h4 class="text-lg font-semibold mb-4">AI Governance Configuration</h4>
              
-             <div class="bg-gray-50 dark:bg-neutral-800/50 rounded-xl p-6 border border-gray-200 dark:border-neutral-800 space-y-8">
-                 <!-- Authority Slider -->
+             <div class="space-y-8">
+                 <!-- Charter vs Policy Slider -->
                  <div>
                       <div class="flex justify-between items-end mb-2">
-                          <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Organizational Authority</label>
-                          <span id="lbl-gov-weight" class="text-sm font-mono bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded">
-                            ${Math.round((org.settings?.governance_split ?? 0.60) * 100)}%
+                          <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Charter vs Policy weighting</label>
+                          <span id="lbl-gov-weight" class="text-sm font-mono bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-0.5 rounded">
+                            ${Math.round((org.settings?.governance_split ?? 0.40) * 100)}%
                           </span>
                       </div>
-                      <input type="range" id="sl-gov-weight" min="0" max="100" value="${Math.round((org.settings?.governance_split ?? 0.60) * 100)}" 
-                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600">
+                      <input type="range" id="sl-gov-weight" min="0" max="100" value="${Math.round((org.settings?.governance_split ?? 0.40) * 100)}"
+                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-green-600">
                       <div class="flex justify-between text-xs text-gray-500 mt-2">
-                          <span>Agent Autonomy (0%)</span>
-                          <span class="font-bold text-gray-400">Balanced (60%)</span>
-                          <span>Strict Compliance (100%)</span>
+                          <span>All Policy (0%)</span>
+                          <span class="font-bold text-gray-400">Balanced (40%)</span>
+                          <span>All Charter (100%)</span>
                       </div>
-                      <p class="text-xs text-gray-500 mt-2">Determines how much weight is given to the Organization's Policy vs the Agent's Persona.</p>
+                      <p class="text-xs text-gray-500 mt-2">How much of an agent's scored values come from your organization's Charter vs the business-unit Policy. Shown value is the Charter's share.</p>
                  </div>
                  
                  <!-- Memory Slider -->
@@ -244,7 +249,7 @@ function renderOrganizationUI(container, org, charter) {
              </div>
         </div>
 
-        <div class="space-y-6">
+        <div class="settings-card">
             <section>
                 <div class="flex items-center justify-between mb-3">
                      <h4 class="text-lg font-semibold">Members</h4>
@@ -252,7 +257,7 @@ function renderOrganizationUI(container, org, charter) {
                 </div>
                 <div id="org-members-table-container" class="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[100px]">
                      <div class="p-8 text-center text-neutral-500">
-                         <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-blue-600 rounded-full" role="status" aria-label="loading"></div>
+                         <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
                      </div>
                 </div>
             </section>

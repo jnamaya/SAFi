@@ -20,16 +20,9 @@ def _detect_provider(model_name: str) -> str:
     return "groq"
 
 def validate_agent_data(data):
-    # Enforce at least one value and one rule
-    values = data.get('values', [])
-    rules = data.get('will_rules') or data.get('rules', [])
-    
-    if not values or len(values) < 1:
-        return (False, "Agent must have at least one value.")
-    
-    if not rules or len(rules) < 1:
-        return (False, "Agent must have at least one rule.")
-        
+    # Under the two-tier governance model an agent is a role: its scored values
+    # and rules are inherited from the org Charter and the attached Policy, so it
+    # need not define its own. Name/key are validated by the caller.
     return (True, "")
 
 @agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
@@ -64,8 +57,19 @@ def save_agent():
         is_valid, err = validate_agent_data(data)
         if not is_valid: return jsonify({"error": err}), 400
 
+        # Governance requirement (enforced per-branch, AFTER auth/existence checks
+        # so 403/404/409 take precedence over business validation): under the
+        # two-tier value model an agent inherits its scored values from a Policy
+        # and/or the org Charter. With neither it is ungoverned and cannot be scored.
+        pid = data.get('policy_id', 'standalone')
+        has_policy = bool(pid) and pid != 'standalone'
+        has_charter = bool(db.get_charter(user.get('org_id'))) if user.get('org_id') else False
+        governed = has_policy or has_charter
+        UNGOVERNED_MSG = "This agent has no governance. Set an Organization Charter (Settings → Organization) or attach a Policy before saving."
+
         if request.method == 'POST':
             if db.get_agent(key): return jsonify({"error": "Agent exists"}), 409
+            if not governed: return jsonify({"error": UNGOVERNED_MSG}), 400
             db.create_agent(
                 key=key, name=str(data['name']),
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
@@ -98,7 +102,9 @@ def save_agent():
             
             if not (is_owner or is_admin):
                  return jsonify({"error": "Unauthorized"}), 403
-            
+
+            if not governed: return jsonify({"error": UNGOVERNED_MSG}), 400
+
             db.update_agent(
                 key=key, name=str(data['name']),
                 description=str(data.get('description') or ''), avatar=str(data.get('avatar') or ''),
@@ -145,9 +151,11 @@ def list_all_agents():
             # Enhance with merged policy data
             for agent in raw_list:
                 try:
-                    # Use get_profile to perform the merge
+                    # get_profile() is the sole compiler — it returns the full
+                    # governed view (role + Policy + Charter), so the details modal
+                    # shows charter mission in the worldview + charter/policy values.
                     merged = get_profile(agent['key'])
-                    
+
                     # RESTORE METADATA: get_profile returns the "engine view", we need "db attributes" for UI
                     merged['key'] = agent['key']
                     merged['is_custom'] = agent.get('is_custom', True)

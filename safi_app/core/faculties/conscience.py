@@ -80,6 +80,12 @@ class ConscienceAuditor:
                     "description": desc,
                     "scoring_guide": guide,
                 })
+
+        # No scored values (e.g. an org agent governed by neither a Charter nor a
+        # Policy): nothing to audit — skip the LLM call and return an empty ledger.
+        if not self.values:
+            return []
+
         rubrics_str = json.dumps(rubrics, indent=2)
 
         sys_prompt = prompt_template.format(

@@ -9,7 +9,7 @@ export function renderScopeStep(container, policyData) {
                     <div class="flex justify-between items-end mb-4">
                         <div>
                             <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Scope</h2>
-                            <p class="text-gray-500 text-sm">Define what this agent is allowed to handle. Anything outside this boundary will be politely refused.</p>
+                            <p class="text-gray-500 text-sm">What this policy covers. Agents stay in this lane — they politely decline anything outside it, both up front and in a final check before replying.</p>
                         </div>
                         <button id="btn-gen-scope" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -28,7 +28,7 @@ export function renderScopeStep(container, policyData) {
             <div class="bg-blue-50 dark:bg-neutral-800 p-6 rounded-2xl border border-blue-100 dark:border-neutral-700 h-fit sticky top-6">
                 <h4 class="font-bold text-lg text-gray-800 dark:text-gray-200 mb-4">Writing a good scope</h4>
                 <div class="space-y-4 text-sm text-gray-600 dark:text-gray-400">
-                    <p>Scope is the agent's lane. It tells the agent what it owns and what to redirect.</p>
+                    <p>Scope is the agent's lane. It's enforced two ways: the agent declines off-topic requests up front, and a final safety check catches any off-topic answer that slips through.</p>
 
                     <div class="p-3 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700">
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Good</strong>

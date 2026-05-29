@@ -39,15 +39,19 @@ export function renderSettingsModelsTab(availableModels, user, onModelsSave) {
     `;
 
     container.innerHTML = `
-        <h3 class="text-xl font-semibold mb-4">Choose an AI Model</h3>
-        <p class="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">Select the AI model used to generate responses. Changes will apply on the next page load.</p>
-        <div class="space-y-4">
-            ${createSelect('model-select-intellect', 'AI Model', user.intellect_model, intellectModels)}
+        <div class="settings-page-header">
+            <h1>AI Models</h1>
+            <p>Select the AI model used to generate responses. Changes apply on the next page load.</p>
         </div>
-        <div class="mt-6 text-right">
-            <button id="save-models-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-black text-white hover:bg-gray-800 text-sm transition-colors">
-                Save Changes
-            </button>
+        <div class="settings-card">
+            <div class="space-y-4">
+                ${createSelect('model-select-intellect', 'AI Model', user.intellect_model, intellectModels)}
+            </div>
+            <div class="mt-6 text-right">
+                <button id="save-models-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+                    Save Changes
+                </button>
+            </div>
         </div>
     `;
 

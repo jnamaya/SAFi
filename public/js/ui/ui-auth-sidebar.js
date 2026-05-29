@@ -38,10 +38,10 @@ export function updateUIForAuthState(user) {
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-64 bg-gray-50 dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-64 bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
           
           <!-- Header Area -->
-          <div class="px-4 py-3 flex items-center justify-between shrink-0">
+          <div class="px-3 py-3 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
               <div class="app-logo h-7 w-7">
                 <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
@@ -65,7 +65,7 @@ export function updateUIForAuthState(user) {
              </div>
 
              <!-- New Chat Button -->
-             <button id="new-chat-button" type="button" class="w-full flex items-center justify-start gap-3 bg-neutral-100 dark:bg-neutral-900 text-black dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-800 px-4 py-2.5 rounded-full transition-colors text-sm font-bold">
+             <button id="new-chat-button" type="button" class="w-full flex items-center justify-start gap-3 bg-green-600 hover:bg-green-700 text-white shadow-sm px-4 py-2.5 rounded-full transition-colors text-sm font-bold">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                 <span>New Chat</span>
              </button>
@@ -270,7 +270,7 @@ export function renderConversationLink(convo, handlers) {
   link.dataset.id = convo.id;
 
   const innerContent = document.createElement('div');
-  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-neutral-50 dark:hover:bg-[#111111] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
+  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
@@ -278,7 +278,7 @@ export function renderConversationLink(convo, handlers) {
     <div class="flex items-center min-w-0 flex-1 pr-8">
         ${pinHtml}
         <div class="flex-1 min-w-0">
-            <span class="convo-title truncate block text-sm font-medium">${convo.title || 'Untitled'}</span>
+            <span class="convo-title truncate block text-sm font-medium" title="${(convo.title || 'Untitled').replace(/"/g, '&quot;')}">${convo.title || 'Untitled'}</span>
             <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
                 ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
             </span>
@@ -410,15 +410,15 @@ export function setActiveConvoLink(id) {
 
     // -- Active State --
     if (isActive) {
-      // FORCE class list to ensure no specific override - DIMMER ACTIVE STATE
-      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-all duration-200 bg-neutral-100 dark:bg-[#1a1a1a] text-neutral-900 dark:text-neutral-200 font-bold my-0.5';
+      // Active row: subtle raised fill + green left accent (styled in CSS via .is-active)
+      inner.className = 'convo-item-inner is-active group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-all duration-200 text-neutral-900 dark:text-neutral-100 font-bold my-0.5';
 
       if (timestamp) {
         // Timestamp text made slightly lighter than main text
         timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-500";
       }
     } else {
-      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-neutral-50 dark:hover:bg-[#111111] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
+      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
       if (title) title.className = `convo-title truncate block text-sm ${isActive ? 'font-semibold' : 'font-medium'}`;
     }

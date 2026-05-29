@@ -694,7 +694,7 @@ function attachEventListeners() {
 
       // Remove margin from main wrapper to reclaim space
       const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-72');
+      if (wrapper) wrapper.classList.remove('md:ml-64');
     });
   }
 
@@ -758,7 +758,7 @@ function attachEventListeners() {
 
       // Restore margin to main wrapper
       const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.add('md:ml-72');
+      if (wrapper) wrapper.classList.add('md:ml-64');
     });
   });
 
@@ -779,7 +779,7 @@ function attachEventListeners() {
 
       // Remove margin from main wrapper
       const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-72');
+      if (wrapper) wrapper.classList.remove('md:ml-64');
 
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
@@ -800,7 +800,7 @@ function attachEventListeners() {
 
       // Remove margin from main wrapper
       const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-72');
+      if (wrapper) wrapper.classList.remove('md:ml-64');
 
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
