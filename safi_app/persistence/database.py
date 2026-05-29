@@ -754,6 +754,21 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
         cursor.close()
         conn.close()
 
+def update_suggested_prompts(msg_id, prompts):
+    """Updates only the suggested_prompts column (used by the background
+    follow-up suggester so it never blocks the request path)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE chat_history SET suggested_prompts=%s WHERE message_id=%s",
+            (json.dumps(prompts), msg_id),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 def update_message_content(msg_id, content, audit_status=None):
     """
     Updates the content and optionally the audit_status of an existing message.

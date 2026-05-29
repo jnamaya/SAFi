@@ -869,6 +869,12 @@ export async function sendMessage(activeProfileData, user) {
             { suggestedPrompts: suggestions, animate: true }
         );
 
+        // Follow-up suggestions are generated off the request path on the
+        // backend; poll the audit endpoint and inject them once ready.
+        if (messageId && (!suggestions || suggestions.length === 0)) {
+            _pollForSuggestions(messageId);
+        }
+
         const updateMeta = { last_updated: new Date().toISOString() };
         if (initialResponse.newTitle && isNewConversation) {
             updateMeta.title = initialResponse.newTitle;
@@ -936,6 +942,44 @@ export async function sendMessage(activeProfileData, user) {
         // Since input is empty after send, disable it again if needed
         ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
     }
+}
+
+// Poll the audit endpoint for backgrounded follow-up suggestions and inject
+// them into the rendered message once they arrive.
+function _pollForSuggestions(messageId, attempts = 0) {
+    const MAX_ATTEMPTS = 6;
+    const DELAY = 1500;
+    if (attempts >= MAX_ATTEMPTS) return;
+
+    setTimeout(async () => {
+        if (!currentConversationId) return;
+        let parsed = [];
+        try {
+            const res = await api.fetchAuditResult(messageId);
+            const raw = res?.suggestedPrompts ?? res?.suggested_prompts;
+            parsed = typeof raw === 'string' ? (JSON.parse(raw) || []) : (raw || []);
+        } catch (e) { /* not ready yet */ }
+
+        if (parsed.length > 0) {
+            // Persist to cache so a re-render keeps them.
+            try {
+                const history = await cache.loadConvoHistory(currentConversationId);
+                const idx = history.findIndex(m => m.message_id === messageId);
+                if (idx > -1) {
+                    history[idx] = { ...history[idx], suggested_prompts: parsed };
+                    await cache.saveConvoHistory(currentConversationId, history);
+                }
+            } catch (e) { /* ignore cache errors */ }
+
+            uiMessages.updateMessageWithAudit(
+                messageId,
+                { suggested_prompts: parsed, message_id: messageId },
+                () => {}
+            );
+            return;
+        }
+        _pollForSuggestions(messageId, attempts + 1);
+    }, DELAY);
 }
 
 async function fetchAndApplyAuditResult(messageId) {

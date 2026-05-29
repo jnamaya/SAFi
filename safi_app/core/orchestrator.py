@@ -475,88 +475,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     org_id=org_id
                 )
 
-            # Let legacy evaluate run for rules compliance (backward compatibility)
-            D_t, E_t = await self.will_gate.evaluate(
-                user_prompt=user_prompt,
-                draft_answer=a_t,
-                conversation_summary=memory_summary
-            )
-
-            # Reflexion Loop
-            if D_t == "violation":
-                self.log.info(f"Will blocked first draft. Reason: {E_t}. Attempting Reflexion Retry.")
-                db.update_message_reasoning(message_id, "Applying policy corrections...")
-
-                retry_metadata["was_retried"] = True
-                retry_metadata["original_draft"] = a_t
-                retry_metadata["violation_reason"] = E_t
-
-                retry_template = self.prompts.get("will_retry", {}).get("template")
-                if not retry_template:
-                    retry_template = (
-                        "{original_prompt_with_date}\n\n"
-                        "--- INTERNAL GOVERNANCE FEEDBACK ---\n"
-                        "Your previous draft response was blocked by the 'Will' gatekeeper.\n"
-                        "Your Blocked Draft:\n\"\"\"\n{blocked_draft}\n\"\"\"\n\n"
-                        "Violation Reason:\n{violation_reason}\n\n"
-                        "INSTRUCTION: Rewrite your response to be fully compliant with the persona values and rules. "
-                        "Analyze your blocked draft to understand what triggered the violation. "
-                        "Address the user's intent safely. Do not mention this internal system correction or the block."
-                    )
-
-                retry_prompt = retry_template.format(
-                    original_prompt_with_date=prompt_with_date,
-                    blocked_draft=a_t,
-                    violation_reason=E_t
-                )
-
-                retry_intent, r_t_retry, context_retry = await self.intellect_engine.generate(
-                    user_prompt=retry_prompt,
-                    memory_summary=memory_summary,
-                    recent_turns=recent_turns_text,
-                    spirit_feedback=spirit_feedback,
-                    plugin_context=plugin_context_data,
-                    user_profile_json=current_profile_json,
-                    agent_context_json=current_agent_context_json,
-                    user_name=user_name,
-                    user_id=user_id,
-                    message_id=message_id,
-                    precomputed_retrieved_context=retrieved_context,
-                )
-
-                a_t_retry = retry_intent.get("content") if retry_intent and retry_intent.get("type") == "text" else None
-                if a_t_retry:
-                    # Validate rephrase structure
-                    is_valid_retry_struct, retry_struct_reason = self.will_gate.evaluate_draft_structure(a_t_retry)
-                    if not is_valid_retry_struct:
-                        return await self.trigger_persona_redirect(
-                            original_prompt=user_prompt,
-                            violation_type=retry_struct_reason,
-                            conversation_id=conversation_id,
-                            message_id=message_id,
-                            new_title=new_title,
-                            user_id=user_id,
-                            org_id=org_id
-                        )
-
-                    D_t_retry, E_t_retry = await self.will_gate.evaluate(
-                        user_prompt=user_prompt,
-                        draft_answer=a_t_retry,
-                        conversation_summary=memory_summary
-                    )
-
-                    if D_t_retry == "approve":
-                        self.log.info("Reflexion Retry Successful. Proceeding with safe response.")
-                        a_t = a_t_retry
-                        r_t = r_t_retry
-                        retrieved_context = context_retry
-                        D_t = D_t_retry
-                        E_t = E_t_retry
-                    else:
-                        self.log.info(f"Reflexion Retry Failed. Still blocked. Reason: {E_t_retry}")
-                        E_t = E_t_retry
-                else:
-                    self.log.warning("Reflexion Retry failed to generate text.")
+            # Structural validation above is the only deterministic Will check on
+            # a text draft. Value/rule compliance is enforced downstream by
+            # Conscience (hard gates) + Spirit, so D_t stays "approve" here.
 
         elif intent["type"] == "tool_call":
             tool_name = intent["tool_name"]
@@ -701,12 +622,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         org_id=org_id
                     )
 
-                db.update_message_reasoning(message_id, "Verifying tool response...")
-                D_t, E_t = await self.will_gate.evaluate(
-                    user_prompt=user_prompt,
-                    draft_answer=a_t,
-                    conversation_summary=memory_summary
-                )
+                # Structural check above is the deterministic Will gate; value
+                # compliance is handled by Conscience + Spirit below. D_t stays
+                # "approve" for the synthesized tool answer.
 
             else:
                 self.log.warning(f"WillGate blocked tool '{tool_name}'. Reason: {tool_reason}")
@@ -730,18 +648,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 a_t = reflexion_intent.get("content") or "" if reflexion_intent and reflexion_intent.get("type") == "text" else f"I'm sorry, I was unable to complete that action. {tool_reason}"
                 D_t = "approve"
                 E_t = f"Tool '{tool_name}' blocked: {tool_reason}."
-
-        # Reject on direct Will violation
-        if D_t == "violation":
-            return await self.trigger_persona_redirect(
-                original_prompt=user_prompt,
-                violation_type="ethical_violation",
-                conversation_id=conversation_id,
-                message_id=message_id,
-                new_title=new_title,
-                user_id=user_id,
-                org_id=org_id
-            )
 
         # --- CANCELLATION CHECK: before Conscience (second expensive LLM call) ---
         if self._is_cancelled(message_id):
@@ -871,20 +777,16 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.save_spirit_memory(self.active_profile_name, mu_new, temp_spirit_memory["turn"])
         self.mu_history.append(mu_new_vector)
 
-        # Get Follow-up Suggestions
-        S_p = []
-        try:
-            S_p = self._get_follow_up_suggestions(
-                user_prompt=user_prompt,
-                ai_response=a_t
-            )
-        except Exception:
-            self.log.exception("Follow-up suggester failed")
-
         # --- PHASE 6: Safe Execution (Will) ---
         db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_message_content(message_id, a_t, audit_status="complete")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None)
+
+        # Follow-up suggestions are a blocking sync LLM call — run them off the
+        # request path so they never delay the answer or block the event loop.
+        # The frontend polls the audit endpoint and injects them when ready.
+        S_p: List[str] = []
+        self.executor.submit(self._run_suggestions_thread, message_id, user_prompt, a_t)
 
         # Append safe log entry
         self._append_log({
@@ -1005,19 +907,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         redirect_turn = int(_sm_readonly.get("turn", 0))
 
-        # Get Follow-up Suggestions
-        S_p = []
-        try:
-            S_p = self._get_follow_up_suggestions(
-                user_prompt=original_prompt,
-                ai_response=safe_output
-            )
-        except Exception:
-            self.log.exception("Follow-up suggester failed")
-
         # Release safe audited response and update audit results
         db.update_message_reasoning(message_id, "Preparing your answer...")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, S_p)
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None)
+
+        # Suggestions run off the hot path (see process_prompt); frontend polls.
+        S_p: List[str] = []
+        self.executor.submit(self._run_suggestions_thread, message_id, original_prompt, safe_output)
 
         # Save a clean pass log entry
         self._append_log({
