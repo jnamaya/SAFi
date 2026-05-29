@@ -309,40 +309,83 @@ class LLMProvider:
 
     # --- Public Faculty Interfaces ---
 
-    async def run_intellect(self, system_prompt: str, user_prompt: Any, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str, Optional[Dict[str, Any]]]:
-        """Runs the configured Intellect model and parses the result."""
-        try:
-            raw_content = await self._chat_completion(
-                route="intellect",
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=1.0,
-                max_tokens=4096,
-                tools=tools
-            )
-            raw_content_stripped = raw_content.strip() if raw_content else ""
-            
-            # Robust extraction for chatty models that put text before/after the tool call JSON
-            if '"tool_calls"' in raw_content_stripped:
-                start = raw_content_stripped.find('{')
-                end = raw_content_stripped.rfind('}')
-                if start != -1 and end != -1 and end > start:
-                    json_text = raw_content_stripped[start:end+1]
-                    try:
-                        payload = json.loads(json_text)
-                        if "tool_calls" in payload:
-                            raw_turn = payload.get("_gemini_raw_turn")
-                            return json_text, "Tool Call", context_for_audit, raw_turn
-                    except:
-                        pass
+    # Times to re-ask the Intellect model when it returns a blank/contentless
+    # response. Fast models (e.g. *-flash) intermittently emit empty content,
+    # which the provider surfaces as the "{}" sentinel; each attempt resamples
+    # the model so a blank never reaches the user.
+    _INTELLECT_MAX_ATTEMPTS = 3
 
-            parsed = parse_intellect_response(raw_content, self.log)
-            answer, reflection = parsed[0], parsed[1]
-            raw_turn = parsed[2] if len(parsed) > 2 else None
-            return answer, reflection, context_for_audit, raw_turn
-        except Exception as e:
-            self.log.exception("Intellect execution failed")
+    @staticmethod
+    def _is_contentless_intellect_answer(answer: Optional[str]) -> bool:
+        """True if the Intellect produced no real text (empty, or only the
+        empty-content "{}" / "[]" sentinel)."""
+        if not answer or not answer.strip():
+            return True
+        return answer.strip() in ("{}", "[]")
+
+    async def run_intellect(self, system_prompt: str, user_prompt: Any, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str, Optional[Dict[str, Any]]]:
+        """Runs the configured Intellect model and parses the result.
+
+        Retries on a blank/contentless response so an empty model turn never
+        reaches the user as a literal "{}". If every attempt is still blank,
+        returns an empty answer so the caller's graceful empty-response path
+        handles it instead of surfacing the sentinel.
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self._INTELLECT_MAX_ATTEMPTS + 1):
+            try:
+                raw_content = await self._chat_completion(
+                    route="intellect",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=1.0,
+                    max_tokens=4096,
+                    tools=tools
+                )
+                raw_content_stripped = raw_content.strip() if raw_content else ""
+
+                # A tool call is a valid (non-empty) response — return immediately,
+                # never retried. Robust extraction for chatty models that wrap the
+                # tool-call JSON in surrounding text.
+                if '"tool_calls"' in raw_content_stripped:
+                    start = raw_content_stripped.find('{')
+                    end = raw_content_stripped.rfind('}')
+                    if start != -1 and end != -1 and end > start:
+                        json_text = raw_content_stripped[start:end+1]
+                        try:
+                            payload = json.loads(json_text)
+                            if "tool_calls" in payload:
+                                raw_turn = payload.get("_gemini_raw_turn")
+                                return json_text, "Tool Call", context_for_audit, raw_turn
+                        except:
+                            pass
+
+                parsed = parse_intellect_response(raw_content, self.log)
+                answer, reflection = parsed[0], parsed[1]
+                raw_turn = parsed[2] if len(parsed) > 2 else None
+
+                if self._is_contentless_intellect_answer(answer):
+                    self.log.warning(
+                        "Intellect returned a blank/contentless response "
+                        "(attempt %d/%d); retrying.", attempt, self._INTELLECT_MAX_ATTEMPTS
+                    )
+                    continue
+
+                return answer, reflection, context_for_audit, raw_turn
+            except Exception as e:
+                last_exc = e
+                self.log.exception(
+                    "Intellect execution failed (attempt %d/%d)", attempt, self._INTELLECT_MAX_ATTEMPTS
+                )
+                continue
+
+        # All attempts failed. On a hard error, preserve the legacy failure
+        # contract (None); on persistent blanks, return an empty answer so the
+        # caller shows its graceful empty-response message, never a literal "{}".
+        if last_exc is not None:
             return None, None, context_for_audit, None
+        self.log.error("Intellect returned blank after %d attempts.", self._INTELLECT_MAX_ATTEMPTS)
+        return "", "", context_for_audit, None
 
     async def run_will(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
         """Runs the configured Will model and parses the result."""
