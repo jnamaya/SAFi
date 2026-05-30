@@ -19,6 +19,8 @@ THE_NEGOTIATOR_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Negotiator",
+    # Built-in roleplay persona — no project/task work context to track.
+    "track_work_context": False,
     "scope_statement": "Business negotiation simulation — supplier representative role only.",
     "description": "A roleplay partner simulating a difficult business negotiation. It gets stubborn if you are rude.",
 

@@ -76,7 +76,8 @@ def save_agent():
                 rag_format_string=data.get('rag_format_string'),
                 tools=data.get('tools', []),
                 scope_statement=str(data.get('scope_statement') or ''),
-                max_agent_turns=data.get('max_agent_turns')
+                max_agent_turns=data.get('max_agent_turns'),
+                track_work_context=bool(data.get('track_work_context', True))
             )
         elif request.method == 'PUT':
             exist = db.get_agent(key)
@@ -110,7 +111,8 @@ def save_agent():
                 rag_format_string=data.get('rag_format_string'),
                 tools=data.get('tools', []),
                 scope_statement=str(data.get('scope_statement') or ''),
-                max_agent_turns=data.get('max_agent_turns')
+                max_agent_turns=data.get('max_agent_turns'),
+                track_work_context=bool(data.get('track_work_context', True))
             )
 
         # Invalidate Cache to ensure runtime uses new config
@@ -188,6 +190,7 @@ def get_agent(key):
              agent['rules'] = agent['will_rules']
              agent['tools'] = raw.get('tools', [])
              agent['scope_statement'] = raw.get('scope_statement', '')
+             agent['track_work_context'] = raw.get('track_work_context', True)
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:

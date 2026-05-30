@@ -17,6 +17,8 @@ THE_PHILOSOPHER_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Philosopher",
+    # Built-in informational persona — no project/task work context to track.
+    "track_work_context": False,
     "scope_statement": "Philosophical inquiry, ethics, virtue, and human flourishing through Aristotelian lens only.",
     "description": "A philosophical guide based on Aristotle, focused on practical wisdom, virtue ethics, and human flourishing (eudaimonia).",
 

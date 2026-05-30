@@ -17,6 +17,8 @@ THE_FIDUCIARY_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Fiduciary",
+    # Built-in informational persona — no project/task work context to track.
+    "track_work_context": False,
     "scope_statement": "Financial education and market analysis only. No personalized investment advice.",
     "description": (
         "A market-aware financial guide powered by the **Model Context Protocol (MCP)**. It combines real-time "

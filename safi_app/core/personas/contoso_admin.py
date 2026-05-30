@@ -22,6 +22,8 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Contoso Governance Officer",
+    # Built-in informational persona — no project/task work context to track.
+    "track_work_context": False,
     "scope_statement": "Contoso IT governance and SOP compliance only.",
 
     # -- RAG Configuration -----------------------------------------------------

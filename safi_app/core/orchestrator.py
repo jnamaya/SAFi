@@ -366,7 +366,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Memories
         memory_summary = db.fetch_conversation_summary(conversation_id)
         current_profile_json = db.fetch_user_profile_memory(user_id)
-        current_agent_context_json = db.fetch_agent_context_memory(user_id, self.active_profile_name)
+        # Per-persona gate: only task/project-oriented agents accumulate work context.
+        # Built-in informational personas set track_work_context=False; org/custom
+        # agents (no flag in DB) default to True. "{}" is the empty sentinel.
+        track_work_context = bool((self.profile or {}).get("track_work_context", True))
+        current_agent_context_json = (
+            db.fetch_agent_context_memory(user_id, self.active_profile_name)
+            if track_work_context else "{}"
+        )
 
         # Recent turns verbatim window (last 3 prior pairs)
         raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=8)
@@ -873,10 +880,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
                 self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
 
-        self.executor.submit(
-            self._run_agent_context_update_thread,
-            user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t
-        )
+        if track_work_context:
+            self.executor.submit(
+                self._run_agent_context_update_thread,
+                user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t
+            )
 
         return {
             "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t,

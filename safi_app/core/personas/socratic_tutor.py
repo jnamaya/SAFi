@@ -16,6 +16,8 @@ THE_SOCRATIC_TUTOR_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Socratic Tutor",
+    # Built-in tutoring persona — no project/task work context to track.
+    "track_work_context": False,
     "description": "A math and science tutor that refuses to give answers, helping students learn by asking guiding questions.",
     "scope_statement": "STEM education only — mathematics, physics, chemistry, biology, and engineering.",
 

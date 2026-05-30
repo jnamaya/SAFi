@@ -5,6 +5,8 @@
 
 export function renderSafetyStep(container, agentData) {
     const maxTurns = agentData.max_agent_turns || '';
+    // Default ON for custom agents unless explicitly disabled.
+    const trackWork = agentData.track_work_context !== false;
 
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Operational Settings</h2>
@@ -34,6 +36,19 @@ export function renderSafetyStep(container, agentData) {
                 </div>
             </div>
 
+            <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-5">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h4 class="font-semibold text-gray-800 dark:text-white mb-1">Work &amp; Task Memory</h4>
+                        <p class="text-xs text-gray-500">When on, the agent remembers durable work context across conversations — ongoing projects, tasks, decisions, deadlines, team members, and vendors a user mentions — and uses it on future turns. Turn off for informational, Q&amp;A, or roleplay agents that have no project to track.</p>
+                    </div>
+                    <button type="button" id="track-work-context-toggle" role="switch" aria-checked="${trackWork}"
+                        class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors outline-none focus:ring-2 focus:ring-blue-500 ${trackWork ? 'bg-blue-600' : 'bg-gray-300 dark:bg-neutral-600'}">
+                        <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${trackWork ? 'translate-x-6' : 'translate-x-1'}"></span>
+                    </button>
+                </div>
+            </div>
+
         </div>
     `;
 
@@ -45,6 +60,25 @@ export function renderSafetyStep(container, agentData) {
                 agentData.max_agent_turns = val;
             } else if (maxTurnsInput.value === '') {
                 agentData.max_agent_turns = null;
+            }
+        });
+    }
+
+    // Normalize the default so the saved payload is explicit.
+    agentData.track_work_context = trackWork;
+    const trackToggle = container.querySelector('#track-work-context-toggle');
+    if (trackToggle) {
+        trackToggle.addEventListener('click', function() {
+            const next = !(agentData.track_work_context !== false);
+            agentData.track_work_context = next;
+            trackToggle.setAttribute('aria-checked', String(next));
+            trackToggle.classList.toggle('bg-blue-600', next);
+            trackToggle.classList.toggle('bg-gray-300', !next);
+            trackToggle.classList.toggle('dark:bg-neutral-600', !next);
+            const knob = trackToggle.querySelector('span');
+            if (knob) {
+                knob.classList.toggle('translate-x-6', next);
+                knob.classList.toggle('translate-x-1', !next);
             }
         });
     }

@@ -219,6 +219,11 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN max_agent_turns INT DEFAULT NULL")
 
+        # Per-agent work/task context memory toggle (default ON for custom agents).
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'track_work_context'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN track_work_context BOOLEAN DEFAULT TRUE")
+
         # --- API Keys ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_keys (
@@ -1041,19 +1046,20 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 # -------------------------------------------------------------------------
 
 def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None,
+                 track_work_context=True):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """INSERT INTO agents (
             agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement, max_agent_turns
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement, max_agent_turns, track_work_context
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (
             key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
             intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
-            int(max_agent_turns) if max_agent_turns else None
+            int(max_agent_turns) if max_agent_turns else None, bool(track_work_context)
         ))
         conn.commit()
     finally:
@@ -1061,7 +1067,8 @@ def create_agent(key, name, description, avatar, worldview, style, values, rules
         conn.close()
 
 def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
-                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None):
+                 intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None,
+                 track_work_context=True):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1069,12 +1076,12 @@ def update_agent(key, name, description, avatar, worldview, style, values, rules
         sql = """UPDATE agents SET
             name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
             intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s, scope_statement=%s,
-            max_agent_turns=%s
+            max_agent_turns=%s, track_work_context=%s
             WHERE agent_key=%s"""
         cursor.execute(sql, (
             name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
             intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
-            int(max_agent_turns) if max_agent_turns else None,
+            int(max_agent_turns) if max_agent_turns else None, bool(track_work_context),
             key
         ))
         conn.commit()
@@ -1094,12 +1101,13 @@ def get_agent(key):
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
             row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
-            
+            row['track_work_context'] = bool(row.get('track_work_context', True) if row.get('track_work_context') is not None else True)
+
             # --- FIX: Ensure 'value' key exists for Core Engine ---
             for v in row['values']:
                 if 'name' in v and 'value' not in v:
                     v['value'] = v['name']
-                    
+
             return row
         return None
     finally:

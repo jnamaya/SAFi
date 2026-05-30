@@ -19,6 +19,8 @@ THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Bible Scholar",
+    # Built-in informational persona — no project/task work context to track.
+    "track_work_context": False,
     "scope_statement": "Biblical scholarship, Christian theology, and church history — with all Scripture grounded in the Berean Standard Bible.",
 
     # -- RAG Configuration -----------------------------------------------------

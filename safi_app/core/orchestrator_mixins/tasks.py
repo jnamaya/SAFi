@@ -85,6 +85,116 @@ def merge_agent_context(existing_json: str, candidate_json: str) -> str:
     return _json.dumps(merged, ensure_ascii=False)
 
 
+# --- Work-context memory: deterministic merge ----------------------------------
+# The extractor LLM emits only a DELTA (upserts/removals) for the latest exchange.
+# We merge it into the stored memory in Python so existing items can NEVER be
+# silently dropped just because the model didn't re-type them. This is the
+# durability guarantee — it does not depend on the model behaving.
+
+# Ordered list categories and the field that identifies one entry within a list.
+_CTX_LIST_FIELDS = ["projects", "tasks", "decisions", "people", "milestones", "vendors", "notes"]
+_CTX_ID_FIELD = {
+    "projects": "name",
+    "tasks": "task",
+    "decisions": "question",
+    "people": "name",
+    "vendors": "name",
+}
+# Soft cap per list (high enough that normal use never hits it; only guards runaway growth).
+_CTX_CAP = 40
+
+
+def _ctx_norm(s) -> str:
+    return (s or "").strip().lower() if isinstance(s, str) else ""
+
+
+def _ctx_identity(cat: str, item) -> str:
+    """Stable identity for an entry, used for upsert-in-place, dedup, and removal."""
+    if not isinstance(item, dict):
+        return ""
+    if cat == "milestones":
+        return _ctx_norm(item.get("event")) + "|" + _ctx_norm(item.get("date"))
+    return _ctx_norm(item.get(_CTX_ID_FIELD.get(cat, "")))
+
+
+def merge_agent_context(current: dict, delta: dict) -> dict:
+    """
+    Merge a model-produced delta into the stored work-context memory.
+
+    Additive by default: any existing entry the delta does not explicitly upsert
+    or remove is carried forward unchanged. Accepts either the delta shape
+    ({"upserts": {...}, "removals": {...}}) or a legacy full-object shape (whose
+    present categories are treated as upserts) — both are safe, neither drops data.
+    """
+    current = current if isinstance(current, dict) else {}
+    out = {k: list(current.get(k) or []) for k in _CTX_LIST_FIELDS}
+
+    if isinstance(delta, dict) and ("upserts" in delta or "removals" in delta):
+        upserts = delta.get("upserts") or {}
+        removals = delta.get("removals") or {}
+    elif isinstance(delta, dict):
+        # Legacy/full-object output — treat present categories as upserts (still additive).
+        upserts = {k: delta.get(k) for k in _CTX_LIST_FIELDS if k in delta}
+        removals = {}
+    else:
+        upserts, removals = {}, {}
+
+    # --- Apply upserts ---
+    for cat in _CTX_LIST_FIELDS:
+        items = upserts.get(cat)
+        if not isinstance(items, list):
+            continue
+        if cat == "notes":
+            seen = {_ctx_norm(n) for n in out["notes"] if isinstance(n, str)}
+            for n in items:
+                if isinstance(n, str) and _ctx_norm(n) and _ctx_norm(n) not in seen:
+                    out["notes"].append(n)
+                    seen.add(_ctx_norm(n))
+            continue
+        index = {}
+        for i, it in enumerate(out[cat]):
+            ident = _ctx_identity(cat, it)
+            if ident:
+                index[ident] = i
+        for it in items:
+            ident = _ctx_identity(cat, it)
+            if not ident or ident == "|":
+                continue
+            if ident in index:
+                target = out[cat][index[ident]]  # update in place; non-empty new values win
+                for f, v in it.items():
+                    if v not in (None, "", []):
+                        target[f] = v
+            else:
+                out[cat].append(it)
+                index[ident] = len(out[cat]) - 1
+
+    # --- Apply removals (explicit only: resolved/done/cancelled) ---
+    for cat in _CTX_LIST_FIELDS:
+        rem = removals.get(cat)
+        if not isinstance(rem, list) or not rem:
+            continue
+        if cat == "notes":
+            remset = {_ctx_norm(r) for r in rem if isinstance(r, str)}
+            out["notes"] = [n for n in out["notes"] if _ctx_norm(n) not in remset]
+            continue
+        remset = set()
+        for r in rem:
+            if isinstance(r, str):
+                remset.add(_ctx_norm(r))
+            elif isinstance(r, dict):
+                remset.add(_ctx_identity(cat, r))
+        remset.discard("")
+        out[cat] = [it for it in out[cat] if _ctx_identity(cat, it) not in remset]
+
+    # --- Soft cap (keep most-recent; only guards runaway growth) ---
+    for cat in _CTX_LIST_FIELDS:
+        if len(out[cat]) > _CTX_CAP:
+            out[cat] = out[cat][-_CTX_CAP:]
+
+    return out
+
+
 class BackgroundTasksMixin:
     """Mixin for background task management (summarization, profile extraction)."""
 

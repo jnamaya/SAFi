@@ -3,6 +3,7 @@ export function renderReviewStep(container, agentData) {
     const hasPolicy = !!(agentData.policy_id && agentData.policy_id !== 'standalone');
     const policyLabel = hasPolicy ? (agentData._policyData?.name || agentData.policy_id) : 'None (Charter only)';
     const maxTurns = agentData.max_agent_turns || 'Default';
+    const trackWork = agentData.track_work_context !== false;
 
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Review & Create</h2>
@@ -41,6 +42,10 @@ export function renderReviewStep(container, agentData) {
                         <li class="flex justify-between">
                             <span>Max Tool Turns</span>
                             <span class="font-mono font-bold">${maxTurns}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span>Work &amp; Task Memory</span>
+                            <span class="font-mono font-bold ${trackWork ? 'text-green-600' : 'text-gray-400'}">${trackWork ? 'On' : 'Off'}</span>
                         </li>
                      </ul>
                 </div>
