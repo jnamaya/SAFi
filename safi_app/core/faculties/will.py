@@ -43,6 +43,16 @@ READ_ONLY_TOOLS: frozenset = frozenset({
     "lookup_definition",
 })
 
+# Maps a failing hard-gate value to the violation reason used for the redirect.
+# The reason drives both the redirect directive lookup and the orchestrator's
+# scope-vs-content classification, so each gate must name its real failure mode.
+# Only genuine scope/injection gates may use "scope_violation"; a grounding
+# breach (fabrication) is NOT a scope problem and must not be reported as one.
+HARD_GATE_VIOLATION_REASONS: Dict[str, str] = {
+    "Scope Compliance": "scope_violation",
+    "Grounding Fidelity": "grounding_violation",
+}
+
 
 class WillGate:
     """
@@ -172,8 +182,11 @@ class WillGate:
         for entry in ledger:
             if entry.get("value") in hard_gate_names and float(entry.get("score", 0)) <= -1.0:
                 value_name = entry.get("value", "unknown")
-                self.log.warning(f"WillGate: Hard gate failure on '{value_name}'.")
-                return ("violation", "scope_violation")
+                # Report the gate's real failure mode. Unmapped gates default to a
+                # generic content violation rather than masquerading as a scope breach.
+                reason = HARD_GATE_VIOLATION_REASONS.get(value_name, "hard_gate_violation")
+                self.log.warning(f"WillGate: Hard gate failure on '{value_name}' → {reason}.")
+                return ("violation", reason)
 
         return ("approve", "hard_gates_passed")
 

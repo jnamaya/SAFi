@@ -69,6 +69,15 @@ DEFAULT_REPHRASE_DIRECTIVES: Dict[str, str] = {
         "question directly and helpfully, taking more care to reflect your defined values. Do NOT refuse "
         "or claim the request is out of scope, and do NOT mention this correction."
     ),
+    "grounding_violation": (
+        "The governance system blocked your previous draft because it asserted factual claims not "
+        "supported by the available source material (retrieved context, tool results, or supplied "
+        "documents). This is NOT a scope problem and NOT the user's fault. "
+        "Respond honestly: state only what the available material actually supports, and clearly flag "
+        "that you cannot confirm the unsupported claims rather than inventing or guessing them. Invite "
+        "the user to provide a source if they need those specifics. Do NOT tell the user their request "
+        "falls outside your area of focus, and do NOT mention any internal review."
+    ),
 }
 
 
@@ -355,7 +364,19 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     p_gates = [v for v in policy_vals if v.get("hard_gate")]
     p_scored = [v for v in policy_vals if not v.get("hard_gate")]
 
-    hard_gates = existing_gates + c_gates + p_gates
+    # Dedupe hard gates by name. The same gate can arrive twice: once via the
+    # base profile (assemble_agent folds the policy's global_values — including
+    # its hard gates — into the profile) and again via policy_values passed here.
+    # Without this, a policy-level gate (e.g. Grounding Fidelity) lands in the
+    # value set twice and is scored twice in every audit ledger.
+    hard_gates = []
+    _seen_gates = set()
+    for v in existing_gates + c_gates + p_gates:
+        name = v.get("value") or v.get("name")
+        if name in _seen_gates:
+            continue
+        _seen_gates.add(name)
+        hard_gates.append(v)
 
     cw = max(0.0, min(1.0, float(charter_weight)))
     if c_scored and p_scored:
