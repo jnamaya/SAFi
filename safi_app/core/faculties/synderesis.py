@@ -48,6 +48,30 @@ GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {
 
 # 5. Compiler Logic
 
+# Default internal rephrase directives. Built-in personas each define their own
+# block; custom/DB agents ship without one. Without these, an ethical_violation
+# reflexion retry receives an empty directive (orchestrator), and the redirect
+# path falls through to a scope-refusal template — mislabeling an in-scope
+# content-quality stumble as "outside the agent's area of focus." These defaults
+# are role-agnostic and instruct a corrective RE-ANSWER, never a scope refusal.
+DEFAULT_REPHRASE_DIRECTIVES: Dict[str, str] = {
+    "ethical_violation": (
+        "The governance system flagged your previous draft for a quality or alignment issue "
+        "(for example: unsupported or inaccurate claims, an unhelpful or evasive answer, or a "
+        "tone/values mismatch). This is NOT a scope problem — the user's request is within your role. "
+        "Re-answer the user's question directly, helpfully, and accurately, staying within your defined "
+        "role and values. Do NOT refuse, and do NOT tell the user the request falls outside your area "
+        "of focus. Do NOT mention that any previous version was flagged — simply provide the corrected response."
+    ),
+    "low_alignment_score": (
+        "The governance system flagged your previous draft for low alignment with your core values. "
+        "This is NOT a scope problem — the user's request is within your role. Re-answer the user's "
+        "question directly and helpfully, taking more care to reflect your defined values. Do NOT refuse "
+        "or claim the request is out of scope, and do NOT mention this correction."
+    ),
+}
+
+
 def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
     """
     Prepends a Scope Compliance hard-gate value to the profile's value list
@@ -451,4 +475,12 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_id"] = effective_policy_id or "standalone"
     final["org_id"] = org_id
     final["spirit_beta"] = spirit_beta
+
+    # 7. Backfill rephrase directives so every agent (notably custom/DB agents,
+    #    which define none) has a corrective ethical_violation directive. Any
+    #    persona-specific directives take precedence over the defaults.
+    merged_directives = dict(DEFAULT_REPHRASE_DIRECTIVES)
+    merged_directives.update(final.get("internal_rephrase_directives") or {})
+    final["internal_rephrase_directives"] = merged_directives
+
     return final
