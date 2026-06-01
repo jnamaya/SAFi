@@ -230,7 +230,31 @@ def init_db():
                 FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
             )
         ''')
-        
+
+        # Widen legacy api_keys.policy_id (CHAR(36), sized for UUIDs) to
+        # VARCHAR(255) so it can hold readable slug policy IDs, matching
+        # policies.id and agents.policy_id. Without this, creating a policy
+        # whose generated ID exceeds 36 chars writes the policies row but fails
+        # the api_keys insert ("Data too long for column 'policy_id'").
+        cursor.execute("SHOW COLUMNS FROM api_keys LIKE 'policy_id'")
+        _ak_col = cursor.fetchone()
+        if _ak_col and 'char(36)' in str(_ak_col[1]).lower():
+            # The column is part of a foreign key, so drop it, widen, re-add.
+            cursor.execute("""
+                SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_keys'
+                  AND COLUMN_NAME = 'policy_id' AND REFERENCED_TABLE_NAME = 'policies'
+            """)
+            _ak_fk = cursor.fetchone()
+            if _ak_fk:
+                cursor.execute(f"ALTER TABLE api_keys DROP FOREIGN KEY {_ak_fk[0]}")
+            cursor.execute("ALTER TABLE api_keys MODIFY policy_id VARCHAR(255) NOT NULL")
+            cursor.execute(
+                "ALTER TABLE api_keys ADD CONSTRAINT api_keys_ibfk_1 "
+                "FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE"
+            )
+            logging.info("Migrated api_keys.policy_id CHAR(36) -> VARCHAR(255).")
+
         # --- Chat History ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
