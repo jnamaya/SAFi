@@ -53,8 +53,10 @@ class SpiritIntegrator:
     def integrate(self, ledger: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Integrates Conscience evaluations to produce a single actionable decision dict.
-        Checks for critical violations (score <= -1.0) and computes a weighted average score
-        scaled to [0.0, 1.0].
+        Flags a critical violation only when a HARD-GATE (non-negotiable) value scores
+        <= -1.0, and computes a weighted average score scaled to [0.0, 1.0]. A -1 on an
+        ordinary (non-hard-gate) value lowers the average but does NOT hard-block — the
+        weighted threshold (alignment < 0.5) decides the block for those.
         """
         critical_violation = False
         weighted_sum = 0.0
@@ -72,8 +74,12 @@ class SpiritIntegrator:
             if row is not None:
                 matched += 1
                 score = float(row.get("score", 0.0))
-                # Critical violation if any score is <= -1.0
-                if score <= -1.0:
+                # Only NON-NEGOTIABLE (hard-gate) values hard-block on a -1. Ordinary
+                # weighted values let a -1 pull down the alignment average instead of
+                # forcing an immediate critical violation. (Hard gates are normally
+                # caught earlier at Phase 4.5; this stays as defense-in-depth for paths
+                # that re-audit without that gate, e.g. the ethical reflexion retry.)
+                if score <= -1.0 and val_dict.get("hard_gate"):
                     critical_violation = True
 
                 # Scaled score: map [-1, 1] to [0, 1]
