@@ -46,6 +46,8 @@ function _getFileTypeConfig(filename) {
         pdf:  { label: 'PDF', bg: 'bg-red-50 dark:bg-red-900/20',       border: 'border-red-200 dark:border-red-800',       text: 'text-red-500' },
         docx: { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
         doc:  { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
+        xlsx: { label: 'XLS', bg: 'bg-green-50 dark:bg-green-900/20',     border: 'border-green-200 dark:border-green-800',     text: 'text-green-600' },
+        xls:  { label: 'XLS', bg: 'bg-green-50 dark:bg-green-900/20',     border: 'border-green-200 dark:border-green-800',     text: 'text-green-600' },
         csv:  { label: 'CSV', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800', text: 'text-emerald-500' },
         txt:  { label: 'TXT', bg: 'bg-neutral-100 dark:bg-neutral-700',  border: 'border-neutral-200 dark:border-neutral-600', text: 'text-neutral-500' },
         md:   { label: 'MD',  bg: 'bg-violet-50 dark:bg-violet-900/20',  border: 'border-violet-200 dark:border-violet-800',  text: 'text-violet-500' },

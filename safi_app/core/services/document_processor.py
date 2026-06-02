@@ -1,7 +1,7 @@
 """
 Document text extraction service.
 
-Extracts plain text from uploaded files (PDF, DOCX, TXT, MD, CSV)
+Extracts plain text from uploaded files (PDF, DOCX, XLSX, TXT, MD, CSV)
 so it can be injected as context into the user's prompt.
 """
 import os
@@ -12,7 +12,7 @@ from typing import Tuple
 
 log = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {'.txt', '.md', '.pdf', '.docx', '.csv'}
+ALLOWED_EXTENSIONS = {'.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv'}
 
 
 def allowed_file(filename: str) -> bool:
@@ -44,6 +44,8 @@ def extract_text(file_storage, filename: str, max_chars: int = 50000) -> Tuple[s
         text = _extract_pdf(file_storage)
     elif ext == '.docx':
         text = _extract_docx(file_storage)
+    elif ext == '.xlsx':
+        text = _extract_xlsx(file_storage)
     else:
         raise ValueError(f"Unsupported file type: {ext}")
 
@@ -115,3 +117,45 @@ def _extract_docx(file_storage) -> str:
         raise ValueError("Could not extract any text from this DOCX file.")
 
     return "\n\n".join(paragraphs)
+
+
+def _extract_xlsx(file_storage) -> str:
+    """Extracts cell values from an XLSX workbook as one Markdown table per sheet."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise ValueError(
+            "XLSX support requires openpyxl. "
+            "Install with: pip install openpyxl"
+        )
+
+    wb = openpyxl.load_workbook(file_storage, read_only=True, data_only=True)
+    sheets = []
+
+    for ws in wb.worksheets:
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            # Skip fully empty rows; stringify cells, blanking out None.
+            cells = ["" if c is None else str(c) for c in row]
+            if any(c.strip() for c in cells):
+                rows.append(cells)
+
+        if not rows:
+            continue
+
+        width = max(len(r) for r in rows)
+        header = rows[0] + [''] * (width - len(rows[0]))
+        lines = ["| " + " | ".join(header) + " |"]
+        lines.append("| " + " | ".join(["---"] * width) + " |")
+        for row in rows[1:]:
+            padded = row + [''] * (width - len(row))
+            lines.append("| " + " | ".join(padded) + " |")
+
+        sheets.append(f"### Sheet: {ws.title}\n\n" + "\n".join(lines))
+
+    wb.close()
+
+    if not sheets:
+        raise ValueError("Could not extract any data from this XLSX file.")
+
+    return "\n\n".join(sheets)
