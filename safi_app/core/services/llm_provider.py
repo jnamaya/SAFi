@@ -298,6 +298,24 @@ class LLMProvider:
                         
                     return json.dumps(payload, default=safe_serialize)
 
+                # Surface a truncated generation. Gemini stops with
+                # finish_reason=MAX_TOKENS when the output (including thinking
+                # tokens) exhausts max_output_tokens; resp.text still holds the
+                # partial answer, so without this check it would silently reach
+                # the user mid-sentence. Compare on the name to stay robust
+                # across SDK enum/string representations.
+                try:
+                    if resp.candidates:
+                        finish_reason = getattr(resp.candidates[0], "finish_reason", None)
+                        if finish_reason is not None and "MAX_TOKENS" in str(finish_reason):
+                            self.log.warning(
+                                "Gemini Intellect response truncated (finish_reason=MAX_TOKENS); "
+                                "answer was cut off mid-output. Consider raising max_output_tokens "
+                                "or capping the thinking budget."
+                            )
+                except Exception:
+                    pass
+
                 return resp.text or "{}"
             except Exception as e:
                 self.log.warning(f"Gemini returned empty response or error: {e}")
@@ -339,7 +357,11 @@ class LLMProvider:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=1.0,
-                    max_tokens=4096,
+                    # 8192 (up from 4096): the Intellect produces long, structured
+                    # answers and runs on thinking models (e.g. gemini-3.5-flash)
+                    # whose reasoning tokens also draw from this budget. 4096 was
+                    # too tight and silently truncated answers mid-output.
+                    max_tokens=8192,
                     tools=tools
                 )
                 raw_content_stripped = raw_content.strip() if raw_content else ""

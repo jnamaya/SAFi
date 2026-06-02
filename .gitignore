@@ -72,3 +72,9 @@ purge_profile.py
 
 # Database backups / dumps
 *.sql
+
+# Local backups (e.g. policy values/weights snapshots)
+.backups/
+
+# Local drafts / blog posts (not for version control)
+docs/building-and-managing-agents-post.md
