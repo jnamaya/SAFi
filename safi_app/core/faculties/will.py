@@ -84,8 +84,11 @@ class WillGate:
             
             # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)
             allowed = struct.get("allowed_markdown_syntaxes")
-            if allowed is not None:
+            if allowed:
                 # Zero-trust whitelist: block any code fence not explicitly permitted.
+                # Only engages when the whitelist is non-empty. An empty/missing list
+                # means "no restriction configured" (the wizard default) — NOT "block
+                # everything" — and falls through to the legacy blacklist branch below.
                 # "```" in the allowed list = permit all code blocks.
                 if "```" in draft_output and "```" not in allowed:
                     fences = re.findall(r'```[a-zA-Z]*', draft_output)
