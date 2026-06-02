@@ -152,6 +152,43 @@ def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
     return profile
 
 
+def _inject_disclaimer_directive(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    If the effective will_rules require a mandatory disclaimer, instruct the
+    Intellect to emit it verbatim.
+
+    The Will only CHECKS for the disclaimer substring (structural gate); nothing
+    else makes the model write it. Built-in personas hardcode the disclaimer in
+    their style text, but policy/charter-driven agents have no such instruction —
+    so without this injection the model never includes it, every draft fails the
+    gate, and the user sees a redirect with no disclaimer at all.
+    """
+    rules = profile.get("will_rules")
+    if not isinstance(rules, dict):
+        return profile
+    struct = rules.get("structural_requirements") or {}
+    if not struct.get("require_disclaimer"):
+        return profile
+    disclaimer = (struct.get("mandatory_disclaimer_substring") or "").strip()
+    if not disclaimer:
+        return profile
+
+    existing_worldview = profile.get("worldview", "") or ""
+    # Idempotent: don't append the directive if the exact text is already present.
+    if disclaimer in existing_worldview:
+        return profile
+
+    directive = (
+        "\n\n--- MANDATORY DISCLAIMER (SYSTEM CONSTRAINT) ---\n"
+        "You MUST end EVERY response with the following text, verbatim and unaltered, "
+        "as the final line(s) of your reply:\n"
+        f"{disclaimer}\n"
+        "Do not paraphrase, translate, summarize, or omit it — it must appear exactly as written."
+    )
+    profile["worldview"] = existing_worldview + directive
+    return profile
+
+
 def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) -> List[Dict[str, Any]]:
     """
     Scales the weights of the provided values so they sum to `target_sum`.
@@ -206,16 +243,32 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     if gov_scope:
         final_profile["scope_statement"] = gov_scope
 
-    # B. Merge Will Rules. Three input shapes:
-    #   - persona dict   + gov list/dict  → keep persona dict (modern)
-    #   - persona list   + gov dict       → use gov dict (wizard-driven policy)
-    #   - persona list   + gov list       → concatenate
+    # B. Merge Will Rules. The governance layer (Policy) is authoritative for
+    # structural_requirements — disclaimer, banned/allowed markdown, alignment
+    # threshold — so its settings must NOT be silently dropped in favour of the
+    # agent's blank wizard defaults (the old behaviour: a persona dict won
+    # wholesale, discarding the policy's disclaimer). When either side is a dict
+    # we merge, with the Policy winning for every structural key it explicitly
+    # sets; legacy list shapes are concatenated as before.
     persona_rules = final_profile.get("will_rules", [])
     gov_rules = governance.get("global_will_rules", [])
-    if isinstance(persona_rules, dict):
-        final_profile["will_rules"] = persona_rules
-    elif isinstance(gov_rules, dict):
-        final_profile["will_rules"] = gov_rules
+    if isinstance(persona_rules, dict) or isinstance(gov_rules, dict):
+        p = persona_rules if isinstance(persona_rules, dict) else {}
+        g = gov_rules if isinstance(gov_rules, dict) else {}
+        merged = copy.deepcopy(p)
+        # Policy structural_requirements override the agent's defaults where set.
+        # Empty/blank policy values ("", None, []) do not clobber agent values.
+        p_struct = dict(merged.get("structural_requirements") or {})
+        for k, val in (g.get("structural_requirements") or {}).items():
+            if val not in (None, "", []):
+                p_struct[k] = val
+        if p_struct:
+            merged["structural_requirements"] = p_struct
+        # Carry over any other policy-level keys the agent doesn't define.
+        for k, val in g.items():
+            if k != "structural_requirements" and k not in merged:
+                merged[k] = val
+        final_profile["will_rules"] = merged
     else:
         final_profile["will_rules"] = (gov_rules or []) + (persona_rules or [])
 
@@ -470,6 +523,10 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
 
     # 5. Charter layer (two-tier value rebuild + descriptive preamble).
     final = apply_charter(base, charter, policy_values=policy_values, charter_weight=charter_weight)
+
+    # 5b. If the effective policy mandates a disclaimer, instruct the Intellect to
+    # emit it verbatim. The Will only checks for it; this makes the model write it.
+    final = _inject_disclaimer_directive(final)
 
     # 6. Stamp governance metadata for the runtime + auditing.
     final["policy_id"] = effective_policy_id or "standalone"
