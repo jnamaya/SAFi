@@ -294,7 +294,7 @@ function renderOrganizationUI(container, org, charter) {
     });
 
     document.getElementById('btn-add-charter-value')?.addEventListener('click', () => {
-        charterValuesData.push({ name: '', description: '', weight: 1.0, rubric: { scoring_guide: [] } });
+        charterValuesData.push({ name: '', description: '', weight: 1.0, hard_gate: false, rubric: { scoring_guide: [] } });
         renderCharterValues(charterValuesData, valuesList);
     });
 
@@ -536,7 +536,7 @@ function renderCharterValues(valuesData, container) {
             <textarea placeholder="Brief description of this value..." rows="2"
                 class="cv-desc w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg p-2.5 resize-none outline-none focus:border-green-500 mb-3">${v.description || ''}</textarea>
 
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <div class="flex items-center gap-2">
                     ${hasRubric
                         ? `<span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium">✓ Rubric ready</span>`
@@ -544,10 +544,16 @@ function renderCharterValues(valuesData, container) {
                     }
                     <button class="btn-toggle-rubric text-xs text-blue-600 dark:text-blue-400 hover:underline">View / Edit Rubric</button>
                 </div>
-                <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
-                    <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
-                    <input type="range" min="1" max="100" value="${weightPct}" class="cv-weight-slider w-20 h-1.5 accent-green-600 cursor-pointer"/>
-                    <span class="cv-weight-lbl text-xs font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${weightPct}%</span>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="If checked, any violation of this value blocks the response outright, regardless of other scores.">
+                        <input type="checkbox" class="cv-hardgate accent-red-600 w-4 h-4" ${v.hard_gate ? 'checked' : ''}/>
+                        <span class="text-xs uppercase font-bold text-gray-500">Non-negotiable</span>
+                    </label>
+                    <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
+                        <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
+                        <input type="range" min="1" max="100" value="${weightPct}" class="cv-weight-slider w-20 h-1.5 accent-green-600 cursor-pointer"/>
+                        <span class="cv-weight-lbl text-xs font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${weightPct}%</span>
+                    </div>
                 </div>
             </div>
 
@@ -585,6 +591,12 @@ function renderCharterValues(valuesData, container) {
             valuesData[idx].weight = pct / 100;
             lbl.textContent = pct + '%';
         });
+
+        // Non-negotiable (hard gate) toggle
+        const hgToggle = card.querySelector('.cv-hardgate');
+        if (hgToggle) {
+            hgToggle.addEventListener('change', e => { valuesData[idx].hard_gate = !!e.target.checked; });
+        }
 
         // Rubric toggle
         const rubricPanel = card.querySelector('.cv-rubric-panel');
