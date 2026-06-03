@@ -146,6 +146,24 @@ class Config:
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
 
+    # --- Agent work-context ("note-taker") memory tuning ---
+    # Sampling temperature for the background extraction call (deterministic by default).
+    AGENT_MEMORY_TEMPERATURE = float(os.environ.get("SAFI_AGENT_MEMORY_TEMPERATURE", "0.0"))
+    # Max entries retained per memory key after the code-side merge (bounds growth).
+    AGENT_MEMORY_MAX_ITEMS_PER_KEY = int(os.environ.get("SAFI_AGENT_MEMORY_MAX_ITEMS", "80"))
+    # Memory structure: key -> identity field for dict items (None = list of strings).
+    # Drives both the empty-context shape and the merge dedupe behavior.
+    AGENT_MEMORY_SCHEMA = {
+        "ongoing_projects": "name",
+        "team_members": "name",
+        "pending_decisions": None,
+        "open_tasks": None,
+        "vendors": "name",
+        "key_dates": "event",
+        "preferences": None,
+        "notes": None,
+    }
+
     # --- TTS CONFIGURATION ---
     # Provider: "edge-tts" (free), "gpt-4o-mini-tts" (OpenAI), or "gemini-*"
     TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "edge-tts")
