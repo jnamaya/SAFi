@@ -7,18 +7,9 @@ import json
 import re
 from datetime import datetime
 
-policy_api_bp = Blueprint('policy_api', __name__)
+from ..core.services.model_routing import detect_provider as _detect_provider
 
-def _detect_provider(model_name: str) -> str:
-    """Auto-detect provider from model name."""
-    if not model_name: return "groq"
-    model_lower = model_name.lower()
-    if model_lower.startswith("gpt-") or model_lower.startswith("o1-"): return "openai"
-    if model_lower.startswith("claude-"): return "anthropic"
-    if model_lower.startswith("gemini-"): return "gemini"
-    if model_lower.startswith("deepseek-"): return "deepseek"
-    if model_lower.startswith("mistral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
-    return "groq"
+policy_api_bp = Blueprint('policy_api', __name__)
 
 def validate_policy_data(data):
     errors = []

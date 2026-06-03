@@ -33,6 +33,7 @@ from .orchestrator_mixins.tasks import BackgroundTasksMixin
 # --- Import Refactored Services ---
 # --- Import Refactored Services ---
 from .services import LLMProvider, RAGService, MCPManager
+from .services.model_routing import detect_provider
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -121,16 +122,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="SafiWorker")
 
         # --- Helper: Auto-detect Provider ---
-        def detect_provider(model_name: str) -> str:
-            if not model_name: return "groq"
-            model_lower = model_name.lower()
-            if model_lower.startswith("gpt-") or model_lower.startswith("o1-"): return "openai"
-            if model_lower.startswith("claude-"): return "anthropic"
-            if model_lower.startswith("gemini-"): return "gemini"
-            if model_lower.startswith("deepseek-"): return "deepseek"
-            if model_lower.startswith("mistral-") or model_lower.startswith("ministral-") or model_lower.startswith("codestral-") or model_lower.startswith("open-mi"): return "mistral"
-            return "groq" 
-
         i_model = intellect_model or getattr(config, "INTELLECT_MODEL")
         c_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
         self.intellect_model = i_model
