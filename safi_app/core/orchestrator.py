@@ -737,20 +737,22 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
         self.log.info(f"[Governance | Phase 5 | Spirit] Alignment: {spirit_assessment.get('alignment_score', '?'):.3f} | Decision: {D_spirit} — {E_spirit}")
 
-        if D_spirit == "violation" and E_spirit == "ethical_violation":
-            # Spirit caught a content quality issue (biased, uncited, unprofessional).
-            # The user's intent is fine — the model's draft was the problem. Use a
-            # reflexion retry so the model can see its original draft and correct it.
-            # trigger_persona_redirect generates in a vacuum and can't fix content
-            # issues; it is reserved for scope/injection violations.
-            self.log.info("[Governance | Phase 5 | Spirit] Attempting ethical reflexion retry.")
-            db.update_message_reasoning(message_id, "Applying ethical corrections...")
+        a_t_spirit = None
+        if D_spirit == "violation" and E_spirit in ("ethical_violation", "low_alignment_score"):
+            # Spirit caught a content quality issue (biased, uncited, unprofessional, or a
+            # low overall alignment score). The user's intent is fine — the model's draft was
+            # the problem. Use a reflexion retry so the model can see its original draft and
+            # correct it. trigger_persona_redirect generates in a vacuum and can't fix content
+            # issues; it is reserved for scope/injection violations (gated at Phase 0 / 4.5).
+            self.log.info(f"[Governance | Phase 5 | Spirit] Attempting reflexion retry ({E_spirit}).")
+            db.update_message_reasoning(message_id, "Refining response for alignment...")
 
-            spirit_directive = (self.profile or {}).get("internal_rephrase_directives", {}).get("ethical_violation", "")
+            _directives = (self.profile or {}).get("internal_rephrase_directives", {})
+            spirit_directive = _directives.get(E_spirit) or _directives.get("ethical_violation", "")
             spirit_retry_prompt = (
                 f"{prompt_with_date}\n\n"
                 "--- INTERNAL GOVERNANCE FEEDBACK ---\n"
-                "Your previous draft response was blocked by an ethical alignment check.\n"
+                "Your previous draft response was blocked by an alignment check.\n"
                 f"Your Blocked Draft:\n\"\"\"\n{a_t}\n\"\"\"\n\n"
                 f"Violation Reason:\n{spirit_directive}\n\n"
                 "INSTRUCTION: Rewrite your response to address the violation above. "
@@ -797,15 +799,25 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     retrieved_context = context_spirit
 
         if D_spirit == "violation":
-            return await self.trigger_persona_redirect(
-                original_prompt=user_prompt,
-                violation_type=E_spirit,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                new_title=new_title,
-                user_id=user_id,
-                org_id=org_id
-            )
+            if E_spirit == "low_alignment_score":
+                # Phase 0 / 4.5 already gate scope & injection; a residual low-alignment dip
+                # is a soft quality signal, not a safety breach. The reflexion retry above is
+                # the correct remedy — commit the best draft with an honest low score rather
+                # than discarding the user's request via a vacuum redirect (which produced the
+                # "replies but not full" behavior). Redirect stays reserved for scope/injection.
+                if a_t_spirit:
+                    a_t, r_t, retrieved_context = a_t_spirit, r_t_spirit, context_spirit
+                self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
+            else:
+                return await self.trigger_persona_redirect(
+                    original_prompt=user_prompt,
+                    violation_type=E_spirit,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    new_title=new_title,
+                    user_id=user_id,
+                    org_id=org_id
+                )
 
         # Calculate new mu vector, drift, note, and spirit score
         S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
