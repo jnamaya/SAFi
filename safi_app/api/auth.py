@@ -349,7 +349,7 @@ def login_demo():
                 'sub': demo_id,
                 'id': demo_id,
                 'email': f"{demo_id}@demo.local",
-                'name': "Demo Admin",
+                'name': "Guest",
                 'picture': "", 
                 'role': 'admin',
                 'org_id': org_id

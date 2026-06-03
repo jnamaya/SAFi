@@ -45,8 +45,20 @@ def create_policy():
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
 
-        # --- Readable ID Generation ---
         org_id = user.get('org_id')
+
+        # Idempotency guard: a policy with this name already exists in the same
+        # scope (org, or creator for personal). This stops a double-submit /
+        # network retry from creating identical duplicate policies.
+        existing = db.find_policy_by_name(data.get("name"), org_id=org_id, created_by=user_id)
+        if existing:
+            return jsonify({
+                "error": f"A policy named '{data.get('name')}' already exists.",
+                "code": "DUPLICATE_NAME",
+                "policy_id": existing['id'],
+            }), 409
+
+        # --- Readable ID Generation ---
         org_prefix = "p" # Default personal
         
         if org_id:

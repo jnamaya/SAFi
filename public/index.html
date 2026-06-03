@@ -91,7 +91,9 @@
         <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
           <div class="w-full max-w-4xl mx-auto flex flex-col items-center">
             <div class="app-logo mb-6 shrink-0">
-              <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full"
+              <img src="assets/logo-white.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full block dark:hidden"
+                onerror="this.onerror=null; this.src='https://placehold.co/64x64/FFFFFF/000000?text=SAFi'" />
+              <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full hidden dark:block"
                 onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'" />
             </div>
             <p class="text-neutral-500 dark:text-neutral-400 mt-2 text-center">The Runtime Governance Engine For AI Agents</p>
@@ -132,7 +134,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
-              Try Demo (Admin)
+              Sign in as Guest
             </a>
 
             <!-- Local Admin Login (shown only when SAFI_LOCAL_ADMIN_* vars are set) -->
@@ -351,7 +353,8 @@
             <!-- Header -->
             <div class="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
               <div class="flex items-center gap-2">
-                <img src="assets/logo.png" alt="SAFi Logo" class="w-8 h-8 rounded-lg object-contain">
+                <img src="assets/logo-white.png" alt="SAFi Logo" class="w-8 h-8 rounded-lg object-contain block dark:hidden">
+                <img src="assets/logo.png" alt="SAFi Logo" class="w-8 h-8 rounded-lg object-contain hidden dark:block">
                 <span class="font-bold text-lg tracking-tight">Control Panel</span>
               </div>
             </div>

@@ -283,7 +283,14 @@ async function submitPolicy() {
         }
     } catch (e) {
         console.error(e);
-        ui.showToast(e.message, "error");
+        // 4xx errors arrive with the raw JSON response body as the message;
+        // unwrap it so the user sees the friendly text (e.g. duplicate-name).
+        let msg = e.message || "Failed to save policy";
+        try {
+            const parsed = JSON.parse(msg);
+            if (parsed && parsed.error) msg = parsed.error;
+        } catch (_) { /* not JSON, use message as-is */ }
+        ui.showToast(msg, "error");
         btn.innerHTML = policyData.policy_id ? 'Save Changes' : 'Create Policy';
         btn.disabled = false;
     }

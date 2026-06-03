@@ -43,8 +43,9 @@ export function updateUIForAuthState(user) {
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-              <div class="app-logo h-7 w-7">
-                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
+              <div class="app-logo h-10 w-10">
+                <img src="assets/logo-white.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain block dark:hidden" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
+                <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain hidden dark:block" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
               </div>
               <span class="font-semibold text-lg tracking-tight">SAFi</span>
             </div>

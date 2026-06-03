@@ -1226,6 +1226,29 @@ def create_organization_atomic(org_name, user_id):
         cursor.close()
         conn.close()
 
+def find_policy_by_name(name, org_id=None, created_by=None):
+    """Return an existing policy ({id, name}) that matches `name` within the
+    same scope, or None. Scope is the organization when org-scoped, otherwise
+    the creating user. Used to make policy creation idempotent so a
+    double-submit / network retry can't spawn identical duplicate policies."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        if org_id:
+            cursor.execute(
+                "SELECT id, name FROM policies WHERE org_id=%s AND name=%s LIMIT 1",
+                (org_id, name),
+            )
+        else:
+            cursor.execute(
+                "SELECT id, name FROM policies WHERE org_id IS NULL AND created_by=%s AND name=%s LIMIT 1",
+                (created_by, name),
+            )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
 def create_policy(name, worldview, will_rules, values, org_id=None, created_by=None, policy_id=None, policy_config=None):
     conn = get_db_connection()
     cursor = conn.cursor()

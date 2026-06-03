@@ -3366,6 +3366,14 @@ video {
   opacity: 1;
 }
 
+.dark\:block:is(.dark *) {
+  display: block;
+}
+
+.dark\:hidden:is(.dark *) {
+  display: none;
+}
+
 .dark\:divide-neutral-700:is(.dark *) > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(64 64 64 / var(--tw-divide-opacity, 1));
