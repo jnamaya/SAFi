@@ -1220,8 +1220,8 @@ video {
   max-width: 80rem;
 }
 
-.max-w-\[140px\] {
-  max-width: 140px;
+.max-w-\[120px\] {
+  max-width: 120px;
 }
 
 .max-w-\[260px\] {
@@ -1306,6 +1306,11 @@ video {
 
 .translate-x-6 {
   --tw-translate-x: 1.5rem;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.-rotate-45 {
+  --tw-rotate: -45deg;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 

@@ -42,8 +42,11 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
     });
 
     document.addEventListener('click', (e) => {
-        const container = document.getElementById('composer-plus-container');
-        if (container && !container.contains(e.target)) {
+        const plusContainer = document.getElementById('composer-plus-container');
+        const modelContainer = document.getElementById('composer-model-container');
+        const inPlus = plusContainer && plusContainer.contains(e.target);
+        const inModel = modelContainer && modelContainer.contains(e.target);
+        if (!inPlus && !inModel) {
             _closeMenu();
             _closeAllDropdowns();
         }
