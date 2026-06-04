@@ -144,7 +144,11 @@ class Config:
     PUBLIC_INTELLECT_MODEL = os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
     PUBLIC_CONSCIENCE_MODEL = os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
     SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
+    # General-purpose background model (suggestions, etc.). Groq/Llama by default.
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
+    # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
+    # note-taking can run on Gemini while suggestions/summaries stay on Groq/Llama.
+    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", "gemini-3.1-flash-lite")
 
     # --- Agent work-context ("note-taker") memory tuning ---
     # Sampling temperature for the background extraction call (deterministic by default).
@@ -167,8 +171,8 @@ class Config:
     # --- TTS CONFIGURATION ---
     # Provider: "edge-tts" (free), "gpt-4o-mini-tts" (OpenAI), or "gemini-*"
     TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "edge-tts")
-    # edge-tts voices: en-US-AriaNeural, en-US-GuyNeural, en-US-JennyNeural
-    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AndrewNeural")
+    # edge-tts voices: en-US-AvaMultilingualNeural, en-US-AndrewNeural, en-US-AriaNeural
+    TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AvaMultilingualNeural")
     TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
 
     # Spirit computation parameters

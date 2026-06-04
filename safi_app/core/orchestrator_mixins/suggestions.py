@@ -57,47 +57,23 @@ class SuggestionsMixin:
     def _get_follow_up_suggestions(self, user_prompt: str, ai_response: str) -> List[str]:
         """
         [SYNC] Called from the BACKGROUND THREAD (BackgroundTasksMixin._run_audit_thread).
-        Uses the SYNC Groq client to avoid Event Loop crashes.
+        Provider-routed via _backend_json_completion so it follows BACKEND_MODEL
+        (Groq, Gemini, etc.) instead of being pinned to the Groq client.
         """
-        # Use the Sync client for background threads
-        suggestion_client = getattr(self, "groq_client_sync", None)
-        if not suggestion_client:
-            self.log.warning("Groq client (Sync) not configured. Cannot generate follow-up suggestions.")
-            return []
-
         prompt_config = self.prompts.get("follow_up_suggester")
         if not prompt_config or "system_prompt" not in prompt_config:
             self.log.warning("No 'follow_up_suggester' prompt found.")
             return []
 
-        suggestion_model = getattr(self.config, "BACKEND_MODEL", "llama-3.1-8b-instant")
+        system_prompt = prompt_config["system_prompt"]
+        content = (
+            f"**Here is the user's prompt:**\n{user_prompt}\n\n"
+            f"**Here is the AI's answer:**\n{ai_response}\n\n"
+            "Please provide relevant follow-up questions."
+        )
 
-        try:
-            system_prompt = prompt_config["system_prompt"]
-            
-            content = (
-                f"**Here is the user's prompt:**\n{user_prompt}\n\n"
-                f"**Here is the AI's answer:**\n{ai_response}\n\n"
-                "Please provide relevant follow-up questions."
-            )
-
-            # Sync call
-            response = suggestion_client.chat.completions.create(
-                model=suggestion_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": content}
-                ],
-                temperature=0.7,
-                max_tokens=512,
-                response_format={"type": "json_object"},
-            )
-            
-            return self._parse_suggestions(response.choices[0].message.content)
-
-        except Exception as e:
-            self.log.error(f"Failed to get follow-up suggestions: {e}")
-            return []
+        raw = self._backend_json_completion(system_prompt, content, temperature=0.7)
+        return self._parse_suggestions(raw)
 
     def _parse_suggestions(self, response_json: str) -> List[str]:
         """Helper to parse the JSON response safely."""

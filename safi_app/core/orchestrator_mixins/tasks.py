@@ -256,15 +256,21 @@ class BackgroundTasksMixin:
         except Exception as e:
             self.log.warning(f"User profile update thread failed: {e}")
 
-    def _backend_json_completion(self, system_prompt: str, user_content: str):
+    def _backend_json_completion(self, system_prompt: str, user_content: str, model: str | None = None, temperature: float | None = None):
         """
-        Synchronous JSON-returning completion on BACKEND_MODEL, routed by provider so
-        background tasks aren't pinned to Groq. gemini-* models use the (sync-capable)
-        google-genai client the LLMProvider already built; everything else uses the
-        OpenAI-compatible sync client (Groq, etc.). Returns raw model text, or None.
+        Synchronous JSON-returning completion, routed by provider so background tasks
+        aren't pinned to Groq. gemini-* models use the (sync-capable) google-genai client
+        the LLMProvider already built; everything else uses the OpenAI-compatible sync
+        client (Groq, etc.). Returns raw model text, or None.
+
+        model defaults to BACKEND_MODEL (general-purpose); the note-taker passes
+        NOTETAKER_MODEL. temperature defaults to AGENT_MEMORY_TEMPERATURE; callers that
+        want more variety (e.g. suggestions) can pass their own.
         """
-        model = self.config.BACKEND_MODEL
-        temperature = self.config.AGENT_MEMORY_TEMPERATURE
+        if model is None:
+            model = self.config.BACKEND_MODEL
+        if temperature is None:
+            temperature = self.config.AGENT_MEMORY_TEMPERATURE
         try:
             if detect_provider(model) == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")
@@ -298,7 +304,7 @@ class BackgroundTasksMixin:
     def _extract_agent_context_raw(self, current_context_json: str, user_prompt: str, ai_response: str):
         """
         Single extraction call. Returns the model's raw candidate-context string, or
-        None on failure. Runs on BACKEND_MODEL (provider-routed via _backend_json_completion).
+        None on failure. Runs on NOTETAKER_MODEL (provider-routed via _backend_json_completion).
         """
         context_prompt_config = self.prompts.get("agent_context_extractor")
         if not context_prompt_config:
@@ -308,7 +314,9 @@ class BackgroundTasksMixin:
             f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
             "Return the updated JSON object."
         )
-        return self._backend_json_completion(context_prompt_config["system_prompt"], content)
+        return self._backend_json_completion(
+            context_prompt_config["system_prompt"], content, model=self.config.NOTETAKER_MODEL
+        )
 
     def _run_agent_context_update_thread(self, user_id: str, agent_id: str, current_context_json: str, user_prompt: str, ai_response: str):
         """
