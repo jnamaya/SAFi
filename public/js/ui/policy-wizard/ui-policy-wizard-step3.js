@@ -1,288 +1,78 @@
 import * as api from '../../core/api.js';
 import * as ui from './../ui.js';
 
-export function renderValuesStep(container, policyData) {
+export function renderScopeStep(container, policyData) {
     container.innerHTML = `
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8 h-full">
-            <div class="md:col-span-2 space-y-8">
-                 <div>
+            <div class="md:col-span-2 space-y-6">
+                <div>
                     <div class="flex justify-between items-end mb-4">
-                         <div>
-                            <label class="block text-lg font-bold text-gray-700 dark:text-gray-300">Standards</label>
-                            <p class="text-sm text-gray-500">The standards this business unit holds its agents to. Every response from agents using this policy is scored against these.</p>
-                         </div>
-                         <button id="btn-gen-values" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                            Suggest Standards
-                         </button>
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Scope</h2>
+                            <p class="text-gray-500 text-sm">What this policy covers. Agents stay in this lane — they politely decline anything outside it, both up front and in a final check before replying.</p>
+                        </div>
+                        <button id="btn-gen-scope" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Draft with AI
+                        </button>
                     </div>
-                    
-                    <div id="pw-values-list" class="space-y-6 mb-6">
-                        <!-- Values rendered here -->
-                    </div>
-                    
-                    <button id="btn-add-value" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl text-base font-medium text-gray-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all">
-                        + Add Custom Standard
-                    </button>
+
+                    <textarea id="pw-scope-statement"
+                        class="w-full h-64 p-5 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+                        placeholder="e.g. Employee benefits, PTO requests, onboarding, and workplace policies only. No legal advice or medical guidance.">${policyData.scope_statement || ''}</textarea>
+
+                    <p class="text-xs text-gray-400 mt-2">One clear sentence describing what the agent can help with. Use "only" to make the boundary explicit.</p>
                 </div>
             </div>
 
-            <div class="bg-blue-50 dark:bg-neutral-800 p-8 rounded-2xl border border-blue-100 dark:border-neutral-700 h-fit sticky top-6">
-                <h4 class="font-bold text-xl text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
-                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                    How Standards Work
-                </h4>
-                <div class="space-y-5 text-sm text-gray-600 dark:text-gray-400">
-                    <p class="leading-relaxed">
-                        Every response is scored against each standard on a scale from <span class="font-mono">-1.0</span> (violated) to <span class="font-mono">+1.0</span> (upheld). The three states below tell the system how to judge each one.
-                    </p>
-                    <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
-                        <strong class="block text-green-600 mb-1">Upheld (+1.0)</strong>
-                        The response actively demonstrates the standard.
+            <div class="bg-blue-50 dark:bg-neutral-800 p-6 rounded-2xl border border-blue-100 dark:border-neutral-700 h-fit sticky top-6">
+                <h4 class="font-bold text-lg text-gray-800 dark:text-gray-200 mb-4">Writing a good scope</h4>
+                <div class="space-y-4 text-sm text-gray-600 dark:text-gray-400">
+                    <p>Scope is the agent's lane. It's enforced two ways: the agent declines off-topic requests up front, and a final safety check catches any off-topic answer that slips through.</p>
+
+                    <div class="p-3 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700">
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Good</strong>
+                        <span class="text-xs">"STEM education only — math, physics, chemistry, biology, engineering."</span>
                     </div>
-                    <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
-                         <strong class="block text-red-600 mb-1">Violated (-1.0)</strong>
-                        The response acts against this standard.
+                    <div class="p-3 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700">
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Better</strong>
+                        <span class="text-xs">"HR employee questions only — benefits, PTO, onboarding, workplace policies. No legal or medical advice."</span>
                     </div>
-                    <div class="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-900/30 text-xs">
-                        <strong class="block text-amber-800 dark:text-amber-300 mb-1">Non-negotiable</strong>
-                        Mark a standard as non-negotiable so that any violation blocks the response outright, no matter how well it scores elsewhere. Reserve for must-nevers like privacy or staying in scope.
-                    </div>
-                    <div class="p-4 bg-gray-100 dark:bg-neutral-700/40 rounded-lg border border-gray-200 dark:border-neutral-600 text-xs">
-                        <strong class="block text-gray-700 dark:text-gray-300 mb-1">Importance</strong>
-                        Sets how much each standard counts toward the overall score. Only the relative importance matters — the numbers are balanced automatically.
-                    </div>
+
+                    <p class="text-xs text-gray-400 leading-relaxed">Tip: Naming what's <em>excluded</em> at the end helps the agent refuse confidently.</p>
                 </div>
             </div>
         </div>
     `;
 
-    renderValuesList(policyData);
+    document.getElementById('pw-scope-statement')?.addEventListener('input', (e) => {
+        policyData.scope_statement = e.target.value;
+    });
 
-    // Bind Auto-Gen Handler
-    document.getElementById('btn-gen-values')?.addEventListener('click', async (e) => {
+    document.getElementById('btn-gen-scope')?.addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;
-        btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block mr-2"></span> Thinking...`;
+        btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block"></span> Drafting...`;
         btn.disabled = true;
-
         try {
             const ctx = policyData.context || policyData.business_unit || policyData.name || "General business unit";
-            const res = await api.generatePolicyContent('values', ctx);
+            const res = await api.generatePolicyContent('scope', ctx);
             if (res.ok && res.content) {
-                let json;
-                if (typeof res.content === 'string') {
-                    let cleaned = res.content.trim();
-                    if (cleaned.startsWith('{') && !cleaned.startsWith('[')) cleaned = `[${cleaned}]`;
-                    json = JSON.parse(cleaned);
-                } else {
-                    json = res.content;
+                const text = typeof res.content === 'string' ? res.content.trim() : '';
+                if (text) {
+                    document.getElementById('pw-scope-statement').value = text;
+                    policyData.scope_statement = text;
+                    ui.showToast('Scope drafted!', 'success');
                 }
-                policyData.values = json.map(v => ({ ...v, weight: v.weight || 0.2 }));
-                renderValuesList(policyData);
-                ui.showToast("Standards generated!", "success");
             }
         } catch (err) {
-            console.error(err);
-            ui.showToast("AI returned invalid format", "error");
+            ui.showToast('Generation failed', 'error');
         }
         btn.innerHTML = original;
         btn.disabled = false;
     });
-
-    // Add Value Btn
-    document.getElementById('btn-add-value').addEventListener('click', () => {
-        policyData.values.push({ name: "New Value", description: "", weight: 0.2, hard_gate: false, rubric: { scoring_guide: [] } });
-        renderValuesList(policyData);
-    });
 }
 
-function renderValuesList(policyData) {
-    const list = document.getElementById('pw-values-list');
-    if (!list) return;
-    list.innerHTML = '';
-
-    if (policyData.values.length === 0) {
-        list.innerHTML = `
-            <div class="text-center py-12 bg-gray-50 dark:bg-neutral-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-800">
-                <p class="text-gray-400 text-lg mb-2">No standards defined yet.</p>
-                <p class="text-sm text-gray-500">Click "Suggest Standards" to generate them from your description, or add your own.</p>
-            </div>`;
-        return;
-    }
-
-    policyData.values.forEach((v, idx) => {
-        // Check for Rubric
-        let hasRubric = false;
-        if (v.rubric) {
-            if (v.rubric.scoring_guide && Array.isArray(v.rubric.scoring_guide)) {
-                hasRubric = v.rubric.scoring_guide.length > 0;
-            }
-        }
-
-        const rubricBadge = hasRubric
-            ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold border border-green-200">✅ Criteria Set</span>`
-            : `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold border border-yellow-200">⚠️ Needs Criteria</span>`;
-
-        const card = document.createElement('div');
-        card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-6 shadow-sm hover:border-blue-300 transition-colors group";
-
-        const nameId = `pw-val-name-${idx}`;
-        const descId = `pw-val-desc-${idx}`;
-
-        card.innerHTML = `
-            <div class="flex justify-between items-start mb-4 gap-4">
-                <input type="text" id="${nameId}" class="flex-1 font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 px-1 py-1 transition-all" 
-                    value="${v.name}" placeholder="e.g. Data Privacy, Accuracy, Regulatory Compliance">
-                    
-                <button class="text-gray-400 hover:text-red-500 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="window.removePolicyValue(${idx})">
-                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-            </div>
-            
-            <textarea id="${descId}" class="w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 hover:border-blue-300 focus:border-blue-500 rounded-lg p-3 resize-none h-24 outline-none transition-all mb-4"
-                placeholder="Brief description of this standard...">${v.description || ''}</textarea>
-            
-            <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100 dark:border-neutral-700">
-                <div class="flex items-center gap-3">
-                    ${rubricBadge}
-                    <button class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline" onclick="document.getElementById('rubric-container-${idx}').classList.toggle('hidden')">
-                        View/Edit Rubric
-                    </button>
-                </div>
-
-                <div class="flex items-center gap-4 flex-wrap">
-                    <label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="If checked, any violation of this standard blocks the response outright, regardless of other scores.">
-                        <input type="checkbox" id="pw-hardgate-${idx}" ${v.hard_gate ? 'checked' : ''} class="accent-red-600 w-4 h-4">
-                        <span class="text-xs uppercase font-bold text-gray-500">Non-negotiable</span>
-                    </label>
-
-                    <div class="flex items-center gap-3 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
-                        <label class="text-xs uppercase font-bold text-gray-500">Importance</label>
-                        <input type="range" min="1" max="100" value="${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}"
-                            class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600">
-                        <span id="pw-weight-lbl-${idx}" class="text-sm font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}%</span>
-                    </div>
-                </div>
-            </div>
-
-            <div id="rubric-container-${idx}" class="hidden mt-6 pt-6 border-t border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50/50 dark:bg-neutral-900/30 -mx-6 -mb-6 px-6 pb-6 rounded-b-xl">
-                 <div class="flex justify-between items-center mb-4">
-                    <label class="block text-xs uppercase text-gray-500 font-bold tracking-wider">How to evaluate it</label>
-                    <span class="text-xs text-gray-400">Fill in the 3 states</span>
-                 </div>
-                 
-                 <!-- Visual Builder Container -->
-                 <div id="rubric-rows-${idx}" class="space-y-3"></div>
-            </div>
-        `;
-        list.appendChild(card);
-
-        // Bind Inputs
-        card.querySelector(`#${nameId}`).addEventListener('change', (e) => policyData.values[idx].name = e.target.value);
-        card.querySelector(`#${descId}`).addEventListener('change', (e) => policyData.values[idx].description = e.target.value);
-
-        // --- RUBRIC BUILDER LOGIC (FIXED 3-POINT) ---
-        const rowsContainer = document.getElementById(`rubric-rows-${idx}`);
-
-        // Ensure rubric structure
-        if (!policyData.values[idx].rubric) policyData.values[idx].rubric = { scoring_guide: [] };
-        if (Array.isArray(policyData.values[idx].rubric)) {
-            policyData.values[idx].rubric = { scoring_guide: policyData.values[idx].rubric };
-        }
-        if (!policyData.values[idx].rubric.scoring_guide) policyData.values[idx].rubric.scoring_guide = [];
-
-        const renderFixedRows = () => {
-            rowsContainer.innerHTML = '';
-            const guide = policyData.values[idx].rubric.scoring_guide;
-
-            // Helper to get text for a specific score
-            const getCriteria = (targetScore) => {
-                const item = guide.find(g => Math.abs(g.score - targetScore) < 0.1);
-                return item ? (item.criteria || item.descriptor || '') : '';
-            };
-
-            // Helper to update the guide
-            const updateCriteria = (targetScore, text) => {
-                // Remove existing
-                policyData.values[idx].rubric.scoring_guide = policyData.values[idx].rubric.scoring_guide.filter(g => Math.abs(g.score - targetScore) >= 0.1);
-                // Add new
-                if (text && text.trim()) {
-                    policyData.values[idx].rubric.scoring_guide.push({ score: targetScore, criteria: text.trim() });
-                }
-            };
-
-            const definitions = [
-                { score: 1.0, label: "Positive (+1.0)", placeholder: "Example of excellent adherence...", color: "green", icon: "✅" },
-                { score: 0.0, label: "Neutral (0.0)", placeholder: "Acceptable / Baseline behavior...", color: "gray", icon: "⚪" },
-                { score: -1.0, label: "Negative (-1.0)", placeholder: "Specific violation example...", color: "red", icon: "🚫" }
-            ];
-
-            definitions.forEach(def => {
-                const row = document.createElement('div');
-                row.className = "flex gap-4 items-start";
-
-                const bgClass = def.score === 1 ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900' :
-                    def.score === -1 ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900' :
-                        'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700';
-
-                const textClass = def.score === 1 ? 'text-green-700 dark:text-green-400' :
-                    def.score === -1 ? 'text-red-700 dark:text-red-400' :
-                        'text-gray-600 dark:text-gray-400';
-
-                row.innerHTML = `
-                    <div class="w-32 shrink-0 pt-3 text-right">
-                        <span class="block text-xs font-bold ${textClass} mb-1">${def.label}</span>
-                    </div>
-                    <div class="flex-1 relative">
-                        <span class="absolute top-3 left-3 text-sm select-none opacity-50">${def.icon}</span>
-                        <textarea class="w-full text-sm p-3 pl-10 rounded-lg border focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none h-20 transition-all shadow-sm ${bgClass}"
-                            placeholder="${def.placeholder}">${getCriteria(def.score)}</textarea>
-                    </div>
-                `;
-
-                const input = row.querySelector('textarea');
-                input.addEventListener('change', (e) => {
-                    updateCriteria(def.score, e.target.value);
-                });
-
-                rowsContainer.appendChild(row);
-            });
-        };
-
-        renderFixedRows();
-
-        // Slider Logic — normalize back to 0..1 float so the engine sees consistent shape
-        const slider = card.querySelector(`input[type="range"]`);
-        const label = card.querySelector(`#pw-weight-lbl-${idx}`);
-        if (slider) {
-            slider.addEventListener('input', (e) => {
-                const pct = parseInt(e.target.value);
-                policyData.values[idx].weight = pct / 100;
-                if (label) label.innerText = pct + '%';
-            });
-        }
-
-        // Hard gate toggle
-        const hg = card.querySelector(`#pw-hardgate-${idx}`);
-        if (hg) {
-            hg.addEventListener('change', (e) => {
-                policyData.values[idx].hard_gate = !!e.target.checked;
-            });
-        }
-    });
-
-    // Window global for remove (legacy pattern)
-    window.removePolicyValue = (idx) => {
-        policyData.values.splice(idx, 1);
-        renderValuesList(policyData);
-    };
-}
-
-export function validateValuesStep(policyData) {
-    if (!policyData.values || policyData.values.length === 0) {
-        ui.showToast("At least one Standard is required.", "error");
-        return false;
-    }
-    return true;
+export function validateScopeStep(policyData) {
+    return true; // Scope is optional but recommended
 }

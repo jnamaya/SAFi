@@ -3,11 +3,11 @@ import * as ui from '../ui.js';
 
 import { renderDefinitionStep, validateDefinitionStep }       from './ui-policy-wizard-step1.js';
 import { renderConstitutionStep, validateConstitutionStep }   from './ui-policy-wizard-step2.js';
-import { renderScopeStep, validateScopeStep }                 from './ui-policy-wizard-step4.js';
-import { renderValuesStep, validateValuesStep }               from './ui-policy-wizard-step3.js';
+import { renderScopeStep, validateScopeStep }                 from './ui-policy-wizard-step3.js';
+import { renderValuesStep, validateValuesStep }               from './ui-policy-wizard-step4.js';
 import { renderWillStep, validateWillStep }                   from './ui-policy-wizard-step5.js';
 import { renderGovernanceStep, validateGovernanceStep }       from './ui-policy-wizard-governance.js';
-import { renderSuccessStep }                                  from './ui-policy-wizard-step6.js';
+import { renderSuccessStep }                                  from './ui-policy-wizard-success.js';
 
 // --- STATE ---
 let currentStep = 1;
