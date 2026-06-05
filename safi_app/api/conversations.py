@@ -575,9 +575,12 @@ def handle_create_conversation():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    
-    new_convo = db.create_conversation(user_id)
-    
+
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id')
+
+    new_convo = db.create_conversation(user_id, project_id=project_id)
+
     if 'created_at' in new_convo:
         new_convo['last_updated'] = new_convo['created_at']
     else:
@@ -630,6 +633,60 @@ def handle_delete_conversation(conversation_id):
     # IDOR check is implicit in the DB function now
     db.delete_conversation(conversation_id, user_id=user_id)
     return jsonify({"status": "success"})
+
+# --- Projects (workspaces that group conversations) ---
+
+@conversations_bp.route('/projects', methods=['GET'])
+def get_projects():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    return jsonify(db.fetch_user_projects(user_id))
+
+@conversations_bp.route('/projects', methods=['POST'])
+def handle_create_project():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "'name' is required."}), 400
+    return jsonify(db.create_project(user_id, name[:255])), 201
+
+@conversations_bp.route('/projects/<project_id>', methods=['PUT'])
+def handle_rename_project(project_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({"error": "'name' is required."}), 400
+    if not db.rename_project(project_id, name[:255], user_id):
+        return jsonify({"error": "Project not found."}), 404
+    return jsonify({"status": "success"})
+
+@conversations_bp.route('/projects/<project_id>', methods=['DELETE'])
+def handle_delete_project(project_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not db.delete_project(project_id, user_id):
+        return jsonify({"error": "Project not found."}), 404
+    return jsonify({"status": "success"})
+
+@conversations_bp.route('/conversations/<conversation_id>/project', methods=['PATCH'])
+def handle_move_conversation(conversation_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    # project_id may be null to detach the conversation from any project.
+    project_id = data.get('project_id')
+    if not db.move_conversation_to_project(conversation_id, project_id, user_id):
+        return jsonify({"error": "Could not move conversation."}), 404
+    return jsonify({"status": "success", "project_id": project_id})
 
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])
 def get_chat_history(conversation_id):

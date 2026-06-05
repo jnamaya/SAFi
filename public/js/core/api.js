@@ -44,6 +44,9 @@ export const urls = {
     CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}`,
     HISTORY: (id, limit = 50, offset = 0) => `${urls.CONVERSATIONS}/${id}/history?limit=${limit}&offset=${offset}`,
     PIN_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/pin`,
+    PROJECTS: j('/api/projects'),
+    PROJECT: (id) => `${j('/api/projects')}/${id}`,
+    MOVE_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/project`,
 
     // Org & Domain
     ORG_ME: j('/api/organizations/me'),
@@ -153,7 +156,8 @@ export const updateUserModels = (models) =>
 
 // Conversation management
 export const fetchConversations = () => httpGet(urls.CONVERSATIONS);
-export const createNewConversation = () => httpJSON(urls.CONVERSATIONS, 'POST', {});
+export const createNewConversation = (projectId = null) =>
+    httpJSON(urls.CONVERSATIONS, 'POST', projectId ? { project_id: projectId } : {});
 export const renameConversation = (id, title) =>
     httpJSON(urls.CONVERSATION(id), 'PUT', { title });
 export const deleteConversation = (id) =>
@@ -163,6 +167,14 @@ export const clearAllConversations = () =>
 
 export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
+
+// Projects (workspaces)
+export const fetchProjects = () => httpGet(urls.PROJECTS);
+export const createProject = (name) => httpJSON(urls.PROJECTS, 'POST', { name });
+export const renameProject = (id, name) => httpJSON(urls.PROJECT(id), 'PUT', { name });
+export const deleteProject = (id) => httpJSON(urls.PROJECT(id), 'DELETE', {});
+export const moveConversationToProject = (id, projectId) =>
+    httpJSON(urls.MOVE_CONVERSATION(id), 'PATCH', { project_id: projectId });
 
 // Chat flow
 export const fetchHistory = (id, limit = 50, offset = 0) =>

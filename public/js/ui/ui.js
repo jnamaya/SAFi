@@ -65,6 +65,17 @@ export function _initElements() {
     confirmClearAllConvosBtn: document.getElementById('confirm-clear-all-convos-btn'),
     cancelClearAllConvosBtn: document.getElementById('cancel-clear-all-convos-btn'),
 
+    projectNameModal: document.getElementById('project-name-modal'),
+    projectNameModalTitle: document.getElementById('project-name-modal-title'),
+    projectNameInput: document.getElementById('project-name-input'),
+    confirmProjectNameBtn: document.getElementById('confirm-project-name-btn'),
+    cancelProjectNameBtn: document.getElementById('cancel-project-name-btn'),
+
+    deleteProjectModal: document.getElementById('delete-project-modal'),
+    deleteProjectName: document.getElementById('delete-project-name'),
+    confirmDeleteProjectBtn: document.getElementById('confirm-delete-project-btn'),
+    cancelDeleteProjectBtn: document.getElementById('cancel-delete-project-btn'),
+
     demoLimitModal: document.getElementById('demo-limit-modal'),
     closeDemoLimitBtn: document.getElementById('close-demo-limit-btn'),
 
@@ -281,6 +292,14 @@ export function showModal(kind, data) {
     elements.deleteConvoModal.classList.remove('hidden');
   } else if (kind === 'clear-all-convos') {
     elements.clearAllConvosModal.classList.remove('hidden');
+  } else if (kind === 'project-name') {
+    elements.projectNameModal.classList.remove('hidden');
+    if (elements.projectNameInput) {
+      elements.projectNameInput.focus();
+      elements.projectNameInput.select();
+    }
+  } else if (kind === 'delete-project') {
+    elements.deleteProjectModal.classList.remove('hidden');
   }
   else if (kind === 'profile') {
     elements.profileModal.classList.remove('hidden');
@@ -302,6 +321,8 @@ export function closeModal() {
   elements.renameModal.classList.add('hidden');
   elements.deleteConvoModal.classList.add('hidden');
   if (elements.clearAllConvosModal) elements.clearAllConvosModal.classList.add('hidden');
+  if (elements.projectNameModal) elements.projectNameModal.classList.add('hidden');
+  if (elements.deleteProjectModal) elements.deleteProjectModal.classList.add('hidden');
   if (elements.demoLimitModal) elements.demoLimitModal.classList.add('hidden');
 
   if (elements.profileModal) {

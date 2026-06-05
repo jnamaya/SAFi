@@ -103,7 +103,7 @@ export function updateUIForAuthState(user) {
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         const term = e.target.value.toLowerCase();
-        const links = document.querySelectorAll('#convo-list > a'); // Select top level links only
+        const links = document.querySelectorAll('#convo-list a[data-id]'); // Loose + project-folder links
 
         links.forEach(link => {
           const titleEl = link.querySelector('.convo-title');
@@ -152,57 +152,158 @@ export function updateUIForAuthState(user) {
   }
 }
 
-/**
- * Creates the dropdown menu for conversation actions (Rename/Delete/Pin).
- */
-function createDropdownMenu(convoId, isPinned, handlers) {
+// --- Shared menu primitives (used by conversation + project dropdowns) ---
+
+const iconPinMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6z M12 15v5"></path></svg>`;
+const iconRenameMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>`;
+const iconTrashMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+const iconFolderMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path></svg>`;
+const iconChevronRightSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>`;
+const iconChevronLeftSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>`;
+const iconRemoveCircle = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14L21 3m-1 7v8a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1h8"></path></svg>`;
+
+function buildMenuContainer(menuId) {
   const menu = document.createElement('div');
-  menu.className = 'convo-menu-dropdown fixed z-50 w-36 bg-white dark:bg-neutral-800 rounded-lg shadow-xl border border-neutral-200 dark:border-neutral-700 p-1';
-  menu.dataset.menuId = convoId;
-
-  const pinButton = document.createElement('button');
-  pinButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
-  pinButton.innerHTML = isPinned ?
-    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19V6a2 2 0 012-2h10a2 2 0 012 2v13M12 4v16m-4-8h8"></path></svg>
-    <span>Unpin</span>` :
-    `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19V6a2 2 0 012-2h10a2 2 0 012 2v13M12 4v16m-4-8h8"></path></svg>
-    <span>Pin</span>`;
-  pinButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    ui.closeAllConvoMenus();
-    handlers.pinHandler(convoId, isPinned);
-  });
-  menu.appendChild(pinButton);
-
-  const renameButton = document.createElement('button');
-  renameButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
-  renameButton.innerHTML = `
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
-    <span>Rename</span>
-  `;
-  renameButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    ui.closeAllConvoMenus();
-    handlers.renameHandler(convoId, document.querySelector(`a[data-id="${convoId}"] .convo-title`).textContent);
-  });
-
-  const deleteButton = document.createElement('button');
-  deleteButton.className = "flex items-center gap-3 w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-md";
-  deleteButton.innerHTML = `
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-    <span>Delete</span>
-  `;
-  deleteButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    ui.closeAllConvoMenus();
-    handlers.deleteHandler(convoId);
-  });
-
-  menu.appendChild(renameButton);
-  menu.appendChild(deleteButton);
+  menu.className = 'convo-menu-dropdown fixed z-50 w-52 bg-white dark:bg-neutral-800 rounded-xl shadow-2xl ring-1 ring-black/[0.06] dark:ring-white/10 p-1.5';
+  menu.dataset.menuId = menuId;
   menu.addEventListener('click', (e) => e.stopPropagation());
-
   return menu;
+}
+
+/**
+ * Builds one menu row. `label` is rendered as text (safe for user-supplied names).
+ */
+function menuItem({ icon = '', label, danger = false, trailing = '', onClick }) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = [
+    'flex items-center gap-3 w-full text-left px-2.5 py-2 text-sm font-medium rounded-lg transition-colors',
+    danger
+      ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+      : 'text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/60',
+  ].join(' ');
+
+  if (icon) {
+    const iconSpan = document.createElement('span');
+    iconSpan.className = `shrink-0 ${danger ? '' : 'text-neutral-400 dark:text-neutral-500'}`;
+    iconSpan.innerHTML = icon;
+    btn.appendChild(iconSpan);
+  }
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'flex-1 truncate';
+  labelSpan.textContent = label;
+  btn.appendChild(labelSpan);
+  if (trailing) {
+    const t = document.createElement('span');
+    t.className = 'shrink-0 text-neutral-400 dark:text-neutral-500';
+    t.innerHTML = trailing;
+    btn.appendChild(t);
+  }
+  btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(e); });
+  return btn;
+}
+
+function menuDivider() {
+  const d = document.createElement('div');
+  d.className = 'my-1 mx-1 border-t border-neutral-200/80 dark:border-neutral-700/70';
+  return d;
+}
+
+function menuHeader(label, onBack) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'flex items-center gap-1.5 w-full px-2 py-1.5 mb-0.5 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors';
+  if (onBack) row.innerHTML = iconChevronLeftSmall;
+  const span = document.createElement('span');
+  span.textContent = label;
+  row.appendChild(span);
+  if (onBack) row.addEventListener('click', (e) => { e.stopPropagation(); onBack(); });
+  else row.disabled = true;
+  return row;
+}
+
+/**
+ * Renders the main conversation menu into an (existing) container element.
+ */
+function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) {
+  menu.innerHTML = '';
+
+  menu.appendChild(menuItem({
+    icon: iconPinMenu,
+    label: isPinned ? 'Unpin' : 'Pin',
+    onClick: () => { ui.closeAllConvoMenus(); handlers.pinHandler(convoId, isPinned); },
+  }));
+
+  menu.appendChild(menuItem({
+    icon: iconRenameMenu,
+    label: 'Rename',
+    onClick: () => {
+      ui.closeAllConvoMenus();
+      const titleEl = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
+      handlers.renameHandler(convoId, titleEl ? titleEl.textContent : '');
+    },
+  }));
+
+  if (typeof handlers.moveHandler === 'function') {
+    menu.appendChild(menuItem({
+      icon: iconFolderMenu,
+      label: 'Move to',
+      trailing: iconChevronRightSmall,
+      onClick: () => renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers),
+    }));
+  }
+
+  menu.appendChild(menuDivider());
+
+  menu.appendChild(menuItem({
+    icon: iconTrashMenu,
+    label: 'Delete',
+    danger: true,
+    onClick: () => { ui.closeAllConvoMenus(); handlers.deleteHandler(convoId); },
+  }));
+}
+
+/**
+ * Creates the dropdown menu for conversation actions (Pin / Rename / Move / Delete).
+ */
+function createDropdownMenu(convoId, isPinned, handlers, currentProjectId = null) {
+  const menu = buildMenuContainer(convoId);
+  populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId);
+  return menu;
+}
+
+/**
+ * Swaps the menu contents for a project picker (with a back arrow to the main menu).
+ */
+function renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers) {
+  const projects = Array.isArray(handlers.projects) ? handlers.projects : [];
+  menu.innerHTML = '';
+
+  menu.appendChild(menuHeader('Move to project',
+    () => populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId)));
+
+  if (currentProjectId) {
+    menu.appendChild(menuItem({
+      icon: iconRemoveCircle,
+      label: 'Remove from project',
+      onClick: () => handlers.moveHandler(convoId, null),
+    }));
+    if (projects.some(p => p.id !== currentProjectId)) menu.appendChild(menuDivider());
+  }
+
+  const targets = projects.filter(p => p.id !== currentProjectId);
+  if (targets.length === 0 && !currentProjectId) {
+    const empty = document.createElement('p');
+    empty.className = 'px-2.5 py-2 text-xs text-neutral-400 italic';
+    empty.textContent = 'No other projects';
+    menu.appendChild(empty);
+  } else {
+    targets.forEach(p => menu.appendChild(menuItem({
+      icon: iconFolderMenu,
+      label: p.name || 'Untitled',
+      onClick: () => handlers.moveHandler(convoId, p.id),
+    })));
+  }
 }
 
 /**
@@ -257,6 +358,126 @@ export function prependConversationLink(convo, handlers) {
       convoList.prepend(link);
     }
   }
+}
+
+/**
+ * Icons for project folders.
+ */
+const iconChevronRight = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
+const iconChevronDown = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+const iconFolder = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path></svg>`;
+const iconPlusSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>`;
+
+/**
+ * Dropdown menu for a project folder (Rename / Delete).
+ */
+function createProjectMenu(project, projectHandlers) {
+  const menu = buildMenuContainer(`project-${project.id}`);
+
+  menu.appendChild(menuItem({
+    icon: iconPlusSmall,
+    label: 'New chat',
+    onClick: () => { ui.closeAllConvoMenus(); projectHandlers.newChatHandler(project.id); },
+  }));
+  menu.appendChild(menuItem({
+    icon: iconRenameMenu,
+    label: 'Rename',
+    onClick: () => { ui.closeAllConvoMenus(); projectHandlers.renameHandler(project.id, project.name); },
+  }));
+  menu.appendChild(menuDivider());
+  menu.appendChild(menuItem({
+    icon: iconTrashMenu,
+    label: 'Delete project',
+    danger: true,
+    onClick: () => { ui.closeAllConvoMenus(); projectHandlers.deleteHandler(project.id, project.name); },
+  }));
+
+  return menu;
+}
+
+/**
+ * Renders a collapsible project folder containing its conversation links.
+ */
+export function renderProjectFolder(project, convos, isExpanded, projectHandlers, convoHandlers) {
+  ui._ensureElements();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-0.5';
+  wrap.dataset.projectId = project.id;
+
+  const header = document.createElement('div');
+  header.className = 'project-folder-header group relative flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors';
+
+  // Toggle (chevron + folder + name + count)
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'flex items-center gap-2 min-w-0 flex-1 text-left text-neutral-700 dark:text-neutral-300';
+  toggle.innerHTML = `
+    <span class="shrink-0 text-neutral-500">${isExpanded ? iconChevronDown : iconChevronRight}</span>
+    <span class="shrink-0 text-neutral-500">${iconFolder}</span>
+    <span class="project-folder-name truncate text-sm font-medium"></span>
+    <span class="shrink-0 text-xs text-neutral-400">${convos.length || ''}</span>
+  `;
+  // User-controlled name: set as text to avoid HTML injection.
+  toggle.querySelector('.project-folder-name').textContent = project.name || 'Untitled';
+  toggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    projectHandlers.toggleHandler(project.id);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'flex items-center gap-0.5 shrink-0';
+
+  const newChatBtn = document.createElement('button');
+  newChatBtn.type = 'button';
+  newChatBtn.title = 'New chat in project';
+  newChatBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
+  newChatBtn.innerHTML = iconPlusSmall;
+  newChatBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    projectHandlers.newChatHandler(project.id);
+  });
+
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.title = 'Project options';
+  menuBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
+  menuBtn.innerHTML = iconMenuDots;
+  menuBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (document.querySelector('.convo-menu-dropdown')) {
+      ui.closeAllConvoMenus();
+      return;
+    }
+    const menu = createProjectMenu(project, projectHandlers);
+    positionDropdown(menu, menuBtn);
+    ui.setOpenDropdown(menu);
+  });
+
+  actions.appendChild(newChatBtn);
+  actions.appendChild(menuBtn);
+  header.appendChild(toggle);
+  header.appendChild(actions);
+  wrap.appendChild(header);
+
+  if (isExpanded) {
+    const body = document.createElement('div');
+    body.className = 'pl-3 ml-2 border-l border-neutral-200 dark:border-neutral-800';
+    if (convos.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'px-3 py-1.5 text-xs text-neutral-400 italic';
+      empty.textContent = 'No chats yet';
+      body.appendChild(empty);
+    } else {
+      convos.forEach(convo => body.appendChild(renderConversationLink(convo, convoHandlers)));
+    }
+    wrap.appendChild(body);
+  }
+
+  return wrap;
 }
 
 /**
@@ -321,7 +542,7 @@ export function renderConversationLink(convo, handlers) {
         ui.closeAllConvoMenus();
         return;
       }
-      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers);
+      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers, convo.project_id || null);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
     }, longPressDuration);
@@ -380,7 +601,7 @@ export function renderConversationLink(convo, handlers) {
         return;
       }
 
-      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers);
+      const menu = createDropdownMenu(convo.id, convo.is_pinned, handlers, convo.project_id || null);
       positionDropdown(menu, actionButton);
       ui.setOpenDropdown(menu);
 

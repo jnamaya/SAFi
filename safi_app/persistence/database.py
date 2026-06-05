@@ -98,6 +98,27 @@ def init_db():
             )
         ''')
 
+        # --- Projects (workspaces that group conversations) ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS projects (
+                id CHAR(36) PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # Add project_id to conversations (guarded migration). ON DELETE SET NULL
+        # so deleting a project never destroys its chats — they just go loose.
+        cursor.execute("SHOW COLUMNS FROM conversations LIKE 'project_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE conversations ADD COLUMN project_id CHAR(36) NULL")
+            cursor.execute(
+                "ALTER TABLE conversations ADD CONSTRAINT fk_conv_project "
+                "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL"
+            )
+
         # --- Organizations ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS organizations (
@@ -711,20 +732,98 @@ def fetch_user_conversations(user_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id, title, is_pinned, created_at FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
+        cursor.execute("SELECT id, title, is_pinned, project_id, created_at FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
         return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()
 
-def create_conversation(user_id):
+def create_conversation(user_id, project_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cid = str(uuid.uuid4())
-        cursor.execute("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'New Conversation')", (cid, user_id))
+        # Only honor project_id if the project exists and belongs to this user,
+        # so a stale/spoofed id can never attach a chat to someone else's project.
+        valid_project_id = None
+        if project_id:
+            cursor.execute("SELECT id FROM projects WHERE id=%s AND user_id=%s", (project_id, user_id))
+            if cursor.fetchone():
+                valid_project_id = project_id
+        cursor.execute(
+            "INSERT INTO conversations (id, user_id, title, project_id) VALUES (%s, %s, 'New Conversation', %s)",
+            (cid, user_id, valid_project_id),
+        )
         conn.commit()
-        return {"id": cid, "title": "New Conversation", "is_pinned": False}
+        return {"id": cid, "title": "New Conversation", "is_pinned": False, "project_id": valid_project_id}
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- Projects (workspaces) ---
+
+def fetch_user_projects(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, name, created_at FROM projects WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_project(user_id, name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        pid = str(uuid.uuid4())
+        cursor.execute("INSERT INTO projects (id, user_id, name) VALUES (%s, %s, %s)", (pid, user_id, name))
+        conn.commit()
+        return {"id": pid, "name": name}
+    finally:
+        cursor.close()
+        conn.close()
+
+def rename_project(pid, name, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE projects SET name=%s WHERE id=%s AND user_id=%s", (name, pid, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_project(pid, user_id):
+    """Deletes the project. Conversations are preserved — the FK's ON DELETE SET
+    NULL detaches them so they fall back to the loose History list."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM projects WHERE id=%s AND user_id=%s", (pid, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+def move_conversation_to_project(cid, project_id, user_id):
+    """Assigns a conversation to a project (or detaches it when project_id is None).
+    Ownership of both the conversation and the target project is enforced."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM conversations WHERE id=%s AND user_id=%s", (cid, user_id))
+        if not cursor.fetchone():
+            return False
+        if project_id:
+            cursor.execute("SELECT id FROM projects WHERE id=%s AND user_id=%s", (project_id, user_id))
+            if not cursor.fetchone():
+                return False
+        cursor.execute("UPDATE conversations SET project_id=%s WHERE id=%s AND user_id=%s", (project_id, cid, user_id))
+        conn.commit()
+        return True
     finally:
         cursor.close()
         conn.close()
@@ -931,10 +1030,13 @@ def delete_conversation(cid, user_id=None):
         conn.close()
 
 def delete_all_conversations(user_id):
+    """Clears the user's loose (non-project) conversations only. Chats filed
+    inside a project are preserved — they're removed by deleting the project or
+    the individual chat. This matches the trash icon's placement under History."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM conversations WHERE user_id=%s", (user_id,))
+        cursor.execute("DELETE FROM conversations WHERE user_id=%s AND project_id IS NULL", (user_id,))
         conn.commit()
     finally:
         cursor.close()

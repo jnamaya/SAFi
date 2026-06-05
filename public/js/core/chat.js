@@ -14,6 +14,27 @@ export let currentConversationId = null;
 let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
 
+// --- PROJECT (WORKSPACE) STATE ---
+// `projects` holds the user's project list; `currentProjectId` is the project a
+// newly-created chat will be filed under (null = loose / no project).
+let projects = [];
+let currentProjectId = null;
+const EXPANDED_PROJECTS_KEY = 'safi_expanded_projects';
+
+function getExpandedProjects() {
+    try {
+        return new Set(JSON.parse(localStorage.getItem(EXPANDED_PROJECTS_KEY) || '[]'));
+    } catch {
+        return new Set();
+    }
+}
+
+function setProjectExpanded(projectId, expanded) {
+    const set = getExpandedProjects();
+    if (expanded) set.add(projectId); else set.delete(projectId);
+    try { localStorage.setItem(EXPANDED_PROJECTS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
 // --- FILE UPLOAD STATE ---
 let pendingFiles = [];   // array — supports multiple attachments
 
@@ -172,6 +193,148 @@ export async function handleTogglePin(id, isPinned, activeProfileData, user) {
 }
 
 
+// --- PROJECT (WORKSPACE) HANDLERS ---
+
+// Styled project modals (create/rename name prompt + delete confirm). Listeners
+// are attached once, lazily; each open swaps in a fresh pending callback.
+let _projectModalsWired = false;
+let _pendingProjectNameSubmit = null;
+let _pendingProjectDelete = null;
+
+function wireProjectModals() {
+    if (_projectModalsWired) return;
+    _projectModalsWired = true;
+
+    const input = document.getElementById('project-name-input');
+    const submitName = () => {
+        const val = (input?.value || '').trim();
+        const cb = _pendingProjectNameSubmit;
+        _pendingProjectNameSubmit = null;
+        ui.closeModal();
+        if (val && cb) cb(val);
+    };
+    document.getElementById('confirm-project-name-btn')?.addEventListener('click', submitName);
+    document.getElementById('cancel-project-name-btn')?.addEventListener('click', () => {
+        _pendingProjectNameSubmit = null;
+        ui.closeModal();
+    });
+    input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitName(); }
+    });
+
+    document.getElementById('confirm-delete-project-btn')?.addEventListener('click', () => {
+        const cb = _pendingProjectDelete;
+        _pendingProjectDelete = null;
+        ui.closeModal();
+        if (cb) cb();
+    });
+    document.getElementById('cancel-delete-project-btn')?.addEventListener('click', () => {
+        _pendingProjectDelete = null;
+        ui.closeModal();
+    });
+}
+
+function openProjectNameModal({ title, value = '', onSubmit }) {
+    wireProjectModals();
+    if (ui.elements.projectNameModalTitle) ui.elements.projectNameModalTitle.textContent = title;
+    if (ui.elements.projectNameInput) ui.elements.projectNameInput.value = value;
+    _pendingProjectNameSubmit = onSubmit;
+    ui.showModal('project-name');
+}
+
+function openDeleteProjectModal({ name, onConfirm }) {
+    wireProjectModals();
+    if (ui.elements.deleteProjectName) ui.elements.deleteProjectName.textContent = `"${name || 'Untitled'}"`;
+    _pendingProjectDelete = onConfirm;
+    ui.showModal('delete-project');
+}
+
+export function handleCreateProject(activeProfileData, user) {
+    openProjectNameModal({
+        title: 'New Project',
+        onSubmit: async (name) => {
+            try {
+                const created = await api.createProject(name);
+                if (created === 'QUEUED') {
+                    ui.showToast('Offline: cannot create a project now.', 'error');
+                    return;
+                }
+                if (created && created.id) setProjectExpanded(created.id, true);
+                await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+                ui.showToast('Project created.', 'success');
+            } catch (e) {
+                console.error('Failed to create project:', e);
+                ui.showToast('Could not create project.', 'error');
+            }
+        },
+    });
+}
+
+function handleRenameProject(projectId, oldName, activeProfileData, user) {
+    ui.closeAllConvoMenus();
+    openProjectNameModal({
+        title: 'Rename Project',
+        value: oldName || '',
+        onSubmit: async (name) => {
+            if (name === oldName) return;
+            try {
+                await api.renameProject(projectId, name);
+                await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+            } catch (e) {
+                console.error('Failed to rename project:', e);
+                ui.showToast('Could not rename project.', 'error');
+            }
+        },
+    });
+}
+
+function handleDeleteProject(projectId, name, activeProfileData, user) {
+    ui.closeAllConvoMenus();
+    // Deleting a project keeps its chats — they fall back to History.
+    openDeleteProjectModal({
+        name,
+        onConfirm: async () => {
+            try {
+                await api.deleteProject(projectId);
+                if (currentProjectId === projectId) currentProjectId = null;
+                await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+                ui.showToast('Project deleted.', 'success');
+            } catch (e) {
+                console.error('Failed to delete project:', e);
+                ui.showToast('Could not delete project.', 'error');
+            }
+        },
+    });
+}
+
+function handleToggleProject(projectId, activeProfileData, user) {
+    const expanded = getExpandedProjects().has(projectId);
+    setProjectExpanded(projectId, !expanded);
+    refreshConvoListOnly(activeProfileData, user, ui.showModal);
+}
+
+function handleNewChatInProject(projectId, activeProfileData, user) {
+    setProjectExpanded(projectId, true);
+    startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user), projectId);
+    if (window.innerWidth < 768) ui.closeSidebar();
+}
+
+async function handleMoveConversation(convoId, projectId, activeProfileData, user) {
+    ui.closeAllConvoMenus();
+    try {
+        await cache.updateConvoInList(convoId, { project_id: projectId });
+        if (projectId) setProjectExpanded(projectId, true);
+        const res = await api.moveConversationToProject(convoId, projectId);
+        if (res === 'QUEUED') {
+            ui.showToast('Move queued.', 'info');
+        }
+        await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+    } catch (e) {
+        console.error('Failed to move conversation:', e);
+        ui.showToast('Could not move conversation.', 'error');
+    }
+}
+
 // --- HELPER: Create Prompt Handler ---
 // This ensures that "New Chat" buttons always have a working prompt click handler
 function createDefaultPromptHandler(activeProfileData, user) {
@@ -213,11 +376,16 @@ export async function loadConversations(activeProfileData, user, promptClickHand
 
     try {
         // 2. Fetch fresh data (uses offlineManager/cache)
-        const response = await api.fetchConversations();
+        const [response, projectResponse] = await Promise.all([
+            api.fetchConversations(),
+            api.fetchProjects().catch(() => []),
+        ]);
 
         const conversations = Array.isArray(response) ? response
             : (response && Array.isArray(response.conversations)) ? response.conversations
                 : [];
+
+        projects = Array.isArray(projectResponse) ? projectResponse : [];
 
         // 3. Save new list and render if different
         await cache.saveConvoList(conversations);
@@ -272,29 +440,70 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     convoList.innerHTML = '';
 
-    // --- NEW: Sorting Logic (Pinned first, then by date) ---
-    conversations.sort((a, b) => {
-        // Pinned conversations always come first
-        if (a.is_pinned !== b.is_pinned) {
-            return a.is_pinned ? -1 : 1;
-        }
-        // Then sort by last_updated (most recent first)
+    // Pinned first, then most-recently-updated.
+    const sortConvos = (list) => list.sort((a, b) => {
+        if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
         const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
         const dateB = b.last_updated ? new Date(b.last_updated) : new Date(0);
         return dateB - dateA;
     });
+    sortConvos(conversations);
 
     const handlers = {
         switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal, true), // Click always switches/scrolls
         // NOTE: handleRename, handleDelete, handleTogglePin are now defined at the module top level.
         renameHandler: handleRename,
         deleteHandler: handleDelete,
-        pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user) // Pass all args
+        pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user), // Pass all args
+        moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
+        projects: projects,
     };
 
-    // Separate pinned and unpinned lists
-    const pinnedConversations = conversations.filter(c => c.is_pinned);
-    const unpinnedConversations = conversations.filter(c => !c.is_pinned);
+    // --- PROJECTS SECTION (workspaces that group conversations) ---
+    const projectIds = new Set(projects.map(p => p.id));
+    const convosByProject = {};
+    projects.forEach(p => { convosByProject[p.id] = []; });
+    conversations.forEach(c => {
+        if (c.project_id && projectIds.has(c.project_id)) {
+            convosByProject[c.project_id].push(c);
+        }
+    });
+
+    const projHeader = document.createElement('div');
+    projHeader.className = 'px-3 mt-2 mb-1 flex items-center justify-between';
+    const projTitle = document.createElement('h3');
+    projTitle.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+    projTitle.textContent = 'Projects';
+    const newProjBtn = document.createElement('button');
+    newProjBtn.type = 'button';
+    newProjBtn.title = 'New project';
+    newProjBtn.className = 'flex items-center gap-1 text-[11px] font-semibold text-neutral-500 hover:text-green-600 dark:hover:text-green-400 transition-colors uppercase tracking-wider';
+    newProjBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg><span>New</span>`;
+    newProjBtn.addEventListener('click', (e) => { e.stopPropagation(); handleCreateProject(activeProfileData, user); });
+    projHeader.appendChild(projTitle);
+    projHeader.appendChild(newProjBtn);
+    convoList.appendChild(projHeader);
+
+    const expanded = getExpandedProjects();
+    const projectHandlers = {
+        toggleHandler: (pid) => handleToggleProject(pid, activeProfileData, user),
+        newChatHandler: (pid) => handleNewChatInProject(pid, activeProfileData, user),
+        renameHandler: (pid, name) => handleRenameProject(pid, name, activeProfileData, user),
+        deleteHandler: (pid, name) => handleDeleteProject(pid, name, activeProfileData, user),
+    };
+
+    projects.forEach(project => {
+        const projConvos = sortConvos(convosByProject[project.id] || []);
+        const folder = uiAuthSidebar.renderProjectFolder(
+            project, projConvos, expanded.has(project.id), projectHandlers, handlers
+        );
+        convoList.appendChild(folder);
+    });
+
+    // Loose conversations (no project) keep the original Pinned / History layout.
+    const looseConversations = conversations.filter(c => !c.project_id || !projectIds.has(c.project_id));
+    const pinnedConversations = looseConversations.filter(c => c.is_pinned);
+    const unpinnedConversations = looseConversations.filter(c => !c.is_pinned);
 
     if (pinnedConversations.length > 0) {
         const pinnedHeader = document.createElement('h3');
@@ -319,7 +528,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         const clearBtn = document.createElement('button');
         clearBtn.id = 'clear-all-convos-button';
         clearBtn.type = 'button';
-        clearBtn.title = 'Clear all chats';
+        clearBtn.title = 'Clear History';
         clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
         clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
 
@@ -344,7 +553,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         const clearBtn = document.createElement('button');
         clearBtn.id = 'clear-all-convos-button';
         clearBtn.type = 'button';
-        clearBtn.title = 'Clear all chats';
+        clearBtn.title = 'Clear History';
         clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
         clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
 
@@ -361,9 +570,13 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 }
 
 
-export async function startNewConversation(isInitialLoad = false, activeProfileData, user, promptClickHandler) {
+export async function startNewConversation(isInitialLoad = false, activeProfileData, user, promptClickHandler, projectId = null) {
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
+
+    // The next created chat lands in this project (null = loose). The global
+    // "New Chat" button passes no projectId, so it always clears the context.
+    currentProjectId = projectId;
 
     if (!isInitialLoad) {
         currentConversationId = null;
@@ -611,7 +824,8 @@ export async function sendMessage(activeProfileData, user) {
     if (!currentConversationId) {
         isNewConversation = true;
         try {
-            const newConvo = await api.createNewConversation();
+            // currentProjectId files the chat under a project when one is active.
+            const newConvo = await api.createNewConversation(currentProjectId);
 
             if (newConvo === 'QUEUED') {
                 ui.showToast('Offline: Cannot start new chat now.', 'error');
@@ -624,18 +838,29 @@ export async function sendMessage(activeProfileData, user) {
                 id: newConvo.id,
                 title: 'Untitled',
                 last_updated: new Date().toISOString(),
-                is_pinned: newConvo.is_pinned === true
+                is_pinned: newConvo.is_pinned === true,
+                project_id: newConvo.project_id || currentProjectId || null
             };
             await cache.updateConvoInList(newConvo.id, newConvoMeta);
 
-            const handlers = {
-                switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true),
-                renameHandler: handleRename,
-                deleteHandler: handleDelete,
-                pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user)
-            };
-            uiAuthSidebar.prependConversationLink(newConvoMeta, handlers);
-            uiAuthSidebar.setActiveConvoLink(currentConversationId);
+            if (newConvoMeta.project_id) {
+                // A project chat must land inside its folder, not the loose list —
+                // a full list re-render groups it correctly.
+                setProjectExpanded(newConvoMeta.project_id, true);
+                await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+                uiAuthSidebar.setActiveConvoLink(currentConversationId);
+            } else {
+                const handlers = {
+                    switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true),
+                    renameHandler: handleRename,
+                    deleteHandler: handleDelete,
+                    pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user),
+                    moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
+                    projects: projects,
+                };
+                uiAuthSidebar.prependConversationLink(newConvoMeta, handlers);
+                uiAuthSidebar.setActiveConvoLink(currentConversationId);
+            }
 
         } catch (error) {
             console.error('Failed to create new conversation on send:', error);
@@ -1140,7 +1365,9 @@ export async function handleConfirmDelete(activeProfileData, user) {
 
 export async function handleConfirmClearAll(activeProfileData, user) {
     try {
-        await cache.saveConvoList([]); // Optimistic UI update
+        // Optimistic UI: drop only loose (non-project) chats; project chats stay.
+        const kept = (await cache.loadConvoList()).filter(c => c.project_id);
+        await cache.saveConvoList(kept);
         currentConversationId = null;
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
         await startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
