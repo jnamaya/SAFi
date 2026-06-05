@@ -1,6 +1,6 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.5  
+> **Version:** 1.6  
 > **Last Updated:** 2026-06-05  
 > **Status:** Aligned with code implementation
 
@@ -28,7 +28,8 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 | $L_t = \{(v_i, s_{i,t}, c_{i,t})\}$ | Conscience ledger per value |
 | $s_{i,t} \in [-1.0, 1.0]$ | Alignment score for value $v_i$ (continuous float) |
 | $c_{i,t} \in [0, 1]$ | Confidence for value $v_i$ |
-| $S_t \in [1, 10]$ | Spirit coherence score |
+| $A_t \in [0, 1]$ | Aggregate alignment score (gating quantity consumed by Will Pass 3) |
+| $S_t \in [1, 10]$ | Spirit coherence score (display/audit quantity) |
 | $M_t$ | Memory state (prior audits, profiles, aggregates) |
 
 ---
@@ -42,18 +43,30 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 │ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────────┐ ┌────────┐ ┌────────┐    │
 │ │Phase Zero│─▶│Intellect │─▶│Will P1 │─▶│Conscience │─▶│Will P2 │─▶│Spirit  │ │
 │ └──────────┘ └──────────┘ │structur│ └───────────┘ │hard-   │ └────────┘    │
-│                   │       │-al     │               │gate    │      │         │
-│                   │       └────────┘               └────────┘      │         │
-│                   │           │                         │      ┌────────┐    │
-│                   │      [violation]               [violation] │Will P3 │    │
-│                   │           ▼                               │alignmnt│    │
-│                   │     ┌──────────┐                          └────────┘    │
-│                   └────▶│Reflexion │──▶ Retry once                │         │
-│                         └──────────┘                         [violation]    │
-│                                                                    ▼         │
-│                                                               Rephrase       │
-│                                                                    │         │
-│                                                                    ▼         │
+│      │            (P2)    │-al     │      (P4)     │gate    │      │  (P5)   │
+│      │                    └────────┘               │ (P4.5) │ ┌────────┐    │
+│      │                        │                    └────────┘ │Will P3 │    │
+│ [unsafe]                 [violation]                   │      │alignmnt│    │
+│      │                        ▼                    [violation]└────────┘    │
+│      │                  redirect (no              │     │          │        │
+│      │                   reflexion)          redirect    │   [violation:    │
+│      │                                                   │  low_align /     │
+│      │                                                   │  ethical]        │
+│      │                                                   │        ▼         │
+│      │                                                   │  ┌──────────┐    │
+│      │                                                   │  │Reflexion │    │
+│      │                                                   │  │(regen →  │    │
+│      │                                                   │  │ re-audit)│    │
+│      │                                                   │  └──────────┘    │
+│      │                                                   │   Retry once     │
+│      │                                                   │        │         │
+│      │                                                   │  still violation?│
+│      │                                                   │  ├ low_align →   │
+│      │                                                   │  │  commit best  │
+│      │                                                   │  └ ethical →     │
+│      ▼                                                   ▼     redirect      │
+│  redirect ◀────────────────────────────────────────────┘        │         │
+│                                                                   ▼         │
 │                                                             Return to User   │
 └────────────────────────────────────────────────────────────────────────────────┘
                          │
@@ -65,6 +78,10 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 │  └─────────────────────────┘   └──────────────────────────────────┘           │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The only reflexion retry in the pipeline is the one driven by **Will Pass 3**
+(Spirit alignment). Will Pass 1 (structural) and Will Pass 2 (hard-gate)
+short-circuit straight to a governed redirect with no retry.
 
 ---
 
@@ -88,16 +105,21 @@ $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lo
 
 $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
 
-**3. Entropy heuristic** — flags high-entropy payloads followed by embedded instruction
-markers (catches obfuscated injections that evade signature matching). A minimum length
-guard prevents false positives on short strings where entropy is statistically unstable:
+**3. Entropy heuristic** — flags a high-entropy payload *prefix* followed later by embedded
+instruction markers (catches obfuscated injections that evade signature matching). A minimum
+length guard prevents false positives on short strings where entropy is statistically
+unstable. Entropy is measured over the first $\tau_{\text{sample}}$ characters only; the
+instruction marker must appear in the remainder *after* that prefix:
 
-$$|x_t| > \tau_{\text{len}} \quad \wedge \quad H(x_t) > \tau_H \quad \wedge \quad \text{has-instr-marker}(x_t)$$
+$$\text{pre} = x_t[:\tau_{\text{sample}}], \quad \text{rem} = x_t[\tau_{\text{sample}}:]$$
 
-$$H(x_t) = -\sum_c P(c) \log_2 P(c)$$
+$$|x_t| \geq \tau_{\text{len}} \quad \wedge \quad H(\text{pre}) \geq \tau_H \quad \wedge \quad \text{has-instr-marker}(\text{rem})$$
 
-Where $\tau_{\text{len}} = 150$ chars (configurable via `MIN_LENGTH_FOR_ENTROPY_CHECK`)
-and $\tau_H = 4.5$ bits/char (configurable via `ENTROPY_THRESHOLD`).
+$$H(s) = -\sum_c P(c) \log_2 P(c)$$
+
+Where $\tau_{\text{len}} = 150$ chars (configurable via `MIN_LENGTH_FOR_ENTROPY_CHECK`),
+$\tau_{\text{sample}} = 300$ chars (`ENTROPY_SAMPLE_LENGTH`), and $\tau_H = 4.5$ bits/char
+(configurable via `ENTROPY_THRESHOLD`). Markers come from `EMBEDDED_INSTRUCTION_MARKERS`.
 
 **If any check fails** → `trigger_persona_redirect(violation_type=gate_reason)` and return.  
 **If all pass** → proceed to Stage 1.
@@ -131,67 +153,94 @@ interleaved with Conscience and Spirit. Each pass is binary: approve or violatio
 
 Evaluates the Intellect's draft directly against structural invariants:
 
-$$D^1_t, E^1_t = W_1(a_t, x_t, V)$$
+$$D^1_t, E^1_t = W_1(a_t)$$
 
-Checks in order:
-1. Required disclaimers present in $a_t$
-2. No banned markdown syntax in $a_t$
+Checks in order (`evaluate_draft_structure`):
+1. Required disclaimer substring present in $a_t$ (when `require_disclaimer` is set)
+2. Code-fence policy: a non-empty `allowed_markdown_syntaxes` whitelist blocks any
+   fence not explicitly permitted; otherwise a legacy `banned_markdown_syntaxes`
+   blacklist applies.
 
-**If $D^1_t = \text{violation}$** → proceed to Stage 2.1 (Reflexion Retry).  
+**If $D^1_t = \text{violation}$** → call `trigger_persona_redirect()` immediately.
+There is **no reflexion retry at this pass.**  
 **If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
 
 ### Pass 2 — Hard-Gate Check (after Conscience, before Spirit)
 
-Evaluates the Conscience ledger for hard-gate failures:
+Evaluates the Conscience ledger for hard-gate failures (`evaluate_hard_gates`):
 
-$$D^2_t, E^2_t = W_2(L_t)$$
+$$D^2_t, E^2_t = W_2(L_t, V)$$
 
 Any value flagged `hard_gate=true` with score $\leq -1$ triggers immediate violation.
+The check is **fail-closed**: if a hard-gate value is missing from the ledger (Conscience
+omitted it or returned a garbled ledger), that too is a violation (`hard_gate_unscored`).
+The violation reason is mapped per value via `HARD_GATE_VIOLATION_REASONS`
+(e.g. `Scope Compliance → scope_violation`, `Grounding Fidelity → grounding_violation`),
+defaulting to `hard_gate_violation`. Hard-gate values carry `weight = 0.0` and are excluded
+from the Spirit EMA.
 
 **If $D^2_t = \text{violation}$** → call `trigger_persona_redirect()`.  
 **If $D^2_t = \text{approve}$** → proceed to Stage 4 (Spirit).
 
-### Pass 3 — Alignment Check (after Spirit)
+### Pass 3 — Alignment Check (after Spirit aggregation)
 
-Evaluates Spirit's aggregate alignment assessment:
+Consumes Spirit's aggregate assessment $(\text{critical\_violation},\ A_t)$ produced by
+`SpiritIntegrator.integrate()` — **not** the $[1,10]$ coherence score $S_t$
+(`evaluate_spirit_score`):
 
-$$D^3_t, E^3_t = W_3(S_t)$$
+$$D^3_t, E^3_t = W_3(\text{critical\_violation}_t,\ A_t)$$
 
-Triggers violation if `critical_violation` flag is set or alignment score $< 0.5$.
+- If `critical_violation` is set → violation with reason `ethical_violation`.
+- Else if $A_t < \theta$ → violation with reason `low_alignment_score`.
 
-**If $D^3_t = \text{violation}$** → Intellect rephrases once under Spirit's directive;
-if rephrase also fails, call `trigger_persona_redirect()`.  
+The threshold $\theta$ resolves agent-specific override
+(`will_rules.structural_requirements.alignment_score_threshold`) → instance default
+(`SPIRIT_ALIGNMENT_THRESHOLD`, $0.5$).
+
+**If $D^3_t = \text{violation}$** → run **Stage 2.1 (Reflexion Retry)** once. After the retry,
+the outcome depends on the residual reason:
+- `low_alignment_score` (a soft quality signal) → **commit the best available draft** with
+  its honest low score recorded. SAFi does **not** vacuum-redirect on residual low alignment;
+  scope/injection are already gated at Phase 0 / Pass 2.
+- `ethical_violation` (critical) → call `trigger_persona_redirect()`.
+
 **If $D^3_t = \text{approve}$** → return $a_t$ to user.
 
-**Code Reference:** [`will.py`](../safi_app/core/faculties/will.py)
+**Code Reference:** [`will.py`](../safi_app/core/faculties/will.py),
+[`orchestrator.py#Phase5`](../safi_app/core/orchestrator.py)
 
 ---
 
 ## Stage 2.1: Reflexion Retry
 
-When the Will blocks a response, the system attempts self-correction (single retry):
+Triggered **only by Will Pass 3** (Spirit alignment violation — `ethical_violation` or
+`low_alignment_score`). The system attempts self-correction exactly once. Will Pass 1 and
+Pass 2 violations do **not** reach this stage; they redirect directly.
 
-**Step 1:** Construct reflexion prompt incorporating violation feedback:
-$$x'_t = x_t \oplus E_t$$
+**Step 1:** Construct reflexion prompt embedding the original draft and the persona's
+rephrase directive for the violation reason
+(`internal_rephrase_directives[E_t]`, falling back to `ethical_violation`):
+$$x'_t = x_t \oplus a_t \oplus \text{directive}(E^3_t)$$
 
-**Step 2:** Generate corrected draft:
+**Step 2:** Generate corrected draft (the original retrieved context is reused):
 $$a'_t, r'_t = I(x'_t, V, M_t)$$
 
-**Step 3:** Re-evaluate with Will Pass 1:
-$$D'^1_t, E'^1_t = W_1(a'_t, x_t, V)$$
+**Step 3:** Re-run the **Conscience → Spirit aggregation → Will Pass 3** segment on the
+corrected draft (not Pass 1):
+$$L'_t = C(a'_t, x_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integrate}(L'_t), \quad D'^3_t, E'^3_t = W_3(\text{critical\_violation}', A'_t)$$
 
-**If $D'^1_t = \text{approve}$:**
-- Adopt corrected response: $a_t \leftarrow a'_t$
-- Proceed to **Stage 3 (Conscience)** — the corrected draft continues through
-  the full remaining pipeline: Conscience → $W_2$ → Spirit → $W_3$
+**If $D'^3_t = \text{approve}$:**
+- Adopt the corrected response and its re-audited ledger:
+  $a_t \leftarrow a'_t,\ L_t \leftarrow L'_t$
+- Continue to the Spirit memory update (Stage 4 `compute`).
 
-**If $D'^1_t = \text{violation}$:**
-- Call `trigger_persona_redirect()` — the user always receives a governed
-  redirect response; SAFi never returns a hard rejection or silence.
-- Record event: $\{t, x_t, a_t, a'_t, D_t, E_t, D'^1_t, E'^1_t\}$
-- Abort downstream stages
+**If $D'^3_t = \text{violation}$:**
+- `low_alignment_score` → commit the best available draft ($a_t \leftarrow a'_t$ if produced)
+  with its low score recorded. SAFi never returns silence or an empty redirect for a soft
+  quality dip.
+- `ethical_violation` → call `trigger_persona_redirect()`.
 
-**Code Reference:** [`orchestrator.py#L339-393`](../safi_app/core/orchestrator.py)
+**Code Reference:** [`orchestrator.py#L738-818`](../safi_app/core/orchestrator.py)
 
 ---
 
@@ -215,13 +264,35 @@ but scores are defined and processed as continuous floats — no discretization 
 
 ## Stage 4: Spirit
 
+The Spirit faculty exposes **two distinct computations** that must not be conflated:
+
+- `integrate()` → the **gating** assessment $(\text{critical\_violation},\ A_t)$ consumed by
+  Will Pass 3 (computed *before* the gate decision).
+- `compute()` → the **memory/display** quantities $(S_t, \mu_t, d_t)$ updated *after* the
+  draft is committed.
+
+### Alignment Aggregation (`integrate`) — gating
+
+For each active value, the per-value score is rescaled $[-1,1] \rightarrow [0,1]$ and
+combined as a **weight-normalized average**. Confidence is **not** used here. A value
+missing from the ledger defaults to neutral ($0.5$):
+
+$$A_t = \frac{\sum_i w_i \cdot \frac{s_{i,t} + 1}{2}}{\sum_i w_i}$$
+
+$$\text{critical\_violation}_t = \exists\, i : \text{hard\_gate}(v_i) \wedge s_{i,t} \leq -1$$
+
+**Fail-closed:** if the agent has values but the ledger scored *none* of them
+($\text{matched} = 0$), `integrate` returns $\text{critical\_violation} = \text{true},\ A_t = 0$
+rather than coasting at the neutral default.
+
 ### Profile Vector
 
 $$p_t = w \odot s_t$$
 
-### Spirit Score Computation
+### Spirit Coherence Score (`compute`) — display/audit
 
-The raw aggregate is clipped to $[-1, 1]$ and linearly rescaled to $[1, 10]$:
+Distinct from $A_t$: the raw aggregate **uses confidence**, is clipped to $[-1, 1]$, then
+linearly rescaled to $[1, 10]$:
 
 $$\text{raw}_t = \text{clip}\!\left(\sum_i w_i \cdot s_{i,t} \cdot c_{i,t},\ -1,\ 1\right)$$
 
@@ -271,11 +342,12 @@ non-content scores.
 |---------|-----------|
 | Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
 | Intellect | $I: (x_t, V, M_t) \rightarrow (a_t, r_t)$ |
-| Will — Pass 1 | $W_1: (a_t, x_t, V) \rightarrow (D^1_t, E^1_t)$ |
+| Will — Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
 | Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
-| Will — Pass 2 | $W_2: L_t \rightarrow (D^2_t, E^2_t)$ |
-| Spirit | $S: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
-| Will — Pass 3 | $W_3: S_t \rightarrow (D^3_t, E^3_t)$ |
+| Will — Pass 2 | $W_2: (L_t, V) \rightarrow (D^2_t, E^2_t)$ |
+| Spirit (integrate) | $\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)$ |
+| Will — Pass 3 | $W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)$ |
+| Spirit (compute) | $\text{compute}: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
 
 ---
 
@@ -316,8 +388,11 @@ Ollama via configuration; see
    (`-1.0 = Confusing`, `0.0 = Vague`, `1.0 = Clear`) but scores arrive as
    continuous floats. No rounding is applied in code.
 
-2. **Spirit scaling:** Score is mapped from $[-1, 1] \rightarrow [1, 10]$ via
-   linear transformation `(raw + 1) / 2 * 9 + 1`, then rounded to the nearest integer.
+2. **Two Spirit aggregations:** `integrate` produces the gating alignment $A_t \in [0,1]$
+   (weight-normalized average of rescaled scores, **confidence-free**) consumed by Will Pass 3.
+   `compute` produces the display coherence score $S_t \in [1,10]$ (**confidence-weighted**,
+   clipped, then mapped `(raw + 1) / 2 * 9 + 1` and rounded). They are independent numbers;
+   the $0.5$ gate threshold applies to $A_t$, never to $S_t$.
 
 3. **No hard rejections:** SAFi never returns silence or an error to the user.
    Every violation — including double Will failure (main + reflexion) — routes

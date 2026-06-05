@@ -57,9 +57,9 @@ The Spirit faculty acts as the integrator and is pure Python using NumPy. It ing
 
 The architecture maintains alignment through a strict execution circuit:
 
-The Will distinguishes between two kinds of failure here. If the Conscience flags a critical violation (any single value scored at -1.0), the Will catches it and triggers a Reflexion Loop, forcing the Intellect to rewrite the response using targeted coaching notes. If instead the aggregate Spirit score simply falls below the user-defined threshold (e.g., < 5) without any critical violation, the Will does not attempt a rewrite; it routes directly to a governed redirect.
+The Will distinguishes between two kinds of failure here. A **hard-gate** breach — a *non-negotiable* value (`hard_gate=true`) scoring $\leq -1$ — is caught deterministically before the Spirit aggregation (Will Pass 2) and routed **directly to a governed redirect**, with no rewrite. Everything else flows into the aggregate alignment score $A_t \in [0,1]$ (Will Pass 3). If $A_t$ falls below the threshold ($0.5$ by default, configurable per agent), or the aggregation flags a critical violation, the Will triggers a **single Reflexion Loop**, forcing the Intellect to rewrite the response using the persona's coaching directive, then re-auditing the corrected draft through Conscience and Spirit.
 
-To prevent infinite loops, if a rewritten output fails a second time, the Will halts the thread entirely and routes to a governed redirect.
+The two failure modes diverge if the rewrite still fails. A residual **low alignment score** is treated as a soft quality signal: the Will commits the best available draft with its honest low score recorded — it does *not* discard the user's request via a vacuum redirect. Only a residual **critical (ethical) violation** routes to a governed redirect. Scope and injection breaches are already gated upstream (Phase 0 and Will Pass 2), so they never reach this rewrite path.
 
 If the output passes all gates, the data coordinates are saved to the history database, and the clean response is released for Safe Execution.
 
