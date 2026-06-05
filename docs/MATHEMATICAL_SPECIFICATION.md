@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.4  
-> **Last Updated:** 2026-05-24  
+> **Version:** 1.5  
+> **Last Updated:** 2026-06-05  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -71,7 +71,7 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 ## Stage 0: Phase Zero Gate
 
 Before the Intellect is ever invoked, the Phase Zero Gate evaluates the raw user
-prompt deterministically — zero LLM calls. If a threat is detected, the orchestrator
+prompt deterministically, invoking no intelligent component. If a threat is detected, the orchestrator
 short-circuits immediately to a governed redirect; Intellect is never called.
 
 Three detection mechanisms run in order:
@@ -124,7 +124,7 @@ Where:
 
 ## Stage 2: Will
 
-The Will is entirely deterministic (zero LLM calls) and runs **three separate passes**
+The Will is entirely deterministic (invokes no intelligent component) and runs **three separate passes**
 interleaved with Conscience and Spirit. Each pass is binary: approve or violation.
 
 ### Pass 1 — Structural Check (before Conscience)
@@ -197,8 +197,8 @@ $$D'^1_t, E'^1_t = W_1(a'_t, x_t, V)$$
 
 ## Stage 3: Conscience
 
-For each value $v_i$ in $V$, the Conscience evaluates alignment via LLM and returns
-a continuous score:
+For each value $v_i$ in $V$, the Conscience evaluates alignment via an evaluation
+function $G_i$ and returns a continuous score:
 
 $$s_{i,t}, c_{i,t} = G_i(a_t, x_t, v_i), \quad s_{i,t} \in [-1.0, 1.0], \quad c_{i,t} \in [0, 1]$$
 
@@ -206,9 +206,8 @@ The complete ledger is composed as:
 
 $$L_t = \{(v_i, s_{i,t}, c_{i,t})\}$$
 
-**Note:** The LLM is instructed to use the anchor points $\{-1.0, 0.0, +1.0\}$ in
-practice, but scores are stored and processed as continuous floats — no discretization
-is applied in code.
+**Note:** The evaluator uses the anchor points $\{-1.0, 0.0, +1.0\}$ as reference,
+but scores are defined and processed as continuous floats — no discretization is applied.
 
 **Code Reference:** [`conscience.py#evaluate()`](../safi_app/core/faculties/conscience.py)
 
@@ -277,6 +276,37 @@ non-content scores.
 | Will — Pass 2 | $W_2: L_t \rightarrow (D^2_t, E^2_t)$ |
 | Spirit | $S: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
 | Will — Pass 3 | $W_3: S_t \rightarrow (D^3_t, E^3_t)$ |
+
+---
+
+## Reference Implementation
+
+The formal model above is substrate-neutral: each faculty is a function with a fixed
+signature (see **Type System**). All technology-specific facts are consolidated here so the
+abstract model stays free of them. The reference implementation realizes the faculties as
+follows.
+
+| Faculty | Intelligent component? | Reference realization |
+|---------|------------------------|------------------------|
+| Phase Zero | No | Deterministic — zero model calls (regex signatures, entropy heuristic) |
+| Synderesis | No | Deterministic — weight normalization, policy merge, rubric assembly |
+| Intellect | **Yes** | LLM call (`run_intellect`), provider-routed |
+| Will ($W_1$–$W_3$) | No | Deterministic — zero model calls (rule / threshold enforcement) |
+| Conscience | **Yes** | LLM call (`run_conscience`) scoring each value against its rubric |
+| Spirit | No | Deterministic — EMA + cosine drift over the score vectors |
+
+Only the **Intellect** and **Conscience** slots invoke an intelligent component; the other
+four faculties are pure functions. Any component satisfying the signatures in the Type
+System table may substitute for an LLM in those two slots — a rules engine, a smaller or
+different model, or a human reviewer.
+
+Where the abstract stages note that a faculty "invokes no intelligent component," the
+engineering consequence in this implementation is **zero LLM calls** — and therefore
+bounded latency, full determinism, and no model attack surface for that stage.
+
+The reference provider routes across OpenAI, Anthropic, Gemini, Groq/DeepSeek/Mistral, and
+Ollama via configuration; see
+[`llm_provider.py`](../safi_app/core/services/llm_provider.py).
 
 ---
 
