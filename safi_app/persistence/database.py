@@ -200,10 +200,21 @@ def init_db():
                 note VARCHAR(500),
                 created_by VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uniq_policy_version (policy_id, version),
-                FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
+                UNIQUE KEY uniq_policy_version (policy_id, version)
             )
         ''')
+        # No FK to policies: version snapshots are self-contained and immutable, and must
+        # survive policy deletion so an auditor can always retrieve the exact version that
+        # ran. Drop the legacy CASCADE FK on existing installs.
+        cursor.execute("""
+            SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'policy_versions'
+              AND REFERENCED_TABLE_NAME = 'policies' LIMIT 1
+        """)
+        _pv_fk = cursor.fetchone()
+        if _pv_fk:
+            cursor.execute(f"ALTER TABLE policy_versions DROP FOREIGN KEY {_pv_fk[0]}")
+            logging.info("Dropped policy_versions FK; version history now survives policy deletion.")
         cursor.execute("SHOW COLUMNS FROM policies LIKE 'version'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE policies ADD COLUMN version INT NOT NULL DEFAULT 1")
