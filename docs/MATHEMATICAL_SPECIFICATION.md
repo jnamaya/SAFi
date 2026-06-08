@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.6  
-> **Last Updated:** 2026-06-05  
+> **Version:** 1.7  
+> **Last Updated:** 2026-06-08  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -338,8 +338,9 @@ non-content scores.
 
 ## Type System
 
-| Faculty | Signature |
+| Stage | Signature |
 |---------|-----------|
+| Synderesis (compile-time) | $\Sigma: \text{policy} \rightarrow (V, R, \text{scope})$ — normalized value set $V$, rubric set $R$, scope bounds |
 | Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
 | Intellect | $I: (x_t, V, M_t) \rightarrow (a_t, r_t)$ |
 | Will — Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
@@ -349,16 +350,18 @@ non-content scores.
 | Will — Pass 3 | $W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)$ |
 | Spirit (compute) | $\text{compute}: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
 
+**Faculties vs. stages.** The rows above are pipeline *stages*, not a list of faculties. SAFi has **five faculties** — *Synderesis, Intellect, Will, Conscience, Spirit* — the moral-cognitive core inherited from the SAF framework. Some faculties span several stages here (the Will's three passes; Spirit's `integrate` and `compute`). And **Phase Zero is not a faculty**: it is a deterministic input-threat *gate* — a perimeter that exists only because the system runs in an adversarial environment the philosophical framework never assumed. Its nearest classical analog is not a faculty of reason but the *sensitive* soul's estimative power (*vis aestimativa*), which perceives a thing as threatening before reason engages — precisely why it sits outside the five.
+
 ---
 
 ## Reference Implementation
 
-The formal model above is substrate-neutral: each faculty is a function with a fixed
+The formal model above is substrate-neutral: each stage is a function with a fixed
 signature (see **Type System**). All technology-specific facts are consolidated here so the
-abstract model stays free of them. The reference implementation realizes the faculties as
+abstract model stays free of them. The reference implementation realizes each stage as
 follows.
 
-| Faculty | Intelligent component? | Reference realization |
+| Stage | Intelligent component? | Reference realization |
 |---------|------------------------|------------------------|
 | Phase Zero | No | Deterministic — zero model calls (regex signatures, entropy heuristic) |
 | Synderesis | No | Deterministic — weight normalization, policy merge, rubric assembly |
@@ -368,7 +371,7 @@ follows.
 | Spirit | No | Deterministic — EMA + cosine drift over the score vectors |
 
 Only the **Intellect** and **Conscience** slots invoke an intelligent component; the other
-four faculties are pure functions. Any component satisfying the signatures in the Type
+stages are pure functions. Any component satisfying the signatures in the Type
 System table may substitute for an LLM in those two slots — a rules engine, a smaller or
 different model, or a human reviewer.
 
