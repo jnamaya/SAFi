@@ -56,6 +56,23 @@
       }
     }
 
+    /* Control Panel nav: give labels primacy and let icons recede to supporting glyphs */
+    #sidebar-nav .sidebar-item {
+      font-size: 0.9375rem;   /* 15px label — a touch more legible than the icons */
+      line-height: 1.25rem;
+    }
+    #sidebar-nav .sidebar-item svg {
+      width: 1.125rem;        /* 18px (was 20px) */
+      height: 1.125rem;
+      stroke-width: 1.5;      /* lighter than the default 2px stroke */
+      flex-shrink: 0;
+      opacity: 0.65;          /* recede until hovered/active */
+    }
+    #sidebar-nav .sidebar-item:hover svg,
+    #sidebar-nav .sidebar-item.active svg {
+      opacity: 1;
+    }
+
     /* FIX: Force audit modal to true full-screen on mobile (iOS Safari inset-0 quirk) */
     @media (max-width: 639px) {
       #conscience-modal {
