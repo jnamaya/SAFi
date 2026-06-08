@@ -181,6 +181,44 @@ def update_policy(policy_id):
         current_app.logger.error(f"update_policy error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
+@policy_api_bp.route('/policies/<policy_id>/versions', methods=['GET'], strict_slashes=False)
+def list_policy_version_history(policy_id):
+    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
+    try:
+        if not db.get_policy(policy_id): return jsonify({"error": "Not found"}), 404
+        return jsonify({"ok": True, "versions": db.list_policy_versions(policy_id)})
+    except Exception as e:
+        current_app.logger.error(f"list_policy_versions error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@policy_api_bp.route('/policies/<policy_id>/versions/<int:version>', methods=['GET'], strict_slashes=False)
+def get_policy_version_detail(policy_id, version):
+    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
+    try:
+        v = db.get_policy_version(policy_id, version)
+        if not v: return jsonify({"error": "Version not found"}), 404
+        return jsonify({"ok": True, "version": v})
+    except Exception as e:
+        current_app.logger.error(f"get_policy_version error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@policy_api_bp.route('/policies/<policy_id>/versions/<int:version>/restore', methods=['POST'], strict_slashes=False)
+@require_role('editor')
+def restore_policy_version_endpoint(policy_id, version):
+    user = session.get('user')
+    user_id = user.get('id') if user else None
+    try:
+        if not db.get_policy(policy_id): return jsonify({"error": "Not found"}), 404
+        ok = db.restore_policy_version(policy_id, version, restored_by=user_id)
+        if not ok: return jsonify({"error": "Version not found"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.error(f"restore_policy_version error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
 @policy_api_bp.route('/policies/<policy_id>/rotate_key', methods=['POST'], strict_slashes=False)
 @require_role('editor')
 def rotate_key(policy_id):

@@ -53,6 +53,7 @@ export async function renderSettingsGovernanceTab() {
                      </div>
                      <div class="flex gap-3">
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
+                         <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
                          ${canGenerateKey ? `<button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>` : ''}
                          ${!isReadOnly && canEditPolicy ? `
                          <button class="text-sm text-gray-600 hover:text-blue-600 edit-policy-btn" data-id="${p.id}">
@@ -165,7 +166,89 @@ export async function renderSettingsGovernanceTab() {
             });
         });
 
+        container.querySelectorAll('.history-policy-btn').forEach(btn => {
+            btn.addEventListener('click', () => openPolicyHistory(btn.dataset.id, btn.dataset.name, canEditPolicy));
+        });
+
     } catch (e) {
         container.innerHTML = `<div class="p-8 text-center text-red-500">Error loading policies: ${e.message}</div>`;
+    }
+}
+
+// --- Policy Version History (modal) ---
+async function openPolicyHistory(policyId, policyName, canEdit) {
+    document.getElementById('policy-history-modal')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'policy-history-modal';
+    modal.className = 'fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50';
+    modal.innerHTML = `
+      <div class="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+          <div>
+            <h3 class="font-bold text-lg text-gray-900 dark:text-white">Version History</h3>
+            <p class="text-xs text-gray-500 font-mono">${policyName}</p>
+          </div>
+          <button id="ph-close" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="ph-body" class="p-6 overflow-y-auto custom-scrollbar">
+          <div class="text-center text-gray-500 py-8"><div class="thinking-spinner w-6 h-6 mx-auto mb-3"></div>Loading history…</div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.querySelector('#ph-close').addEventListener('click', close);
+
+    const body = modal.querySelector('#ph-body');
+    try {
+        const res = await api.getPolicyVersions(policyId);
+        if (!res.ok) throw new Error(res.error || 'Failed to load history');
+        const versions = res.versions || [];
+        if (!versions.length) { body.innerHTML = '<p class="text-gray-500 text-center py-8">No history yet.</p>'; return; }
+        const latest = versions[0].version;
+        body.innerHTML = versions.map(v => `
+          <div class="border border-gray-200 dark:border-neutral-800 rounded-xl p-4 mb-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <span class="font-semibold text-gray-900 dark:text-white">v${v.version}</span>
+                ${v.version === latest ? '<span class="ml-2 px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs rounded-full font-medium">current</span>' : ''}
+                <div class="text-xs text-gray-500 mt-0.5">${v.note ? v.note + ' · ' : ''}${v.created_at ? new Date(v.created_at).toLocaleString() : ''}</div>
+              </div>
+              <div class="flex gap-3 shrink-0">
+                <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white ph-view" data-v="${v.version}">View</button>
+                ${(canEdit && v.version !== latest) ? `<button class="text-sm text-blue-600 hover:underline ph-restore" data-v="${v.version}">Restore</button>` : ''}
+              </div>
+            </div>
+            <pre class="ph-detail hidden mt-3 text-xs whitespace-pre-wrap bg-gray-50 dark:bg-neutral-800 rounded-lg p-3 text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto" data-v="${v.version}"></pre>
+          </div>`).join('');
+
+        body.querySelectorAll('.ph-view').forEach(b => b.addEventListener('click', async () => {
+            const vno = b.dataset.v;
+            const pre = body.querySelector(`.ph-detail[data-v="${vno}"]`);
+            if (!pre.classList.contains('hidden')) { pre.classList.add('hidden'); return; }
+            pre.textContent = 'Loading…'; pre.classList.remove('hidden');
+            const r = await api.getPolicyVersion(policyId, vno);
+            if (r.ok) {
+                const v = r.version;
+                const vals = (v.values_weights || []).map(x => x.name || x.value).filter(Boolean);
+                pre.textContent =
+                  `PURPOSE & MANDATE:\n${v.worldview || '(none)'}\n\n` +
+                  `VALUES (${vals.length}): ${vals.join(', ') || '(none)'}\n` +
+                  `CONSTRAINTS: ${(v.will_rules || []).length}\n` +
+                  `SCOPE: ${(v.policy_config || {}).scope_statement || '(none)'}`;
+            } else { pre.textContent = 'Failed to load version.'; }
+        }));
+
+        body.querySelectorAll('.ph-restore').forEach(b => b.addEventListener('click', async () => {
+            if (!confirm(`Restore policy to v${b.dataset.v}? This creates a new version with that content; agents using this policy will pick it up.`)) return;
+            b.disabled = true; b.textContent = 'Restoring…';
+            const r = await api.restorePolicyVersion(policyId, b.dataset.v);
+            if (r.ok) { close(); renderSettingsGovernanceTab(); }
+            else { alert(r.error || 'Restore failed.'); b.disabled = false; b.textContent = 'Restore'; }
+        }));
+    } catch (e) {
+        body.innerHTML = `<p class="text-red-500 text-center py-8">${e.message}</p>`;
     }
 }

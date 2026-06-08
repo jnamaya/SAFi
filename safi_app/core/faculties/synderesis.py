@@ -489,6 +489,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     org_id = raw_persona.get("org_id")
     policy_values: List[Dict[str, Any]] = []
     policy_cfg: Dict[str, Any] = {}
+    policy_version: Optional[int] = None
 
     # 3. Policy + role layer.
     if effective_policy_id and effective_policy_id != "standalone":
@@ -499,6 +500,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
             print(f"Error loading policy {effective_policy_id}: {e}")
         if db_policy:
             policy_cfg = db_policy.get("policy_config") or {}
+            policy_version = db_policy.get("version")
             policy_values = db_policy.get("values_weights", []) or []
             for v in policy_values:
                 if "name" in v and "value" not in v:
@@ -551,6 +553,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
 
     # 6. Stamp governance metadata for the runtime + auditing.
     final["policy_id"] = effective_policy_id or "standalone"
+    final["policy_version"] = policy_version
     final["org_id"] = org_id
     final["spirit_beta"] = spirit_beta
 

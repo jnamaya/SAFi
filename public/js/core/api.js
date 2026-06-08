@@ -297,6 +297,18 @@ export async function getPolicy(policyId) {
     return httpGet(`${urls.POLICIES}/${policyId}`);
 }
 
+export async function getPolicyVersions(policyId) {
+    return httpGet(`${urls.POLICIES}/${policyId}/versions`);
+}
+
+export async function getPolicyVersion(policyId, version) {
+    return httpGet(`${urls.POLICIES}/${policyId}/versions/${version}`);
+}
+
+export async function restorePolicyVersion(policyId, version) {
+    return httpJSON(`${urls.POLICIES}/${policyId}/versions/${version}/restore`, 'POST', {});
+}
+
 export async function deletePolicy(policyId) {
     return httpJSON(`${urls.POLICIES}/${policyId}`, 'DELETE', {});
 }

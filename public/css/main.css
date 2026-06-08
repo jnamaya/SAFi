@@ -769,6 +769,10 @@ video {
   z-index: 70;
 }
 
+.z-\[80\] {
+  z-index: 80;
+}
+
 .-mx-6 {
   margin-left: -1.5rem;
   margin-right: -1.5rem;
@@ -1090,6 +1094,10 @@ video {
   max-height: 8rem;
 }
 
+.max-h-48 {
+  max-height: 12rem;
+}
+
 .max-h-64 {
   max-height: 16rem;
 }
@@ -1100,6 +1108,10 @@ video {
 
 .max-h-\[70vh\] {
   max-height: 70vh;
+}
+
+.max-h-\[85vh\] {
+  max-height: 85vh;
 }
 
 .min-h-0 {
@@ -3241,6 +3253,11 @@ video {
 .hover\:text-gray-500:hover {
   --tw-text-opacity: 1;
   color: rgb(107 114 128 / var(--tw-text-opacity, 1));
+}
+
+.hover\:text-gray-700:hover {
+  --tw-text-opacity: 1;
+  color: rgb(55 65 81 / var(--tw-text-opacity, 1));
 }
 
 .hover\:text-gray-800:hover {

@@ -186,6 +186,36 @@ def init_db():
             cursor.execute("ALTER TABLE organizations MODIFY global_policy_id VARCHAR(255)")
             cursor.execute("SET FOREIGN_KEY_CHECKS=1")
 
+        # --- POLICY VERSIONS (history / restore) ---
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS policy_versions (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                policy_id VARCHAR(255) NOT NULL,
+                version INT NOT NULL,
+                name VARCHAR(255),
+                worldview TEXT,
+                will_rules JSON,
+                values_weights JSON,
+                policy_config JSON,
+                note VARCHAR(500),
+                created_by VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_policy_version (policy_id, version),
+                FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute("SHOW COLUMNS FROM policies LIKE 'version'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE policies ADD COLUMN version INT NOT NULL DEFAULT 1")
+        # Backfill a v1 snapshot for any pre-existing policy that has no history yet.
+        cursor.execute('''
+            INSERT INTO policy_versions (policy_id, version, name, worldview, will_rules, values_weights, policy_config, note)
+            SELECT p.id, 1, p.name, p.worldview, p.will_rules, p.values_weights, p.policy_config, 'Initial version (backfilled)'
+            FROM policies p
+            LEFT JOIN policy_versions pv ON pv.policy_id = p.id
+            WHERE pv.id IS NULL
+        ''')
+
         # --- AGENTS TABLE ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS agents (
@@ -1392,29 +1422,95 @@ def create_policy(name, worldview, will_rules, values, org_id=None, created_by=N
             "INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by, policy_config) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (pid, org_id, name, worldview, json.dumps(will_rules), json.dumps(values), created_by, json.dumps(policy_config or {}))
         )
+        # Seed version 1 of the policy history.
+        cursor.execute(
+            "INSERT INTO policy_versions (policy_id, version, name, worldview, will_rules, values_weights, policy_config, note, created_by) "
+            "VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s)",
+            (pid, name, worldview, json.dumps(will_rules), json.dumps(values), json.dumps(policy_config or {}), "Initial version", created_by)
+        )
         conn.commit()
         return pid
     finally:
         cursor.close()
         conn.close()
 
-def update_policy(policy_id, name=None, worldview=None, will_rules=None, values=None, policy_config=None):
+def update_policy(policy_id, name=None, worldview=None, will_rules=None, values=None, policy_config=None, note=None, updated_by=None):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     try:
         fields, params = [], []
-        if name is not None:         fields.append("name=%s");          params.append(name)
-        if worldview is not None:    fields.append("worldview=%s");     params.append(worldview)
-        if will_rules is not None:   fields.append("will_rules=%s");    params.append(json.dumps(will_rules))
-        if values is not None:       fields.append("values_weights=%s"); params.append(json.dumps(values))
-        if policy_config is not None: fields.append("policy_config=%s"); params.append(json.dumps(policy_config))
+        if name is not None:          fields.append("name=%s");           params.append(name)
+        if worldview is not None:     fields.append("worldview=%s");      params.append(worldview)
+        if will_rules is not None:    fields.append("will_rules=%s");     params.append(json.dumps(will_rules))
+        if values is not None:        fields.append("values_weights=%s"); params.append(json.dumps(values))
+        if policy_config is not None: fields.append("policy_config=%s");  params.append(json.dumps(policy_config))
+        if not fields:
+            return  # nothing to change — don't create an empty version
+        # Bump the version counter atomically with the content update.
+        fields.append("version = version + 1")
         params.append(policy_id)
-        if fields:
-            cursor.execute(f"UPDATE policies SET {', '.join(fields)} WHERE id=%s", tuple(params))
-            conn.commit()
+        cursor.execute(f"UPDATE policies SET {', '.join(fields)} WHERE id=%s", tuple(params))
+        # Snapshot the resulting full state into the version history.
+        cursor.execute("SELECT * FROM policies WHERE id=%s", (policy_id,))
+        row = cursor.fetchone()
+        if row:
+            _j = lambda v: v if (isinstance(v, str) or v is None) else json.dumps(v)
+            cursor.execute(
+                "INSERT INTO policy_versions (policy_id, version, name, worldview, will_rules, values_weights, policy_config, note, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (policy_id, row['version'], row['name'], row['worldview'],
+                 _j(row['will_rules']), _j(row['values_weights']), _j(row['policy_config']), note, updated_by)
+            )
+        conn.commit()
     finally:
         cursor.close()
         conn.close()
+
+
+def list_policy_versions(pid):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT version, name, note, created_by, created_at FROM policy_versions "
+            "WHERE policy_id=%s ORDER BY version DESC", (pid,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_policy_version(pid, version):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM policy_versions WHERE policy_id=%s AND version=%s", (pid, version))
+        row = cursor.fetchone()
+        if row:
+            row['will_rules']     = json.loads(row['will_rules'])     if isinstance(row['will_rules'], str)     else row['will_rules']     or []
+            row['values_weights'] = json.loads(row['values_weights']) if isinstance(row['values_weights'], str) else row['values_weights'] or []
+            row['policy_config']  = json.loads(row['policy_config'])  if isinstance(row['policy_config'], str)  else row['policy_config']  or {}
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def restore_policy_version(pid, version, restored_by=None):
+    v = get_policy_version(pid, version)
+    if not v:
+        return False
+    update_policy(
+        pid,
+        name=v.get('name'),
+        worldview=v.get('worldview'),
+        will_rules=v.get('will_rules'),
+        values=v.get('values_weights'),
+        policy_config=v.get('policy_config'),
+        note=f"Restored from v{version}",
+        updated_by=restored_by,
+    )
+    return True
 
 def get_policy(pid):
     conn = get_db_connection()
