@@ -8,8 +8,8 @@ export function renderConstitutionStep(container, policyData) {
                  <div>
                     <div class="flex justify-between items-end mb-4">
                          <div>
-                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose &amp; Voice</label>
-                            <p class="text-base text-gray-500 mb-4">The perspective and voice every agent using this policy will reason from. Describe how they should think, talk, and approach their work.</p>
+                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose &amp; Mandate</label>
+                            <p class="text-base text-gray-500 mb-4">What every agent under this policy exists to do and the perspective it reasons from — the unit's mission, the objectives it is responsible for, and the orientation it should approach its work with.</p>
                          </div>
                          <button id="btn-gen-worldview" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -17,14 +17,14 @@ export function renderConstitutionStep(container, policyData) {
                          </button>
                     </div>
                     <div class="relative">
-                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 shadow-sm resize-y" placeholder="Perspective:
-This team approaches its work from the perspective of [philosophy / orientation].
+                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 shadow-sm resize-y" placeholder="Purpose:
+What this unit exists to do — its mission and the outcomes it is responsible for.
 
-Voice & Tone:
-[e.g. Professional and empathetic — clear without being cold.]
+Mandate:
+The principles and priorities agents must operate by, and the limits of their authority.
 
-Context:
-[Any additional context agents in this unit should always keep in mind.]">${policyData.worldview}</textarea>
+Perspective:
+The orientation agents should reason from — e.g. rigorous and evidence-driven; compliance before speed.">${policyData.worldview}</textarea>
                         
 
                     </div>
@@ -38,16 +38,16 @@ Context:
                 </h4>
                 <ul class="space-y-6 text-sm text-gray-600 dark:text-gray-400">
                     <li>
-                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Set the perspective</strong>
-                        Purpose &amp; voice shapes how agents interpret and respond. Be intentional — a clear statement keeps every agent consistent.
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">State the purpose</strong>
+                        Be concrete about what this unit is for and the outcomes it owns. A clear mandate keeps every agent pulling in the same direction.
                     </li>
                     <li>
-                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Tone & Voice</strong>
-                        Be specific. "Empathetic but concise" is more useful than "friendly."
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Name the perspective</strong>
+                        Specify the orientation agents reason from — "evidence-driven and cautious" guides judgment better than "smart."
                     </li>
                     <li>
-                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Already have guidelines?</strong>
-                        Paste them in and let the AI expand them into a structured statement.
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Already have a charter or mandate?</strong>
+                        Paste it in and let the AI expand it into a structured statement.
                     </li>
                 </ul>
             </div>
@@ -70,9 +70,9 @@ Context:
             if (res.ok && res.content) {
                 document.getElementById('pw-worldview').value = res.content;
                 policyData.worldview = res.content;
-                ui.showToast("Purpose & Voice drafted!", "success");
+                ui.showToast("Purpose & Mandate drafted!", "success");
             } else {
-                ui.showToast("Failed to generate Purpose & Voice", "error");
+                ui.showToast("Failed to generate Purpose & Mandate", "error");
             }
         } catch (err) { console.error(err); }
         btn.innerHTML = original;
@@ -82,7 +82,7 @@ Context:
 
 export function validateConstitutionStep(policyData) {
     if (!policyData.worldview || policyData.worldview.length < 10) {
-        ui.showToast("A Purpose & Voice statement is required (at least 10 chars).", "error");
+        ui.showToast("A Purpose & Mandate statement is required (at least 10 chars).", "error");
         return false;
     }
     return true;

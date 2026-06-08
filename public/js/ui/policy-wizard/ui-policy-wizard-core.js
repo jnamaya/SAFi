@@ -321,7 +321,7 @@ function ensureWizardInlineExists() {
 
         <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto gap-4">
             <span data-step="1">Basics</span>
-            <span data-step="2">Purpose &amp; Voice</span>
+            <span data-step="2">Purpose &amp; Mandate</span>
             <span data-step="3">Scope</span>
             <span data-step="4">Standards</span>
             <span data-step="5">Tools &amp; Guardrails</span>

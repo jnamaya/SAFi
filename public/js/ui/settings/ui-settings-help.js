@@ -213,8 +213,8 @@ export function renderSettingsHelpTab() {
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Purpose &amp; Voice</p>
-                            <p class="mt-0.5">The perspective and tone written into a policy that shape how an agent interprets questions and frames its responses. It is the foundation the agent reasons from — before any specific rules apply.</p>
+                            <p class="font-medium text-gray-900 dark:text-white">Purpose &amp; Mandate</p>
+                            <p class="mt-0.5">What a policy's agents exist to do and the perspective they reason from — the unit's mission, the objectives it owns, and the orientation it approaches its work with. It is the foundation the agent reasons from, before any specific rules apply.</p>
                         </div>
 
                         <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
@@ -380,7 +380,7 @@ export function renderSettingsHelpTab() {
                         <div class="space-y-2">
                             <div class="flex gap-2">
                                 <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Purpose &amp; Voice</strong> — The perspective and tone every agent under the policy reasons from.</div>
+                                <div><strong class="text-gray-900 dark:text-white">Purpose &amp; Mandate</strong> — The purpose, mandate, and perspective every agent under the policy reasons from.</div>
                             </div>
                             <div class="flex gap-2">
                                 <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>

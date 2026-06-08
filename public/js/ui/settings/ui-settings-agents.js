@@ -331,7 +331,7 @@ export function renderProfileDetailsModal(profile, options = {}) {
     container.innerHTML = '';
 
     container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
-    container.insertAdjacentHTML('beforeend', createModalSection('Purpose &amp; Voice', profile.worldview));
+    container.insertAdjacentHTML('beforeend', createModalSection('Purpose &amp; Mandate', profile.worldview));
     // Policies don't enforce style; only show Style for agents that set one.
     if (profile.style && !String(profile.style).startsWith('N/A')) {
         container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
