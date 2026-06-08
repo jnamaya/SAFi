@@ -56,7 +56,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         </div>
         ` : ''}
         
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             ${profiles.map(profile => {
         const avatarUrl = getAvatarForProfile(profile.name);
         const description = profile.description_short || profile.description || '';
@@ -89,13 +89,16 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                     </div>
 
                     <!-- Actions Footer -->
-                    <div class="mt-auto pt-3 pb-3 px-4 border-t border-gray-100 dark:border-neutral-700/50 flex justify-center gap-2 z-10 relative">
+                    <div class="mt-auto pt-3 pb-3 px-4 border-t border-gray-100 dark:border-neutral-700/50 flex flex-wrap justify-center gap-2 z-10 relative">
                         <button type="button" data-key="${profile.key}" class="view-profile-details-btn px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700/50 hover:bg-gray-200 dark:hover:bg-neutral-700 rounded-lg transition-colors">
                             Details
                         </button>
                         ${(profile.is_custom && currentUser && (currentUser.role === 'admin' || currentUser.id === profile.created_by)) ? `
                         <button type="button" data-key="${profile.key}" class="edit-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
                             Edit
+                        </button>
+                        <button type="button" data-key="${profile.key}" class="dup-agent-btn px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors">
+                            Duplicate
                         </button>
                         <button type="button" data-key="${profile.key}" class="delete-agent-btn px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">
                             Delete
@@ -141,6 +144,32 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                 const res = await api.getAgent(key);
                 if (res && res.ok && res.agent) {
                     openAgentWizard(res.agent, availableModels); // Updated to pass models
+                } else {
+                    ui.showToast("Failed to load agent details", "error");
+                }
+            } catch (err) {
+                ui.showToast(`Error: ${err.message}`, "error");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        };
+    });
+
+    // --- Attach listeners for "Duplicate Agent" buttons ---
+    container.querySelectorAll('.dup-agent-btn').forEach(btn => {
+        btn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = btn.dataset.key;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Loading...';
+            btn.disabled = true;
+            try {
+                const res = await api.getAgent(key);
+                if (res && res.ok && res.agent) {
+                    const clone = { ...res.agent, key: null, name: `Copy of ${res.agent.name}` };
+                    openAgentWizard(clone, availableModels);
                 } else {
                     ui.showToast("Failed to load agent details", "error");
                 }

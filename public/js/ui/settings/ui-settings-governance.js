@@ -51,9 +51,10 @@ export async function renderSettingsGovernanceTab() {
                              </span>
                          </div>
                      </div>
-                     <div class="flex gap-3">
+                     <div class="flex flex-wrap gap-x-3 gap-y-2 justify-end">
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
+                         ${canEditPolicy ? `<button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white dup-policy-btn" data-id="${p.id}">Duplicate</button>` : ''}
                          ${canGenerateKey ? `<button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>` : ''}
                          ${!isReadOnly && canEditPolicy ? `
                          <button class="text-sm text-gray-600 hover:text-blue-600 edit-policy-btn" data-id="${p.id}">
@@ -168,6 +169,13 @@ export async function renderSettingsGovernanceTab() {
 
         container.querySelectorAll('.history-policy-btn').forEach(btn => {
             btn.addEventListener('click', () => openPolicyHistory(btn.dataset.id, btn.dataset.name, canEditPolicy));
+        });
+
+        container.querySelectorAll('.dup-policy-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const policy = allPolicies.find(p => p.id === btn.dataset.id);
+                if (policy) openPolicyWizard({ ...policy, id: null, name: `Copy of ${policy.name}` });
+            });
         });
 
     } catch (e) {
