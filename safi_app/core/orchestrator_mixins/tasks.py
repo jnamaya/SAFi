@@ -8,83 +8,6 @@ from ...config import Config
 from ..services.model_routing import detect_provider
 
 
-def _norm(s) -> str:
-    return " ".join(str(s).strip().lower().split())
-
-
-def _empty_context() -> dict:
-    return {k: [] for k in Config.AGENT_MEMORY_SCHEMA}
-
-
-def merge_agent_context(existing_json: str, candidate_json: str) -> str:
-    """
-    Merge the extractor's candidate output INTO the existing context without ever
-    dropping what was already stored (anti-shrink). The existing context is the base;
-    candidate items are only ADDED (new) or used to refresh fields of a matching item.
-
-    - Unparseable / non-dict candidate -> existing is returned unchanged (anti-corruption).
-    - List-of-strings keys: union with case-insensitive dedupe.
-    - List-of-dicts keys: dedupe by identity field; matching items get non-empty fields refreshed.
-    - Each list capped at Config.AGENT_MEMORY_MAX_ITEMS_PER_KEY (keeps the most recent tail) to bound growth.
-    """
-    try:
-        existing = _json.loads(existing_json) if existing_json and existing_json not in ("{}", "null", "") else {}
-    except Exception:
-        existing = {}
-    if not isinstance(existing, dict):
-        existing = {}
-
-    merged = _empty_context()
-    for k in Config.AGENT_MEMORY_SCHEMA:
-        v = existing.get(k)
-        if isinstance(v, list):
-            merged[k] = list(v)
-
-    try:
-        candidate = _json.loads(candidate_json)
-    except Exception:
-        candidate = None
-    if not isinstance(candidate, dict):
-        # Anti-corruption guard: never overwrite good memory with garbage.
-        return _json.dumps(merged, ensure_ascii=False)
-
-    for key, idfield in Config.AGENT_MEMORY_SCHEMA.items():
-        cand_items = candidate.get(key)
-        if not isinstance(cand_items, list):
-            continue
-        if idfield is None:
-            seen = {_norm(x) for x in merged[key] if isinstance(x, str)}
-            for item in cand_items:
-                if isinstance(item, dict):
-                    item = item.get("note") or item.get("text") or _json.dumps(item, ensure_ascii=False)
-                item = str(item)
-                if _norm(item) and _norm(item) not in seen:
-                    merged[key].append(item)
-                    seen.add(_norm(item))
-        else:
-            index = {_norm(it[idfield]): i for i, it in enumerate(merged[key])
-                     if isinstance(it, dict) and it.get(idfield)}
-            for item in cand_items:
-                if not isinstance(item, dict):
-                    item = {idfield: str(item)}
-                name = _norm(item.get(idfield, ""))
-                if not name:
-                    continue
-                if name in index:
-                    tgt = merged[key][index[name]]
-                    for fk, fv in item.items():
-                        if fv not in (None, "", []):
-                            tgt[fk] = fv
-                else:
-                    merged[key].append(item)
-                    index[name] = len(merged[key]) - 1
-
-    for k in merged:
-        if len(merged[k]) > Config.AGENT_MEMORY_MAX_ITEMS_PER_KEY:
-            merged[k] = merged[k][-Config.AGENT_MEMORY_MAX_ITEMS_PER_KEY:]
-    return _json.dumps(merged, ensure_ascii=False)
-
-
 # --- Work-context memory: deterministic merge ----------------------------------
 # The extractor LLM emits only a DELTA (upserts/removals) for the latest exchange.
 # We merge it into the stored memory in Python so existing items can NEVER be
@@ -332,8 +255,18 @@ class BackgroundTasksMixin:
         if raw is None:
             return
         try:
-            merged = merge_agent_context(current_context_json, raw)
-            db.upsert_agent_context_memory(user_id, agent_id, merged)
+            current = _json.loads(current_context_json) if current_context_json and current_context_json not in ("{}", "null", "") else {}
+        except Exception:
+            current = {}
+        try:
+            delta = _json.loads(raw)
+        except Exception:
+            # Unparseable extractor output: leave stored memory untouched (anti-corruption).
+            self.log.warning("[AgentMemory] extractor returned non-JSON; leaving memory unchanged.")
+            return
+        try:
+            merged = merge_agent_context(current, delta)
+            db.upsert_agent_context_memory(user_id, agent_id, _json.dumps(merged, ensure_ascii=False))
             self.log.info(f"[AgentMemory] Updated context for user={user_id} agent={agent_id}")
         except Exception as e:
             self.log.warning(f"[AgentMemory] Agent context merge/save failed: {e}")
