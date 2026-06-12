@@ -5,7 +5,7 @@
 
 # SAFi: Self-Alignment Framework Interface
 
-> **Built for IT Directors, CTOs, and Engineering VPs** who need governed AI deployment without trading compliance for velocity.
+> Built for institutions that demand sovereign, compliant, and private governance over their autonomous AI agents. 
 
 ## Table of Contents
 
@@ -31,24 +31,26 @@
 ---
 
 ### The Problem
-Your organization is deploying AI agents. Your legal and compliance teams are asking hard questions: What policies govern every response? Who audits the decisions? What happens when the model drifts, gets jailbroken, or gives advice it shouldn't?
 
-The standard answer -- a system prompt and a hope -- is not an answer. The industry's next move was to wrap the model in more LLM calls to police itself: monolithic guardrails that are slow, expensive, and just as susceptible to adversarial prompts as the model they are trying to constrain.
+Your organization is deploying AI agents. Your legal and compliance teams are probably asking hard questions: 
 
-There is a better way.
+* What policies are being enforced, and how? 
+* Who audits the decisions? 
+* What happens when the model drifts, gets jailbroken, or takes an unauthorized action?
 
-### What SAFi Is
-SAFi is an open-source runtime governance engine that does not just watch what your AI does; it enforces, audits, and shapes every decision *before* it reaches a user. Think of it as the **separation of powers for AI agents.**
+You probably scratch your head, think about those PDF policies sitting on the Intranet that nobody looks at, and wonder: *How can I possibly enforce those policies in an AI agent?* 
 
-Instead of a single model trying to be smart, compliant, and ethical all at once, SAFi splits cognition into five specialized faculties -- each with a distinct job, each operating in its own security layer:
+The current standard approach is downstream filters—guardrails that check the output after the fact. 
 
-| Faculty | Role | Security Property |
-| :--- | :--- | :--- |
-| **Synderesis** | The constitution compiler: defines immutable rules and value weights. | Read-only after deployment. |
-| **Intellect** | The generative engine: drafts responses and tool proposals. | Air-gapped from execution. |
-| **Will** | The deterministic gatekeeper: pure Python, zero LLM. | Immune to prompt injection. |
-| **Conscience** | The analytical auditor: scores every draft against rubrics. | Secondary validation layer. |
-| **Spirit** | The long-term memory: detects drift using exponential moving averages. | Non-LLM mathematical integrity. |
+### That's not a solution. It's a patchwork. 
+
+SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
+
+SAFi starts with your **Organizational Charter (Identity)**: Your mission statement and core values. It uses this as the guiding context. 
+
+Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, IT Security).
+
+SAFi uses the Charter to give the agent direction and cultural fit, and strictly enforces the Policy through a deterministic layer.
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
