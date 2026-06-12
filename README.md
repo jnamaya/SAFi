@@ -10,6 +10,7 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
+- [The Origin Story](#the-origin-story-from-human-cognition-to-machine-agency)
 - [Quick Start](#quick-start)
 - [How SAFi Compares](#how-safi-compares)
 - [How Does It Work?](#how-does-it-work)
@@ -51,6 +52,33 @@ SAFi starts with your **Organizational Charter (Identity)**: Your mission statem
 Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, IT Security).
 
 SAFi uses the Charter to give the agent direction and cultural fit, and strictly enforces the Policy through a deterministic layer.
+
+### The Origin Story: From Human Cognition to Machine Agency
+
+At this point, you are probably wondering how SAFi actually achieves this. If you are fond of classical philosophy, you will appreciate that SAFi's architecture is rooted in over two millennia of classical thinking about human cognition.
+
+> **Just want the code?**
+> If you'd rather skip the philosophy and get your hands dirty, jump straight to the [Quick Start](#quick-start) section.
+
+SAFi actually started about 20 years ago not as an AI project, but as a personal quest to answer a fundamental question: "How do humans think and make decisions?"
+
+It wasn't an academically rigorous research project. It was a deeply personal curiosity, partly triggered by my own philosophical and religious convictions.
+
+But being a systems engineer, I naturally started breaking this cognitive process down into modular components. Years later, I realized these components mapped perfectly to classical faculty psychology: the **Intellect** and the **Will**.
+
+This gave me the foundation for what I eventually called the Self-Alignment Framework (SAF), a closed-loop cognitive structure with five interlocking faculties:
+
+`Values → Intellect → Will → Conscience → Spirit`
+
+Originally, this was strictly a human-based framework. I found it profoundly useful and deeply resonant. I considered publishing it in an academic journal, but lacking formal philosophical training, I suffered from imposter syndrome and assumed the "old guard" would reject it.
+
+Then, LLMs arrived.
+
+I started brainstorming the framework with ChatGPT, and during those sessions, the AI itself hinted at a radical idea: What if this cognitive topology could be applied to AI?
+
+That was the turning point. I ported the human cognitive framework into a cybernetic architecture for machine agency. I called this implementation **SAFi** (the Self-Alignment Framework Interface).
+
+*(And yes, I stole the lowercase 'i' from Apple because I thought it looked cool 😎).*
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
