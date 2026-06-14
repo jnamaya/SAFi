@@ -100,7 +100,7 @@ This distinction is important because it is easy to mistake SAFi for another pro
 
 The LLM performs cognition-related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
 
-Synderesis sets the direction. The Will governs. The Spirit remembers. And all three operate independently of the underlying model.
+Synderesis sets the direction. The Will decides. The Spirit remembers. And all three operate independently of the underlying model.
 
 This allows governance to remain stable even when the model changes. A future implementation could replace one LLM with another while preserving the same governing structure. That stability is intentional.
 
