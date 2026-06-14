@@ -76,5 +76,8 @@ purge_profile.py
 # Local backups (e.g. policy values/weights snapshots)
 .backups/
 
+# Benchmark backup/scratch snapshots (top-level only; tracked results live in Benchmarks/Results & Scripts)
+/Benchmarks/*.json
+
 # Local drafts / blog posts (not for version control)
 docs/building-and-managing-agents-post.md
