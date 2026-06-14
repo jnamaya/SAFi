@@ -72,7 +72,7 @@ As I experimented with LLMs, I noticed they were surprisingly good at performing
 
 That observation led to a realization that completely changed how I viewed the framework. SAF was not merely a personal development framework. It had become a cognitive architecture, not because it resembled one philosophically, but because it possessed the characteristics of one structurally. The framework defined specialized faculties with distinct responsibilities, inputs, outputs, memory interactions, evaluation mechanisms, and feedback loops. What began as an attempt to understand human decision making had gradually evolved into a formal model of cognition.
 
-More importantly, the architecture appeared to be substrate independent. A human being could instantiate the faculties. A corporate board could instantiate the faculties. An organization could instantiate the faculties. And now, AI systems could instantiate many of the same functions as well. The faculties were more important than the entity performing them.
+More importantly, the architecture appeared to be substrate independent. A human being, a corporate board, an organization, and now an AI system could each instantiate the same faculties. The faculties were more important than the entity performing them.
 
 That was the turning point: the moment I stopped viewing SAF as merely a framework for personal development and started viewing it as a framework for governing intelligent agents. That realization eventually became SAFi, the Self-Alignment Framework Interface.
 
@@ -100,7 +100,7 @@ This distinction is important because it is easy to mistake SAFi for another pro
 
 The LLM performs cognition-related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
 
-The Will governs. The Spirit remembers. And both operate independently of the underlying model.
+Synderesis sets the direction. The Will governs. The Spirit remembers. And all three operate independently of the underlying model.
 
 This allows governance to remain stable even when the model changes. A future implementation could replace one LLM with another while preserving the same governing structure. That stability is intentional.
 
