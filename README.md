@@ -98,7 +98,7 @@ Synderesis compiles organizational values, policies, and principles into structu
 
 This distinction is important because it is easy to mistake SAFi for another prompt engineering framework or another collection of AI guardrails. It is neither.
 
-The LLM performs cognition-related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
+The LLM performs cognition-related tasks. The governance layer is a property of the entire system. The Intellect may propose. The Conscience may evaluate. But neither governs.
 
 Synderesis sets the direction. The Will decides. The Spirit remembers. And all three operate independently of the underlying model.
 
