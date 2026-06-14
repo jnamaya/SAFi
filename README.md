@@ -35,7 +35,7 @@ The current standard approach is downstream filters, guardrails that check the o
 
 SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
 
-SAFi starts with your **Organizational Charter (Identity)**: your mission statement and core values. It uses this as the guiding context. 
+SAFi starts with your **Organizational Charter**: your mission statement and core values. It uses this as the guiding context for the agent. 
 
 Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, GenAI Policies).
 
