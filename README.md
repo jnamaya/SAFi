@@ -236,17 +236,8 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ### 3. Performance & Cost Profile
 
-**Full governance adds roughly $0.005 per interaction and under 5 seconds of latency. The separation-of-powers architecture costs less to run than a monolithic guardrail.**
+**Depending on your intelligence needs, SAFi can run very cheaply.** In the testing and demos I have run, I have spent about $0.005 per interaction at under 10 seconds of latency. You can even run SAFi entirely on local LLMs for a completely private, cost-free setup. I have found DeepSeek V4 Pro and Flash to be very good and very cheap, as are Gemini Flash 3.5 and its Lite version. For the Conscience module, GPT OSS 120B or Google Gemini 3.5 Lite would do.
 
-By using a **Hybrid Architecture** (a deterministic Will layer and a lightweight Conscience auditor on smaller open-source models) SAFi achieves lower latency and cost than monolithic chains.
-
-| Configuration | Avg. Latency | Avg. Cost (per 1k interactions) |
-| :--- | :--- | :--- |
-| Monolithic (large commercial models only) | ~30-60 seconds | $$$ (High) |
-| **SAFi Hybrid (large + open-source models)** | **~3-5 seconds** | **~$5.00** |
-
-- **Latency:** The Will faculty is pure deterministic Python: sub-millisecond gate checks, no waiting for a model to "grade its own homework."
-- **Cost:** Conscience runs on smaller open-source models, keeping fully governed interactions at roughly **$0.005 each**.
 
 ---
 
