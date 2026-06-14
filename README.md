@@ -35,7 +35,7 @@ The current standard approach is downstream filters—guardrails that check the 
 
 SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
 
-SAFi starts with your **Organizational Charter (Identity)**: Your mission statement and core values. It uses this as the guiding context. 
+SAFi starts with your **Organizational Charter (Identity)**: your mission statement and core values. It uses this as the guiding context. 
 
 Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, GenAI Policies).
 
@@ -80,7 +80,7 @@ That was the turning point: the moment I stopped viewing SAF as merely a framewo
 
 ### From Cognitive Architecture to Software Architecture
 
-The earliest versions of SAFi were heavily LLM driven. At the time, that seemed like the obvious design. If language models could perform the functions of the faculties, why not allow them to implement most of the architecture?
+The earliest versions of SAFi were heavily LLM-driven. At the time, that seemed like the obvious design. If language models could perform the functions of the faculties, why not allow them to implement most of the architecture?
 
 The answer turned out to be governance. The more I thought about SAFi's purpose, the more I realized that governance cannot depend entirely on the very thing it is trying to govern.
 
@@ -98,13 +98,13 @@ Synderesis compiles organizational values, policies, and principles into structu
 
 This distinction is important because it is easy to mistake SAFi for another prompt engineering framework or another collection of AI guardrails. It is neither.
 
-The LLM performs cognition related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
+The LLM performs cognition-related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
 
 The Will governs. The Spirit remembers. And both operate independently of the underlying model.
 
 This allows governance to remain stable even when the model changes. A future implementation could replace one LLM with another while preserving the same governing structure. That stability is intentional.
 
-Mathematically, SAFi can be described as a cognitive architecture because it defines specialized faculties, persistent memory structures, evaluation functions, state transitions, feedback mechanisms, and a closed loop adaptation process. The architecture is not a collection of prompts; it is a system of interacting faculties.
+Mathematically, SAFi can be described as a cognitive architecture because it defines specialized faculties, persistent memory structures, evaluation functions, state transitions, feedback mechanisms, and a closed-loop adaptation process. The architecture is not a collection of prompts; it is a system of interacting faculties.
 
 This distinction becomes particularly important when discussing the Conscience. People familiar with modern AI often assume SAFi's Conscience is simply another variation of "LLM as a Judge." It is not. Traditional LLM judges evaluate outputs using broad and generalized principles. SAFi's Conscience evaluates against the specific values and policies that Synderesis compiled for that exact agent. It asks questions such as:
 
@@ -114,7 +114,7 @@ This distinction becomes particularly important when discussing the Conscience. 
 
 The resulting evaluations are recorded in the Conscience Ledger and passed to the Spirit. The Spirit integrates those evaluations over time, maintains behavioral profiles, measures drift from historical patterns, updates memory, and generates feedback that can influence future reasoning.
 
-Most AI governance systems stop at evaluation. SAFi continues into integration, memory, adaptation, and self correction. That closed loop is what ultimately transforms SAFi from a collection of AI guardrails into a cognitive architecture for machine governance.
+Most AI governance systems stop at evaluation. SAFi continues into integration, memory, adaptation, and self-correction. That closed loop is what ultimately transforms SAFi from a collection of AI guardrails into a cognitive architecture for machine governance.
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
