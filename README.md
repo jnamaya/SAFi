@@ -1,7 +1,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
-[![Good First Issue](https://img.shields.io/github/issues/jnamaya/SAFi/good%20first%20issue?label=good%20first%20issue)](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
 # SAFi: Self-Alignment Framework Interface
 
@@ -38,9 +37,9 @@ SAFi governs AI agents the exact same way you manage human employees, so your cu
 
 SAFi starts with your **Organizational Charter (Identity)**: Your mission statement and core values. It uses this as the guiding context. 
 
-Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, IT Security).
+Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, GenAI Policies).
 
-SAFi uses the Charter to give the agent direction and cultural fit, and strictly enforces the Policy through a deterministic layer.
+SAFi uses the Charter to give the agent direction and cultural awareness, and strictly enforces the Policy through a deterministic layer.
 
 ## The Origin Story: From Human Cognition to Machine Governance
 
