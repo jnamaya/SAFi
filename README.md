@@ -12,7 +12,6 @@
 - [The Problem](#the-problem)
 - [The Origin Story](#the-origin-story-from-human-cognition-to-machine-governance)
 - [Quick Start](#quick-start)
-- [How SAFi Compares](#how-safi-compares)
 - [How Does It Work?](#how-does-it-work)
 - [Mathematical Specification](#mathematical-specification)
 - [Benchmarks & Validation](#benchmarks--validation)
@@ -170,62 +169,11 @@ SAFi will create the account automatically on first startup. The login form appe
 
 ---
 
-### Why This Changes Everything
-**99.86% jailbreak defense** in live adversarial testing. **98.5% overall compliance** vs. an 85% baseline. Sub-5-second latency at roughly **$0.005 per interaction**.
-
-Those are not marketing numbers -- they are published benchmark results from 1,435+ adversarial interactions. SAFi's **Will** faculty (a blind, deterministic gatekeeper that never touches an LLM) caught every single attack that the baseline model missed.
-
-*Because you can't socially engineer pure Python.*
-
-### How SAFi Compares
-
-| | SAFi | Guardrails AI | NVIDIA NeMo Guardrails |
-| :--- | :--- | :--- | :--- |
-| **Gate Architecture** | Deterministic Python (zero LLM) | LLM-based validators | LLM-based Colang rails |
-| **Prompt Injection Risk** | Immune at Will layer | Validator is susceptible | Rail LLM is susceptible |
-| **Jailbreak Defense Rate** | **99.86%** (1,435+ live tests) | Not independently published | Not independently published |
-| **Avg. Latency** | ~3-5 seconds | ~10-30+ seconds | ~10-30+ seconds |
-| **Cost per Interaction** | ~$0.005 | Higher (multiple LLM calls) | Higher (multiple LLM calls) |
-| **Long-term Drift Detection** | Yes (EMA-based Spirit faculty) | No | No |
-| **Full Per-Decision Audit Trail** | Yes (five-faculty logging) | Partial | Partial |
-| **Model Independence** | GPT, Claude, Gemini, Llama, Groq, Mistral, DeepSeek | Model-agnostic | Model-agnostic |
-| **Built-in Governance UI** | Yes | No | No |
-| **Open Source License** | AGPL-3.0 | Apache 2.0 | Apache 2.0 |
-
-> *Competitor data sourced from public documentation as of May 2026. Latency and cost figures for alternatives are architecture-based estimates. Only SAFi figures are from independent adversarial testing.*
-
-### What You Get
-
-| Principle | What It Means | SAFi Delivers |
-| :--- | :--- | :--- |
-| 🛡️ **Policy Enforcement** | Your rules, not the model's defaults, govern every response. | Runtime-layer enforcement: custom policies override the underlying LLM. |
-| 🔍 **Full Traceability** | Every decision logged, every veto recorded, every drift tracked. | Granular audit trail across all five faculties -- a black box no more. |
-| 🔄 **Model Independence** | Swap LLMs without rewriting governance. | Modular architecture supporting GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. |
-| 📈 **Long-Term Consistency** | Your AI's ethical identity stays stable over months of use. | Spirit's EMA-based drift detection auto-corrects behavioral drift. |
-
-### The Architecture That Makes It Possible
-SAFi's innovation is a **separation of powers** inspired by classical philosophy, mapped directly to software modules. Each faculty has a single job and cannot be overridden by the others.
-
-The **Intent Air Gap** severs the generative Intellect from the execution environment. The **Blind Will** enforces structural invariants with no semantic vulnerability. The **Spirit** tracks alignment as a mathematical vector, not a subjective vibe.
-
-This is not philosophical decoration -- it is a security architecture that makes your governance model-independent. Whether your underlying LLM is GPT-5 or an open-source fine-tune, SAFi's pipeline intercepts violations at the exact same deterministic gates.
-
-> Want the full design rationale? Read [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
-
-### Next Steps
-🚀 **Try the live demo** → [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
-🐙 **Star the repo** → `git clone https://github.com/jnamaya/SAFi.git`
-📖 **Read the math** → [docs/MATHEMATICAL_SPECIFICATION.md](docs/MATHEMATICAL_SPECIFICATION.md)
-🛠️ **Use it headless** → Plug into LangChain, AutoGen, Teams, Telegram, or WhatsApp.
-
-**SAFi turns any LLM into a governed, auditable agent -- your policies enforced at runtime, every decision logged.** The demo is live. The benchmarks are public. The architecture is open source.
-**Try it. Fork it. Govern it.**
-
----
-
 ## How Does It Work?
 
-SAFi implements a cognitive architecture derived from five specialized faculties -- each a separate software module with a distinct role and security boundary. The design is inspired by classical philosophy's separation of cognitive powers; the full rationale is in [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
+So let me show you how those five faculties actually fit together in the code.
+
+Each one is its own software module with a single job and a boundary it is not allowed to cross. The structure follows the separation of powers I described above: the Intellect proposes, the Conscience evaluates, the Will governs, and the Spirit remembers. That separation is the whole point, so no single faculty can quietly take over the others. If you want the reasoning behind *why* it is built this way rather than the *how*, I wrote that up in [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md).
 
 ### The Five Faculties
 
