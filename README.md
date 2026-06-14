@@ -10,7 +10,7 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
-- [The Origin Story](#the-origin-story-from-human-cognition-to-machine-agency)
+- [The Origin Story](#the-origin-story-from-human-cognition-to-machine-governance)
 - [Quick Start](#quick-start)
 - [How SAFi Compares](#how-safi-compares)
 - [How Does It Work?](#how-does-it-work)
@@ -53,40 +53,80 @@ Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protoco
 
 SAFi uses the Charter to give the agent direction and cultural fit, and strictly enforces the Policy through a deterministic layer.
 
-## The Origin Story: From Human Cognition to Machine Agency
+## The Origin Story: From Human Cognition to Machine Governance
 
-At this point, you are probably wondering how SAFi actually achieves this. If you are fond of classical philosophy, you will appreciate that SAFi's architecture is rooted in over two millennia of classical thinking about human cognition.
+At this point, you are probably wondering how SAFi actually works. If you are fond of classical philosophy, you may appreciate that SAFi's architecture is rooted in more than two thousand years of thinking about human cognition and decision making.
 
 > **Just want the code?**
 > If you'd rather skip the philosophy and get your hands dirty, jump straight to the [Quick Start](#quick-start) section.
 
-SAFi actually started about 20 years ago not as an AI project, but as a personal quest to answer a fundamental question: "How do humans think and make decisions?"
+I started thinking about what eventually became SAFi about twenty years ago as a personal quest to answer a few simple questions: What is the meaning of life? How do people think? Why do we make the decisions we make? The kind of questions that usually lead to more questions than answers.
 
-This wasn't an academically rigorous research project. It was a deeply personal curiosity, partly triggered by my own philosophical convictions.
+But being an IT guy, I naturally approached the problem like an engineer. Instead of trying to answer those questions directly, I started trying to understand the machinery behind them. I began breaking my own thinking into components, or what I called functions. I wanted to understand how decisions were actually produced.
 
-But being a systems architect, I approached my own thinking systematically. Years later, I realized that reverse-engineering my own cognition had led me to the same place as classical faculty psychology: I had arrived independently at the idea of the **Intellect** and the **Will**, the same ground Thomas Aquinas covered more than 800 years ago. So I started studying his ideas to sharpen my own.
+A few years later, I discovered that Thomas Aquinas had spent considerable time thinking about many of the same questions eight hundred years earlier. As I became more familiar with his work, I noticed striking similarities between his understanding of human cognition and the way I had been modeling it.
 
-Studying Thomas Aquinas and synthesizing his ideas gave me the foundation for what I eventually called the Self-Alignment Framework (SAF), an interlocking structure built from what Aquinas called faculties:
+Studying Aquinas provided the foundation for what I eventually called the Self-Alignment Framework (SAF), a closed loop composed of five interlocking faculties:
 
 `Values → Intellect → Will → Conscience → Spirit`
 
-This structure diverges from Classical Philosophy in a couple of ways, but it was the only way I could make it work systematically.
+The framework resembles Aquinas's structure of the soul in several respects, although it also diverges from it in important ways.
 
-One detail is worth pointing out here. What I call **Values**, Aquinas called **Synderesis**: the innate disposition that grasps the first principles of moral action. The two are not quite the same thing, though. Synderesis is the *capacity* to apprehend those principles; Values are *what that capacity holds onto*. So in my framework I treat Values as "the objects of Synderesis", the concrete commitments that the faculty points at. That mapping carries straight into SAFi: Synderesis is implemented as the foundational faculty, and Values are what it compiles into the immutable baseline every other faculty is measured against.
+One distinction is worth making upfront. Aquinas approached these questions from a theological perspective. I approached them from an architectural one. My objective is not to prove that machines possess souls, consciousness, or genuine agency. In fact, I largely agree with Aquinas that machines do not possess teleology in the philosophical sense. My objective is much simpler: I am borrowing the structure, not making ontological claims about AI.
 
-Aquinas would also disagree with where I placed Conscience. He wouldn't treat it as a faculty at all, but as an act of the Intellect, reason applying what it knows to a particular case. But I needed a dedicated evaluating component, so I broke from him here and set Conscience after the Will as an independent faculty.
+For years, SAF remained little more than an intellectual pastime. I thought about it almost daily. It gradually evolved into my own personal development framework and a lens through which I viewed decision making. I considered writing a book about it. I even considered publishing a journal article. But lacking formal philosophical training, I assumed I would have a difficult time convincing the academic old guard to take it seriously.
 
-The Spirit faculty is something unique to SAFi. The closest concept in classical philosophy is "habit", but in SAFi the Spirit is more dynamic: it does more than just capture historical facts, it tracks alignment over time and feeds that signal back into the next decision.
+Then large language models arrived.
 
-Originally, this lived only in my head and a few rough drafts. I found it profoundly useful and deeply resonant. I considered publishing it in an academic journal, but lacking formal philosophical training and not having much confidence in myself, I assumed the "old guard" would find it weird or unsound from a philosophical standpoint.
+Like many people, I was fascinated by the philosophical debates they sparked. People immediately began arguing about consciousness, personhood, intelligence, and whether machines could truly think. Those debates interested me, but something else caught my attention.
 
-Then, LLMs arrived.
+As I experimented with LLMs, I noticed they were surprisingly good at performing the functions that SAF assigned to its faculties. They could reason as an Intellect. They could evaluate as a Conscience. They could generate alternatives and recommendations that a Will could act upon.
 
-I started brainstorming the framework with ChatGPT, and during those sessions, the model itself hinted that this could be a useful system to apply to AI. At this point, the concept of "governance" hadn't emerged yet.
+That observation led to a realization that completely changed how I viewed the framework. SAF was not merely a personal development framework. It had become a cognitive architecture, not because it resembled one philosophically, but because it possessed the characteristics of one structurally. The framework defined specialized faculties with distinct responsibilities, inputs, outputs, memory interactions, evaluation mechanisms, and feedback loops. What began as an attempt to understand human decision making had gradually evolved into a formal model of cognition.
 
-But what became clear is that the framework is really a cognitive architecture, where each component's function can be carried out by a human, an AI, or a group of people. That made an LLM a good candidate for each faculty. So I started building the system in Python and JavaScript, and called this machine implementation **SAFi** (the Self-Alignment Framework Interface). The "Interface" part is the point: it's the portal to the philosophical framework, the thing that makes the abstract concrete.
+More importantly, the architecture appeared to be substrate independent. A human being could instantiate the faculties. A corporate board could instantiate the faculties. An organization could instantiate the faculties. And now, AI systems could instantiate many of the same functions as well. The faculties were more important than the entity performing them.
 
-*(And yes, I stole the lowercase 'i' from Apple because I thought it looked cool 😎).*
+That was the turning point: the moment I stopped viewing SAF as merely a framework for personal development and started viewing it as a framework for governing intelligent agents. That realization eventually became SAFi, the Self-Alignment Framework Interface.
+
+*(And yes, I stole the lowercase "i" from Apple because I thought it looked cool 😎. It also sounds a bit like "Sophie," which is a name I happen to like.)*
+
+### From Cognitive Architecture to Software Architecture
+
+The earliest versions of SAFi were heavily LLM driven. At the time, that seemed like the obvious design. If language models could perform the functions of the faculties, why not allow them to implement most of the architecture?
+
+The answer turned out to be governance. The more I thought about SAFi's purpose, the more I realized that governance cannot depend entirely on the very thing it is trying to govern.
+
+> A constitution cannot be rewritten by the citizen.
+>
+> A referee cannot be the player.
+>
+> And a governance system cannot fully delegate its authority to the model it is supervising.
+
+That realization pushed SAFi toward a strict separation of powers.
+
+Today, only two faculties rely on a language model. The Intellect generates candidate responses. The Conscience evaluates those responses. Everything else is deterministic.
+
+Synderesis compiles organizational values, policies, and principles into structured evaluation criteria. The Will serves as the sole decision maker and gatekeeper; it approves, blocks, or requests correction according to explicit rules. The Spirit maintains memory, computes behavioral profiles, measures drift, updates system state, and generates feedback for future interactions. None of those faculties depend on a language model. They are implemented as ordinary software.
+
+This distinction is important because it is easy to mistake SAFi for another prompt engineering framework or another collection of AI guardrails. It is neither.
+
+The LLM performs cognition related tasks. The governance layer remains outside the model. The Intellect may propose. The Conscience may evaluate. But neither governs.
+
+The Will governs. The Spirit remembers. And both operate independently of the underlying model.
+
+This allows governance to remain stable even when the model changes. A future implementation could replace one LLM with another while preserving the same governing structure. That stability is intentional.
+
+Mathematically, SAFi can be described as a cognitive architecture because it defines specialized faculties, persistent memory structures, evaluation functions, state transitions, feedback mechanisms, and a closed loop adaptation process. The architecture is not a collection of prompts; it is a system of interacting faculties.
+
+This distinction becomes particularly important when discussing the Conscience. People familiar with modern AI often assume SAFi's Conscience is simply another variation of "LLM as a Judge." It is not. Traditional LLM judges evaluate outputs using broad and generalized principles. SAFi's Conscience evaluates against the specific values and policies that Synderesis compiled for that exact agent. It asks questions such as:
+
+- *"Are we acting according to the Q3 Refund Policy?"*
+- *"Are we complying with the organization's data retention requirements?"*
+- *"Are we maintaining the empathy standard defined in the Charter?"*
+
+The resulting evaluations are recorded in the Conscience Ledger and passed to the Spirit. The Spirit integrates those evaluations over time, maintains behavioral profiles, measures drift from historical patterns, updates memory, and generates feedback that can influence future reasoning.
+
+Most AI governance systems stop at evaluation. SAFi continues into integration, memory, adaptation, and self correction. That closed loop is what ultimately transforms SAFi from a collection of AI guardrails into a cognitive architecture for machine governance.
 
 <p align="center">
   <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
