@@ -98,11 +98,11 @@ Synderesis compiles organizational values, policies, and principles into structu
 
 This distinction is important because it is easy to mistake SAFi for another prompt engineering framework or another collection of AI guardrails. It is neither.
 
-The LLM performs cognition-related tasks. The governance layer is a property of the entire system. The Intellect may propose. The Conscience may evaluate. But neither governs.
+The LLM performs cognition-related tasks. The Intellect may propose. The Conscience may evaluate. But neither governs.
 
 Synderesis sets the direction. The Will decides. The Spirit remembers. And all three operate independently of the underlying model.
 
-This allows governance to remain stable even when the model changes. A future implementation could replace one LLM with another while preserving the same governing structure. That stability is intentional.
+Governance is therefore a property of the entire system, not of the model. You can swap one LLM for another without breaking anything, because the governing structure stays the same. SAFi is model-independent by design.
 
 Mathematically, SAFi can be described as a cognitive architecture because it defines specialized faculties, persistent memory structures, evaluation functions, state transitions, feedback mechanisms, and a closed-loop adaptation process. The architecture is not a collection of prompts; it is a system of interacting faculties.
 
