@@ -12,7 +12,7 @@ import {
 } from './ui-wizard-step3.js';
 import {
     renderSafetyStep, validateSafetyStep
-} from './ui-wizard-step5.js';
+} from './ui-wizard-step4.js';
 import {
     renderReviewStep
 } from './ui-wizard-review.js';
