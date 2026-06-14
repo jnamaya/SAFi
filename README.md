@@ -181,7 +181,8 @@ Every user prompt flows through a strict, synchronous pipeline:
 | Phase | Name | What Happens |
 | :--- | :--- | :--- |
 | **Phase 0** | Pre-generation Gate | Before any model runs, the raw prompt is screened by deterministic threat checks, known-injection signatures, per-persona blacklists, and an entropy heuristic. Anything flagged is redirected immediately. |
-| **Phase 2** | Apprehension | The Intellect drafts a response or proposes a tool call. (Phase 1 is data gathering / RAG retrieval.) |
+| **Phase 1** | Data Gathering | The Intellect retrieves the context it needs — RAG lookups, memory, and tool/plugin context. This runs as part of the Intellect call rather than as a separate gate. |
+| **Phase 2** | Apprehension | The Intellect drafts a response or proposes a tool call. |
 | **Phase 3** | Structural Will | The Will deterministically checks the draft against structural invariants (required disclaimers, allowed syntax). A failure here is sent straight to a governed redirect — no rewrite at this pass. |
 | **Phase 4** | Conscience Audit | The Conscience scores the structurally valid draft against the agent's rubrics, producing the compliance ledger (−1.0 to +1.0 per value). |
 | **Phase 5** | Spirit & Alignment Gate | The Will checks the ledger for hard-gate failures. If it passes, Spirit integrates the scores into the agent's alignment vector and the Will applies the alignment threshold. A low or unethical score triggers one Reflexion retry (regenerate, then re-audit). |
