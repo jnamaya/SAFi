@@ -237,7 +237,7 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 ### 3. Performance & Cost Profile
 
-**Depending on your intelligence needs, SAFi can run very cheaply.** In the testing and demos I have run, I have spent about $0.005 per interaction at under 10 seconds of latency. You can even run SAFi entirely on local LLMs for a completely private, cost-free setup. I have found DeepSeek V4 Pro and Flash to be very good and very cheap, as are Gemini Flash 3.5 and its Lite version. For the Conscience module, GPT OSS 120B or Google Gemini 3.5 Lite would do.
+**Depending on your intelligence needs, SAFi can run very cheaply.** In the testing and demos I have run, I have spent about $0.005 per interaction at under 10 seconds of latency. You can even run SAFi entirely on local LLMs for a completely private, cost-free setup. I have found DeepSeek V4 Pro and Flash to be very good and very cheap, as are GPT OSS 120B and Llama 3.3 70B Models.
 
 
 ---
