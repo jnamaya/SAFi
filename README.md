@@ -60,10 +60,6 @@ Studying Aquinas provided the foundation for what I eventually called the Self-A
 
 > 📖 **Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
 
-<p align="center">
-  <img src="public/assets/safi-demo.gif" alt="SAFi Demo" />
-</p>
-
 ---
 
 ## Quick Start
