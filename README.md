@@ -9,7 +9,8 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
-- [The Origin Story](#the-origin-story-from-human-cognition-to-machine-governance)
+- [The Origin Story](#the-origin-story)
+- [From Cognitive Architecture to Software Architecture](#from-cognitive-architecture-to-software-architecture)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
 - [Benchmarks & Validation](#benchmarks--validation)
@@ -41,44 +42,13 @@ Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protoco
 
 SAFi uses the Charter to give the agent direction and cultural awareness, and strictly enforces the Policy through a deterministic layer.
 
-## The Origin Story: From Human Cognition to Machine Governance
+## The Origin Story
 
-At this point, you are probably wondering how SAFi actually works. If you are fond of classical philosophy, you may appreciate that SAFi's architecture is rooted in more than two thousand years of thinking about human cognition and decision making.
+SAFi did not start as software. It began about twenty years ago as a personal quest to understand how people actually make decisions — a quest that eventually intersected with Thomas Aquinas's eight-hundred-year-old model of human cognition and became the five-faculty Self-Alignment Framework: `Values → Intellect → Will → Conscience → Spirit`. When large language models arrived, that personal framework turned out to be a substrate-independent cognitive architecture for governing intelligent agents.
 
-> **Just want the code?**
-> If you'd rather skip the philosophy and get your hands dirty, jump straight to the [Quick Start](#quick-start) section.
+> 📖 **Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
 
-I started thinking about what eventually became SAFi about twenty years ago as a personal quest to answer a few simple questions: What is the meaning of life? How do people think? Why do we make the decisions we make? The kind of questions that usually lead to more questions than answers.
-
-But being an IT guy, I naturally approached the problem like an engineer. Instead of trying to answer those questions directly, I started trying to understand the machinery behind them. I began breaking my own thinking into components, or what I called functions. I wanted to understand how decisions were actually produced.
-
-A few years later, I discovered that Thomas Aquinas had spent considerable time thinking about many of the same questions eight hundred years earlier. As I became more familiar with his work, I noticed striking similarities between his understanding of human cognition and the way I had been modeling it.
-
-Studying Aquinas provided the foundation for what I eventually called the Self-Alignment Framework (SAF), a closed loop composed of five interlocking faculties:
-
-`Values → Intellect → Will → Conscience → Spirit`
-
-The framework resembles Aquinas's structure of the soul in several respects, although it also diverges from it in important ways.
-
-One distinction is worth making upfront. Aquinas approached these questions from a theological perspective. I approached them from an architectural one. My objective is not to prove that machines possess souls, consciousness, or genuine agency. In fact, I largely agree with Aquinas that machines do not possess teleology in the philosophical sense. My objective is much simpler: I am borrowing the structure, not making ontological claims about AI.
-
-For years, SAF remained little more than an intellectual pastime. I thought about it almost daily. It gradually evolved into my own personal development framework and a lens through which I viewed decision making. I considered writing a book about it. I even considered publishing a journal article. But lacking formal philosophical training, I assumed I would have a difficult time convincing the academic old guard to take it seriously.
-
-Then large language models arrived.
-
-Like many people, I was fascinated by the philosophical debates they sparked. People immediately began arguing about consciousness, personhood, intelligence, and whether machines could truly think. Those debates interested me, but something else caught my attention.
-
-As I experimented with LLMs, I noticed they were surprisingly good at performing the functions that SAF assigned to its faculties. They could reason as an Intellect. They could evaluate as a Conscience. They could generate alternatives and recommendations that a Will could act upon.
-
-That observation led to a realization that completely changed how I viewed the framework. SAF was not merely a personal development framework. It had become a cognitive architecture, not because it resembled one philosophically, but because it possessed the characteristics of one structurally. The framework defined specialized faculties with distinct responsibilities, inputs, outputs, memory interactions, evaluation mechanisms, and feedback loops. What began as an attempt to understand human decision making had gradually evolved into a formal model of cognition.
-
-More importantly, the architecture appeared to be substrate independent. A human being, a corporate board, an organization, and now an AI system could each instantiate the same faculties. The faculties were more important than the entity performing them.
-
-That was the turning point: the moment I stopped viewing SAF as merely a framework for personal development and started viewing it as a framework for governing intelligent agents. That realization eventually became SAFi, the Self-Alignment Framework Interface.
-
-*(And yes, I stole the lowercase "i" from Apple because I thought it looked cool 😎. It also sounds a bit like "Sophie," which is a name I happen to like.)*
-
-### From Cognitive Architecture to Software Architecture
+## From Cognitive Architecture to Software Architecture
 
 The earliest versions of SAFi were heavily LLM-driven. At the time, that seemed like the obvious design. If language models could perform the functions of the faculties, why not allow them to implement most of the architecture?
 
