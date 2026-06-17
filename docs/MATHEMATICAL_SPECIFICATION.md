@@ -184,11 +184,13 @@ from the Spirit EMA.
 
 ### Pass 3 — Alignment Check (after Spirit aggregation)
 
-Consumes Spirit's aggregate assessment $(\text{critical\_violation},\ A_t)$ produced by
+Consumes Spirit's aggregate assessment $`(\text{critical\_violation},\ A_t)`$ produced by
 `SpiritIntegrator.integrate()` — **not** the $[1,10]$ coherence score $S_t$
 (`evaluate_spirit_score`):
 
-$$D^3_t, E^3_t = W_3(\text{critical\_violation}_t,\ A_t)$$
+```math
+D^3_t, E^3_t = W_3(\text{critical\_violation}_t,\ A_t)
+```
 
 - If `critical_violation` is set → violation with reason `ethical_violation`.
 - Else if $A_t < \theta$ → violation with reason `low_alignment_score`.
@@ -227,7 +229,9 @@ $$a'_t, r'_t = I(x'_t, V, M_t)$$
 
 **Step 3:** Re-run the **Conscience → Spirit aggregation → Will Pass 3** segment on the
 corrected draft (not Pass 1):
-$$L'_t = C(a'_t, x_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integrate}(L'_t), \quad D'^3_t, E'^3_t = W_3(\text{critical\_violation}', A'_t)$$
+```math
+L'_t = C(a'_t, x_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integrate}(L'_t), \quad D'^3_t, E'^3_t = W_3(\text{critical\_violation}', A'_t)
+```
 
 **If $D'^3_t = \text{approve}$:**
 - Adopt the corrected response and its re-audited ledger:
@@ -266,7 +270,7 @@ but scores are defined and processed as continuous floats — no discretization 
 
 The Spirit faculty exposes **two distinct computations** that must not be conflated:
 
-- `integrate()` → the **gating** assessment $(\text{critical\_violation},\ A_t)$ consumed by
+- `integrate()` → the **gating** assessment $`(\text{critical\_violation},\ A_t)`$ consumed by
   Will Pass 3 (computed *before* the gate decision).
 - `compute()` → the **memory/display** quantities $(S_t, \mu_t, d_t)$ updated *after* the
   draft is committed.
@@ -279,10 +283,12 @@ missing from the ledger defaults to neutral ($0.5$):
 
 $$A_t = \frac{\sum_i w_i \cdot \frac{s_{i,t} + 1}{2}}{\sum_i w_i}$$
 
-$$\text{critical\_violation}_t = \exists\, i : \text{hard\_gate}(v_i) \wedge s_{i,t} \leq -1$$
+```math
+\text{critical\_violation}_t = \exists\, i : \text{hard\_gate}(v_i) \wedge s_{i,t} \leq -1
+```
 
 **Fail-closed:** if the agent has values but the ledger scored *none* of them
-($\text{matched} = 0$), `integrate` returns $\text{critical\_violation} = \text{true},\ A_t = 0$
+($\text{matched} = 0$), `integrate` returns $`\text{critical\_violation} = \text{true},\ A_t = 0`$
 rather than coasting at the neutral default.
 
 ### Profile Vector
@@ -346,8 +352,8 @@ non-content scores.
 | Will — Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
 | Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
 | Will — Pass 2 | $W_2: (L_t, V) \rightarrow (D^2_t, E^2_t)$ |
-| Spirit (integrate) | $\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)$ |
-| Will — Pass 3 | $W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)$ |
+| Spirit (integrate) | $`\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)`$ |
+| Will — Pass 3 | $`W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)`$ |
 | Spirit (compute) | $\text{compute}: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
 
 **Faculties vs. stages.** The rows above are pipeline *stages*, not a list of faculties. SAFi has **five faculties** — *Synderesis, Intellect, Will, Conscience, Spirit* — the moral-cognitive core inherited from the SAF framework. Some faculties span several stages here (the Will's three passes; Spirit's `integrate` and `compute`). And **Phase Zero is not a faculty**: it is a deterministic input-threat *gate* — a perimeter that exists only because the system runs in an adversarial environment the philosophical framework never assumed. Its nearest classical analog is not a faculty of reason but the *sensitive* soul's estimative power (*vis aestimativa*), which perceives a thing as threatening before reason engages — precisely why it sits outside the five.
