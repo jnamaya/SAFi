@@ -194,8 +194,8 @@ class Config:
         # Groq Models
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
-        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B"},
         {"id": "llama-3.1-8b-instant", "label": "llama-3.1-8b"},
+        {"id": "qwen/qwen3.6-27b", "label": "qwen3.6-27b"},
 
 
         # OpenAI Models
@@ -204,7 +204,6 @@ class Config:
 
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
-        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet"},
 
         # Google Models
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
