@@ -195,22 +195,12 @@ class Config:
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
 
-
-        # OpenAI Models
-        {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
-        {"id": "gpt-4o", "label": "GPT-4o"},
-
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
 
         # Google Models
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
         {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
-
-        # Mistral Models
-        {"id": "mistral-small-2603", "label": "Mistral Small 4"},
-        {"id": "ministral-3b-2512", "label": "Ministral 3 3B"},
 
         # DeepSeek Models
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
