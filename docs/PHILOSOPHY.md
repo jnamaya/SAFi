@@ -14,7 +14,7 @@ Here is how Thomas Aquinas's faculties map to the SAFi architecture.
 
 | Thomistic Faculty | Classical Role | SAFi Module | Software Role |
 | :--- | :--- | :--- | :--- |
-| **Synderesis** | The innate knowledge of first moral principles. Cannot be corrupted by circumstance. | `synderesis.py` | A Python file responsible for compiling the organizational charter, core values, and policies into principles that the Conscience can process. |
+| **Synderesis** | The innate knowledge of first moral principles. Cannot be corrupted by circumstance. | `synderesis.py` | The immutable compiler. Compiles the organizational charter, core values, and policies into the principles the Conscience evaluates against — read-only at runtime. |
 | **Intellect** | The faculty that apprehends truth and drafts judgments. | `intellect.py` | The generative LLM responsible for drafting responses or tool calls. Operates entirely within an Air Gap; it can only produce intents, never execute them. |
 | **Will** | The faculty of rational appetite. Executes only what reason has approved. | `will.py` | 100% Python-based. Approves or vetoes the Intellect's proposals based on structural checks and the Conscience's ledger scores. |
 | **Conscience** | The faculty that applies the principles compiled by Synderesis to particular acts. | `conscience.py` | The analytical auditor. A secondary LLM call that scores each draft against the agent's value rubrics, generating a precise compliance ledger (−1.0 to +1.0 per value dimension). |
