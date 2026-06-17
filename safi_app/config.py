@@ -195,7 +195,6 @@ class Config:
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
         {"id": "llama-3.1-8b-instant", "label": "llama-3.1-8b"},
-        {"id": "qwen/qwen3.6-27b", "label": "qwen3.6-27b"},
 
 
         # OpenAI Models
