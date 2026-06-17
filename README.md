@@ -31,9 +31,9 @@ You probably scratch your head, think about those PDF policies sitting on the In
 
 The current standard approach is downstream filters, guardrails that check the output after the fact. 
 
-**That's not a solution. It's a patchwork.**
+SAFi takes a fundamentally different approach.
 
-SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
+It governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
 
 SAFi starts with your **Organizational Charter**: your mission statement and core values. It uses this as the guiding context for the agent. 
 
