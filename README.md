@@ -114,6 +114,8 @@ The structure follows the separation of powers I described above: the Intellect 
 | **Conscience** | `conscience.py` | The evaluator. It evaluates the Intellect's proposal against the agent's rubrics, generating a precise compliance ledger (−1.0 to +1.0 per value). |
 | **Spirit** | `spirit.py` | The long-term memory. Integrates Conscience scores into a rolling alignment vector using an EMA, detecting behavioral drift over time and generating coaching for future turns. |
 
+> 📖 **Why these five?** See [Philosophy as Architecture](docs/PHILOSOPHY.md) for how the Thomistic faculties of the soul map to SAFi's modules.
+
 ### The Seven-Phase Execution Loop
 
 Every user prompt flows through a strict, synchronous pipeline:
