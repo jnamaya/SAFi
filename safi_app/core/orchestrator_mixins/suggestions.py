@@ -25,7 +25,7 @@ class SuggestionsMixin:
             self.log.warning("No 'suggestion_engine' prompt found.")
             return []
 
-        suggestion_model = getattr(self.config, "BACKEND_MODEL", "llama-3.1-8b-instant")
+        suggestion_model = getattr(self.config, "BACKEND_MODEL", "openai/gpt-oss-20b")
 
         try:
             system_prompt = prompt_config["system_prompt"]

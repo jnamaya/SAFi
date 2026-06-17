@@ -89,7 +89,7 @@ async def _extract_entities_with_llm_and_regex(
             )
 
             resp = await groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="openai/gpt-oss-20b",
                 messages=[{"role": "user", "content": extraction_prompt}],
                 temperature=0.0,
                 max_tokens=128,
@@ -184,7 +184,7 @@ async def _find_ticker_with_llm(
             f"Otherwise, respond with ONLY the ticker symbol and nothing else (e.g., 'AAPL', 'GOOGL')."
         )
         resp = await groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=10

@@ -136,16 +136,16 @@ class Config:
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
     # Model assignments for each faculty (defaults — apply to authenticated users and bots)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "llama-3.1-8b-instant")
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-20b")
     CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.1-flash-lite")
 
     # Models used exclusively by the public WordPress chatbot endpoint.
     # Falls back to the global defaults above if not set.
     PUBLIC_INTELLECT_MODEL = os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
     PUBLIC_CONSCIENCE_MODEL = os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
-    SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "llama-3.1-8b-instant")
-    # General-purpose background model (suggestions, etc.). Groq/Llama by default.
-    BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "llama-3.1-8b-instant")
+    SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "openai/gpt-oss-20b")
+    # General-purpose background model (suggestions, etc.). Groq/GPT-OSS by default.
+    BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "openai/gpt-oss-20b")
     # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
     # note-taking can run on Gemini while suggestions/summaries stay on Groq/Llama.
     NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", "gemini-3.1-flash-lite")
@@ -194,7 +194,6 @@ class Config:
         # Groq Models
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
-        {"id": "llama-3.1-8b-instant", "label": "llama-3.1-8b"},
 
 
         # OpenAI Models

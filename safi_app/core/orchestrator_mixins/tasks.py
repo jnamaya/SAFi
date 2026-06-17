@@ -145,7 +145,7 @@ class BackgroundTasksMixin:
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
             
             response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL", "llama-3.1-8b-instant"),
+                model=getattr(self.config, "SUMMARIZER_MODEL", "openai/gpt-oss-20b"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
             )
@@ -169,7 +169,7 @@ class BackgroundTasksMixin:
                 "Return the new, updated JSON object."
             )
             response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL", "llama-3.1-8b-instant"),
+                model=getattr(self.config, "SUMMARIZER_MODEL", "openai/gpt-oss-20b"),
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
                 temperature=0.0,
                 response_format={"type": "json_object"},

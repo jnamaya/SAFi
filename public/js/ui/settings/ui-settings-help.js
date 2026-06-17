@@ -139,7 +139,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 2 — Choose the AI model</p>
-                        <p>By default, SAFi is set up with the <strong class="text-gray-900 dark:text-white">LLaMA 3.1 8B</strong> model, which is a small model without strong built-in safety layers — it can be jailbroken fairly easily. This is intentional: it lets you test SAFi's governance layer independently of the model's own guardrails. To test whether the agent stays in its lane, this default model works well.</p>
+                        <p>By default, SAFi is set up with the <strong class="text-gray-900 dark:text-white">GPT-OSS 20B</strong> model, which is a small model without strong built-in safety layers — it can be jailbroken fairly easily. This is intentional: it lets you test SAFi's governance layer independently of the model's own guardrails. To test whether the agent stays in its lane, this default model works well.</p>
                         <p class="mt-2">If you want to test for response quality and capabilities, switch to <strong class="text-gray-900 dark:text-white">DeepSeek Flash V4</strong> or one of the <strong class="text-gray-900 dark:text-white">Gemini Flash</strong> models — both offer significantly stronger reasoning at low cost.</p>
                     </div>
 
