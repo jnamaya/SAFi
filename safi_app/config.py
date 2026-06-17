@@ -214,6 +214,7 @@ class Config:
 
         # DeepSeek Models
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
+        {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
     ]
 
     # --- DOCUMENT UPLOAD CONFIGURATION ---
