@@ -59,8 +59,6 @@ Studying Aquinas provided the foundation for what I eventually called the Self-A
 `Values → Intellect → Will → Conscience → Spirit`
 
 > 📖 **Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
->
-> 🛠️ Or jump to how one file, `values.py`, became `synderesis.py`: [How the Code Forced the Philosophy](docs/ORIGIN_STORY.md#how-the-code-forced-the-philosophy)
 
 ---
 
