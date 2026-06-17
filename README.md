@@ -130,7 +130,7 @@ Every user prompt flows through a strict, synchronous pipeline:
 | **Phase 5** | Spirit & Alignment Gate | The Will checks the ledger for hard-gate failures. If it passes, Spirit integrates the scores into the agent's alignment vector and the Will applies the alignment threshold. A low or unethical score triggers one Reflexion retry (regenerate, then re-audit). |
 | **Phase 6** | Safe Execution | The fully audited response is finalized, logged with its vector coordinates, and delivered to the user. |
 
-> 📐 **This is just the quick overview.** For the formal model, see the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
+> 📐 For the formal model, see the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
 
 ---
 
