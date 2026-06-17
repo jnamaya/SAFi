@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/Cover_image.png" alt="SAFi: Self-Alignment Framework Interface" width="100%">
+  <img src="public/assets/cover.png?v=2" alt="SAFi: Self-Alignment Framework Interface" width="100%">
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
