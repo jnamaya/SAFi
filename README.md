@@ -56,9 +56,9 @@ A few years later, I discovered that Thomas Aquinas had spent considerable time 
 
 Studying Aquinas provided the foundation for what I eventually called the Self-Alignment Framework (SAF), a closed loop composed of five interlocking faculties:
 
-`Values → Intellect → Will → Conscience → Spirit`
+Values → Intellect → Will → Conscience → Spirit
 
-> 📖 **Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
+**Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
 
 ---
 
