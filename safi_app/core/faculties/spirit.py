@@ -10,7 +10,7 @@ translating metaphysical virtue into trackable vector coordinates.
 """
 from __future__ import annotations
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 # Relative import from within the 'faculties' package
 from .utils import _norm_label

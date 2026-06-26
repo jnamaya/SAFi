@@ -3,7 +3,6 @@ Defines the SAFi class, the main orchestrator for the application.
 """
 from __future__ import annotations
 import json
-import threading
 import uuid
 import asyncio
 import numpy as np
@@ -30,7 +29,6 @@ from .orchestrator_mixins.tts import TtsMixin
 from .orchestrator_mixins.suggestions import SuggestionsMixin
 from .orchestrator_mixins.tasks import BackgroundTasksMixin
 
-# --- Import Refactored Services ---
 # --- Import Refactored Services ---
 from .services import LLMProvider, RAGService, MCPManager
 from .services.model_routing import detect_provider

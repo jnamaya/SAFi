@@ -157,8 +157,7 @@ class IntellectEngine:
         agent_context_injection = ""
         if agent_context_json and agent_context_json not in ("{}", "null", ""):
             try:
-                import json as _json
-                parsed = _json.loads(agent_context_json)
+                parsed = json.loads(agent_context_json)
                 # Only inject if the context has at least one non-empty array
                 if any(v for v in parsed.values() if isinstance(v, list) and v):
                     template = self.prompt_config.get(

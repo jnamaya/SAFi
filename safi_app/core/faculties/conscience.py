@@ -58,7 +58,6 @@ class ConscienceAuditor:
             if template: worldview_injection = template.format(worldview=worldview)
 
         rubrics = []
-        rubrics = []
         for v in self.values:
             if "rubric" in v:
                 rub = v["rubric"]

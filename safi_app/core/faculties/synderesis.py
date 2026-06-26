@@ -11,7 +11,10 @@ produced by this module are what all other faculties rely on to function.
 from typing import Dict, Any, List, Optional
 import copy
 import json
+import logging
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # 1. Import Governance
 from ..governance.contoso.policy import CONTOSO_GLOBAL_POLICY
@@ -423,7 +426,7 @@ def load_custom_persona(name: str) -> Optional[Dict[str, Any]]:
             return agent
 
     except Exception as e:
-        print(f"Error loading custom persona {name} from DB: {e}")
+        log.error(f"Error loading custom persona {name} from DB: {e}")
         return None
     return None
 
@@ -439,7 +442,7 @@ def list_custom_personas(owner_id: Optional[str] = None, include_all: bool = Fal
              # Standard User View (filtered)
              return db.list_agents(owner_id)
     except Exception as e:
-        print(f"Error listing custom personas: {e}")
+        log.error(f"Error listing custom personas: {e}")
         return []
 
 # 7. Public Accessors
@@ -497,7 +500,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
         try:
             db_policy = db.get_policy(effective_policy_id)
         except Exception as e:
-            print(f"Error loading policy {effective_policy_id}: {e}")
+            log.error(f"Error loading policy {effective_policy_id}: {e}")
         if db_policy:
             policy_cfg = db_policy.get("policy_config") or {}
             policy_version = db_policy.get("version")
@@ -535,7 +538,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
                 spirit_beta = float(settings.get("spirit_beta", 0.90))
             charter = db.get_charter(org_id)
         except Exception as e:
-            print(f"Error resolving org governance for {org_id}: {e}")
+            log.error(f"Error resolving org governance for {org_id}: {e}")
     # Policy-level β override (wizard "Ethical Memory" / Consistency slider).
     pol_beta = policy_cfg.get("ethical_memory")
     if pol_beta is not None:
