@@ -78,6 +78,12 @@ class Config:
     # OAuth credentials for Google login
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+    # Native-app Google Sign-In uses its own OAuth client id(s) — its ID tokens
+    # carry a different audience than the web client above. List them here
+    # (comma-separated) so mobile login tokens are accepted as valid audiences.
+    GOOGLE_MOBILE_CLIENT_IDS = tuple(
+        c.strip() for c in os.environ.get("GOOGLE_MOBILE_CLIENT_IDS", "").split(",") if c.strip()
+    )
 
     # OAuth credentials for Microsoft login
     MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID")

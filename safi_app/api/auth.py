@@ -204,15 +204,27 @@ def login_mobile():
         return jsonify({"error": "Missing auth token"}), 400
 
     try:
-        # SECURITY: Verify the Google ID token's signature, issuer, audience and
-        # expiry against Google's public certs. Never trust an unverified JWT —
-        # decoding with verify_signature=False let any client forge a login as
-        # any user simply by supplying a self-made token.
+        # SECURITY: Verify the Google ID token's signature, issuer and expiry
+        # against Google's public certs. Never trust an unverified JWT — decoding
+        # with verify_signature=False let any client forge a login as any user.
+        #
+        # The native (Capacitor) app authenticates with its OWN Google OAuth
+        # client, so its token's audience differs from the web GOOGLE_CLIENT_ID.
+        # We therefore verify the signature without a fixed audience, then
+        # explicitly enforce that the audience is one of OUR registered client
+        # ids (web + mobile). This keeps audience validation strict while
+        # supporting both clients.
+        allowed_audiences = {
+            aud for aud in (
+                current_app.config.get('GOOGLE_CLIENT_ID'),
+                *current_app.config.get('GOOGLE_MOBILE_CLIENT_IDS', ()),
+            ) if aud
+        }
         try:
             user_info = id_token.verify_oauth2_token(
                 token,
                 google_requests.Request(),
-                current_app.config['GOOGLE_CLIENT_ID'],
+                audience=None,  # audience enforced manually against allow-list below
             )
         except ValueError as verify_error:
             current_app.logger.warning(f"Mobile login: rejected invalid Google token: {verify_error}")
@@ -222,6 +234,13 @@ def login_mobile():
         # https://accounts.google.com}; double-check defensively.
         if user_info.get('iss') not in ('accounts.google.com', 'https://accounts.google.com'):
             return jsonify({"error": "Invalid token issuer"}), 401
+
+        # Enforce audience against our own registered client ids.
+        if user_info.get('aud') not in allowed_audiences:
+            current_app.logger.warning(
+                f"Mobile login: rejected token with unrecognized audience {user_info.get('aud')}"
+            )
+            return jsonify({"error": "Invalid authentication token"}), 401
 
         if 'email' not in user_info:
             return jsonify({"error": "Invalid token payload"}), 401
