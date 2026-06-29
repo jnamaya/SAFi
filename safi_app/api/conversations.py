@@ -484,7 +484,8 @@ def cancel_message_endpoint(message_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    db.cancel_message(message_id)
+    if not db.cancel_message(message_id, user_id=user_id):
+        return jsonify({"error": "Message not found."}), 404
     return jsonify({"status": "cancelled"})
 
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
@@ -497,7 +498,7 @@ def get_audit_result_endpoint(message_id):
         current_app.logger.warning(f"AUDIT CHECK: Unauthorized access attempt for {message_id}")
         return jsonify({"error": "Authentication required."}), 401
 
-    result = db.get_audit_result(message_id)
+    result = db.get_audit_result(message_id, user_id=user_id)
     if result:
         current_app.logger.debug(f"AUDIT CHECK: Found result for {message_id}: {result['status']}")
         return jsonify(result)
@@ -598,8 +599,9 @@ def handle_rename_conversation(conversation_id):
     if not new_title:
         return jsonify({"error": "'title' is required."}), 400
     
-    # IDOR check is implicit in the DB function now
-    db.rename_conversation(conversation_id, new_title, user_id=user_id)
+    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
+    if not db.rename_conversation(conversation_id, new_title, user_id=user_id):
+        return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/pin', methods=['PATCH'])
@@ -612,8 +614,9 @@ def handle_pin_conversation(conversation_id):
     if is_pinned is None or not isinstance(is_pinned, bool):
         return jsonify({"error": "'is_pinned' boolean field is required."}), 400
     
-    # IDOR check is implicit in the DB function now
-    db.toggle_conversation_pin(conversation_id, is_pinned, user_id=user_id)
+    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
+    if not db.toggle_conversation_pin(conversation_id, is_pinned, user_id=user_id):
+        return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success", "is_pinned": is_pinned})
 
 @conversations_bp.route('/conversations', methods=['DELETE'])
@@ -630,8 +633,9 @@ def handle_delete_conversation(conversation_id):
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # IDOR check is implicit in the DB function now
-    db.delete_conversation(conversation_id, user_id=user_id)
+    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
+    if not db.delete_conversation(conversation_id, user_id=user_id):
+        return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success"})
 
 # --- Projects (workspaces that group conversations) ---

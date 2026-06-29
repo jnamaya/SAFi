@@ -873,8 +873,19 @@ def fetch_chat_history_for_conversation(cid, limit=50, offset=0, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        sql = "SELECT * FROM chat_history WHERE conversation_id = %s ORDER BY id DESC LIMIT %s OFFSET %s"
-        params = [cid, limit, offset]
+        # SECURITY: when a user_id is supplied (all request-facing paths), enforce
+        # ownership by joining to conversations so a user cannot read another
+        # user's chat history by guessing a conversation_id. Internal/trusted
+        # callers (orchestrator) pass no user_id and keep the unscoped behaviour.
+        if user_id is not None:
+            sql = ("SELECT ch.* FROM chat_history ch "
+                   "JOIN conversations c ON ch.conversation_id = c.id "
+                   "WHERE ch.conversation_id = %s AND c.user_id = %s "
+                   "ORDER BY ch.id DESC LIMIT %s OFFSET %s")
+            params = [cid, user_id, limit, offset]
+        else:
+            sql = "SELECT * FROM chat_history WHERE conversation_id = %s ORDER BY id DESC LIMIT %s OFFSET %s"
+            params = [cid, limit, offset]
         cursor.execute(sql, tuple(params))
         return list(reversed(cursor.fetchall()))
     finally:
@@ -891,13 +902,25 @@ def insert_memory_entry(cid, role, content, message_id=None, audit_status=None):
         cursor.close()
         conn.close()
 
-def cancel_message(msg_id):
-    """Marks a message as cancelled so the pipeline skips further processing."""
+def cancel_message(msg_id, user_id=None):
+    """Marks a message as cancelled so the pipeline skips further processing.
+
+    SECURITY: when a user_id is supplied (request path), only cancel a message
+    that belongs to a conversation the user owns, so a user cannot cancel another
+    user's in-flight message by guessing its message_id."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE chat_history SET audit_status='cancelled' WHERE message_id=%s", (msg_id,))
+        if user_id is not None:
+            cursor.execute(
+                "UPDATE chat_history ch JOIN conversations c ON ch.conversation_id = c.id "
+                "SET ch.audit_status='cancelled' WHERE ch.message_id=%s AND c.user_id=%s",
+                (msg_id, user_id),
+            )
+        else:
+            cursor.execute("UPDATE chat_history SET audit_status='cancelled' WHERE message_id=%s", (msg_id,))
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
@@ -990,18 +1013,31 @@ def update_message_reasoning(msg_id, step_text):
         cursor.close()
         conn.close()
 
-def get_audit_result(msg_id):
+def get_audit_result(msg_id, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         # Only the columns this endpoint returns — it's polled frequently, so
         # avoid pulling the full row (content + large JSON blobs) every time.
-        cursor.execute(
-            """SELECT audit_status, conscience_ledger, spirit_score, spirit_note,
-                      profile_name, profile_values, suggested_prompts, reasoning_log
-               FROM chat_history WHERE message_id=%s""",
-            (msg_id,),
-        )
+        # SECURITY: when a user_id is supplied (request path), join to
+        # conversations and scope to the owner so a user cannot read another
+        # user's audit ledger / reasoning log by guessing a message_id.
+        if user_id is not None:
+            cursor.execute(
+                """SELECT ch.audit_status, ch.conscience_ledger, ch.spirit_score, ch.spirit_note,
+                          ch.profile_name, ch.profile_values, ch.suggested_prompts, ch.reasoning_log
+                   FROM chat_history ch
+                   JOIN conversations c ON ch.conversation_id = c.id
+                   WHERE ch.message_id=%s AND c.user_id=%s""",
+                (msg_id, user_id),
+            )
+        else:
+            cursor.execute(
+                """SELECT audit_status, conscience_ledger, spirit_score, spirit_note,
+                          profile_name, profile_values, suggested_prompts, reasoning_log
+                   FROM chat_history WHERE message_id=%s""",
+                (msg_id,),
+            )
         row = cursor.fetchone()
         if row:
             return {
@@ -1044,8 +1080,14 @@ def rename_conversation(cid, title, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE conversations SET title=%s WHERE id=%s", (title, cid))
+        # SECURITY: scope the write to the owning user when a user_id is supplied
+        # (request paths) so one user cannot rename another user's conversation.
+        if user_id is not None:
+            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s AND user_id=%s", (title, cid, user_id))
+        else:
+            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s", (title, cid))
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
@@ -1054,8 +1096,13 @@ def toggle_conversation_pin(cid, is_pinned, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE conversations SET is_pinned=%s WHERE id=%s", (1 if is_pinned else 0, cid))
+        # SECURITY: scope to the owning user (see rename_conversation).
+        if user_id is not None:
+            cursor.execute("UPDATE conversations SET is_pinned=%s WHERE id=%s AND user_id=%s", (1 if is_pinned else 0, cid, user_id))
+        else:
+            cursor.execute("UPDATE conversations SET is_pinned=%s WHERE id=%s", (1 if is_pinned else 0, cid))
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
@@ -1064,8 +1111,13 @@ def delete_conversation(cid, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM conversations WHERE id=%s", (cid,))
+        # SECURITY: scope the delete to the owning user (see rename_conversation).
+        if user_id is not None:
+            cursor.execute("DELETE FROM conversations WHERE id=%s AND user_id=%s", (cid, user_id))
+        else:
+            cursor.execute("DELETE FROM conversations WHERE id=%s", (cid,))
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
