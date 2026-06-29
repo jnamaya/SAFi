@@ -23,4 +23,6 @@ def detect_provider(model_name: str) -> str:
         return "deepseek"
     if m.startswith("mistral-") or m.startswith("ministral-") or m.startswith("codestral-") or m.startswith("open-mi"):
         return "mistral"
+    if m.startswith("glm-"):
+        return "zhipu"
     return "groq"

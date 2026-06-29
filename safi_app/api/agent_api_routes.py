@@ -226,8 +226,8 @@ async def generate_rubric():
 
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Hardcoded: Use cheap fast GPT-OSS 120B model for wizard tasks
-        model = "openai/gpt-oss-120b"
+        # Use the configured backend model for wizard tasks
+        model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
         llm_config = {
@@ -293,8 +293,8 @@ async def generate_values():
         
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Hardcoded: Use cheap fast GPT-OSS 120B model for wizard tasks
-        model = "openai/gpt-oss-120b"
+        # Use the configured backend model for wizard tasks
+        model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
         llm_config = {
@@ -369,7 +369,7 @@ async def generate_scope():
 
         from safi_app.core.services.llm_provider import LLMProvider
 
-        model = "openai/gpt-oss-120b"
+        model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
 
         llm_config = {

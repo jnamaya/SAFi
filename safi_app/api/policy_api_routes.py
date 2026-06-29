@@ -299,8 +299,8 @@ async def generate_policy_content_endpoint():
         from safi_app.core.services.llm_provider import LLMProvider
         from safi_app.config import Config
         
-        # Hardcoded: Use cheap fast GPT-OSS 120B model for wizard tasks
-        model = "openai/gpt-oss-120b"
+        # Use the configured backend model for wizard tasks
+        model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
         llm_config = {

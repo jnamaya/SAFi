@@ -153,6 +153,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     "type": "openai",
                     "api_key": getattr(config, "MISTRAL_API_KEY", ""),
                     "base_url": "https://api.mistral.ai/v1"
+                },
+                "zhipu": {
+                    "type": "openai",
+                    "api_key": getattr(config, "ZHIPU_API_KEY", ""),
+                    "base_url": "https://api.z.ai/api/paas/v4"
                 }
             },
             "routes": {

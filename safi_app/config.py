@@ -95,6 +95,7 @@ class Config:
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+    ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
     # MySQL connection details
@@ -205,6 +206,9 @@ class Config:
         # DeepSeek Models
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
         {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
+
+        # Zhipu (Z.ai) Models
+        {"id": "glm-5.2", "label": "GLM-5.2"},
     ]
 
     # --- DOCUMENT UPLOAD CONFIGURATION ---
@@ -233,12 +237,13 @@ class Config:
         llm_keys = [
             cls.GROQ_API_KEY, cls.OPENAI_API_KEY, cls.ANTHROPIC_API_KEY,
             cls.GEMINI_API_KEY, cls.MISTRAL_API_KEY, cls.DEEPSEEK_API_KEY,
+            cls.ZHIPU_API_KEY,
         ]
         if not any(llm_keys):
             errors.append(
                 "No LLM API key is configured — set at least one of: "
                 "GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, "
-                "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY"
+                "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, ZHIPU_API_KEY"
             )
 
         if errors:
