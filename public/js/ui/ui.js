@@ -197,6 +197,21 @@ export function closeSidebar() {
   updateSidebarState(false);
 }
 
+/**
+ * Toggles the desktop sidebar between expanded and collapsed.
+ * Collapse is driven by an `html.sidebar-collapsed` class (CSS-only on desktop),
+ * so it survives the sidebar's re-render on login and is restored before paint.
+ * No-op on mobile, where the sidebar is an overlay controlled by open/closeSidebar.
+ */
+export function toggleDesktopSidebar() {
+  const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+  try {
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+  } catch (e) {
+    /* localStorage unavailable (private mode) — non-fatal */
+  }
+}
+
 // --- LOADING / SCROLLING ---
 
 export function clearLoadingInterval() {

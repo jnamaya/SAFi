@@ -676,6 +676,39 @@ function attachEventListeners() {
   const sidebarOverlay = document.getElementById('sidebar-overlay');
   if (sidebarOverlay) sidebarOverlay.addEventListener('click', ui.closeSidebar);
 
+  // --- Desktop sidebar collapse toggle ---
+  // Delegated: the collapse button lives inside the sidebar, which is re-rendered on login.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-sidebar-toggle]')) {
+      hapticImpactLight();
+      ui.toggleDesktopSidebar();
+    }
+  });
+
+  // --- Scroll-to-bottom button ---
+  const chatWindow = document.getElementById('chat-window');
+  const scrollToBottomBtn = document.getElementById('scroll-to-bottom-btn');
+  if (chatWindow && scrollToBottomBtn) {
+    let rafPending = false;
+    const refreshScrollButton = () => {
+      const distanceFromBottom =
+        chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight;
+      scrollToBottomBtn.classList.toggle('s2b-hidden', distanceFromBottom < 160);
+    };
+    const scheduleRefresh = () => {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => { rafPending = false; refreshScrollButton(); });
+    };
+    chatWindow.addEventListener('scroll', scheduleRefresh, { passive: true });
+    // New/streaming messages change the scroll height — re-evaluate on DOM mutations.
+    new MutationObserver(scheduleRefresh).observe(chatWindow, { childList: true, subtree: true });
+    scrollToBottomBtn.addEventListener('click', () => {
+      hapticImpactLight();
+      ui.scrollToBottom();
+    });
+  }
+
   // --- Control Panel ---
   const controlPanelButton = document.getElementById('control-panel-btn');
   if (controlPanelButton) {

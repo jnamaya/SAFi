@@ -1872,3 +1872,41 @@ form {
   0%   { opacity: 0; transform: scale(0.96) translateY(4px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
+
+/* --- Desktop collapsible sidebar --- */
+/* The floating "show sidebar" button only exists on desktop, and only while collapsed. */
+#desktop-sidebar-show {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  /* Animate the chat area reclaiming space when the sidebar collapses. */
+  #main-layout-wrapper {
+    transition: margin-left 0.3s ease-in-out;
+  }
+
+  html.sidebar-collapsed #sidebar {
+    transform: translateX(-100%);
+  }
+
+  html.sidebar-collapsed #main-layout-wrapper {
+    margin-left: 0 !important;
+  }
+
+  html.sidebar-collapsed #desktop-sidebar-show {
+    display: inline-flex;
+  }
+}
+
+/* --- Scroll-to-bottom button --- */
+#scroll-to-bottom-btn {
+  left: 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#scroll-to-bottom-btn.s2b-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+}

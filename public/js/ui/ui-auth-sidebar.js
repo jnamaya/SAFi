@@ -50,9 +50,16 @@ export function updateUIForAuthState(user) {
               <span class="font-semibold text-lg tracking-tight">SAFi</span>
             </div>
 
-            <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
-            </button>
+            <div class="flex items-center">
+              <!-- Collapse sidebar (desktop only) -->
+              <button data-sidebar-toggle type="button" aria-label="Collapse sidebar" title="Collapse sidebar" class="hidden md:inline-flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
+              </button>
+
+              <button id="sidebar-close-btn" type="button" aria-label="Close sidebar" class="md:hidden p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+              </button>
+            </div>
           </div>
           
           <!-- Search Bar Area -->

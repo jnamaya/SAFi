@@ -1,5 +1,5 @@
 // sw.js - minimal offline + background refresh
-const STATIC_CACHE = 'safi-static-v1';
+const STATIC_CACHE = 'safi-static-v2';
 const API_CACHE = 'safi-api-v1';
 
 // App shell to precache (adjust paths if your structure differs)
