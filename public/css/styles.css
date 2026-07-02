@@ -43,8 +43,8 @@ html {
    rem, so lowering the root font-size shrinks text AND spacing proportionally.
    This is the single knob to tune — 15px ≈ 94% of desktop. Try 14px for more,
    16px to disable. Only applies in the native app (class added in index.html). */
-html.native { font-size: 15px; }
-html.native body { font-size: 15px; }
+html.native { font-size: 14px; }
+html.native body { font-size: 14px; }
 
 #app-container {
   max-width: 100%;
