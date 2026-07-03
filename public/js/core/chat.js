@@ -1271,7 +1271,7 @@ export function autoSize() {
     sendButton.disabled = !hasText && pendingFiles.length === 0;
 
     if (!hasText) {
-        input.style.height = '44px'; // Force reset to min-height
+        input.style.height = '28px'; // Force reset to min-height
         return;
     }
 

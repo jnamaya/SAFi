@@ -4396,6 +4396,14 @@ video {
     display: none;
   }
 
+  .md\:h-9 {
+    height: 2.25rem;
+  }
+
+  .md\:w-9 {
+    width: 2.25rem;
+  }
+
   .md\:w-auto {
     width: auto;
   }
