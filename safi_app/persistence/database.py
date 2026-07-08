@@ -593,19 +593,6 @@ def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dic
         return {"turn": turn, "mu": mu_obj}
     return None
 
-def message_exists(message_id: str) -> bool:
-    """True if a chat_history row with this message_id already exists.
-    Used to drop double-submits before any rows are inserted."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT 1 FROM chat_history WHERE message_id=%s LIMIT 1", (message_id,))
-        return cursor.fetchone() is not None
-    finally:
-        cursor.close()
-        conn.close()
-
-
 def get_latest_spirit_memory(agent_id):
     """
     Wrapper for load_spirit_memory to match orchestrator call signature.
@@ -964,6 +951,51 @@ def insert_memory_entry(cid, role, content, message_id=None, audit_status=None):
     finally:
         cursor.close()
         conn.close()
+
+def insert_turn_atomic(cid, user_prompt, message_id, ai_audit_status="pending"):
+    """Insert a turn's user row and AI placeholder in ONE transaction.
+
+    The AI row's message_id is UNIQUE, so a repeated or concurrent submit with
+    the same message_id fails the AI insert; the whole transaction rolls back,
+    taking the user row with it. This closes the double-submit race that a
+    plain 'insert user, then insert ai' left open: the user row (which carries
+    no unique constraint — message_id is NULL on it) used to persist even when
+    the AI insert collided, leaving a duplicate prompt in history.
+
+    Order is preserved (user row first, lower AUTO_INCREMENT id) so the
+    transcript still renders user-before-assistant.
+
+    Returns True if the turn was inserted, False if this message_id already
+    exists (a double-submit to drop). Re-raises any other error.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("START TRANSACTION")
+        cursor.execute(
+            "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (cid, "user", user_prompt, None, None),
+        )
+        cursor.execute(
+            "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (cid, "ai", "", message_id, ai_audit_status),
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        if "Duplicate entry" in str(e) and "message_id" in str(e):
+            return False
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def cancel_message(msg_id, user_id=None):
     """Marks a message as cancelled so the pipeline skips further processing.

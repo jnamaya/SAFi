@@ -427,29 +427,22 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # --- 0. Pre-insertion for Live Reasoning ---
         try:
-            # Double-submit guard: a retry reusing an explicit message_id must be
-            # dropped BEFORE the user row is inserted — the old duplicate check
-            # fired on the AI placeholder insert, by which point the user message
-            # had already landed in history a second time.
-            if override_message_id and db.message_exists(override_message_id):
-                self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
-                return { "finalOutput": "", "messageId": message_id, "duplicate": True }
-
-            # Ensure messages exist in DB so reasoning poller can find them IMMEDIATELLY
+            # Title derives from the first message, so decide it before inserting.
             history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
             new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
 
-            db.insert_memory_entry(conversation_id, "user", user_prompt)
-            # Create the AI message placeholder immediately
-            db.insert_memory_entry(conversation_id, "ai", "", message_id=message_id, audit_status="pending")
+            # Insert the user row and the AI placeholder atomically. A repeated
+            # or concurrent submit reusing this message_id fails the AI row's
+            # UNIQUE key, rolls the whole turn back (so no orphaned duplicate
+            # user row is left behind — the flaw of the old two-insert path),
+            # and returns False so we drop the double-submit cleanly.
+            if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
+                self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
+                return { "finalOutput": "", "messageId": message_id, "duplicate": True }
 
             # --- Initial Status ---
             db.update_message_reasoning(message_id, "Analyzing your request...")
         except Exception as e:
-            # Duplicate message_id means a retry/double-submit for the same request — drop silently
-            if "Duplicate entry" in str(e) and "message_id" in str(e):
-                self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
-                return { "finalOutput": "", "messageId": message_id, "duplicate": True }
             import traceback
             self.log.error(f"Pre-Insert CRASH: {str(e)}\n{traceback.format_exc()}")
             return { "finalOutput": "An internal error occurred. Please try again.", "messageId": message_id }
