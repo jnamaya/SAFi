@@ -535,7 +535,10 @@ def profiles_list():
             profile_details['is_custom'] = p.get('is_custom', False)
             profile_details['created_by'] = p.get('created_by')
             all_profiles.append(profile_details)
-        except KeyError:
+        except (KeyError, ValueError):
+            # KeyError: unknown persona. ValueError: agent failed compile-time
+            # governance validation (e.g. rubric-less hard gate) — skip it here;
+            # it still appears in the agents management UI where it can be fixed.
             continue 
             
     sorted_profiles = sorted(all_profiles, key=lambda x: x['name'])

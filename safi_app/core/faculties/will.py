@@ -89,7 +89,16 @@ class WillGate:
             
             # 1. Enforce Disclaimer Presence
             if struct.get("require_disclaimer"):
-                if struct["mandatory_disclaimer_substring"] not in draft_output:
+                expected = (struct.get("mandatory_disclaimer_substring") or "").strip()
+                if not expected:
+                    # Config error: the rule is on but no substring was set. There
+                    # is nothing checkable to enforce — blocking every draft (or
+                    # crashing on a KeyError, the old behavior) helps nobody.
+                    self.log.warning(
+                        "WillGate: require_disclaimer is set but "
+                        "mandatory_disclaimer_substring is empty — skipping disclaimer check."
+                    )
+                elif expected not in draft_output:
                     return False, "missing_disclaimer"
             
             # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)

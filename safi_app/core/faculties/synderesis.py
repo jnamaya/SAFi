@@ -201,6 +201,64 @@ def _inject_disclaimer_directive(profile: Dict[str, Any]) -> Dict[str, Any]:
     return profile
 
 
+def _has_usable_rubric(v: Dict[str, Any]) -> bool:
+    """True if the value carries a rubric the Conscience can actually score:
+    a non-empty dict or non-empty list — the two shapes evaluate() accepts."""
+    rub = v.get("rubric")
+    return bool(rub) and isinstance(rub, (dict, list))
+
+
+def _validate_value_rubrics(profile: Dict[str, Any], agent_name: str) -> Dict[str, Any]:
+    """Compile-time enforcement of the Conscience contract. The auditor only
+    submits values that carry a rubric, and the Will fails closed on any hard
+    gate missing from the resulting ledger — so a rubric-less value is not a
+    cosmetic gap, it changes runtime behavior:
+
+    - A HARD-GATE value without a usable rubric can never be scored, so every
+      request fails closed as hard_gate_unscored — a redirect-only agent with
+      no error pointing at the cause. Fail loud here instead.
+    - An ORDINARY value without a usable rubric can never be scored either:
+      Spirit's compute() then hits its "Ledger missing" return every turn,
+      freezing the EMA memory and recording 1/10 forever. Strip it (with a
+      warning) and renormalize the remaining scored weights so Spirit math
+      stays calibrated.
+    """
+    values = profile.get("values", [])
+    if not values:
+        return profile
+
+    bad_gates = [
+        (v.get("value") or v.get("name") or "<unnamed>")
+        for v in values if v.get("hard_gate") and not _has_usable_rubric(v)
+    ]
+    if bad_gates:
+        raise ValueError(
+            f"Agent '{agent_name}' is misconfigured: hard-gate value(s) "
+            f"{', '.join(repr(n) for n in bad_gates)} have no usable rubric. "
+            "A hard gate the Conscience cannot score fails closed on every "
+            "request. Add a rubric to the value or remove its hard_gate flag."
+        )
+
+    stripped = [
+        (v.get("value") or v.get("name") or "<unnamed>")
+        for v in values if not v.get("hard_gate") and not _has_usable_rubric(v)
+    ]
+    if stripped:
+        log.warning(
+            f"Agent '{agent_name}': stripped scored value(s) with no usable rubric "
+            f"({', '.join(stripped)}) — the Conscience can never score them, which "
+            "would freeze Spirit memory. Add rubrics to restore them."
+        )
+        profile = copy.deepcopy(profile)
+        gates = [v for v in profile["values"] if v.get("hard_gate")]
+        scored = [
+            v for v in profile["values"]
+            if not v.get("hard_gate") and _has_usable_rubric(v)
+        ]
+        profile["values"] = gates + _normalize_weights(scored, target_sum=1.0)
+    return profile
+
+
 def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) -> List[Dict[str, Any]]:
     """
     Scales the weights of the provided values so they sum to `target_sum`.
@@ -553,6 +611,12 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     # 5b. If the effective policy mandates a disclaimer, instruct the Intellect to
     # emit it verbatim. The Will only checks for it; this makes the model write it.
     final = _inject_disclaimer_directive(final)
+
+    # 5c. Compile-time rubric validation: hard gates without a usable rubric
+    # raise (the agent would fail closed on every request); ordinary values
+    # without one are stripped with a warning (they could never be scored and
+    # would freeze Spirit memory).
+    final = _validate_value_rubrics(final, key)
 
     # 6. Stamp governance metadata for the runtime + auditing.
     final["policy_id"] = effective_policy_id or "standalone"

@@ -854,8 +854,10 @@ def get_me():
         active_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
         try:
             user_details['active_profile_details'] = get_profile(active_profile_name)
-        except KeyError:
-            # Fallback logic...
+        except (KeyError, ValueError):
+            # KeyError: persona no longer exists. ValueError: it failed
+            # compile-time governance validation (e.g. rubric-less hard gate).
+            # Either way, fall back to the default so login still works.
             db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
             user_details['active_profile'] = Config.DEFAULT_PROFILE
             user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
