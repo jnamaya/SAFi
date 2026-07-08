@@ -283,15 +283,33 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return False
 
     def _ledger_covers_values(self, ledger: List[Dict[str, Any]]) -> bool:
-        """True if the audit scored at least one of this agent's defined values.
-        A ledger that covers none of them signals a failed/garbled Conscience
-        pass, which the caller treats as a fail-closed condition."""
+        """True if the audit usably covers this agent's defined values: every
+        hard gate is scored AND a strict majority of scored values are present.
+
+        The old rule ("any one value scored") let a mostly-garbled ledger coast
+        through — 1 of 8 values scored counted as a usable audit, the other 7
+        defaulted to neutral in Spirit's aggregate, and the message could ship
+        on the strength of a single score. Failing coverage here (rather than
+        at the hard-gate check) also gives the guarded audit its one retry
+        before the orchestrator fails closed."""
         if not ledger:
             return False
         from .faculties.utils import _norm_label
-        defined = {_norm_label(v.get("value") or v.get("name")) for v in self.values}
         scored = {_norm_label(e.get("value")) for e in ledger if e.get("value")}
-        return bool(defined & scored)
+        gate_names = {
+            _norm_label(v.get("value") or v.get("name"))
+            for v in self.values if v.get("hard_gate")
+        }
+        if gate_names - scored:
+            return False
+        value_names = [
+            _norm_label(v.get("value") or v.get("name"))
+            for v in self.values if not v.get("hard_gate")
+        ]
+        if not value_names:
+            return True
+        matched = sum(1 for n in value_names if n in scored)
+        return matched * 2 > len(value_names)
 
     async def _run_conscience_audit(self, a_t, user_prompt, r_t, retrieved_context, message_id):
         """Run the Conscience audit, retrying once if it errors or returns a

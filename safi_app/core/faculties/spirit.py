@@ -147,17 +147,26 @@ class SpiritIntegrator:
             lmap.get(nkey) for nkey in self._norm_values
         ]
 
-        if any(r is None for r in sorted_rows):
-            missing = [self.values[i]["value"] for i, r in enumerate(sorted_rows) if r is None]
-            # Safety return
+        missing = [
+            self.values[i].get("value") or self.values[i].get("name") or "Unknown"
+            for i, r in enumerate(sorted_rows) if r is None
+        ]
+        if len(missing) == len(sorted_rows):
+            # Nothing matched at all — no update possible. (The orchestrator's
+            # coverage gate fails closed long before this; kept as a safety net.)
             return 1, f"Ledger missing: {', '.join(missing)}", mu_memory, np.zeros(expected_len), None, np.zeros(expected_len)
 
-        # Convert scores/confidences
+        # A partially-scored ledger is scored over the values it DID cover —
+        # missing values contribute neutrally (score 0), the same treatment
+        # integrate() applies when gating. The old all-or-nothing "Ledger
+        # missing" return recorded 1/10 for a response the gates had just
+        # approved and silently froze the EMA memory.
+        observed = np.array([r is not None for r in sorted_rows], dtype=bool)
         scores = np.nan_to_num(
-            np.array([float(r.get("score", 0.0)) for r in sorted_rows], dtype=float)
+            np.array([float(r.get("score", 0.0)) if r else 0.0 for r in sorted_rows], dtype=float)
         )
         confidences = np.nan_to_num(
-            np.array([float(r.get("confidence", 0.0)) for r in sorted_rows], dtype=float)
+            np.array([float(r.get("confidence", 0.0)) if r else 0.0 for r in sorted_rows], dtype=float)
         )
 
         # --- 3. Compute This Turn (p_t) ---
@@ -166,8 +175,12 @@ class SpiritIntegrator:
         p_t = self.value_weights * scores
 
         # --- 4. Update Spirit Vector (mu) ---
-        # mu_new_vector only contains CURRENT active values
-        mu_new_vector = self.beta * mu_tm1_vector + (1 - self.beta) * p_t
+        # mu_new_vector only contains CURRENT active values. Observed values get
+        # the EMA update; unobserved values HOLD their previous mu — a missing
+        # observation is not evidence of neutrality, so their memory neither
+        # decays nor moves this turn.
+        ema = self.beta * mu_tm1_vector + (1 - self.beta) * p_t
+        mu_new_vector = np.where(observed, ema, mu_tm1_vector)
 
         # --- 5. Export Memory (Reconstruct Dict) ---
         if is_legacy:
@@ -187,6 +200,8 @@ class SpiritIntegrator:
         drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1_vector) / denom)
 
         note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
+        if missing:
+            note += f" Unscored: {', '.join(missing)}."
 
         # Return the DICTIONARY memory for storage, AND the vector for in-memory history
         return spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector

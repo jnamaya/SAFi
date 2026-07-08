@@ -119,6 +119,9 @@ class TestFinalizeDraft(unittest.TestCase):
         self.assertEqual(res["reason"], "scope_violation")
 
     def test_unscored_hard_gate_fails_closed(self):
+        # Since Phase 3, a ledger missing a hard gate fails the COVERAGE check
+        # (stage "audit"), which grants the guarded audit its one retry before
+        # failing closed — it no longer reaches the hard-gate stage.
         conscience = FakeConscience([
             ledger_entry("Honesty", 1.0),
             ledger_entry("Care", 1.0),
@@ -126,8 +129,9 @@ class TestFinalizeDraft(unittest.TestCase):
         safi = make_safi(conscience)
         res = finalize(safi, f"Answer. {DISCLAIMER}")
         self.assertEqual(res["verdict"], "violation")
-        self.assertEqual(res["stage"], "hard_gate")
-        self.assertEqual(res["reason"], "hard_gate_unscored")
+        self.assertEqual(res["stage"], "audit")
+        self.assertEqual(res["reason"], "audit_unavailable")
+        self.assertEqual(conscience.calls, 2, "coverage failure earns one audit retry")
 
     def test_audit_error_fails_closed_not_raised(self):
         conscience = FakeConscience(RuntimeError("LLM down"))

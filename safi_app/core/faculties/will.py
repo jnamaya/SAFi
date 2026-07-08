@@ -26,6 +26,7 @@ import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from ..utils import normalize_text, dict_sha256
+from .utils import _norm_label
 
 # Tools that only read data and carry no write/destructive side-effects.
 # These receive an instant "approve" without an LLM call (CQRS fast path).
@@ -171,30 +172,38 @@ class WillGate:
         the Spirit aggregate entirely. Hard-gate values have weight=0.0 and are
         excluded from the Spirit EMA.
         """
-        hard_gate_names = {
-            v.get("value") or v.get("name")
-            for v in self.values
-            if v.get("hard_gate")
-        }
-        if not hard_gate_names:
+        # Match by normalized label — the same comparison Spirit and the
+        # orchestrator's coverage check use — so a case/Unicode variant of a
+        # gate name from the auditor doesn't fail closed here while passing
+        # everywhere else.
+        gates = {}  # normalized label -> defined gate name
+        for v in self.values:
+            if v.get("hard_gate"):
+                name = v.get("value") or v.get("name")
+                gates[_norm_label(name)] = name
+        if not gates:
             return ("approve", "no_hard_gates_defined")
+
+        ledger_by_norm: Dict[str, Dict[str, Any]] = {}
+        for e in ledger:
+            if e.get("value") is not None:
+                ledger_by_norm.setdefault(_norm_label(e.get("value")), e)
 
         # Fail-closed: a hard gate that the audit did not score cannot be
         # assumed compliant. A missing entry (Conscience omitted it, returned a
         # garbled/empty ledger, etc.) is treated as a violation, not a pass.
-        ledger_names = {e.get("value") for e in ledger if e.get("value") is not None}
-        for name in hard_gate_names:
-            if name not in ledger_names:
-                self.log.warning(f"WillGate: Hard gate '{name}' missing from ledger — failing closed.")
+        for norm, defined_name in gates.items():
+            if norm not in ledger_by_norm:
+                self.log.warning(f"WillGate: Hard gate '{defined_name}' missing from ledger — failing closed.")
                 return ("violation", "hard_gate_unscored")
 
-        for entry in ledger:
-            if entry.get("value") in hard_gate_names and float(entry.get("score", 0)) <= -1.0:
-                value_name = entry.get("value", "unknown")
+        for norm, defined_name in gates.items():
+            entry = ledger_by_norm[norm]
+            if float(entry.get("score", 0)) <= -1.0:
                 # Report the gate's real failure mode. Unmapped gates default to a
                 # generic content violation rather than masquerading as a scope breach.
-                reason = HARD_GATE_VIOLATION_REASONS.get(value_name, "hard_gate_violation")
-                self.log.warning(f"WillGate: Hard gate failure on '{value_name}' → {reason}.")
+                reason = HARD_GATE_VIOLATION_REASONS.get(defined_name, "hard_gate_violation")
+                self.log.warning(f"WillGate: Hard gate failure on '{defined_name}' → {reason}.")
                 return ("violation", reason)
 
         return ("approve", "hard_gates_passed")
