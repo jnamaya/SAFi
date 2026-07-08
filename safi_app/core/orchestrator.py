@@ -427,6 +427,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # --- 0. Pre-insertion for Live Reasoning ---
         try:
+            # Double-submit guard: a retry reusing an explicit message_id must be
+            # dropped BEFORE the user row is inserted — the old duplicate check
+            # fired on the AI placeholder insert, by which point the user message
+            # had already landed in history a second time.
+            if override_message_id and db.message_exists(override_message_id):
+                self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
+                return { "finalOutput": "", "messageId": message_id, "duplicate": True }
+
             # Ensure messages exist in DB so reasoning poller can find them IMMEDIATELLY
             history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
             new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
@@ -635,7 +643,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         from google.genai import types
                         agent_history.append(types.Content(**raw_turn))
                     else:
-                        agent_history.append(f"SYSTEM OBSERVATION: Model requested tool {current_tool_name}.")
+                        # Include the arguments — without them the model cannot
+                        # tell WHICH call produced the result below (e.g. which
+                        # query, which page) and multi-step reasoning degrades.
+                        try:
+                            _args_str = json.dumps(current_parameters, ensure_ascii=False, default=str)
+                        except Exception:
+                            _args_str = str(current_parameters)
+                        agent_history.append(
+                            f"SYSTEM OBSERVATION: Model requested tool {current_tool_name} "
+                            f"with arguments: {_args_str}"
+                        )
 
                     try:
                         tool_result = await self.mcp_manager.execute_tool(

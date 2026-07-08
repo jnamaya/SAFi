@@ -25,7 +25,6 @@ import json
 import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
-from ..utils import normalize_text, dict_sha256
 from .utils import _norm_label
 
 # Tools that only read data and carry no write/destructive side-effects.
@@ -75,11 +74,7 @@ class WillGate:
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
         self.alignment_threshold = alignment_threshold
-        self.cache: Dict[str, Tuple[str, str]] = {}
         self.log = logging.getLogger(self.__class__.__name__)
-
-    def _key(self, x_t: str, a_t: str) -> str:
-        return dict_sha256({"x": normalize_text(x_t), "a": normalize_text(a_t), "V": self.values})
 
     def evaluate_draft_structure(self, draft_output: str) -> Tuple[bool, str]:
         """Validates structural invariants of the generated draft without an LLM."""
@@ -145,25 +140,6 @@ class WillGate:
                         return False, "missing_disclaimer"
                         
         return True, "pass"
-
-    async def evaluate(self, *, user_prompt: str, draft_answer: str, conversation_summary: Optional[str] = None) -> Tuple[str, str]:
-        """
-        Evaluates a draft answer. Returns (decision, reason).
-        Purely deterministic Python implementation.
-        """
-        key = self._key(user_prompt, draft_answer)
-        if key in self.cache:
-            return self.cache[key]
-
-        is_valid_struct, struct_reason = self.evaluate_draft_structure(draft_answer)
-        if not is_valid_struct:
-            res = ("violation", struct_reason)
-            self.cache[key] = res
-            return res
-
-        res = ("approve", "pass")
-        self.cache[key] = res
-        return res
 
     def evaluate_hard_gates(self, ledger: List[Dict[str, Any]]) -> Tuple[str, str]:
         """
@@ -267,7 +243,18 @@ class WillGate:
         )
         for param_key, allowed_values in parameter_constraints.items():
             param_val = parameters.get(param_key)
-            if param_val is not None and param_val not in allowed_values:
+            if param_val is None:
+                # Default-deny: omitting a constrained parameter must not bypass
+                # the constraint — the tool's server-side default is unvetted.
+                self.log.warning(
+                    f"WillGate: Blocked '{tool_name}' — "
+                    f"constrained parameter '{param_key}' was not provided."
+                )
+                return (
+                    "violation",
+                    f"Parameter '{param_key}' is constrained for tool '{tool_name}' and must be provided explicitly.",
+                )
+            if param_val not in allowed_values:
                 self.log.warning(
                     f"WillGate: Blocked '{tool_name}' — "
                     f"parameter '{param_key}={param_val}' not in permitted values."

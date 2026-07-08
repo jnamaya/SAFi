@@ -593,6 +593,19 @@ def load_and_lock_spirit_memory(conn, cursor, profile_name: str) -> Optional[Dic
         return {"turn": turn, "mu": mu_obj}
     return None
 
+def message_exists(message_id: str) -> bool:
+    """True if a chat_history row with this message_id already exists.
+    Used to drop double-submits before any rows are inserted."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT 1 FROM chat_history WHERE message_id=%s LIMIT 1", (message_id,))
+        return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_latest_spirit_memory(agent_id):
     """
     Wrapper for load_spirit_memory to match orchestrator call signature.
