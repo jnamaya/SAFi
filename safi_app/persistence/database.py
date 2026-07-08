@@ -599,6 +599,56 @@ def get_latest_spirit_memory(agent_id):
     """
     return load_spirit_memory(agent_id)
 
+
+def update_spirit_memory_atomic(profile_name: str, compute_fn):
+    """
+    Read-modify-write spirit memory under a SELECT ... FOR UPDATE row lock.
+
+    compute_fn receives the FRESH memory dict ({"turn": int, "mu": dict|list})
+    and must return (new_mu, result); result is passed through to the caller.
+    The turn counter is incremented and persisted in the same transaction, so
+    concurrent turns on the same profile serialize instead of last-write-wins
+    (the orchestrator's copy loaded at turn start is seconds stale by commit
+    time — LLM calls sit between). Returns (result, new_turn).
+
+    compute_fn must be pure math (no I/O) — the row lock is held while it runs.
+    Retries once if the transaction fails (e.g. chosen as a deadlock victim on
+    the first-turn gap lock); an exception before commit means nothing was
+    applied, so the retry cannot double-count a turn.
+    """
+    last_exc = None
+    for attempt in (1, 2):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("START TRANSACTION")
+            cursor.execute(
+                "SELECT turn, mu FROM spirit_memory WHERE profile_name = %s FOR UPDATE",
+                (profile_name,),
+            )
+            row = cursor.fetchone()
+            if row:
+                turn, mu_json = row
+                memory = {"turn": turn, "mu": json.loads(mu_json) if mu_json else {}}
+            else:
+                memory = {"turn": 0, "mu": {}}
+
+            new_mu, result = compute_fn(memory)
+            new_turn = int(memory.get("turn", 0)) + 1
+            save_spirit_memory_in_transaction(cursor, profile_name, {"turn": new_turn, "mu": new_mu})
+            conn.commit()
+            return result, new_turn
+        except Exception as e:
+            last_exc = e
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        finally:
+            cursor.close()
+            conn.close()
+    raise last_exc
+
 def save_spirit_memory(agent_id, mu, turn, score=None, drift=None):
     """
     Wrapper to save spirit memory. 

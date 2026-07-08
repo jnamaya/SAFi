@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 import asyncio
+import threading
 import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
@@ -230,6 +231,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
              # Sanitize name: replace non-alphanumeric with underscore
              self.active_profile_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw_name).lower()
 
+        # Shared per-profile coaching state. SAFi instances are cached and shared
+        # across all requests for a profile, and requests run in separate threads
+        # (gunicorn gthread), so reads/writes go through _spirit_state_lock.
+        # Held only for quick in-memory ops — never across an await or DB call.
+        self._spirit_state_lock = threading.Lock()
         self.last_drift = 0.0
         self.mu_history = deque(maxlen=5)
 
@@ -473,10 +479,19 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             for m in recent_window
         ) if recent_window else ""
         
+        # Read-only snapshot for the coaching feedback below. The authoritative
+        # EMA commit at the end of the turn re-reads mu under a row lock
+        # (update_spirit_memory_atomic), so this copy being seconds stale by
+        # then is harmless.
         temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              temp_spirit_memory = {"turn": 0, "mu": {}}
-        
+
+        # Snapshot shared in-memory coaching state under the lock.
+        with self._spirit_state_lock:
+            recent_mu_snapshot = list(self.mu_history)
+            last_drift_snapshot = self.last_drift
+
         # Resolve Vector from Memory (Dict or List) for Feedback
         mu_memory = temp_spirit_memory.get("mu", {})
         current_mu = np.zeros(len(self.values))
@@ -492,9 +507,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # Derive last turn's raw scores (p_t) via EMA inversion: p_t = (mu_t - beta*mu_{t-1}) / (1-beta)
         last_pt = None
-        if len(self.mu_history) >= 2:
+        if len(recent_mu_snapshot) >= 2:
             beta = getattr(self.spirit, 'beta', 0.9)
-            prev_mu = np.array(list(self.mu_history)[-2])
+            prev_mu = np.array(recent_mu_snapshot[-2])
             if prev_mu.shape == current_mu.shape and np.any(current_mu != 0):
                 last_pt = np.clip(
                     (current_mu - beta * prev_mu) / max(1 - beta, 1e-6),
@@ -508,8 +523,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             spirit_feedback = build_spirit_feedback(
                 mu=current_mu,
                 value_names=[v.get('value') or v.get('name') for v in self.values],
-                drift=self.last_drift,
-                recent_mu=list(self.mu_history),
+                drift=last_drift_snapshot,
+                recent_mu=recent_mu_snapshot,
                 value_weights=[float(v.get('weight', 1.0) or 0.0) for v in self.values],
                 value_descriptions=[v.get('description', '') or v.get('definition', '') for v in self.values],
                 last_pt=last_pt
@@ -874,16 +889,24 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             if chosen["verdict"] == "violation":
                 self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
 
-        # Calculate new mu vector, drift, note, and spirit score
-        S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))
-        self.last_drift = drift_val if drift_val is not None else 0.0
-        self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {self.last_drift:.4f} | Note: '{(note or '')[:80]}'")
+        # Calculate new mu vector, drift, note, and spirit score — atomically.
+        # compute() runs against the FRESH mu under a DB row lock, so two
+        # concurrent turns on this profile serialize their EMA updates instead
+        # of last-write-wins (which lost one turn's contribution and its turn
+        # increment). compute() is pure math; the lock is held for milliseconds.
+        def _apply_ema(fresh_memory: Dict[str, Any]):
+            computed = self.spirit.compute(ledger, fresh_memory.get("mu", {}))
+            return computed[2], computed  # (new_mu, full result tuple)
 
-        # Save updated Spirit Memory
-        temp_spirit_memory["turn"] = int(temp_spirit_memory.get("turn", 0)) + 1
-        temp_spirit_memory["mu"] = mu_new
-        db.save_spirit_memory(self.active_profile_name, mu_new, temp_spirit_memory["turn"])
-        self.mu_history.append(mu_new_vector)
+        (S_t, note, mu_new, p_t, drift_val, mu_new_vector), spirit_turn = (
+            db.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
+        )
+        drift_for_log = drift_val if drift_val is not None else 0.0
+        self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {drift_for_log:.4f} | Note: '{(note or '')[:80]}'")
+
+        with self._spirit_state_lock:
+            self.last_drift = drift_for_log
+            self.mu_history.append(mu_new_vector)
 
         # --- PHASE 6: Safe Execution (Will) ---
         db.update_message_reasoning(message_id, "Preparing your answer...")
@@ -899,7 +922,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # Append safe log entry
         self._append_log({
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "t": temp_spirit_memory["turn"],
+            "t": spirit_turn,
             "userPrompt": user_prompt,
             "intellectDraft": a_t,
             "intellectReflection": r_t or "",
@@ -927,8 +950,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         self.log.info(
             f"[Governance | APPROVED] Profile: {self.active_profile_name} | "
-            f"Will: {D_t} | Spirit: {S_t}/10 | Drift: {self.last_drift:.4f} | "
-            f"Turn: {temp_spirit_memory['turn']}"
+            f"Will: {D_t} | Spirit: {S_t}/10 | Drift: {drift_for_log:.4f} | "
+            f"Turn: {spirit_turn}"
         )
 
         if hasattr(self, 'groq_client_sync'):
@@ -1028,7 +1051,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # agent values, so the EMA spirit vector must not be updated here.
         S_t, note = self.spirit.compute_redirect(ledger)
         drift_val = None
-        self.last_drift = 0.0
+        with self._spirit_state_lock:
+            self.last_drift = 0.0
         p_t = np.zeros(max(1, len(self.spirit.values)))
         mu_new_vector = p_t
         # Load turn count for log context only — not incrementing, not saving.
