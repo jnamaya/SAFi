@@ -541,7 +541,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             spirit_feedback = ""
 
         # --- PHASE 0: Pre-generation Injection Gate ---
-        persona_blacklist = (self.profile or {}).get("will_rules", {}).get("early_prompt_blacklist", [])
+        # will_rules may be a dict (governed agents) or a legacy list (a
+        # standalone custom agent — load_custom_persona defaults the missing key
+        # to []). Only a dict carries early_prompt_blacklist; treat a list as
+        # "none defined" rather than crashing on list.get().
+        _will_rules = (self.profile or {}).get("will_rules", {})
+        persona_blacklist = (
+            _will_rules.get("early_prompt_blacklist", [])
+            if isinstance(_will_rules, dict) else []
+        )
         is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, persona_blacklist)
         if not is_safe:
             self.log.warning(f"[Governance | Phase 0 | Injection Gate] BLOCKED — {gate_reason}")
@@ -993,10 +1001,37 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
+    def _enforce_redirect_structure(self, safe_output: str) -> str:
+        """Deterministically repair a redirect that fails the Will's structural
+        gate. The redirect is terminal (it cannot recurse into another
+        redirect), so instead of re-generating we fix what we can:
+
+        - missing_disclaimer: append the mandatory disclaimer substring verbatim,
+          so a regulated agent's refusal carries it exactly as a normal draft
+          would (the structural gate enforces the same substring elsewhere).
+        - other structural failures (e.g. banned markdown): logged and shipped
+          as-is — a governed refusal is better than an error, and there is no
+          safe automatic rewrite. These are unlikely in a plain refusal.
+        """
+        is_valid, reason = self.will_gate.evaluate_draft_structure(safe_output)
+        if is_valid:
+            return safe_output
+
+        if reason == "missing_disclaimer":
+            rules = (self.profile or {}).get("will_rules", {})
+            struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
+            disclaimer = (struct.get("mandatory_disclaimer_substring") or "").strip()
+            if disclaimer and disclaimer not in safe_output:
+                self.log.info("[Governance | Redirect] Appending mandatory disclaimer to redirect output.")
+                return f"{safe_output.rstrip()}\n\n{disclaimer}"
+
+        self.log.warning(f"[Governance | Redirect] Structural check failed ({reason}); shipping redirect as-is.")
+        return safe_output
+
     async def trigger_persona_redirect(
-        self, 
-        original_prompt: str, 
-        violation_type: str, 
+        self,
+        original_prompt: str,
+        violation_type: str,
         conversation_id: str,
         message_id: str,
         new_title: Optional[str],
@@ -1048,6 +1083,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         )
         
         safe_output = safe_intent.get("content") or "I am currently unable to process this request under governance rules."
+
+        # Enforce the structural gate on the redirect too. Normal drafts run
+        # through _finalize_draft (which redirects on a structural failure), but
+        # the redirect is the terminal path and cannot recurse — so we repair
+        # deterministically instead. Most important for regulated agents whose
+        # refusal must still carry the mandatory disclaimer; the model is
+        # instructed to add it via the worldview, but that is not enforced.
+        safe_output = self._enforce_redirect_structure(safe_output)
 
         # --- AUDITING AND MEMORY INTEGRATION FOR SPOKESPERSON RESPONSE ---
         # NOTE: generate_forced_response never receives the original malicious content
