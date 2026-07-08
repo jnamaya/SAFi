@@ -318,6 +318,71 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 db.update_message_reasoning(message_id, "Re-auditing response...")
         return ledger
 
+    async def _finalize_draft(
+        self,
+        a_t: str,
+        user_prompt: str,
+        r_t: Optional[str],
+        retrieved_context: Optional[str],
+        message_id: str,
+        label: str = "",
+    ) -> Dict[str, Any]:
+        """Unified governance commit path for ANY candidate draft — initial text,
+        tool-loop synthesis, blocked-tool reflexion, or Spirit reflexion retry.
+        Runs the same gates in the same order for every producer:
+
+          structure (Will W1) → Conscience audit → coverage fail-closed →
+          hard gates (Will) → Spirit aggregate + threshold (Will)
+
+        Returns a verdict dict; the caller decides redirect / retry / commit:
+          verdict: "approve" | "violation"
+          stage:   "structure" | "audit" | "hard_gate" | "spirit"
+          reason:  gate-specific reason string
+          ledger / spirit_assessment: populated as far as the draft got
+        """
+        tag = f" | {label}" if label else ""
+
+        db.update_message_reasoning(message_id, "Checking response structure...")
+        is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
+        self.log.info(f"[Governance | Phase 3 | Will W1{tag}] Structural: {'PASS' if is_valid_struct else 'FAIL'} — {structure_reason}")
+        if not is_valid_struct:
+            return {"verdict": "violation", "stage": "structure", "reason": structure_reason,
+                    "ledger": [], "spirit_assessment": None}
+
+        db.update_message_reasoning(message_id, "Auditing response for compliance...")
+        ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id)
+
+        # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
+        # errored, timed out, or returned a ledger that scored none of this
+        # agent's values, the draft cannot ship unaudited.
+        if self.values and not self._ledger_covers_values(ledger):
+            self.log.error(f"[Governance | Phase 4{tag}] Audit unavailable/degraded — failing closed.")
+            return {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable",
+                    "ledger": ledger, "spirit_assessment": None}
+
+        if ledger:
+            scores_str = " | ".join(
+                f"{e.get('value', '?')}={float(e.get('score', 0)):+.1f}"
+                for e in ledger
+            )
+            self.log.info(f"[Governance | Phase 4 | Conscience{tag}] {scores_str}")
+
+        D_hard, E_hard = self.will_gate.evaluate_hard_gates(ledger)
+        self.log.info(f"[Governance | Phase 4.5 | Hard Gate{tag}] Decision: {D_hard} — {E_hard}")
+        if D_hard == "violation":
+            return {"verdict": "violation", "stage": "hard_gate", "reason": E_hard,
+                    "ledger": ledger, "spirit_assessment": None}
+
+        db.update_message_reasoning(message_id, "Computing alignment score...")
+        spirit_assessment = self.spirit.integrate(ledger)
+        D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
+        self.log.info(
+            f"[Governance | Phase 5 | Spirit{tag}] Alignment: {spirit_assessment.get('alignment_score', 0.0):.3f} | "
+            f"Decision: {D_spirit} — {E_spirit}"
+        )
+        return {"verdict": D_spirit, "stage": "spirit", "reason": E_spirit,
+                "ledger": ledger, "spirit_assessment": spirit_assessment}
+
     async def process_prompt(
         self,
         user_prompt: str,
@@ -497,24 +562,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
             self.log.info(f"[Governance | Phase 2 | Intellect] Draft: {len(a_t)} chars | '{a_t[:100].strip()}'")
 
-            # --- PHASE 3: Structural Validation (Will) ---
-            db.update_message_reasoning(message_id, "Checking response structure...")
-            is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
-            self.log.info(f"[Governance | Phase 3 | Will W1] Structural: {'PASS' if is_valid_struct else 'FAIL'} — {structure_reason}")
-            if not is_valid_struct:
-                return await self.trigger_persona_redirect(
-                    original_prompt=user_prompt,
-                    violation_type=structure_reason,
-                    conversation_id=conversation_id,
-                    message_id=message_id,
-                    new_title=new_title,
-                    user_id=user_id,
-                    org_id=org_id
-                )
-
-            # Structural validation above is the only deterministic Will check on
-            # a text draft. Value/rule compliance is enforced downstream by
-            # Conscience (hard gates) + Spirit, so D_t stays "approve" here.
+            # Structure, audit, hard gates, and Spirit all run in the unified
+            # _finalize_draft path below — same gates for every draft producer.
+            # D_t stays "approve" here.
 
         elif intent["type"] == "tool_call":
             tool_name = intent["tool_name"]
@@ -646,22 +696,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
                 a_t = next_intent.get("content") or "" if next_intent and next_intent.get("type") == "text" else "I was unable to produce a response after executing the requested tools."
 
-                # Final Will checks
-                is_valid_tool_struct, tool_struct_reason = self.will_gate.evaluate_draft_structure(a_t)
-                if not is_valid_tool_struct:
-                    return await self.trigger_persona_redirect(
-                        original_prompt=user_prompt,
-                        violation_type=tool_struct_reason,
-                        conversation_id=conversation_id,
-                        message_id=message_id,
-                        new_title=new_title,
-                        user_id=user_id,
-                        org_id=org_id
-                    )
-
-                # Structural check above is the deterministic Will gate; value
-                # compliance is handled by Conscience + Spirit below. D_t stays
-                # "approve" for the synthesized tool answer.
+                # Structure + value compliance for the synthesized tool answer are
+                # enforced by the unified _finalize_draft path below. D_t stays
+                # "approve" here.
 
             else:
                 self.log.warning(f"WillGate blocked tool '{tool_name}'. Reason: {tool_reason}")
@@ -677,6 +714,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     spirit_feedback=spirit_feedback,
                     plugin_context=plugin_context_data,
                     user_profile_json=current_profile_json,
+                    agent_context_json=current_agent_context_json,
                     user_name=user_name,
                     user_id=user_id,
                     message_id=message_id
@@ -691,19 +729,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.log.info(f"[Governance] Message {message_id} cancelled before Conscience.")
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
-        # --- PHASE 4: Deep Analytical Audit (Conscience) [Synchronous] ---
-        db.update_message_reasoning(message_id, "Auditing response for compliance...")
-        ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id)
+        # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
+        # Every draft producer (initial text, tool-loop synthesis, blocked-tool
+        # reflexion) funnels through the same gates in _finalize_draft.
+        result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id)
 
-        # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
-        # errored, timed out, or returned a ledger that scored none of this
-        # agent's values, redirect to a safe reply rather than ship an unaudited
-        # response. (Previously an empty/garbled ledger sailed through approved.)
-        if self.values and not self._ledger_covers_values(ledger):
-            self.log.error("[Governance | Phase 4] Audit unavailable/degraded — failing closed.")
+        # Structural, audit-availability, and hard-gate failures all redirect with
+        # the gate's own reason — identical disposition for every draft producer.
+        if result["verdict"] == "violation" and result["stage"] != "spirit":
             return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
-                violation_type="audit_unavailable",
+                violation_type=result["reason"],
                 conversation_id=conversation_id,
                 message_id=message_id,
                 new_title=new_title,
@@ -711,40 +747,27 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 org_id=org_id
             )
 
-        if ledger:
-            scores_str = " | ".join(
-                f"{e.get('value', '?')}={float(e.get('score', 0)):+.1f}"
-                for e in ledger
-            )
-            self.log.info(f"[Governance | Phase 4 | Conscience] {scores_str}")
+        ledger = result["ledger"]
 
-        # --- PHASE 4.5: Will Hard Gate Check ---
-        D_hard, E_hard = self.will_gate.evaluate_hard_gates(ledger)
-        self.log.info(f"[Governance | Phase 4.5 | Hard Gate] Decision: {D_hard} — {E_hard}")
-        if D_hard == "violation":
-            return await self.trigger_persona_redirect(
-                original_prompt=user_prompt,
-                violation_type=E_hard,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                new_title=new_title,
-                user_id=user_id,
-                org_id=org_id
-            )
+        if result["verdict"] == "violation":
+            # Spirit-stage violation: a content-quality dip, not a safety breach —
+            # scope/injection are gated at Phase 0 / 4.5. The user's intent is fine;
+            # the draft is the problem. Run a reflexion retry that shows the model
+            # its blocked draft so it can correct it. trigger_persona_redirect
+            # generates in a vacuum and can't fix content issues; it stays reserved
+            # for the failures handled above.
+            E_spirit = result["reason"]
+            retry_metadata.update({
+                "was_retried": True,
+                "original_draft": a_t,
+                "violation_reason": E_spirit,
+            })
 
-        # --- PHASE 5: Compute Conviction (Spirit Vector Core) [Synchronous] ---
-        db.update_message_reasoning(message_id, "Computing alignment score...")
-        spirit_assessment = self.spirit.integrate(ledger)
-        D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
-        self.log.info(f"[Governance | Phase 5 | Spirit] Alignment: {spirit_assessment.get('alignment_score', '?'):.3f} | Decision: {D_spirit} — {E_spirit}")
+            # Cancellation check before the retry's extra Intellect + Conscience calls.
+            if self._is_cancelled(message_id):
+                self.log.info(f"[Governance] Message {message_id} cancelled before Spirit retry.")
+                return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
-        a_t_spirit = None
-        if D_spirit == "violation" and E_spirit in ("ethical_violation", "low_alignment_score"):
-            # Spirit caught a content quality issue (biased, uncited, unprofessional, or a
-            # low overall alignment score). The user's intent is fine — the model's draft was
-            # the problem. Use a reflexion retry so the model can see its original draft and
-            # correct it. trigger_persona_redirect generates in a vacuum and can't fix content
-            # issues; it is reserved for scope/injection violations (gated at Phase 0 / 4.5).
             self.log.info(f"[Governance | Phase 5 | Spirit] Attempting reflexion retry ({E_spirit}).")
             db.update_message_reasoning(message_id, "Refining response for alignment...")
 
@@ -780,36 +803,38 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 else None
             )
 
+            retry_result = None
             if a_t_spirit:
                 db.update_message_reasoning(message_id, "Re-auditing corrected response...")
-                ledger = await self.conscience.evaluate(
-                    final_output=a_t_spirit,
-                    user_prompt=user_prompt,
-                    reflection=r_t_spirit or "",
-                    retrieved_context=context_spirit or ""
+                # The retry draft runs the SAME full gate path as the original:
+                # structure, guarded audit, coverage fail-closed, hard gates, Spirit.
+                # (Previously it skipped structure + hard gates, and an audit error
+                # here escaped uncaught.)
+                retry_result = await self._finalize_draft(
+                    a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry"
                 )
-                spirit_assessment = self.spirit.integrate(ledger)
-                D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
-                self.log.info(
-                    f"[Governance | Phase 5 | Spirit Retry] Alignment: {spirit_assessment.get('alignment_score', '?'):.3f} | "
-                    f"Decision: {D_spirit} — {E_spirit}"
-                )
-                if D_spirit != "violation":
-                    a_t = a_t_spirit
-                    r_t = r_t_spirit
-                    retrieved_context = context_spirit
 
-        if D_spirit == "violation":
-            if E_spirit == "low_alignment_score":
-                # Phase 0 / 4.5 already gate scope & injection; a residual low-alignment dip
-                # is a soft quality signal, not a safety breach. The reflexion retry above is
-                # the correct remedy — commit the best draft with an honest low score rather
-                # than discarding the user's request via a vacuum redirect (which produced the
-                # "replies but not full" behavior). Redirect stays reserved for scope/injection.
-                if a_t_spirit:
-                    a_t, r_t, retrieved_context = a_t_spirit, r_t_spirit, context_spirit
-                self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
-            else:
+            # A draft is committable if it passed every gate, or dipped only on the
+            # soft low-alignment threshold — committed with its honest low score
+            # rather than discarding the user's request via a vacuum redirect
+            # (which produced the "replies but not full" behavior).
+            def _committable(res: Optional[Dict[str, Any]]) -> bool:
+                if not res:
+                    return False
+                if res["verdict"] != "violation":
+                    return True
+                return res["stage"] == "spirit" and res["reason"] == "low_alignment_score"
+
+            candidates = []
+            if _committable(result):
+                candidates.append((result, a_t, r_t, retrieved_context))
+            if _committable(retry_result):
+                candidates.append((retry_result, a_t_spirit, r_t_spirit, context_spirit))
+
+            if not candidates:
+                # Neither draft is fit to ship. Redirect on the ORIGINAL audit's
+                # reason: it is the authoritative read on the user's request (its
+                # hard gates passed); the retry's failures are draft-specific.
                 return await self.trigger_persona_redirect(
                     original_prompt=user_prompt,
                     violation_type=E_spirit,
@@ -819,6 +844,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     user_id=user_id,
                     org_id=org_id
                 )
+
+            # Commit the best candidate: a clean approve beats a low-alignment
+            # commit; ties break on the higher measured alignment score.
+            best = max(candidates, key=lambda c: (
+                c[0]["verdict"] != "violation",
+                float((c[0]["spirit_assessment"] or {}).get("alignment_score", 0.0)),
+            ))
+            chosen, a_t, r_t, retrieved_context = best
+            ledger = chosen["ledger"]
+            if chosen["verdict"] == "violation":
+                self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
 
         # Calculate new mu vector, drift, note, and spirit score
         S_t, note, mu_new, p_t, drift_val, mu_new_vector = self.spirit.compute(ledger, temp_spirit_memory.get("mu", {}))

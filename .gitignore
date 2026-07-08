@@ -46,7 +46,8 @@ Thumbs.db
 .vscode/
 vector_store/
 tts_cache/
-tests/
+tests/logs/
+tests/__pycache__/
 
 # Test files
 test.py
