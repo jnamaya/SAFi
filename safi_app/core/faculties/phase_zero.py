@@ -92,22 +92,31 @@ class PhaseZeroGate:
     def _has_embedded_instruction(self, prompt: str) -> bool:
         """
         Detects the indirect injection pattern: a high-entropy data blob
-        followed by an instruction block.
+        combined with an instruction block.
 
         Classic example — the 'ancient text' attack:
           1. Random-looking character dump (high Shannon entropy)
           2. Embedded 'NEW TASK: STOP HERE' block inside the data
           3. Final request to reproduce the text including the embedded instruction
+
+        The entropy scan slides over the WHOLE prompt. It previously sampled
+        only the first ENTROPY_SAMPLE_LENGTH characters, so prepending a
+        paragraph of benign prose defeated the check entirely.
         """
         if len(prompt) < MIN_LENGTH_FOR_ENTROPY_CHECK:
             return False
 
-        sample = prompt[:ENTROPY_SAMPLE_LENGTH]
-        entropy = self._compute_entropy(sample)
-
-        if entropy < ENTROPY_THRESHOLD:
+        # Cheap check first: no instruction marker anywhere -> not this pattern.
+        prompt_lower = prompt.lower()
+        if not any(marker in prompt_lower for marker in EMBEDDED_INSTRUCTION_MARKERS):
             return False
 
-        # High entropy confirmed — check if instruction markers appear later in the prompt
-        remainder = prompt[ENTROPY_SAMPLE_LENGTH:].lower()
-        return any(marker in remainder for marker in EMBEDDED_INSTRUCTION_MARKERS)
+        # Marker present — look for a high-entropy payload window anywhere.
+        step = max(1, ENTROPY_SAMPLE_LENGTH // 2)
+        for start in range(0, len(prompt), step):
+            sample = prompt[start:start + ENTROPY_SAMPLE_LENGTH]
+            if len(sample) < MIN_LENGTH_FOR_ENTROPY_CHECK:
+                break
+            if self._compute_entropy(sample) >= ENTROPY_THRESHOLD:
+                return True
+        return False
