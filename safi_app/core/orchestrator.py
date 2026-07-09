@@ -317,7 +317,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         matched = sum(1 for n in value_names if n in scored)
         return matched * 2 > len(value_names)
 
-    async def _run_conscience_audit(self, a_t, user_prompt, r_t, retrieved_context, message_id):
+    async def _run_conscience_audit(self, a_t, user_prompt, r_t, retrieved_context, message_id, recent_history=""):
         """Run the Conscience audit, retrying once if it errors or returns a
         ledger that scores none of this agent's values (transient LLM failure /
         garbled output). Returns the ledger — possibly still degraded, in which
@@ -330,6 +330,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     user_prompt=user_prompt,
                     reflection=r_t or "",
                     retrieved_context=retrieved_context or "",
+                    recent_history=recent_history or "",
                 )
             except Exception as e:
                 self.log.exception(f"ConscienceAuditor.evaluate() failed (attempt {attempt}): {e}")
@@ -350,6 +351,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         retrieved_context: Optional[str],
         message_id: str,
         label: str = "",
+        recent_history: str = "",
     ) -> Dict[str, Any]:
         """Unified governance commit path for ANY candidate draft — initial text,
         tool-loop synthesis, blocked-tool reflexion, or Spirit reflexion retry.
@@ -374,7 +376,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     "ledger": [], "spirit_assessment": None}
 
         db.update_message_reasoning(message_id, "Auditing response for compliance...")
-        ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id)
+        ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id, recent_history)
 
         # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
         # errored, timed out, or returned a ledger that scored none of this
@@ -784,7 +786,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
         # Every draft producer (initial text, tool-loop synthesis, blocked-tool
         # reflexion) funnels through the same gates in _finalize_draft.
-        result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id)
+        result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id,
+                                            recent_history=recent_turns_text)
 
         # Structural, audit-availability, and hard-gate failures all redirect with
         # the gate's own reason — identical disposition for every draft producer.
@@ -863,7 +866,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 # (Previously it skipped structure + hard gates, and an audit error
                 # here escaped uncaught.)
                 retry_result = await self._finalize_draft(
-                    a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry"
+                    a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry",
+                    recent_history=recent_turns_text,
                 )
 
             # A draft is committable if it passed every gate, or dipped only on the
