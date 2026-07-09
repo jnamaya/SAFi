@@ -77,9 +77,16 @@ class LLMProvider:
         tools: Optional[List[Dict[str, Any]]] = None,
         extra_body: Optional[Dict[str, Any]] = None,
         top_p: Optional[float] = None,
+        json_mode: bool = False,
     ) -> str:
         """
         Internal generic handler that routes the request to the correct provider.
+
+        json_mode constrains decoding to valid JSON at the API level (OpenAI-compatible
+        response_format / Gemini response_mime_type). Callers must still instruct the
+        model to produce JSON in the prompt — OpenAI-compatible providers reject json
+        mode otherwise. Ignored when tools are passed (the two are incompatible) and
+        on providers with no native support (Anthropic).
         """
         route_config = self.config.get("routes", {}).get(route)
         if not route_config:
@@ -123,6 +130,8 @@ class LLMProvider:
                 params["top_p"] = top_p
             if extra_body is not None:
                 params["extra_body"] = extra_body
+            if json_mode and not tools:
+                params["response_format"] = {"type": "json_object"}
 
             # Map generic MCP tools to OpenAI format if provided
             if tools:
@@ -251,7 +260,8 @@ class LLMProvider:
                 system_instruction=system_prompt,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
-                tools=gemini_tools
+                tools=gemini_tools,
+                response_mime_type="application/json" if (json_mode and not gemini_tools) else None,
             )
 
             try:
@@ -444,15 +454,34 @@ class LLMProvider:
                 top_p = None
                 extra_body = None
 
-            raw_content = await self._chat_completion(
-                route="conscience",
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=temperature,
-                max_tokens=8192,
-                top_p=top_p,
-                extra_body=extra_body,
-            )
+            try:
+                # Constrain decoding to valid JSON at the API level: eliminates the
+                # markdown-fence/prose failure class that otherwise degrades the
+                # ledger and burns the orchestrator's re-audit retry.
+                raw_content = await self._chat_completion(
+                    route="conscience",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_tokens=8192,
+                    top_p=top_p,
+                    extra_body=extra_body,
+                    json_mode=True,
+                )
+            except Exception as e:
+                # A provider that rejects json_mode would otherwise fail BOTH audit
+                # attempts and brick the agent into permanent fail-closed. Retry
+                # once without it; the text parser still handles unconstrained output.
+                self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
+                raw_content = await self._chat_completion(
+                    route="conscience",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_tokens=8192,
+                    top_p=top_p,
+                    extra_body=extra_body,
+                )
             return parse_conscience_response(raw_content, self.log)
         except Exception as e:
             self.log.exception("Conscience execution failed")
