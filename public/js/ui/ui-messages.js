@@ -98,18 +98,59 @@ renderer.table = function (token) {
     if (body) body = `<tbody>${body}</tbody>`;
     return `<div class="table-wrapper"><table><thead>${header}</thead>${body}</table></div>`;
 };
+// Fenced code: header bar with language label + per-block copy button.
+// Highlighting happens here because marked v5+ dropped the setOptions
+// `highlight` hook the old code relied on.
+renderer.code = function (token) {
+    const lang = (token.lang || '').trim().split(/\s+/)[0];
+    let highlighted;
+    let langClass = '';
+    try {
+        if (lang && hljs.getLanguage(lang)) {
+            highlighted = hljs.highlight(token.text, { language: lang }).value;
+            langClass = ` language-${lang}`;
+        } else {
+            highlighted = hljs.highlightAuto(token.text).value;
+        }
+    } catch (e) {
+        highlighted = escapeHtml(token.text);
+    }
+    return `<div class="code-block">`
+        + `<div class="code-block-header">`
+        + `<span class="code-block-lang">${escapeHtml(lang || 'code')}</span>`
+        + `<button type="button" class="code-copy-btn" aria-label="Copy code">${iconCopy}<span>Copy</span></button>`
+        + `</div>`
+        + `<pre><code class="hljs${langClass}">${highlighted}</code></pre>`
+        + `</div>`;
+};
+// External links open in a new tab instead of navigating away mid-conversation.
+renderer.link = function (token) {
+    const html = marked.Renderer.prototype.link.call(this, token);
+    return html.replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ');
+};
 marked.setOptions({
     renderer: renderer,
     breaks: true,
     gfm: true,
     mangle: false,
-    headerIds: false,
-    highlight: function(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-            return hljs.highlight(code, { language: lang }).value;
-        }
-        return hljs.highlightAuto(code).value;
-    }
+    headerIds: false
+});
+
+// Delegated handler for the per-block copy buttons (message HTML is injected
+// via innerHTML, so listeners can't be attached at render time).
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.code-copy-btn');
+    if (!btn) return;
+    const codeEl = btn.closest('.code-block')?.querySelector('pre code');
+    if (!codeEl) return;
+    navigator.clipboard.writeText(codeEl.textContent || '').then(() => {
+        btn.classList.add('copied');
+        btn.innerHTML = `${iconCheck}<span>Copied</span>`;
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = `${iconCopy}<span>Copy</span>`;
+        }, 1500);
+    });
 });
 
 function _markdownToPlainText(markdown) {
@@ -117,6 +158,8 @@ function _markdownToPlainText(markdown) {
         const html = marked.parse(markdown);
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
+        // Code-block header chrome (lang label, Copy button) is UI, not content.
+        tempDiv.querySelectorAll('.code-block-header').forEach(el => el.remove());
         return tempDiv.textContent || tempDiv.innerText || '';
     } catch (e) { return markdown; }
 }
