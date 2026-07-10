@@ -718,7 +718,7 @@ export function updateActiveProfileChip(profileNameOrObject) {
 
   // Update the main chat input placeholder
   if (ui.elements.messageInput) {
-    ui.elements.messageInput.placeholder = `Ask ${profileNameText}`;
+    ui.elements.messageInput.placeholder = `Message ${profileNameText}`;
   }
 }
 
