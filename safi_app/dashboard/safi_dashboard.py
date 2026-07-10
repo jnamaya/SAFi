@@ -497,7 +497,13 @@ with kpi_cols[1]:
     with row1[1]: st.metric(
         "Avg. Long-Term Consistency",
         f"{avg_coherence_percent:.1f}%" if pd.notna(avg_coherence_percent) else "N/A",
-        help=CONSISTENCY_HELP,
+        help=(
+            "Average consistency across all turns in the selected period. Each turn "
+            "is scored on how closely its value expression matched the agent's "
+            "historical pattern (its spirit memory) at that point; 100% means the "
+            "agent reliably behaves like itself. A low average signals sustained "
+            "drift from the agent's established identity, not one odd turn."
+        ),
     )
     with row2[0]:
         redirect_quality_html = (
