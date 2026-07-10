@@ -831,6 +831,141 @@ html.native body { font-size: 14px; }
   box-shadow: none; /* No shadow */
 }
 
+/* Pipeline trace variant: stepper on top, status line below */
+.thinking-container-trace {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.thinking-statusline {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pipeline-trace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pipeline-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #d4d4d4;
+  background: transparent;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.step-dot svg {
+  width: 8px;
+  height: 8px;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.step-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #a3a3a3;
+  transition: color 0.3s;
+  user-select: none;
+}
+
+.step-connector {
+  width: 14px;
+  height: 1.5px;
+  background: #d4d4d4;
+  border-radius: 1px;
+  transition: background 0.3s;
+}
+
+/* Active stage: filled pulsing dot */
+.pipeline-step.active .step-dot {
+  border-color: #0a0a0a;
+  background: #0a0a0a;
+  animation: step-dot-pulse 1.4s infinite ease-in-out;
+}
+
+.pipeline-step.active .step-label {
+  color: #171717;
+}
+
+/* Completed stage: green check */
+.pipeline-step.done .step-dot {
+  border-color: #16a34a;
+  background: #16a34a;
+}
+
+.pipeline-step.done .step-dot svg {
+  opacity: 1;
+}
+
+.pipeline-step.done .step-label {
+  color: #16a34a;
+}
+
+.step-connector.done {
+  background: #16a34a;
+}
+
+@keyframes step-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+/* Dark theme */
+.dark .step-dot {
+  border-color: #525252;
+}
+
+.dark .step-label {
+  color: #737373;
+}
+
+.dark .step-connector {
+  background: #525252;
+}
+
+.dark .pipeline-step.active .step-dot {
+  border-color: #4ade80;
+  background: #4ade80;
+}
+
+.dark .pipeline-step.active .step-label {
+  color: #e5e5e5;
+}
+
+.dark .pipeline-step.done .step-dot {
+  border-color: #22c55e;
+  background: #22c55e;
+}
+
+.dark .pipeline-step.done .step-dot svg {
+  color: #0a0a0a;
+}
+
+.dark .pipeline-step.done .step-label {
+  color: #4ade80;
+}
+
+.dark .step-connector.done {
+  background: #22c55e;
+}
+
 @keyframes float-gentle {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-2px); }

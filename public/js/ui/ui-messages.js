@@ -246,6 +246,15 @@ function typeWriterEffect(targetElement, htmlContent, onComplete) {
                 steps.push({ type: 'text', content: node.textContent });
             }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
+            // Insert as one unit: SVG can't be rebuilt with createElement
+            // (needs createElementNS), and UI chrome like the code-block
+            // header should appear whole, not letter-by-letter.
+            if (node.tagName.toLowerCase() === 'svg' ||
+                (node.classList && node.classList.contains('code-block-header'))) {
+                steps.push({ type: 'atomic', html: node.outerHTML });
+                return;
+            }
+
             // Capture attributes (class, href, etc.)
             const attributes = {};
             if (node.attributes) {
@@ -323,6 +332,11 @@ function typeWriterEffect(targetElement, htmlContent, onComplete) {
             }
             stepIndex++;
             type(); // Recursively call immediately
+        }
+        else if (step.type === 'atomic') {
+            currentParent.insertAdjacentHTML('beforeend', step.html);
+            stepIndex++;
+            type(); // No delay — chrome appears whole
         }
         else if (step.type === 'text') {
             const content = step.content;
@@ -658,6 +672,70 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 // State to track current loading profile name
 let currentLoadingProfile = null;
 
+// --- PIPELINE TRACE ---
+// Maps the backend's reasoning-log strings onto the governance pipeline's
+// stages so the loader can show real progress, never a fake animation.
+// Unknown strings (e.g. tool statuses like "Searching the web…") update the
+// status text only and leave the stage where it is.
+const PIPELINE_STAGES = ['Analyze', 'Draft', 'Audit', 'Score'];
+
+function _stageForStep(text) {
+    const t = (text || '').toLowerCase();
+    if (t.startsWith('analyzing')) return 0;
+    if (t.startsWith('drafting')) return 1;
+    if (t.startsWith('checking response structure')) return 2;
+    if (t.includes('audit')) return 2;                  // Auditing / Re-auditing / governance response
+    if (t.startsWith('refining')) return 2;             // reflexion loop stays visibly in Audit
+    if (t.startsWith('applying governance')) return 2;  // redirect path
+    if (t.startsWith('computing alignment')) return 3;
+    if (t.startsWith('preparing your answer')) return 3;
+    return -1;
+}
+
+const STEP_CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
+
+function _renderPipelineTraceHtml() {
+    return `<div class="pipeline-trace" id="pipeline-trace">` + PIPELINE_STAGES.map((label, i) =>
+        (i > 0 ? `<span class="step-connector"></span>` : '')
+        + `<span class="pipeline-step${i === 0 ? ' active' : ''}" data-stage="${i}">`
+        + `<span class="step-dot">${STEP_CHECK_ICON}</span>`
+        + `<span class="step-label">${label}</span>`
+        + `</span>`
+    ).join('') + `</div>`;
+}
+
+function _setTraceStage(stage) {
+    if (stage < 0) return;
+    const trace = document.getElementById('pipeline-trace');
+    if (!trace) return;
+    trace.querySelectorAll('.pipeline-step').forEach(el => {
+        const i = Number(el.dataset.stage);
+        el.classList.toggle('done', i < stage);
+        el.classList.toggle('active', i === stage);
+    });
+    trace.querySelectorAll('.step-connector').forEach((el, idx) => {
+        // Connector idx sits between step idx and idx+1.
+        el.classList.toggle('done', idx < stage);
+    });
+}
+
+/**
+ * Feed the full reasoning log (array of {step}) into the trace. Uses the
+ * whole log, not just the last entry, so fast stages the poll skipped over
+ * still get their checkmarks.
+ */
+export function updatePipelineTrace(log) {
+    if (!Array.isArray(log) || log.length === 0) return;
+    let maxStage = -1;
+    for (const entry of log) {
+        const s = _stageForStep(entry?.step);
+        if (s > maxStage) maxStage = s;
+    }
+    _setTraceStage(maxStage);
+    const lastText = log[log.length - 1]?.step;
+    if (lastText) updateThinkingStatus(lastText);
+}
+
 export function showLoadingIndicator(profileName) {
     currentLoadingProfile = profileName;
     ui._ensureElements();
@@ -674,13 +752,16 @@ export function showLoadingIndicator(profileName) {
     <div class="message ai">
         <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
         <div class="ai-content-wrapper">
-            <div class="thinking-container">
-                <div class="thinking-pulse-wave">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+            <div class="thinking-container thinking-container-trace">
+                ${_renderPipelineTraceHtml()}
+                <div class="thinking-statusline">
+                    <div class="thinking-pulse-wave">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span id="thinking-status" class="transition-opacity duration-200">Thinking...</span>
                 </div>
-                <span id="thinking-status" class="transition-opacity duration-200">Thinking...</span>
             </div>
         </div>
     </div>`;

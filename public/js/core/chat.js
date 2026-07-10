@@ -957,7 +957,7 @@ export async function sendMessage(activeProfileData, user) {
                 let log = result.reasoning_log;
                 if (typeof log === 'string') log = JSON.parse(log);
                 if (Array.isArray(log) && log.length > 0) {
-                    uiMessages.updateThinkingStatus(log[log.length - 1].step);
+                    uiMessages.updatePipelineTrace(log);
                 }
             }
         } catch (e) { /* message may not exist yet — ignore */ }
