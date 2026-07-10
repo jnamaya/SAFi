@@ -4304,6 +4304,14 @@ video {
     max-width: 42rem;
   }
 
+  .sm\:flex-1 {
+    flex: 1 1 0%;
+  }
+
+  .sm\:shrink-0 {
+    flex-shrink: 0;
+  }
+
   .sm\:-translate-x-1\/2 {
     --tw-translate-x: -50%;
     transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
@@ -4331,8 +4339,20 @@ video {
     flex-direction: row-reverse;
   }
 
+  .sm\:items-start {
+    align-items: flex-start;
+  }
+
   .sm\:items-center {
     align-items: center;
+  }
+
+  .sm\:justify-end {
+    justify-content: flex-end;
+  }
+
+  .sm\:justify-between {
+    justify-content: space-between;
   }
 
   .sm\:gap-2 {
