@@ -553,6 +553,8 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     policy_values: List[Dict[str, Any]] = []
     policy_cfg: Dict[str, Any] = {}
     policy_version: Optional[int] = None
+    policy_name: Optional[str] = None
+    org_name: Optional[str] = None
 
     # 3. Policy + role layer.
     if effective_policy_id and effective_policy_id != "standalone":
@@ -564,6 +566,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
         if db_policy:
             policy_cfg = db_policy.get("policy_config") or {}
             policy_version = db_policy.get("version")
+            policy_name = db_policy.get("name")
             policy_values = db_policy.get("values_weights", []) or []
             for v in policy_values:
                 if "name" in v and "value" not in v:
@@ -590,6 +593,8 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     if org_id:
         try:
             org = db.get_organization(org_id)
+            if org:
+                org_name = org.get("name")
             if org and org.get("settings"):
                 settings = org["settings"]
                 if isinstance(settings, str):
@@ -625,6 +630,10 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_version"] = policy_version
     final["org_id"] = org_id
     final["spirit_beta"] = spirit_beta
+    # Display metadata for the UI (provenance line on the new-chat screen).
+    final["policy_name"] = policy_name
+    final["org_name"] = org_name
+    final["has_charter"] = bool(charter)
 
     # 7. Backfill rephrase directives so every agent (notably custom/DB agents,
     #    which define none) has a corrective ethical_violation directive. Any

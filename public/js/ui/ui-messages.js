@@ -686,16 +686,41 @@ export function resetChatView() {
     ui.elements.chatWindow.innerHTML = '';
 }
 
+// Escape agent-authored text (descriptions, value names, prompts come from the
+// DB and are org-user-authored) before it goes through innerHTML.
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const LOCK_ICON = `<svg class="inline-block w-3 h-3 -mt-0.5 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-label="Non-negotiable"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>`;
+
+const SHIELD_ICON = `<svg class="inline-block w-3.5 h-3.5 -mt-0.5 mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>`;
+
 export function displayEmptyState(activeProfile, promptClickHandler, firstName = '') {
     ui._ensureElements();
     document.querySelector('.empty-state-container')?.remove();
     if (!activeProfile) return;
 
+    // "Scope Compliance" is a synthetic hard gate injected by the compiler; the
+    // scope line below already communicates it, so skip its chip.
     const valuesHtml = (activeProfile.values || [])
-        .map(v => `<span class="value-chip">${v.value || v.name || ''}</span>`)
+        .filter(v => (v.value || v.name || '') !== 'Scope Compliance')
+        .map(v => {
+            const name = escapeHtml(v.value || v.name || '');
+            const isGate = !!v.hard_gate;
+            const definition = v.definition || v.rubric?.description || '';
+            let tip = isGate
+                ? `Non-negotiable — responses that violate this value are blocked.${definition ? ' ' + definition : ''}`
+                : definition;
+            if (tip.length > 200) tip = tip.slice(0, 197) + '…';
+            const tipAttr = tip ? ` title="${escapeHtml(tip)}"` : '';
+            return `<span class="value-chip${isGate ? ' value-chip-gate' : ''}"${tipAttr}>${isGate ? LOCK_ICON : ''}${name}</span>`;
+        })
         .join('');
     const promptsHtml = (activeProfile.example_prompts || [])
-        .map(p => `<button class="example-prompt-btn">"${p}"</button>`)
+        .map(p => `<button class="example-prompt-btn">"${escapeHtml(p)}"</button>`)
         .join('');
     const avatarUrl = getAvatarForProfile(activeProfile.name);
 
@@ -704,11 +729,30 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
     container.style.cssText = 'width: 100%; max-width: 56rem; margin: 0 auto; padding: 0 1rem;';
 
     const greetingHtml = firstName
-        ? `<h1 class="text-4xl font-bold text-neutral-800 dark:text-neutral-200 mb-6">Hi ${firstName}</h1>`
+        ? `<h1 class="text-4xl font-bold text-neutral-800 dark:text-neutral-200 mb-6">Hi ${escapeHtml(firstName)}</h1>`
         : '';
 
     const descriptionHtml = activeProfile.description
-        ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 max-w-lg mx-auto mb-4">${activeProfile.description}</p>`
+        ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 max-w-lg mx-auto mb-4">${escapeHtml(activeProfile.description)}</p>`
+        : '';
+
+    // Governance provenance: who constrains this agent (Charter → Policy).
+    const provParts = [];
+    if (activeProfile.has_charter) {
+        provParts.push(escapeHtml(activeProfile.org_name ? `${activeProfile.org_name} Charter` : 'Org Charter'));
+    }
+    if (activeProfile.policy_name) provParts.push(escapeHtml(activeProfile.policy_name));
+    const governanceHtml = provParts.length
+        ? `<p class="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">${SHIELD_ICON}Governed by ${provParts.join(' → ')}</p>`
+        : '';
+
+    const scopeHtml = activeProfile.scope_statement
+        ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 max-w-lg mx-auto mb-2">Scope: ${escapeHtml(activeProfile.scope_statement)} Questions outside this scope will be redirected.</p>`
+        : '';
+
+    const kbName = activeProfile.rag_knowledge_base;
+    const kbHtml = kbName
+        ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">Has access to the &ldquo;${escapeHtml(String(kbName).replace(/[_-]+/g, ' '))}&rdquo; knowledge base.</p>`
         : '';
 
     const promptsSectionHtml = promptsHtml
@@ -720,16 +764,19 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
       <div class="text-center pt-8 pb-4">
         ${greetingHtml}
         <div class="inline-flex items-center gap-3 bg-neutral-100 dark:bg-neutral-800 rounded-2xl px-4 py-3 mb-4">
-          <img src="${avatarUrl}" alt="${activeProfile.name}" class="w-10 h-10 rounded-lg object-cover shrink-0">
+          <img src="${avatarUrl}" alt="${escapeHtml(activeProfile.name)}" class="w-10 h-10 rounded-lg object-cover shrink-0">
           <div class="text-left">
             <p class="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Active Agent</p>
-            <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">${activeProfile.name || 'Default'}</p>
+            <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">${escapeHtml(activeProfile.name || 'Default')}</p>
           </div>
         </div>
         ${descriptionHtml}
+        ${governanceHtml}
+        ${scopeHtml}
+        ${kbHtml}
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
-          Switch agents anytime from your profile at the bottom of the sidebar.
+          Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar.
         </p>
         ${promptsSectionHtml}
       </div>`;

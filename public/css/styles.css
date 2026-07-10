@@ -678,6 +678,19 @@ html.native body { font-size: 14px; }
   color: #000000;
 }
 
+/* Hard-gate (non-negotiable) values: lock icon + amber accent */
+.value-chip-gate {
+  border: 1px solid #d97706;
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.dark .value-chip-gate {
+  border-color: #b45309;
+  background-color: #fde68a;
+  color: #78350f;
+}
+
 .example-prompt-btn {
   padding: 0.75rem;
   background-color: #f3f4f6;

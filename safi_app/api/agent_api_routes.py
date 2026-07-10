@@ -131,7 +131,12 @@ def list_all_agents():
     
     sys_agents = []
     for k, v in PERSONAS.items():
-        a = v.copy()
+        # Compile through get_profile() so built-ins carry the same governed
+        # view (scope, hard gates, policy/org names) the UI shows for DB agents.
+        try:
+            a = get_profile(k)
+        except Exception:
+            a = v.copy()
         a['key'] = k
         a['is_custom'] = False
         sys_agents.append(a)
