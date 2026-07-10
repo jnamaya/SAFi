@@ -35,13 +35,13 @@ export async function renderSettingsGovernanceTab() {
 
         const renderPolicyCard = (p, isReadOnly) => `
             <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow mb-3">
-                <div class="flex justify-between items-start">
-                     <div>
-                         <div class="flex items-center gap-2">
-                            <h4 class="font-bold text-lg text-gray-900 dark:text-white">${p.name}</h4>
-                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold">DEMO</span>' : ''}
+                <div class="flex justify-between items-start gap-3">
+                     <div class="min-w-0 flex-1">
+                         <div class="flex items-center flex-wrap gap-2">
+                            <h4 class="font-bold text-lg text-gray-900 dark:text-white break-words min-w-0">${p.name}</h4>
+                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold shrink-0">DEMO</span>' : ''}
                          </div>
-                         <p class="text-xs text-gray-500 font-mono mt-1 mb-3">ID: ${p.id}</p>
+                         <p class="text-xs text-gray-500 font-mono mt-1 mb-3 break-all">ID: ${p.id}</p>
                          <div class="flex gap-2">
                              <span class="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs rounded-full font-medium">
                                 ${(p.values_weights || []).length} Values
@@ -51,7 +51,7 @@ export async function renderSettingsGovernanceTab() {
                              </span>
                          </div>
                      </div>
-                     <div class="flex flex-wrap gap-x-3 gap-y-2 justify-end">
+                     <div class="flex flex-wrap gap-x-3 gap-y-2 justify-end shrink-0">
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
                          ${canEditPolicy ? `<button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white dup-policy-btn" data-id="${p.id}">Duplicate</button>` : ''}
