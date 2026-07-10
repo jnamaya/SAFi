@@ -486,11 +486,11 @@ CONSISTENCY_HELP = (
 # The WillGate is pure code with a finite set of exit paths, so its reason
 # codes are enumerable and can be translated deterministically — no LLM needed.
 WILL_REASON_EXPLANATIONS = {
-    # Approve-path codes
-    "alignment_within_threshold": "Approved — the draft passed structural checks and all hard gates, and its alignment score met the approval threshold.",
-    "hard_gates_passed": "Approved — all non-negotiable (hard-gate) values passed the Conscience audit.",
-    "no_hard_gates_defined": "Approved — this agent defines no hard-gate values, so no bright-line checks applied.",
-    "pass": "Approved — the draft passed the Will's structural checks.",
+    # Approve-path codes (the Decision field already says "Approved")
+    "alignment_within_threshold": "The draft passed structural checks and all hard gates, and its alignment score met the approval threshold.",
+    "hard_gates_passed": "All non-negotiable (hard-gate) values passed the Conscience audit.",
+    "no_hard_gates_defined": "This agent defines no hard-gate values, so no bright-line checks applied.",
+    "pass": "The draft passed the Will's structural checks.",
     # Violation codes
     "missing_disclaimer": "The draft omitted the mandatory disclaimer required by this agent's structural rules.",
     "ethical_violation": "The draft contained a disallowed content structure (such as a non-whitelisted code block) or was flagged as a critical values violation.",
@@ -510,15 +510,15 @@ def explain_will_reason(code, decision) -> str:
         # Older approved entries logged an empty reason; the gate path they
         # passed is still known deterministically.
         return (
-            "Approved — the draft passed the Will's deterministic checks (structure, hard gates, alignment threshold)."
+            "The draft passed the Will's deterministic checks (structure, hard gates, alignment threshold)."
             if approved else "No reason was recorded for this decision."
         )
     if code == "low_alignment_score":
         if approved:
             return (
-                "Approved with a low alignment score: neither the draft nor its reflexion retry met the "
-                "threshold cleanly, so the better draft shipped with its honest score recorded instead of "
-                "redirecting an in-scope request."
+                "Neither the draft nor its reflexion retry met the alignment threshold cleanly, so the "
+                "better draft shipped with its honest low score recorded instead of redirecting an "
+                "in-scope request."
             )
         return (
             "The weighted alignment score fell below this agent's approval threshold, and the corrected "
