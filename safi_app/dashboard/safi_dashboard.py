@@ -51,30 +51,9 @@ if not token:
     st.stop()
 
 try:
-    # Use Config.SECRET_KEY from loaded config (safi_config)
-    # Ensure Config is loaded first (it is imported inside try-catch block lines 17-29, we assume success or stop)
-    # FIX: Move Auth Block AFTER Config Load
-    # We will assume basic security provided by verify_signature=True (default)
-    
-    # We need Config.SECRET_KEY. It is available in safi_config.Config.SECRET_KEY
     secret_key = safi_config.Config.SECRET_KEY
-    
-    try:
-        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        raise  # Let outer handler show the "Session Expired" message — don't try fallback key
-    except jwt.InvalidTokenError:
-        # Fallback: Check if backend is using the default dev key?
-        fallback_key = "dev-secret-key-should-be-changed"
-        if secret_key != fallback_key:
-            try:
-                payload = jwt.decode(token, fallback_key, algorithms=["HS256"])
-                st.warning("⚠️ Config Mismatch: Backend using default Dev Key.")
-            except jwt.InvalidTokenError:
-                 raise # Re-raise original error if fallback also fails
-        else:
-             raise # Re-raise if we were already using dev key
-    
+    payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+
     # Verify Role (Redundant but safe)
     if payload.get('role') not in ['admin', 'editor', 'auditor']:
         st.error(f"⚠️ Access Denied: Role '{payload.get('role')}' is not authorized.")
@@ -471,7 +450,16 @@ if date_range_option == "Last 7 Days": df_filtered = df[df["ts"] >= (now - timed
 elif date_range_option == "Last 30 Days": df_filtered = df[df["ts"] >= (now - timedelta(days=30))]
 else: df_filtered = df
 
-avg_alignment = df_filtered["spirit.score"].mean()
+# Compliance is scored over approved turns only. Redirected turns carry a
+# redirect-quality score from a separate rubric (how well the refusal was
+# handled), so pooling them would inflate compliance when the agent blocks a
+# lot of requests gracefully. Redirect quality is reported on its own, inside
+# the Interventions card.
+approved_scores = df_filtered.loc[df_filtered["will.decision"] == "Approved", "spirit.score"]
+redirected_scores = df_filtered.loc[df_filtered["will.decision"] == "Redirected", "spirit.score"]
+
+avg_alignment = approved_scores.mean()
+avg_redirect_quality = redirected_scores.mean()
 avg_incoherence = df_filtered["spirit.drift"].mean()
 avg_coherence_percent = (1 - avg_incoherence) * 100 if pd.notna(avg_incoherence) else None
 
@@ -489,9 +477,17 @@ with kpi_cols[0]:
 with kpi_cols[1]:
     row1 = st.columns(2)
     row2 = st.columns(2)
-    with row1[0]: st.metric("Avg. Compliance Score", f"{avg_alignment:.1f} / 10" if pd.notna(avg_alignment) else "N/A")
+    with row1[0]: st.metric(
+        "Avg. Compliance Score",
+        f"{avg_alignment:.1f} / 10" if pd.notna(avg_alignment) else "N/A",
+        help="Mean alignment score over approved turns only. Redirected turns are scored on a separate redirect-quality rubric and shown in the Interventions card.",
+    )
     with row1[1]: st.metric("Avg. Long-Term Consistency", f"{avg_coherence_percent:.1f}%" if pd.notna(avg_coherence_percent) else "N/A")
     with row2[0]:
+        redirect_quality_html = (
+            f"""<div style="font-size: 0.875rem; opacity: 0.7;">avg. redirect quality {avg_redirect_quality:.1f} / 10</div>"""
+            if pd.notna(avg_redirect_quality) else ""
+        )
         st.markdown(f"""
         <div class="card">
             <div style="font-size: 0.875rem;">Interventions</div>
@@ -499,6 +495,7 @@ with kpi_cols[1]:
             <div style="font-size: 0.875rem; opacity: 0.7;">
                 {intervention_rate:.1f}% of responses redirected
             </div>
+            {redirect_quality_html}
         </div>
         """, unsafe_allow_html=True)
     with row2[1]: st.metric("Total Audits", f"{total_audits}", f"in period")
