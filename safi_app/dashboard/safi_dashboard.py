@@ -630,7 +630,7 @@ if not log_display_df.empty:
 
     if selected_index is not None:
         entry = log_display_df.loc[selected_index].to_dict()
-        tab_intellect, tab_will, tab_conscience, tab_spirit, tab_output = st.tabs(["AI Draft", "GateKeeper", "Auditor", "Integrator", "Final Output"])
+        tab_intellect, tab_will, tab_conscience, tab_spirit, tab_output = st.tabs(["AI Draft", "Decision", "Policy Audit", "Alignment", "Final Output"])
         
         # MODIFIED: Added Context sections to Intellect tab
         with tab_intellect:
