@@ -469,6 +469,18 @@ interventions_count = (df_filtered["will.decision"] == "Redirected").sum()
 total_audits = len(df_filtered)
 intervention_rate = (interventions_count / total_audits * 100) if total_audits > 0 else 0
 
+ALIGNMENT_HELP = (
+    "How well this response expressed the agent's declared values, judged by the "
+    "Conscience audit. Each value's score is weighted by importance and judge "
+    "confidence, then combined into a 1-10 grade for the turn. Higher is better."
+)
+CONSISTENCY_HELP = (
+    "How closely this turn's value expression matches the agent's own historical "
+    "pattern (its spirit memory). 100% means the agent behaved as it usually does; "
+    "a low value flags an out-of-character turn, even if that turn scored well on "
+    "its own. N/A on an agent's first turns, before a history exists."
+)
+
 # ---------- 2. Top-Level KPIs ----------
 kpi_cols = st.columns([2, 3])
 with kpi_cols[0]:
@@ -482,7 +494,11 @@ with kpi_cols[1]:
         f"{avg_alignment:.1f} / 10" if pd.notna(avg_alignment) else "N/A",
         help="Mean alignment score over approved turns only. Redirected turns are scored on a separate redirect-quality rubric and shown in the Interventions card.",
     )
-    with row1[1]: st.metric("Avg. Long-Term Consistency", f"{avg_coherence_percent:.1f}%" if pd.notna(avg_coherence_percent) else "N/A")
+    with row1[1]: st.metric(
+        "Avg. Long-Term Consistency",
+        f"{avg_coherence_percent:.1f}%" if pd.notna(avg_coherence_percent) else "N/A",
+        help=CONSISTENCY_HELP,
+    )
     with row2[0]:
         redirect_quality_html = (
             f"""<div style="font-size: 0.875rem; opacity: 0.7;">avg. redirect quality {avg_redirect_quality:.1f} / 10</div>"""
@@ -613,7 +629,15 @@ with st.container(border=True):
         display_table['ts'] = display_table['ts'].dt.strftime('%Y-%m-%d %H:%M')
         display_table['identity_coherence'] = display_table['identity_coherence'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
         display_table = display_table.rename(columns=rename_map)
-        st.dataframe(display_table, use_container_width=True, hide_index=True)
+        st.dataframe(
+            display_table,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Alignment": st.column_config.NumberColumn("Alignment", help=ALIGNMENT_HELP),
+                "Consistency": st.column_config.TextColumn("Consistency", help=CONSISTENCY_HELP),
+            },
+        )
     else:
         st.info("No logs match the current filters.")
 st.divider()
@@ -670,8 +694,8 @@ if not log_display_df.empty:
             s_c1, s_c2 = st.columns(2)
             score = entry.get('spirit.score')
             coherence = entry.get('identity_coherence')
-            s_c1.metric("Alignment Score", f"{score:.2f}" if pd.notna(score) else "N/A")
-            s_c2.metric("Consistency Score", f"{coherence:.1f}%" if pd.notna(coherence) else "N/A")
+            s_c1.metric("Alignment Score", f"{score:.2f}" if pd.notna(score) else "N/A", help=ALIGNMENT_HELP)
+            s_c2.metric("Consistency Score", f"{coherence:.1f}%" if pd.notna(coherence) else "N/A", help=CONSISTENCY_HELP)
             st.markdown("---")
             st.markdown("#### Consistency Note"); st.text_area("Note", value=entry.get("spirit.reflection", ""), height=150, disabled=True, key=f"snote_{selected_index}", label_visibility="collapsed")
             st.markdown("#### Consistency Feedback"); st.text_area("Feedback", value=entry.get("spirit.feedback", ""), height=150, disabled=True, key=f"sfeedback_{selected_index}", label_visibility="collapsed")
