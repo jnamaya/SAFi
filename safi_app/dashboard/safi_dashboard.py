@@ -144,7 +144,8 @@ def normalize_entry(e: dict) -> dict:
             "recent_turns": e.get("recentTurns", ""),
             "intellect.context": e.get("retrievedContext"),
             "will.decision": will_norm, "will.reflection": e.get("willReason", ""),
-            "will.blocked_draft": e.get("blockedDraft", ""), # <-- ADDED
+            "will.blocked_draft": e.get("blockedDraft", ""),
+            "will.original_ledger": e.get("originalLedger", []),
             "conscience.evaluations": e.get("conscienceLedger", []) or e.get("conscience_ledger", []),
             "spirit.score": e.get("spiritScore"), "spirit.drift": e.get("drift"),
             "spirit.reflection": e.get("spiritNote", ""), "spirit.feedback": e.get("spiritFeedback", ""),
@@ -162,6 +163,7 @@ def normalize_entry(e: dict) -> dict:
         "will.decision": (lambda d: "Approved" if d == "approve" else ("Redirected" if d in ["violation", "blocked", "redirected"] else d or "Unknown"))(
             (e.get("will", {}).get("decision") or "").lower()
         ), "will.reflection": e.get("will", {}).get("reflection", ""),
+        "will.blocked_draft": "", "will.original_ledger": [],
         "conscience.evaluations": e.get("conscience", {}).get("evaluations", []),
         "spirit.score": e.get("spirit", {}).get("score"), "spirit.drift": e.get("spirit", {}).get("drift"),
         "spirit.reflection": e.get("spirit", {}).get("reflection", ""), "spirit.feedback": e.get("spirit", {}).get("feedback", ""),
@@ -481,6 +483,55 @@ CONSISTENCY_HELP = (
     "its own. N/A on an agent's first turns, before a history exists."
 )
 
+# The WillGate is pure code with a finite set of exit paths, so its reason
+# codes are enumerable and can be translated deterministically — no LLM needed.
+WILL_REASON_EXPLANATIONS = {
+    # Approve-path codes
+    "alignment_within_threshold": "Approved — the draft passed structural checks and all hard gates, and its alignment score met the approval threshold.",
+    "hard_gates_passed": "Approved — all non-negotiable (hard-gate) values passed the Conscience audit.",
+    "no_hard_gates_defined": "Approved — this agent defines no hard-gate values, so no bright-line checks applied.",
+    "pass": "Approved — the draft passed the Will's structural checks.",
+    # Violation codes
+    "missing_disclaimer": "The draft omitted the mandatory disclaimer required by this agent's structural rules.",
+    "ethical_violation": "The draft contained a disallowed content structure (such as a non-whitelisted code block) or was flagged as a critical values violation.",
+    "scope_violation": "The Scope Compliance hard gate scored -1: the request or draft fell outside this agent's permitted scope.",
+    "scope_validation": "The request fell outside this agent's permitted scope.",
+    "grounding_violation": "The Grounding Fidelity hard gate scored -1: the draft asserted claims not supported by the retrieved sources.",
+    "hard_gate_violation": "A non-negotiable (hard-gate) value scored -1 in the Conscience audit.",
+    "hard_gate_unscored": "The Conscience audit failed to score one of this agent's hard-gate values, so the Will failed closed rather than ship an unaudited draft.",
+    "audit_unavailable": "The Conscience audit was unavailable or covered none of this agent's values, so the draft could not ship unaudited (fail-closed).",
+}
+
+
+def explain_will_reason(code, decision) -> str:
+    code = str(code).strip() if isinstance(code, str) else ""
+    approved = str(decision).lower().startswith("approv")
+    if not code:
+        # Older approved entries logged an empty reason; the gate path they
+        # passed is still known deterministically.
+        return (
+            "Approved — the draft passed the Will's deterministic checks (structure, hard gates, alignment threshold)."
+            if approved else "No reason was recorded for this decision."
+        )
+    if code == "low_alignment_score":
+        if approved:
+            return (
+                "Approved with a low alignment score: neither the draft nor its reflexion retry met the "
+                "threshold cleanly, so the better draft shipped with its honest score recorded instead of "
+                "redirecting an in-scope request."
+            )
+        return (
+            "The weighted alignment score fell below this agent's approval threshold, and the corrected "
+            "retry did not pass either, so the response was redirected."
+        )
+    if code.startswith("injection:"):
+        category = code.split(":", 1)[1].replace("_", " ")
+        return f"Blocked before generation: the prompt matched an injection-attack pattern ({category})."
+    if code.startswith("Tool '"):
+        return code  # tool-gate reasons are already human-readable sentences
+    return WILL_REASON_EXPLANATIONS.get(code, f"Unrecognized gate code: `{code}`")
+
+
 # ---------- 2. Top-Level KPIs ----------
 kpi_cols = st.columns([2, 3])
 with kpi_cols[0]:
@@ -681,14 +732,32 @@ if not log_display_df.empty:
 
         with tab_will:
             st.markdown("#### Decision"); st.markdown(f"<div style='font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;'>{entry.get('will.decision', 'Unknown')}</div>", unsafe_allow_html=True)
-            
-            # Show Blocked Draft if present
-            if entry.get("will.blocked_draft"):
-                st.error("Using Blocked Draft Content")
-                st.text_area("Blocked Draft", value=entry.get("will.blocked_draft", ""), height=200, disabled=True, key=f"wdraft_{selected_index}")
-            
+
             st.markdown("#### Reason")
-            st.text_area("Reason", value=entry.get("will.reflection", ""), height=200, disabled=True, key=f"willr_{selected_index}")
+            reason_code = entry.get("will.reflection")
+            reason_code = reason_code.strip() if isinstance(reason_code, str) else ""
+            st.markdown(explain_will_reason(reason_code, entry.get("will.decision", "")))
+            if reason_code:
+                st.caption(f"Gate code: `{reason_code}`")
+
+            # On redirects, show the Conscience judge's written justification for
+            # the value(s) that failed in the ORIGINAL audit (the Policy Audit tab
+            # shows the redirect's own quality audit, not the failing one).
+            original_ledger = entry.get("will.original_ledger")
+            failing_rows = [
+                r for r in (original_ledger if isinstance(original_ledger, list) else [])
+                if isinstance(r, dict) and float(r.get("score") or 0) <= -1.0
+            ]
+            if failing_rows:
+                st.markdown("#### Judge Justification for the Block")
+                for row in failing_rows:
+                    justification = row.get("reason") or row.get("reflection") or "No justification recorded."
+                    st.error(f"**{row.get('value', 'Unknown value')}** (score {float(row.get('score') or 0):+.1f}): {justification}")
+
+            blocked_draft = entry.get("will.blocked_draft")
+            if isinstance(blocked_draft, str) and blocked_draft.strip():
+                st.markdown("#### Blocked Draft")
+                st.text_area("Blocked Draft", value=blocked_draft, height=200, disabled=True, key=f"wdraft_{selected_index}", label_visibility="collapsed")
         
         with tab_conscience:
             st.markdown("#### Policy Evaluation")

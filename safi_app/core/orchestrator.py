@@ -799,10 +799,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 message_id=message_id,
                 new_title=new_title,
                 user_id=user_id,
-                org_id=org_id
+                org_id=org_id,
+                failing_ledger=result["ledger"],
+                blocked_draft=a_t,
             )
 
         ledger = result["ledger"]
+        commit_reason = result["reason"]
 
         if result["verdict"] == "violation":
             # Spirit-stage violation: a content-quality dip, not a safety breach —
@@ -898,7 +901,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     message_id=message_id,
                     new_title=new_title,
                     user_id=user_id,
-                    org_id=org_id
+                    org_id=org_id,
+                    failing_ledger=result["ledger"],
+                    blocked_draft=a_t,
                 )
 
             # Commit the best candidate: a clean approve beats a low-alignment
@@ -909,6 +914,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             ))
             chosen, a_t, r_t, retrieved_context = best
             ledger = chosen["ledger"]
+            commit_reason = chosen["reason"]
             if chosen["verdict"] == "violation":
                 self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
 
@@ -941,6 +947,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # The frontend polls the audit endpoint and injects them when ready.
         S_p: List[str] = []
         self.executor.submit(self._run_suggestions_thread, message_id, user_prompt, a_t)
+
+        # Record the gate's approve reason unless a more specific note (e.g. a
+        # blocked tool) was already set — approved turns used to log an empty reason.
+        if not E_t:
+            E_t = commit_reason
 
         # Append safe log entry
         self._append_log({
@@ -1033,7 +1044,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         message_id: str,
         new_title: Optional[str],
         user_id: str,
-        org_id: Optional[str]
+        org_id: Optional[str],
+        failing_ledger: Optional[List[Dict[str, Any]]] = None,
+        blocked_draft: str = "",
     ) -> Dict[str, Any]:
         """Persona Redirect: Re-engages the Intellect to handle boundaries in the persona's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
@@ -1136,6 +1149,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "willDecision": "redirected",
             "willReason": violation_type,
             "isRedirect": True,
+            # The audit that triggered the block — the redirect's own quality audit
+            # goes in conscienceLedger; this preserves WHY the original draft failed
+            # so the dashboard can show the judge's justification.
+            "originalLedger": failing_ledger or [],
+            "blockedDraft": blocked_draft or "",
             "conscienceLedger": ledger,
             "spiritScore": S_t,
             "spiritNote": note,
