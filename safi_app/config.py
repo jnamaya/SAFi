@@ -220,6 +220,7 @@ class Config:
         # Cerebras Models (bare ids, unlike Groq's "openai/"-prefixed ones)
         {"id": "gpt-oss-120b", "label": "GPT-OSS 120B (Cerebras)"},
         {"id": "zai-glm-4.7", "label": "GLM 4.7 (Cerebras)"},
+        {"id": "gemma-4-31b", "label": "Gemma 4 31B (Cerebras)"},
     ]
 
     # --- DOCUMENT UPLOAD CONFIGURATION ---
