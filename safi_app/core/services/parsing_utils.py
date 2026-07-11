@@ -77,15 +77,19 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         obj = json.loads(sanitized)
         return obj
     except json.JSONDecodeError:
-        # 4. Deep Fallback: Quote Repair
-        # Sometimes models produce: {"reason": "The user said "hello""} -> invalid
-        try:
-            # Extremely simple heuristic: assume keys are valid, try to ignore quotes in values?
-            # Actually, hard to fix generically. We log and return error.
-            pass
-        except Exception:
-            pass
+        pass  # Go to escape repair
 
+    # 4. Invalid-escape repair.
+    # Models embed LaTeX inside JSON strings — \( t \), \alpha, \[ ... \] —
+    # and those backslash sequences are not legal JSON escapes, so one math
+    # marker kills the whole parse (observed leaking Intellect reflections to
+    # the frontend). Double any backslash that doesn't start a valid JSON
+    # escape and retry.
+    try:
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', sanitized)
+        obj = json.loads(repaired)
+        return obj
+    except json.JSONDecodeError:
         log.warning(f"Robust JSON parse failed. Content start: {json_text[:100]}...")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
 
@@ -174,7 +178,23 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                      answer = answer.replace(delimiter_text, "").strip()
                      return answer, reflection, json_obj.get("_gemini_raw_turn")
 
-    # --- Strategy 3: Fallback (Raw Text) ---
+    # --- Strategy 3a: Salvage an unparseable reflection blob ---
+    # A "reflection": key is present but Strategies 1/2 couldn't parse its
+    # JSON (malformed beyond even escape repair). NEVER ship the blob to the
+    # user — it can contain internal governance coaching from reflexion
+    # retries. Cut the answer at the blob's opening brace and keep the raw
+    # blob text as the reflection. An empty remaining answer is returned
+    # as-is so run_intellect's contentless-answer retry resamples the model.
+    ref_key_match = re.search(r'["\']reflection["\']\s*:', clean_text)
+    if ref_key_match:
+        blob_start = clean_text.rfind("{", 0, ref_key_match.start() + 1)
+        if blob_start != -1:
+            answer = clean_text[:blob_start].replace(delimiter_text, "").strip()
+            reflection = clean_text[blob_start:].strip()
+            log.warning("parse_intellect_response: Strategy 3 salvage — stripped unparseable reflection blob from answer.")
+            return answer.replace("\\n", "\n"), reflection, None
+
+    # --- Strategy 3b: Fallback (Raw Text) ---
     # Model didn't include the delimiter or a reflection JSON block; surface the raw text as the answer.
     answer = re.sub(r'-*REFLECTION-*', '', clean_text).strip()
     log.info("parse_intellect_response: Strategy 3 fallback — model omitted reflection format.")
