@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime
 
-from ..core.services.model_routing import detect_provider as _detect_provider
+from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
@@ -304,14 +304,7 @@ async def generate_policy_content_endpoint():
         detected_provider = _detect_provider(model)
         
         llm_config = {
-            "providers": {
-                "openai": { "type": "openai", "api_key": Config.OPENAI_API_KEY },
-                "groq": { "type": "openai", "api_key": Config.GROQ_API_KEY, "base_url": "https://api.groq.com/openai/v1" },
-                "anthropic": { "type": "anthropic", "api_key": Config.ANTHROPIC_API_KEY },
-                "gemini": { "type": "gemini", "api_key": Config.GEMINI_API_KEY },
-                "deepseek": { "type": "openai", "api_key": getattr(Config, 'DEEPSEEK_API_KEY', ''), "base_url": "https://api.deepseek.com" },
-                "mistral": { "type": "openai", "api_key": getattr(Config, 'MISTRAL_API_KEY', ''), "base_url": "https://api.mistral.ai/v1" }
-            },
+            "providers": _build_providers_config(Config),
             "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
         provider = LLMProvider(llm_config)

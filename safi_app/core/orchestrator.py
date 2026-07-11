@@ -32,7 +32,7 @@ from .orchestrator_mixins.tasks import BackgroundTasksMixin
 
 # --- Import Refactored Services ---
 from .services import LLMProvider, RAGService, MCPManager
-from .services.model_routing import detect_provider
+from .services.model_routing import detect_provider, build_providers_config
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -127,40 +127,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # --- 1. Construct LLM Configuration ---
         llm_config = {
-            "providers": {
-                "openai": {
-                    "type": "openai",
-                    "api_key": config.OPENAI_API_KEY
-                },
-                "groq": {
-                    "type": "openai",
-                    "api_key": config.GROQ_API_KEY,
-                    "base_url": "https://api.groq.com/openai/v1"
-                },
-                "anthropic": {
-                    "type": "anthropic",
-                    "api_key": config.ANTHROPIC_API_KEY
-                },
-                "gemini": {
-                    "type": "gemini",
-                    "api_key": config.GEMINI_API_KEY
-                },
-                "deepseek": {
-                    "type": "openai",
-                    "api_key": getattr(config, "DEEPSEEK_API_KEY", ""),
-                    "base_url": "https://api.deepseek.com"
-                },
-                "mistral": {
-                    "type": "openai",
-                    "api_key": getattr(config, "MISTRAL_API_KEY", ""),
-                    "base_url": "https://api.mistral.ai/v1"
-                },
-                "zhipu": {
-                    "type": "openai",
-                    "api_key": getattr(config, "ZHIPU_API_KEY", ""),
-                    "base_url": "https://api.z.ai/api/paas/v4"
-                }
-            },
+            "providers": build_providers_config(config),
             "routes": {
                 "intellect": {
                     "provider": getattr(config, "INTELLECT_PROVIDER", detect_provider(i_model)),
