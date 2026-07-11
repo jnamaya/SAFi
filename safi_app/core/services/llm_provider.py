@@ -454,34 +454,50 @@ class LLMProvider:
                 top_p = None
                 extra_body = None
 
-            try:
-                # Constrain decoding to valid JSON at the API level: eliminates the
-                # markdown-fence/prose failure class that otherwise degrades the
-                # ledger and burns the orchestrator's re-audit retry.
-                raw_content = await self._chat_completion(
-                    route="conscience",
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=temperature,
-                    max_tokens=8192,
-                    top_p=top_p,
-                    extra_body=extra_body,
-                    json_mode=True,
-                )
-            except Exception as e:
-                # A provider that rejects json_mode would otherwise fail BOTH audit
-                # attempts and brick the agent into permanent fail-closed. Retry
-                # once without it; the text parser still handles unconstrained output.
-                self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
-                raw_content = await self._chat_completion(
-                    route="conscience",
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=temperature,
-                    max_tokens=8192,
-                    top_p=top_p,
-                    extra_body=extra_body,
-                )
+            # Gemma (observed on Cerebras gemma-4-31b) degenerates under
+            # response_format=json_object with a long audit system prompt: it
+            # returns a literal empty "{}" with HTTP 200. Skip json_mode up
+            # front — unconstrained Gemma produces a parseable ledger.
+            use_json_mode = "gemma" not in conscience_model.lower()
+
+            ledger: List[Dict[str, Any]] = []
+            if use_json_mode:
+                try:
+                    # Constrain decoding to valid JSON at the API level: eliminates the
+                    # markdown-fence/prose failure class that otherwise degrades the
+                    # ledger and burns the orchestrator's re-audit retry.
+                    raw_content = await self._chat_completion(
+                        route="conscience",
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=temperature,
+                        max_tokens=8192,
+                        top_p=top_p,
+                        extra_body=extra_body,
+                        json_mode=True,
+                    )
+                    ledger = parse_conscience_response(raw_content, self.log)
+                    if ledger:
+                        return ledger
+                    # An empty ledger from a successful json_mode call is the
+                    # degenerate-output case (e.g. a bare "{}"), not a real audit
+                    # — fall through to the unconstrained retry.
+                    self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
+                except Exception as e:
+                    # A provider that rejects json_mode would otherwise fail BOTH audit
+                    # attempts and brick the agent into permanent fail-closed. Retry
+                    # once without it; the text parser still handles unconstrained output.
+                    self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
+
+            raw_content = await self._chat_completion(
+                route="conscience",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=8192,
+                top_p=top_p,
+                extra_body=extra_body,
+            )
             return parse_conscience_response(raw_content, self.log)
         except Exception as e:
             self.log.exception("Conscience execution failed")
