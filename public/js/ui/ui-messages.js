@@ -621,10 +621,12 @@ function _stageForStep(text) {
 
 const STEP_CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
 
+// Stages start hidden ('unrevealed') and slide in one by one as the backend
+// actually reaches them — only the first stage is visible up front.
 function _renderPipelineTraceHtml() {
     return `<div class="pipeline-trace" id="pipeline-trace">` + PIPELINE_STAGES.map((label, i) =>
-        (i > 0 ? `<span class="step-connector"></span>` : '')
-        + `<span class="pipeline-step${i === 0 ? ' active' : ''}" data-stage="${i}">`
+        (i > 0 ? `<span class="step-connector unrevealed"></span>` : '')
+        + `<span class="pipeline-step${i === 0 ? ' active' : ' unrevealed'}" data-stage="${i}">`
         + `<span class="step-dot">${STEP_CHECK_ICON}</span>`
         + `<span class="step-label">${label}</span>`
         + `</span>`
@@ -637,11 +639,14 @@ function _setTraceStage(stage) {
     if (!trace) return;
     trace.querySelectorAll('.pipeline-step').forEach(el => {
         const i = Number(el.dataset.stage);
+        el.classList.toggle('unrevealed', i > stage);
         el.classList.toggle('done', i < stage);
         el.classList.toggle('active', i === stage);
     });
     trace.querySelectorAll('.step-connector').forEach((el, idx) => {
-        // Connector idx sits between step idx and idx+1.
+        // Connector idx sits between step idx and idx+1; it appears together
+        // with step idx+1 and fills green at the same moment.
+        el.classList.toggle('unrevealed', idx >= stage);
         el.classList.toggle('done', idx < stage);
     });
 }

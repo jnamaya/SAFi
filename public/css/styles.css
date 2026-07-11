@@ -834,13 +834,25 @@ html.native body { font-size: 14px; }
 .pipeline-trace {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  /* Spacing lives on connector margins (not gap) so unrevealed stages
+     collapse to zero width without leaving stray gaps behind. */
 }
 
 .pipeline-step {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 120px;
+  transition: max-width 0.35s ease, opacity 0.3s ease;
+}
+
+/* Future stages stay hidden until the backend actually reaches them */
+.pipeline-step.unrevealed,
+.step-connector.unrevealed {
+  max-width: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
 }
 
 .step-dot {
@@ -875,10 +887,13 @@ html.native body { font-size: 14px; }
 .step-connector {
   position: relative;
   width: 14px;
+  max-width: 14px;
   height: 1.5px;
+  margin: 0 6px;
   background: #d4d4d4;
   border-radius: 1px;
   overflow: hidden;
+  transition: max-width 0.35s ease, margin 0.35s ease, opacity 0.3s ease;
 }
 
 /* Connector fills left-to-right as its stage completes */
