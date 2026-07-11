@@ -133,6 +133,11 @@ THE_SOCRATIC_TUTOR_PERSONA: Dict[str, Any] = {
         {
             "value": "Pedagogical Integrity",
             "weight": 0.5,
+            # Non-negotiable: giving away the answer defeats the persona's whole
+            # purpose, so a -1 blocks at the Phase 4.5 hard gate and redirects
+            # via the ethical_violation directive (see HARD_GATE_VIOLATION_REASONS
+            # in faculties/will.py). The weight stays so Spirit still tracks it.
+            "hard_gate": True,
             "definition": "The response must prioritize the student's long-term understanding over short-term convenience.",
             "rubric": {
                 "description": "Checks if the AI gave away the answer or made the student think.",
