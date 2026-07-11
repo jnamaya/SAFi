@@ -472,8 +472,8 @@ total_audits = len(df_filtered)
 intervention_rate = (interventions_count / total_audits * 100) if total_audits > 0 else 0
 
 ALIGNMENT_HELP = (
-    "How well this response expressed the agent's declared values, judged by the "
-    "Conscience audit. Each value's score is weighted by importance and judge "
+    "How well this response expressed the agent's declared values, as assessed by "
+    "the Conscience audit. Each value's score is weighted by importance and audit "
     "confidence, then combined into a 1-10 grade for the turn. Higher is better."
 )
 CONSISTENCY_HELP = (
@@ -749,7 +749,7 @@ if not log_display_df.empty:
                 if isinstance(r, dict) and float(r.get("score") or 0) <= -1.0
             ]
             if failing_rows:
-                st.markdown("#### Judge Justification for the Block")
+                st.markdown("#### Audit Justification for the Block")
                 for row in failing_rows:
                     justification = row.get("reason") or row.get("reflection") or "No justification recorded."
                     st.error(f"**{row.get('value', 'Unknown value')}** (score {float(row.get('score') or 0):+.1f}): {justification}")
