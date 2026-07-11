@@ -128,6 +128,14 @@ THE_HEALTH_NAVIGATOR_PERSONA: Dict[str, Any] = {
         "structural_requirements": {
             "require_disclaimer": True,
             "mandatory_disclaimer_substring": "Disclaimer: I am an AI guide, not a doctor",
+            # Appended verbatim when the orchestrator repairs a draft that
+            # omitted the disclaimer — matches the style's disclaimer exactly.
+            "disclaimer_repair_text": (
+                "***\n"
+                "*Disclaimer: I am an AI guide, not a doctor. This information is for educational purposes and "
+                "does not constitute medical advice, diagnosis, or treatment. Always seek the advice of your physician "
+                "or other qualified health provider with any questions you may have regarding a medical condition.*"
+            ),
             "banned_markdown_syntaxes": []
         }
     },
