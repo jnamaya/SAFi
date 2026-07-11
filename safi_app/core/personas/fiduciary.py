@@ -141,6 +141,10 @@ THE_FIDUCIARY_PERSONA: Dict[str, Any] = {
         "structural_requirements": {
             "require_disclaimer": True,
             "mandatory_disclaimer_substring": "*Disclaimer: This information is for educational and informational purposes only",
+            # Appended verbatim when the model omits the disclaimer and the
+            # orchestrator repairs the draft — must contain the substring above
+            # and match the worldview's disclaimer format exactly.
+            "disclaimer_repair_text": "*Disclaimer: This information is for educational and informational purposes only and does not constitute financial, investment, or professional advice. Always consult with a licensed financial professional before making any investment decisions.*",
             "banned_markdown_syntaxes": ["```python", "```javascript", "```bash", "```html"]
         },
         "early_prompt_blacklist": []

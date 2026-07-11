@@ -337,10 +337,22 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         db.update_message_reasoning(message_id, "Checking response structure...")
         is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
+        if not is_valid_struct and structure_reason == "missing_disclaimer":
+            # Mechanically repairable: append the mandatory disclaimer and
+            # re-validate instead of discarding an otherwise-good draft (models
+            # omit it intermittently, and blocking here surfaced repeated
+            # "internal issue" notices to users). The repaired draft still runs
+            # the FULL audit below, and callers commit the repaired text via
+            # the "draft" key in the result.
+            repaired = self._append_mandatory_disclaimer(a_t)
+            if repaired is not None:
+                self.log.info(f"[Governance | Phase 3 | Will W1{tag}] Appended mandatory disclaimer (deterministic repair).")
+                a_t = repaired
+                is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
         self.log.info(f"[Governance | Phase 3 | Will W1{tag}] Structural: {'PASS' if is_valid_struct else 'FAIL'} — {structure_reason}")
         if not is_valid_struct:
             return {"verdict": "violation", "stage": "structure", "reason": structure_reason,
-                    "ledger": [], "spirit_assessment": None}
+                    "ledger": [], "spirit_assessment": None, "draft": a_t}
 
         db.update_message_reasoning(message_id, "Auditing response for compliance...")
         ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id, recent_history)
@@ -351,7 +363,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         if self.values and not self._ledger_covers_values(ledger):
             self.log.error(f"[Governance | Phase 4{tag}] Audit unavailable/degraded — failing closed.")
             return {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable",
-                    "ledger": ledger, "spirit_assessment": None}
+                    "ledger": ledger, "spirit_assessment": None, "draft": a_t}
 
         if ledger:
             scores_str = " | ".join(
@@ -364,7 +376,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.log.info(f"[Governance | Phase 4.5 | Hard Gate{tag}] Decision: {D_hard} — {E_hard}")
         if D_hard == "violation":
             return {"verdict": "violation", "stage": "hard_gate", "reason": E_hard,
-                    "ledger": ledger, "spirit_assessment": None}
+                    "ledger": ledger, "spirit_assessment": None, "draft": a_t}
 
         db.update_message_reasoning(message_id, "Computing alignment score...")
         spirit_assessment = self.spirit.integrate(ledger)
@@ -374,7 +386,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             f"Decision: {D_spirit} — {E_spirit}"
         )
         return {"verdict": D_spirit, "stage": "spirit", "reason": E_spirit,
-                "ledger": ledger, "spirit_assessment": spirit_assessment}
+                "ledger": ledger, "spirit_assessment": spirit_assessment, "draft": a_t}
 
     async def process_prompt(
         self,
@@ -755,6 +767,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # reflexion) funnels through the same gates in _finalize_draft.
         result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id,
                                             recent_history=recent_turns_text)
+        # _finalize_draft may deterministically repair the draft (e.g. append a
+        # missing mandatory disclaimer) — commit what was actually audited.
+        a_t = result.get("draft", a_t)
 
         # Structural and audit-availability failures are system faults, not
         # verdicts on the user's request — ship a deterministic notice instead
@@ -866,6 +881,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry",
                     recent_history=recent_turns_text,
                 )
+                a_t_spirit = retry_result.get("draft", a_t_spirit)
 
             # A draft is committable if it passed every gate, or dipped only on the
             # soft low-alignment threshold — committed with its honest low score
@@ -1024,6 +1040,23 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
+    def _append_mandatory_disclaimer(self, text: str) -> Optional[str]:
+        """Return `text` with the profile's mandatory disclaimer appended, or
+        None when there is nothing to repair with (no disclaimer configured)
+        or it is already present.
+
+        Prefers structural_requirements.disclaimer_repair_text (the full,
+        well-formed disclaimer) and falls back to the checked substring —
+        which is a lenient prefix, so persona authors should set the repair
+        text whenever the substring is not a complete sentence."""
+        rules = (self.profile or {}).get("will_rules", {})
+        struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
+        substring = (struct.get("mandatory_disclaimer_substring") or "").strip()
+        repair_text = (struct.get("disclaimer_repair_text") or "").strip() or substring
+        if not repair_text or not substring or substring in text:
+            return None
+        return f"{text.rstrip()}\n\n{repair_text}"
+
     def _enforce_redirect_structure(self, safe_output: str) -> str:
         """Deterministically repair a redirect that fails the Will's structural
         gate. The redirect is terminal (it cannot recurse into another
@@ -1041,12 +1074,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             return safe_output
 
         if reason == "missing_disclaimer":
-            rules = (self.profile or {}).get("will_rules", {})
-            struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
-            disclaimer = (struct.get("mandatory_disclaimer_substring") or "").strip()
-            if disclaimer and disclaimer not in safe_output:
+            repaired = self._append_mandatory_disclaimer(safe_output)
+            if repaired is not None:
                 self.log.info("[Governance | Redirect] Appending mandatory disclaimer to redirect output.")
-                return f"{safe_output.rstrip()}\n\n{disclaimer}"
+                return repaired
 
         self.log.warning(f"[Governance | Redirect] Structural check failed ({reason}); shipping redirect as-is.")
         return safe_output

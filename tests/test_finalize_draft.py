@@ -85,13 +85,38 @@ def finalize(safi, draft):
 
 class TestFinalizeDraft(unittest.TestCase):
 
-    def test_structural_failure_blocks_before_audit(self):
-        conscience = FakeConscience([])
+    def test_missing_disclaimer_is_repaired_not_blocked(self):
+        # A missing disclaimer is mechanically repairable: the orchestrator
+        # appends it, re-validates, and the repaired draft runs the full audit.
+        conscience = FakeConscience([
+            ledger_entry("Scope Compliance", 1.0),
+            ledger_entry("Honesty", 1.0),
+            ledger_entry("Care", 1.0),
+        ])
         safi = make_safi(conscience)
         res = finalize(safi, "Draft with no disclaimer.")
+        self.assertEqual(res["verdict"], "approve")
+        self.assertTrue(res["draft"].endswith(DISCLAIMER))
+        self.assertEqual(conscience.calls, 1, "repaired draft must still be audited")
+
+    def test_unrepairable_structural_failure_blocks_before_audit(self):
+        # Banned markdown has no safe automatic rewrite — still fails closed
+        # at the structure stage without spending an audit.
+        conscience = FakeConscience([])
+        safi = make_safi(conscience)
+        safi.profile = {
+            "will_rules": {
+                "structural_requirements": {
+                    "require_disclaimer": True,
+                    "mandatory_disclaimer_substring": DISCLAIMER,
+                    "banned_markdown_syntaxes": ["```python"],
+                }
+            }
+        }
+        safi.will_gate = WillGate(None, values=VALUES, profile=safi.profile, alignment_threshold=0.5)
+        res = finalize(safi, f"Run this:\n```python\nprint('x')\n``` {DISCLAIMER}")
         self.assertEqual(res["verdict"], "violation")
         self.assertEqual(res["stage"], "structure")
-        self.assertEqual(res["reason"], "missing_disclaimer")
         self.assertEqual(conscience.calls, 0, "Conscience must not run on a structural failure")
 
     def test_clean_draft_approves(self):
