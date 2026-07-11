@@ -831,19 +831,6 @@ html.native body { font-size: 14px; }
   box-shadow: none; /* No shadow */
 }
 
-/* Pipeline trace variant: stepper on top, status line below */
-.thinking-container-trace {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.thinking-statusline {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .pipeline-trace {
   display: inline-flex;
   align-items: center;
@@ -886,14 +873,30 @@ html.native body { font-size: 14px; }
 }
 
 .step-connector {
+  position: relative;
   width: 14px;
   height: 1.5px;
   background: #d4d4d4;
   border-radius: 1px;
-  transition: background 0.3s;
+  overflow: hidden;
 }
 
-/* Active stage: filled pulsing dot */
+/* Connector fills left-to-right as its stage completes */
+.step-connector::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #16a34a;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.4s ease;
+}
+
+.step-connector.done::after {
+  transform: scaleX(1);
+}
+
+/* Active stage: filled pulsing dot, breathing label in sync */
 .pipeline-step.active .step-dot {
   border-color: #0a0a0a;
   background: #0a0a0a;
@@ -902,12 +905,14 @@ html.native body { font-size: 14px; }
 
 .pipeline-step.active .step-label {
   color: #171717;
+  animation: step-label-breathe 1.4s infinite ease-in-out;
 }
 
-/* Completed stage: green check */
+/* Completed stage: green check pops in */
 .pipeline-step.done .step-dot {
   border-color: #16a34a;
   background: #16a34a;
+  animation: step-check-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .pipeline-step.done .step-dot svg {
@@ -918,13 +923,20 @@ html.native body { font-size: 14px; }
   color: #16a34a;
 }
 
-.step-connector.done {
-  background: #16a34a;
-}
-
 @keyframes step-dot-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+@keyframes step-label-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes step-check-pop {
+  0% { transform: scale(0.5); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }
 
 /* Dark theme */
@@ -962,7 +974,7 @@ html.native body { font-size: 14px; }
   color: #4ade80;
 }
 
-.dark .step-connector.done {
+.dark .step-connector::after {
   background: #22c55e;
 }
 

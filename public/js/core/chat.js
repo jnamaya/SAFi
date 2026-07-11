@@ -970,7 +970,6 @@ export async function sendMessage(activeProfileData, user) {
         _clearAllPendingFiles();
         for (const file of filesToProcess) {
             try {
-                uiMessages.updateThinkingStatus(`Extracting ${file.name}…`);
                 const extracted = await api.extractDocumentText(file);
                 documentContext += `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.]\n${extracted.text}\n[END DOCUMENT]`;
                 if (extracted.was_truncated) {

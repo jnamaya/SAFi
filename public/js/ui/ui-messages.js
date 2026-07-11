@@ -12,76 +12,6 @@ const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBo
 const iconShield = `<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
 const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
 
-// --- CONFIG: Persona-Specific Loading Messages ---
-const LOADING_MESSAGES = {
-    default: [
-        "Reading your message carefully...",
-        "Thinking through the best response...",
-        "Reviewing for accuracy and care...",
-        "Almost ready..."
-    ],
-    "The Philosopher": [
-        "Consulting Aristotle's Ethics...",
-        "Weighing both sides of the question...",
-        "Seeking the virtuous path forward...",
-        "Crafting a thoughtful, balanced reply..."
-    ],
-    "The Bible Scholar": [
-        "Consulting the Berean Standard Bible...",
-        "Analyzing the historical context...",
-        "Checking cross-references...",
-        "Drawing from scholarly consensus..."
-    ],
-    "The Fiduciary": [
-        "Checking the latest market data...",
-        "Reviewing with objectivity and care...",
-        "Making sure no advice slips through...",
-        "Preparing a clear, balanced response..."
-    ],
-    "The Jurist": [
-        "Reviewing Constitutional precedents...",
-        "Analyzing relevant case law...",
-        "Checking for legal balance...",
-        "Preparing a neutral, informed response..."
-    ],
-    "The Health Navigator": [
-        "Looking into your health question...",
-        "Finding relevant care options...",
-        "Making sure guidance is safe and clear...",
-        "Preparing your response..."
-    ],
-    "The SAFi Guide": [
-        "Searching the SAFi documentation...",
-        "Verifying the framework details...",
-        "Pulling together the right explanation...",
-        "Almost ready..."
-    ],
-    "The Socratic Tutor": [
-        "Thinking of the right question to ask you...",
-        "Finding a hint that guides without giving away...",
-        "Planning the next step in your learning...",
-        "Making sure not to spoil the answer..."
-    ],
-    "The Vault": [
-        "Running security protocols...",
-        "Access verification in progress...",
-        "Protecting classified information...",
-        "Preparing a secure response..."
-    ],
-    "The Negotiator": [
-        "Reviewing your offer...",
-        "Considering the negotiation so far...",
-        "Thinking through a counter-position...",
-        "Preparing a response..."
-    ],
-    "The Contoso Governance Officer": [
-        "Reviewing Contoso IT policies...",
-        "Checking compliance requirements...",
-        "Consulting the SOPs...",
-        "Preparing a governance-aligned response..."
-    ],
-};
-
 // --- MARKDOWN SETUP ---
 const renderer = new marked.Renderer();
 renderer.table = function (token) {
@@ -669,14 +599,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     }
 }
 
-// State to track current loading profile name
-let currentLoadingProfile = null;
-
 // --- PIPELINE TRACE ---
 // Maps the backend's reasoning-log strings onto the governance pipeline's
 // stages so the loader can show real progress, never a fake animation.
-// Unknown strings (e.g. tool statuses like "Searching the web…") update the
-// status text only and leave the stage where it is.
+// Unknown strings (e.g. tool statuses like "Searching the web…") leave the
+// stage where it is.
 const PIPELINE_STAGES = ['Analyze', 'Draft', 'Audit', 'Score'];
 
 function _stageForStep(text) {
@@ -732,12 +659,9 @@ export function updatePipelineTrace(log) {
         if (s > maxStage) maxStage = s;
     }
     _setTraceStage(maxStage);
-    const lastText = log[log.length - 1]?.step;
-    if (lastText) updateThinkingStatus(lastText);
 }
 
 export function showLoadingIndicator(profileName) {
-    currentLoadingProfile = profileName;
     ui._ensureElements();
     ui.clearLoadingInterval();
     document.querySelector('.empty-state-container')?.remove();
@@ -752,55 +676,20 @@ export function showLoadingIndicator(profileName) {
     <div class="message ai">
         <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
         <div class="ai-content-wrapper">
-            <div class="thinking-container thinking-container-trace">
-                ${_renderPipelineTraceHtml()}
-                <div class="thinking-statusline">
-                    <div class="thinking-pulse-wave">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                    <span id="thinking-status" class="transition-opacity duration-200">Thinking...</span>
+            <div class="thinking-container">
+                <div class="thinking-pulse-wave">
+                    <span></span>
+                    <span></span>
+                    <span></span>
                 </div>
+                ${_renderPipelineTraceHtml()}
             </div>
         </div>
     </div>`;
     ui.elements.chatWindow.appendChild(container);
     ui.scrollToBottom();
 
-    const statusSpan = container.querySelector('#thinking-status');
-    const messages = LOADING_MESSAGES[profileName] || LOADING_MESSAGES.default;
-    let stage = 0;
-
-    if (statusSpan) statusSpan.textContent = messages[0];
-
-    const interval = setInterval(() => {
-        stage++;
-        const msg = messages[stage % messages.length];
-        if (statusSpan) {
-            statusSpan.style.opacity = '0';
-            setTimeout(() => {
-                statusSpan.textContent = msg;
-                statusSpan.style.opacity = '1';
-            }, 200);
-        }
-    }, 2500);
-    ui.setLoadingInterval(interval);
-
     return container;
-}
-
-export function updateThinkingStatus(text) {
-    const statusSpan = document.getElementById('thinking-status');
-    if (!statusSpan || !text) return;
-    ui.clearLoadingInterval();
-    if (statusSpan.textContent !== text) {
-        statusSpan.style.opacity = '0';
-        setTimeout(() => {
-            statusSpan.textContent = text;
-            statusSpan.style.opacity = '1';
-        }, 200);
-    }
 }
 
 export function resetChatView() {
