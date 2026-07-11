@@ -286,13 +286,13 @@ function renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers) 
   const projects = Array.isArray(handlers.projects) ? handlers.projects : [];
   menu.innerHTML = '';
 
-  menu.appendChild(menuHeader('Move to project',
+  menu.appendChild(menuHeader('Move to folder',
     () => populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId)));
 
   if (currentProjectId) {
     menu.appendChild(menuItem({
       icon: iconRemoveCircle,
-      label: 'Remove from project',
+      label: 'Remove from folder',
       onClick: () => handlers.moveHandler(convoId, null),
     }));
     if (projects.some(p => p.id !== currentProjectId)) menu.appendChild(menuDivider());
@@ -302,7 +302,7 @@ function renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers) 
   if (targets.length === 0 && !currentProjectId) {
     const empty = document.createElement('p');
     empty.className = 'px-2.5 py-2 text-xs text-neutral-400 italic';
-    empty.textContent = 'No other projects';
+    empty.textContent = 'No other folders';
     menu.appendChild(empty);
   } else {
     targets.forEach(p => menu.appendChild(menuItem({
@@ -394,7 +394,7 @@ function createProjectMenu(project, projectHandlers) {
   menu.appendChild(menuDivider());
   menu.appendChild(menuItem({
     icon: iconTrashMenu,
-    label: 'Delete project',
+    label: 'Delete folder',
     danger: true,
     onClick: () => { ui.closeAllConvoMenus(); projectHandlers.deleteHandler(project.id, project.name); },
   }));
@@ -438,7 +438,7 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
 
   const newChatBtn = document.createElement('button');
   newChatBtn.type = 'button';
-  newChatBtn.title = 'New chat in project';
+  newChatBtn.title = 'New chat in folder';
   newChatBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
   newChatBtn.innerHTML = iconPlusSmall;
   newChatBtn.addEventListener('click', (e) => {
@@ -449,7 +449,7 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
 
   const menuBtn = document.createElement('button');
   menuBtn.type = 'button';
-  menuBtn.title = 'Project options';
+  menuBtn.title = 'Folder options';
   menuBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
   menuBtn.innerHTML = iconMenuDots;
   menuBtn.addEventListener('click', (e) => {

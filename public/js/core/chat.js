@@ -251,20 +251,20 @@ function openDeleteProjectModal({ name, onConfirm }) {
 
 export function handleCreateProject(activeProfileData, user) {
     openProjectNameModal({
-        title: 'New Project',
+        title: 'New Folder',
         onSubmit: async (name) => {
             try {
                 const created = await api.createProject(name);
                 if (created === 'QUEUED') {
-                    ui.showToast('Offline: cannot create a project now.', 'error');
+                    ui.showToast('Offline: cannot create a folder now.', 'error');
                     return;
                 }
                 if (created && created.id) setProjectExpanded(created.id, true);
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-                ui.showToast('Project created.', 'success');
+                ui.showToast('Folder created.', 'success');
             } catch (e) {
                 console.error('Failed to create project:', e);
-                ui.showToast('Could not create project.', 'error');
+                ui.showToast('Could not create folder.', 'error');
             }
         },
     });
@@ -273,7 +273,7 @@ export function handleCreateProject(activeProfileData, user) {
 function handleRenameProject(projectId, oldName, activeProfileData, user) {
     ui.closeAllConvoMenus();
     openProjectNameModal({
-        title: 'Rename Project',
+        title: 'Rename Folder',
         value: oldName || '',
         onSubmit: async (name) => {
             if (name === oldName) return;
@@ -282,7 +282,7 @@ function handleRenameProject(projectId, oldName, activeProfileData, user) {
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
             } catch (e) {
                 console.error('Failed to rename project:', e);
-                ui.showToast('Could not rename project.', 'error');
+                ui.showToast('Could not rename folder.', 'error');
             }
         },
     });
@@ -298,10 +298,10 @@ function handleDeleteProject(projectId, name, activeProfileData, user) {
                 await api.deleteProject(projectId);
                 if (currentProjectId === projectId) currentProjectId = null;
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-                ui.showToast('Project deleted.', 'success');
+                ui.showToast('Folder deleted.', 'success');
             } catch (e) {
                 console.error('Failed to delete project:', e);
-                ui.showToast('Could not delete project.', 'error');
+                ui.showToast('Could not delete folder.', 'error');
             }
         },
     });
@@ -473,10 +473,10 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     projHeader.className = 'px-3 mt-2 mb-1 flex items-center justify-between';
     const projTitle = document.createElement('h3');
     projTitle.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
-    projTitle.textContent = 'Projects';
+    projTitle.textContent = 'Folders';
     const newProjBtn = document.createElement('button');
     newProjBtn.type = 'button';
-    newProjBtn.title = 'New project';
+    newProjBtn.title = 'New folder';
     newProjBtn.className = 'flex items-center gap-1 text-[11px] font-semibold text-neutral-500 hover:text-green-600 dark:hover:text-green-400 transition-colors uppercase tracking-wider';
     newProjBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg><span>New</span>`;
     newProjBtn.addEventListener('click', (e) => { e.stopPropagation(); handleCreateProject(activeProfileData, user); });
