@@ -756,8 +756,23 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id,
                                             recent_history=recent_turns_text)
 
-        # Structural, audit-availability, and hard-gate failures all redirect with
-        # the gate's own reason — identical disposition for every draft producer.
+        # Structural and audit-availability failures are system faults, not
+        # verdicts on the user's request — ship a deterministic notice instead
+        # of a persona redirect (see _ship_system_failure_notice).
+        if result["verdict"] == "violation" and result["stage"] in ("structure", "audit"):
+            return self._ship_system_failure_notice(
+                original_prompt=user_prompt,
+                violation_type=result["reason"],
+                message_id=message_id,
+                new_title=new_title,
+                user_id=user_id,
+                org_id=org_id,
+                failing_ledger=result["ledger"],
+                blocked_draft=a_t,
+            )
+
+        # Hard-gate failures ARE verdicts on the draft's content and keep the
+        # persona redirect, voiced with the gate's own reason.
         if result["verdict"] == "violation" and result["stage"] != "spirit":
             return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
@@ -1002,6 +1017,91 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         self.log.warning(f"[Governance | Redirect] Structural check failed ({reason}); shipping redirect as-is.")
         return safe_output
+
+    def _ship_system_failure_notice(
+        self,
+        original_prompt: str,
+        violation_type: str,
+        message_id: str,
+        new_title: Optional[str],
+        user_id: str,
+        org_id: Optional[str],
+        failing_ledger: Optional[List[Dict[str, Any]]] = None,
+        blocked_draft: str = "",
+    ) -> Dict[str, Any]:
+        """Ship a deterministic notice for internal governance failures
+        (audit unavailable/degraded, structural check failed).
+
+        These are system faults, not verdicts on the user's request, so
+        trigger_persona_redirect is the wrong tool for them: it generates in a
+        vacuum (generate_forced_response withholds the user's question as an
+        anti-injection measure) and persona worldviews mandate scope refusals
+        for anything off-topic — which turned in-scope questions into false
+        "outside my area of focus" replies. This path makes NO LLM calls, so it
+        also still works when the failure is the provider itself (rate limit,
+        outage) — precisely when this path tends to fire.
+        """
+        self.log.info(
+            f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | "
+            f"Reason: {violation_type} (deterministic system-failure notice)"
+        )
+
+        notice = (
+            "I'm sorry — I ran into a temporary internal issue while preparing a verified "
+            "answer, so I can't share a response this time. This was not a problem with "
+            "your question. Please try asking it again in a moment."
+        )
+        db.update_message_content(message_id, notice, audit_status="complete")
+
+        # Nothing to audit: the text is fixed, governance-authored copy, and no
+        # redirect-quality score applies (None, not 0 — a 0 would read as a real
+        # rock-bottom score in the dashboard). The failing audit's ledger is
+        # preserved in the log entry so the dashboard can show WHY the draft failed.
+        note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
+        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None)
+
+        _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
+        zeros = [0.0] * max(1, len(self.spirit.values))
+        self._append_log({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "t": int(_sm_readonly.get("turn", 0)),
+            "userPrompt": original_prompt,
+            "intellectDraft": notice,
+            "intellectReflection": "",
+            "finalOutput": notice,
+            "willDecision": "redirected",
+            "willReason": violation_type,
+            "isRedirect": True,
+            "originalLedger": failing_ledger or [],
+            "blockedDraft": blocked_draft or "",
+            "conscienceLedger": [],
+            "spiritScore": None,
+            "spiritNote": note,
+            "drift": None,
+            "p_t_vector": zeros,
+            "mu_t_vector": zeros,
+            "memorySummary": "",
+            "spiritFeedback": "",
+            "retrievedContext": "",
+            "policyId": self.profile.get("policy_id"),
+            "policyVersion": self.profile.get("policy_version"),
+            "orgId": org_id or self.profile.get("org_id"),
+            "userId": user_id,
+            "agentName": self.active_profile_name,
+            "intellectModel": self.intellect_model,
+        })
+
+        return {
+            "finalOutput": notice,
+            "newTitle": new_title,
+            "willDecision": "redirected",
+            "willReason": violation_type,
+            "activeProfile": self.active_profile_name,
+            "activeValues": self.values, "profileValues": self.values,
+            "messageId": message_id, "suggestedPrompts": [],
+            "conscienceLedger": [], "spirit_score": None, "spiritNote": note,
+            "audit_status": "complete"
+        }
 
     async def trigger_persona_redirect(
         self,
