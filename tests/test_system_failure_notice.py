@@ -39,7 +39,7 @@ def make_safi():
     return s
 
 
-def ship(safi, violation_type="audit_unavailable"):
+def ship(safi, violation_type="audit_unavailable", **kwargs):
     with patch("safi_app.core.orchestrator.db", MagicMock()) as db, \
          patch.object(SAFi, "_append_log") as append_log:
         res = safi._ship_system_failure_notice(
@@ -51,6 +51,7 @@ def ship(safi, violation_type="audit_unavailable"):
             org_id="org-1",
             failing_ledger=[{"value": "Honesty", "score": 0.0}],
             blocked_draft="blocked draft text",
+            **kwargs,
         )
     return res, db, append_log
 
@@ -83,6 +84,24 @@ class TestSystemFailureNotice(unittest.TestCase):
         self.assertTrue(entry["isRedirect"])
         self.assertEqual(entry["originalLedger"], [{"value": "Honesty", "score": 0.0}])
         self.assertEqual(entry["blockedDraft"], "blocked draft text")
+
+    def test_custom_notice_overrides_default_text(self):
+        # The exhausted content-gate terminal passes its own honest copy.
+        res, db, _ = ship(make_safi(), violation_type="ethical_violation",
+                          notice="Custom terminal copy.")
+        self.assertEqual(res["finalOutput"], "Custom terminal copy.")
+        db.update_message_content.assert_called_once_with(
+            "msg-1", "Custom terminal copy.", audit_status="complete")
+
+    def test_correctable_gate_predicate(self):
+        ok = {"verdict": "violation", "stage": "hard_gate", "reason": "ethical_violation"}
+        self.assertTrue(SAFi._is_correctable_gate(ok))
+        # Scope gates, spirit dips, approvals, and system faults are NOT correctable.
+        self.assertFalse(SAFi._is_correctable_gate({**ok, "reason": "scope_violation"}))
+        self.assertFalse(SAFi._is_correctable_gate({**ok, "stage": "spirit"}))
+        self.assertFalse(SAFi._is_correctable_gate({**ok, "verdict": "approve"}))
+        self.assertFalse(SAFi._is_correctable_gate(
+            {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable"}))
 
     def test_no_fake_spirit_score(self):
         res, db, _ = ship(make_safi())

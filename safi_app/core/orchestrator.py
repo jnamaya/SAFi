@@ -771,9 +771,19 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 blocked_draft=a_t,
             )
 
-        # Hard-gate failures ARE verdicts on the draft's content and keep the
-        # persona redirect, voiced with the gate's own reason.
-        if result["verdict"] == "violation" and result["stage"] != "spirit":
+        # Content-correction hard gates (reason mapped to ethical_violation,
+        # e.g. the tutor's Pedagogical Integrity) are like spirit-stage dips:
+        # the user's request is fine, the DRAFT is the problem. They fall
+        # through to the reflexion retry below, which regenerates with the
+        # question and blocked draft visible. The vacuum persona redirect
+        # cannot do that (it withholds the question as an anti-injection
+        # measure) and produced false "out of scope" refusals here.
+        correctable_gate = self._is_correctable_gate(result)
+
+        # Remaining hard-gate failures (scope, grounding) ARE verdicts on
+        # engaging the request at all and keep the persona redirect, voiced
+        # with the gate's own reason.
+        if result["verdict"] == "violation" and result["stage"] != "spirit" and not correctable_gate:
             return await self.trigger_persona_redirect(
                 original_prompt=user_prompt,
                 violation_type=result["reason"],
@@ -790,12 +800,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         commit_reason = result["reason"]
 
         if result["verdict"] == "violation":
-            # Spirit-stage violation: a content-quality dip, not a safety breach —
-            # scope/injection are gated at Phase 0 / 4.5. The user's intent is fine;
-            # the draft is the problem. Run a reflexion retry that shows the model
-            # its blocked draft so it can correct it. trigger_persona_redirect
-            # generates in a vacuum and can't fix content issues; it stays reserved
-            # for the failures handled above.
+            # A content-quality block, not a safety breach — either a
+            # spirit-stage dip or a correctable hard gate (see above);
+            # scope/injection are gated at Phase 0 / 4.5. The user's intent is
+            # fine; the draft is the problem. Run a reflexion retry that shows
+            # the model its blocked draft so it can correct it.
+            # trigger_persona_redirect generates in a vacuum and can't fix
+            # content issues; it stays reserved for the failures handled above.
             E_spirit = result["reason"]
             retry_metadata.update({
                 "was_retried": True,
@@ -808,7 +819,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 self.log.info(f"[Governance] Message {message_id} cancelled before Spirit retry.")
                 return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
-            self.log.info(f"[Governance | Phase 5 | Spirit] Attempting reflexion retry ({E_spirit}).")
+            _retry_phase = "Phase 4.5 | Hard Gate" if correctable_gate else "Phase 5 | Spirit"
+            self.log.info(f"[Governance | {_retry_phase}] Attempting reflexion retry ({E_spirit}).")
             db.update_message_reasoning(message_id, "Refining response for alignment...")
 
             _directives = (self.profile or {}).get("internal_rephrase_directives", {})
@@ -873,6 +885,27 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 candidates.append((retry_result, a_t_spirit, r_t_spirit, context_spirit))
 
             if not candidates:
+                if correctable_gate:
+                    # Both drafts failed the content hard gate. There is no
+                    # valid answer to ship and no scope story to tell — the
+                    # vacuum redirect would falsely claim the question was out
+                    # of scope, so send the honest deterministic notice.
+                    return self._ship_system_failure_notice(
+                        original_prompt=user_prompt,
+                        violation_type=result["reason"],
+                        message_id=message_id,
+                        new_title=new_title,
+                        user_id=user_id,
+                        org_id=org_id,
+                        failing_ledger=result["ledger"],
+                        blocked_draft=a_t,
+                        notice=(
+                            "I'm sorry — I wasn't able to put together a response that fits "
+                            "how this assistant is meant to help with that question. Your "
+                            "question itself was fine; try rephrasing it, or asking about a "
+                            "smaller piece of it, and I'll give it another go."
+                        ),
+                    )
                 # Neither draft is fit to ship. Redirect on the ORIGINAL audit's
                 # reason: it is the authoritative read on the user's request (its
                 # hard gates passed); the retry's failures are draft-specific.
@@ -1018,6 +1051,19 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.log.warning(f"[Governance | Redirect] Structural check failed ({reason}); shipping redirect as-is.")
         return safe_output
 
+    @staticmethod
+    def _is_correctable_gate(result: Dict[str, Any]) -> bool:
+        """True for a hard-gate failure whose mapped reason is ethical_violation
+        (a content-quality gate, e.g. Pedagogical Integrity). These take the
+        reflexion retry — regenerate with the question and blocked draft
+        visible — instead of the vacuum persona redirect, which cannot see the
+        question and misreports in-scope requests as out of scope."""
+        return (
+            result.get("verdict") == "violation"
+            and result.get("stage") == "hard_gate"
+            and result.get("reason") == "ethical_violation"
+        )
+
     def _ship_system_failure_notice(
         self,
         original_prompt: str,
@@ -1028,9 +1074,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         org_id: Optional[str],
         failing_ledger: Optional[List[Dict[str, Any]]] = None,
         blocked_draft: str = "",
+        notice: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Ship a deterministic notice for internal governance failures
-        (audit unavailable/degraded, structural check failed).
+        (audit unavailable/degraded, structural check failed) — and, with a
+        custom `notice`, as the terminal for an exhausted content-gate retry.
 
         These are system faults, not verdicts on the user's request, so
         trigger_persona_redirect is the wrong tool for them: it generates in a
@@ -1046,11 +1094,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             f"Reason: {violation_type} (deterministic system-failure notice)"
         )
 
-        notice = (
-            "I'm sorry — I ran into a temporary internal issue while preparing a verified "
-            "answer, so I can't share a response this time. This was not a problem with "
-            "your question. Please try asking it again in a moment."
-        )
+        if notice is None:
+            notice = (
+                "I'm sorry — I ran into a temporary internal issue while preparing a verified "
+                "answer, so I can't share a response this time. This was not a problem with "
+                "your question. Please try asking it again in a moment."
+            )
         db.update_message_content(message_id, notice, audit_status="complete")
 
         # Nothing to audit: the text is fixed, governance-authored copy, and no
