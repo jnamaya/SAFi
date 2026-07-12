@@ -7,6 +7,18 @@ and evaluates it against the rubrics established by Synderesis. Via a secondary 
 it scores the output on each configured value to produce a precise compliance ledger
 (scores from -1.0 to 1.0 with confidence intervals) — the mathematical judgment that the
 Will and Spirit depend on to make their decisions.
+
+Note on the departure from Aquinas: in Aquinas's psychology, conscience is not a
+distinct faculty (potentia) at all — it is an act of the intellect, the one reasoning
+power applying moral knowledge to a particular case (Summa Theologiae I, q. 79, a. 13).
+SAFi agrees in substance: the Conscience is not a different kind of thing from the
+Intellect. Both are instances of the same underlying faculty — an LLM performing
+reasoning. But SAFi deliberately breaks from Aquinas in structure by instantiating
+that faculty twice, in separate roles: once as the author of the draft (Intellect)
+and once as its independent auditor (Conscience), with its own prompt, its own
+rubrics, and no stake in defending the draft. The reason is adversarial, not
+metaphysical: the judge cannot be the defendant. A reasoning process auditing its
+own output inherits its own blind spots and rationalizations. One faculty, two seats.
 """
 from __future__ import annotations
 import json
