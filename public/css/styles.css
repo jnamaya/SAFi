@@ -1412,7 +1412,8 @@ html.native body { font-size: 14px; }
 
 /* compact the action buttons so they sit neatly inside the bar */
 .msg-actionbar .tts-btn,
-.msg-actionbar .copy-btn {
+.msg-actionbar .copy-btn,
+.msg-actionbar .save-btn {
   width: 26px;
   height: 26px;
 }
@@ -1460,7 +1461,8 @@ html.native body { font-size: 14px; }
 
 /* Frosted glass message action controls */
 .tts-btn,
-.copy-btn {
+.copy-btn,
+.save-btn {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -1475,7 +1477,8 @@ html.native body { font-size: 14px; }
 }
 
 .tts-btn:hover,
-.copy-btn:hover {
+.copy-btn:hover,
+.save-btn:hover {
   color: var(--fg) !important;
   background: rgba(0, 0, 0, 0.04) !important;
   border-color: rgba(0, 0, 0, 0.05) !important;
@@ -1483,13 +1486,15 @@ html.native body { font-size: 14px; }
 }
 
 .dark .tts-btn:hover,
-.dark .copy-btn:hover {
+.dark .copy-btn:hover,
+.dark .save-btn:hover {
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .tts-btn:active,
-.copy-btn:active {
+.copy-btn:active,
+.save-btn:active {
   transform: scale(0.95);
 }
 

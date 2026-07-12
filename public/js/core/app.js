@@ -8,6 +8,7 @@ import { initModelSelector, toggleModelDropdown, getActiveModelLabel } from '../
 import { initComposerMenu, updateAgentLabel, updateModelLabel } from '../ui/ui-composer-menu.js';
 import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
 import * as chat from './chat.js';
+import * as uiSaved from '../ui/ui-saved.js';
 import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-settings-core.js';
 
 import offlineManager from '../services/offline-manager.js';
@@ -660,6 +661,35 @@ function attachEventListeners() {
     if (e.target.closest('#clear-all-convos-button')) {
       hapticImpactLight();
       ui.showModal('clear-all-convos');
+    }
+  });
+
+  // --- Saved answers ---
+  // Bookmark button in the message action bar announces intent via a custom
+  // event (ui-messages.js has no access to projects/api state).
+  document.addEventListener('safi:save-answer', (e) => {
+    const { messageId, anchor } = e.detail || {};
+    if (!messageId) return;
+    uiSaved.showSavePicker(anchor, chat.getProjects(), async (projectId) => {
+      try {
+        await api.saveAnswer(messageId, projectId);
+        ui.showToast('Answer saved', 'success');
+      } catch {
+        ui.showToast('Could not save answer.', 'error');
+      }
+    });
+  });
+
+  // Sidebar "Saved" entry (delegated: the sidebar re-renders on login)
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#saved-answers-button')) {
+      hapticImpactLight();
+      if (window.innerWidth < 768) ui.closeSidebar();
+      uiSaved.openSavedModal({
+        projects: chat.getProjects(),
+        onJumpToConversation: (convoId) =>
+          chat.switchConversation(convoId, activeProfileData, user, ui.showModal, true),
+      });
     }
   });
 

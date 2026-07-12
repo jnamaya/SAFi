@@ -47,6 +47,9 @@ export const urls = {
     PROJECTS: j('/api/projects'),
     PROJECT: (id) => `${j('/api/projects')}/${id}`,
     MOVE_CONVERSATION: (id) => `${urls.CONVERSATIONS}/${id}/project`,
+    SAVED_ANSWERS: j('/api/saved-answers'),
+    SAVED_ANSWER: (id) => `${j('/api/saved-answers')}/${id}`,
+    MOVE_SAVED_ANSWER: (id) => `${j('/api/saved-answers')}/${id}/project`,
 
     // Org & Domain
     ORG_ME: j('/api/organizations/me'),
@@ -175,6 +178,14 @@ export const renameProject = (id, name) => httpJSON(urls.PROJECT(id), 'PUT', { n
 export const deleteProject = (id) => httpJSON(urls.PROJECT(id), 'DELETE', {});
 export const moveConversationToProject = (id, projectId) =>
     httpJSON(urls.MOVE_CONVERSATION(id), 'PATCH', { project_id: projectId });
+
+// Saved answers (snapshots of individual AI responses)
+export const fetchSavedAnswers = () => httpGet(urls.SAVED_ANSWERS);
+export const saveAnswer = (messageId, projectId = null) =>
+    httpJSON(urls.SAVED_ANSWERS, 'POST', { message_id: messageId, project_id: projectId });
+export const moveSavedAnswer = (id, projectId) =>
+    httpJSON(urls.MOVE_SAVED_ANSWER(id), 'PATCH', { project_id: projectId });
+export const deleteSavedAnswer = (id) => httpJSON(urls.SAVED_ANSWER(id), 'DELETE', {});
 
 // Chat flow
 export const fetchHistory = (id, limit = 50, offset = 0) =>

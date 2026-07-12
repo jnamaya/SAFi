@@ -147,6 +147,10 @@ function _clearAllPendingFiles() {
 
 // --- CORE EXPORTED HANDLERS (Fixing ReferenceError) ---
 // Moved declarations of handlers here to ensure they are defined before renderConvoList uses them.
+export function getProjects() {
+    return projects;
+}
+
 export function handleRename(id, oldTitle) {
     convoToRename = { id, oldTitle };
     ui.showModal('rename', { oldTitle });

@@ -3,6 +3,7 @@ import mysql.connector
 from mysql.connector import pooling
 import json
 import os
+import re
 import uuid
 import numpy as np
 from datetime import datetime, timezone
@@ -118,6 +119,30 @@ def init_db():
                 "ALTER TABLE conversations ADD CONSTRAINT fk_conv_project "
                 "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL"
             )
+
+        # --- Saved answers (snapshots of individual AI responses) ---
+        # Content and governance metadata are copied at save time so a saved
+        # answer survives deletion of its source conversation (chat_history
+        # rows cascade away with the conversation). conversation_id is a soft
+        # pointer for "jump to origin" — deliberately no FK so it can dangle.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS saved_answers (
+                id CHAR(36) PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                project_id CHAR(36) NULL,
+                conversation_id CHAR(36) NULL,
+                message_id CHAR(36) NOT NULL,
+                title VARCHAR(255),
+                content MEDIUMTEXT,
+                profile_name VARCHAR(50),
+                spirit_score INT,
+                conscience_ledger JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_saved_user_message (user_id, message_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+            )
+        ''')
 
         # --- Organizations ---
         cursor.execute('''
@@ -915,6 +940,113 @@ def move_conversation_to_project(cid, project_id, user_id):
         cursor.execute("UPDATE conversations SET project_id=%s WHERE id=%s AND user_id=%s", (project_id, cid, user_id))
         conn.commit()
         return True
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- Saved answers ---
+
+def save_answer(user_id, message_id, project_id=None):
+    """Snapshots an assistant message into saved_answers. Ownership is enforced
+    by resolving the message through its conversation's user_id. Saving the
+    same message twice updates the folder instead of duplicating."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT h.message_id, h.content, h.profile_name, h.spirit_score,
+                      h.conscience_ledger, h.conversation_id, c.title AS convo_title
+               FROM chat_history h
+               JOIN conversations c ON c.id = h.conversation_id
+               WHERE h.message_id=%s AND c.user_id=%s AND h.role='ai'""",
+            (message_id, user_id),
+        )
+        msg = cursor.fetchone()
+        if not msg or not msg.get('content'):
+            return None
+
+        valid_project_id = None
+        if project_id:
+            cursor.execute("SELECT id FROM projects WHERE id=%s AND user_id=%s", (project_id, user_id))
+            if cursor.fetchone():
+                valid_project_id = project_id
+
+        # Title: first non-empty line of the answer, stripped of markdown noise.
+        first_line = next((l.strip() for l in msg['content'].splitlines() if l.strip()), '')
+        title = re.sub(r'^[#>*\-\s`]+', '', first_line)[:255] or (msg.get('convo_title') or 'Saved answer')
+
+        sid = str(uuid.uuid4())
+        cursor.execute(
+            """INSERT INTO saved_answers
+                   (id, user_id, project_id, conversation_id, message_id, title,
+                    content, profile_name, spirit_score, conscience_ledger)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE project_id=VALUES(project_id)""",
+            (sid, user_id, valid_project_id, msg['conversation_id'], message_id, title,
+             msg['content'], msg.get('profile_name'), msg.get('spirit_score'),
+             msg.get('conscience_ledger')),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT id, project_id, conversation_id, message_id, title, created_at "
+            "FROM saved_answers WHERE user_id=%s AND message_id=%s",
+            (user_id, message_id),
+        )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+def fetch_saved_answers(user_id):
+    """All saved answers for a user, newest first. origin_exists tells the UI
+    whether 'jump to conversation' is still possible."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT s.id, s.project_id, s.conversation_id, s.message_id, s.title,
+                      s.content, s.profile_name, s.spirit_score, s.conscience_ledger,
+                      s.created_at, (c.id IS NOT NULL) AS origin_exists
+               FROM saved_answers s
+               LEFT JOIN conversations c ON c.id = s.conversation_id
+               WHERE s.user_id=%s
+               ORDER BY s.created_at DESC""",
+            (user_id,),
+        )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def move_saved_answer(sid, project_id, user_id):
+    """Reassigns a saved answer to a project (or None to detach)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM saved_answers WHERE id=%s AND user_id=%s", (sid, user_id))
+        if not cursor.fetchone():
+            return False
+        if project_id:
+            cursor.execute("SELECT id FROM projects WHERE id=%s AND user_id=%s", (project_id, user_id))
+            if not cursor.fetchone():
+                return False
+        # rowcount is unreliable here (MySQL reports 0 for a no-op move), so
+        # existence was checked above and the update itself is authoritative.
+        cursor.execute("UPDATE saved_answers SET project_id=%s WHERE id=%s AND user_id=%s",
+                       (project_id, sid, user_id))
+        conn.commit()
+        return True
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_saved_answer(sid, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM saved_answers WHERE id=%s AND user_id=%s", (sid, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
