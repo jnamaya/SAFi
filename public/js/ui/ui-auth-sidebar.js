@@ -33,8 +33,11 @@ export function updateUIForAuthState(user) {
   const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
   const name = user?.name || 'Guest';
 
+  const layoutWrapper = document.getElementById('main-layout-wrapper');
+
   if (user) {
     ui.elements.loginView.classList.add('hidden');
+    if (layoutWrapper) layoutWrapper.classList.add('md:ml-64');
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
@@ -153,6 +156,9 @@ export function updateUIForAuthState(user) {
 
   } else {
     ui.elements.sidebarContainer.innerHTML = '';
+    // No sidebar when logged out — drop the reserved margin so the login view
+    // centers on the actual viewport instead of sitting 128px right of center.
+    if (layoutWrapper) layoutWrapper.classList.remove('md:ml-64');
     ui.elements.loginView.classList.remove('hidden');
     ui.elements.chatView.classList.add('hidden');
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');

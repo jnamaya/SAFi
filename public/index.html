@@ -105,7 +105,9 @@
       <!-- Sidebar dynamically generated -->
     </div>
 
-    <div id="main-layout-wrapper" class="md:ml-64 flex flex-col h-full w-full overflow-hidden relative">
+    <!-- md:ml-64 is added by updateUIForAuthState() once a user is logged in and the sidebar exists;
+         the default (logged-out) state has no sidebar, so the login view centers on the full viewport. -->
+    <div id="main-layout-wrapper" class="flex flex-col h-full w-full overflow-hidden relative">
       <section class="w-full flex flex-col flex-1 min-h-0 px-0 overflow-hidden">
 
         <!-- Login View -->
