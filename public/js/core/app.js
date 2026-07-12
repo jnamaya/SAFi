@@ -664,25 +664,25 @@ function attachEventListeners() {
     }
   });
 
-  // --- Saved answers ---
+  // --- Saved content ---
   // Bookmark button in the message action bar announces intent via a custom
   // event (ui-messages.js has no access to projects/api state).
-  document.addEventListener('safi:save-answer', (e) => {
+  document.addEventListener('safi:save-content', (e) => {
     const { messageId, anchor } = e.detail || {};
     if (!messageId) return;
     uiSaved.showSavePicker(anchor, chat.getProjects(), async (projectId) => {
       try {
-        await api.saveAnswer(messageId, projectId);
-        ui.showToast('Answer saved', 'success');
+        await api.saveContent(messageId, projectId);
+        ui.showToast('Saved', 'success');
       } catch {
-        ui.showToast('Could not save answer.', 'error');
+        ui.showToast('Could not save.', 'error');
       }
     });
   });
 
   // Sidebar "Saved" entry (delegated: the sidebar re-renders on login)
   document.addEventListener('click', (e) => {
-    if (e.target.closest('#saved-answers-button')) {
+    if (e.target.closest('#saved-content-button')) {
       hapticImpactLight();
       if (window.innerWidth < 768) ui.closeSidebar();
       uiSaved.openSavedModal({

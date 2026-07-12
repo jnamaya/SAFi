@@ -437,10 +437,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             saveBtn = document.createElement('button');
             saveBtn.className = 'save-btn shrink-0';
             saveBtn.innerHTML = iconBookmark;
-            saveBtn.title = 'Save this answer';
-            saveBtn.setAttribute('aria-label', 'Save this answer');
+            saveBtn.title = 'Save this response';
+            saveBtn.setAttribute('aria-label', 'Save this response');
             saveBtn.onclick = () => {
-                document.dispatchEvent(new CustomEvent('safi:save-answer', {
+                document.dispatchEvent(new CustomEvent('safi:save-content', {
                     detail: { messageId, anchor: saveBtn }
                 }));
             };

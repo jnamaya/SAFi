@@ -120,13 +120,19 @@ def init_db():
                 "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL"
             )
 
-        # --- Saved answers (snapshots of individual AI responses) ---
+        # --- Saved content (snapshots of individual AI responses) ---
         # Content and governance metadata are copied at save time so a saved
-        # answer survives deletion of its source conversation (chat_history
+        # item survives deletion of its source conversation (chat_history
         # rows cascade away with the conversation). conversation_id is a soft
         # pointer for "jump to origin" — deliberately no FK so it can dangle.
+        # Shipped briefly as saved_answers; rename preserves any early rows.
+        cursor.execute("SHOW TABLES LIKE 'saved_answers'")
+        if cursor.fetchone():
+            cursor.execute("SHOW TABLES LIKE 'saved_content'")
+            if not cursor.fetchone():
+                cursor.execute("RENAME TABLE saved_answers TO saved_content")
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS saved_answers (
+            CREATE TABLE IF NOT EXISTS saved_content (
                 id CHAR(36) PRIMARY KEY,
                 user_id VARCHAR(255) NOT NULL,
                 project_id CHAR(36) NULL,
@@ -944,10 +950,10 @@ def move_conversation_to_project(cid, project_id, user_id):
         cursor.close()
         conn.close()
 
-# --- Saved answers ---
+# --- Saved content ---
 
-def save_answer(user_id, message_id, project_id=None):
-    """Snapshots an assistant message into saved_answers. Ownership is enforced
+def save_content(user_id, message_id, project_id=None):
+    """Snapshots an assistant message into saved_content. Ownership is enforced
     by resolving the message through its conversation's user_id. Saving the
     same message twice updates the folder instead of duplicating."""
     conn = get_db_connection()
@@ -973,11 +979,11 @@ def save_answer(user_id, message_id, project_id=None):
 
         # Title: first non-empty line of the answer, stripped of markdown noise.
         first_line = next((l.strip() for l in msg['content'].splitlines() if l.strip()), '')
-        title = re.sub(r'^[#>*\-\s`]+', '', first_line)[:255] or (msg.get('convo_title') or 'Saved answer')
+        title = re.sub(r'^[#>*\-\s`]+', '', first_line)[:255] or (msg.get('convo_title') or 'Saved item')
 
         sid = str(uuid.uuid4())
         cursor.execute(
-            """INSERT INTO saved_answers
+            """INSERT INTO saved_content
                    (id, user_id, project_id, conversation_id, message_id, title,
                     content, profile_name, spirit_score, conscience_ledger)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -989,7 +995,7 @@ def save_answer(user_id, message_id, project_id=None):
         conn.commit()
         cursor.execute(
             "SELECT id, project_id, conversation_id, message_id, title, created_at "
-            "FROM saved_answers WHERE user_id=%s AND message_id=%s",
+            "FROM saved_content WHERE user_id=%s AND message_id=%s",
             (user_id, message_id),
         )
         return cursor.fetchone()
@@ -997,8 +1003,8 @@ def save_answer(user_id, message_id, project_id=None):
         cursor.close()
         conn.close()
 
-def fetch_saved_answers(user_id):
-    """All saved answers for a user, newest first. origin_exists tells the UI
+def fetch_saved_content(user_id):
+    """All saved content for a user, newest first. origin_exists tells the UI
     whether 'jump to conversation' is still possible."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -1007,7 +1013,7 @@ def fetch_saved_answers(user_id):
             """SELECT s.id, s.project_id, s.conversation_id, s.message_id, s.title,
                       s.content, s.profile_name, s.spirit_score, s.conscience_ledger,
                       s.created_at, (c.id IS NOT NULL) AS origin_exists
-               FROM saved_answers s
+               FROM saved_content s
                LEFT JOIN conversations c ON c.id = s.conversation_id
                WHERE s.user_id=%s
                ORDER BY s.created_at DESC""",
@@ -1018,12 +1024,12 @@ def fetch_saved_answers(user_id):
         cursor.close()
         conn.close()
 
-def move_saved_answer(sid, project_id, user_id):
-    """Reassigns a saved answer to a project (or None to detach)."""
+def move_saved_content(sid, project_id, user_id):
+    """Reassigns a saved item to a project (or None to detach)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM saved_answers WHERE id=%s AND user_id=%s", (sid, user_id))
+        cursor.execute("SELECT id FROM saved_content WHERE id=%s AND user_id=%s", (sid, user_id))
         if not cursor.fetchone():
             return False
         if project_id:
@@ -1032,7 +1038,7 @@ def move_saved_answer(sid, project_id, user_id):
                 return False
         # rowcount is unreliable here (MySQL reports 0 for a no-op move), so
         # existence was checked above and the update itself is authoritative.
-        cursor.execute("UPDATE saved_answers SET project_id=%s WHERE id=%s AND user_id=%s",
+        cursor.execute("UPDATE saved_content SET project_id=%s WHERE id=%s AND user_id=%s",
                        (project_id, sid, user_id))
         conn.commit()
         return True
@@ -1040,11 +1046,11 @@ def move_saved_answer(sid, project_id, user_id):
         cursor.close()
         conn.close()
 
-def delete_saved_answer(sid, user_id):
+def delete_saved_content(sid, user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM saved_answers WHERE id=%s AND user_id=%s", (sid, user_id))
+        cursor.execute("DELETE FROM saved_content WHERE id=%s AND user_id=%s", (sid, user_id))
         conn.commit()
         return cursor.rowcount > 0
     finally:

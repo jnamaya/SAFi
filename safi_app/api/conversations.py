@@ -695,17 +695,17 @@ def handle_move_conversation(conversation_id):
         return jsonify({"error": "Could not move conversation."}), 404
     return jsonify({"status": "success", "project_id": project_id})
 
-# --- Saved answers (snapshots of individual AI responses) ---
+# --- Saved content (snapshots of individual AI responses) ---
 
-@conversations_bp.route('/saved-answers', methods=['GET'])
-def get_saved_answers():
+@conversations_bp.route('/saved-content', methods=['GET'])
+def get_saved_content():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    return jsonify(db.fetch_saved_answers(user_id))
+    return jsonify(db.fetch_saved_content(user_id))
 
-@conversations_bp.route('/saved-answers', methods=['POST'])
-def handle_save_answer():
+@conversations_bp.route('/saved-content', methods=['POST'])
+def handle_save_content():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -715,30 +715,30 @@ def handle_save_answer():
         return jsonify({"error": "'message_id' is required."}), 400
     # Ownership is enforced in the DB layer (message resolved via its
     # conversation's user_id; project ownership validated the same way).
-    saved = db.save_answer(user_id, message_id, project_id=data.get('project_id'))
+    saved = db.save_content(user_id, message_id, project_id=data.get('project_id'))
     if not saved:
         return jsonify({"error": "Message not found."}), 404
     return jsonify(saved), 201
 
-@conversations_bp.route('/saved-answers/<saved_id>/project', methods=['PATCH'])
-def handle_move_saved_answer(saved_id):
+@conversations_bp.route('/saved-content/<saved_id>/project', methods=['PATCH'])
+def handle_move_saved_content(saved_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     data = request.get_json(silent=True) or {}
-    # project_id may be null to detach the saved answer from any folder.
+    # project_id may be null to detach the saved item from any folder.
     project_id = data.get('project_id')
-    if not db.move_saved_answer(saved_id, project_id, user_id):
-        return jsonify({"error": "Could not move saved answer."}), 404
+    if not db.move_saved_content(saved_id, project_id, user_id):
+        return jsonify({"error": "Could not move saved item."}), 404
     return jsonify({"status": "success", "project_id": project_id})
 
-@conversations_bp.route('/saved-answers/<saved_id>', methods=['DELETE'])
-def handle_delete_saved_answer(saved_id):
+@conversations_bp.route('/saved-content/<saved_id>', methods=['DELETE'])
+def handle_delete_saved_content(saved_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    if not db.delete_saved_answer(saved_id, user_id):
-        return jsonify({"error": "Saved answer not found."}), 404
+    if not db.delete_saved_content(saved_id, user_id):
+        return jsonify({"error": "Saved item not found."}), 404
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])

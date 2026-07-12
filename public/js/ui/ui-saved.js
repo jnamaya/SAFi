@@ -1,5 +1,5 @@
 // js/ui/ui-saved.js
-// Saved answers: the save-to-folder picker (anchored to the bookmark button in
+// Saved content: the save-to-folder picker (anchored to the bookmark button in
 // the message action bar) and the "Saved" browser modal opened from the sidebar.
 
 import * as api from '../core/api.js';
@@ -72,13 +72,13 @@ export function showSavePicker(anchor, projects, onPick) {
     setTimeout(() => document.addEventListener('click', _outsideClose, true), 0);
 }
 
-// --- Saved answers browser modal -------------------------------------------
+// --- Saved content browser modal -------------------------------------------
 
 let _modalState = null; // { items, projects, filter, onJump }
 
 function closeSavedModal() {
-    document.getElementById('saved-answers-modal')?.remove();
-    document.getElementById('saved-answers-backdrop')?.remove();
+    document.getElementById('saved-content-modal')?.remove();
+    document.getElementById('saved-content-backdrop')?.remove();
     document.removeEventListener('keydown', _escClose);
     _modalState = null;
 }
@@ -109,7 +109,7 @@ function _scoreBadge(score) {
 
 function _renderList() {
     const { items, projects, filter } = _modalState;
-    const listEl = document.getElementById('saved-answers-list');
+    const listEl = document.getElementById('saved-content-list');
     if (!listEl) return;
     listEl.innerHTML = '';
 
@@ -123,7 +123,7 @@ function _renderList() {
         empty.className = 'text-center text-sm text-neutral-500 dark:text-neutral-400 py-12';
         empty.textContent = items.length
             ? 'Nothing saved in this folder yet.'
-            : 'No saved answers yet. Use the bookmark icon under any answer to keep it here.';
+            : 'Nothing saved yet. Use the bookmark icon under any response to keep it here.';
         listEl.appendChild(empty);
         return;
     }
@@ -152,7 +152,7 @@ function _renderList() {
                 <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs text-neutral-500 dark:text-neutral-400">${metaBits}</div>
             </div>
             <svg class="w-4 h-4 mt-1 shrink-0 text-neutral-400 transition-transform saved-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>`;
-        head.querySelector('.saved-title').textContent = item.title || 'Saved answer';
+        head.querySelector('.saved-title').textContent = item.title || 'Saved item';
 
         // Body (rendered markdown + actions), hidden until expanded
         const body = document.createElement('div');
@@ -203,7 +203,7 @@ function _renderList() {
         select.addEventListener('change', async () => {
             const target = select.value || null;
             try {
-                await api.moveSavedAnswer(item.id, target);
+                await api.moveSavedContent(item.id, target);
                 item.project_id = target;
                 ui.showToast('Moved', 'success');
                 _renderList();
@@ -229,7 +229,7 @@ function _renderList() {
             }
             clearTimeout(disarmTimer);
             try {
-                await api.deleteSavedAnswer(item.id);
+                await api.deleteSavedContent(item.id);
                 _modalState.items = _modalState.items.filter(i => i.id !== item.id);
                 ui.showToast('Deleted', 'success');
                 _renderList();
@@ -256,7 +256,7 @@ function _modalStateSafeJump(conversationId) {
 let _jumpHandler = null;
 
 /**
- * Opens the Saved answers browser.
+ * Opens the Saved content browser.
  * opts.projects — current folder list (for names, filter, move targets)
  * opts.onJumpToConversation(id) — navigate to the origin conversation
  */
@@ -265,12 +265,12 @@ export async function openSavedModal(opts = {}) {
     _jumpHandler = opts.onJumpToConversation || null;
 
     const backdrop = document.createElement('div');
-    backdrop.id = 'saved-answers-backdrop';
+    backdrop.id = 'saved-content-backdrop';
     backdrop.className = 'fixed inset-0 bg-black/60 z-40';
     backdrop.addEventListener('click', closeSavedModal);
 
     const modal = document.createElement('div');
-    modal.id = 'saved-answers-modal';
+    modal.id = 'saved-content-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.className = 'fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-auto sm:min-w-[560px] sm:max-w-2xl bg-white dark:bg-neutral-900 sm:rounded-xl sm:shadow-2xl z-50 flex flex-col h-full sm:h-auto sm:max-h-[85vh]';
@@ -278,25 +278,25 @@ export async function openSavedModal(opts = {}) {
         <div class="flex items-center justify-between p-5 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
             <div class="flex items-center gap-3">
                 <span class="p-2 bg-green-100 dark:bg-green-900/40 rounded-full text-green-600 dark:text-green-400">${iconBookmark}</span>
-                <h3 class="text-lg font-semibold">Saved Answers</h3>
+                <h3 class="text-lg font-semibold">Saved Content</h3>
             </div>
             <div class="flex items-center gap-3">
-                <select id="saved-answers-filter" class="text-sm bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 py-1.5 text-neutral-700 dark:text-neutral-200 dark:bg-neutral-900 focus:outline-none">
+                <select id="saved-content-filter" class="text-sm bg-transparent border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 py-1.5 text-neutral-700 dark:text-neutral-200 dark:bg-neutral-900 focus:outline-none">
                     <option value="all">All folders</option>
                     <option value="none">No folder</option>
                 </select>
-                <button id="close-saved-answers" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">${iconClose}</button>
+                <button id="close-saved-content" type="button" aria-label="Close modal" class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">${iconClose}</button>
             </div>
         </div>
-        <div id="saved-answers-list" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 min-h-[160px]">
+        <div id="saved-content-list" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 min-h-[160px]">
             <div class="text-center text-sm text-neutral-500 dark:text-neutral-400 py-12">Loading…</div>
         </div>`;
 
     document.body.append(backdrop, modal);
     document.addEventListener('keydown', _escClose);
-    modal.querySelector('#close-saved-answers').addEventListener('click', closeSavedModal);
+    modal.querySelector('#close-saved-content').addEventListener('click', closeSavedModal);
 
-    const filterEl = modal.querySelector('#saved-answers-filter');
+    const filterEl = modal.querySelector('#saved-content-filter');
     (opts.projects || []).forEach(p => {
         const o = document.createElement('option');
         o.value = p.id; o.textContent = p.name || 'Untitled';
@@ -305,11 +305,11 @@ export async function openSavedModal(opts = {}) {
 
     let items = [];
     try {
-        const res = await api.fetchSavedAnswers();
+        const res = await api.fetchSavedContent();
         items = Array.isArray(res) ? res : [];
     } catch {
-        document.getElementById('saved-answers-list').innerHTML =
-            '<div class="text-center text-sm text-red-500 py-12">Could not load saved answers.</div>';
+        document.getElementById('saved-content-list').innerHTML =
+            '<div class="text-center text-sm text-red-500 py-12">Could not load saved content.</div>';
         return;
     }
 
