@@ -1076,9 +1076,12 @@ def update_message_content(msg_id, content, audit_status=None):
         cursor.close()
         conn.close()
 
-def update_message_reasoning(msg_id, step_text):
+def update_message_reasoning(msg_id, step_text, phase=None):
     """
     Appends a new reasoning step to the message's reasoning_log.
+    phase: optional tag ("gather" for agentic tool-call steps) so the
+    frontend loader can map the step to a pipeline stage without
+    string-matching every tool label.
     """
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -1099,6 +1102,8 @@ def update_message_reasoning(msg_id, step_text):
             "step": step_text,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        if phase:
+            new_step["phase"] = phase
         current_log.append(new_step)
         
         # 3. Save back

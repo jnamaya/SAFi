@@ -882,6 +882,19 @@ html.native body { font-size: 14px; }
   color: #a3a3a3;
   transition: color 0.3s;
   user-select: none;
+  white-space: nowrap;
+}
+
+/* Gather (agentic tool loop) shows the live tool status while active —
+   e.g. "Searching the web" — which runs longer than the fixed stage labels. */
+.pipeline-step.gather.active {
+  max-width: 220px;
+}
+
+.pipeline-step.gather .step-label {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .step-connector {

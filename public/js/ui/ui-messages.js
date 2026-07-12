@@ -602,21 +602,29 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 // --- PIPELINE TRACE ---
 // Maps the backend's reasoning-log strings onto the governance pipeline's
 // stages so the loader can show real progress, never a fake animation.
-// Unknown strings (e.g. tool statuses like "Searching the web…") leave the
-// stage where it is.
-const PIPELINE_STAGES = ['Analyze', 'Draft', 'Audit', 'Score'];
+// 'Gather' is the agentic tool-call loop: it only exists on turns where the
+// agent actually calls tools (log entries tagged phase:"gather") and stays
+// hidden otherwise, so plain chat turns keep the 4-stage trace.
+const PIPELINE_STAGES = ['Analyze', 'Draft', 'Gather', 'Audit', 'Score'];
+const GATHER_STAGE = 2;
 
-function _stageForStep(text) {
-    const t = (text || '').toLowerCase();
+function _stageForStep(entry) {
+    if (entry?.phase === 'gather') return GATHER_STAGE;
+    const t = (entry?.step || '').toLowerCase();
     if (t.startsWith('analyzing')) return 0;
     if (t.startsWith('drafting')) return 1;
-    if (t.startsWith('checking response structure')) return 2;
-    if (t.includes('audit')) return 2;                  // Auditing / Re-auditing / governance response
-    if (t.startsWith('refining')) return 2;             // reflexion loop stays visibly in Audit
-    if (t.startsWith('applying governance')) return 2;  // redirect path
-    if (t.startsWith('computing alignment')) return 3;
-    if (t.startsWith('preparing your answer')) return 3;
+    if (t.startsWith('checking response structure')) return 3;
+    if (t.includes('audit')) return 3;                  // Auditing / Re-auditing / governance response
+    if (t.startsWith('refining')) return 3;             // reflexion loop stays visibly in Audit
+    if (t.startsWith('applying governance')) return 3;  // redirect path
+    if (t.startsWith('computing alignment')) return 4;
+    if (t.startsWith('preparing your answer')) return 4;
     return -1;
+}
+
+// "Searching the web (step 2)..." -> "Searching the web"
+function _gatherLabel(text) {
+    return (text || '').replace(/\s*\(step \d+\)/i, '').replace(/\.{3,}$/, '').trim();
 }
 
 const STEP_CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
@@ -626,44 +634,62 @@ const STEP_CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 function _renderPipelineTraceHtml() {
     return `<div class="pipeline-trace" id="pipeline-trace">` + PIPELINE_STAGES.map((label, i) =>
         (i > 0 ? `<span class="step-connector unrevealed"></span>` : '')
-        + `<span class="pipeline-step${i === 0 ? ' active' : ' unrevealed'}" data-stage="${i}">`
+        + `<span class="pipeline-step${i === 0 ? ' active' : ' unrevealed'}${i === GATHER_STAGE ? ' gather' : ''}" data-stage="${i}">`
         + `<span class="step-dot">${STEP_CHECK_ICON}</span>`
         + `<span class="step-label">${label}</span>`
         + `</span>`
     ).join('') + `</div>`;
 }
 
-function _setTraceStage(stage) {
+function _setTraceStage(stage, gatherSeen, gatherLabel) {
     if (stage < 0) return;
     const trace = document.getElementById('pipeline-trace');
     if (!trace) return;
     trace.querySelectorAll('.pipeline-step').forEach(el => {
         const i = Number(el.dataset.stage);
-        el.classList.toggle('unrevealed', i > stage);
-        el.classList.toggle('done', i < stage);
-        el.classList.toggle('active', i === stage);
+        // On non-agentic turns the Gather stage never happened — keep it
+        // collapsed even after later stages pass it.
+        const skip = i === GATHER_STAGE && !gatherSeen;
+        el.classList.toggle('unrevealed', skip || i > stage);
+        el.classList.toggle('done', !skip && i < stage);
+        el.classList.toggle('active', !skip && i === stage);
+        if (i === GATHER_STAGE) {
+            // While gathering, the label is the live tool status
+            // ("Searching the web"); it settles back to "Gather" once done.
+            const labelEl = el.querySelector('.step-label');
+            const text = (i === stage && gatherLabel) ? gatherLabel : PIPELINE_STAGES[GATHER_STAGE];
+            if (labelEl && labelEl.textContent !== text) labelEl.textContent = text;
+        }
     });
     trace.querySelectorAll('.step-connector').forEach((el, idx) => {
         // Connector idx sits between step idx and idx+1; it appears together
-        // with step idx+1 and fills green at the same moment.
-        el.classList.toggle('unrevealed', idx >= stage);
-        el.classList.toggle('done', idx < stage);
+        // with step idx+1 and fills green at the same moment. The connector
+        // leading into a skipped Gather stage stays collapsed with it.
+        const skip = idx === GATHER_STAGE - 1 && !gatherSeen;
+        el.classList.toggle('unrevealed', skip || idx >= stage);
+        el.classList.toggle('done', !skip && idx < stage);
     });
 }
 
 /**
- * Feed the full reasoning log (array of {step}) into the trace. Uses the
- * whole log, not just the last entry, so fast stages the poll skipped over
- * still get their checkmarks.
+ * Feed the full reasoning log (array of {step, phase?}) into the trace. Uses
+ * the whole log, not just the last entry, so fast stages the poll skipped
+ * over still get their checkmarks.
  */
 export function updatePipelineTrace(log) {
     if (!Array.isArray(log) || log.length === 0) return;
     let maxStage = -1;
+    let gatherSeen = false;
+    let gatherLabel = '';
     for (const entry of log) {
-        const s = _stageForStep(entry?.step);
+        const s = _stageForStep(entry);
         if (s > maxStage) maxStage = s;
+        if (s === GATHER_STAGE) {
+            gatherSeen = true;
+            gatherLabel = _gatherLabel(entry?.step) || gatherLabel;
+        }
     }
-    _setTraceStage(maxStage);
+    _setTraceStage(maxStage, gatherSeen, gatherLabel);
 }
 
 export function showLoadingIndicator(profileName) {
