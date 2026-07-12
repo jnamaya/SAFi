@@ -3,13 +3,20 @@ title: SAFi Explained: The Conscience
 slug: faculties-conscience
 tags: ["safi", "faculties", "conscience"]
 summary: Conscience faculty: the synchronous analytical auditor that scores every Will-approved draft against value rubrics in Phase 4, producing the compliance ledger L_t before the user receives a response.
-version: 2.0
+version: 2.1
 ---
 
 # SAFi Explained: The Conscience
 
 ## Core concept
 The Conscience is the analytical auditor in SAFi. It runs synchronously in Phase 4 — the user does not receive the response until the Conscience has completed its audit. The Conscience asks: was this response aligned with the declared values, and did it stay within scope?
+
+## Where SAFi departs from Aquinas
+In Thomas Aquinas's psychology, conscience (*conscientia*) is not a distinct faculty at all. It is an act of the intellect: the one reasoning power applying moral knowledge to a particular case (*Summa Theologiae* I, q. 79, a. 13).
+
+SAFi agrees with Aquinas in substance. The Conscience is not a different kind of thing from the Intellect — both are instances of the same underlying faculty, a large language model performing reasoning. Conscience in SAFi is, exactly as Aquinas held, intellect applied to moral judgment.
+
+SAFi departs from Aquinas in structure. It instantiates that same faculty twice, in separate roles: once as the author of the draft (the Intellect) and once as its independent auditor (the Conscience), with its own prompt, its own rubrics, and no stake in defending the draft. The reason is adversarial, not metaphysical: the judge cannot be the defendant. A reasoning process auditing its own output inherits its own blind spots and rationalizations. One faculty, two seats.
 
 ## Synchronous by design
 The Conscience audit is not deferred to a background process. It is part of the synchronous request pipeline. Every response the user receives has already been scored by the Conscience before it is delivered. This means governance is not just logged — it is enforced in real time.
@@ -53,5 +60,7 @@ An approved response on a sensitive finance topic might produce:
 - 01 Faculties Values and Profiles
 - 03 Faculties Will
 - 05 Faculties Spirit
+- 14 SAF Family Tree
+- 18 Separation of Powers
 - 22 Conscience Rubrics
 - 26 SAFi Scope Compliance Defense
