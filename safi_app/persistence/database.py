@@ -409,6 +409,32 @@ def init_db():
             )
         ''')
 
+        # --- Chat Audit Trail (SEA Rule 17a-4(f)(2)(i)(A) audit-trail alternative) ---
+        # Append-only, hash-chained journal of every create/modify/delete that
+        # touches chat_history, with a timestamp and actor per entry. No foreign
+        # keys: entries must survive the cascade deletes they document so a
+        # deleted record can still be re-created for its full retention period.
+        # state is LONGTEXT, not JSON: MySQL normalizes JSON documents (key
+        # order, number formatting), which would break byte-exact verification
+        # of entry_hash. See docs/SEC_COMPLIANCE_READINESS.md.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_audit_trail (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                message_pk INT NOT NULL,
+                message_id CHAR(36),
+                conversation_id CHAR(36) NOT NULL,
+                action VARCHAR(16) NOT NULL,
+                actor VARCHAR(255) NOT NULL,
+                state LONGTEXT,
+                event_at VARCHAR(40) NOT NULL,
+                prev_hash VARCHAR(64),
+                entry_hash VARCHAR(64) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_trail_message (message_pk),
+                INDEX idx_trail_conversation (conversation_id)
+            )
+        ''')
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id VARCHAR(255) NOT NULL,
@@ -843,6 +869,13 @@ def delete_user(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Deleting a user cascades users -> conversations -> chat_history, so
+        # journal every chat row first or the records are unrecoverable.
+        _chat_trail_snapshot_delete(
+            cursor,
+            "JOIN conversations c ON ch.conversation_id = c.id WHERE c.user_id=%s",
+            (user_id,), f"user:{user_id}",
+        )
         cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
         cursor.execute("DELETE FROM prompt_usage WHERE user_id=%s", (user_id,))
         conn.commit()
@@ -1080,11 +1113,116 @@ def fetch_chat_history_for_conversation(cid, limit=50, offset=0, user_id=None):
         cursor.close()
         conn.close()
 
+# --- Chat audit trail helpers ---
+# Every mutation of chat_history writes a chat_audit_trail entry inside the
+# same transaction, so the record and its journal entry commit or roll back
+# together. Entries for one message form a hash chain (entry_hash covers the
+# payload plus prev_hash): editing or removing any past entry breaks every
+# hash after it. 'update' entries store the prior values of exactly the
+# fields being overwritten; 'append' entries store the appended reasoning
+# step (the original is re-created by truncation); 'delete' entries store the
+# full row. The demo-sandbox bulk cleanup is deliberately not journaled —
+# demo chats are disposable fixtures, not business records.
+
+_CHAT_TRAIL_ROW_FIELDS = [
+    "id", "conversation_id", "message_id", "role", "content", "audit_status",
+    "conscience_ledger", "spirit_score", "spirit_note", "profile_name",
+    "profile_values", "suggested_prompts", "reasoning_log", "timestamp",
+]
+
+def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, actor, state):
+    """Appends one entry to chat_audit_trail on the caller's cursor/transaction.
+
+    The FOR UPDATE on the chain tip serializes concurrent writers touching the
+    same message so the chain never forks.
+    """
+    cursor.execute(
+        "SELECT entry_hash FROM chat_audit_trail WHERE message_pk=%s "
+        "ORDER BY id DESC LIMIT 1 FOR UPDATE",
+        (message_pk,),
+    )
+    row = cursor.fetchone()
+    prev_hash = (row["entry_hash"] if isinstance(row, dict) else row[0]) if row else None
+    event_at = datetime.now(timezone.utc).isoformat()
+    state_json = json.dumps(state, default=str) if state is not None else None
+    payload = json.dumps(
+        {
+            "message_pk": message_pk,
+            "message_id": message_id,
+            "conversation_id": conversation_id,
+            "action": action,
+            "actor": actor,
+            "state": state_json,
+            "event_at": event_at,
+            "prev_hash": prev_hash,
+        },
+        sort_keys=True,
+    )
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    cursor.execute(
+        "INSERT INTO chat_audit_trail (message_pk, message_id, conversation_id, "
+        "action, actor, state, event_at, prev_hash, entry_hash) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (message_pk, message_id, conversation_id, action, actor,
+         state_json, event_at, prev_hash, entry_hash),
+    )
+
+def _chat_trail_snapshot_delete(cursor, where_sql, params, actor):
+    """Journals a 'delete' entry (full prior row) for every chat_history row
+    matched by where_sql, on the caller's cursor so the snapshots and the
+    delete commit atomically. where_sql must alias chat_history as ch."""
+    cols = ", ".join(f"ch.{f}" for f in _CHAT_TRAIL_ROW_FIELDS)
+    cursor.execute(f"SELECT {cols} FROM chat_history ch {where_sql}", params)
+    rows = cursor.fetchall()
+    for row in rows:
+        state = dict(zip(_CHAT_TRAIL_ROW_FIELDS, row))
+        _chat_trail_append(
+            cursor, state["id"], state["message_id"], state["conversation_id"],
+            "delete", actor, state,
+        )
+
+def verify_message_audit_trail(message_pk):
+    """Recomputes the hash chain for one chat_history row's trail entries.
+    Returns {'entries': n, 'valid': bool, 'first_bad_id': id or None}."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT * FROM chat_audit_trail WHERE message_pk=%s ORDER BY id",
+            (message_pk,),
+        )
+        entries = cursor.fetchall()
+        prev_hash = None
+        for e in entries:
+            payload = json.dumps(
+                {
+                    "message_pk": e["message_pk"],
+                    "message_id": e["message_id"],
+                    "conversation_id": e["conversation_id"],
+                    "action": e["action"],
+                    "actor": e["actor"],
+                    "state": e["state"],
+                    "event_at": e["event_at"],
+                    "prev_hash": prev_hash,
+                },
+                sort_keys=True,
+            )
+            expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            if e["prev_hash"] != prev_hash or e["entry_hash"] != expected:
+                return {"entries": len(entries), "valid": False, "first_bad_id": e["id"]}
+            prev_hash = e["entry_hash"]
+        return {"entries": len(entries), "valid": True, "first_bad_id": None}
+    finally:
+        cursor.close()
+        conn.close()
+
 def insert_memory_entry(cid, role, content, message_id=None, audit_status=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) VALUES (%s, %s, %s, %s, %s)", (cid, role, content, message_id, audit_status))
+        _chat_trail_append(cursor, cursor.lastrowid, message_id, cid, "create",
+                           "system:memory", {"role": role, "content": content, "audit_status": audit_status})
         conn.commit()
     finally:
         cursor.close()
@@ -1115,11 +1253,17 @@ def insert_turn_atomic(cid, user_prompt, message_id, ai_audit_status="pending"):
             "VALUES (%s, %s, %s, %s, %s)",
             (cid, "user", user_prompt, None, None),
         )
+        user_pk = cursor.lastrowid
         cursor.execute(
             "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) "
             "VALUES (%s, %s, %s, %s, %s)",
             (cid, "ai", "", message_id, ai_audit_status),
         )
+        ai_pk = cursor.lastrowid
+        _chat_trail_append(cursor, user_pk, None, cid, "create",
+                           "system:pipeline", {"role": "user", "content": user_prompt})
+        _chat_trail_append(cursor, ai_pk, message_id, cid, "create",
+                           "system:pipeline", {"role": "ai", "content": "", "audit_status": ai_audit_status})
         conn.commit()
         return True
     except Exception as e:
@@ -1144,6 +1288,24 @@ def cancel_message(msg_id, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        if user_id is not None:
+            cursor.execute(
+                "SELECT ch.id, ch.conversation_id, ch.audit_status FROM chat_history ch "
+                "JOIN conversations c ON ch.conversation_id = c.id "
+                "WHERE ch.message_id=%s AND c.user_id=%s FOR UPDATE",
+                (msg_id, user_id),
+            )
+        else:
+            cursor.execute(
+                "SELECT id, conversation_id, audit_status FROM chat_history "
+                "WHERE message_id=%s FOR UPDATE",
+                (msg_id,),
+            )
+        row = cursor.fetchone()
+        if row:
+            actor = f"user:{user_id}" if user_id is not None else "system"
+            _chat_trail_append(cursor, row[0], msg_id, row[1], "update",
+                               actor, {"audit_status": row[2]})
         if user_id is not None:
             cursor.execute(
                 "UPDATE chat_history ch JOIN conversations c ON ch.conversation_id = c.id "
@@ -1174,6 +1336,19 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT id, conversation_id, conscience_ledger, audit_status, spirit_score, "
+            "spirit_note, profile_name, profile_values, suggested_prompts "
+            "FROM chat_history WHERE message_id=%s FOR UPDATE",
+            (msg_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            _chat_trail_append(cursor, row[0], msg_id, row[1], "update", "system:pipeline", {
+                "conscience_ledger": row[2], "audit_status": row[3], "spirit_score": row[4],
+                "spirit_note": row[5], "profile_name": row[6], "profile_values": row[7],
+                "suggested_prompts": row[8],
+            })
         sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, spirit_note=%s, profile_name=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
         cursor.execute(sql, (json.dumps(ledger), score, note, pname, json.dumps(pvals), json.dumps(prompts), msg_id))
         conn.commit()
@@ -1187,6 +1362,15 @@ def update_suggested_prompts(msg_id, prompts):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT id, conversation_id, suggested_prompts FROM chat_history "
+            "WHERE message_id=%s FOR UPDATE",
+            (msg_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            _chat_trail_append(cursor, row[0], msg_id, row[1], "update",
+                               "system:suggester", {"suggested_prompts": row[2]})
         cursor.execute(
             "UPDATE chat_history SET suggested_prompts=%s WHERE message_id=%s",
             (json.dumps(prompts), msg_id),
@@ -1203,6 +1387,18 @@ def update_message_content(msg_id, content, audit_status=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            "SELECT id, conversation_id, content, audit_status FROM chat_history "
+            "WHERE message_id=%s FOR UPDATE",
+            (msg_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            prior = {"content": row[2]}
+            if audit_status:
+                prior["audit_status"] = row[3]
+            _chat_trail_append(cursor, row[0], msg_id, row[1], "update",
+                               "system:pipeline", prior)
         if audit_status:
             sql = "UPDATE chat_history SET content=%s, audit_status=%s WHERE message_id=%s"
             cursor.execute(sql, (content, audit_status, msg_id))
@@ -1225,16 +1421,16 @@ def update_message_reasoning(msg_id, step_text, phase=None):
     cursor = conn.cursor(dictionary=True)
     try:
         # 1. Fetch existing log
-        cursor.execute("SELECT reasoning_log FROM chat_history WHERE message_id=%s", (msg_id,))
+        cursor.execute("SELECT id, conversation_id, reasoning_log FROM chat_history WHERE message_id=%s FOR UPDATE", (msg_id,))
         row = cursor.fetchone()
         if not row: return
-        
+
         current_log = row['reasoning_log']
-        if isinstance(current_log, str): 
+        if isinstance(current_log, str):
             current_log = json.loads(current_log)
         if not isinstance(current_log, list):
             current_log = []
-            
+
         # 2. Append new step with timestamp
         new_step = {
             "step": step_text,
@@ -1243,8 +1439,10 @@ def update_message_reasoning(msg_id, step_text, phase=None):
         if phase:
             new_step["phase"] = phase
         current_log.append(new_step)
-        
+
         # 3. Save back
+        _chat_trail_append(cursor, row['id'], msg_id, row['conversation_id'],
+                           "append", "system:pipeline", {"reasoning_step": new_step})
         cursor.execute("UPDATE chat_history SET reasoning_log=%s WHERE message_id=%s", (json.dumps(current_log), msg_id))
         conn.commit()
     finally:
@@ -1351,8 +1549,16 @@ def delete_conversation(cid, user_id=None):
     try:
         # SECURITY: scope the delete to the owning user (see rename_conversation).
         if user_id is not None:
+            _chat_trail_snapshot_delete(
+                cursor,
+                "JOIN conversations c ON ch.conversation_id = c.id WHERE c.id=%s AND c.user_id=%s",
+                (cid, user_id), f"user:{user_id}",
+            )
             cursor.execute("DELETE FROM conversations WHERE id=%s AND user_id=%s", (cid, user_id))
         else:
+            _chat_trail_snapshot_delete(
+                cursor, "WHERE ch.conversation_id=%s", (cid,), "system",
+            )
             cursor.execute("DELETE FROM conversations WHERE id=%s", (cid,))
         conn.commit()
         return cursor.rowcount > 0
@@ -1367,6 +1573,12 @@ def delete_all_conversations(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        _chat_trail_snapshot_delete(
+            cursor,
+            "JOIN conversations c ON ch.conversation_id = c.id "
+            "WHERE c.user_id=%s AND c.project_id IS NULL",
+            (user_id,), f"user:{user_id}",
+        )
         cursor.execute("DELETE FROM conversations WHERE user_id=%s AND project_id IS NULL", (user_id,))
         conn.commit()
     finally:

@@ -138,10 +138,23 @@ expectations and are the platform's strongest selling point in this market.
 
 ## 3. Roadmap (priority order)
 
-1. **Versioned audit trail** (audit-trail alternative, not WORM): wire up the dormant
-   `audit_snapshots` mechanism; snapshot prior state on every `chat_history` mutation
-   with timestamp + actor identifier; convert cascade hard-deletes to soft deletes
-   within the retention window.
+1. **Versioned audit trail** (audit-trail alternative, not WORM) — **✅ shipped
+   July 13, 2026.** Implemented as a new append-only `chat_audit_trail` table
+   (dedicated table rather than the dormant `audit_snapshots`, whose
+   content-hash-keyed schema has no sequence, actor, or action semantics).
+   Every `chat_history` mutation journals an entry in the same transaction:
+   `create` on insert, `update` with prior values of the overwritten fields,
+   `append` for reasoning-log steps, and `delete` with a full-row snapshot
+   before conversation/user cascade deletes — so hard deletes remain
+   user-facing but the original record is always re-creatable. Entries are
+   hash-chained per message (SHA-256 over payload + previous hash;
+   `verify_message_audit_trail()` detects tampering), timestamped, and
+   actor-attributed (`user:<id>` / `system:pipeline` / `system:suggester`),
+   matching 17a-4(f)(2)(i)(A)'s coverage of automated actions. The demo-sandbox
+   bulk cleanup is deliberately not journaled (disposable fixtures, not
+   business records). Note: append-only is enforced at the application layer;
+   a hardened deployment should also revoke UPDATE/DELETE on the table from
+   the app's DB account.
 2. **Reg S-P package** (fully in effect now): encryption at rest for content and OAuth
    tokens; incident-response tooling with a 30-day-clock workflow; 72-hour
    breach-notice flow-down terms with LLM providers.
