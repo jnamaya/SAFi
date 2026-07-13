@@ -181,8 +181,46 @@ expectations and are the platform's strongest selling point in this market.
    - *72-hour vendor flow-down:* the registry tracks vendor timestamps as
      evidence; the contractual flow-down itself is a legal/procurement task
      (DPA terms with LLM providers), not code.
-3. **Retention engine + export API**: per-org retention config, legal hold, prompt
-   production for the executive-officer/D3P pathway.
+3. **Retention engine + export API** — **✅ shipped July 13, 2026.**
+   - *Per-org retention config + legal hold* in `organizations.settings`
+     (`retention_years` 1–99 or absent = keep forever — the default; nothing is
+     ever destroyed unless an org opts in). All changes go through
+     `set_org_retention_config`, which writes the evidence row in the same
+     transaction — config changes cannot dodge the log. Legal hold (with
+     required reason, server-stamped) suspends all destruction for the org.
+   - *Purge engine* (`scripts/retention_purge.py`, daily systemd timer
+     `safi-retention-purge.timer` + manual): destroys conversations whose
+     newest message predates the org cutoff (last-activity semantics — the
+     conservative direction), then sweeps orphaned audit-trail chains
+     **whole-chain only** and only when the chain's own newest entry is past
+     cutoff (a message deleted yesterday inside an ancient conversation is 1
+     day into its own retention period and survives). This is the one
+     deletion path that bypasses trail snapshotting — destruction is the
+     point — evidenced in the append-only `org_compliance_log` as counts and
+     the frozen cutoff, never content. Safety rails: dry-run, blast-radius
+     guard (>25% of org conversations or >100k rows refuses without
+     `--force`), per-batch legal-hold re-check, deadlock retry, GET_LOCK
+     against concurrent runs. Trail entries carry an unauthenticated `org_id`
+     attribution column (outside the hash) stamped at write on delete paths
+     and backfilled incrementally each run.
+   - *Examiner production* (`GET /api/organizations/<org>/records/export`):
+     date-range export of decrypted message records + audit-trail integrity
+     metadata (hashes, actors, timestamps — snapshot states omitted),
+     50k-message cap, logged to `org_compliance_log` as chain of custody.
+     Admin UI card ("Data Retention & Legal Hold") in Organization settings
+     with the compliance evidence log.
+   - *JSONL disk logs*: global `SAFI_LOG_RETENTION_DAYS` (files mix orgs so
+     per-org purge is impossible); skipped entirely while any org holds a
+     legal hold.
+   - *Interpretation note*: an absent audit-trail chain means the record
+     passed retention and was purged (see `org_compliance_log`) — it is not
+     tamper evidence.
+   - *Residuals*: pre-feature orphan chains with no derivable org are never
+     auto-purged (manual `--purge-unattributed` requires N ≥ max configured
+     retention, no holds anywhere, and no keep-forever orgs). `message_pk`
+     reuse after a MySQL restart can theoretically mix chains (purge skips
+     and counts them; hardening ticket open). Pinned conversations are NOT
+     exempt from retention — org policy is authoritative.
 4. **Supervision**: DB-enforced audit-log authorization (replace substring match);
    MFA/SAML; compliance review workflow over Conscience/Spirit data.
 5. **Business side**: SOC 2 program; resolve the paragraph (i) hosting-undertaking

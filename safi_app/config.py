@@ -81,6 +81,12 @@ class Config:
     # mode, allowed only outside production.
     ENCRYPTION_KEY = os.environ.get("SAFI_ENCRYPTION_KEY", "")
 
+    # Global retention for the per-profile JSONL orchestrator logs on disk
+    # (days; unset/empty = keep forever). Files mix orgs, so this is global
+    # rather than per-org; scripts/retention_purge.py enforces it and skips
+    # entirely while any org has an active legal hold.
+    LOG_RETENTION_DAYS = int(os.environ.get("SAFI_LOG_RETENTION_DAYS") or 0) or None
+
     # OAuth credentials for Google login
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")

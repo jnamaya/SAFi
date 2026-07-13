@@ -250,6 +250,49 @@ function renderOrganizationUI(container, org, charter) {
         </div>
 
         <div class="settings-card">
+             <h4 class="text-lg font-semibold mb-1">Data Retention &amp; Legal Hold</h4>
+             <p class="text-xs text-gray-500 mb-4">Records older than the retention period are destroyed by the daily purge and evidenced below (SEC 17a-4 / Reg S-P). A legal hold suspends all destruction.</p>
+             <div class="space-y-4">
+                 <div class="grid md:grid-cols-2 gap-4">
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Retention period</span>
+                         <select id="sel-retention-years" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                             <option value="" ${!org.settings?.retention_years ? 'selected' : ''}>Keep forever (no purge)</option>
+                             ${[3, 5, 6, 7].map(y => `<option value="${y}" ${org.settings?.retention_years === y ? 'selected' : ''}>${y} years</option>`).join('')}
+                         </select>
+                     </label>
+                     <div class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Legal hold</span>
+                         <label class="mt-2 flex items-center gap-2 text-sm">
+                             <input type="checkbox" id="chk-legal-hold" ${org.settings?.legal_hold?.active ? 'checked' : ''}>
+                             Suspend all data destruction
+                         </label>
+                         <input id="inp-hold-reason" placeholder="Reason (required to place a hold)"
+                             value="${(org.settings?.legal_hold?.active && org.settings?.legal_hold?.reason) ? String(org.settings.legal_hold.reason).replace(/"/g, '&quot;') : ''}"
+                             class="mt-2 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm ${org.settings?.legal_hold?.active ? '' : 'hidden'}">
+                     </div>
+                 </div>
+                 <div class="flex justify-end">
+                     <button id="btn-save-retention" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Retention Settings</button>
+                 </div>
+                 <div class="border-t border-gray-200 dark:border-neutral-700 pt-4">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Examiner export (records production)</span>
+                     <div class="mt-2 flex flex-wrap items-center gap-2">
+                         <input type="date" id="exp-from" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <span class="text-sm text-gray-500">to</span>
+                         <input type="date" id="exp-to" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <button id="btn-export-records" class="px-4 py-2 border border-gray-300 dark:border-neutral-600 rounded-lg text-sm">Export JSON</button>
+                     </div>
+                     <p class="text-xs text-gray-400 mt-1">Decrypted message records plus audit-trail integrity metadata. Every export is logged.</p>
+                 </div>
+                 <div class="border-t border-gray-200 dark:border-neutral-700 pt-4">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Compliance evidence log</span>
+                     <div id="compliance-log-list" class="mt-2 text-sm text-gray-500">Loading…</div>
+                 </div>
+             </div>
+        </div>
+
+        <div class="settings-card">
             <section>
                 <div class="flex items-center justify-between mb-3">
                      <h4 class="text-lg font-semibold">Members</h4>
@@ -498,8 +541,66 @@ function renderOrganizationUI(container, org, charter) {
         });
     }
 
+    // --- Data Retention & Legal Hold ---
+    const chkHold = container.querySelector('#chk-legal-hold');
+    const inpReason = container.querySelector('#inp-hold-reason');
+    if (chkHold) {
+        chkHold.addEventListener('change', () => inpReason.classList.toggle('hidden', !chkHold.checked));
+        container.querySelector('#btn-save-retention').addEventListener('click', async () => {
+            const yearsRaw = container.querySelector('#sel-retention-years').value;
+            const payload = {
+                retention_years: yearsRaw ? parseInt(yearsRaw) : null,
+                legal_hold: { active: chkHold.checked, reason: inpReason.value.trim() },
+            };
+            try {
+                await api.updateRetention(org.id, payload);
+                ui.showToast('Retention settings saved', 'success');
+                loadComplianceLog(org.id);
+            } catch (e) {
+                ui.showToast(e.message || 'Save failed', 'error');
+            }
+        });
+        container.querySelector('#btn-export-records').addEventListener('click', () => {
+            const from = container.querySelector('#exp-from').value;
+            const to = container.querySelector('#exp-to').value;
+            if (!from || !to) { ui.showToast('Pick a from and to date', 'error'); return; }
+            window.open(api.recordsExportUrl(org.id, from, to), '_blank');
+            setTimeout(() => loadComplianceLog(org.id), 1500);
+        });
+        loadComplianceLog(org.id);
+    }
+
     // --- Load Members ---
     loadOrganizationMembers(org.id);
+}
+
+async function loadComplianceLog(orgId) {
+    const el = document.getElementById('compliance-log-list');
+    if (!el) return;
+    try {
+        const res = await api.getComplianceLog(orgId);
+        const events = res.events || [];
+        if (!events.length) {
+            el.innerHTML = '<span class="text-gray-400">No compliance events yet.</span>';
+            return;
+        }
+        el.innerHTML = events.map(e => {
+            const when = e.created_at ? new Date(e.created_at).toLocaleString() : '';
+            const summary = e.event_type === 'purge_completed' && e.detail?.counts
+                ? ` — ${e.detail.counts.conversations ?? 0} conversations, ${e.detail.counts.chat_history ?? 0} messages destroyed`
+                : e.event_type === 'examiner_export' && e.detail?.counts
+                    ? ` — ${e.detail.counts.messages} messages produced`
+                    : '';
+            return `<div class="py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <span class="font-mono text-xs text-gray-400">${when}</span>
+                <span class="ml-2 font-medium">${e.event_type.replace(/_/g, ' ')}</span>
+                <span class="text-gray-500">${summary}</span>
+                <span class="ml-2 text-xs text-gray-400">${e.actor || ''}</span>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        el.innerHTML = '<span class="text-red-400">Failed to load compliance log.</span>';
+    }
 }
 
 function renderCharterValues(valuesData, container) {

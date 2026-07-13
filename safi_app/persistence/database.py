@@ -430,11 +430,36 @@ def init_db():
                 event_at VARCHAR(40) NOT NULL,
                 prev_hash VARCHAR(64),
                 entry_hash VARCHAR(64) NOT NULL,
+                org_id CHAR(36) NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_trail_message (message_pk),
-                INDEX idx_trail_conversation (conversation_id)
+                INDEX idx_trail_conversation (conversation_id),
+                INDEX idx_trail_org (org_id, message_pk, created_at)
             )
         ''')
+
+        # org_id on the trail is UNAUTHENTICATED routing metadata for the
+        # retention purge (entry_hash does not cover it) — never treat it as
+        # evidence. Backfilled incrementally by scripts/retention_purge.py.
+        cursor.execute("SHOW COLUMNS FROM chat_audit_trail LIKE 'org_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_audit_trail ADD COLUMN org_id CHAR(36) NULL")
+            cursor.execute("ALTER TABLE chat_audit_trail ADD INDEX idx_trail_org (org_id, message_pk, created_at)")
+            logging.info("Retention migration: added chat_audit_trail.org_id + idx_trail_org")
+
+        # Purge queries select by age; these columns were unindexed.
+        for _tbl, _idx, _cols in [
+            ("chat_history", "idx_ch_conv_ts", "(conversation_id, timestamp)"),
+            ("conversations", "idx_conv_created", "(created_at)"),
+        ]:
+            cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s",
+                (_tbl, _idx),
+            )
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(f"ALTER TABLE {_tbl} ADD INDEX {_idx} {_cols}")
+                logging.info(f"Retention migration: added index {_idx} on {_tbl}")
 
         # --- Security Incidents (SEC Reg S-P, 17 CFR 248.30) ---
         # Incident records are examiner-facing evidence with their own retention
@@ -493,6 +518,23 @@ def init_db():
                 event_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_ievent_incident (incident_id),
                 INDEX idx_ievent_org (org_id)
+            )
+        ''')
+
+        # --- Org Compliance Log (retention/legal-hold/export evidence) ---
+        # Append-only, no FKs (survives org deletion). Records destruction and
+        # production evidence as COUNTS and config diffs — never content. A
+        # NULL org_id marks a global event (JSONL file purge, unattributed
+        # sweep). Only append/list helpers exist by construction.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS org_compliance_log (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                org_id CHAR(36) NULL,
+                event_type VARCHAR(40) NOT NULL,
+                actor VARCHAR(255) NOT NULL,
+                detail JSON NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_oclog_org (org_id, created_at)
             )
         ''')
 
@@ -952,6 +994,7 @@ def delete_user(user_id):
             cursor,
             "JOIN conversations c ON ch.conversation_id = c.id WHERE c.user_id=%s",
             (user_id,), f"user:{user_id}",
+            org_id=_org_id_for_user(cursor, user_id),
         )
         cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
         cursor.execute("DELETE FROM prompt_usage WHERE user_id=%s", (user_id,))
@@ -1218,11 +1261,12 @@ _CHAT_TRAIL_ROW_FIELDS = [
     "profile_values", "suggested_prompts", "reasoning_log", "timestamp",
 ]
 
-def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, actor, state):
+def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, actor, state, org_id=None):
     """Appends one entry to chat_audit_trail on the caller's cursor/transaction.
 
     The FOR UPDATE on the chain tip serializes concurrent writers touching the
-    same message so the chain never forks.
+    same message so the chain never forks. org_id is UNAUTHENTICATED routing
+    metadata for the retention purge — deliberately outside entry_hash.
     """
     cursor.execute(
         "SELECT entry_hash FROM chat_audit_trail WHERE message_pk=%s "
@@ -1249,24 +1293,45 @@ def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, 
     entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     cursor.execute(
         "INSERT INTO chat_audit_trail (message_pk, message_id, conversation_id, "
-        "action, actor, state, event_at, prev_hash, entry_hash) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "action, actor, state, event_at, prev_hash, entry_hash, org_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (message_pk, message_id, conversation_id, action, actor,
-         state_json, event_at, prev_hash, entry_hash),
+         state_json, event_at, prev_hash, entry_hash, org_id),
     )
 
-def _chat_trail_snapshot_delete(cursor, where_sql, params, actor):
+def _org_id_for_user(cursor, user_id):
+    """Resolves a user's org for trail attribution. None if unknown."""
+    if not user_id:
+        return None
+    cursor.execute("SELECT org_id FROM users WHERE id=%s", (user_id,))
+    row = cursor.fetchone()
+    return (row["org_id"] if isinstance(row, dict) else row[0]) if row else None
+
+def _chat_trail_snapshot_delete(cursor, where_sql, params, actor, org_id=None):
     """Journals a 'delete' entry (full prior row) for every chat_history row
     matched by where_sql, on the caller's cursor so the snapshots and the
-    delete commit atomically. where_sql must alias chat_history as ch."""
+    delete commit atomically. where_sql must alias chat_history as ch.
+
+    Also stamps org_id onto the messages' EXISTING trail entries: once the
+    conversation row is gone the org can no longer be derived, and the
+    retention purge needs the attribution to ever reclaim these chains."""
     cols = ", ".join(f"ch.{f}" for f in _CHAT_TRAIL_ROW_FIELDS)
     cursor.execute(f"SELECT {cols} FROM chat_history ch {where_sql}", params)
     rows = cursor.fetchall()
+    if org_id:
+        cids = sorted({row[1] for row in rows})
+        if cids:
+            placeholders = ", ".join(["%s"] * len(cids))
+            cursor.execute(
+                f"UPDATE chat_audit_trail SET org_id=%s "
+                f"WHERE conversation_id IN ({placeholders}) AND org_id IS NULL",
+                (org_id, *cids),
+            )
     for row in rows:
         state = dict(zip(_CHAT_TRAIL_ROW_FIELDS, row))
         _chat_trail_append(
             cursor, state["id"], state["message_id"], state["conversation_id"],
-            "delete", actor, state,
+            "delete", actor, state, org_id=org_id,
         )
 
 def verify_message_audit_trail(message_pk):
@@ -1639,6 +1704,7 @@ def delete_conversation(cid, user_id=None):
                 cursor,
                 "JOIN conversations c ON ch.conversation_id = c.id WHERE c.id=%s AND c.user_id=%s",
                 (cid, user_id), f"user:{user_id}",
+                org_id=_org_id_for_user(cursor, user_id),
             )
             cursor.execute("DELETE FROM conversations WHERE id=%s AND user_id=%s", (cid, user_id))
         else:
@@ -1664,6 +1730,7 @@ def delete_all_conversations(user_id):
             "JOIN conversations c ON ch.conversation_id = c.id "
             "WHERE c.user_id=%s AND c.project_id IS NULL",
             (user_id,), f"user:{user_id}",
+            org_id=_org_id_for_user(cursor, user_id),
         )
         cursor.execute("DELETE FROM conversations WHERE user_id=%s AND project_id IS NULL", (user_id,))
         conn.commit()
@@ -2559,6 +2626,173 @@ def list_incident_events(org_id, incident_id):
                 except (ValueError, TypeError):
                     pass
         return rows
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# RETENTION & COMPLIANCE LOG (SEA 17a-4 / Advisers Act 204-2 retention)
+# -------------------------------------------------------------------------
+# org_compliance_log is append-only destruction/production evidence: counts
+# and config diffs only, never content. No update/delete helpers exist.
+
+def append_compliance_log(org_id, event_type, actor, detail=None, cursor=None):
+    """Appends one evidence row. Pass a cursor to join the caller's
+    transaction; otherwise commits standalone."""
+    own_conn = None
+    if cursor is None:
+        own_conn = get_db_connection()
+        cursor = own_conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO org_compliance_log (org_id, event_type, actor, detail) "
+            "VALUES (%s, %s, %s, %s)",
+            (org_id, event_type, actor, json.dumps(detail) if detail is not None else None),
+        )
+        if own_conn:
+            own_conn.commit()
+    finally:
+        if own_conn:
+            cursor.close()
+            own_conn.close()
+
+def list_compliance_log(org_id, limit=20):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT * FROM org_compliance_log WHERE org_id=%s "
+            "ORDER BY id DESC LIMIT %s", (org_id, int(limit)),
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("detail"), str):
+                try:
+                    r["detail"] = json.loads(r["detail"])
+                except (ValueError, TypeError):
+                    pass
+        return rows
+    finally:
+        cursor.close()
+        conn.close()
+
+def validate_retention_years(value):
+    """Returns (ok, normalized). None means keep-forever (no purge)."""
+    if value is None:
+        return True, None
+    if isinstance(value, bool) or not isinstance(value, int):
+        return False, None
+    if value < 1 or value > 99:
+        return False, None
+    return True, value
+
+def get_org_retention_config(org_id):
+    """Reads retention config from organizations.settings, validated on read.
+    Returns {retention_years, legal_hold, valid} — the purge must skip (and
+    log) orgs where valid is False rather than guess."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        ok, years = validate_retention_years(settings.get("retention_years"))
+        hold = settings.get("legal_hold") or {}
+        return {
+            "retention_years": years,
+            "legal_hold": {
+                "active": bool(hold.get("active")),
+                "reason": hold.get("reason"),
+                "set_by": hold.get("set_by"),
+                "set_at": hold.get("set_at"),
+            },
+            "valid": ok,
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+def set_org_retention_config(org_id, changes, actor):
+    """Merges retention config into organizations.settings AND appends the
+    compliance-log evidence rows in the same transaction, so a config change
+    can never dodge the evidence log. Returns the new config, or raises
+    ValueError on invalid input.
+
+    changes: {"retention_years": int|None} and/or
+             {"legal_hold": {"active": bool, "reason": str}}
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+
+        if "retention_years" in changes:
+            ok, years = validate_retention_years(changes["retention_years"])
+            if not ok:
+                raise ValueError("retention_years must be an integer between 1 and 99, or null for keep-forever")
+            old = settings.get("retention_years")
+            if old != years:
+                if years is None:
+                    settings.pop("retention_years", None)
+                else:
+                    settings["retention_years"] = years
+                append_compliance_log(org_id, "retention_config_changed", actor,
+                                      {"changed": {"retention_years": {"old": old, "new": years}}},
+                                      cursor=cursor)
+
+        if "legal_hold" in changes:
+            req = changes["legal_hold"] or {}
+            activating = bool(req.get("active"))
+            current = settings.get("legal_hold") or {}
+            if activating and not (req.get("reason") or "").strip():
+                raise ValueError("a reason is required to place a legal hold")
+            if activating and not current.get("active"):
+                settings["legal_hold"] = {
+                    "active": True,
+                    "reason": req["reason"].strip(),
+                    "set_by": actor,
+                    "set_at": datetime.now(timezone.utc).isoformat(),
+                }
+                append_compliance_log(org_id, "legal_hold_set", actor,
+                                      {"reason": settings["legal_hold"]["reason"]},
+                                      cursor=cursor)
+            elif not activating and current.get("active"):
+                settings["legal_hold"] = {"active": False, "cleared_by": actor,
+                                          "cleared_at": datetime.now(timezone.utc).isoformat()}
+                append_compliance_log(org_id, "legal_hold_cleared", actor,
+                                      {"previous_reason": current.get("reason")},
+                                      cursor=cursor)
+
+        cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                       (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_org_retention_config(org_id)
+
+def list_orgs_with_retention():
+    """All non-demo orgs that have any retention config — the purge worklist."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, name, settings FROM organizations "
+                       "WHERE settings LIKE '%retention_years%' OR settings LIKE '%legal_hold%'")
+        return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()

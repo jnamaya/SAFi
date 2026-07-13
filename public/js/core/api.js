@@ -450,3 +450,23 @@ export async function logIncidentEvent(orgId, incidentId, data) {
 export function incidentExportUrl(orgId, incidentId, format) {
     return j(`/api/organizations/${orgId}/incidents/${incidentId}/export?format=${format}`);
 }
+
+// --- RECORDS GOVERNANCE API Functions (retention, legal hold, examiner export) ---
+
+export async function getRetention(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/retention`));
+}
+
+export async function updateRetention(orgId, data) {
+    return httpJSON(j(`/api/organizations/${orgId}/retention`), 'PUT', data);
+}
+
+export async function getComplianceLog(orgId, limit = 20) {
+    return httpGet(j(`/api/organizations/${orgId}/compliance-log?limit=${limit}`));
+}
+
+// File download — plain URL for window.open/href, not the JSON pipeline.
+export function recordsExportUrl(orgId, from, to, userId) {
+    const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
+    return j(`/api/organizations/${orgId}/records/export?from=${from}&to=${to}${u}`);
+}

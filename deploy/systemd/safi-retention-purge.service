@@ -1,0 +1,15 @@
+[Unit]
+Description=SAFi data-retention purge (SEA 17a-4 / Reg S-P retention)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+ExecStart=/var/www/safi/venv/bin/python /var/www/safi/scripts/retention_purge.py
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
