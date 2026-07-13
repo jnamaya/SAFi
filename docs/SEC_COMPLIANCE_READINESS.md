@@ -155,9 +155,32 @@ expectations and are the platform's strongest selling point in this market.
    business records). Note: append-only is enforced at the application layer;
    a hardened deployment should also revoke UPDATE/DELETE on the table from
    the app's DB account.
-2. **Reg S-P package** (fully in effect now): encryption at rest for content and OAuth
-   tokens; incident-response tooling with a 30-day-clock workflow; 72-hour
-   breach-notice flow-down terms with LLM providers.
+2. **Reg S-P package** — **✅ shipped July 13, 2026.**
+   - *Encryption at rest:* Fernet (via `SAFI_ENCRYPTION_KEY`, `MultiFernet`
+     comma-separated rotation) applied at the accessor layer in
+     `safi_app/persistence/crypto.py` + `database.py`. Covers OAuth
+     access/refresh tokens and all user-content columns (chat content, spirit
+     notes, conscience ledgers, reasoning logs, memory summaries, saved
+     content, user profiles, agent context). Ciphertext is written to both the
+     row and the audit-trail snapshot, so the journal holds no plaintext and
+     hash verification stays byte-exact. Dual-read supports legacy plaintext;
+     `scripts/backfill_encryption.py` (idempotent, batched, `--verify`)
+     encrypted all historical rows in production. JSON columns migrated to
+     LONGTEXT (Fernet tokens aren't valid JSON); TEXT columns widened to
+     MEDIUMTEXT (Fernet ≈1.34× expansion). Key is required in production by
+     `Config.validate()`.
+   - *Incident registry (248.30):* org-scoped `security_incidents` +
+     append-only `incident_events` tables (no FKs — records survive org
+     deletion; no delete endpoint exists). Admin API + UI tab with the
+     **30-day clock computed from `firm_aware_at`** (AG-delay extension,
+     documented harm-determination exception with server-stamped provenance),
+     **72-hour vendor-notice check**, field-level diff event log, and JSON/CSV
+     examiner export that itself logs a chain-of-custody event. SAFi records
+     and tracks; the firm sends notices via its own channels and logs a
+     `notification_sent` event (stamps first-notice date).
+   - *72-hour vendor flow-down:* the registry tracks vendor timestamps as
+     evidence; the contractual flow-down itself is a legal/procurement task
+     (DPA terms with LLM providers), not code.
 3. **Retention engine + export API**: per-org retention config, legal hold, prompt
    production for the executive-officer/D3P pathway.
 4. **Supervision**: DB-enforced audit-log authorization (replace substring match);
@@ -167,6 +190,21 @@ expectations and are the platform's strongest selling point in this market.
    pending 17a-4 AI-records proposal.
 
 ---
+
+### Accepted residuals from priority 2 (documented, deferred)
+
+- JSONL orchestrator disk logs remain plaintext (dashboard reads them);
+  follow-up phase would encrypt log lines + decrypt in the dashboard.
+- `chat_audit_trail.state` entries written *before* encryption keep their
+  plaintext under the immutable hash chain.
+- `conversations.title` (first 50 chars of first prompt), `saved_content.title`,
+  and `suggested_prompts` remain plaintext.
+- The Fernet key lives in `.env` on the host — protects DB dumps/backups and
+  exfiltrated tables, not a full host compromise. Secret-manager integration
+  is a later hardening step. **The key must be backed up off-host; losing it
+  makes encrypted data permanently unreadable.**
+- Incident notices are sent outside SAFi (no email infrastructure); the
+  registry records the evidence trail.
 
 ## 4. Open questions
 

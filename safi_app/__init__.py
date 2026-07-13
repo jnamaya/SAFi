@@ -5,6 +5,7 @@ This file contains the `create_app` function which initializes and configures
 the Flask application, including middleware, extensions (CORS, OAuth),
 database connections, and API blueprints.
 """
+import logging
 import os
 from flask import Flask, send_from_directory, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -23,6 +24,13 @@ def create_app():
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
     Config.validate()
+
+    from .persistence import crypto
+    if not crypto.is_enabled():
+        logging.getLogger(__name__).warning(
+            "SAFI_ENCRYPTION_KEY not set — application-level encryption DISABLED; "
+            "sensitive columns will be written in plaintext"
+        )
 
     # Apply ProxyFix middleware to correctly handle headers from a reverse proxy
     # (e.g., Nginx, Heroku) for things like HTTPS and client IP.
@@ -89,7 +97,8 @@ def create_app():
     from .api.organizations import organizations_bp
     from .api.model_api_routes import model_api_bp
     from .api.documents import documents_bp
-    
+    from .api.incidents_api import incidents_bp
+
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
@@ -98,6 +107,7 @@ def create_app():
     app.register_blueprint(organizations_bp, url_prefix='/api')
     app.register_blueprint(model_api_bp, url_prefix='/api')
     app.register_blueprint(documents_bp, url_prefix='/api')
+    app.register_blueprint(incidents_bp, url_prefix='/api')
 
     @app.after_request
     def add_security_headers(response):

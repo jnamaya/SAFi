@@ -17,6 +17,7 @@ import { renderSettingsMyProfileTab } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
 import { renderSettingsHelpTab } from './ui-settings-help.js';
+import { renderSettingsIncidentsTab } from './ui-settings-incidents.js';
 // I'll add dashboard here to be safe and create the file later.
 // Note: Imports might fail until files exist, but that's fine as long as I create them all before running.
 
@@ -130,6 +131,8 @@ export function setupControlPanelTabs() {
                 renderSettingsGovernanceTab();
             } else if (tabId === 'organization') {
                 renderSettingsOrganizationTab();
+            } else if (tabId === 'incidents') {
+                renderSettingsIncidentsTab();
             } else if (tabId === 'profile') {
                 renderSettingsMyProfileTab();
             } else if (tabId === 'agents') {

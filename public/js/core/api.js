@@ -422,3 +422,31 @@ export async function extractDocumentText(file) {
 
     return data;
 }
+
+// --- SECURITY INCIDENTS API Functions (Reg S-P registry, admin-only) ---
+
+export async function listIncidents(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/incidents`));
+}
+
+export async function createIncident(orgId, data) {
+    return httpJSON(j(`/api/organizations/${orgId}/incidents`), 'POST', data);
+}
+
+export async function getIncident(orgId, incidentId) {
+    return httpGet(j(`/api/organizations/${orgId}/incidents/${incidentId}`));
+}
+
+export async function updateIncident(orgId, incidentId, data) {
+    return httpJSON(j(`/api/organizations/${orgId}/incidents/${incidentId}`), 'PUT', data);
+}
+
+export async function logIncidentEvent(orgId, incidentId, data) {
+    return httpJSON(j(`/api/organizations/${orgId}/incidents/${incidentId}/events`), 'POST', data);
+}
+
+// Export is a file download — used as a plain href/window.open target,
+// not through the JSON pipeline.
+export function incidentExportUrl(orgId, incidentId, format) {
+    return j(`/api/organizations/${orgId}/incidents/${incidentId}/export?format=${format}`);
+}

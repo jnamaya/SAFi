@@ -375,7 +375,10 @@ function renderControlPanel() {
   // Models: Admin, Editor, Auditor (Member = No Access)
   const canSeeModels = ['admin', 'editor', 'auditor'].includes(user.role);
 
-  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels });
+  // Incidents (Reg S-P registry): Admin only
+  const canSeeIncidents = user.role === 'admin';
+
+  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels, canSeeIncidents });
 
   const navOrg = document.getElementById('nav-organization'); // NEW ID
   if (navOrg) {
@@ -401,6 +404,12 @@ function renderControlPanel() {
   if (navDash) {
     if (canSeeDashboard) navDash.classList.remove('hidden');
     else navDash.classList.add('hidden');
+  }
+
+  const navIncidents = document.getElementById('nav-incidents');
+  if (navIncidents) {
+    if (canSeeIncidents) navIncidents.classList.remove('hidden');
+    else navIncidents.classList.add('hidden');
   }
 
   // --- NEW: Hide entire Management Group if no children are visible ---

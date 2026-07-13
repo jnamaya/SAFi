@@ -38,6 +38,8 @@ mcp>=1.0.0
 
 # ── Config & Utils ────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
+# Encryption at rest (Fernet) — pinned explicitly; was only a transitive dep
+cryptography==48.0.0
 
 # ── Dashboard (Streamlit) ─────────────────────────────────────────────────────
 streamlit>=1.35.0

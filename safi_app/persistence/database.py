@@ -12,6 +12,7 @@ import logging
 import hashlib
 import secrets
 from ..config import Config
+from . import crypto
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -92,7 +93,7 @@ def init_db():
                 id CHAR(36) PRIMARY KEY,
                 user_id VARCHAR(255) NOT NULL,
                 title VARCHAR(255),
-                memory_summary TEXT,
+                memory_summary MEDIUMTEXT,
                 is_pinned BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -142,7 +143,7 @@ def init_db():
                 content MEDIUMTEXT,
                 profile_name VARCHAR(50),
                 spirit_score INT,
-                conscience_ledger JSON,
+                conscience_ledger LONGTEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_saved_user_message (user_id, message_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -360,11 +361,11 @@ def init_db():
                 conversation_id CHAR(36) NOT NULL,
                 message_id CHAR(36) UNIQUE,
                 role VARCHAR(20) NOT NULL,
-                content TEXT,
+                content MEDIUMTEXT,
                 audit_status VARCHAR(20),
-                conscience_ledger JSON,
+                conscience_ledger LONGTEXT,
                 spirit_score INT,
-                spirit_note TEXT,
+                spirit_note MEDIUMTEXT,
                 profile_name VARCHAR(50),
                 profile_values JSON,
                 suggested_prompts JSON DEFAULT NULL,
@@ -380,7 +381,7 @@ def init_db():
 
         cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'reasoning_log'")
         if not cursor.fetchone():
-            cursor.execute("ALTER TABLE chat_history ADD COLUMN reasoning_log JSON DEFAULT NULL")
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN reasoning_log LONGTEXT DEFAULT NULL")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
@@ -435,10 +436,70 @@ def init_db():
             )
         ''')
 
+        # --- Security Incidents (SEC Reg S-P, 17 CFR 248.30) ---
+        # Incident records are examiner-facing evidence with their own retention
+        # obligations, so like policy_versions they carry NO foreign keys: they
+        # must survive org/user deletion. There is deliberately no delete helper
+        # or endpoint — closing an incident is a status change.
+        # firm_aware_at drives the 30-day customer-notification clock (the rule
+        # runs from when the covered institution becomes AWARE, not occurrence).
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS security_incidents (
+                id CHAR(36) PRIMARY KEY,
+                org_id CHAR(36) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                status VARCHAR(20) NOT NULL DEFAULT 'open',
+                severity VARCHAR(20) DEFAULT 'medium',
+                occurred_at DATETIME NULL,
+                occurred_range_end DATETIME NULL,
+                firm_aware_at DATETIME NOT NULL,
+                source VARCHAR(20) NOT NULL DEFAULT 'internal',
+                vendor_name VARCHAR(255) NULL,
+                vendor_aware_at DATETIME NULL,
+                vendor_notified_firm_at DATETIME NULL,
+                data_types JSON,
+                affected_scope TEXT,
+                affected_user_ids JSON,
+                assessment_notes TEXT,
+                containment_notes TEXT,
+                harm_assessment TEXT,
+                harm_determination VARCHAR(40) NULL,
+                harm_determined_by VARCHAR(255) NULL,
+                harm_determined_at DATETIME NULL,
+                ag_delay BOOLEAN DEFAULT FALSE,
+                ag_delay_reference VARCHAR(500) NULL,
+                ag_delay_until DATETIME NULL,
+                customers_notified_at DATETIME NULL,
+                created_by VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_incident_org (org_id)
+            )
+        ''')
+
+        # Append-only event log per incident (who/when/what, field diffs).
+        # No UPDATE/DELETE helpers exist for it by construction.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS incident_events (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                incident_id CHAR(36) NOT NULL,
+                org_id CHAR(36) NOT NULL,
+                event_type VARCHAR(40) NOT NULL,
+                detail TEXT,
+                changes JSON,
+                actor_id VARCHAR(255),
+                actor_email VARCHAR(255),
+                event_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ievent_incident (incident_id),
+                INDEX idx_ievent_org (org_id)
+            )
+        ''')
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id VARCHAR(255) NOT NULL,
-                profile_json TEXT,
+                profile_json MEDIUMTEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id)
@@ -450,13 +511,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS agent_context_memory (
                 user_id VARCHAR(255) NOT NULL,
                 agent_id VARCHAR(255) NOT NULL,
-                context_json TEXT,
+                context_json MEDIUMTEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, agent_id)
             )
         ''')
 
-        # --- OAuth Tokens (NEW) ---
+        # --- OAuth Tokens ---
+        # access_token/refresh_token are Fernet-encrypted at the accessor layer
+        # (see persistence/crypto.py); scope/expires_at stay plain (needed for
+        # expiry checks, not secret).
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS oauth_tokens (
                 user_id VARCHAR(255),
@@ -472,21 +536,34 @@ def init_db():
             )
         ''')
 
-        # --- OAuth Tokens (NEW) ---
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS oauth_tokens (
-                user_id VARCHAR(255),
-                provider VARCHAR(50),
-                access_token TEXT,
-                refresh_token TEXT,
-                expires_at TIMESTAMP NULL,
-                scope TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, provider),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        ''')
+        # --- Encryption-at-rest column migrations ---
+        # Fernet ciphertext is base64 (~1.34x + 57 bytes), so TEXT columns that
+        # hold encrypted content must widen to MEDIUMTEXT; JSON columns cannot
+        # hold a Fernet token at all, so they become LONGTEXT (MySQL serializes
+        # existing JSON to text on ALTER — legacy values stay parseable).
+        # Guarded by information_schema so each ALTER runs exactly once.
+        _enc_migrations = [
+            ("chat_history", [("content", "mediumtext"), ("spirit_note", "mediumtext"),
+                              ("conscience_ledger", "longtext"), ("reasoning_log", "longtext")]),
+            ("saved_content", [("conscience_ledger", "longtext")]),
+            ("conversations", [("memory_summary", "mediumtext")]),
+            ("user_profiles", [("profile_json", "mediumtext")]),
+            ("agent_context_memory", [("context_json", "mediumtext")]),
+        ]
+        for _tbl, _cols in _enc_migrations:
+            _needed = []
+            for _col, _target in _cols:
+                cursor.execute(
+                    "SELECT DATA_TYPE FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                    (_tbl, _col),
+                )
+                _row = cursor.fetchone()
+                if _row and _row[0].lower() != _target:
+                    _needed.append(f"MODIFY {_col} {_target.upper()}")
+            if _needed:
+                cursor.execute(f"ALTER TABLE {_tbl} " + ", ".join(_needed))
+                logging.info(f"Encryption migration: ALTER TABLE {_tbl} — {', '.join(_needed)}")
 
         conn.commit()
         logging.info("Database initialized.")
@@ -1010,8 +1087,13 @@ def save_content(user_id, message_id, project_id=None):
             if cursor.fetchone():
                 valid_project_id = project_id
 
+        # The copy INSERT below stores the SELECTed values as-is (ciphertext
+        # stays ciphertext — no decrypt/re-encrypt round-trip); decrypt only
+        # to derive the human-readable title.
+        plain_content = crypto.decrypt_value(msg['content'])
+
         # Title: first non-empty line of the answer, stripped of markdown noise.
-        first_line = next((l.strip() for l in msg['content'].splitlines() if l.strip()), '')
+        first_line = next((l.strip() for l in plain_content.splitlines() if l.strip()), '')
         title = re.sub(r'^[#>*\-\s`]+', '', first_line)[:255] or (msg.get('convo_title') or 'Saved item')
 
         sid = str(uuid.uuid4())
@@ -1052,7 +1134,10 @@ def fetch_saved_content(user_id):
                ORDER BY s.created_at DESC""",
             (user_id,),
         )
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        for r in rows:
+            crypto.decrypt_fields(r, ("content", "conscience_ledger"))
+        return rows
     finally:
         cursor.close()
         conn.close()
@@ -1108,7 +1193,10 @@ def fetch_chat_history_for_conversation(cid, limit=50, offset=0, user_id=None):
             sql = "SELECT * FROM chat_history WHERE conversation_id = %s ORDER BY id DESC LIMIT %s OFFSET %s"
             params = [cid, limit, offset]
         cursor.execute(sql, tuple(params))
-        return list(reversed(cursor.fetchall()))
+        rows = list(reversed(cursor.fetchall()))
+        for r in rows:
+            crypto.decrypt_fields(r, ("content", "spirit_note", "conscience_ledger", "reasoning_log"))
+        return rows
     finally:
         cursor.close()
         conn.close()
@@ -1216,18 +1304,6 @@ def verify_message_audit_trail(message_pk):
         cursor.close()
         conn.close()
 
-def insert_memory_entry(cid, role, content, message_id=None, audit_status=None):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) VALUES (%s, %s, %s, %s, %s)", (cid, role, content, message_id, audit_status))
-        _chat_trail_append(cursor, cursor.lastrowid, message_id, cid, "create",
-                           "system:memory", {"role": role, "content": content, "audit_status": audit_status})
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-
 def insert_turn_atomic(cid, user_prompt, message_id, ai_audit_status="pending"):
     """Insert a turn's user row and AI placeholder in ONE transaction.
 
@@ -1247,11 +1323,14 @@ def insert_turn_atomic(cid, user_prompt, message_id, ai_audit_status="pending"):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Encrypt once: the same ciphertext goes to the DB row and the trail
+        # entry so no plaintext copy exists at rest anywhere.
+        enc_prompt = crypto.encrypt_value(user_prompt)
         cursor.execute("START TRANSACTION")
         cursor.execute(
             "INSERT INTO chat_history (conversation_id, role, content, message_id, audit_status) "
             "VALUES (%s, %s, %s, %s, %s)",
-            (cid, "user", user_prompt, None, None),
+            (cid, "user", enc_prompt, None, None),
         )
         user_pk = cursor.lastrowid
         cursor.execute(
@@ -1261,7 +1340,7 @@ def insert_turn_atomic(cid, user_prompt, message_id, ai_audit_status="pending"):
         )
         ai_pk = cursor.lastrowid
         _chat_trail_append(cursor, user_pk, None, cid, "create",
-                           "system:pipeline", {"role": "user", "content": user_prompt})
+                           "system:pipeline", {"role": "user", "content": enc_prompt})
         _chat_trail_append(cursor, ai_pk, message_id, cid, "create",
                            "system:pipeline", {"role": "ai", "content": "", "audit_status": ai_audit_status})
         conn.commit()
@@ -1350,7 +1429,8 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
                 "suggested_prompts": row[8],
             })
         sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, spirit_note=%s, profile_name=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
-        cursor.execute(sql, (json.dumps(ledger), score, note, pname, json.dumps(pvals), json.dumps(prompts), msg_id))
+        cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, crypto.encrypt_value(note),
+                             pname, json.dumps(pvals), json.dumps(prompts), msg_id))
         conn.commit()
     finally:
         cursor.close()
@@ -1399,12 +1479,13 @@ def update_message_content(msg_id, content, audit_status=None):
                 prior["audit_status"] = row[3]
             _chat_trail_append(cursor, row[0], msg_id, row[1], "update",
                                "system:pipeline", prior)
+        enc_content = crypto.encrypt_value(content)
         if audit_status:
             sql = "UPDATE chat_history SET content=%s, audit_status=%s WHERE message_id=%s"
-            cursor.execute(sql, (content, audit_status, msg_id))
+            cursor.execute(sql, (enc_content, audit_status, msg_id))
         else:
             sql = "UPDATE chat_history SET content=%s WHERE message_id=%s"
-            cursor.execute(sql, (content, msg_id))
+            cursor.execute(sql, (enc_content, msg_id))
         conn.commit()
     finally:
         cursor.close()
@@ -1425,7 +1506,7 @@ def update_message_reasoning(msg_id, step_text, phase=None):
         row = cursor.fetchone()
         if not row: return
 
-        current_log = row['reasoning_log']
+        current_log = crypto.decrypt_value(row['reasoning_log'])
         if isinstance(current_log, str):
             current_log = json.loads(current_log)
         if not isinstance(current_log, list):
@@ -1440,10 +1521,13 @@ def update_message_reasoning(msg_id, step_text, phase=None):
             new_step["phase"] = phase
         current_log.append(new_step)
 
-        # 3. Save back
+        # 3. Save back (step encrypted in the trail too — agentic tool steps
+        # can embed user-derived labels, so no plaintext enters the journal)
         _chat_trail_append(cursor, row['id'], msg_id, row['conversation_id'],
-                           "append", "system:pipeline", {"reasoning_step": new_step})
-        cursor.execute("UPDATE chat_history SET reasoning_log=%s WHERE message_id=%s", (json.dumps(current_log), msg_id))
+                           "append", "system:pipeline",
+                           {"reasoning_step_enc": crypto.encrypt_value(json.dumps(new_step))})
+        cursor.execute("UPDATE chat_history SET reasoning_log=%s WHERE message_id=%s",
+                       (crypto.encrypt_value(json.dumps(current_log)), msg_id))
         conn.commit()
     finally:
         cursor.close()
@@ -1476,6 +1560,7 @@ def get_audit_result(msg_id, user_id=None):
             )
         row = cursor.fetchone()
         if row:
+            crypto.decrypt_fields(row, ("conscience_ledger", "spirit_note", "reasoning_log"))
             return {
                 "status": row['audit_status'],
                 "ledger": row['conscience_ledger'],
@@ -1497,7 +1582,7 @@ def fetch_conversation_summary(cid, user_id=None):
     try:
         cursor.execute("SELECT memory_summary FROM conversations WHERE id=%s", (cid,))
         row = cursor.fetchone()
-        return row[0] if row else ""
+        return crypto.decrypt_value(row[0]) if row else ""
     finally:
         cursor.close()
         conn.close()
@@ -1506,7 +1591,8 @@ def update_conversation_summary(cid, summary, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE conversations SET memory_summary=%s WHERE id=%s", (summary, cid))
+        cursor.execute("UPDATE conversations SET memory_summary=%s WHERE id=%s",
+                       (crypto.encrypt_value(summary), cid))
         conn.commit()
     finally:
         cursor.close()
@@ -1606,7 +1692,7 @@ def fetch_user_profile_memory(uid):
     try:
         cursor.execute("SELECT profile_json FROM user_profiles WHERE user_id=%s", (uid,))
         row = cursor.fetchone()
-        return row['profile_json'] if row else "{}"
+        return crypto.decrypt_value(row['profile_json']) if row else "{}"
     finally:
         cursor.close()
         conn.close()
@@ -1615,7 +1701,8 @@ def upsert_user_profile_memory(uid, data):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO user_profiles (user_id, profile_json) VALUES (%s, %s) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)", (uid, data))
+        cursor.execute("INSERT INTO user_profiles (user_id, profile_json) VALUES (%s, %s) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)",
+                       (uid, crypto.encrypt_value(data)))
         conn.commit()
     finally:
         cursor.close()
@@ -1631,7 +1718,7 @@ def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
             (user_id, agent_id)
         )
         row = cursor.fetchone()
-        return row['context_json'] if row and row['context_json'] else "{}"
+        return crypto.decrypt_value(row['context_json']) if row and row['context_json'] else "{}"
     finally:
         cursor.close()
         conn.close()
@@ -1645,7 +1732,7 @@ def upsert_agent_context_memory(user_id: str, agent_id: str, context_json: str) 
             """INSERT INTO agent_context_memory (user_id, agent_id, context_json)
                VALUES (%s, %s, %s)
                ON DUPLICATE KEY UPDATE context_json=VALUES(context_json)""",
-            (user_id, agent_id, context_json)
+            (user_id, agent_id, crypto.encrypt_value(context_json))
         )
         conn.commit()
     finally:
@@ -2264,6 +2351,218 @@ def get_organization_members(org_id):
         cursor.close()
         conn.close()
 
+# -------------------------------------------------------------------------
+# SECURITY INCIDENTS (Reg S-P 248.30)
+# -------------------------------------------------------------------------
+# Every query is scoped by org_id at the SQL layer, not just the route guard.
+# incident_events is append-only: no update/delete helpers exist for it.
+
+# Columns an admin may set through the API; everything else (harm provenance
+# stamps, customers_notified_at, timestamps) is server-managed.
+_INCIDENT_MUTABLE = [
+    "title", "description", "status", "severity", "occurred_at",
+    "occurred_range_end", "firm_aware_at", "source", "vendor_name",
+    "vendor_aware_at", "vendor_notified_firm_at", "data_types",
+    "affected_scope", "affected_user_ids", "assessment_notes",
+    "containment_notes", "harm_assessment", "harm_determination",
+    "ag_delay", "ag_delay_reference", "ag_delay_until",
+]
+_INCIDENT_JSON_COLS = ("data_types", "affected_user_ids")
+_INCIDENT_DT_COLS = ("occurred_at", "occurred_range_end", "firm_aware_at",
+                     "vendor_aware_at", "vendor_notified_firm_at", "ag_delay_until")
+
+def _incident_dt(value):
+    """Normalizes ISO-8601 input (with T/Z/offset) to the naive-UTC
+    'YYYY-MM-DD HH:MM:SS' form MySQL DATETIME accepts."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value  # let MySQL reject anything unparseable
+    if not isinstance(value, datetime):
+        return value
+    if value.tzinfo:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+def _incident_store_value(col, value):
+    if col in _INCIDENT_JSON_COLS:
+        return json.dumps(value) if value is not None else None
+    if col in _INCIDENT_DT_COLS:
+        return _incident_dt(value)
+    return value
+
+def _incident_event_append(cursor, org_id, incident_id, event_type, detail,
+                           actor_id, actor_email, changes=None):
+    cursor.execute(
+        "INSERT INTO incident_events (incident_id, org_id, event_type, detail, "
+        "changes, actor_id, actor_email) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (incident_id, org_id, event_type, detail,
+         json.dumps(changes) if changes else None, actor_id, actor_email),
+    )
+
+def create_security_incident(org_id, data, actor_id, actor_email):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        iid = str(uuid.uuid4())
+        cols, vals = ["id", "org_id", "created_by"], [iid, org_id, actor_id]
+        for c in _INCIDENT_MUTABLE:
+            if c in data and data[c] is not None:
+                cols.append(c)
+                vals.append(_incident_store_value(c, data[c]))
+        cursor.execute(
+            f"INSERT INTO security_incidents ({', '.join(cols)}) "
+            f"VALUES ({', '.join(['%s'] * len(vals))})",
+            tuple(vals),
+        )
+        _incident_event_append(cursor, org_id, iid, "created",
+                               f"Incident opened: {data.get('title', '')}",
+                               actor_id, actor_email)
+        conn.commit()
+        return iid
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_security_incidents(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM security_incidents WHERE org_id=%s "
+                       "ORDER BY firm_aware_at DESC", (org_id,))
+        rows = cursor.fetchall()
+        for r in rows:
+            for c in _INCIDENT_JSON_COLS:
+                if isinstance(r.get(c), str):
+                    try:
+                        r[c] = json.loads(r[c])
+                    except (ValueError, TypeError):
+                        pass
+        return rows
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_security_incident(org_id, incident_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM security_incidents WHERE id=%s AND org_id=%s",
+                       (incident_id, org_id))
+        row = cursor.fetchone()
+        if row:
+            for c in _INCIDENT_JSON_COLS:
+                if isinstance(row.get(c), str):
+                    try:
+                        row[c] = json.loads(row[c])
+                    except (ValueError, TypeError):
+                        pass
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_security_incident(org_id, incident_id, changes, actor_id, actor_email):
+    """Whitelisted-field update with an atomic field-level diff event.
+    Returns the updated row, or None if the incident isn't in this org."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM security_incidents WHERE id=%s AND org_id=%s FOR UPDATE",
+                       (incident_id, org_id))
+        current = cursor.fetchone()
+        if not current:
+            return None
+        diff = {}
+        sets, vals = [], []
+        for c in _INCIDENT_MUTABLE:
+            if c not in changes:
+                continue
+            new_v = changes[c]
+            stored_v = _incident_store_value(c, new_v)
+            old_v = current.get(c)
+            if isinstance(old_v, bool):
+                old_cmp = old_v
+            else:
+                old_cmp = str(old_v) if old_v is not None else None
+            new_cmp = str(stored_v) if stored_v is not None else None
+            if c == "ag_delay":
+                new_cmp = bool(new_v)
+                old_cmp = bool(old_v)
+                stored_v = new_cmp
+            if old_cmp != new_cmp:
+                diff[c] = {"from": old_v if not isinstance(old_v, (bytes,)) else str(old_v),
+                           "to": new_v}
+                sets.append(f"{c}=%s")
+                vals.append(stored_v)
+        # Server-stamp harm-determination provenance: the Reg S-P exception
+        # must be a *documented determination* attributable to a person.
+        if "harm_determination" in diff and changes.get("harm_determination"):
+            sets.append("harm_determined_by=%s")
+            vals.append(actor_email or actor_id)
+            sets.append("harm_determined_at=UTC_TIMESTAMP()")
+        if sets:
+            vals.extend([incident_id, org_id])
+            cursor.execute(
+                f"UPDATE security_incidents SET {', '.join(sets)} WHERE id=%s AND org_id=%s",
+                tuple(vals),
+            )
+            event_type = "updated"
+            if "status" in diff:
+                event_type = "status_changed"
+            elif "harm_determination" in diff:
+                event_type = "harm_determination"
+            _incident_event_append(cursor, org_id, incident_id, event_type,
+                                   None, actor_id, actor_email, changes=diff)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_security_incident(org_id, incident_id)
+
+def append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
+    """Manual event log entry. 'notification_sent' also stamps
+    customers_notified_at (first notice stops the 30-day clock)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT customers_notified_at FROM security_incidents "
+                       "WHERE id=%s AND org_id=%s FOR UPDATE", (incident_id, org_id))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        if event_type == "notification_sent" and row[0] is None:
+            cursor.execute("UPDATE security_incidents SET customers_notified_at=UTC_TIMESTAMP() "
+                           "WHERE id=%s AND org_id=%s", (incident_id, org_id))
+        _incident_event_append(cursor, org_id, incident_id, event_type, detail,
+                               actor_id, actor_email)
+        conn.commit()
+        return True
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_incident_events(org_id, incident_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM incident_events WHERE incident_id=%s AND org_id=%s "
+                       "ORDER BY id ASC", (incident_id, org_id))
+        rows = cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("changes"), str):
+                try:
+                    r["changes"] = json.loads(r["changes"])
+                except (ValueError, TypeError):
+                    pass
+        return rows
+    finally:
+        cursor.close()
+        conn.close()
+
 def update_member_role(user_id, org_id, new_role):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2323,82 +2622,11 @@ def delete_policy_keys(pid):
         cursor.close()
         conn.close()
 
-def update_memory_audit(message_id, audit_status, ledger, spirit_score, spirit_note, profile_name=None, profile_values=None, suggested_prompts=None):
-    """
-    Updates a chat history record with the results of the Conscience Audit.
-    Similar to update_audit_results but kept for compatibility.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        sql = """
-            UPDATE chat_history 
-            SET audit_status=%s, 
-                conscience_ledger=%s, 
-                spirit_score=%s, 
-                spirit_note=%s,
-                profile_name=%s,
-                profile_values=%s,
-                suggested_prompts=%s
-            WHERE message_id=%s
-        """
-        cursor.execute(sql, (
-            audit_status, 
-            json.dumps(ledger), 
-            spirit_score, 
-            spirit_note,
-            profile_name,
-            json.dumps(profile_values) if profile_values else None,
-            json.dumps(suggested_prompts) if suggested_prompts else None,
-            message_id
-        ))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-
 # -------------------------------------------------------------------------
 # OAUTH TOKEN MANAGEMENT
 # -------------------------------------------------------------------------
-
-def upsert_oauth_token(user_id, provider, access_token, refresh_token, expires_at, scope):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        sql = """
-            INSERT INTO oauth_tokens (user_id, provider, access_token, refresh_token, expires_at, scope)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                access_token=VALUES(access_token),
-                refresh_token=VALUES(refresh_token),
-                expires_at=VALUES(expires_at),
-                scope=VALUES(scope)
-        """
-        cursor.execute(sql, (user_id, provider, access_token, refresh_token, expires_at, scope))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-
-def get_oauth_token(user_id, provider):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
-        return cursor.fetchone()
-    finally:
-        cursor.close()
-        conn.close()
-
-def delete_oauth_token(user_id, provider):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+# Token values are Fernet-encrypted here so every caller (auth callbacks,
+# MCP connectors) reads and writes plaintext transparently.
 
 def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expires_at=None, scope=None):
     conn = get_db_connection()
@@ -2413,7 +2641,8 @@ def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expi
                 expires_at = VALUES(expires_at),
                 scope = VALUES(scope)
         """
-        cursor.execute(sql, (user_id, provider, access_token, refresh_token, expires_at, scope))
+        cursor.execute(sql, (user_id, provider, crypto.encrypt_value(access_token),
+                             crypto.encrypt_value(refresh_token), expires_at, scope))
         conn.commit()
     finally:
         cursor.close()
@@ -2424,7 +2653,7 @@ def get_oauth_token(user_id, provider):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
-        return cursor.fetchone()
+        return crypto.decrypt_fields(cursor.fetchone(), ("access_token", "refresh_token"))
     finally:
         cursor.close()
         conn.close()

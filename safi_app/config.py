@@ -75,6 +75,12 @@ class Config:
     # Moved from hardcoded string to environment variable
     BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "safi-bot-secret-123")
 
+    # Master key for application-level encryption at rest (Fernet). Accepts a
+    # comma-separated list: the FIRST key encrypts, ALL keys decrypt, so keys
+    # can be rotated by prepending a new one. Unset = passthrough (plaintext)
+    # mode, allowed only outside production.
+    ENCRYPTION_KEY = os.environ.get("SAFI_ENCRYPTION_KEY", "")
+
     # OAuth credentials for Google login
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
@@ -244,6 +250,11 @@ class Config:
                 errors.append("DB_PASSWORD is required")
             if not cls.GOOGLE_CLIENT_ID or not cls.GOOGLE_CLIENT_SECRET:
                 errors.append("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for user login")
+            if not cls.ENCRYPTION_KEY:
+                errors.append(
+                    "SAFI_ENCRYPTION_KEY is required in production — generate with: "
+                    "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                )
 
         # At least one LLM provider key must be present in any environment
         llm_keys = [
