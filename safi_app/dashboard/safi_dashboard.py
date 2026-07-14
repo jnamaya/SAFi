@@ -260,7 +260,7 @@ def create_gauge_card(score: float) -> str:
     
     gauge_svg = f"""<svg width="160" height="160" viewBox="0 0 120 120"><circle class="gauge-bg" cx="60" cy="60" r="54" stroke-width="12" fill="none"></circle><circle class="gauge-fill" cx="60" cy="60" r="54" stroke-width="12" transform="rotate(-90 60 60)" stroke-dasharray="{stroke_dasharray}" style="stroke: {color};" fill="none"></circle><text class="gauge-text" x="50%" y="50%" dominant-baseline="middle" text-anchor="middle">{score:.1f}</text></svg>"""
     
-    explanation_html = """<div style="text-align: center; font-size: 0.8em; opacity: 0.7; margin-top: 8px;">This score blends Compliance and Consistency into a single measure.</div>"""
+    explanation_html = """<div style="text-align: center; font-size: 0.8em; opacity: 0.7; margin-top: 8px;">This score blends Alignment and Consistency into a single measure.</div>"""
 
     return f"""
     <div class="card">
@@ -541,7 +541,7 @@ with kpi_cols[1]:
     row1 = st.columns(2)
     row2 = st.columns(2)
     with row1[0]: st.metric(
-        "Avg. Compliance Score",
+        "Avg. Alignment Score",
         f"{avg_alignment:.1f} / 10" if pd.notna(avg_alignment) else "N/A",
         help="Mean alignment score over approved turns only. Redirected turns are scored on a separate redirect-quality rubric and shown in the Interventions card.",
     )
@@ -661,14 +661,14 @@ with st.container(border=True):
     st.subheader("Log Explorer")
     search_cols = st.columns([4, 1])
     search_query = search_cols[0].text_input("Search prompts...", placeholder="🔍 Search all prompts in the selected date range...", label_visibility="collapsed")
-    filter_option = search_cols[1].selectbox("Filter by...", ["All", "Flagged (Score < 6 or Coherence < 60%)", "Approved", "Redirected"], label_visibility="collapsed")
+    filter_option = search_cols[1].selectbox("Filter by...", ["All", "Flagged (Alignment < 6 or Consistency < 60%)", "Approved", "Redirected"], label_visibility="collapsed")
 
     log_display_df = df_filtered.copy()
     log_display_df['identity_coherence'] = (1 - log_display_df['spirit.drift']) * 100
     
     if search_query:
         log_display_df = log_display_df[log_display_df["prompt"].str.contains(search_query, case=False, na=False)]
-    if filter_option == "Flagged (Score < 6 or Coherence < 60%)":
+    if filter_option == "Flagged (Alignment < 6 or Consistency < 60%)":
         log_display_df = log_display_df[(log_display_df['spirit.score'] < 6) | (log_display_df['identity_coherence'] < 60)]
     elif filter_option == "Approved":
         log_display_df = log_display_df[log_display_df["will.decision"] == "Approved"]

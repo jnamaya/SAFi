@@ -61,24 +61,28 @@ export function setupConscienceModalContent(payload) {
  */
 function renderScoreAndTrend(payload) {
     // --- Radial Gauge ---
-    const score = (payload.spirit_score !== null && payload.spirit_score !== undefined) ? Math.max(0, Math.min(10, payload.spirit_score)) : 10.0;
+    // A missing score means the audit hasn't completed (or failed) — show N/A,
+    // never a default value that reads as a real result.
+    const hasScore = payload.spirit_score !== null && payload.spirit_score !== undefined;
+    const score = hasScore ? Math.max(0, Math.min(10, payload.spirit_score)) : 0;
     const circumference = 50 * 2 * Math.PI; // 314
-    const offset = circumference - (score / 10) * circumference;
+    const offset = hasScore ? circumference - (score / 10) * circumference : circumference;
 
+    // Thresholds match the Audit Hub dashboard gauge (safi_dashboard.py)
     const getScoreColor = (s) => {
-        if (s >= 8) return 'text-green-500';
-        if (s >= 5) return 'text-yellow-500';
+        if (s > 7) return 'text-green-500';
+        if (s > 4) return 'text-yellow-500';
         return 'text-red-500';
     };
-    
+
     const getGradId = (s) => {
-        if (s >= 8) return 'gauge-grad-green';
-        if (s >= 5) return 'gauge-grad-yellow';
+        if (s > 7) return 'gauge-grad-green';
+        if (s > 4) return 'gauge-grad-yellow';
         return 'gauge-grad-red';
     };
-    
+
     const gradId = getGradId(score);
-    const colorClass = getScoreColor(score);
+    const colorClass = hasScore ? getScoreColor(score) : 'text-gray-400 dark:text-gray-500';
 
     const radialGauge = `
         <div class="flex flex-col items-center justify-center">
@@ -103,17 +107,19 @@ function renderScoreAndTrend(payload) {
                         </filter>
                     </defs>
                     <circle class="text-gray-200 dark:text-neutral-800" stroke-width="8" stroke="currentColor" fill="transparent" r="50" cx="60" cy="60" />
+                    ${hasScore ? `
                     <!-- Subtle backing glow circle -->
                     <circle stroke="url(#${gradId})" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" class="opacity-20 blur-[2px]" />
                     <!-- Primary indicator circle with glow filter -->
                     <circle stroke="url(#${gradId})" stroke-width="8" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" filter="url(#gauge-glow)" />
+                    ` : ''}
                 </svg>
                 <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-                    <span class="text-4xl font-bold ${colorClass}">${score.toFixed(1)}</span>
-                    <span class="text-xs text-gray-500 dark:text-gray-400">/ 10</span>
+                    <span class="text-4xl font-bold ${colorClass}">${hasScore ? score.toFixed(1) : 'N/A'}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">${hasScore ? '/ 10' : 'audit pending'}</span>
                 </div>
             </div>
-            <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200 text-sm">Consistency Score</h4>
+            <h4 class="font-semibold mt-3 text-center text-gray-800 dark:text-gray-200 text-sm">Alignment Score</h4>
         </div>
     `;
 
@@ -142,7 +148,7 @@ function renderScoreAndTrend(payload) {
 
         sparkline = `
             <div class="flex-1">
-                <h4 class="font-semibold mb-2 text-center md:text-left text-gray-800 dark:text-gray-200 text-sm">Consistency Trend</h4>
+                <h4 class="font-semibold mb-2 text-center md:text-left text-gray-800 dark:text-gray-200 text-sm">Alignment Trend</h4>
                 <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto">
                     <defs>
                         <linearGradient id="sparkline-grad" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -362,7 +368,7 @@ function copyAuditToClipboard(payload) {
     // Implementation same as original
     let text = `SAFi Ethical Reasoning Audit\n`;
     text += `Profile: ${payload.profile || 'N_A'}\n`;
-    text += `Alignment Score: ${payload.spirit_score !== null ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
+    text += `Alignment Score: ${payload.spirit_score !== null && payload.spirit_score !== undefined ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
     text += `------------------------------------\n\n`;
 
     if (payload.ledger && payload.ledger.length > 0) {

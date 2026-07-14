@@ -199,7 +199,7 @@ class SpiritIntegrator:
         denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1_vector))
         drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1_vector) / denom)
 
-        note = f"Coherence {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
+        note = f"Alignment {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
         if missing:
             note += f" Unscored: {', '.join(missing)}."
 

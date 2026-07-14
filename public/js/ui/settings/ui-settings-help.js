@@ -154,8 +154,8 @@ export function renderSettingsHelpTab() {
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 5 — Check the compliance score</p>
-                        <p>After the agent responds, expand the response details to see the compliance score. This shows how well the response aligned with the agent's values and standards. A green score means it passed cleanly — anything lower triggered an automatic retry before you saw the result.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 5 — Check the alignment score</p>
+                        <p>After the agent responds, expand the response details to see the alignment score. This shows how well the response aligned with the agent's values and standards. A green score means it passed cleanly — anything lower triggered an automatic retry before you saw the result.</p>
                     </div>
 
                     <div>
@@ -286,7 +286,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Compliance Audits</p>
-                        <p>Each response includes a compliance score indicating how well it aligned with the agent's values and standards. You can view this by expanding the response details. Scores range from excellent to neutral to violation — violations trigger a retry or a redirect.</p>
+                        <p>Each response includes an alignment score indicating how well it aligned with the agent's values and standards. You can view this by expanding the response details. Scores range from excellent to neutral to violation — violations trigger a retry or a redirect.</p>
                     </div>
 
                 </div>
@@ -555,7 +555,7 @@ export function renderSettingsHelpTab() {
                     ${faqItem("Can I use the same agent for different topics?",
                         "Each agent is designed for a specific purpose, so it works best when you stick to its intended topic area. If you need help with something different, check whether another agent covers that topic or ask your admin about creating a new one.")}
 
-                    ${faqItem("What does the compliance score mean?",
+                    ${faqItem("What does the alignment score mean?",
                         "After each response, SAFi scores it against the agent's values and standards on a scale from excellent (+1) to violation (-1). A high score means the response aligned well with the agent's purpose and principles. A low score would have triggered a retry — you only see responses that passed.")}
 
                     ${faqItem("How do I invite someone to my organization?",
@@ -565,7 +565,7 @@ export function renderSettingsHelpTab() {
                         "Yes. In the chat view, find the conversation in the left sidebar and use the delete option. Deleted conversations cannot be recovered.")}
 
                     ${faqItem("What is the Audit Hub?",
-                        "The Audit Hub shows a detailed log of all conversations and how each response was evaluated — including the compliance scores and any policy flags. It's designed for transparency and oversight, not for monitoring users.")}
+                        "The Audit Hub shows a detailed log of all conversations and how each response was evaluated — including the alignment scores and any policy flags. It's designed for transparency and oversight, not for monitoring users.")}
 
                     ${faqItem("I'm not seeing an option I expect. Why?",
                         "Some features are only visible to certain roles. If you don't see an option like Create Agent, Edit Policy, or Manage Organization, your account may be set to Member or Auditor role. Contact your organization's admin if you believe your access should be different.")}
