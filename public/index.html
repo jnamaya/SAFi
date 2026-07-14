@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260714.1" rel="stylesheet">
+  <link href="css/main.css?v=20260714.2" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
   <script>
     const theme = localStorage.theme;
@@ -385,13 +385,15 @@
 
                   </div>
                 </div>
-              </div>
 
-              <!-- AI disclosure (EU AI Act Art. 50(1)) — platform-level, not operator-configurable -->
-              <p id="ai-disclosure" class="text-xs text-center text-neutral-400 dark:text-neutral-500 pt-2 px-2">
-                You are chatting with an AI agent. Responses are AI-generated and governed by your
-                organization's policy.
-              </p>
+                <!-- AI disclosure (EU AI Act Art. 50(1)) — platform-level, not operator-configurable.
+                     Kept inside .relative wrapper: #composer-footer is display:flex (styles.css),
+                     a direct child would sit beside the capsule, not below it. -->
+                <p id="ai-disclosure" class="text-xs text-center text-neutral-400 dark:text-neutral-500 pt-2 px-2">
+                  You are chatting with an AI agent. Responses are AI-generated and governed by your
+                  organization's policy.
+                </p>
+              </div>
             </footer>
           </div>
         </div>
