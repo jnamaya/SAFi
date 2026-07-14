@@ -365,6 +365,7 @@ def init_db():
                 audit_status VARCHAR(20),
                 conscience_ledger LONGTEXT,
                 spirit_score INT,
+                drift FLOAT DEFAULT NULL,
                 spirit_note MEDIUMTEXT,
                 profile_name VARCHAR(50),
                 profile_values JSON,
@@ -382,6 +383,14 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'reasoning_log'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE chat_history ADD COLUMN reasoning_log LONGTEXT DEFAULT NULL")
+
+        # Consistency metric: Spirit's per-turn drift used to live only in the
+        # JSON governance logs, so nothing DB-backed (frontend, examiner export)
+        # could reconstruct a Consistency trend. NULL means "no drift computed"
+        # (first turn, redirects, system-failure notices) and renders as N/A.
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'drift'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN drift FLOAT DEFAULT NULL AFTER spirit_score")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
@@ -1257,7 +1266,7 @@ def fetch_chat_history_for_conversation(cid, limit=50, offset=0, user_id=None):
 
 _CHAT_TRAIL_ROW_FIELDS = [
     "id", "conversation_id", "message_id", "role", "content", "audit_status",
-    "conscience_ledger", "spirit_score", "spirit_note", "profile_name",
+    "conscience_ledger", "spirit_score", "drift", "spirit_note", "profile_name",
     "profile_values", "suggested_prompts", "reasoning_log", "timestamp",
 ]
 
@@ -1476,13 +1485,13 @@ def is_message_cancelled(msg_id):
         cursor.close()
         conn.close()
 
-def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None):
+def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None, drift=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "SELECT id, conversation_id, conscience_ledger, audit_status, spirit_score, "
-            "spirit_note, profile_name, profile_values, suggested_prompts "
+            "spirit_note, profile_name, profile_values, suggested_prompts, drift "
             "FROM chat_history WHERE message_id=%s FOR UPDATE",
             (msg_id,),
         )
@@ -1491,10 +1500,10 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
             _chat_trail_append(cursor, row[0], msg_id, row[1], "update", "system:pipeline", {
                 "conscience_ledger": row[2], "audit_status": row[3], "spirit_score": row[4],
                 "spirit_note": row[5], "profile_name": row[6], "profile_values": row[7],
-                "suggested_prompts": row[8],
+                "suggested_prompts": row[8], "drift": row[9],
             })
-        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, spirit_note=%s, profile_name=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
-        cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, crypto.encrypt_value(note),
+        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, drift=%s, spirit_note=%s, profile_name=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
+        cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, drift, crypto.encrypt_value(note),
                              pname, json.dumps(pvals), json.dumps(prompts), msg_id))
         conn.commit()
     finally:
@@ -1609,7 +1618,7 @@ def get_audit_result(msg_id, user_id=None):
         # user's audit ledger / reasoning log by guessing a message_id.
         if user_id is not None:
             cursor.execute(
-                """SELECT ch.audit_status, ch.conscience_ledger, ch.spirit_score, ch.spirit_note,
+                """SELECT ch.audit_status, ch.conscience_ledger, ch.spirit_score, ch.drift, ch.spirit_note,
                           ch.profile_name, ch.profile_values, ch.suggested_prompts, ch.reasoning_log
                    FROM chat_history ch
                    JOIN conversations c ON ch.conversation_id = c.id
@@ -1618,7 +1627,7 @@ def get_audit_result(msg_id, user_id=None):
             )
         else:
             cursor.execute(
-                """SELECT audit_status, conscience_ledger, spirit_score, spirit_note,
+                """SELECT audit_status, conscience_ledger, spirit_score, drift, spirit_note,
                           profile_name, profile_values, suggested_prompts, reasoning_log
                    FROM chat_history WHERE message_id=%s""",
                 (msg_id,),
@@ -1630,6 +1639,7 @@ def get_audit_result(msg_id, user_id=None):
                 "status": row['audit_status'],
                 "ledger": row['conscience_ledger'],
                 "spirit_score": row['spirit_score'],
+                "drift": row['drift'],
                 "spirit_note": row['spirit_note'],
                 "profile": row['profile_name'],
                 "values": row['profile_values'],

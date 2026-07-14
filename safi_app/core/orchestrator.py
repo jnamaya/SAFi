@@ -972,7 +972,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- PHASE 6: Safe Execution (Will) ---
         db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_message_content(message_id, a_t, audit_status="complete")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None)
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+                                drift=drift_val)
 
         # Follow-up suggestions are a blocking sync LLM call — run them off the
         # request path so they never delay the answer or block the event loop.
