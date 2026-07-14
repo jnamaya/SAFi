@@ -111,3 +111,29 @@ export function updateModelLabel(name) {
     const barEl = document.getElementById('composer-model-label');
     if (barEl) barEl.textContent = name || '';
 }
+
+// AI disclosure (EU AI Act Art. 50(1)) below the composer. When the active
+// agent is policy-governed, the generic sentence becomes a "this policy" link
+// that opens the policy details modal; standalone/built-in agents keep the
+// static fallback text baked into index.html.
+export function updateAiDisclosure(profile, onViewPolicy) {
+    const el = document.getElementById('ai-disclosure');
+    if (!el) return;
+
+    const hasPolicy = profile && profile.policy_id && profile.policy_id !== 'standalone';
+    if (!hasPolicy || typeof onViewPolicy !== 'function') {
+        el.textContent = "You are chatting with an AI agent. Responses are AI-generated and governed by your organization's policy.";
+        return;
+    }
+
+    el.textContent = 'You are chatting with an AI agent governed by ';
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.id = 'ai-disclosure-policy-link';
+    link.className = 'underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors';
+    link.textContent = 'this policy';
+    if (profile.policy_name) link.title = profile.policy_name;
+    link.addEventListener('click', () => onViewPolicy(profile));
+    el.appendChild(link);
+    el.appendChild(document.createTextNode('.'));
+}

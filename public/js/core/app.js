@@ -5,7 +5,7 @@ import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import { initDataSources, toggleDataDropdown } from '../ui/ui-data-sources.js';
 import { initModelSelector, toggleModelDropdown, getActiveModelLabel } from '../ui/ui-model-selector.js';
-import { initComposerMenu, updateAgentLabel, updateModelLabel } from '../ui/ui-composer-menu.js';
+import { initComposerMenu, updateAgentLabel, updateModelLabel, updateAiDisclosure } from '../ui/ui-composer-menu.js';
 import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
 import * as chat from './chat.js';
 import * as uiSaved from '../ui/ui-saved.js';
@@ -450,6 +450,7 @@ function renderControlPanel() {
     handleProfileChange
   );
   updateAgentLabel(activeProfileData.name, activeProfileData.avatar || getAvatarForProfile(activeProfileData.name));
+  updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
 
   // --- NEW: Push State to UI Settings Module ---
   // This ensures the sidebar click handlers work correctly even if data changes
@@ -550,6 +551,7 @@ async function handleProfileChange(newProfileKey) {
       // Optimistically update UI
       activeProfileData = availableProfiles.find(p => p.key === newProfileKey) || activeProfileData;
       uiAuthSidebar.updateActiveProfileChip(activeProfileData); // Pass object for avatar support
+      updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
       return;
     }
 
@@ -565,6 +567,38 @@ async function handleProfileChange(newProfileKey) {
     console.error('Failed to switch profile:', error);
     ui.showToast('Could not switch agent.', 'error');
     hapticError();
+  }
+}
+
+// Opens the governing policy of the active agent in the shared details modal
+// (same view the Control Panel governance tab uses). Triggered from the
+// "this policy" link in the composer's AI disclosure.
+async function handleViewGoverningPolicy(profile) {
+  try {
+    const res = await api.getPolicy(profile.policy_id);
+    const policy = res?.policy;
+    if (!policy) throw new Error('Policy not found');
+
+    const cfg = policy.policy_config || {};
+    const descParts = [`**Policy ID:** ${policy.id}`];
+    if (policy.version) descParts.push(`**Version:** ${policy.version}`);
+    if (cfg.business_unit) descParts.push(`**Business Unit:** ${cfg.business_unit}`);
+    if (cfg.scope_statement) descParts.push(`**Scope:** ${cfg.scope_statement}`);
+    if (profile.has_charter) {
+      descParts.push(`This policy operates under the ${profile.org_name ? `**${profile.org_name}** ` : ''}organization charter.`);
+    }
+
+    uiSettingsModals.renderProfileDetailsModal({
+      name: policy.name,
+      description: descParts.join('\n\n'),
+      worldview: policy.worldview,
+      values: policy.values_weights,
+      will_rules: policy.will_rules
+    }, { isPolicy: true });
+    ui.showModal('profile');
+  } catch (error) {
+    console.error('Failed to load policy details:', error);
+    ui.showToast('Could not load policy details.', 'error');
   }
 }
 
