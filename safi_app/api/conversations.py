@@ -438,10 +438,20 @@ async def process_prompt_endpoint():
          return jsonify({"error": "User not found."}), 404
 
     user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-    
+
     # FETCH AGENT PROFILE FIRST to check for overrides
     try:
         agent_profile = get_profile(user_profile_name)
+    except KeyError:
+        # The stored agent no longer exists (retired demo persona or deleted
+        # custom agent). Fall back to the platform default and heal the user
+        # record so the UI and backend agree on the next load.
+        user_profile_name = Config.DEFAULT_PROFILE
+        try:
+            db.update_user_profile(user_id, user_profile_name)
+            agent_profile = get_profile(user_profile_name)
+        except Exception:
+            agent_profile = {}
     except Exception:
         agent_profile = {}
 

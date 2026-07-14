@@ -64,7 +64,7 @@ THE_SOCRATIC_TUTOR_PERSONA: Dict[str, Any] = {
     #                                 in every response. Blocks the draft if absent.
     #   mandatory_disclaimer_substring : The exact string that must appear in the draft.
     #   banned_markdown_syntaxes    : Code fence tags the draft must NOT contain.
-    #                                 Can also ban literal secret strings (see Vault).
+    #                                 Can also ban literal secret strings.
     "will_rules": {
         "early_prompt_blacklist": [],
         "structural_requirements": {
