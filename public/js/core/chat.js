@@ -705,6 +705,13 @@ function renderHistory(history, user, showModal, activeProfileData) {
             profile: (activeProfileData && activeProfileData.key === turn.profile_name)
                 ? activeProfileData.name
                 : turn.profile_name,
+            // Governing policy of the turn's agent. chat_history doesn't persist
+            // per-turn policy provenance, so this resolves only for the active
+            // agent (same rule as the display name above); other turns fall back
+            // to agent wording in the modal.
+            policy_name: (activeProfileData && activeProfileData.key === turn.profile_name)
+                ? (activeProfileData.policy_name || null)
+                : null,
             values: values || [],
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
@@ -1027,15 +1034,18 @@ export async function sendMessage(activeProfileData, user) {
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
         const messageId = initialResponse.messageId || aiMessageId;
-        // Resolve human-readable profile name
+        // Resolve human-readable profile name (and its governing policy)
         let profileName = initialResponse.activeProfile;
+        let policyName = null;
         // If the returned profile matches the current active profile key, use the readable name
         if (activeProfileData && activeProfileData.key === profileName) {
             profileName = activeProfileData.name;
+            policyName = activeProfileData.policy_name || null;
         }
         // Fallback if initialResponse.activeProfile was null
         if (!profileName && activeProfileData) {
             profileName = activeProfileData.name;
+            policyName = activeProfileData.policy_name || null;
         }
         const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
@@ -1071,6 +1081,7 @@ export async function sendMessage(activeProfileData, user) {
         const initialPayload = {
             ledger: ledger,
             profile: profileName,
+            policy_name: policyName,
             values: values,
             spirit_score: spiritScore,
             spirit_scores_history: scoresHistoryForPayload,

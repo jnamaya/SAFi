@@ -10,7 +10,17 @@ export function setupConscienceModalContent(payload) {
     if (!container) return;
     container.innerHTML = ''; // Clear previous content
 
-    const profileName = payload.profile || null;
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    // Raw agent keys (e.g. "the_fiduciary") can reach us for historical turns
+    // from non-active agents; make them readable.
+    const profileName = payload.profile ? String(payload.profile).replace(/_/g, ' ') : null;
+    const policyName = payload.policy_name || null;
+
+    // Scored values come from the governing policy (two-tier model), so name
+    // the policy when we know it; agent wording is the standalone fallback.
+    const evaluatedAgainst = policyName
+        ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
+        : `${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>'s` : "this agent's"} values and standards`;
 
     // 1. Group ledger items
     const ledger = payload.ledger || [];
@@ -27,7 +37,7 @@ export function setupConscienceModalContent(payload) {
     // ADDED w-full to nav to ensure tabs span full width
     container.innerHTML = `
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            This report shows how this response was evaluated against ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${profileName}</strong>'s` : "this agent's"} values and standards.
+            This report shows how this response was evaluated against ${evaluatedAgainst}.
         </p>
         
         ${renderScoreAndTrend(payload)}
@@ -368,6 +378,7 @@ function copyAuditToClipboard(payload) {
     // Implementation same as original
     let text = `SAFi Ethical Reasoning Audit\n`;
     text += `Profile: ${payload.profile || 'N_A'}\n`;
+    if (payload.policy_name) text += `Governing Policy: ${payload.policy_name}\n`;
     text += `Alignment Score: ${payload.spirit_score !== null && payload.spirit_score !== undefined ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
     text += `------------------------------------\n\n`;
 
