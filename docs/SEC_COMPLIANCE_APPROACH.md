@@ -81,16 +81,26 @@ institution must have:
 ## 2. Platform capabilities
 
 SAFi's governance architecture was designed for auditability first, which maps
-directly onto the expectations above:
+directly onto the expectations above.
+
+*A note on terminology:* SAFi's internal architecture names its pipeline stages
+after classical faculties (Intellect, Will, Conscience, Spirit), and audit
+records and export fields carry those names. This document uses the product's
+user-facing vocabulary, with the internal field names noted in parentheses
+where an examiner would encounter them in exported records.
 
 - **Hash-chained audit trail** — every chat-record create/modify/delete is
   journaled in an append-only, SHA-256 hash-chained trail with a timestamp and
   actor identifier (human or automated), and enough state to re-create the
   original record. Designed to support the 17a-4 audit-trail alternative;
   integrity is verifiable per message.
-- **Per-turn governance ledger** — every response carries its Conscience
-  evaluation, Spirit alignment score, Will decision, governing policy ID and
-  version, and the model that produced it.
+- **Per-turn governance record** — every response carries an itemized
+  evaluation against each value in the governing policy (recorded as the
+  conscience ledger), an Alignment Score from 0–10 produced by an independent
+  evaluation model (recorded as `spirit_score`), the enforcement decision that
+  approved, blocked, or redirected the response (recorded as the will
+  decision), the governing policy ID and version, and the model that produced
+  the response.
 - **Immutable policy versioning** — policy snapshots survive policy deletion, so
   an auditor can always retrieve the exact policy version that governed a given
   turn.
