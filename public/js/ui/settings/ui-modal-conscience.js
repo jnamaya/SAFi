@@ -14,12 +14,18 @@ export function setupConscienceModalContent(payload) {
     // Raw agent keys (e.g. "the_fiduciary") can reach us for historical turns
     // from non-active agents; make them readable.
     const profileName = payload.profile ? String(payload.profile).replace(/_/g, ' ') : null;
-    const policyName = payload.policy_name || null;
+    // Point-in-time provenance persisted with the turn. policy_name is a
+    // display nicety resolved by the caller when possible; the persisted
+    // policy_id (humanized) is the fallback, and policy_version pins the
+    // exact policy revision that was in force.
+    const rawPolicyId = (payload.policy_id && payload.policy_id !== 'standalone') ? payload.policy_id : null;
+    const policyName = payload.policy_name || (rawPolicyId ? String(rawPolicyId).replace(/_/g, ' ') : null);
+    const policyVersion = rawPolicyId ? (payload.policy_version ?? null) : null;
 
     // Scored values come from the governing policy (two-tier model), so name
     // the policy when we know it; agent wording is the standalone fallback.
     const evaluatedAgainst = policyName
-        ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
+        ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>${policyVersion ? ` (v${esc(policyVersion)})` : ''}, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
         : `${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>'s` : "this agent's"} values and standards`;
 
     // 1. Group ledger items
@@ -378,7 +384,12 @@ function copyAuditToClipboard(payload) {
     // Implementation same as original
     let text = `SAFi Ethical Reasoning Audit\n`;
     text += `Profile: ${payload.profile || 'N_A'}\n`;
-    if (payload.policy_name) text += `Governing Policy: ${payload.policy_name}\n`;
+    const copyPolicyId = (payload.policy_id && payload.policy_id !== 'standalone') ? payload.policy_id : null;
+    if (payload.policy_name || copyPolicyId) {
+        const v = copyPolicyId && payload.policy_version != null ? ` (v${payload.policy_version})` : '';
+        text += `Governing Policy: ${payload.policy_name || copyPolicyId}${v}\n`;
+        if (copyPolicyId) text += `Policy ID: ${copyPolicyId}\n`;
+    }
     text += `Alignment Score: ${payload.spirit_score !== null && payload.spirit_score !== undefined ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
     text += `------------------------------------\n\n`;
 

@@ -700,16 +700,20 @@ function renderHistory(history, user, showModal, activeProfileData) {
             .filter(s => s !== null && s !== undefined);
         // --- END FIX ---
 
+        // Point-in-time governance provenance persisted with the turn
+        // (chat_history.policy_id / policy_version). The display name resolves
+        // from the active profile when the ids match; otherwise the modal
+        // falls back to the humanized policy id.
+        const turnPolicyId = (turn.policy_id && turn.policy_id !== 'standalone') ? turn.policy_id : null;
+
         const payload = {
             ledger: ledger || [],
             profile: (activeProfileData && activeProfileData.key === turn.profile_name)
                 ? activeProfileData.name
                 : turn.profile_name,
-            // Governing policy of the turn's agent. chat_history doesn't persist
-            // per-turn policy provenance, so this resolves only for the active
-            // agent (same rule as the display name above); other turns fall back
-            // to agent wording in the modal.
-            policy_name: (activeProfileData && activeProfileData.key === turn.profile_name)
+            policy_id: turnPolicyId,
+            policy_version: turnPolicyId ? (turn.policy_version ?? null) : null,
+            policy_name: (turnPolicyId && activeProfileData && activeProfileData.policy_id === turnPolicyId)
                 ? (activeProfileData.policy_name || null)
                 : null,
             values: values || [],
@@ -1034,19 +1038,24 @@ export async function sendMessage(activeProfileData, user) {
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const suggestions = initialResponse.suggestedPrompts || [];
         const messageId = initialResponse.messageId || aiMessageId;
-        // Resolve human-readable profile name (and its governing policy)
+        // Resolve human-readable profile name
         let profileName = initialResponse.activeProfile;
-        let policyName = null;
         // If the returned profile matches the current active profile key, use the readable name
         if (activeProfileData && activeProfileData.key === profileName) {
             profileName = activeProfileData.name;
-            policyName = activeProfileData.policy_name || null;
         }
         // Fallback if initialResponse.activeProfile was null
         if (!profileName && activeProfileData) {
             profileName = activeProfileData.name;
-            policyName = activeProfileData.policy_name || null;
         }
+        // Governance provenance for this turn, straight from the response
+        // (same values the backend persisted to chat_history).
+        const respPolicyId = (initialResponse.policyId && initialResponse.policyId !== 'standalone')
+            ? initialResponse.policyId : null;
+        const respPolicyVersion = respPolicyId ? (initialResponse.policyVersion ?? null) : null;
+        const policyName = (respPolicyId && activeProfileData && activeProfileData.policy_id === respPolicyId)
+            ? (activeProfileData.policy_name || null)
+            : null;
         const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
         // --- END BUG FIX ---
@@ -1070,6 +1079,8 @@ export async function sendMessage(activeProfileData, user) {
             message_id: messageId,
             conscience_ledger: ledger,
             profile_name: profileName,
+            policy_id: initialResponse.policyId || null,
+            policy_version: initialResponse.policyVersion ?? null,
             profile_values: values,
             spirit_score: spiritScore,
             suggested_prompts: suggestions,
@@ -1081,6 +1092,8 @@ export async function sendMessage(activeProfileData, user) {
         const initialPayload = {
             ledger: ledger,
             profile: profileName,
+            policy_id: respPolicyId,
+            policy_version: respPolicyVersion,
             policy_name: policyName,
             values: values,
             spirit_score: spiritScore,

@@ -973,7 +973,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_message_content(message_id, a_t, audit_status="complete")
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
-                                drift=drift_val)
+                                drift=drift_val,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"))
 
         # Follow-up suggestions are a blocking sync LLM call — run them off the
         # request path so they never delay the answer or block the event loop.
@@ -1039,6 +1041,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "activeProfile": self.active_profile_name, "activeValues": self.values, "profileValues": self.values,
             "messageId": message_id, "suggestedPrompts": S_p,
             "conscienceLedger": ledger, "spirit_score": S_t, "spiritNote": note,
+            "policyId": (self.profile or {}).get("policy_id"),
+            "policyVersion": (self.profile or {}).get("policy_version"),
             "audit_status": "complete"
         }
 
@@ -1140,7 +1144,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # rock-bottom score in the dashboard). The failing audit's ledger is
         # preserved in the log entry so the dashboard can show WHY the draft failed.
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
-        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None)
+        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"))
 
         _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
@@ -1182,6 +1188,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "activeValues": self.values, "profileValues": self.values,
             "messageId": message_id, "suggestedPrompts": [],
             "conscienceLedger": [], "spirit_score": None, "spiritNote": note,
+            "policyId": (self.profile or {}).get("policy_id"),
+            "policyVersion": (self.profile or {}).get("policy_version"),
             "audit_status": "complete"
         }
 
@@ -1281,7 +1289,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # Release safe audited response and update audit results
         db.update_message_reasoning(message_id, "Preparing your answer...")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None)
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"))
 
         # Suggestions run off the hot path (see process_prompt); frontend polls.
         S_p: List[str] = []
@@ -1329,6 +1339,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "activeValues": self.values, "profileValues": self.values,
             "messageId": message_id, "suggestedPrompts": S_p,
             "conscienceLedger": ledger, "spirit_score": S_t, "spiritNote": note,
+            "policyId": (self.profile or {}).get("policy_id"),
+            "policyVersion": (self.profile or {}).get("policy_version"),
             "audit_status": "complete"
         }
 

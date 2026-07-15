@@ -146,7 +146,8 @@ def export_records(org_id):
             conversations[cid]["messages"].append({
                 k: r[k] for k in ("id", "message_id", "role", "content", "audit_status",
                                   "conscience_ledger", "spirit_score", "drift", "spirit_note",
-                                  "profile_name", "reasoning_log", "timestamp")
+                                  "profile_name", "policy_id", "policy_version",
+                                  "reasoning_log", "timestamp")
             })
 
         # Trail metadata per conversation — integrity evidence, states omitted.
