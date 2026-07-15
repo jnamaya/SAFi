@@ -759,7 +759,9 @@ function renderHistory(history, user, showModal, activeProfileData) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                let freshScores = [];
+                // On a cache miss, keep the payload's history instead of
+                // erasing the trend with an empty array.
+                let freshScores = p.spirit_scores_history || [];
                 if (msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
                         .map(t => t.spirit_score)
@@ -1111,7 +1113,9 @@ export async function sendMessage(activeProfileData, user) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                let freshScores = [];
+                // On a cache miss, keep the payload's history instead of
+                // erasing the trend with an empty array.
+                let freshScores = p.spirit_scores_history || [];
                 if (msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
                         .map(t => t.spirit_score)

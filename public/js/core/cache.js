@@ -30,7 +30,7 @@ const NativeStorage = {
     try {
       const data = JSON.stringify(value);
       if (Preferences && isNative) {
-        await Preferences.set({ key, data });
+        await Preferences.set({ key, value: data });
       } else {
         localStorage.setItem(key, data);
       }
