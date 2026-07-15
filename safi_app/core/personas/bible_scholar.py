@@ -19,6 +19,11 @@ THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Bible Scholar",
+    # Governing business-unit policy (seeded at startup from
+    # core/governance/demo/policies.py). The compiler pulls scored values and
+    # scope from the policy; the values below are the standalone fallback if
+    # the policy row is ever deleted.
+    "policy_id": "demo_religious_studies_policy",
     # Built-in informational persona — no project/task work context to track.
     "track_work_context": False,
     "scope_statement": "Biblical scholarship, Christian theology, and church history — with all Scripture grounded in the Berean Standard Bible.",

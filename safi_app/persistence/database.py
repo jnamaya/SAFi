@@ -622,6 +622,10 @@ def init_db():
         # Ensure the SAFi default policy template exists (system-wide seed)
         _ensure_safi_policy_exists()
 
+        # Ensure the demo business-unit policies governing the built-in demo
+        # agents exist (one per persona)
+        _ensure_demo_agent_policies_exist()
+
         # Seed persistent local admin account (if configured)
         _seed_local_admin()
 
@@ -676,6 +680,44 @@ def _ensure_safi_policy_exists():
     finally:
         cursor.close()
         conn.close()
+
+def _ensure_demo_agent_policies_exist():
+    """
+    Seeds the demo business-unit policies that govern the built-in demo agents
+    (one per persona; see core/governance/demo/policies.py). Idempotent: any
+    policy id already present is left untouched, so operator edits made through
+    the Governance tab survive restarts. Uses create_policy() so each seed also
+    gets its version-1 history row, then flips is_demo so the policies are
+    visible to every user.
+    """
+    from ..core.governance.demo.policies import DEMO_AGENT_POLICIES
+
+    for pid, pol in DEMO_AGENT_POLICIES.items():
+        try:
+            if get_policy(pid):
+                continue
+            create_policy(
+                name=pol["name"],
+                worldview=pol.get("worldview", ""),
+                will_rules=pol.get("will_rules", []),
+                values=pol.get("values", []),
+                policy_id=pid,
+                policy_config={
+                    "business_unit": pol.get("business_unit", ""),
+                    "scope_statement": pol.get("scope_statement", ""),
+                },
+            )
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("UPDATE policies SET is_demo=TRUE WHERE id=%s", (pid,))
+                conn.commit()
+            finally:
+                cursor.close()
+                conn.close()
+            logging.info(f"Seeded demo agent policy '{pid}'.")
+        except Exception as e:
+            logging.error(f"Failed to seed demo agent policy '{pid}': {e}")
 
 # -------------------------------------------------------------------------
 # LOCAL ADMIN SEEDING
