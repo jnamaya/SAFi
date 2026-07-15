@@ -1046,6 +1046,126 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
+    async def evaluate_output(
+        self,
+        user_prompt: str,
+        agent_output: str,
+        user_id: str,
+        conversation_id: str,
+        org_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Headless governance gateway: evaluate an EXTERNALLY generated output
+        against this profile's compiled policy, without calling Intellect.
+
+        Runs the same unified gate path as a native draft (_finalize_draft:
+        structure → Conscience audit → coverage fail-closed → hard gates →
+        Spirit threshold) plus the Phase Zero injection gate on the input,
+        and persists the turn to chat_history so the evaluation is covered by
+        the hash-chained audit trail, retention engine, and examiner export
+        exactly like a native turn.
+
+        It never redirects, retries, or rewrites — the caller owns
+        remediation. The one deterministic repair _finalize_draft applies
+        (appending a missing mandatory disclaimer) is surfaced via
+        evaluatedOutput / outputRepaired so the caller can ship the repaired
+        text. Spirit EMA memory integrates ONLY approved outputs: the gateway
+        is a pre-delivery gate, and a blocked output that never ships must not
+        shape the agent's longitudinal character memory (the same rule the
+        persona-redirect path applies via compute_redirect).
+        """
+        message_id = str(uuid.uuid4())
+
+        if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
+            return {"error": "duplicate message_id", "messageId": message_id, "duplicate": True}
+
+        def _commit_and_report(verdict: str, stage: str, reason: str,
+                               evaluated: str, ledger: List[Dict[str, Any]],
+                               spirit_score: Optional[int], spirit_note: str,
+                               drift_val: Optional[float]) -> Dict[str, Any]:
+            db.update_message_content(message_id, evaluated, audit_status="complete")
+            db.update_audit_results(message_id, ledger, spirit_score, spirit_note,
+                                    self.active_profile_name, self.values, None,
+                                    drift=drift_val,
+                                    policy_id=(self.profile or {}).get("policy_id"),
+                                    policy_version=(self.profile or {}).get("policy_version"))
+            self._append_log({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "mode": "evaluate_gateway",
+                "userPrompt": user_prompt,
+                "externalOutput": agent_output,
+                "finalOutput": evaluated,
+                "willDecision": verdict,
+                "willReason": reason,
+                "gateStage": stage,
+                "conscienceLedger": ledger,
+                "spiritScore": spirit_score,
+                "spiritNote": spirit_note,
+                "drift": drift_val,
+                "policyId": (self.profile or {}).get("policy_id"),
+                "policyVersion": (self.profile or {}).get("policy_version"),
+                "orgId": org_id or (self.profile or {}).get("org_id"),
+                "userId": user_id,
+                "agentName": self.active_profile_name,
+            })
+            self.log.info(
+                f"[Governance | Gateway] Profile: {self.active_profile_name} | "
+                f"Decision: {verdict} ({stage}: {reason}) | "
+                f"Spirit: {spirit_score if spirit_score is not None else 'N/A'}/10"
+            )
+            return {
+                "decision": verdict, "stage": stage, "reason": reason,
+                "evaluatedOutput": evaluated,
+                "outputRepaired": evaluated != agent_output,
+                "conscienceLedger": ledger,
+                "spirit_score": spirit_score, "spiritNote": spirit_note,
+                "drift": drift_val,
+                "activeProfile": self.active_profile_name,
+                "policyId": (self.profile or {}).get("policy_id"),
+                "policyVersion": (self.profile or {}).get("policy_version"),
+                "messageId": message_id, "conversationId": conversation_id,
+                "audit_status": "complete",
+            }
+
+        # --- PHASE 0: Injection gate on the INPUT (report-only, no redirect) ---
+        _will_rules = (self.profile or {}).get("will_rules", {})
+        persona_blacklist = (
+            _will_rules.get("early_prompt_blacklist", [])
+            if isinstance(_will_rules, dict) else []
+        )
+        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, persona_blacklist)
+        if not is_safe:
+            self.log.warning(f"[Governance | Gateway | Phase 0] BLOCKED — {gate_reason}")
+            return _commit_and_report("violation", "phase_zero", gate_reason,
+                                      agent_output, [], None,
+                                      f"Input blocked pre-audit: {gate_reason}", None)
+
+        # --- PHASES 3–5: unified gate path on the external output ---
+        result = await self._finalize_draft(
+            agent_output, user_prompt, "", "", message_id, label="Gateway"
+        )
+        evaluated = result.get("draft", agent_output)
+        ledger = result["ledger"]
+
+        if result["verdict"] == "violation":
+            return _commit_and_report("violation", result["stage"], result["reason"],
+                                      evaluated, ledger, None, result["reason"], None)
+
+        # Approved: integrate Spirit EMA under the same row lock as native turns.
+        def _apply_ema(fresh_memory: Dict[str, Any]):
+            computed = self.spirit.compute(ledger, fresh_memory.get("mu", {}))
+            return computed[2], computed
+
+        (S_t, note, mu_new, p_t, drift_val, mu_new_vector), spirit_turn = (
+            db.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
+        )
+        with self._spirit_state_lock:
+            self.last_drift = drift_val if drift_val is not None else 0.0
+            self.mu_history.append(mu_new_vector)
+
+        return _commit_and_report("approve", result["stage"], result["reason"],
+                                  evaluated, ledger, S_t, note, drift_val)
+
     def _append_mandatory_disclaimer(self, text: str) -> Optional[str]:
         """Return `text` with the profile's mandatory disclaimer appended, or
         None when there is nothing to repair with (no disclaimer configured)

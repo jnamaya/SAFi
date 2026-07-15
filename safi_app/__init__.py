@@ -99,6 +99,7 @@ def create_app():
     from .api.documents import documents_bp
     from .api.incidents_api import incidents_bp
     from .api.records_api import records_bp
+    from .api.evaluate_api import evaluate_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -110,6 +111,7 @@ def create_app():
     app.register_blueprint(documents_bp, url_prefix='/api')
     app.register_blueprint(incidents_bp, url_prefix='/api')
     app.register_blueprint(records_bp, url_prefix='/api')
+    app.register_blueprint(evaluate_bp, url_prefix='/api')
 
     @app.after_request
     def add_security_headers(response):
