@@ -34,6 +34,8 @@ from ...personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
 from ...personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
 from ...personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
 from ...personas.safi_steward import THE_SAFI_STEWARD_PERSONA
+from ...personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
+from ..contoso.policy import CONTOSO_GLOBAL_POLICY
 
 
 def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -50,7 +52,48 @@ def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _contoso_policy_values() -> List[Dict[str, Any]]:
+    """
+    Contoso is the one demo agent whose legacy GOVERNANCE_MAP policy carried
+    its OWN values on top of the persona's. Reproduce the legacy compile
+    (global values normalized to 0.60 + persona values to 0.40), then merge
+    duplicates by name, summing their weights. The legacy path listed the
+    three shared values twice (once per tier), double-entering them in every
+    audit ledger; per-name totals are identical, so alignment math is
+    unchanged — the ledger is just clean now.
+    """
+    def _norm(vals, target):
+        vals = copy.deepcopy(vals)
+        total = sum(v.get("weight", 0) for v in vals) or 1.0
+        for v in vals:
+            v["weight"] = v.get("weight", 0) / total * target
+        return vals
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    for v in _norm(CONTOSO_GLOBAL_POLICY["global_values"], 0.60) + \
+             _norm(THE_CONTOSO_ADMIN_PERSONA["values"], 0.40):
+        name = v.get("value") or v.get("name")
+        if name in merged:
+            merged[name]["weight"] = round(merged[name]["weight"] + v["weight"], 6)
+        else:
+            v["weight"] = round(v["weight"], 6)
+            merged[name] = v
+    return list(merged.values())
+
+
 DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
+
+    "demo_contoso_genai_policy": {
+        "name": "Contoso GenAI Use Policy",
+        "business_unit": "Contoso IT Governance (Demo)",
+        "worldview": CONTOSO_GLOBAL_POLICY["global_worldview"],
+        # Kept for policy transparency (Governance tab / details modal). The
+        # persona's dict-shaped will_rules win the runtime merge, same as the
+        # legacy GOVERNANCE_MAP path.
+        "will_rules": CONTOSO_GLOBAL_POLICY["global_will_rules"],
+        "scope_statement": THE_CONTOSO_ADMIN_PERSONA.get("scope_statement", ""),
+        "values": _contoso_policy_values(),
+    },
 
     "demo_financial_advisory_policy": {
         "name": "Financial Advisory Policy",
@@ -155,6 +198,7 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
 # persona key -> governing demo policy id (used to stamp the personas and by
 # the seeder's sanity logging; the personas also carry this in "policy_id").
 DEMO_AGENT_POLICY_MAP: Dict[str, str] = {
+    "contoso_admin": "demo_contoso_genai_policy",
     "fiduciary": "demo_financial_advisory_policy",
     "health_navigator": "demo_patient_navigation_policy",
     "bible_scholar": "demo_religious_studies_policy",

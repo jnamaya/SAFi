@@ -126,7 +126,7 @@ export function updateAiDisclosure(profile, onViewPolicy) {
         return;
     }
 
-    el.textContent = 'You are chatting with an AI agent governed by ';
+    el.textContent = 'This AI agent is being governed by ';
     const link = document.createElement('button');
     link.type = 'button';
     link.id = 'ai-disclosure-policy-link';

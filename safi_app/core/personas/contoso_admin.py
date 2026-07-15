@@ -22,6 +22,11 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Contoso Governance Officer",
+    # Governing business-unit policy (seeded at startup from
+    # core/governance/demo/policies.py, sourced from governance/contoso).
+    # If the policy row is ever deleted, the GOVERNANCE_MAP entry in
+    # synderesis.py takes over as the in-code fallback.
+    "policy_id": "demo_contoso_genai_policy",
     # Built-in informational persona — no project/task work context to track.
     "track_work_context": False,
     "scope_statement": "Contoso IT governance and SOP compliance only.",
