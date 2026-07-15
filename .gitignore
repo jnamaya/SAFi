@@ -82,3 +82,6 @@ purge_profile.py
 
 # Local drafts / blog posts (not for version control)
 docs/building-and-managing-agents-post.md
+
+# Internal-only docs (gap analyses, security posture — never publish)
+docs/internal/

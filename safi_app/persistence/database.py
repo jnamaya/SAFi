@@ -436,7 +436,7 @@ def init_db():
         # deleted record can still be re-created for its full retention period.
         # state is LONGTEXT, not JSON: MySQL normalizes JSON documents (key
         # order, number formatting), which would break byte-exact verification
-        # of entry_hash. See docs/SEC_COMPLIANCE_READINESS.md.
+        # of entry_hash. See docs/internal/SEC_COMPLIANCE_READINESS.md.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_audit_trail (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
