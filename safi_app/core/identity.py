@@ -20,7 +20,9 @@ Contract:
   (design §3.6 grace window, avoids a hard global logout at deploy).
 """
 from __future__ import annotations
+import json
 import os
+import re
 import time
 import threading
 from datetime import datetime, timezone
@@ -28,6 +30,11 @@ from datetime import datetime, timezone
 from flask import request, session, g
 
 from ..persistence import database as db
+
+# The only endpoints a session flagged mfa_pending_enrollment may reach:
+# identity introspection, TOTP enrollment itself, and logout.
+_MFA_ENROLLMENT_PATHS = re.compile(
+    r"^/api/(me$|me/mfa($|/)|logout$|app-config$)")
 
 # Deploy date + 7 days; override via env if the window needs extending.
 LEGACY_COOKIE_GRACE_UNTIL = datetime.fromisoformat(
@@ -105,6 +112,20 @@ def resolve_session():
             return
         if idle is not None and idle > 60:
             db.touch_session(sid)
+
+        # Org-mandated MFA, not yet enrolled: the session exists only so the
+        # user can enroll. Everything outside the allow-list stays anonymous
+        # (endpoints return their own 401s) — one choke point, fail closed.
+        ctx = row.get("auth_context")
+        if isinstance(ctx, str):
+            try:
+                ctx = json.loads(ctx)
+            except ValueError:
+                ctx = None
+        if isinstance(ctx, dict) and ctx.get("mfa_pending_enrollment"):
+            if not _MFA_ENROLLMENT_PATHS.match(request.path):
+                return
+            g.mfa_pending_enrollment = True
 
         shim = {
             "id": user["id"],

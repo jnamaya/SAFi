@@ -25,7 +25,56 @@ from authlib.integrations.base_client.errors import OAuthError
 from google_auth_oauthlib.flow import Flow # For Tool Auth
 import jwt
 
+from ..core import totp as totp_lib
+
 auth_bp = Blueprint('auth', __name__)
+
+# =================================================================
+# TOTP MFA HELPERS (enterprise identity Phase 2)
+# =================================================================
+
+_MFA_TOKEN_TTL_SECONDS = 300
+
+# In-process attempt throttle: user_id -> [timestamps]. Good enough for a
+# single-box deploy; the auth_events journal is the durable record.
+_mfa_attempts: dict = {}
+_MFA_MAX_ATTEMPTS = 5
+_MFA_ATTEMPT_WINDOW = 300
+
+
+def _mfa_rate_limited(user_id):
+    import time as _time
+    now = _time.time()
+    attempts = [t for t in _mfa_attempts.get(user_id, []) if now - t < _MFA_ATTEMPT_WINDOW]
+    _mfa_attempts[user_id] = attempts
+    return len(attempts) >= _MFA_MAX_ATTEMPTS
+
+
+def _mfa_record_attempt(user_id):
+    import time as _time
+    _mfa_attempts.setdefault(user_id, []).append(_time.time())
+
+
+def _issue_mfa_token(user_id):
+    """Short-lived proof that the password step succeeded; the second factor
+    must be presented before any session exists."""
+    payload = {
+        "sub": user_id,
+        "type": "mfa_pending",
+        "exp": datetime.utcnow() + timedelta(seconds=_MFA_TOKEN_TTL_SECONDS),
+    }
+    token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
+    return token.decode("utf-8") if isinstance(token, bytes) else token
+
+
+def _verify_mfa_token(token):
+    try:
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "mfa_pending":
+            return None
+        return payload.get("sub")
+    except jwt.PyJWTError:
+        return None
 
 # =================================================================
 # ENTERPRISE IDENTITY PHASE 1 HELPERS (server-side sessions)
@@ -369,9 +418,64 @@ def login_local():
     if not check_password_hash(user['password_hash'], password):
         return jsonify({"error": "Invalid credentials."}), 401
 
-    _establish_session(user, idp='local')
+    # --- TOTP MFA (enterprise identity Phase 2) ---
+    totp_state = db.get_user_totp(user['id'])
+    if totp_state['enabled']:
+        # Password verified but no session yet: hand back a short-lived
+        # mfa_pending token; the session is only created by /login/local/mfa.
+        return jsonify({"ok": False, "mfa_required": True,
+                        "mfa_token": _issue_mfa_token(user['id'])})
+
+    cfg = db.get_org_identity_config(user.get('org_id'))
+    if cfg.get('require_mfa'):
+        # Org mandates MFA and this account has none: grant a session that
+        # can ONLY reach /me + MFA enrollment + logout (enforced centrally in
+        # core/identity.resolve_session), so enrollment is possible but
+        # nothing else is.
+        _establish_session(user, idp='local', extra_context={
+            "amr": ["pwd"], "mfa": False, "mfa_pending_enrollment": True})
+        current_app.logger.info(f"Local login (MFA enrollment required): {email}")
+        return jsonify({"ok": True, "mfa_setup_required": True})
+
+    _establish_session(user, idp='local', extra_context={"amr": ["pwd"], "mfa": False})
 
     current_app.logger.info(f"Local admin login: {email}")
+    return jsonify({"ok": True})
+
+
+@auth_bp.route('/login/local/mfa', methods=['POST'])
+def login_local_mfa():
+    """
+    [POST /api/login/local/mfa]
+    Second step of local login for TOTP-enrolled accounts: exchanges the
+    mfa_pending token + a live code for a real session.
+    """
+    if not Config.ENABLE_LOCAL_LOGIN:
+        return jsonify({"error": "Local login is not enabled on this instance."}), 404
+
+    data = request.get_json(silent=True) or {}
+    user_id = _verify_mfa_token(data.get('mfa_token') or '')
+    if not user_id:
+        return jsonify({"error": "MFA challenge expired. Sign in again."}), 401
+
+    if _mfa_rate_limited(user_id):
+        db.log_auth_event('mfa_rate_limited', f"user:{user_id}", user_id=user_id)
+        return jsonify({"error": "Too many attempts. Wait a few minutes."}), 429
+
+    user = db.get_user_details(user_id)
+    totp_state = db.get_user_totp(user_id)
+    if not user or not totp_state['enabled'] or not totp_state['secret']:
+        return jsonify({"error": "Invalid credentials."}), 401
+
+    if not totp_lib.verify_code(totp_state['secret'], data.get('code') or ''):
+        _mfa_record_attempt(user_id)
+        db.log_auth_event('mfa_failed', f"user:{user_id}", org_id=user.get('org_id'),
+                          user_id=user_id, detail={"method": "totp", "phase": "login"})
+        return jsonify({"error": "Invalid code."}), 401
+
+    _mfa_attempts.pop(user_id, None)
+    _establish_session(user, idp='local', extra_context={"amr": ["pwd", "otp"], "mfa": True})
+    current_app.logger.info(f"Local MFA login: {user.get('email')}")
     return jsonify({"ok": True})
 
 # =================================================================
@@ -881,6 +985,16 @@ def get_me():
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
 
+        # Org-mandated MFA, not yet enrolled (restricted session): tell the
+        # frontend to show the enrollment gate instead of the app.
+        from flask import g as _g
+        if getattr(_g, 'mfa_pending_enrollment', False):
+            user_details['mfa_setup_required'] = True
+
+        # Credential material never leaves the server, even hashed/encrypted.
+        for _sensitive in ('password_hash', 'totp_secret', 'totp_enabled_at'):
+            user_details.pop(_sensitive, None)
+
         # --- Self-Correction for Org Owners ---
         if user_details.get('org_id') and user_details.get('role') != 'admin':
             org = db.get_organization(user_details['org_id'])
@@ -962,6 +1076,107 @@ def revoke_my_other_sessions():
     from flask import g
     count = db.revoke_user_sessions(user_id, f"user:{user_id}", keep_sid=getattr(g, 'sid', None))
     return jsonify({"ok": True, "revoked": count})
+
+# =================================================================
+# TOTP MFA SELF-SERVICE (enterprise identity Phase 2)
+# =================================================================
+
+@auth_bp.route('/me/mfa', methods=['GET'])
+def get_my_mfa():
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    state = db.get_user_totp(user_id)
+    user = db.get_user_details(user_id) or {}
+    cfg = db.get_org_identity_config(user.get('org_id'))
+    return jsonify({"ok": True, "totp_enabled": state['enabled'],
+                    "org_requires_mfa": bool(cfg.get('require_mfa')),
+                    # OAuth accounts satisfy MFA at the IdP, not here.
+                    "local_account": bool(user.get('password_hash'))})
+
+
+@auth_bp.route('/me/mfa/totp/setup', methods=['POST'])
+def setup_my_totp():
+    """Generate a pending secret and return it (Base32 + otpauth URI). Not
+    enforced at login until confirmed with a live code via /verify."""
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    user = db.get_user_details(user_id) or {}
+    if not user.get('password_hash'):
+        return jsonify({"error": "TOTP applies to local (password) accounts. "
+                                 "SSO accounts get MFA from their identity provider."}), 400
+    secret = totp_lib.generate_secret()
+    try:
+        db.set_user_totp_pending(user_id, secret)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify({"ok": True, "secret": secret,
+                    "otpauth_uri": totp_lib.provisioning_uri(secret, user.get('email') or user_id)})
+
+
+@auth_bp.route('/me/mfa/totp/verify', methods=['POST'])
+def verify_my_totp():
+    """Confirm enrollment with a live code. If the current session was a
+    restricted mfa_pending_enrollment session (org-mandated MFA), upgrade it
+    in place so the user proceeds without re-login."""
+    from flask import g
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    if _mfa_rate_limited(user_id):
+        return jsonify({"error": "Too many attempts. Wait a few minutes."}), 429
+
+    state = db.get_user_totp(user_id)
+    if not state['secret']:
+        return jsonify({"error": "No enrollment in progress."}), 400
+    code = (request.get_json(silent=True) or {}).get('code') or ''
+    if not totp_lib.verify_code(state['secret'], code):
+        _mfa_record_attempt(user_id)
+        db.log_auth_event('mfa_failed', f"user:{user_id}", user_id=user_id,
+                          detail={"method": "totp", "phase": "enrollment"})
+        return jsonify({"error": "Invalid code."}), 401
+
+    _mfa_attempts.pop(user_id, None)
+    user = db.get_user_details(user_id) or {}
+    if not state['enabled']:
+        db.enable_user_totp(user_id, f"user:{user_id}", org_id=user.get('org_id'))
+
+    sid = getattr(g, 'sid', None) or session.get('sid')
+    if sid:
+        row = db.get_session(sid)
+        ctx = row.get('auth_context') if row else None
+        if isinstance(ctx, str):
+            try: ctx = json.loads(ctx)
+            except ValueError: ctx = None
+        if isinstance(ctx, dict) and ctx.get('mfa_pending_enrollment'):
+            ctx.pop('mfa_pending_enrollment', None)
+            ctx['mfa'] = True
+            ctx['amr'] = sorted(set(ctx.get('amr') or ['pwd']) | {'otp'})
+            db.update_session_auth_context(sid, ctx)
+    return jsonify({"ok": True, "totp_enabled": True})
+
+
+@auth_bp.route('/me/mfa/totp', methods=['DELETE'])
+def disable_my_totp():
+    """Self-service disable — requires a live code so a hijacked session
+    cannot strip the second factor."""
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    if _mfa_rate_limited(user_id):
+        return jsonify({"error": "Too many attempts. Wait a few minutes."}), 429
+    state = db.get_user_totp(user_id)
+    if not state['enabled']:
+        # Pending (unconfirmed) enrollments can be dropped without a code.
+        db.disable_user_totp(user_id, f"user:{user_id}")
+        return jsonify({"ok": True, "totp_enabled": False})
+    code = (request.get_json(silent=True) or {}).get('code') or ''
+    if not totp_lib.verify_code(state['secret'], code):
+        _mfa_record_attempt(user_id)
+        db.log_auth_event('mfa_failed', f"user:{user_id}", user_id=user_id,
+                          detail={"method": "totp", "phase": "disable"})
+        return jsonify({"error": "Invalid code."}), 401
+    user = db.get_user_details(user_id) or {}
+    db.disable_user_totp(user_id, f"user:{user_id}", org_id=user.get('org_id'))
+    return jsonify({"ok": True, "totp_enabled": False})
+
 
 @auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():

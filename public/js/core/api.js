@@ -393,6 +393,21 @@ export async function revokeMemberSessions(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/sessions`, 'DELETE', {});
 }
 
+// --- Enterprise identity Phase 2: TOTP MFA (self-service) ---
+
+export async function getMyMfa() {
+    return httpGet('/api/me/mfa');
+}
+export async function setupTotp() {
+    return httpJSON('/api/me/mfa/totp/setup', 'POST', {});
+}
+export async function verifyTotp(code) {
+    return httpJSON('/api/me/mfa/totp/verify', 'POST', { code });
+}
+export async function disableTotp(code) {
+    return httpJSON('/api/me/mfa/totp', 'DELETE', { code });
+}
+
 export async function removeMember(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}`, 'DELETE', {});
 }

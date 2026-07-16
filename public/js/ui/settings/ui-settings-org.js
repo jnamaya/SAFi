@@ -274,6 +274,14 @@ function renderOrganizationUI(container, org, charter) {
                          class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
                      <span class="block text-xs text-gray-400 mt-1">Absolute cap; forces a fresh IdP login. Regulated orgs typically use 12.</span>
                  </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Require MFA</span>
+                     <select id="sel-require-mfa" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <option value="false">Off</option>
+                         <option value="true">Required for local accounts</option>
+                     </select>
+                     <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app before using SAFi. SSO accounts should enforce MFA at your identity provider.</span>
+                 </label>
              </div>
              <div class="flex justify-end mt-4">
                  <button id="btn-save-identity" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
@@ -552,6 +560,7 @@ function renderOrganizationUI(container, org, charter) {
             selPolicy.value = cfg.join_policy || 'domain_auto_join';
             container.querySelector('#inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
             container.querySelector('#inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
+            container.querySelector('#sel-require-mfa').value = String(!!cfg.require_mfa);
         }).catch(() => {});
         container.querySelector('#btn-save-identity').addEventListener('click', async () => {
             const idleRaw = container.querySelector('#inp-idle-timeout').value;
@@ -561,6 +570,7 @@ function renderOrganizationUI(container, org, charter) {
                     join_policy: selPolicy.value,
                     idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
                     session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
+                    require_mfa: container.querySelector('#sel-require-mfa').value === 'true',
                 });
                 ui.showToast('Identity settings saved', 'success');
             } catch (e) {

@@ -369,7 +369,8 @@ def update_identity_config(org_id):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
     changes = {k: data[k] for k in
-               ('idle_timeout_minutes', 'session_lifetime_hours', 'join_policy') if k in data}
+               ('idle_timeout_minutes', 'session_lifetime_hours', 'join_policy',
+                'require_mfa') if k in data}
     try:
         return jsonify(db.set_org_identity_config(org_id, changes, _actor()))
     except ValueError as e:

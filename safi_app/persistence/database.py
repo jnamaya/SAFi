@@ -87,6 +87,14 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL")
 
+        # TOTP MFA for local accounts (enterprise identity Phase 2).
+        # totp_secret holds Fernet ciphertext; enabled only once the user has
+        # confirmed a live code (totp_enabled_at set).
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'totp_secret'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT NULL")
+            cursor.execute("ALTER TABLE users ADD COLUMN totp_enabled_at DATETIME DEFAULT NULL")
+
         # --- Conversations ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS conversations (
@@ -3050,6 +3058,7 @@ IDENTITY_DEFAULTS = {
     "idle_timeout_minutes": 7 * 24 * 60,   # 7 days
     "session_lifetime_hours": 30 * 24,     # 30 days absolute
     "join_policy": "domain_auto_join",     # preserves pre-Phase-1 behavior
+    "require_mfa": False,                  # org opt-in (HIPAA/SEC posture)
 }
 JOIN_POLICIES = ("invite_only", "domain_auto_join", "both")
 
@@ -3244,6 +3253,8 @@ def get_org_identity_config(org_id):
             cfg["session_lifetime_hours"] = life
         if policy in JOIN_POLICIES:
             cfg["join_policy"] = policy
+        if isinstance(ident.get("require_mfa"), bool):
+            cfg["require_mfa"] = ident["require_mfa"]
         return cfg
     finally:
         cursor.close()
@@ -3270,6 +3281,10 @@ def set_org_identity_config(org_id, changes, actor):
         if changes["join_policy"] not in JOIN_POLICIES:
             raise ValueError(f"join_policy must be one of {', '.join(JOIN_POLICIES)}")
         validated["join_policy"] = changes["join_policy"]
+    if "require_mfa" in changes:
+        if not isinstance(changes["require_mfa"], bool):
+            raise ValueError("require_mfa must be true or false")
+        validated["require_mfa"] = changes["require_mfa"]
     if not validated:
         raise ValueError("nothing to change")
 
@@ -3312,6 +3327,102 @@ def set_org_identity_config(org_id, changes, actor):
         cursor.close()
         conn.close()
     return get_org_identity_config(org_id)
+
+
+def update_session_auth_context(sid, auth_context):
+    """Replace a session's auth_context (e.g. after in-session MFA enrollment
+    upgrades amr from ['pwd'] to ['pwd','otp'])."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE sessions SET auth_context=%s WHERE id=%s",
+                       (json.dumps(auth_context), sid))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# --- TOTP MFA (enterprise identity Phase 2) ---------------------------------
+
+def get_user_totp(user_id):
+    """{'secret': plaintext-Base32 or None, 'enabled': bool}. Secret is stored
+    Fernet-encrypted; a row with a secret but no totp_enabled_at is a pending
+    enrollment awaiting first-code confirmation."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT totp_secret, totp_enabled_at FROM users WHERE id=%s", (user_id,))
+        row = cursor.fetchone()
+        if not row or not row.get("totp_secret"):
+            return {"secret": None, "enabled": False}
+        return {"secret": crypto.decrypt_value(row["totp_secret"]),
+                "enabled": row.get("totp_enabled_at") is not None}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_user_totp_pending(user_id, secret_b32):
+    """Store a NEW secret as pending (not yet enforced at login). Overwrites
+    any prior pending secret; refuses to overwrite an ENABLED one — the user
+    must disable first (with a live code) so a hijacked session cannot
+    silently swap the authenticator."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET totp_secret=%s WHERE id=%s AND totp_enabled_at IS NULL",
+            (crypto.encrypt_value(secret_b32), user_id))
+        if cursor.rowcount == 0:
+            cursor.execute("SELECT totp_enabled_at FROM users WHERE id=%s", (user_id,))
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                raise ValueError("MFA is already enabled; disable it before re-enrolling")
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def enable_user_totp(user_id, actor, org_id=None):
+    """Flip a pending enrollment to enabled; journals mfa_enrolled in the
+    same transaction."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET totp_enabled_at=NOW() "
+            "WHERE id=%s AND totp_secret IS NOT NULL AND totp_enabled_at IS NULL",
+            (user_id,))
+        if cursor.rowcount:
+            log_auth_event("mfa_enrolled", actor, org_id=org_id, user_id=user_id,
+                           detail={"method": "totp"}, cursor=cursor)
+        conn.commit()
+        return bool(cursor.rowcount)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def disable_user_totp(user_id, actor, org_id=None):
+    """Remove the secret entirely; journals mfa_disabled in the same
+    transaction. Caller is responsible for verifying authority (live code
+    for self-service, admin role for resets)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET totp_secret=NULL, totp_enabled_at=NULL "
+            "WHERE id=%s AND totp_secret IS NOT NULL", (user_id,))
+        if cursor.rowcount:
+            log_auth_event("mfa_disabled", actor, org_id=org_id, user_id=user_id,
+                           detail={"method": "totp"}, cursor=cursor)
+        conn.commit()
+        return bool(cursor.rowcount)
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def create_org_invitation(org_id, email, role, invited_by, expires_days=14):

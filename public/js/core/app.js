@@ -193,6 +193,80 @@ function applyTheme(theme) {
 
 // --- AUTHENTICATION & DATA LOADING ---
 
+/**
+ * Full-screen gate shown when the org requires MFA and this local account
+ * has no authenticator yet. The session is server-restricted to the MFA
+ * endpoints until verification succeeds, so there is nothing else to render.
+ */
+function showMfaEnrollmentGate() {
+  const gate = document.createElement('div');
+  gate.id = 'mfa-enrollment-gate';
+  gate.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-[#f9f9f9] dark:bg-black p-4';
+  gate.innerHTML = `
+    <div class="w-full max-w-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6">
+      <h2 class="text-lg font-bold text-neutral-900 dark:text-white mb-1">Two-factor authentication required</h2>
+      <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
+        Your organization requires an authenticator app on this account before you can continue.
+      </p>
+      <div id="mfa-gate-step1">
+        <button id="mfa-gate-generate" class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
+          Set up authenticator
+        </button>
+      </div>
+      <div id="mfa-gate-step2" class="hidden">
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+          Add this key to your authenticator app (Google Authenticator, 1Password, Authy…),
+          then enter the 6-digit code it shows.
+        </p>
+        <div class="mb-3 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-sm break-all select-all" id="mfa-gate-secret"></div>
+        <a id="mfa-gate-otpauth" href="#" class="block text-xs text-green-600 hover:underline mb-3">Open in authenticator app</a>
+        <input id="mfa-gate-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"
+          class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm tracking-widest text-center dark:text-white mb-2" />
+        <button id="mfa-gate-verify" class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
+          Verify and continue
+        </button>
+      </div>
+      <p id="mfa-gate-error" class="hidden text-red-500 text-xs text-center mt-2"></p>
+      <button id="mfa-gate-logout" class="w-full mt-4 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 underline">
+        Sign out instead
+      </button>
+    </div>`;
+  document.body.appendChild(gate);
+
+  const errEl = gate.querySelector('#mfa-gate-error');
+  const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('hidden'); };
+
+  gate.querySelector('#mfa-gate-generate').addEventListener('click', async () => {
+    errEl.classList.add('hidden');
+    try {
+      const res = await api.setupTotp();
+      gate.querySelector('#mfa-gate-secret').textContent = res.secret;
+      gate.querySelector('#mfa-gate-otpauth').href = res.otpauth_uri;
+      gate.querySelector('#mfa-gate-step1').classList.add('hidden');
+      gate.querySelector('#mfa-gate-step2').classList.remove('hidden');
+      gate.querySelector('#mfa-gate-code').focus();
+    } catch (e) {
+      showErr(e.message || 'Could not start enrollment.');
+    }
+  });
+
+  gate.querySelector('#mfa-gate-verify').addEventListener('click', async () => {
+    errEl.classList.add('hidden');
+    const code = gate.querySelector('#mfa-gate-code').value.trim();
+    if (code.length !== 6) { showErr('Enter the 6-digit code.'); return; }
+    try {
+      await api.verifyTotp(code);
+      window.location.reload();
+    } catch (e) {
+      showErr(e.message || 'Invalid code.');
+    }
+  });
+
+  gate.querySelector('#mfa-gate-logout').addEventListener('click', async () => {
+    try { await api.logout(); } finally { window.location.reload(); }
+  });
+}
+
 async function checkLoginStatus() {
   try {
     await api.awaitAuthInit();
@@ -214,6 +288,14 @@ async function checkLoginStatus() {
     }
 
     user = (me && me.ok) ? me.user : null;
+
+    // Org-mandated MFA with no authenticator enrolled: the server has issued
+    // a restricted session (only /me, /me/mfa/* and logout work), so instead
+    // of booting the app we show the enrollment gate.
+    if (user && user.mfa_setup_required) {
+      showMfaEnrollmentGate();
+      return;
+    }
 
     // Render the sidebar/login view based on auth state
     uiAuthSidebar.updateUIForAuthState(user);

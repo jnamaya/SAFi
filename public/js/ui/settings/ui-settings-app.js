@@ -71,6 +71,96 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
 
     // Fetch and render connected accounts
     _renderConnectedAccounts(container);
+
+    // Two-factor authentication (local accounts)
+    _renderSecurityCard(container);
+}
+
+async function _renderSecurityCard(container) {
+    let mfa;
+    try {
+        mfa = await api.getMyMfa();
+    } catch {
+        return; // endpoint unavailable (e.g. demo user) — skip the card
+    }
+    if (!mfa || !mfa.ok || !mfa.local_account) return; // SSO accounts: MFA lives at the IdP
+
+    const card = document.createElement('div');
+    card.className = 'settings-card';
+    const accountHeader = Array.from(container.querySelectorAll('h4')).find(h => h.textContent === 'Account');
+    if (accountHeader && accountHeader.parentNode) {
+        accountHeader.parentNode.parentNode.insertBefore(card, accountHeader.parentNode);
+    } else {
+        container.appendChild(card);
+    }
+
+    const render = (state) => {
+        card.innerHTML = `
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Two-Factor Authentication</h4>
+            <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                A 6-digit code from an authenticator app is required at sign-in.
+                ${state.org_requires_mfa ? '<span class="font-semibold">Your organization requires this.</span>' : ''}
+            </p>
+            <div id="mfa-card-body"></div>
+            <p id="mfa-card-error" class="hidden text-red-500 text-xs mt-2"></p>`;
+        const body = card.querySelector('#mfa-card-body');
+        const errEl = card.querySelector('#mfa-card-error');
+        const showErr = (m) => { errEl.textContent = m; errEl.classList.remove('hidden'); };
+
+        if (state.totp_enabled) {
+            body.innerHTML = `
+                <div class="flex items-center justify-between p-3 border border-neutral-200 dark:border-neutral-700 rounded-lg">
+                    <span class="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">Enabled</span>
+                    <div class="flex items-center gap-2">
+                        <input id="mfa-disable-code" type="text" inputmode="numeric" maxlength="6" placeholder="Code"
+                            class="w-24 px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-xs text-center">
+                        <button id="mfa-disable-btn" class="text-xs text-red-600 hover:text-red-800 underline font-medium">Disable</button>
+                    </div>
+                </div>`;
+            body.querySelector('#mfa-disable-btn').addEventListener('click', async () => {
+                errEl.classList.add('hidden');
+                const code = body.querySelector('#mfa-disable-code').value.trim();
+                if (code.length !== 6) { showErr('Enter a current 6-digit code to disable.'); return; }
+                try {
+                    await api.disableTotp(code);
+                    render({ ...state, totp_enabled: false });
+                } catch (e) { showErr(e.message || 'Invalid code.'); }
+            });
+        } else {
+            body.innerHTML = `
+                <button id="mfa-enable-btn" class="px-4 py-2 rounded-lg bg-neutral-800 dark:bg-neutral-700 text-white text-xs font-medium hover:bg-black dark:hover:bg-neutral-600 transition-colors">
+                    Set up authenticator app
+                </button>`;
+            body.querySelector('#mfa-enable-btn').addEventListener('click', async () => {
+                errEl.classList.add('hidden');
+                try {
+                    const res = await api.setupTotp();
+                    body.innerHTML = `
+                        <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+                            Add this key to your authenticator app, then confirm with the 6-digit code it shows.
+                        </p>
+                        <div class="mb-2 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-xs break-all select-all">${res.secret}</div>
+                        <a href="${res.otpauth_uri}" class="block text-xs text-green-600 hover:underline mb-3">Open in authenticator app</a>
+                        <div class="flex items-center gap-2">
+                            <input id="mfa-confirm-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456"
+                                class="w-28 px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-center tracking-widest">
+                            <button id="mfa-confirm-btn" class="px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors">Confirm</button>
+                        </div>`;
+                    body.querySelector('#mfa-confirm-btn').addEventListener('click', async () => {
+                        errEl.classList.add('hidden');
+                        const code = body.querySelector('#mfa-confirm-code').value.trim();
+                        if (code.length !== 6) { showErr('Enter the 6-digit code.'); return; }
+                        try {
+                            await api.verifyTotp(code);
+                            render({ ...state, totp_enabled: true });
+                        } catch (e) { showErr(e.message || 'Invalid code.'); }
+                    });
+                    body.querySelector('#mfa-confirm-code').focus();
+                } catch (e) { showErr(e.message || 'Could not start enrollment.'); }
+            });
+        }
+    };
+    render(mfa);
 }
 
 async function _renderConnectedAccounts(container) {
