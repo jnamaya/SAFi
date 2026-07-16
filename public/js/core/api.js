@@ -372,6 +372,27 @@ export async function updateMemberRole(orgId, userId, role) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/role`, 'PUT', { role });
 }
 
+// --- Enterprise identity: org identity config, invitations, sessions ---
+
+export async function getOrgIdentity(orgId) {
+    return httpGet(`/api/organizations/${orgId}/identity`);
+}
+export async function updateOrgIdentity(orgId, changes) {
+    return httpJSON(`/api/organizations/${orgId}/identity`, 'PUT', changes);
+}
+export async function listInvitations(orgId) {
+    return httpGet(`/api/organizations/${orgId}/invitations`);
+}
+export async function createInvitation(orgId, email, role) {
+    return httpJSON(`/api/organizations/${orgId}/invitations`, 'POST', { email, role });
+}
+export async function revokeInvitation(orgId, inviteId) {
+    return httpJSON(`/api/organizations/${orgId}/invitations/${inviteId}`, 'DELETE', {});
+}
+export async function revokeMemberSessions(orgId, userId) {
+    return httpJSON(`/api/organizations/${orgId}/members/${userId}/sessions`, 'DELETE', {});
+}
+
 export async function removeMember(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}`, 'DELETE', {});
 }

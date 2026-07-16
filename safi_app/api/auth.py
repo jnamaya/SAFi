@@ -28,6 +28,79 @@ import jwt
 auth_bp = Blueprint('auth', __name__)
 
 # =================================================================
+# ENTERPRISE IDENTITY PHASE 1 HELPERS (server-side sessions)
+# =================================================================
+
+def _establish_session(user_details, idp, extra_context=None, lifetime_hours=None):
+    """Create the server-side session row, journal the login, and set the slim
+    {'sid'} cookie. Replaces the old fat session['user'] writes — everything
+    but the sid is re-resolved per request by core/identity.resolve_session."""
+    from ..core import identity as _identity
+    user_id = user_details['id']
+    org_id = user_details.get('org_id')
+    cfg = db.get_org_identity_config(org_id)
+    hours = lifetime_hours or cfg['session_lifetime_hours']
+    ctx = {"idp": idp}
+    if extra_context:
+        ctx.update(extra_context)
+    sid = db.create_session(
+        user_id, org_id, hours,
+        ip=request.remote_addr,  # ProxyFix already resolves the client IP
+        user_agent=request.user_agent.string if request.user_agent else None,
+        auth_context=ctx,
+    )
+    db.log_auth_event('login', f"user:{user_id}", org_id=org_id, user_id=user_id,
+                      session_id=sid, detail=ctx)
+    _identity.invalidate_user_cache(user_id)
+    session.clear()
+    session['sid'] = sid
+    session.permanent = True
+    return sid
+
+
+def _resolve_membership(user_details, idp):
+    """Membership at login: a live invitation wins; otherwise domain auto-join
+    under the org's join policy (invite_only orgs journal the denial and the
+    user lands org-less — they still authenticate). Mutates user_details."""
+    user_id = user_details['id']
+    email = (user_details.get('email') or '').strip().lower()
+
+    inv = db.match_pending_invitation(email)
+    if inv:
+        res = db.accept_invitation(inv['id'], user_id, f"user:{user_id}")
+        if res:
+            user_details['org_id'] = res['org_id']
+            user_details['role'] = res['role']
+            db.log_auth_event('member_joined', f"user:{user_id}", org_id=res['org_id'],
+                              user_id=user_id, detail={"join_method": "invite", "idp": idp})
+            return
+
+    if '@' not in email:
+        return
+    domain = email.split('@')[-1]
+    try:
+        org = db.get_organization_by_domain(domain)
+    except Exception as e:
+        current_app.logger.error(f"Domain lookup failed during login: {e}")
+        return
+    if not org:
+        return
+    policy = db.get_org_identity_config(org['id'])['join_policy']
+    if policy in ('domain_auto_join', 'both'):
+        user_details['org_id'] = org['id']
+        user_details['role'] = 'member'
+        db.update_user_org_and_role(user_id, org['id'], 'member')
+        db.log_auth_event('member_joined', f"user:{user_id}", org_id=org['id'],
+                          user_id=user_id,
+                          detail={"join_method": "auto_join", "idp": idp, "domain": domain})
+        current_app.logger.info(f"User {user_id} auto-joined org {org['name']} (Domain: {domain})")
+    else:
+        db.log_auth_event('login_denied', f"user:{user_id}", org_id=org['id'],
+                          user_id=user_id,
+                          detail={"reason": "join_policy", "idp": idp, "domain": domain})
+        current_app.logger.info(f"User {user_id} not auto-joined to {org['name']}: join_policy={policy}")
+
+# =================================================================
 # PUBLIC APP CONFIG (non-sensitive feature flags for the frontend)
 # =================================================================
 
@@ -137,20 +210,12 @@ def callback():
             user_details['active_profile'] = default_profile
 
         if not user_details.get('org_id'):
-            # NEW: Domain-based Auto-Join
-            # If the user has a domain that matches a verified organization, join them as MEMBER.
+            # Membership: invitation first, then domain auto-join under the
+            # org's join policy (enterprise identity Phase 1).
             try:
-                user_email = user_details.get('email', '')
-                if '@' in user_email:
-                    domain = user_email.split('@')[-1]
-                    existing_org = db.get_organization_by_domain(domain)
-                    if existing_org:
-                        user_details['org_id'] = existing_org['id']
-                        user_details['role'] = 'member'
-                        db.update_user_org_and_role(user_id, existing_org['id'], 'member')
-                        current_app.logger.info(f"User {user_id} auto-joined org {existing_org['name']} (Domain: {domain})")
+                _resolve_membership(user_details, idp='google')
             except Exception as e:
-                current_app.logger.error(f"Error in domain auto-join: {e}")
+                current_app.logger.error(f"Error resolving membership: {e}")
 
         if not user_details.get('org_id'):
             # NEW: "Founder Flow" - Auto-create Personal Organization
@@ -167,21 +232,8 @@ def callback():
             except Exception as e:
                 current_app.logger.error(f"Failed to auto-create org: {e}")
 
-        # FIX: Store minimal data in session to prevent "Cookie too large" errors.
-        session_user = {
-            'id': user_details['id'],
-            'email': user_details.get('email'),
-            'name': user_details.get('name'),
-            'active_profile': user_details.get('active_profile'),
-            'role': user_details.get('role', 'member'),
-            'org_id': user_details.get('org_id')
-        }
-        session['user'] = session_user
-        
-        # Compatibility with Tool Auth (which uses simple keys)
-        session['user_id'] = user_details['id']
-        session['user_email'] = user_details.get('email')
-        
+        _establish_session(user_details, idp='google')
+
         current_app.logger.info(f"Web callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
     except Exception as e:
@@ -271,17 +323,13 @@ def login_mobile():
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
-        # 5. CRITICAL FIX: Set the Flask Session so /api/me works!
-        session_user = {
-            'id': user_details['id'],
-            'email': user_details.get('email'),
-            'name': user_details.get('name'),
-            'active_profile': user_details.get('active_profile'),
-            'role': user_details.get('role', 'member'),
-            'org_id': user_details.get('org_id')
-        }
-        session['user'] = session_user
-        session['user_id'] = user_details['id']
+        # 5. Membership + server-side session (enterprise identity Phase 1)
+        if not user_details.get('org_id'):
+            try:
+                _resolve_membership(user_details, idp='google_mobile')
+            except Exception as e:
+                current_app.logger.error(f"Error resolving membership (mobile): {e}")
+        _establish_session(user_details, idp='google_mobile')
 
         # Return a status token so the frontend knows it succeeded
         return jsonify({"ok": True, "token": "mobile_session_active"})
@@ -321,17 +369,7 @@ def login_local():
     if not check_password_hash(user['password_hash'], password):
         return jsonify({"error": "Invalid credentials."}), 401
 
-    session_user = {
-        'id':             user['id'],
-        'email':          user.get('email'),
-        'name':           user.get('name'),
-        'active_profile': user.get('active_profile') or Config.DEFAULT_PROFILE,
-        'role':           user.get('role', 'admin'),
-        'org_id':         user.get('org_id'),
-    }
-    session['user']       = session_user
-    session['user_id']    = user['id']
-    session['user_email'] = user.get('email')
+    _establish_session(user, idp='local')
 
     current_app.logger.info(f"Local admin login: {email}")
     return jsonify({"ok": True})
@@ -400,18 +438,9 @@ def login_demo():
             
             current_app.logger.info(f"Created new demo user {demo_id}")
 
-        # 4. Create Session
-        session_user = {
-            'id': user_to_login['id'],
-            'email': user_to_login.get('email'),
-            'name': user_to_login.get('name'),
-            'active_profile': user_to_login.get('active_profile', Config.DEFAULT_PROFILE),
-            'role': user_to_login.get('role', 'admin'),
-            'org_id': user_to_login.get('org_id'),
-            'is_demo': True 
-        }
-        session['user'] = session_user
-        session['user_id'] = user_to_login['id']
+        # 4. Create Session — fixed 24h absolute, matching the sandbox purge.
+        _establish_session(user_to_login, idp='demo', lifetime_hours=24,
+                           extra_context={"is_demo": True})
         
         # 5. Return Response with Cookie
         resp = redirect('/')
@@ -493,31 +522,14 @@ def callback_microsoft():
         user_id = mapped_user_info.get('id')
         user_details = db.get_user_details(user_id)
         
-        # Reuse user setup logic (Org/Profile)
+        # Membership + server-side session (enterprise identity Phase 1)
         if not user_details.get('org_id'):
             try:
-                user_email = user_details.get('email', '')
-                if '@' in user_email:
-                    domain = user_email.split('@')[-1]
-                    existing_org = db.get_organization_by_domain(domain)
-                    if existing_org:
-                        user_details['org_id'] = existing_org['id']
-                        user_details['role'] = 'member'
-                        db.update_user_org_and_role(user_id, existing_org['id'], 'member')
+                _resolve_membership(user_details, idp='microsoft')
             except Exception as e:
-                current_app.logger.warning(f"Domain auto-join failed for Microsoft user {user_id}: {e}")
+                current_app.logger.warning(f"Membership resolution failed for Microsoft user {user_id}: {e}")
 
-        # Create session
-        session_user = {
-            'id': user_details['id'],
-            'email': user_details.get('email'),
-            'name': user_details.get('name'),
-            'active_profile': user_details.get('active_profile'),
-            'role': user_details.get('role', 'member'),
-            'org_id': user_details.get('org_id')
-        }
-        session['user'] = session_user
-        session['user_id'] = user_details['id']
+        _establish_session(user_details, idp='microsoft')
         
         # --- Microsoft Token Storage for Tools (Bonus) ---
         # Since we have the token here, we can piggyback and save it for OneDrive use!
@@ -905,15 +917,64 @@ def set_user_models():
 def delete_me():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
+    db.revoke_user_sessions(user_id, f"user:{user_id}")
     db.delete_user(user_id)
     session.clear()
     return jsonify({"status": "success"})
+
+# =================================================================
+# SESSION MANAGEMENT (self-service; enterprise identity Phase 1)
+# =================================================================
+
+@auth_bp.route('/me/sessions', methods=['GET'])
+def list_my_sessions():
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    from flask import g
+    rows = db.list_user_sessions(user_id)
+    current = getattr(g, 'sid', None)
+    out = [{
+        "id": r["id"],
+        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        "last_seen_at": r["last_seen_at"].isoformat() if r.get("last_seen_at") else None,
+        "expires_at": r["expires_at"].isoformat() if r.get("expires_at") else None,
+        "ip": r.get("ip"),
+        "user_agent": r.get("user_agent"),
+        "current": r["id"] == current,
+    } for r in rows]
+    return jsonify({"ok": True, "sessions": out})
+
+@auth_bp.route('/me/sessions/<sid>', methods=['DELETE'])
+def revoke_my_session(sid):
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    row = db.get_session(sid)
+    if not row or row["user_id"] != user_id:
+        return jsonify({"error": "Not found"}), 404
+    db.revoke_session(sid, f"user:{user_id}")
+    return jsonify({"ok": True})
+
+@auth_bp.route('/me/sessions', methods=['DELETE'])
+def revoke_my_other_sessions():
+    """Log out everywhere else — revokes every session except the current."""
+    user_id = session.get('user_id')
+    if not user_id: return jsonify({"error": "Auth required"}), 401
+    from flask import g
+    count = db.revoke_user_sessions(user_id, f"user:{user_id}", keep_sid=getattr(g, 'sid', None))
+    return jsonify({"ok": True, "revoked": count})
 
 @auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():
     """
     [POST /api/logout]
-    Clears the server-side session.
+    Revokes the server-side session and clears the cookie.
     """
+    sid = session.get('sid')
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if sid:
+        db.revoke_session(sid, f"user:{user_id or 'unknown'}", reason='logout')
+        db.log_auth_event('logout', f"user:{user_id or 'unknown'}",
+                          user_id=user_id, session_id=sid)
     session.clear()
+    return jsonify({"ok": True})
     return redirect('/') if request.method == 'GET' else jsonify({"status": "success"})

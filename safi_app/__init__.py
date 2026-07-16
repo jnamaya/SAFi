@@ -25,6 +25,17 @@ def create_app():
     app.config.from_object(Config)
     Config.validate()
 
+    # Enterprise identity Phase 1: the cookie holds only a server-side session
+    # id. Permanent so the sid survives browser restarts (absolute/idle expiry
+    # is enforced server-side); REFRESH_EACH_REQUEST must stay False or the
+    # in-memory session shim would be serialized on every response (see
+    # core/identity.py).
+    from datetime import timedelta
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+    app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+    app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
+    app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+
     from .persistence import crypto
     if not crypto.is_enabled():
         logging.getLogger(__name__).warning(
@@ -112,6 +123,11 @@ def create_app():
     app.register_blueprint(incidents_bp, url_prefix='/api')
     app.register_blueprint(records_bp, url_prefix='/api')
     app.register_blueprint(evaluate_bp, url_prefix='/api')
+
+    # Server-side session resolution (enterprise identity Phase 1).
+    from .core.identity import resolve_session, strip_session_shim
+    app.before_request(resolve_session)
+    app.after_request(strip_session_shim)
 
     @app.after_request
     def add_security_headers(response):

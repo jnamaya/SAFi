@@ -248,7 +248,7 @@ def update_user_role(org_id, user_id):
         return jsonify({"error": "Invalid role"}), 400
         
     try:
-        db.update_member_role(user_id, org_id, new_role)
+        db.update_member_role(user_id, org_id, new_role, actor=_actor())
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
     except Exception as e:
         current_app.logger.error(f"Error updating role: {e}")
@@ -265,10 +265,117 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
-        db.remove_member_from_org(user_id, org_id)
+        db.remove_member_from_org(user_id, org_id, actor=_actor())
         return jsonify({"status": "removed", "user_id": user_id})
     except Exception as e:
         current_app.logger.error(f"Error removing member: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+# -------------------------------------------------------------------------
+# ENTERPRISE IDENTITY (Phase 1): member sessions, invitations, identity config
+# -------------------------------------------------------------------------
+
+def _actor():
+    user = session.get('user') or {}
+    return user.get('email') or user.get('id') or 'unknown'
+
+
+def _member_of_org(org_id, user_id):
+    details = db.get_user_details(user_id)
+    return bool(details and str(details.get('org_id')) == str(org_id))
+
+
+@organizations_bp.route('/organizations/<org_id>/members/<user_id>/sessions', methods=['GET'])
+@require_role('admin')
+def list_member_sessions(org_id, user_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    if not _member_of_org(org_id, user_id):
+        return jsonify({"error": "Not a member of this organization"}), 404
+    rows = db.list_user_sessions(user_id)
+    return jsonify({"ok": True, "sessions": [{
+        "id": r["id"][:8] + "…",  # opaque preview — admins revoke in bulk, never need the full sid
+        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        "last_seen_at": r["last_seen_at"].isoformat() if r.get("last_seen_at") else None,
+        "ip": r.get("ip"), "user_agent": r.get("user_agent"),
+    } for r in rows]})
+
+
+@organizations_bp.route('/organizations/<org_id>/members/<user_id>/sessions', methods=['DELETE'])
+@require_role('admin')
+def revoke_member_sessions(org_id, user_id):
+    """Force-logout a member everywhere (admin off-boarding lever)."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    if not _member_of_org(org_id, user_id):
+        return jsonify({"error": "Not a member of this organization"}), 404
+    count = db.revoke_user_sessions(user_id, f"admin:{_actor()}")
+    return jsonify({"ok": True, "revoked": count})
+
+
+@organizations_bp.route('/organizations/<org_id>/invitations', methods=['GET'])
+@require_role('admin')
+def list_invitations(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    rows = db.list_org_invitations(org_id)
+    for r in rows:
+        for k in ('created_at', 'expires_at', 'accepted_at', 'revoked_at'):
+            if r.get(k) is not None:
+                r[k] = r[k].isoformat()
+    return jsonify({"ok": True, "invitations": rows})
+
+
+@organizations_bp.route('/organizations/<org_id>/invitations', methods=['POST'])
+@require_role('admin')
+def create_invitation(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    try:
+        inv = db.create_org_invitation(org_id, data.get('email'),
+                                       data.get('role', 'member'), _actor())
+        return jsonify({"ok": True, "invitation": inv}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error creating invitation: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/invitations/<invite_id>', methods=['DELETE'])
+@require_role('admin')
+def revoke_invitation(org_id, invite_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    ok = db.revoke_org_invitation(org_id, invite_id, _actor())
+    return (jsonify({"ok": True}) if ok
+            else (jsonify({"error": "Invitation not found or already resolved"}), 404))
+
+
+@organizations_bp.route('/organizations/<org_id>/identity', methods=['GET'])
+@require_role('admin')
+def get_identity_config(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(db.get_org_identity_config(org_id))
+
+
+@organizations_bp.route('/organizations/<org_id>/identity', methods=['PUT'])
+@require_role('admin')
+def update_identity_config(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    changes = {k: data[k] for k in
+               ('idle_timeout_minutes', 'session_lifetime_hours', 'join_policy') if k in data}
+    try:
+        return jsonify(db.set_org_identity_config(org_id, changes, _actor()))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating identity config: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
 # -------------------------------------------------------------------------

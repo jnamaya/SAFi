@@ -606,6 +606,56 @@ def init_db():
             )
         ''')
 
+        # --- Enterprise identity Phase 1: server-side sessions + membership ---
+        # (docs/internal/DESIGN_ENTERPRISE_IDENTITY.md §3.1)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sessions (
+                id            CHAR(43) PRIMARY KEY,
+                user_id       VARCHAR(255) NOT NULL,
+                org_id        VARCHAR(36) NULL,
+                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at    TIMESTAMP NOT NULL,
+                revoked_at    TIMESTAMP NULL,
+                revoked_by    VARCHAR(255) NULL,
+                ip            VARCHAR(45) NULL,
+                user_agent    VARCHAR(255) NULL,
+                auth_context  JSON NULL,
+                INDEX idx_sessions_user (user_id),
+                INDEX idx_sessions_expires (expires_at)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS org_invitations (
+                id          CHAR(36) PRIMARY KEY,
+                org_id      VARCHAR(36) NOT NULL,
+                email       VARCHAR(255) NOT NULL,
+                role        ENUM('admin','editor','auditor','member') DEFAULT 'member',
+                invited_by  VARCHAR(255) NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at  TIMESTAMP NOT NULL,
+                accepted_at TIMESTAMP NULL,
+                revoked_at  TIMESTAMP NULL,
+                UNIQUE KEY uq_org_email (org_id, email)
+            )
+        ''')
+        # Append-only, no FKs — lifecycle records must survive user/org deletion
+        # (same rationale as chat_audit_trail).
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS auth_events (
+                id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+                ts         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                org_id     VARCHAR(36) NULL,
+                user_id    VARCHAR(255) NULL,
+                session_id CHAR(43) NULL,
+                event      VARCHAR(40) NOT NULL,
+                detail     JSON NULL,
+                actor      VARCHAR(255) NOT NULL,
+                INDEX idx_auth_events_org (org_id, ts),
+                INDEX idx_auth_events_user (user_id, ts)
+            )
+        ''')
+
         # --- Encryption-at-rest column migrations ---
         # Fernet ciphertext is base64 (~1.34x + 57 bytes), so TEXT columns that
         # hold encrypted content must widen to MEDIUMTEXT; JSON columns cannot
@@ -2951,23 +3001,429 @@ def list_orgs_with_retention():
         cursor.close()
         conn.close()
 
-def update_member_role(user_id, org_id, new_role):
+def update_member_role(user_id, org_id, new_role, actor="system"):
+    """Role change revokes the target's live sessions in the SAME transaction
+    and journals the change — a demoted admin must not keep an admin session
+    (fresh role is re-read per request, but revocation forces a clean re-auth
+    and provides the examiner-facing event)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT role FROM users WHERE id=%s AND org_id=%s", (user_id, org_id))
+        row = cursor.fetchone()
+        prior_role = row[0] if row else None
         cursor.execute("UPDATE users SET role=%s WHERE id=%s AND org_id=%s", (new_role, user_id, org_id))
+        revoked = _revoke_user_sessions_cursor(cursor, user_id, f"admin:{actor}")
+        log_auth_event("role_changed", f"admin:{actor}", org_id=org_id, user_id=user_id,
+                       detail={"prior_role": prior_role, "new_role": new_role,
+                               "sessions_revoked": revoked}, cursor=cursor)
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-def remove_member_from_org(user_id, org_id):
+def remove_member_from_org(user_id, org_id, actor="system"):
+    """Removal revokes all the member's live sessions in the SAME transaction
+    and journals member_removed — off-boarding evidence (design §3.4)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         # We simply set org_id to NULL and role to 'member' (resetting them)
         cursor.execute("UPDATE users SET org_id=NULL, role='member' WHERE id=%s AND org_id=%s", (user_id, org_id))
+        removed = cursor.rowcount > 0
+        revoked = _revoke_user_sessions_cursor(cursor, user_id, "system:member_removed")
+        log_auth_event("member_removed", f"admin:{actor}", org_id=org_id, user_id=user_id,
+                       detail={"sessions_revoked": revoked, "removed": removed}, cursor=cursor)
         conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+# -------------------------------------------------------------------------
+# ENTERPRISE IDENTITY PHASE 1 — sessions, auth events, invitations
+# (docs/internal/DESIGN_ENTERPRISE_IDENTITY.md)
+# -------------------------------------------------------------------------
+
+# Platform defaults when an org has not configured identity settings
+# (consumer-friendly; a regulated org tightens via set_org_identity_config).
+IDENTITY_DEFAULTS = {
+    "idle_timeout_minutes": 7 * 24 * 60,   # 7 days
+    "session_lifetime_hours": 30 * 24,     # 30 days absolute
+    "join_policy": "domain_auto_join",     # preserves pre-Phase-1 behavior
+}
+JOIN_POLICIES = ("invite_only", "domain_auto_join", "both")
+
+
+def log_auth_event(event, actor, org_id=None, user_id=None, session_id=None, detail=None, cursor=None):
+    """Append a row to the auth_events journal. Pass a cursor to journal
+    inside the caller's transaction (lifecycle changes must not be able to
+    dodge the journal); otherwise uses its own connection."""
+    sql = ("INSERT INTO auth_events (org_id, user_id, session_id, event, detail, actor) "
+           "VALUES (%s, %s, %s, %s, %s, %s)")
+    args = (org_id, user_id, session_id, event,
+            json.dumps(detail) if detail is not None else None, actor)
+    if cursor is not None:
+        cursor.execute(sql, args)
+        return
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, args)
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def create_session(user_id, org_id, lifetime_hours, ip=None, user_agent=None, auth_context=None):
+    """Create a server-side session row; returns the opaque session id — the
+    only thing the cookie will hold."""
+    sid = secrets.token_urlsafe(32)  # 43 chars base64url
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO sessions (id, user_id, org_id, expires_at, ip, user_agent, auth_context) "
+            "VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL %s HOUR), %s, %s, %s)",
+            (sid, user_id, org_id, int(lifetime_hours), ip,
+             (user_agent or "")[:255] or None,
+             json.dumps(auth_context) if auth_context else None),
+        )
+        conn.commit()
+        return sid
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_session(sid):
+    """Session row plus liveness computed IN SQL (is_expired, idle_seconds) so
+    the resolver never mixes Python clock/timezone with MySQL's."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT *, (expires_at <= NOW()) AS is_expired, "
+            "TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS idle_seconds "
+            "FROM sessions WHERE id=%s",
+            (sid,),
+        )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def touch_session(sid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE sessions SET last_seen_at=NOW() WHERE id=%s", (sid,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def revoke_session(sid, revoked_by, reason="revoked"):
+    """Revoke one session (idempotent). Journals session_revoked."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE sessions SET revoked_at=NOW(), revoked_by=%s WHERE id=%s AND revoked_at IS NULL",
+            (revoked_by, sid),
+        )
+        revoked = cursor.rowcount > 0
+        if revoked:
+            cursor.execute("SELECT user_id, org_id FROM sessions WHERE id=%s", (sid,))
+            row = cursor.fetchone()
+            log_auth_event("session_revoked", revoked_by,
+                           org_id=row[1] if row else None,
+                           user_id=row[0] if row else None,
+                           session_id=sid, detail={"reason": reason}, cursor=cursor)
+        conn.commit()
+        return revoked
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _revoke_user_sessions_cursor(cursor, user_id, revoked_by):
+    """Same-transaction bulk revoke; returns count. Used by member lifecycle."""
+    cursor.execute(
+        "UPDATE sessions SET revoked_at=NOW(), revoked_by=%s "
+        "WHERE user_id=%s AND revoked_at IS NULL AND expires_at > NOW()",
+        (revoked_by, user_id),
+    )
+    return cursor.rowcount
+
+
+def revoke_user_sessions(user_id, revoked_by, keep_sid=None):
+    """Revoke all of a user's live sessions (optionally keeping one — 'log out
+    everywhere else'). Returns count."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        if keep_sid:
+            cursor.execute(
+                "UPDATE sessions SET revoked_at=NOW(), revoked_by=%s "
+                "WHERE user_id=%s AND id != %s AND revoked_at IS NULL AND expires_at > NOW()",
+                (revoked_by, user_id, keep_sid),
+            )
+        else:
+            _revoke_user_sessions_cursor(cursor, user_id, revoked_by)
+        count = cursor.rowcount
+        if count:
+            log_auth_event("session_revoked", revoked_by, user_id=user_id,
+                           detail={"count": count, "bulk": True}, cursor=cursor)
+        conn.commit()
+        return count
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_user_sessions(user_id, active_only=True):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        q = ("SELECT id, user_id, org_id, created_at, last_seen_at, expires_at, "
+             "revoked_at, revoked_by, ip, user_agent FROM sessions WHERE user_id=%s")
+        if active_only:
+            q += " AND revoked_at IS NULL AND expires_at > NOW()"
+        q += " ORDER BY last_seen_at DESC"
+        cursor.execute(q, (user_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def sweep_expired_sessions(older_than_days=90):
+    """Delete session rows expired/revoked more than N days ago (housekeeping;
+    auth_events retains the lifecycle history)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM sessions WHERE (expires_at < DATE_SUB(NOW(), INTERVAL %s DAY)) "
+            "OR (revoked_at IS NOT NULL AND revoked_at < DATE_SUB(NOW(), INTERVAL %s DAY))",
+            (older_than_days, older_than_days),
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_org_identity_config(org_id):
+    """Org identity settings with platform defaults. No org → defaults."""
+    cfg = dict(IDENTITY_DEFAULTS)
+    if not org_id:
+        return cfg
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        ident = settings.get("identity") or {}
+        idle = ident.get("idle_timeout_minutes")
+        life = ident.get("session_lifetime_hours")
+        policy = ident.get("join_policy")
+        if isinstance(idle, int) and 5 <= idle <= 60 * 24 * 30:
+            cfg["idle_timeout_minutes"] = idle
+        if isinstance(life, int) and 1 <= life <= 24 * 30:
+            cfg["session_lifetime_hours"] = life
+        if policy in JOIN_POLICIES:
+            cfg["join_policy"] = policy
+        return cfg
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_org_identity_config(org_id, changes, actor):
+    """Merge identity settings AND journal the change to auth_events in the
+    same transaction (mirror of set_org_retention_config's contract).
+    changes: any of idle_timeout_minutes (int|None resets), session_lifetime_hours
+    (int|None), join_policy (str). Raises ValueError on invalid input."""
+    validated = {}
+    if "idle_timeout_minutes" in changes:
+        v = changes["idle_timeout_minutes"]
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int) or not (5 <= v <= 60 * 24 * 30)):
+            raise ValueError("idle_timeout_minutes must be 5..43200 or null for the platform default")
+        validated["idle_timeout_minutes"] = v
+    if "session_lifetime_hours" in changes:
+        v = changes["session_lifetime_hours"]
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int) or not (1 <= v <= 24 * 30)):
+            raise ValueError("session_lifetime_hours must be 1..720 or null for the platform default")
+        validated["session_lifetime_hours"] = v
+    if "join_policy" in changes:
+        if changes["join_policy"] not in JOIN_POLICIES:
+            raise ValueError(f"join_policy must be one of {', '.join(JOIN_POLICIES)}")
+        validated["join_policy"] = changes["join_policy"]
+    if not validated:
+        raise ValueError("nothing to change")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        ident = settings.get("identity") or {}
+        changed = {}
+        for k, v in validated.items():
+            old = ident.get(k)
+            if old != v:
+                changed[k] = {"old": old, "new": v}
+                if v is None:
+                    ident.pop(k, None)
+                else:
+                    ident[k] = v
+        if changed:
+            settings["identity"] = ident
+            timeout_changes = {k: v for k, v in changed.items() if k != "join_policy"}
+            if timeout_changes:
+                log_auth_event("identity_config_changed", actor, org_id=org_id,
+                               detail=timeout_changes, cursor=cursor)
+            if "join_policy" in changed:
+                log_auth_event("join_policy_changed", actor, org_id=org_id,
+                               detail={"join_policy": changed["join_policy"]}, cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_org_identity_config(org_id)
+
+
+def create_org_invitation(org_id, email, role, invited_by, expires_days=14):
+    """Create (or refresh a pending) invitation. Journals member_invited."""
+    if role not in ("admin", "editor", "auditor", "member"):
+        raise ValueError("invalid role")
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        raise ValueError("valid email required")
+    invite_id = str(uuid.uuid4())
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO org_invitations (id, org_id, email, role, invited_by, expires_at) "
+            "VALUES (%s, %s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL %s DAY)) "
+            "ON DUPLICATE KEY UPDATE role=VALUES(role), invited_by=VALUES(invited_by), "
+            "expires_at=VALUES(expires_at), accepted_at=NULL, revoked_at=NULL",
+            (invite_id, org_id, email, role, invited_by, int(expires_days)),
+        )
+        # Flag invites outside the org's verified domain (contractor case).
+        cursor.execute("SELECT domain_to_verify FROM organizations WHERE id=%s AND domain_verified=TRUE", (org_id,))
+        row = cursor.fetchone()
+        external = bool(row and row[0] and not email.endswith("@" + row[0].lower()))
+        log_auth_event("member_invited", invited_by, org_id=org_id,
+                       detail={"email": email, "role": role, "external_domain": external},
+                       cursor=cursor)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return {"id": invite_id, "org_id": org_id, "email": email, "role": role,
+            "external_domain": external}
+
+
+def list_org_invitations(org_id, pending_only=True):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        q = "SELECT * FROM org_invitations WHERE org_id=%s"
+        if pending_only:
+            q += " AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()"
+        q += " ORDER BY created_at DESC"
+        cursor.execute(q, (org_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def revoke_org_invitation(org_id, invite_id, actor):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE org_invitations SET revoked_at=NOW() "
+            "WHERE id=%s AND org_id=%s AND accepted_at IS NULL AND revoked_at IS NULL",
+            (invite_id, org_id),
+        )
+        ok = cursor.rowcount > 0
+        if ok:
+            log_auth_event("invite_revoked", actor, org_id=org_id,
+                           detail={"invite_id": invite_id}, cursor=cursor)
+        conn.commit()
+        return ok
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def match_pending_invitation(email):
+    """Most recent live invitation for this (verified) email, if any."""
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT * FROM org_invitations WHERE email=%s AND accepted_at IS NULL "
+            "AND revoked_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1",
+            (email,),
+        )
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def accept_invitation(invite_id, user_id, actor):
+    """Accept: stamp the invite, set the user's org/role, journal — one txn.
+    Returns {org_id, role} or None if the invite is no longer live."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT * FROM org_invitations WHERE id=%s AND accepted_at IS NULL "
+            "AND revoked_at IS NULL AND expires_at > NOW() FOR UPDATE",
+            (invite_id,),
+        )
+        inv = cursor.fetchone()
+        if not inv:
+            conn.rollback()
+            return None
+        cursor.execute("UPDATE org_invitations SET accepted_at=NOW() WHERE id=%s", (invite_id,))
+        cursor.execute("UPDATE users SET org_id=%s, role=%s WHERE id=%s",
+                       (inv["org_id"], inv["role"], user_id))
+        log_auth_event("invite_accepted", actor, org_id=inv["org_id"], user_id=user_id,
+                       detail={"invite_id": invite_id, "role": inv["role"],
+                               "join_method": "invite"}, cursor=cursor)
+        conn.commit()
+        return {"org_id": inv["org_id"], "role": inv["role"]}
     finally:
         cursor.close()
         conn.close()

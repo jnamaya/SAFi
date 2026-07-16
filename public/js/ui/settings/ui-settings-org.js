@@ -250,6 +250,37 @@ function renderOrganizationUI(container, org, charter) {
         </div>
 
         <div class="settings-card">
+             <h4 class="text-lg font-semibold mb-1">Identity &amp; Sessions</h4>
+             <p class="text-xs text-gray-500 mb-4">How members join and how long their sessions live. Changes are journaled to the auth events log. Sessions are revocable server-side — removing a member or changing a role ends their access on the next request.</p>
+             <div class="grid md:grid-cols-3 gap-4">
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Join policy</span>
+                     <select id="sel-join-policy" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <option value="domain_auto_join">Domain auto-join</option>
+                         <option value="invite_only">Invite only</option>
+                         <option value="both">Invites + domain auto-join</option>
+                     </select>
+                     <span class="block text-xs text-gray-400 mt-1">Auto-join admits every account on your verified domain, including contractors and shared mailboxes.</span>
+                 </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Idle timeout (minutes)</span>
+                     <input type="number" id="inp-idle-timeout" min="5" max="43200" placeholder="platform default: 10080"
+                         class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                     <span class="block text-xs text-gray-400 mt-1">Regulated orgs typically use 30.</span>
+                 </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Session lifetime (hours)</span>
+                     <input type="number" id="inp-session-lifetime" min="1" max="720" placeholder="platform default: 720"
+                         class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                     <span class="block text-xs text-gray-400 mt-1">Absolute cap; forces a fresh IdP login. Regulated orgs typically use 12.</span>
+                 </label>
+             </div>
+             <div class="flex justify-end mt-4">
+                 <button id="btn-save-identity" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
+             </div>
+        </div>
+
+        <div class="settings-card">
             <section>
                 <div class="flex items-center justify-between mb-3">
                      <h4 class="text-lg font-semibold">Members</h4>
@@ -259,6 +290,22 @@ function renderOrganizationUI(container, org, charter) {
                      <div class="p-8 text-center text-neutral-500">
                          <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
                      </div>
+                </div>
+                <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
+                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Invite a member</span>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="email" id="inp-invite-email" placeholder="person@company.com"
+                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                        <select id="sel-invite-role" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                            <option value="member">member</option>
+                            <option value="auditor">auditor</option>
+                            <option value="editor">editor</option>
+                            <option value="admin">admin</option>
+                        </select>
+                        <button id="btn-send-invite" class="px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold">Invite</button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Invites expire after 14 days and admit the address on their next login, regardless of join policy.</p>
+                    <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
                 </div>
             </section>
         </div>
@@ -498,10 +545,79 @@ function renderOrganizationUI(container, org, charter) {
         });
     }
 
+    // --- Identity & Sessions ---
+    const selPolicy = container.querySelector('#sel-join-policy');
+    if (selPolicy) {
+        api.getOrgIdentity(org.id).then(cfg => {
+            selPolicy.value = cfg.join_policy || 'domain_auto_join';
+            container.querySelector('#inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
+            container.querySelector('#inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
+        }).catch(() => {});
+        container.querySelector('#btn-save-identity').addEventListener('click', async () => {
+            const idleRaw = container.querySelector('#inp-idle-timeout').value;
+            const lifeRaw = container.querySelector('#inp-session-lifetime').value;
+            try {
+                await api.updateOrgIdentity(org.id, {
+                    join_policy: selPolicy.value,
+                    idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
+                    session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
+                });
+                ui.showToast('Identity settings saved', 'success');
+            } catch (e) {
+                ui.showToast(e.message || 'Save failed', 'error');
+            }
+        });
+    }
+
+    // --- Invitations ---
+    const btnInvite = container.querySelector('#btn-send-invite');
+    if (btnInvite) {
+        btnInvite.addEventListener('click', async () => {
+            const email = container.querySelector('#inp-invite-email').value.trim();
+            if (!email) { ui.showToast('Enter an email address', 'error'); return; }
+            try {
+                const res = await api.createInvitation(org.id, email, container.querySelector('#sel-invite-role').value);
+                ui.showToast(res.invitation?.external_domain
+                    ? 'Invite sent (outside your verified domain)' : 'Invite sent', 'success');
+                container.querySelector('#inp-invite-email').value = '';
+                loadPendingInvites(org.id);
+            } catch (e) {
+                ui.showToast(e.message || 'Invite failed', 'error');
+            }
+        });
+        loadPendingInvites(org.id);
+    }
+
     // --- Load Members ---
     // (Retention, legal hold, examiner export, evidence log, and the provider
     // allow-list moved to the Compliance tab — ui-settings-compliance.js.)
     loadOrganizationMembers(org.id);
+}
+
+async function loadPendingInvites(orgId) {
+    const el = document.getElementById('pending-invites-list');
+    if (!el) return;
+    try {
+        const res = await api.listInvitations(orgId);
+        const invites = res.invitations || [];
+        if (!invites.length) { el.innerHTML = ''; return; }
+        el.innerHTML = `<span class="text-xs font-bold text-gray-400 uppercase">Pending invites</span>` +
+            invites.map(i => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <span>${i.email} <span class="text-xs text-gray-400">(${i.role}, expires ${new Date(i.expires_at).toLocaleDateString()})</span></span>
+                <button data-invite="${i.id}" class="text-xs text-red-500 hover:underline">Revoke</button>
+            </div>`).join('');
+        el.querySelectorAll('[data-invite]').forEach(btn => btn.addEventListener('click', async () => {
+            try {
+                await api.revokeInvitation(orgId, btn.getAttribute('data-invite'));
+                loadPendingInvites(orgId);
+            } catch (e) {
+                ui.showToast(e.message || 'Revoke failed', 'error');
+            }
+        }));
+    } catch (e) {
+        el.innerHTML = '';
+    }
 }
 
 function renderCharterValues(valuesData, container) {
