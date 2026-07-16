@@ -847,6 +847,10 @@ video {
   margin-top: -0.125rem;
 }
 
+.-mt-2 {
+  margin-top: -0.5rem;
+}
+
 .mb-0 {
   margin-bottom: 0px;
 }
@@ -2825,11 +2829,6 @@ video {
 .text-purple-800 {
   --tw-text-opacity: 1;
   color: rgb(107 33 168 / var(--tw-text-opacity, 1));
-}
-
-.text-red-400 {
-  --tw-text-opacity: 1;
-  color: rgb(248 113 113 / var(--tw-text-opacity, 1));
 }
 
 .text-red-500 {

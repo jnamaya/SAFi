@@ -406,10 +406,10 @@ function renderControlPanel() {
     else navDash.classList.add('hidden');
   }
 
-  const navIncidents = document.getElementById('nav-incidents');
-  if (navIncidents) {
-    if (canSeeIncidents) navIncidents.classList.remove('hidden');
-    else navIncidents.classList.add('hidden');
+  const navCompliance = document.getElementById('nav-compliance');
+  if (navCompliance) {
+    if (canSeeIncidents) navCompliance.classList.remove('hidden');
+    else navCompliance.classList.add('hidden');
   }
 
   // --- NEW: Hide entire Management Group if no children are visible ---

@@ -1,7 +1,8 @@
-// Security Incidents tab (SEC Reg S-P registry, admin-only).
-// List view with 30-day notification-clock badges, create/edit form,
-// detail view with event timeline and JSON/CSV export. SAFi records and
+// Security Incidents section of the Compliance tab (SEC Reg S-P registry,
+// admin-only). List view with 30-day notification-clock badges, create/edit
+// form, detail view with event timeline and JSON/CSV export. SAFi records and
 // tracks; the firm sends actual customer notices via its own channels.
+// Rendered by ui-settings-compliance.js into #compliance-incidents.
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 
@@ -59,14 +60,10 @@ function vendorBadge(clock) {
     return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Vendor notice ${clock.vendor_notice_hours}h</span>`;
 }
 
-export async function renderSettingsIncidentsTab() {
-    ui._ensureElements();
-    const container = ui.elements.cpTabIncidents;
+export async function renderIncidentsSection(container, org) {
     if (!container) return;
     container.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
     try {
-        const orgRes = await api.getMyOrganization();
-        const org = orgRes ? orgRes.organization : null;
         if (!org) {
             container.innerHTML = `<p class="text-sm text-gray-500">You need an organization (and the admin role) to manage incidents.</p>`;
             return;
@@ -74,7 +71,7 @@ export async function renderSettingsIncidentsTab() {
         orgId = org.id;
         await renderList(container);
     } catch (e) {
-        console.error('Incidents tab error:', e);
+        console.error('Incidents section error:', e);
         container.innerHTML = `<p class="text-sm text-red-500">Failed to load incidents.</p>`;
     }
 }
@@ -95,7 +92,7 @@ async function renderList(container) {
     container.innerHTML = `
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h1 class="text-2xl font-bold">Security Incidents</h1>
+                <h2 class="text-xl font-semibold">Security Incidents</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Reg S-P incident-response registry. The 30-day customer-notice clock runs from when the firm became aware.</p>
             </div>
             <button id="incident-new-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">New Incident</button>
@@ -128,7 +125,7 @@ function renderForm(container, incident) {
     const sel = (opts, cur) => opts.map(o => `<option value="${o}" ${o === cur ? 'selected' : ''}>${o}</option>`).join('');
     container.innerHTML = `
         <button id="incident-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to incidents</button>
-        <h1 class="text-2xl font-bold mb-4">${incident ? 'Edit Incident' : 'New Incident'}</h1>
+        <h2 class="text-xl font-semibold mb-4">${incident ? "Edit Incident" : "New Incident"}</h2>
         <form id="incident-form" class="max-w-2xl space-y-4">
             ${formField('Title *', `<input name="title" required maxlength="255" class="${INPUT_CLS}" value="${esc(i.title || '')}">`)}
             ${formField('Description', `<textarea name="description" rows="3" class="${INPUT_CLS}">${esc(i.description || '')}</textarea>`)}

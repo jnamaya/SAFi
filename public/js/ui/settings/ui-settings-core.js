@@ -1,15 +1,5 @@
 import * as ui from '../ui.js';
-import { renderSettingsDashboardTab } from './ui-settings-dashboard.js'; // Extracted separately or kept inline? Plan didn't specifying dashboard but it's small.
-// Wait, plan didn't have dashboard. I should verify if I extract it or keep it.
-// The plan listed 8 modules. Dashboard wasn't one of them explicitly, but it's part of the tabs.
-// Looking at the code, renderSettingsDashboardTab is independent. I will add it to `ui-settings-core.js` or a new `ui-settings-dashboard.js`.
-// Let's check `ui-settings-core.js` responsibility. It handles tabs.
-// I'll make a decision to put Dashboard in `ui-settings-dashboard.js` to be clean, or just keep it in core if it's tiny.
-// It creates an iframe. It's distinct. I'll create `ui-settings-dashboard.js`.
-
-// Re-evaluating core imports based on what I will create.
-// Core needs to import the render functions to call them in the switch/click handler.
-
+import { renderSettingsDashboardTab } from './ui-settings-dashboard.js';
 import { renderSettingsOrganizationTab, setOrgCurrentUser } from './ui-settings-org.js';
 import { renderSettingsProfileTab } from './ui-settings-agents.js';
 import { renderSettingsModelsTab } from './ui-settings-models.js';
@@ -17,9 +7,7 @@ import { renderSettingsMyProfileTab } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
 import { renderSettingsHelpTab } from './ui-settings-help.js';
-import { renderSettingsIncidentsTab } from './ui-settings-incidents.js';
-// I'll add dashboard here to be safe and create the file later.
-// Note: Imports might fail until files exist, but that's fine as long as I create them all before running.
+import { renderSettingsComplianceTab } from './ui-settings-compliance.js';
 
 let currentUser = null;
 
@@ -131,8 +119,8 @@ export function setupControlPanelTabs() {
                 renderSettingsGovernanceTab();
             } else if (tabId === 'organization') {
                 renderSettingsOrganizationTab();
-            } else if (tabId === 'incidents') {
-                renderSettingsIncidentsTab();
+            } else if (tabId === 'compliance') {
+                renderSettingsComplianceTab();
             } else if (tabId === 'profile') {
                 renderSettingsMyProfileTab();
             } else if (tabId === 'agents') {

@@ -34,7 +34,7 @@ export function _initElements() {
     cpTabMyProfile: document.getElementById('tab-profile'),   // Content ID for user profile
     cpTabGovernance: document.getElementById('tab-governance'),
     cpTabOrganization: document.getElementById('tab-organization'),
-    cpTabIncidents: document.getElementById('tab-incidents'),
+    cpTabCompliance: document.getElementById('tab-compliance'),
 
     loginButton: document.getElementById('login-button'),
     sidebarContainer: document.getElementById('sidebar-container'),
