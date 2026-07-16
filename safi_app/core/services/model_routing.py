@@ -8,6 +8,24 @@ Kept dependency-free so it can be imported anywhere without circular-import risk
 from __future__ import annotations
 
 
+# Provider governance metadata. baa_capable = the provider offers a HIPAA
+# Business Associate Agreement on an enterprise/API tier (OpenAI, Anthropic,
+# Google via Vertex, Mistral enterprise — verified July 2026); eu_hostable =
+# an EU/EEA-resident hosting option exists. Consumed by the per-org provider
+# allow-list (provider_governance.py), the /models endpoint, and the
+# org-settings UI badges. Keys MUST match build_providers_config below.
+PROVIDER_METADATA = {
+    "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True},
+    "anthropic": {"label": "Anthropic",     "baa_capable": True,  "eu_hostable": True},
+    "gemini":    {"label": "Google Gemini", "baa_capable": True,  "eu_hostable": True},
+    "mistral":   {"label": "Mistral",       "baa_capable": True,  "eu_hostable": True},
+    "groq":      {"label": "Groq",          "baa_capable": False, "eu_hostable": False},
+    "cerebras":  {"label": "Cerebras",      "baa_capable": False, "eu_hostable": False},
+    "deepseek":  {"label": "DeepSeek",      "baa_capable": False, "eu_hostable": False},
+    "zhipu":     {"label": "Zhipu (Z.ai)",  "baa_capable": False, "eu_hostable": False},
+}
+
+
 def detect_provider(model_name: str) -> str:
     """Map a model name to its provider key by prefix. Defaults to 'groq'."""
     if not model_name:

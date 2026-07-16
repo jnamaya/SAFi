@@ -8,6 +8,8 @@ import re
 from datetime import datetime
 
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
+from ..core.rbac import get_current_org_id
+from ..core.services.provider_governance import activate_org
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
@@ -307,6 +309,7 @@ async def generate_policy_content_endpoint():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
+        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
         
         prompt = ""

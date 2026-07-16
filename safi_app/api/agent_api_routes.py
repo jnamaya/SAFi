@@ -7,6 +7,8 @@ from ..config import Config
 from .conversations import global_safi_cache  # Import Cache
 
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
+from ..core.rbac import get_current_org_id
+from ..core.services.provider_governance import activate_org
 
 agent_api_bp = Blueprint('agent_api', __name__)
 
@@ -239,6 +241,7 @@ async def generate_rubric():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
+        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
         
         system_prompt = (
@@ -299,6 +302,7 @@ async def generate_values():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
+        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
         
         # Enhanced prompt to include rubrics with scoring guide
@@ -367,6 +371,7 @@ async def generate_scope():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": { "provider": detected_provider, "model": model } }
         }
+        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
 
         system_prompt = (

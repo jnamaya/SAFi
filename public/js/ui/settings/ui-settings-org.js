@@ -293,6 +293,25 @@ function renderOrganizationUI(container, org, charter) {
         </div>
 
         <div class="settings-card">
+             <h4 class="text-lg font-semibold mb-1">AI Provider Allow-List</h4>
+             <p class="text-xs text-gray-500 mb-4">Restrict which LLM providers may receive your organization's content — across chat, audits, and background tasks. Enforcement fails closed: blocked providers are never silently substituted. Changes are recorded in the compliance evidence log.</p>
+             <div class="space-y-4">
+                 <label class="flex items-center gap-2 text-sm">
+                     <input type="checkbox" id="chk-provider-restrict" ${org.settings?.provider_allowlist ? 'checked' : ''}>
+                     <span class="font-bold text-gray-700 dark:text-gray-300">Restrict providers</span>
+                     <span class="text-xs text-gray-400">(unchecked = all providers allowed)</span>
+                 </label>
+                 <div id="provider-checklist" class="grid md:grid-cols-2 gap-2 ${org.settings?.provider_allowlist ? '' : 'hidden'}">
+                     <div class="text-sm text-gray-400">Loading providers…</div>
+                 </div>
+                 <p class="text-xs text-gray-400">BAA = provider offers a HIPAA Business Associate Agreement on an enterprise tier. EU = an EU/EEA-resident hosting option exists. Voice synthesis via edge-tts is governed separately.</p>
+                 <div class="flex justify-end">
+                     <button id="btn-save-providers" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Provider Settings</button>
+                 </div>
+             </div>
+        </div>
+
+        <div class="settings-card">
             <section>
                 <div class="flex items-center justify-between mb-3">
                      <h4 class="text-lg font-semibold">Members</h4>
@@ -570,8 +589,52 @@ function renderOrganizationUI(container, org, charter) {
         loadComplianceLog(org.id);
     }
 
+    // --- AI Provider Allow-List ---
+    const chkRestrict = container.querySelector('#chk-provider-restrict');
+    if (chkRestrict) {
+        const checklist = container.querySelector('#provider-checklist');
+        chkRestrict.addEventListener('change', () => checklist.classList.toggle('hidden', !chkRestrict.checked));
+        loadProviderChecklist(org.id);
+        container.querySelector('#btn-save-providers').addEventListener('click', async () => {
+            let allowlist = null;
+            if (chkRestrict.checked) {
+                allowlist = [...checklist.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+                if (!allowlist.length) {
+                    ui.showToast('Select at least one provider, or uncheck "Restrict providers"', 'error');
+                    return;
+                }
+            }
+            try {
+                await api.updateOrgProviders(org.id, allowlist);
+                ui.showToast('Provider settings saved', 'success');
+                loadComplianceLog(org.id);
+            } catch (e) {
+                ui.showToast(e.message || 'Save failed', 'error');
+            }
+        });
+    }
+
     // --- Load Members ---
     loadOrganizationMembers(org.id);
+}
+
+async function loadProviderChecklist(orgId) {
+    const el = document.getElementById('provider-checklist');
+    if (!el) return;
+    try {
+        const res = await api.getOrgProviders(orgId);
+        const badge = (on, label) => on
+            ? `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">${label}</span>`
+            : '';
+        el.innerHTML = (res.providers || []).map(p => `
+            <label class="flex items-center gap-2 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2">
+                <input type="checkbox" value="${p.key}" ${p.allowed ? 'checked' : ''}>
+                <span class="font-medium">${p.label}</span>
+                ${badge(p.baa_capable, 'BAA')}${badge(p.eu_hostable, 'EU')}
+            </label>`).join('');
+    } catch (e) {
+        el.innerHTML = `<span class="text-sm text-red-500">Failed to load providers: ${e.message || e}</span>`;
+    }
 }
 
 async function loadComplianceLog(orgId) {

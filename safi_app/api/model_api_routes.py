@@ -1,30 +1,20 @@
-from flask import Blueprint, jsonify, session, current_app
-from ..config import Config
+from flask import Blueprint, jsonify, session
+
+from ..persistence import database as db
+from ..core.services.provider_governance import list_models_for_org
 
 model_api_bp = Blueprint('model_api', __name__)
 
+
 @model_api_bp.route('/models', methods=['GET'], strict_slashes=False)
 def list_models():
-    """
-    Returns available AI models for different faculties.
-    """
+    """Canonical model list: Config.AVAILABLE_MODELS enriched with provider
+    metadata (provider, baa_capable, eu_hostable) and filtered by the caller
+    org's provider allow-list — so a model on a blocked provider is never
+    even offered in a picker."""
     user = session.get('user')
-    if not user: return jsonify({"error": "Unauthorized"}), 401
-
-    # In a real system, these might come from a DB or LLM Provider handshake.
-    # For now, we define standard supported models.
-    
-    models = [
-        # INTELLECT (High reasoning, context window)
-        {"id": "gpt-4o", "category": "Intellect", "name": "GPT-4o", "provider": "OpenAI", "description": "High intelligence, multimodal standard."},
-        {"id": "gpt-4-turbo", "category": "Intellect", "name": "GPT-4 Turbo", "provider": "OpenAI", "description": "Legacy high-intelligence model."},
-        {"id": "llama-3.1-70b-versatile", "category": "Intellect", "name": "Llama 3.1 70B", "provider": "Groq", "description": "Fast, open-source high intelligence."},
-        {"id": "openai/gpt-oss-20b", "category": "Intellect", "name": "GPT-OSS 20B", "provider": "Groq", "description": "Fast, open-source efficient reasoning."},
-
-        # SUPPORT (Conscience/Will - Efficiency focused)
-        {"id": "gpt-4o-mini", "category": "Support", "name": "GPT-4o Mini", "provider": "OpenAI", "description": "Efficient, cost-effective reasoning."},
-        {"id": "openai/gpt-oss-20b", "category": "Support", "name": "GPT-OSS 20B", "provider": "Groq", "description": "Fast, efficient for rule checking."},
-        {"id": "gemma-7b-it", "category": "Support", "name": "Gemma 7B", "provider": "Groq", "description": "Google's open efficient model."}
-    ]
-
-    return jsonify({"ok": True, "models": models})
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    user_id = user.get('sub') or user.get('id')
+    details = db.get_user_details(user_id) or {}
+    return jsonify({"ok": True, "models": list_models_for_org(details.get('org_id'))})

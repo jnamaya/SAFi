@@ -6,6 +6,7 @@ import json
 import uuid
 import asyncio
 import threading
+import contextvars
 import numpy as np
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Union, Optional
@@ -33,6 +34,7 @@ from .orchestrator_mixins.tasks import BackgroundTasksMixin
 # --- Import Refactored Services ---
 from .services import LLMProvider, RAGService, MCPManager
 from .services.model_routing import detect_provider, build_providers_config
+from .services.provider_governance import activate_org
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -143,6 +145,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         self.llm_provider = LLMProvider(llm_config)
         self.clients = self.llm_provider.clients
 
+        # Model provenance for the audit record: which provider/model serves
+        # each faculty of this instance. Persisted per turn alongside
+        # policy_id/policy_version by update_audit_results.
+        self.model_attribution = json.dumps({
+            "intellect": f"{llm_config['routes']['intellect']['provider']}/{i_model}",
+            "conscience": f"{llm_config['routes']['conscience']['provider']}/{c_model}",
+        })
+
         # --- 2. RESTORE SYNC CLIENTS ---
         if config.GROQ_API_KEY:
             self.groq_client_sync = OpenAI(
@@ -248,6 +258,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             self.executor.shutdown(wait=False)
         except Exception:
             pass
+
+    def _submit_bg(self, fn, *args):
+        """executor.submit with the caller's contextvars copied into the
+        worker thread, so per-org provider governance (activate_org) keeps
+        applying to background LLM calls — plain threads don't inherit
+        contextvars."""
+        ctx = contextvars.copy_context()
+        return self.executor.submit(ctx.run, fn, *args)
 
     def _is_cancelled(self, message_id: str) -> bool:
         try:
@@ -401,7 +419,13 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         The main entrypoint for processing a user's prompt.
         Refactored to integrate the six-phase synchronous cybernetic circuit.
         """
-        message_id = override_message_id if override_message_id else str(uuid.uuid4()) 
+        message_id = override_message_id if override_message_id else str(uuid.uuid4())
+
+        # Per-org provider governance for this turn: every LLM dispatch below
+        # (Intellect, Conscience, backgrounds via _submit_bg) checks this
+        # context and fails closed on a disallowed provider.
+        activate_org(org_id or (self.profile or {}).get("org_id"))
+
         now_utc = datetime.now(timezone.utc)
         current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
@@ -975,13 +999,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
                                 drift=drift_val,
                                 policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"))
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution)
 
         # Follow-up suggestions are a blocking sync LLM call — run them off the
         # request path so they never delay the answer or block the event loop.
         # The frontend polls the audit endpoint and injects them when ready.
         S_p: List[str] = []
-        self.executor.submit(self._run_suggestions_thread, message_id, user_prompt, a_t)
+        self._submit_bg(self._run_suggestions_thread, message_id, user_prompt, a_t)
 
         # Record the gate's approve reason unless a more specific note (e.g. a
         # blocked tool) was already set — approved turns used to log an empty reason.
@@ -1024,14 +1049,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         )
 
         if hasattr(self, 'groq_client_sync'):
-            self.executor.submit(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
+            self._submit_bg(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
 
         if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
-                self.executor.submit(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
+                self._submit_bg(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
 
         if track_work_context:
-            self.executor.submit(
+            self._submit_bg(
                 self._run_agent_context_update_thread,
                 user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t
             )
@@ -1076,6 +1101,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         """
         message_id = str(uuid.uuid4())
 
+        # Per-org provider governance: the Conscience audit below must honor
+        # the governing org's provider allow-list, same as a native turn.
+        activate_org(org_id or (self.profile or {}).get("org_id"))
+
         if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
             return {"error": "duplicate message_id", "messageId": message_id, "duplicate": True}
 
@@ -1088,7 +1117,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                     self.active_profile_name, self.values, None,
                                     drift=drift_val,
                                     policy_id=(self.profile or {}).get("policy_id"),
-                                    policy_version=(self.profile or {}).get("policy_version"))
+                                    policy_version=(self.profile or {}).get("policy_version"),
+                                    model_attribution=self.model_attribution)
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "evaluate_gateway",
@@ -1266,7 +1296,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
         db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"))
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution)
 
         _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
@@ -1411,11 +1442,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"))
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution)
 
         # Suggestions run off the hot path (see process_prompt); frontend polls.
         S_p: List[str] = []
-        self.executor.submit(self._run_suggestions_thread, message_id, original_prompt, safe_output)
+        self._submit_bg(self._run_suggestions_thread, message_id, original_prompt, safe_output)
 
         # Save a clean pass log entry
         self._append_log({

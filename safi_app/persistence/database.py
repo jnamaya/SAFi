@@ -402,6 +402,15 @@ def init_db():
             cursor.execute("ALTER TABLE chat_history ADD COLUMN policy_id VARCHAR(255) DEFAULT NULL AFTER profile_name")
             cursor.execute("ALTER TABLE chat_history ADD COLUMN policy_version INT DEFAULT NULL AFTER policy_id")
 
+        # Model provenance: which provider/model actually served each faculty
+        # for this turn (JSON string: {"intellect": "groq/…", "conscience": …}).
+        # Companion to policy_id/policy_version — the policy says which rules
+        # governed the turn, this says which model produced/audited it under
+        # those rules. NULL = pre-migration turn or redirect without audit.
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'model_attribution'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN model_attribution VARCHAR(512) DEFAULT NULL AFTER policy_version")
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -1539,14 +1548,14 @@ def is_message_cancelled(msg_id):
         conn.close()
 
 def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None, drift=None,
-                         policy_id=None, policy_version=None):
+                         policy_id=None, policy_version=None, model_attribution=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "SELECT id, conversation_id, conscience_ledger, audit_status, spirit_score, "
             "spirit_note, profile_name, profile_values, suggested_prompts, drift, "
-            "policy_id, policy_version "
+            "policy_id, policy_version, model_attribution "
             "FROM chat_history WHERE message_id=%s FOR UPDATE",
             (msg_id,),
         )
@@ -1557,10 +1566,12 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
                 "spirit_note": row[5], "profile_name": row[6], "profile_values": row[7],
                 "suggested_prompts": row[8], "drift": row[9],
                 "policy_id": row[10], "policy_version": row[11],
+                "model_attribution": row[12],
             })
-        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, drift=%s, spirit_note=%s, profile_name=%s, policy_id=%s, policy_version=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
+        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, drift=%s, spirit_note=%s, profile_name=%s, policy_id=%s, policy_version=%s, model_attribution=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
         cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, drift, crypto.encrypt_value(note),
-                             pname, policy_id, policy_version, json.dumps(pvals), json.dumps(prompts), msg_id))
+                             pname, policy_id, policy_version, model_attribution,
+                             json.dumps(pvals), json.dumps(prompts), msg_id))
         conn.commit()
     finally:
         cursor.close()
@@ -2854,6 +2865,79 @@ def set_org_retention_config(org_id, changes, actor):
         cursor.close()
         conn.close()
     return get_org_retention_config(org_id)
+
+def get_org_provider_config(org_id):
+    """Reads the LLM provider allow-list from organizations.settings.
+    {'allowlist': [...]} or {'allowlist': None} — None means unrestricted."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        raw = settings.get("provider_allowlist")
+        return {"allowlist": raw if isinstance(raw, list) else None}
+    finally:
+        cursor.close()
+        conn.close()
+
+def set_org_provider_allowlist(org_id, allowlist, actor):
+    """Sets (or clears, with None) the org's LLM provider allow-list AND
+    appends the compliance-log evidence row in the same transaction, so the
+    change can never dodge the evidence log — same contract as
+    set_org_retention_config. Raises ValueError on invalid input.
+
+    allowlist: None = unrestricted, or a NON-EMPTY list of provider keys from
+    model_routing.PROVIDER_METADATA (an empty list would brick every LLM call
+    in the org, so it is rejected rather than stored)."""
+    from ..core.services.model_routing import PROVIDER_METADATA
+    if allowlist is not None:
+        if not isinstance(allowlist, list) or not allowlist:
+            raise ValueError("allowlist must be null (unrestricted) or a non-empty list of provider keys")
+        unknown = sorted({str(p) for p in allowlist} - set(PROVIDER_METADATA))
+        if unknown:
+            raise ValueError(f"unknown providers: {', '.join(unknown)}")
+        allowlist = sorted({str(p) for p in allowlist})
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+
+        old = settings.get("provider_allowlist")
+        old = sorted(old) if isinstance(old, list) else None
+        if old != allowlist:
+            if allowlist is None:
+                settings.pop("provider_allowlist", None)
+            else:
+                settings["provider_allowlist"] = allowlist
+            append_compliance_log(org_id, "provider_allowlist_changed", actor,
+                                  {"changed": {"provider_allowlist": {"old": old, "new": allowlist}}},
+                                  cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    from ..core.services import provider_governance
+    provider_governance.invalidate_org(org_id)
+    return get_org_provider_config(org_id)
 
 def list_orgs_with_retention():
     """All non-demo orgs that have any retention config — the purge worklist."""

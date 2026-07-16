@@ -6,6 +6,7 @@ import json as _json
 from ...persistence import database as db
 from ...config import Config
 from ..services.model_routing import detect_provider
+from ..services.provider_governance import assert_provider_allowed, ProviderNotAllowedError
 
 
 # --- Work-context memory: deterministic merge ----------------------------------
@@ -136,7 +137,14 @@ class BackgroundTasksMixin:
         """Runs the summarization logic in a background thread using Sync client."""
         if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
             return
-            
+
+        # Direct Groq dispatch — honor the org provider allow-list (skip, never reroute).
+        try:
+            assert_provider_allowed("groq", context="summarizer")
+        except ProviderNotAllowedError as e:
+            self.log.warning(f"[Governance] Summarization skipped: {e}")
+            return
+
         summarizer_prompt_config = self.prompts.get("summarizer")
         if not summarizer_prompt_config: return
 
@@ -156,6 +164,13 @@ class BackgroundTasksMixin:
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
         """Runs the long-term user profile update logic in a background thread."""
         if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
+            return
+
+        # Direct Groq dispatch — honor the org provider allow-list (skip, never reroute).
+        try:
+            assert_provider_allowed("groq", context="profile_extractor")
+        except ProviderNotAllowedError as e:
+            self.log.warning(f"[Governance] Profile extraction skipped: {e}")
             return
 
         profile_prompt_config = self.prompts.get("profile_extractor")
@@ -194,6 +209,17 @@ class BackgroundTasksMixin:
             model = self.config.BACKEND_MODEL
         if temperature is None:
             temperature = self.config.AGENT_MEMORY_TEMPERATURE
+        # Per-org provider governance. Dispatch below is binary — gemini-*
+        # models use the Gemini client, EVERYTHING else goes to the Groq sync
+        # client regardless of what detect_provider says about the model id —
+        # so the assertion checks the provider that actually receives content.
+        # Background conveniences degrade gracefully: skip, never reroute.
+        effective_provider = "gemini" if detect_provider(model) == "gemini" else "groq"
+        try:
+            assert_provider_allowed(effective_provider, context=f"backend:{model}")
+        except ProviderNotAllowedError as e:
+            self.log.warning(f"[Governance] Background completion skipped: {e}")
+            return None
         try:
             if detect_provider(model) == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")

@@ -71,6 +71,43 @@ def update_retention(org_id):
         return jsonify({"error": "Internal Server Error"}), 500
 
 
+@records_bp.route('/organizations/<org_id>/providers', methods=['GET'])
+@require_role('admin')
+def get_providers(org_id):
+    """The org's LLM provider allow-list, with governance metadata for the UI
+    (BAA-capable / EU-hostable badges). allowlist null = unrestricted."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..core.services.model_routing import PROVIDER_METADATA
+    cfg = db.get_org_provider_config(org_id)
+    allow = cfg.get("allowlist")
+    providers = [
+        {"key": k, **meta, "allowed": (allow is None or k in allow)}
+        for k, meta in PROVIDER_METADATA.items()
+    ]
+    return jsonify({"providers": providers, "allowlist": allow})
+
+
+@records_bp.route('/organizations/<org_id>/providers', methods=['PUT'])
+@require_role('admin')
+def update_providers(org_id):
+    """Set (list of provider keys) or clear (null) the org's provider
+    allow-list. Change is evidence-logged to org_compliance_log in the same
+    transaction — same contract as retention config."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    if "allowlist" not in data:
+        return jsonify({"error": "pass allowlist: [provider keys] or null for unrestricted"}), 400
+    try:
+        return jsonify(db.set_org_provider_allowlist(org_id, data["allowlist"], _actor()))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating provider allow-list: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @records_bp.route('/organizations/<org_id>/compliance-log', methods=['GET'])
 @require_role('admin')
 def compliance_log(org_id):

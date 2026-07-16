@@ -94,7 +94,13 @@ class LLMProvider:
 
         provider_name = route_config["provider"]
         model_name = route_config["model"]
-        
+
+        # Per-org provider governance — fail closed BEFORE any dispatch. No
+        # active org context = unrestricted; a disallowed provider raises,
+        # never reroutes (see provider_governance module docstring).
+        from .provider_governance import assert_provider_allowed
+        assert_provider_allowed(provider_name, context=f"route:{route}, model:{model_name}")
+
         # Get provider details
         provider_details = self.config.get("providers", {}).get(provider_name)
         if not provider_details:

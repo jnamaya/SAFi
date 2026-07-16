@@ -20,6 +20,14 @@ class SuggestionsMixin:
             self.log.warning("Groq client (Async) not configured. Cannot generate prompt suggestions.")
             return []
 
+        # Direct Groq dispatch — honor the org provider allow-list (skip, never reroute).
+        from ..services.provider_governance import assert_provider_allowed, ProviderNotAllowedError
+        try:
+            assert_provider_allowed("groq", context="suggestion_engine")
+        except ProviderNotAllowedError as e:
+            self.log.warning(f"[Governance] Prompt suggestions skipped: {e}")
+            return []
+
         prompt_config = self.prompts.get("suggestion_engine")
         if not prompt_config or "system_prompt" not in prompt_config:
             self.log.warning("No 'suggestion_engine' prompt found.")

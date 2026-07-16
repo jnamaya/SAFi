@@ -465,6 +465,17 @@ export async function getComplianceLog(orgId, limit = 20) {
     return httpGet(j(`/api/organizations/${orgId}/compliance-log?limit=${limit}`));
 }
 
+// --- LLM provider allow-list (HIPAA BAA chains / EU data residency) ---
+
+export async function getOrgProviders(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/providers`));
+}
+
+// allowlist: array of provider keys, or null for unrestricted
+export async function updateOrgProviders(orgId, allowlist) {
+    return httpJSON(j(`/api/organizations/${orgId}/providers`), 'PUT', { allowlist });
+}
+
 // File download — plain URL for window.open/href, not the JSON pipeline.
 export function recordsExportUrl(orgId, from, to, userId) {
     const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
