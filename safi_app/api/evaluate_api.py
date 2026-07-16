@@ -8,6 +8,12 @@ Authentication is the Policy API key (same contract as /bot/process_prompt);
 the key alone selects the governing policy, and every evaluation is persisted
 to chat_history so it is covered by the hash-chained audit trail, retention
 engine, and examiner export exactly like a native turn.
+
+Caller obligations: SAFi governs the output but does not present it. If the
+evaluated output is shown to end users, the EU AI Act Art. 50(1) duty to
+disclose AI interaction rests with the deploying caller — SAFi's disclosure
+covers only its own surfaces. Every response repeats this in
+`caller_obligations` so external deployers cannot miss it.
 """
 from flask import Blueprint, jsonify, request, current_app
 
@@ -83,6 +89,14 @@ async def evaluate_endpoint():
             conversation_id=conversation_id,
             org_id=org_id,
         )
+        if isinstance(result, dict):
+            result.setdefault("caller_obligations", {
+                "eu_ai_act_art_50_1": (
+                    "If this output is presented to end users, the duty to "
+                    "disclose that they are interacting with an AI system "
+                    "rests with the deploying caller."
+                )
+            })
         return jsonify(result)
 
     except Exception as e:
