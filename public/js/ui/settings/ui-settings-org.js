@@ -304,7 +304,7 @@ function renderOrganizationUI(container, org, charter) {
                         </select>
                         <button id="btn-send-invite" class="px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold">Invite</button>
                     </div>
-                    <p class="text-xs text-gray-400 mt-1">Invites expire after 14 days and admit the address on their next login, regardless of join policy.</p>
+                    <p class="text-xs text-gray-400 mt-1">No email is sent — share the app link yourself. The invite is applied automatically when that address signs in (Google or Microsoft), regardless of join policy. Expires after 14 days.</p>
                     <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
                 </div>
             </section>
@@ -578,7 +578,8 @@ function renderOrganizationUI(container, org, charter) {
             try {
                 const res = await api.createInvitation(org.id, email, container.querySelector('#sel-invite-role').value);
                 ui.showToast(res.invitation?.external_domain
-                    ? 'Invite sent (outside your verified domain)' : 'Invite sent', 'success');
+                    ? 'Invite created (outside your verified domain) — no email is sent; it applies when they sign in'
+                    : 'Invite created — no email is sent; it applies when they sign in', 'success');
                 container.querySelector('#inp-invite-email').value = '';
                 loadPendingInvites(org.id);
             } catch (e) {
