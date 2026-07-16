@@ -370,7 +370,7 @@ def update_identity_config(org_id):
     data = request.json or {}
     changes = {k: data[k] for k in
                ('idle_timeout_minutes', 'session_lifetime_hours', 'join_policy',
-                'require_mfa') if k in data}
+                'require_mfa', 'ms_tenant_id', 'google_hd') if k in data}
     try:
         return jsonify(db.set_org_identity_config(org_id, changes, _actor()))
     except ValueError as e:

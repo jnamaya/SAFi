@@ -3059,6 +3059,8 @@ IDENTITY_DEFAULTS = {
     "session_lifetime_hours": 30 * 24,     # 30 days absolute
     "join_policy": "domain_auto_join",     # preserves pre-Phase-1 behavior
     "require_mfa": False,                  # org opt-in (HIPAA/SEC posture)
+    "ms_tenant_id": None,                  # Entra tid to enforce (Phase 2)
+    "google_hd": None,                     # Workspace hosted domain to enforce
 }
 JOIN_POLICIES = ("invite_only", "domain_auto_join", "both")
 
@@ -3255,6 +3257,10 @@ def get_org_identity_config(org_id):
             cfg["join_policy"] = policy
         if isinstance(ident.get("require_mfa"), bool):
             cfg["require_mfa"] = ident["require_mfa"]
+        for claim_key in ("ms_tenant_id", "google_hd"):
+            v = ident.get(claim_key)
+            if isinstance(v, str) and v.strip():
+                cfg[claim_key] = v.strip()
         return cfg
     finally:
         cursor.close()
@@ -3285,6 +3291,20 @@ def set_org_identity_config(org_id, changes, actor):
         if not isinstance(changes["require_mfa"], bool):
             raise ValueError("require_mfa must be true or false")
         validated["require_mfa"] = changes["require_mfa"]
+    if "ms_tenant_id" in changes:
+        v = changes["ms_tenant_id"]
+        if v is not None:
+            v = str(v).strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", v):
+                raise ValueError("ms_tenant_id must be the directory (tenant) GUID from Entra, or null")
+        validated["ms_tenant_id"] = v or None
+    if "google_hd" in changes:
+        v = changes["google_hd"]
+        if v is not None:
+            v = str(v).strip().lower()
+            if v and not re.fullmatch(r"[a-z0-9.-]{3,255}", v):
+                raise ValueError("google_hd must be a Workspace domain (e.g. example.com), or null")
+        validated["google_hd"] = v or None
     if not validated:
         raise ValueError("nothing to change")
 

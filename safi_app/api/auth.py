@@ -107,6 +107,82 @@ def _establish_session(user_details, idp, extra_context=None, lifetime_hours=Non
     return sid
 
 
+# AMR values that count as a completed MFA factor (Entra: mfa/ngcmfa/hwk;
+# generic OIDC: otp/fido/sms/swk).
+_MFA_AMR_METHODS = {"mfa", "ngcmfa", "hwk", "otp", "fido", "sms", "swk"}
+
+
+def _sso_evidence(idp, claims):
+    """Distill id_token claims into the auth_context audit evidence:
+    which directory vouched for this person, and was MFA used.
+    mfa is True/False when amr was present, None when the IdP sent none
+    (Google rarely does — 'enforced at Workspace, attested by policy')."""
+    ev = {"idp": idp}
+    for k in ("iss", "tid", "hd", "auth_time"):
+        if claims.get(k) is not None:
+            ev[k] = claims[k]
+    amr = claims.get("amr") or []
+    if isinstance(amr, str):
+        amr = [amr]
+    if amr:
+        ev["amr"] = amr
+        ev["mfa"] = any(m in _MFA_AMR_METHODS for m in amr)
+    else:
+        ev["mfa"] = None
+    return ev
+
+
+def _org_claim_gate(user_details, idp, claims):
+    """Per-tenant OIDC enforcement (enterprise identity Phase 2 §4.3).
+    Returns a denial reason (journaled as login_denied) or None to proceed.
+    Only orgs that configured a restriction are affected — fail open for
+    unconfigured orgs, fail closed once a tenant/domain is pinned."""
+    org_id = user_details.get('org_id')
+    if not org_id:
+        return None
+    cfg = db.get_org_identity_config(org_id)
+    reason = None
+    if idp.startswith('google'):
+        want_hd = cfg.get('google_hd')
+        if want_hd and (claims.get('hd') or '').lower() != want_hd:
+            reason = 'hd_mismatch'  # consumer accounts have no hd → rejected
+    elif idp == 'microsoft':
+        want_tid = cfg.get('ms_tenant_id')
+        if want_tid and (claims.get('tid') or '').lower() != want_tid:
+            reason = 'tid_mismatch'
+        elif cfg.get('require_mfa'):
+            amr = claims.get('amr') or []
+            if isinstance(amr, str):
+                amr = [amr]
+            # Entra sends amr on v1/v2 tokens with the optional claim enabled;
+            # an org that mandates MFA must present MFA evidence to log in.
+            if not any(m in _MFA_AMR_METHODS for m in amr):
+                reason = 'mfa_evidence_missing'
+    if reason:
+        db.log_auth_event('login_denied', f"user:{user_details['id']}", org_id=org_id,
+                          user_id=user_details['id'],
+                          detail={"reason": reason, "idp": idp,
+                                  "tid": claims.get('tid'), "hd": claims.get('hd'),
+                                  "amr": claims.get('amr')})
+        current_app.logger.warning(
+            f"Login denied for {user_details.get('email')}: {reason} (idp={idp})")
+    return reason
+
+
+def _decode_id_token_unverified(token):
+    """Claims from an id_token obtained DIRECTLY from the token endpoint over
+    TLS with client authentication — provenance makes the payload trustworthy
+    without re-verifying the signature (same trust model as the userinfo
+    call these flows already rely on). Never use on tokens from clients."""
+    try:
+        idt = (token or {}).get('id_token')
+        if not idt:
+            return {}
+        return jwt.decode(idt, options={"verify_signature": False})
+    except Exception:
+        return {}
+
+
 def _resolve_membership(user_details, idp):
     """Membership at login: a live invitation wins; otherwise domain auto-join
     under the org's join policy (invite_only orgs journal the denial and the
@@ -194,6 +270,11 @@ def get_dashboard_token():
             "org_id": user.get('org_id'),
             "email": user.get('email'),
             "type": "dashboard_access",
+            # Short-lived by contract (docstring) — was minted with NO exp
+            # until 2026-07-16, i.e. it never expired. PyJWT enforces exp
+            # automatically wherever the dashboard decodes it.
+            "iat": datetime.utcnow(),
+            "exp": datetime.utcnow() + timedelta(minutes=15),
         }
         
         token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
@@ -235,9 +316,9 @@ def callback():
         current_app.logger.info("Web callback initiated.")
         # Authlib handles redirect_uri from session automatically, 
         # provided the login route set it correctly (with https).
-        token = oauth.google.authorize_access_token() 
+        token = oauth.google.authorize_access_token()
         nonce = session.pop('nonce', None)
-        oauth.google.parse_id_token(token, nonce=nonce)
+        id_claims = oauth.google.parse_id_token(token, nonce=nonce) or {}
         user_info = oauth.google.get('userinfo').json()
         
         # --- Account Linking ---
@@ -281,7 +362,12 @@ def callback():
             except Exception as e:
                 current_app.logger.error(f"Failed to auto-create org: {e}")
 
-        _establish_session(user_details, idp='google')
+        # Per-tenant claim enforcement + directory/MFA evidence (Phase 2)
+        denied = _org_claim_gate(user_details, 'google', id_claims)
+        if denied:
+            return redirect(f'/?error=login_denied&reason={denied}')
+        _establish_session(user_details, idp='google',
+                           extra_context=_sso_evidence('google', id_claims))
 
         current_app.logger.info(f"Web callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
@@ -378,7 +464,15 @@ def login_mobile():
                 _resolve_membership(user_details, idp='google_mobile')
             except Exception as e:
                 current_app.logger.error(f"Error resolving membership (mobile): {e}")
-        _establish_session(user_details, idp='google_mobile')
+
+        # Per-tenant claim enforcement — the verified Google ID token IS the
+        # claims dict here (includes hd for Workspace accounts).
+        denied = _org_claim_gate(user_details, 'google_mobile', user_info)
+        if denied:
+            return jsonify({"error": "Login denied by your organization's policy",
+                            "reason": denied}), 403
+        _establish_session(user_details, idp='google_mobile',
+                           extra_context=_sso_evidence('google_mobile', user_info))
 
         # Return a status token so the frontend knows it succeeded
         return jsonify({"ok": True, "token": "mobile_session_active"})
@@ -633,7 +727,14 @@ def callback_microsoft():
             except Exception as e:
                 current_app.logger.warning(f"Membership resolution failed for Microsoft user {user_id}: {e}")
 
-        _establish_session(user_details, idp='microsoft')
+        # Per-tenant claim enforcement + directory/MFA evidence (Phase 2).
+        # tid/amr come from the id_token minted by the token endpoint.
+        id_claims = _decode_id_token_unverified(token)
+        denied = _org_claim_gate(user_details, 'microsoft', id_claims)
+        if denied:
+            return redirect(f'/?error=login_denied&reason={denied}')
+        _establish_session(user_details, idp='microsoft',
+                           extra_context=_sso_evidence('microsoft', id_claims))
         
         # --- Microsoft Token Storage for Tools (Bonus) ---
         # Since we have the token here, we can piggyback and save it for OneDrive use!

@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260716.4" rel="stylesheet">
+  <link href="css/main.css?v=20260716.5" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
   <script>
     const theme = localStorage.theme;
@@ -160,6 +160,9 @@
               </svg>
               Sign in as Guest
             </a>
+
+            <!-- Login error banner (e.g. org tenant policy denials) -->
+            <p id="login-error-banner" class="hidden mt-3 text-xs text-red-600 dark:text-red-400 text-center max-w-xs"></p>
 
             <!-- Local Admin Login (shown only when SAFI_LOCAL_ADMIN_* vars are set) -->
             <div id="local-login-section" class="hidden w-full max-w-xs mt-2">
@@ -861,6 +864,24 @@
     // Native detection — mirrors api.js logic without needing an import
     const _isNative = !!(window.Capacitor?.isNativePlatform?.());
     const _HOST = _isNative ? 'https://safi.selfalignmentframework.com' : '';
+
+    // Surface login errors passed back via redirect (?error=...&reason=...)
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get('error');
+      if (!err) return;
+      const banner = document.getElementById('login-error-banner');
+      if (!banner) return;
+      const reasons = {
+        tid_mismatch: "Your organization only allows sign-ins from its own Microsoft tenant. Use your work account.",
+        hd_mismatch: "Your organization only allows sign-ins from its Google Workspace domain. Use your work account.",
+        mfa_evidence_missing: "Your organization requires multi-factor authentication. Complete MFA with your identity provider and try again.",
+      };
+      banner.textContent = err === 'login_denied'
+        ? (reasons[params.get('reason')] || 'Sign-in was denied by your organization\'s policy.')
+        : (err === 'auth_failed' ? 'Sign-in failed. Please try again.' : '');
+      if (banner.textContent) banner.classList.remove('hidden');
+    })();
 
     // Apply server-side feature flags to the login page
     fetch(`${_HOST}/api/app-config`)

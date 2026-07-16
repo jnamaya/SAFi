@@ -278,9 +278,21 @@ function renderOrganizationUI(container, org, charter) {
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Require MFA</span>
                      <select id="sel-require-mfa" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
                          <option value="false">Off</option>
-                         <option value="true">Required for local accounts</option>
+                         <option value="true">Required</option>
                      </select>
-                     <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app before using SAFi. SSO accounts should enforce MFA at your identity provider.</span>
+                     <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app. Microsoft sign-ins must present MFA evidence (amr) from Entra. Google MFA is enforced at Workspace.</span>
+                 </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Microsoft tenant ID</span>
+                     <input type="text" id="inp-ms-tenant" placeholder="not restricted" spellcheck="false"
+                         class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                     <span class="block text-xs text-gray-400 mt-1">Entra directory (tenant) GUID. When set, only Microsoft sign-ins from this tenant are accepted — a wrong value locks out Microsoft logins.</span>
+                 </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Google Workspace domain</span>
+                     <input type="text" id="inp-google-hd" placeholder="not restricted" spellcheck="false"
+                         class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                     <span class="block text-xs text-gray-400 mt-1">When set, only Google sign-ins from this Workspace domain are accepted; consumer Gmail accounts are rejected.</span>
                  </label>
              </div>
              <div class="flex justify-end mt-4">
@@ -561,6 +573,8 @@ function renderOrganizationUI(container, org, charter) {
             container.querySelector('#inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
             container.querySelector('#inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
             container.querySelector('#sel-require-mfa').value = String(!!cfg.require_mfa);
+            container.querySelector('#inp-ms-tenant').value = cfg.ms_tenant_id || '';
+            container.querySelector('#inp-google-hd').value = cfg.google_hd || '';
         }).catch(() => {});
         container.querySelector('#btn-save-identity').addEventListener('click', async () => {
             const idleRaw = container.querySelector('#inp-idle-timeout').value;
@@ -571,6 +585,8 @@ function renderOrganizationUI(container, org, charter) {
                     idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
                     session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
                     require_mfa: container.querySelector('#sel-require-mfa').value === 'true',
+                    ms_tenant_id: container.querySelector('#inp-ms-tenant').value.trim() || null,
+                    google_hd: container.querySelector('#inp-google-hd').value.trim() || null,
                 });
                 ui.showToast('Identity settings saved', 'success');
             } catch (e) {
