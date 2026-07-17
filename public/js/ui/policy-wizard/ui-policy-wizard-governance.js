@@ -66,6 +66,7 @@ export function renderGovernanceStep(container, policyData) {
                     ${summaryRow('Non-negotiable standards', (policyData.values || []).filter(v => v.hard_gate).length, (policyData.values || []).some(v => v.hard_gate), 'red')}
                     ${summaryRow('Required disclaimer', policyData.structural_requirements?.require_disclaimer ? 'On' : '—', policyData.structural_requirements?.require_disclaimer)}
                     ${summaryRow('Prohibited formatting', (policyData.structural_requirements?.banned_markdown_syntaxes || []).length, (policyData.structural_requirements?.banned_markdown_syntaxes || []).length > 0)}
+                    ${summaryRow('Blocked phrases', (policyData.early_prompt_blacklist || []).length, (policyData.early_prompt_blacklist || []).length > 0)}
                     ${summaryRow('Authorized tools', (policyData.allowed_tools || []).length, (policyData.allowed_tools || []).length > 0)}
                     ${summaryRow('Written rules', (policyData.will_rules || []).length, (policyData.will_rules || []).length > 0)}
                 </div>

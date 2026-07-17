@@ -19,6 +19,9 @@ export function renderWillStep(container, policyData) {
     if (!Array.isArray(policyData.will_rules)) {
         policyData.will_rules = [];
     }
+    if (!Array.isArray(policyData.early_prompt_blacklist)) {
+        policyData.early_prompt_blacklist = [];
+    }
 
     const sr = policyData.structural_requirements;
 
@@ -73,6 +76,21 @@ export function renderWillStep(container, policyData) {
                     <button id="pw-add-banned-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
                 </div>
                 <ul id="pw-banned-list" class="space-y-2"></ul>
+            </div>
+
+            <!-- BLOCKED PHRASES (Phase Zero prompt blacklist) -->
+            <div class="bg-white dark:bg-neutral-900 border border-amber-200 dark:border-amber-900/40 rounded-xl p-5">
+                <div>
+                    <h3 class="font-bold text-amber-700 dark:text-amber-300">Blocked Phrases</h3>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-3">Phrases checked against every user message <em>before</em> the agent runs. If a message contains one (case-insensitive), the agent politely redirects without processing it. Use for topics agents under this policy must never engage with — matching is literal, so keep phrases short and distinctive.</p>
+                </div>
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="pw-blacklist-input"
+                        class="flex-1 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-gray-50 dark:bg-neutral-800 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                        placeholder="e.g. insider trading tips">
+                    <button id="pw-add-blacklist-btn" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
+                </div>
+                <ul id="pw-blacklist-list" class="space-y-2"></ul>
             </div>
 
             <!-- LEGACY FREE-TEXT RULES (optional) -->
@@ -141,6 +159,22 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-banned-btn').addEventListener('click', addBanned);
     document.getElementById('pw-banned-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addBanned(); });
 
+    // --- BLOCKED PHRASES (Phase Zero) ---
+    renderList('pw-blacklist-list', policyData.early_prompt_blacklist, 'amber', (i) => {
+        policyData.early_prompt_blacklist.splice(i, 1);
+    });
+    const addBlacklist = () => {
+        const input = document.getElementById('pw-blacklist-input');
+        const val = input.value.trim();
+        if (val) {
+            policyData.early_prompt_blacklist.push(val);
+            input.value = '';
+            renderList('pw-blacklist-list', policyData.early_prompt_blacklist, 'amber', (i) => policyData.early_prompt_blacklist.splice(i, 1));
+        }
+    };
+    document.getElementById('pw-add-blacklist-btn').addEventListener('click', addBlacklist);
+    document.getElementById('pw-blacklist-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addBlacklist(); });
+
     // --- LEGACY RULES ---
     renderList('pw-rules-list', policyData.will_rules, 'gray', (i) => {
         policyData.will_rules.splice(i, 1);
@@ -171,6 +205,7 @@ function renderList(id, arr, color, onRemove) {
         const colorCls = {
             red:   'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30 text-red-900 dark:text-red-200',
             green: 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/30 text-green-900 dark:text-green-200',
+            amber: 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30 text-amber-900 dark:text-amber-200',
             gray:  'bg-gray-50 dark:bg-neutral-900 border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200',
         }[color] || '';
         li.className = `flex items-center gap-2 p-2.5 border rounded-lg ${colorCls}`;

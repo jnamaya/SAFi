@@ -340,6 +340,19 @@ function ensureWizardInlineExists() {
     document.getElementById('close-pw-btn').addEventListener('click', () => closeWizard(false));
     document.getElementById('pw-back-btn').addEventListener('click', prevStep);
     document.getElementById('pw-next-btn').addEventListener('click', nextStep);
+
+    // Step labels navigate BACK to any earlier step. Forward stays gated
+    // behind Next so per-step validation can't be skipped.
+    document.querySelectorAll('#policy-wizard-view [data-step]').forEach((el) => {
+        el.addEventListener('click', () => {
+            const idx = parseInt(el.dataset.step, 10);
+            if (idx < currentStep && currentStep <= TOTAL_STEPS) {
+                saveDraft();
+                currentStep = idx;
+                renderStep(currentStep);
+            }
+        });
+    });
 }
 
 function updateProgress() {
@@ -372,5 +385,9 @@ function updateProgress() {
         const idx = parseInt(el.dataset.step, 10);
         if (idx <= currentStep) el.classList.add('text-blue-600');
         else el.classList.remove('text-blue-600');
+        // Visited steps are click-to-return targets (see ensureWizardInlineExists)
+        const clickable = idx < currentStep && currentStep <= TOTAL_STEPS;
+        el.classList.toggle('cursor-pointer', clickable);
+        el.classList.toggle('hover:underline', clickable);
     });
 }

@@ -198,10 +198,23 @@ def _inject_disclaimer_directive(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _has_usable_rubric(v: Dict[str, Any]) -> bool:
-    """True if the value carries a rubric the Conscience can actually score:
-    a non-empty dict or non-empty list — the two shapes evaluate() accepts."""
+    """True if the value carries a rubric the Conscience can actually score.
+
+    A dict rubric must contain scoring criteria (non-empty scoring_guide) or at
+    least a description the judge can reason from; a list rubric IS the scoring
+    guide and must be non-empty. A bare `{"scoring_guide": []}` shell — what the
+    policy wizard creates for a standard whose criteria were never filled in —
+    is NOT usable: the Conscience would receive a value with no criteria at all.
+    """
     rub = v.get("rubric")
-    return bool(rub) and isinstance(rub, (dict, list))
+    if isinstance(rub, list):
+        return len(rub) > 0
+    if isinstance(rub, dict):
+        guide = rub.get("scoring_guide")
+        if isinstance(guide, list) and len(guide) > 0:
+            return True
+        return bool(str(rub.get("description") or "").strip())
+    return False
 
 
 def _validate_value_rubrics(profile: Dict[str, Any], agent_name: str) -> Dict[str, Any]:

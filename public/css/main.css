@@ -1806,6 +1806,11 @@ video {
   border-color: rgb(62 62 62 / var(--tw-border-opacity, 1));
 }
 
+.border-amber-100 {
+  --tw-border-opacity: 1;
+  border-color: rgb(254 243 199 / var(--tw-border-opacity, 1));
+}
+
 .border-amber-200 {
   --tw-border-opacity: 1;
   border-color: rgb(253 230 138 / var(--tw-border-opacity, 1));
@@ -1893,6 +1898,11 @@ video {
 .border-green-600 {
   --tw-border-opacity: 1;
   border-color: rgb(22 163 74 / var(--tw-border-opacity, 1));
+}
+
+.border-indigo-200 {
+  --tw-border-opacity: 1;
+  border-color: rgb(199 210 254 / var(--tw-border-opacity, 1));
 }
 
 .border-neutral-100 {
@@ -1988,6 +1998,11 @@ video {
 .bg-amber-50 {
   --tw-bg-opacity: 1;
   background-color: rgb(255 251 235 / var(--tw-bg-opacity, 1));
+}
+
+.bg-amber-600 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(217 119 6 / var(--tw-bg-opacity, 1));
 }
 
 .bg-black\/50 {
@@ -2088,6 +2103,11 @@ video {
 .bg-indigo-100 {
   --tw-bg-opacity: 1;
   background-color: rgb(224 231 255 / var(--tw-bg-opacity, 1));
+}
+
+.bg-indigo-50 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(238 242 255 / var(--tw-bg-opacity, 1));
 }
 
 .bg-neutral-100 {
@@ -2659,9 +2679,19 @@ video {
   color: rgb(217 119 6 / var(--tw-text-opacity, 1));
 }
 
+.text-amber-700 {
+  --tw-text-opacity: 1;
+  color: rgb(180 83 9 / var(--tw-text-opacity, 1));
+}
+
 .text-amber-800 {
   --tw-text-opacity: 1;
   color: rgb(146 64 14 / var(--tw-text-opacity, 1));
+}
+
+.text-amber-900 {
+  --tw-text-opacity: 1;
+  color: rgb(120 53 15 / var(--tw-text-opacity, 1));
 }
 
 .text-black {
@@ -2781,6 +2811,11 @@ video {
 .text-indigo-600 {
   --tw-text-opacity: 1;
   color: rgb(79 70 229 / var(--tw-text-opacity, 1));
+}
+
+.text-indigo-800 {
+  --tw-text-opacity: 1;
+  color: rgb(55 48 163 / var(--tw-text-opacity, 1));
 }
 
 .text-neutral-300 {
@@ -2979,6 +3014,10 @@ video {
 
 .opacity-20 {
   opacity: 0.2;
+}
+
+.opacity-40 {
+  opacity: 0.4;
 }
 
 .opacity-50 {
@@ -3224,6 +3263,11 @@ video {
 .hover\:border-purple-400:hover {
   --tw-border-opacity: 1;
   border-color: rgb(192 132 252 / var(--tw-border-opacity, 1));
+}
+
+.hover\:bg-amber-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(180 83 9 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:bg-black:hover {
@@ -3499,6 +3543,11 @@ video {
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
 }
 
+.focus\:ring-amber-500:focus {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(245 158 11 / var(--tw-ring-opacity, 1));
+}
+
 .focus\:ring-blue-500:focus {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(59 130 246 / var(--tw-ring-opacity, 1));
@@ -3592,6 +3641,14 @@ video {
   border-color: rgb(120 53 15 / 0.3);
 }
 
+.dark\:border-amber-900\/40:is(.dark *) {
+  border-color: rgb(120 53 15 / 0.4);
+}
+
+.dark\:border-amber-900\/50:is(.dark *) {
+  border-color: rgb(120 53 15 / 0.5);
+}
+
 .dark\:border-blue-700:is(.dark *) {
   --tw-border-opacity: 1;
   border-color: rgb(29 78 216 / var(--tw-border-opacity, 1));
@@ -3650,6 +3707,10 @@ video {
 
 .dark\:border-green-900\/40:is(.dark *) {
   border-color: rgb(20 83 45 / 0.4);
+}
+
+.dark\:border-indigo-800\/40:is(.dark *) {
+  border-color: rgb(55 48 163 / 0.4);
 }
 
 .dark\:border-neutral-600:is(.dark *) {
@@ -3724,6 +3785,10 @@ video {
 .dark\:bg-amber-900:is(.dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(120 53 15 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:bg-amber-900\/10:is(.dark *) {
+  background-color: rgb(120 53 15 / 0.1);
 }
 
 .dark\:bg-amber-900\/20:is(.dark *) {
@@ -3807,6 +3872,10 @@ video {
 
 .dark\:bg-green-950\/30:is(.dark *) {
   background-color: rgb(5 46 22 / 0.3);
+}
+
+.dark\:bg-indigo-900\/20:is(.dark *) {
+  background-color: rgb(49 46 129 / 0.2);
 }
 
 .dark\:bg-indigo-900\/30:is(.dark *) {
@@ -4059,6 +4128,11 @@ video {
 .dark\:text-green-500:is(.dark *) {
   --tw-text-opacity: 1;
   color: rgb(34 197 94 / var(--tw-text-opacity, 1));
+}
+
+.dark\:text-indigo-300:is(.dark *) {
+  --tw-text-opacity: 1;
+  color: rgb(165 180 252 / var(--tw-text-opacity, 1));
 }
 
 .dark\:text-indigo-400:is(.dark *) {

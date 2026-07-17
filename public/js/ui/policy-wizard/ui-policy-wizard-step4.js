@@ -36,6 +36,7 @@ export function renderValuesStep(container, policyData) {
                     <p class="leading-relaxed">
                         Every response is scored against each standard on a scale from <span class="font-mono">-1.0</span> (violated) to <span class="font-mono">+1.0</span> (upheld). The three states below tell the system how to judge each one.
                     </p>
+                    <div id="pw-charter-note" class="hidden p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800/40 text-xs leading-relaxed"></div>
                     <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
                         <strong class="block text-green-600 mb-1">Upheld (+1.0)</strong>
                         The response actively demonstrates the standard.
@@ -58,6 +59,7 @@ export function renderValuesStep(container, policyData) {
     `;
 
     renderValuesList(policyData);
+    loadCharterNote();
 
     // Bind Auto-Gen Handler
     document.getElementById('btn-gen-values')?.addEventListener('click', async (e) => {
@@ -95,6 +97,53 @@ export function renderValuesStep(container, policyData) {
         policyData.values.push({ name: "New Value", description: "", weight: 0.2, hard_gate: false, rubric: { scoring_guide: [] } });
         renderValuesList(policyData);
     });
+}
+
+// If the org has a Charter, its core values take a fixed share of every score
+// (settings.governance_split, default 40%) and the standards on this policy
+// share the rest. Without this note, authors read "every response is scored
+// against these" and assume 100%.
+async function loadCharterNote() {
+    try {
+        const orgRes = await api.getMyOrganization();
+        const org = orgRes && orgRes.organization;
+        if (!org || !org.id) return;
+
+        const cRes = await api.getCharter(org.id).catch(() => null);
+        const charter = cRes && cRes.charter;
+        if (!charter) return;
+
+        let coreValues = charter.core_values || [];
+        if (typeof coreValues === 'string') {
+            try { coreValues = JSON.parse(coreValues); } catch (_) { coreValues = []; }
+        }
+        const scoredCount = coreValues.filter(v => !v.hard_gate).length;
+        if (scoredCount === 0) return; // gate-only charter: no share of the score
+
+        let settings = org.settings || {};
+        if (typeof settings === 'string') {
+            try { settings = JSON.parse(settings); } catch (_) { settings = {}; }
+        }
+        const split = Number(settings.governance_split);
+        const charterPct = Math.round((isFinite(split) && split > 0 ? split : 0.40) * 100);
+
+        const note = document.getElementById('pw-charter-note');
+        if (!note) return; // user navigated away
+        note.innerHTML = `
+            <strong class="block text-indigo-800 dark:text-indigo-300 mb-1">Your organization has a Charter</strong>
+            Its ${scoredCount} core value${scoredCount === 1 ? '' : 's'} automatically take <strong>${charterPct}%</strong> of every score for agents under this policy. The standards you define here share the remaining <strong>${100 - charterPct}%</strong>.`;
+        note.classList.remove('hidden');
+    } catch (_) { /* note is informational — never block the step on it */ }
+}
+
+// Weight is stored as a 0..1 float (legacy rows may hold a 0..100 percent).
+// A stored 0 MUST render as 0 — the old `(v.weight && ...) : (v.weight || 20)`
+// fallback displayed zero-weight standards as a healthy-looking 20%, hiding
+// values that in fact never affect scoring.
+function weightToPct(weight) {
+    if (typeof weight !== 'number' || !isFinite(weight)) return 20;
+    if (weight <= 1.0) return Math.round(weight * 100);
+    return Math.min(100, Math.round(weight));
 }
 
 function renderValuesList(policyData) {
@@ -157,11 +206,12 @@ function renderValuesList(policyData) {
                         <span class="text-xs uppercase font-bold text-gray-500">Non-negotiable</span>
                     </label>
 
-                    <div class="flex items-center gap-3 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
+                    <div id="pw-weight-wrap-${idx}" class="flex items-center gap-3 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800 ${v.hard_gate ? 'opacity-40' : ''}"
+                        title="${v.hard_gate ? 'Not used: a non-negotiable standard blocks on violation instead of contributing to the score.' : 'How much this standard counts toward the overall score.'}">
                         <label class="text-xs uppercase font-bold text-gray-500">Importance</label>
-                        <input type="range" min="1" max="100" value="${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}"
-                            class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600">
-                        <span id="pw-weight-lbl-${idx}" class="text-sm font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${(v.weight && v.weight <= 1.0) ? Math.round(v.weight * 100) : (v.weight || 20)}%</span>
+                        <input type="range" min="0" max="100" value="${weightToPct(v.weight)}" ${v.hard_gate ? 'disabled' : ''}
+                            class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600 disabled:cursor-not-allowed">
+                        <span id="pw-weight-lbl-${idx}" class="text-sm font-mono font-bold ${!v.hard_gate && weightToPct(v.weight) === 0 ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'} w-8 text-right">${weightToPct(v.weight)}%</span>
                     </div>
                 </div>
             </div>
@@ -215,7 +265,7 @@ function renderValuesList(policyData) {
             const definitions = [
                 { score: 1.0, label: "Positive (+1.0)", placeholder: "Example of excellent adherence...", color: "green", icon: "✅" },
                 { score: 0.0, label: "Neutral (0.0)", placeholder: "Acceptable / Baseline behavior...", color: "gray", icon: "⚪" },
-                { score: -1.0, label: "Negative (-1.0)", placeholder: "Specific violation example...", color: "red", icon: "🚫" }
+                { score: -1.0, label: "Negative (-1.0)", placeholder: "Something the response actively DOES that violates this (e.g. reveals confidential data) — not something it merely fails to mention...", color: "red", icon: "🚫" }
             ];
 
             definitions.forEach(def => {
@@ -259,15 +309,30 @@ function renderValuesList(policyData) {
             slider.addEventListener('input', (e) => {
                 const pct = parseInt(e.target.value);
                 policyData.values[idx].weight = pct / 100;
-                if (label) label.innerText = pct + '%';
+                if (label) {
+                    label.innerText = pct + '%';
+                    label.classList.toggle('text-red-600', pct === 0);
+                    label.classList.toggle('text-gray-700', pct !== 0);
+                }
             });
         }
 
-        // Hard gate toggle
+        // Hard gate toggle — the engine ignores weight for non-negotiables
+        // (they block on violation instead of contributing to the score), so
+        // disable the Importance control rather than let it suggest otherwise.
         const hg = card.querySelector(`#pw-hardgate-${idx}`);
+        const weightWrap = card.querySelector(`#pw-weight-wrap-${idx}`);
         if (hg) {
             hg.addEventListener('change', (e) => {
-                policyData.values[idx].hard_gate = !!e.target.checked;
+                const gated = !!e.target.checked;
+                policyData.values[idx].hard_gate = gated;
+                if (slider) slider.disabled = gated;
+                if (weightWrap) {
+                    weightWrap.classList.toggle('opacity-40', gated);
+                    weightWrap.title = gated
+                        ? 'Not used: a non-negotiable standard blocks on violation instead of contributing to the score.'
+                        : 'How much this standard counts toward the overall score.';
+                }
             });
         }
     });
@@ -279,10 +344,45 @@ function renderValuesList(policyData) {
     };
 }
 
+// Mirrors the engine's compile-time contract (synderesis._validate_value_rubrics
+// and the save-time checks in policy_api_routes.validate_policy_data): a
+// rubric-less non-negotiable blocks every response; a rubric-less ordinary
+// standard is silently stripped; a zero-weight ordinary standard never counts.
+// Catch all three here, on the step where the fix is, instead of at save or —
+// worse — at a user's first chat.
+function hasUsableCriteria(v) {
+    const rub = v.rubric;
+    if (Array.isArray(rub)) return rub.length > 0;
+    if (rub && typeof rub === 'object') {
+        if (Array.isArray(rub.scoring_guide) && rub.scoring_guide.length > 0) return true;
+        return !!(rub.description && String(rub.description).trim());
+    }
+    return false;
+}
+
 export function validateValuesStep(policyData) {
     if (!policyData.values || policyData.values.length === 0) {
         ui.showToast("At least one Standard is required.", "error");
         return false;
+    }
+    for (const v of policyData.values) {
+        const name = v.name || 'Unnamed standard';
+        if (!hasUsableCriteria(v)) {
+            ui.showToast(
+                v.hard_gate
+                    ? `"${name}" is non-negotiable but has no scoring criteria — agents would block every response. Open "View/Edit Rubric" and fill in the states.`
+                    : `"${name}" has no scoring criteria, so it can never be scored. Open "View/Edit Rubric" and fill in the states.`,
+                "error"
+            );
+            return false;
+        }
+        if (!v.hard_gate && (!v.weight || v.weight <= 0)) {
+            ui.showToast(
+                `"${name}" has an importance of 0%, so it never affects scoring. Raise its importance or mark it non-negotiable.`,
+                "error"
+            );
+            return false;
+        }
     }
     return true;
 }

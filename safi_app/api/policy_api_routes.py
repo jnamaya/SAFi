@@ -10,6 +10,10 @@ from datetime import datetime
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
 from ..core.rbac import get_current_org_id
 from ..core.services.provider_governance import activate_org
+# Single source of truth with the governance compiler: what the compiler would
+# strip (ordinary value) or raise on (hard gate) at chat time, we reject at
+# save time — the author is looking at the form, not at a user's failed chat.
+from ..core.faculties.synderesis import _has_usable_rubric
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
@@ -24,6 +28,33 @@ def validate_policy_data(data):
             errors.append("Values must be a list.")
         elif len(data['values']) < 1:
             errors.append("At least one Core Value is required.")
+        else:
+            for v in data['values']:
+                if not isinstance(v, dict):
+                    errors.append("Each value must be an object.")
+                    break
+                vname = v.get('name') or v.get('value') or '<unnamed>'
+                if not _has_usable_rubric(v):
+                    if v.get('hard_gate'):
+                        errors.append(
+                            f"Non-negotiable standard '{vname}' has no scoring criteria. "
+                            "Agents under this policy would block every response. "
+                            "Fill in its rubric before saving."
+                        )
+                    else:
+                        errors.append(
+                            f"Standard '{vname}' has no scoring criteria, so it can never "
+                            "be scored. Fill in its rubric before saving."
+                        )
+                try:
+                    weight = float(v.get('weight') or 0)
+                except (TypeError, ValueError):
+                    weight = 0
+                if not v.get('hard_gate') and weight <= 0:
+                    errors.append(
+                        f"Standard '{vname}' has an importance of 0, so it never affects "
+                        "scoring. Give it an importance or mark it non-negotiable."
+                    )
 
     # will_rules may be either a legacy list of strings or a structured dict
     # ({structural_requirements, early_prompt_blacklist, allowed_tools, rules}).
@@ -338,7 +369,12 @@ async def generate_policy_content_endpoint():
                  "1. Use a 3-point scale ONLY: 1.0, 0.0, and -1.0.\n"
                  "2. 1.0 = Full Compliance/Positive.\n"
                  "3. 0.0 = Neutral/Not Applicable.\n"
-                 "4. -1.0 = Violation/Negative.\n"
+                 "4. -1.0 = Violation/Negative. The -1.0 criteria MUST describe something "
+                 "the response actively DOES (an act of commission — e.g. 'reveals "
+                 "confidential data', 'promises a specific outcome'), never a mere "
+                 "omission like 'fails to mention X'. Policies govern many unrelated "
+                 "requests; omission-based penalties punish responses where the value "
+                 "simply wasn't in play.\n"
                  "5. DO NOT produce a 1-5 scale.\n\n"
                  "Example Rubric Format:\n"
                  "\"rubric\": {\n"

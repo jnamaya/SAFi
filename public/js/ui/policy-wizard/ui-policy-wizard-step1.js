@@ -1,3 +1,5 @@
+import * as ui from './../ui.js';
+
 export function renderDefinitionStep(container, policyData) {
     container.innerHTML = `
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -51,7 +53,7 @@ export function renderDefinitionStep(container, policyData) {
 
 export function validateDefinitionStep(policyData) {
     if (!policyData.name || !policyData.name.trim()) {
-        alert("Policy Name is required");
+        ui.showToast("Policy Name is required.", "error");
         return false;
     }
     return true;
