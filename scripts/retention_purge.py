@@ -343,6 +343,13 @@ def purge_org(conn, org, args):
         done["prompt_usage"] = purge_aged_table(conn, org_id, cutoff, "prompt_usage", "timestamp", args.batch_size)
         done["audit_snapshots"] = purge_aged_table(conn, org_id, cutoff, "audit_snapshots", "created_at", args.batch_size, pk="hash")
 
+        # Review-queue sweep: PENDING rows whose message this run (or an
+        # earlier one) destroyed — nothing left to review. Reviewed rows are
+        # deliberately kept: once the chain and its 'review' entries are
+        # purged, the queue row is the disposition's last remnant, and the
+        # coverage report counts it as purged.
+        done["review_queue_orphans"] = db.sweep_orphaned_pending_reviews(org_id)
+
         db.append_compliance_log(org_id, "purge_completed", ACTOR, {
             "run_id": run_id, "cutoff_utc": cutoff_iso, "retention_years": years,
             "batches": batches, "duration_seconds": round(time.time() - started, 1),
@@ -357,6 +364,18 @@ def purge_org(conn, org, args):
             "partial_counts": done,
         })
         raise
+
+
+def check_review_backlogs(args):
+    """Daily queue_backlog sweep (Art. 72): every org with a review config
+    gets its oldest-pending-item age checked; overdue queues journal an
+    alert (and fire the org's webhook, if configured). Runs on this timer —
+    not per-turn — plus opportunistically on queue reads in the API."""
+    if args.dry_run:
+        return
+    from safi_app.core.services import review_alerts
+    for org_id in db.list_orgs_with_review_enabled():
+        review_alerts.check_queue_backlog(org_id)
 
 
 def purge_log_files(args, orgs):
@@ -486,6 +505,7 @@ def main():
             purge_org(conn, org, args)
         if not args.org:
             purge_log_files(args, orgs)
+            check_review_backlogs(args)
     finally:
         release_lock(conn)
         conn.close()

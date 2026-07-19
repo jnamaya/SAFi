@@ -16,12 +16,14 @@ inherits the same tamper-evidence as the record it supervises.
 import csv
 import io
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, current_app, session, Response
 
 from ..persistence import database as db
 from ..core.rbac import require_role, require_any_role, get_current_org_id
+from ..core.services import review_alerts
 
 review_bp = Blueprint('review', __name__)
 
@@ -73,6 +75,10 @@ def list_queue(org_id):
         rows, total = db.list_review_queue(
             org_id, status=status, trigger=trigger,
             profile=request.args.get("profile"), limit=limit, offset=offset)
+        # Opportunistic queue_backlog check (design §6): off the request
+        # thread so a slow webhook can never delay the queue read.
+        threading.Thread(target=review_alerts.check_queue_backlog,
+                         args=(org_id,), daemon=True).start()
         return jsonify({"items": rows, "total": total, "limit": limit, "offset": offset})
     except Exception as e:
         current_app.logger.error(f"Error listing review queue: {e}")

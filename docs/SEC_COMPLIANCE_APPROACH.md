@@ -130,19 +130,36 @@ where an examiner would encounter them in exported records.
   at sign-in, an org-level require-MFA setting, and an append-only
   authentication event journal (sign-ins, denials, session revocations).
 - **Role-based access control** — including a dedicated auditor role.
+- **Supervisory review queue** — org-configurable sampling of governed turns
+  into a human review queue: a deterministic random sample (a published hash
+  rule, so an examiner can recompute exactly which turns were due — sampling
+  cannot be cherry-picked) plus rule triggers covering every hard-gate block,
+  gateway violations, low-Alignment turns, and Consistency drops. Reviewers
+  (admin and auditor roles only) approve or override each item; overrides
+  require a written reason. Every disposition is appended to the same
+  hash-chained audit trail as the record under review, attributed to the
+  authenticated reviewer. Coverage reporting (turns, sampled, dispositions,
+  review latency) exports to CSV with chain-of-custody logging, and all
+  sampling-rule changes are recorded in the compliance evidence log.
+  Supports FINRA 3110/3120 supervisory review; review is post-hoc
+  supervision — an override documents the firm's determination about a
+  delivered response, it does not retract it.
+- **Post-market monitoring alerts** — threshold alerts for rolling Alignment
+  degradation per agent, per-turn Consistency drops, and review-queue
+  backlog, journaled to an append-only alert log, surfaced in-app, and
+  optionally pushed to a firm webhook signed with HMAC-SHA256 (delivery
+  outcomes journaled). Thresholds are org-configurable and evidence-logged.
+  The written monitoring plan is published at `docs/MONITORING_PLAN.md`.
 
 ## 3. Roadmap
 
 Planned work, in priority order:
 
-1. **Compliance supervision workflow** — sampling, flagging, and sign-off tooling
-   for compliance officers over the per-turn governance data, per FINRA's
-   human-in-the-loop expectations.
-2. **Zero-data-retention LLM endpoints** — enabling provider ZDR options where
+1. **Zero-data-retention LLM endpoints** — enabling provider ZDR options where
    offered and documenting per-provider retention posture alongside the
    existing per-org provider allow-list.
-3. **SOC 2 Type II program.**
-4. **SAML SSO and SCIM provisioning** — available on enterprise demand,
+2. **SOC 2 Type II program.**
+3. **SAML SSO and SCIM provisioning** — available on enterprise demand,
    building on the shipped OIDC per-tenant enforcement.
 5. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
    amended paragraph (i) hosting-undertaking question for hosted deployments.

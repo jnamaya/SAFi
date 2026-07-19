@@ -35,6 +35,7 @@ from .orchestrator_mixins.tasks import BackgroundTasksMixin
 from .services import LLMProvider, RAGService, MCPManager
 from .services.model_routing import detect_provider, build_providers_config
 from .services.provider_governance import activate_org
+from .services import review_alerts
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -1012,6 +1013,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                 model_attribution=self.model_attribution,
                                 will_decision="approve", will_stage=will_stage_final)
 
+        # Art. 72 monitoring runs off the request path; _submit_bg copies
+        # contextvars so the org context (active_org) still resolves inside.
+        self._submit_bg(review_alerts.evaluate_turn_alerts,
+                        self.active_profile_name, S_t, drift_val, "approve")
+
         # Follow-up suggestions are a blocking sync LLM call — run them off the
         # request path so they never delay the answer or block the event loop.
         # The frontend polls the audit endpoint and injects them when ready.
@@ -1131,6 +1137,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                     model_attribution=self.model_attribution,
                                     will_decision=verdict,
                                     will_stage=(stage if verdict != "approve" else None))
+            # Art. 72 monitoring off the request path (same as native turns).
+            self._submit_bg(review_alerts.evaluate_turn_alerts,
+                            self.active_profile_name, spirit_score, drift_val, verdict)
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "evaluate_gateway",

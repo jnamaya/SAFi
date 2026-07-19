@@ -3543,6 +3543,109 @@ def get_review_report(org_id, date_from, date_to):
                  "turns are pre-Phase-E and not in the denominator."),
     }
 
+def recent_org_profile_scores(org_id, profile_name, limit):
+    """Last N Alignment scores for an org+profile, newest first — the rolling
+    window for the alignment_degradation alert. Approved turns only (redirects
+    carry a redirect-quality score from a separate rubric; pooling them would
+    poison the mean — same rule as the Audit Hub KPIs). Org attribution rides
+    the org-stamped terminal trail entry, so pre-Phase-E turns fall outside
+    the window by construction."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT ch.spirit_score FROM chat_audit_trail t "
+            "JOIN chat_history ch ON ch.id = t.message_pk "
+            "WHERE t.org_id=%s AND t.action='update' AND ch.profile_name=%s "
+            "AND ch.will_decision='approve' AND ch.spirit_score IS NOT NULL "
+            "GROUP BY t.message_pk, ch.spirit_score ORDER BY t.message_pk DESC LIMIT %s",
+            (org_id, profile_name, int(limit)))
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+def oldest_pending_review_age_days(org_id):
+    """Age in days of the oldest pending queue row, or None when the queue is
+    clear — the queue_backlog alert input."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT TIMESTAMPDIFF(SECOND, MIN(created_at), NOW()) / 86400.0 "
+            "FROM review_queue WHERE org_id=%s AND status='pending'", (org_id,))
+        row = cursor.fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+    finally:
+        cursor.close()
+        conn.close()
+
+def recent_alert_exists(org_id, alert_type, profile, hours):
+    """True when an alert of this type fired for this (org, profile) within
+    the cooldown window. profile None matches org-level alerts (backlog)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT detail FROM review_alerts WHERE org_id=%s AND alert_type=%s "
+            "AND created_at > NOW() - INTERVAL %s HOUR ORDER BY id DESC LIMIT 50",
+            (org_id, alert_type, int(hours)))
+        for (raw,) in cursor.fetchall():
+            detail = _review_json(raw, {})
+            if detail.get("profile") == profile:
+                return True
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def insert_review_alert(org_id, alert_type, detail, delivered):
+    """Journals one Art. 72 alert (append-only — the delivery outcome is
+    known before the insert; there is deliberately no update helper)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO review_alerts (org_id, alert_type, detail, delivered) "
+            "VALUES (%s, %s, %s, %s)",
+            (org_id, alert_type, json.dumps(detail), json.dumps(delivered)))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        cursor.close()
+        conn.close()
+
+def sweep_orphaned_pending_reviews(org_id):
+    """Removes PENDING queue rows whose underlying message was retention-
+    purged — there is nothing left to review. Reviewed rows are kept even
+    when orphaned: after the chain (and its 'review' entries) is purged, the
+    queue row is the last remnant of the disposition, and the coverage
+    report counts these as purged. Returns rows removed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE rq FROM review_queue rq LEFT JOIN chat_history ch ON ch.id = rq.message_pk "
+            "WHERE rq.org_id=%s AND rq.status='pending' AND ch.id IS NULL", (org_id,))
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_orgs_with_review_enabled():
+    """Org ids whose review_config exists — the backlog-check worklist for
+    the daily timer (enabled is verified against merged config by the
+    caller; the LIKE is just a cheap prefilter)."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id FROM organizations WHERE settings LIKE '%review_config%'")
+        return [r["id"] for r in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
 def list_review_alerts(org_id, limit=20):
     """Recent Art. 72 monitoring alerts, newest first (append-only journal)."""
     conn = get_db_connection()
