@@ -115,6 +115,20 @@ where an examiner would encounter them in exported records.
   engine with safety rails, and a date-range examiner production/export API.
   All retention-config changes and exports are recorded in an append-only
   compliance evidence log.
+- **Per-org LLM provider allow-list** — each organization can restrict which
+  LLM providers may receive its content. Enforcement is fail-closed across
+  every model call in the pipeline (including internal evaluation stages), a
+  disallowed provider is rejected at request time rather than rerouted, and
+  every allow-list change is recorded in the append-only compliance evidence
+  log. Each turn's audit record attributes the specific provider and model
+  that produced and evaluated the response. Designed to support Reg S-P
+  service-provider oversight (17 CFR 248.30(a)(5)).
+- **Enterprise identity and MFA** — server-side revocable sessions with
+  org-configurable idle and absolute timeouts, TOTP multi-factor
+  authentication for local accounts, per-tenant SSO enforcement (Microsoft
+  Entra tenant and Google Workspace domain pinning) with MFA evidence checks
+  at sign-in, an org-level require-MFA setting, and an append-only
+  authentication event journal (sign-ins, denials, session revocations).
 - **Role-based access control** — including a dedicated auditor role.
 
 ## 3. Roadmap
@@ -124,10 +138,13 @@ Planned work, in priority order:
 1. **Compliance supervision workflow** — sampling, flagging, and sign-off tooling
    for compliance officers over the per-turn governance data, per FINRA's
    human-in-the-loop expectations.
-2. **Enterprise identity** — MFA and SAML SSO.
-3. **SOC 2 Type II program** and enterprise/zero-data-retention LLM endpoint
-   options as per-org policy.
-4. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
+2. **Zero-data-retention LLM endpoints** — enabling provider ZDR options where
+   offered and documenting per-provider retention posture alongside the
+   existing per-org provider allow-list.
+3. **SOC 2 Type II program.**
+4. **SAML SSO and SCIM provisioning** — available on enterprise demand,
+   building on the shipped OIDC per-tenant enforcement.
+5. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
    amended paragraph (i) hosting-undertaking question for hosted deployments.
 
 ## 4. Key sources
