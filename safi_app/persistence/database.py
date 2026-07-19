@@ -419,6 +419,18 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE chat_history ADD COLUMN model_attribution VARCHAR(512) DEFAULT NULL AFTER policy_version")
 
+        # Will provenance: the enforcement decision that terminated this turn
+        # ('approve'|'violation'|'redirected') and the gate that determined it
+        # ('phase_zero'|'structure'|'audit'|'hard_gate'|'spirit'). Previously
+        # this lived only in the JSONL governance logs, so "list all hard-gate
+        # blocks last quarter" had no DB-backed answer. NULL = pre-Phase-E turn
+        # (reports must render it as unknown, never as approved); on approved
+        # turns will_stage is NULL except 'spirit' for a low-alignment commit.
+        cursor.execute("SHOW COLUMNS FROM chat_history LIKE 'will_decision'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN will_decision VARCHAR(16) DEFAULT NULL AFTER model_attribution")
+            cursor.execute("ALTER TABLE chat_history ADD COLUMN will_stage VARCHAR(16) DEFAULT NULL AFTER will_decision")
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_usage (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -571,6 +583,51 @@ def init_db():
                 detail JSON NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_oclog_org (org_id, created_at)
+            )
+        ''')
+
+        # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
+        # Workflow state only — the regulatory evidence for each disposition is
+        # the 'review' entry appended to chat_audit_trail in the same
+        # transaction as the status change. One row per sampled turn even when
+        # several triggers fire (triggers is a JSON array): the queue measures
+        # reviewer workload, not trigger volume. No FKs (house style); rows
+        # whose message_pk was retention-purged are swept by the purge script.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS review_queue (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                org_id CHAR(36) NOT NULL,
+                message_pk INT NOT NULL,
+                message_id CHAR(36) NOT NULL,
+                conversation_id CHAR(36) NOT NULL,
+                profile_name VARCHAR(50),
+                policy_id VARCHAR(255),
+                policy_version INT,
+                triggers JSON NOT NULL,
+                trigger_detail JSON,
+                status ENUM('pending','approved','overridden') DEFAULT 'pending',
+                reviewed_by VARCHAR(255) NULL,
+                reviewer_email VARCHAR(255) NULL,
+                reviewed_at TIMESTAMP NULL,
+                reason_enc MEDIUMTEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_review_msg (message_pk),
+                INDEX idx_review_org (org_id, status, created_at)
+            )
+        ''')
+
+        # Append-only Art. 72 post-market-monitoring alert journal (who was
+        # told what, when, and whether the webhook delivery succeeded). No
+        # UPDATE/DELETE helpers exist for it by construction.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS review_alerts (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                org_id CHAR(36) NOT NULL,
+                alert_type VARCHAR(40) NOT NULL,
+                detail JSON,
+                delivered JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ralerts_org (org_id, created_at)
             )
         ''')
 
@@ -1606,14 +1663,24 @@ def is_message_cancelled(msg_id):
         conn.close()
 
 def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None, drift=None,
-                         policy_id=None, policy_version=None, model_attribution=None):
+                         policy_id=None, policy_version=None, model_attribution=None,
+                         will_decision=None, will_stage=None):
+    # Org attribution comes from the turn's provider-governance context (set
+    # once per turn via activate_org, copied into executor threads). It stamps
+    # the trail entry (routing metadata, outside the hash — same contract as
+    # delete snapshots) and scopes the review-sampling decision below.
+    try:
+        from ..core.services import provider_governance as _pg
+        _org_id = _pg.active_org()
+    except Exception:
+        _org_id = None
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "SELECT id, conversation_id, conscience_ledger, audit_status, spirit_score, "
             "spirit_note, profile_name, profile_values, suggested_prompts, drift, "
-            "policy_id, policy_version, model_attribution "
+            "policy_id, policy_version, model_attribution, will_decision, will_stage "
             "FROM chat_history WHERE message_id=%s FOR UPDATE",
             (msg_id,),
         )
@@ -1625,11 +1692,26 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
                 "suggested_prompts": row[8], "drift": row[9],
                 "policy_id": row[10], "policy_version": row[11],
                 "model_attribution": row[12],
-            })
-        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, drift=%s, spirit_note=%s, profile_name=%s, policy_id=%s, policy_version=%s, model_attribution=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
+                "will_decision": row[13], "will_stage": row[14],
+            }, org_id=_org_id)
+        sql = """UPDATE chat_history SET conscience_ledger=%s, audit_status='complete', spirit_score=%s, drift=%s, spirit_note=%s, profile_name=%s, policy_id=%s, policy_version=%s, model_attribution=%s, will_decision=%s, will_stage=%s, profile_values=%s, suggested_prompts=%s WHERE message_id=%s"""
         cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, drift, crypto.encrypt_value(note),
                              pname, policy_id, policy_version, model_attribution,
+                             will_decision, will_stage,
                              json.dumps(pvals), json.dumps(prompts), msg_id))
+        # Review sampling shares this transaction so a committed turn and its
+        # "was this due for review" decision are atomic — a turn can never
+        # commit without its due queue row. Isolation is one-way: a sampling
+        # bug must never take down the governance commit itself.
+        if row:
+            try:
+                _maybe_enqueue_review(
+                    cursor, _org_id, row[0], msg_id, row[1], pname,
+                    policy_id, policy_version, score, drift,
+                    will_decision, will_stage,
+                )
+            except Exception:
+                logging.exception("Review sampling hook failed — turn commit unaffected.")
         conn.commit()
     finally:
         cursor.close()
@@ -2996,6 +3078,230 @@ def set_org_provider_allowlist(org_id, allowlist, actor):
     from ..core.services import provider_governance
     provider_governance.invalidate_org(org_id)
     return get_org_provider_config(org_id)
+
+# --- Human review queue: config, sampling, enqueue (Phase E) ---------------
+# Config lives in organizations.settings.review_config, changed only through
+# set_org_review_config (evidence-logged, same pattern as retention and the
+# provider allow-list). Sampling default OFF — supervision is an org's
+# explicit, journaled opt-in. Thresholds default to the Audit Hub's
+# long-standing flag line (Alignment < 6; drift > 0.4 ≡ Consistency < 60%).
+
+REVIEW_CONFIG_DEFAULTS = {
+    "enabled": False,
+    "random_sample_pct": 5,
+    "triggers": {
+        "hard_gate_block": True,
+        "gateway_violation": True,
+        "low_alignment": True,
+        "alignment_threshold": 6,
+        "drift_spike": True,
+        "drift_threshold": 0.4,
+    },
+    "alerts": {
+        "webhook_url": None,
+        "alignment_avg_threshold": 6,
+        "alignment_window_turns": 20,
+        "backlog_max_age_days": 14,
+    },
+}
+
+def _merged_review_config(stored):
+    """Stored review_config (possibly partial/absent) merged over defaults."""
+    cfg = json.loads(json.dumps(REVIEW_CONFIG_DEFAULTS))  # deep copy
+    if isinstance(stored, dict):
+        for key, val in stored.items():
+            if key in ("triggers", "alerts") and isinstance(val, dict):
+                cfg[key].update(val)
+            else:
+                cfg[key] = val
+    return cfg
+
+def _is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+def validate_review_config_changes(changes):
+    """Validates a partial review_config update. Raises ValueError with a
+    user-facing message on the first problem. Pure — no DB."""
+    if not isinstance(changes, dict):
+        raise ValueError("review config must be an object")
+    allowed_top = {"enabled", "random_sample_pct", "triggers", "alerts"}
+    unknown = set(changes) - allowed_top
+    if unknown:
+        raise ValueError(f"unknown review config keys: {', '.join(sorted(unknown))}")
+    if "enabled" in changes and not isinstance(changes["enabled"], bool):
+        raise ValueError("enabled must be true or false")
+    if "random_sample_pct" in changes:
+        pct = changes["random_sample_pct"]
+        if not _is_num(pct) or pct < 0 or pct > 100:
+            raise ValueError("random_sample_pct must be a number between 0 and 100")
+    trig = changes.get("triggers", {})
+    if not isinstance(trig, dict):
+        raise ValueError("triggers must be an object")
+    allowed_trig = set(REVIEW_CONFIG_DEFAULTS["triggers"])
+    unknown = set(trig) - allowed_trig
+    if unknown:
+        raise ValueError(f"unknown trigger keys: {', '.join(sorted(unknown))}")
+    for key in ("hard_gate_block", "gateway_violation", "low_alignment", "drift_spike"):
+        if key in trig and not isinstance(trig[key], bool):
+            raise ValueError(f"{key} must be true or false")
+    if "alignment_threshold" in trig and not (_is_num(trig["alignment_threshold"]) and 0 <= trig["alignment_threshold"] <= 10):
+        raise ValueError("alignment_threshold must be a number between 0 and 10")
+    if "drift_threshold" in trig and not (_is_num(trig["drift_threshold"]) and 0 <= trig["drift_threshold"] <= 1):
+        raise ValueError("drift_threshold must be a number between 0 and 1")
+    alerts = changes.get("alerts", {})
+    if not isinstance(alerts, dict):
+        raise ValueError("alerts must be an object")
+    allowed_alerts = set(REVIEW_CONFIG_DEFAULTS["alerts"])
+    unknown = set(alerts) - allowed_alerts
+    if unknown:
+        raise ValueError(f"unknown alert keys: {', '.join(sorted(unknown))}")
+    url = alerts.get("webhook_url")
+    if url is not None and "webhook_url" in alerts:
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")) or len(url) > 512:
+            raise ValueError("webhook_url must be an http(s) URL (max 512 chars) or null")
+    if "alignment_avg_threshold" in alerts and not (_is_num(alerts["alignment_avg_threshold"]) and 0 <= alerts["alignment_avg_threshold"] <= 10):
+        raise ValueError("alignment_avg_threshold must be a number between 0 and 10")
+    if "alignment_window_turns" in alerts:
+        w = alerts["alignment_window_turns"]
+        if isinstance(w, bool) or not isinstance(w, int) or not 1 <= w <= 500:
+            raise ValueError("alignment_window_turns must be an integer between 1 and 500")
+    if "backlog_max_age_days" in alerts:
+        d = alerts["backlog_max_age_days"]
+        if isinstance(d, bool) or not isinstance(d, int) or not 1 <= d <= 365:
+            raise ValueError("backlog_max_age_days must be an integer between 1 and 365")
+
+def get_org_review_config(org_id):
+    """The org's review config merged over defaults (never partial)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        return _merged_review_config(settings.get("review_config"))
+    finally:
+        cursor.close()
+        conn.close()
+
+def set_org_review_config(org_id, changes, actor):
+    """Merges a partial review_config into organizations.settings AND appends
+    the compliance-log evidence row in the same transaction (mirror of
+    set_org_retention_config). Returns the new merged config; raises
+    ValueError on invalid input."""
+    validate_review_config_changes(changes)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        old_merged = _merged_review_config(settings.get("review_config"))
+        stored = settings.get("review_config") or {}
+        for key, val in changes.items():
+            if key in ("triggers", "alerts"):
+                sub = dict(stored.get(key) or {})
+                sub.update(val)
+                stored[key] = sub
+            else:
+                stored[key] = val
+        settings["review_config"] = stored
+        new_merged = _merged_review_config(stored)
+        if new_merged != old_merged:
+            append_compliance_log(org_id, "review_config_changed", actor,
+                                  {"old": old_merged, "new": new_merged},
+                                  cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_org_review_config(org_id)
+
+def evaluate_review_triggers(cfg, message_id, conversation_id, score, drift,
+                             will_decision, will_stage):
+    """Which review triggers does this committed turn match? Pure — no DB.
+
+    Returns (triggers, detail). Deterministic random sampling: a turn is
+    sampled iff sha256(message_id) % 10000 < pct*100, so given the journaled
+    config an examiner can recompute exactly which turns were due — there is
+    no cherry-picking a hash function. Native hard-gate blocks ship as
+    persona redirects, so the trigger keys on will_stage alone (it also
+    catches gateway hard-gate violations)."""
+    trig_cfg = cfg.get("triggers", {})
+    triggers, detail = [], {}
+    if trig_cfg.get("hard_gate_block") and will_stage == "hard_gate":
+        triggers.append("hard_gate_block")
+    if (trig_cfg.get("gateway_violation") and will_decision == "violation"
+            and str(conversation_id or "").startswith("gw_")):
+        triggers.append("gateway_violation")
+    if trig_cfg.get("low_alignment") and score is not None:
+        thr = trig_cfg.get("alignment_threshold", 6)
+        if score < thr:
+            triggers.append("low_alignment")
+            detail["spirit_score"] = score
+            detail["alignment_threshold"] = thr
+    if trig_cfg.get("drift_spike") and drift is not None:
+        dthr = trig_cfg.get("drift_threshold", 0.4)
+        if drift > dthr:
+            triggers.append("drift_spike")
+            detail["drift"] = drift
+            detail["drift_threshold"] = dthr
+    pct = cfg.get("random_sample_pct") or 0
+    if pct > 0:
+        bucket = int(hashlib.sha256(str(message_id).encode("utf-8")).hexdigest(), 16) % 10000
+        if bucket < int(round(pct * 100)):
+            triggers.append("random_sample")
+    if triggers:
+        detail["will_decision"] = will_decision
+        detail["will_stage"] = will_stage
+    return triggers, detail
+
+def _maybe_enqueue_review(cursor, org_id, message_pk, message_id, conversation_id,
+                          profile_name, policy_id, policy_version, score, drift,
+                          will_decision, will_stage):
+    """Runs on update_audit_results' cursor/transaction. Reads the org's
+    review config and inserts a review_queue row when any trigger matches.
+    ON DUPLICATE refreshes triggers/detail without touching workflow state
+    (a terminal commit normally happens exactly once per message)."""
+    if not org_id:
+        return
+    cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+    row = cursor.fetchone()
+    raw = row[0] if row else None
+    settings = {}
+    if raw:
+        try:
+            settings = json.loads(raw) if isinstance(raw, str) else raw
+        except (ValueError, TypeError):
+            settings = {}
+    cfg = _merged_review_config(settings.get("review_config"))
+    if not cfg.get("enabled"):
+        return
+    triggers, detail = evaluate_review_triggers(
+        cfg, message_id, conversation_id, score, drift, will_decision, will_stage)
+    if not triggers:
+        return
+    cursor.execute(
+        "INSERT INTO review_queue (org_id, message_pk, message_id, conversation_id, "
+        "profile_name, policy_id, policy_version, triggers, trigger_detail) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE triggers=VALUES(triggers), trigger_detail=VALUES(trigger_detail)",
+        (org_id, message_pk, message_id, conversation_id, profile_name,
+         policy_id, policy_version, json.dumps(triggers), json.dumps(detail)),
+    )
 
 def list_orgs_with_retention():
     """All non-demo orgs that have any retention config — the purge worklist."""

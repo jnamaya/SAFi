@@ -28,6 +28,10 @@ from .model_routing import PROVIDER_METADATA, detect_provider
 _ACTIVE_ALLOWLIST: ContextVar[Optional[FrozenSet[str]]] = ContextVar(
     "safi_provider_allowlist", default=None
 )
+# The governing org itself, carried alongside the allow-list so downstream
+# persistence (trail org attribution, review-queue sampling) can resolve the
+# turn's org without threading it through every call signature.
+_ACTIVE_ORG: ContextVar[Optional[str]] = ContextVar("safi_active_org", default=None)
 
 _CACHE_TTL_SECONDS = 60.0
 _cache: dict = {}
@@ -74,11 +78,17 @@ def invalidate_org(org_id) -> None:
 
 def activate_org(org_id) -> None:
     """Establish org provider governance for the current execution context."""
+    _ACTIVE_ORG.set(str(org_id) if org_id else None)
     _ACTIVE_ALLOWLIST.set(get_org_allowlist(org_id))
 
 
 def active_allowlist() -> Optional[FrozenSet[str]]:
     return _ACTIVE_ALLOWLIST.get()
+
+
+def active_org() -> Optional[str]:
+    """The org governing the current execution context. None = ungoverned."""
+    return _ACTIVE_ORG.get()
 
 
 def assert_provider_allowed(provider_name: str, context: str = "") -> None:

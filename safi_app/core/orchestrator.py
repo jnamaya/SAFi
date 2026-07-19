@@ -558,7 +558,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 message_id=message_id,
                 new_title=new_title,
                 user_id=user_id,
-                org_id=org_id
+                org_id=org_id,
+                will_stage="phase_zero",
             )
         self.log.info(f"[Governance | Phase 0 | Injection Gate] PASS — {gate_reason}")
 
@@ -809,6 +810,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 org_id=org_id,
                 failing_ledger=result["ledger"],
                 blocked_draft=a_t,
+                will_stage=result["stage"],
             )
 
         # Content-correction hard gates (reason mapped to ethical_violation,
@@ -834,10 +836,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 org_id=org_id,
                 failing_ledger=result["ledger"],
                 blocked_draft=a_t,
+                will_stage=result["stage"],
             )
 
         ledger = result["ledger"]
         commit_reason = result["reason"]
+        # Will provenance for the committed row: NULL stage = clean approve;
+        # 'spirit' = shipped with an honest low-alignment score (see below).
+        will_stage_final = None
 
         if result["verdict"] == "violation":
             # A content-quality block, not a safety breach — either a
@@ -940,6 +946,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         org_id=org_id,
                         failing_ledger=result["ledger"],
                         blocked_draft=a_t,
+                        will_stage=result["stage"],
                         notice=(
                             "I'm sorry — I wasn't able to put together a response that fits "
                             "how this assistant is meant to help with that question. Your "
@@ -960,6 +967,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     org_id=org_id,
                     failing_ledger=result["ledger"],
                     blocked_draft=a_t,
+                    will_stage=result["stage"],
                 )
 
             # Commit the best candidate: a clean approve beats a low-alignment
@@ -971,6 +979,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             chosen, a_t, r_t, retrieved_context = best
             ledger = chosen["ledger"]
             commit_reason = chosen["reason"]
+            will_stage_final = "spirit" if chosen["verdict"] == "violation" else None
             if chosen["verdict"] == "violation":
                 self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
 
@@ -1000,7 +1009,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                 drift=drift_val,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution)
+                                model_attribution=self.model_attribution,
+                                will_decision="approve", will_stage=will_stage_final)
 
         # Follow-up suggestions are a blocking sync LLM call — run them off the
         # request path so they never delay the answer or block the event loop.
@@ -1118,7 +1128,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                     drift=drift_val,
                                     policy_id=(self.profile or {}).get("policy_id"),
                                     policy_version=(self.profile or {}).get("policy_version"),
-                                    model_attribution=self.model_attribution)
+                                    model_attribution=self.model_attribution,
+                                    will_decision=verdict,
+                                    will_stage=(stage if verdict != "approve" else None))
             self._append_log({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "evaluate_gateway",
@@ -1262,6 +1274,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         failing_ledger: Optional[List[Dict[str, Any]]] = None,
         blocked_draft: str = "",
         notice: Optional[str] = None,
+        will_stage: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Ship a deterministic notice for internal governance failures
         (audit unavailable/degraded, structural check failed) — and, with a
@@ -1297,7 +1310,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution)
+                                model_attribution=self.model_attribution,
+                                will_decision="redirected", will_stage=will_stage)
 
         _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
@@ -1355,6 +1369,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         org_id: Optional[str],
         failing_ledger: Optional[List[Dict[str, Any]]] = None,
         blocked_draft: str = "",
+        will_stage: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Persona Redirect: Re-engages the Intellect to handle boundaries in the persona's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
@@ -1443,7 +1458,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution)
+                                model_attribution=self.model_attribution,
+                                will_decision="redirected", will_stage=will_stage)
 
         # Suggestions run off the hot path (see process_prompt); frontend polls.
         S_p: List[str] = []

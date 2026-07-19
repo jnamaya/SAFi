@@ -33,6 +33,7 @@ def make_safi():
     s.profile = {"policy_id": "pol-1", "policy_version": 1, "org_id": "org-1"}
     s.active_profile_name = "test_agent"
     s.intellect_model = "test-model"
+    s.model_attribution = '{"intellect": "test/test-model"}'
     s.spirit = MagicMock(values=VALUES)
     # Deliberately NO intellect_engine / llm_provider / conscience attributes:
     # touching any of them (i.e. making an LLM call) raises AttributeError.
