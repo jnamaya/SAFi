@@ -3303,6 +3303,260 @@ def _maybe_enqueue_review(cursor, org_id, message_pk, message_id, conversation_i
          policy_id, policy_version, json.dumps(triggers), json.dumps(detail)),
     )
 
+def _review_json(value, default):
+    """Parses a JSON column value that may arrive as str or already-parsed."""
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return default
+
+_REVIEW_QUEUE_LIST_FIELDS = (
+    "id, org_id, message_pk, message_id, conversation_id, profile_name, "
+    "policy_id, policy_version, triggers, trigger_detail, status, "
+    "reviewed_by, reviewer_email, reviewed_at, created_at"
+)
+
+def _review_row_public(row):
+    """Normalizes a review_queue dict row for API consumption: JSON columns
+    parsed, reason never included (list surface is workflow-only; the detail
+    endpoint decrypts it explicitly)."""
+    row.pop("reason_enc", None)
+    row["triggers"] = _review_json(row.get("triggers"), [])
+    row["trigger_detail"] = _review_json(row.get("trigger_detail"), {})
+    return row
+
+def list_review_queue(org_id, status=None, trigger=None, profile=None,
+                      limit=50, offset=0):
+    """Queue rows for the org, newest first — workflow fields only, nothing
+    encrypted. Returns (rows, total) where total counts all rows matching the
+    filters (for pagination)."""
+    where = ["org_id=%s"]
+    params = [org_id]
+    if status:
+        where.append("status=%s")
+        params.append(status)
+    if trigger:
+        where.append("JSON_CONTAINS(triggers, %s)")
+        params.append(json.dumps(trigger))
+    if profile:
+        where.append("profile_name=%s")
+        params.append(profile)
+    where_sql = " AND ".join(where)
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM review_queue WHERE {where_sql}",
+                       tuple(params))
+        total = cursor.fetchone()["n"]
+        cursor.execute(
+            f"SELECT {_REVIEW_QUEUE_LIST_FIELDS} FROM review_queue "
+            f"WHERE {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s",
+            tuple(params) + (int(limit), int(offset)),
+        )
+        return [_review_row_public(r) for r in cursor.fetchall()], total
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_review_item(org_id, queue_id):
+    """One queue row with everything a reviewer needs to make the call:
+    the decrypted turn (content, conscience ledger, spirit note, reasoning
+    log, will provenance, model attribution), the user prompt that produced
+    it, prior 'review' trail entries, and the hash-chain verification result.
+    Returns None when the row doesn't exist in this org. turn is None when
+    the underlying message was retention-purged (queue row outlives it)."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM review_queue WHERE id=%s AND org_id=%s",
+                       (queue_id, org_id))
+        queue = cursor.fetchone()
+        if not queue:
+            return None
+        reason = crypto.decrypt_value(queue.pop("reason_enc", None))
+        queue = _review_row_public(queue)
+        queue["reason"] = reason
+
+        cursor.execute(
+            "SELECT id, message_id, role, content, audit_status, conscience_ledger, "
+            "spirit_score, drift, spirit_note, profile_name, policy_id, policy_version, "
+            "model_attribution, will_decision, will_stage, reasoning_log, timestamp "
+            "FROM chat_history WHERE id=%s", (queue["message_pk"],))
+        turn = cursor.fetchone()
+        crypto.decrypt_fields(turn, ("content", "spirit_note", "conscience_ledger", "reasoning_log"))
+
+        user_prompt = None
+        if turn:
+            cursor.execute(
+                "SELECT content FROM chat_history WHERE conversation_id=%s "
+                "AND role='user' AND id < %s ORDER BY id DESC LIMIT 1",
+                (queue["conversation_id"], queue["message_pk"]))
+            prow = cursor.fetchone()
+            if prow:
+                user_prompt = crypto.decrypt_value(prow["content"])
+
+        cursor.execute(
+            "SELECT id, actor, state, event_at FROM chat_audit_trail "
+            "WHERE message_pk=%s AND action='review' ORDER BY id",
+            (queue["message_pk"],))
+        history = []
+        for e in cursor.fetchall():
+            state = _review_json(e.get("state"), {})
+            state["reason"] = crypto.decrypt_value(state.pop("reason_enc", None))
+            history.append({"trail_id": e["id"], "actor": e["actor"],
+                            "event_at": e["event_at"], **state})
+    finally:
+        cursor.close()
+        conn.close()
+    return {
+        "queue": queue,
+        "turn": turn,
+        "user_prompt": user_prompt,
+        "review_history": history,
+        "chain": verify_message_audit_trail(queue["message_pk"]),
+    }
+
+def apply_review_action(org_id, queue_id, action, reason, reviewer_id, reviewer_email):
+    """Records a supervisory disposition. In ONE transaction: locks the queue
+    row, rejects anything not 'pending', updates workflow state, and appends
+    the 'review' entry to the message's chat_audit_trail hash chain — the
+    trail entry is the regulatory artifact (Art. 14 auditable intervention /
+    FINRA sign-off); the queue row is merely workflow state. An override is a
+    documented supervisory determination about a delivered message — it does
+    NOT retract or alter the message itself.
+
+    Returns the updated queue row, or None when the row doesn't exist in this
+    org. Raises ValueError on invalid action, missing override reason, or a
+    row that is no longer pending."""
+    if action not in ("approve", "override"):
+        raise ValueError("action must be 'approve' or 'override'")
+    reason = (reason or "").strip()
+    if action == "override" and not reason:
+        raise ValueError("a reason is mandatory for an override")
+    status = "approved" if action == "approve" else "overridden"
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM review_queue WHERE id=%s AND org_id=%s FOR UPDATE",
+                       (queue_id, org_id))
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        if row["status"] != "pending":
+            conn.rollback()
+            raise ValueError(f"already reviewed: this item is '{row['status']}'")
+        reason_enc = crypto.encrypt_value(reason) if reason else None
+        cursor.execute(
+            "UPDATE review_queue SET status=%s, reviewed_by=%s, reviewer_email=%s, "
+            "reviewed_at=NOW(), reason_enc=%s WHERE id=%s",
+            (status, reviewer_id, reviewer_email, reason_enc, queue_id))
+        _chat_trail_append(
+            cursor, row["message_pk"], row["message_id"], row["conversation_id"],
+            "review", f"user:{reviewer_id}",
+            {
+                "disposition": status,
+                "triggers": _review_json(row["triggers"], []),
+                "reason_enc": reason_enc,
+                "policy_id": row["policy_id"],
+                "policy_version": row["policy_version"],
+                "queue_id": row["id"],
+            },
+            org_id=org_id,
+        )
+        conn.commit()
+        cursor.execute(f"SELECT {_REVIEW_QUEUE_LIST_FIELDS} FROM review_queue WHERE id=%s",
+                       (queue_id,))
+        return _review_row_public(cursor.fetchone())
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_review_report(org_id, date_from, date_to):
+    """Supervisory coverage report for [date_from, date_to). Total org turns
+    are counted from chat_audit_trail terminal 'update' entries (chat_history
+    has no org_id; entries with a NULL org stamp are pre-Phase-E and fall
+    outside the denominator — reports must treat that era as 'pre-Phase-E',
+    never 'approved'). Everything else derives from review_queue rows created
+    in the window."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT COUNT(DISTINCT message_pk) AS n FROM chat_audit_trail "
+            "WHERE org_id=%s AND action='update' AND message_id IS NOT NULL "
+            "AND created_at >= %s AND created_at < %s",
+            (org_id, date_from, date_to))
+        total_turns = cursor.fetchone()["n"]
+        cursor.execute(
+            "SELECT rq.id, rq.triggers, rq.status, rq.reviewer_email, "
+            "rq.created_at, rq.reviewed_at, ch.id AS live_pk "
+            "FROM review_queue rq LEFT JOIN chat_history ch ON ch.id = rq.message_pk "
+            "WHERE rq.org_id=%s AND rq.created_at >= %s AND rq.created_at < %s",
+            (org_id, date_from, date_to))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+    trigger_counts, dispositions, per_reviewer = {}, {"pending": 0, "approved": 0, "overridden": 0}, {}
+    latencies, purged = [], 0
+    for r in rows:
+        for t in _review_json(r["triggers"], []):
+            trigger_counts[t] = trigger_counts.get(t, 0) + 1
+        dispositions[r["status"]] = dispositions.get(r["status"], 0) + 1
+        if r["live_pk"] is None:
+            purged += 1
+        if r["status"] != "pending" and r["reviewed_at"] and r["created_at"]:
+            per_reviewer[r["reviewer_email"] or "unknown"] = \
+                per_reviewer.get(r["reviewer_email"] or "unknown", 0) + 1
+            latencies.append((r["reviewed_at"] - r["created_at"]).total_seconds())
+
+    latencies.sort()
+    n = len(latencies)
+    median_latency = None
+    if n:
+        median_latency = latencies[n // 2] if n % 2 else (latencies[n // 2 - 1] + latencies[n // 2]) / 2
+    sampled = len(rows)
+    reviewed = sampled - dispositions.get("pending", 0)
+    return {
+        "range": {"from": str(date_from), "to": str(date_to)},
+        "total_turns": total_turns,
+        "sampled": sampled,
+        "sampled_pct_of_turns": round(sampled * 100.0 / total_turns, 2) if total_turns else None,
+        "trigger_counts": trigger_counts,
+        "reviewed": reviewed,
+        "dispositions": dispositions,
+        "median_review_latency_seconds": round(median_latency, 1) if median_latency is not None else None,
+        "per_reviewer": per_reviewer,
+        "purged_message_rows": purged,
+        "note": ("total_turns counts governed turns committed since will-decision "
+                 "provenance shipped (trail entries carrying an org stamp); earlier "
+                 "turns are pre-Phase-E and not in the denominator."),
+    }
+
+def list_review_alerts(org_id, limit=20):
+    """Recent Art. 72 monitoring alerts, newest first (append-only journal)."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, alert_type, detail, delivered, created_at FROM review_alerts "
+            "WHERE org_id=%s ORDER BY id DESC LIMIT %s",
+            (org_id, int(limit)))
+        rows = cursor.fetchall()
+        for r in rows:
+            r["detail"] = _review_json(r.get("detail"), {})
+            r["delivered"] = _review_json(r.get("delivered"), {})
+        return rows
+    finally:
+        cursor.close()
+        conn.close()
+
 def list_orgs_with_retention():
     """All non-demo orgs that have any retention config — the purge worklist."""
     conn = get_db_connection()
