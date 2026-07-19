@@ -8,6 +8,7 @@ import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
 import { renderSettingsHelpTab } from './ui-settings-help.js';
 import { renderSettingsComplianceTab } from './ui-settings-compliance.js';
+import { renderSettingsReviewTab, setReviewCurrentUser } from './ui-settings-review.js';
 
 let currentUser = null;
 
@@ -29,6 +30,8 @@ export function updateCurrentUser(u) {
     currentUser = u;
     // Propagate to org module which needs it for member table
     setOrgCurrentUser(u);
+    // Review module needs the role: config editing is admin-only
+    setReviewCurrentUser(u);
 }
 
 /**
@@ -121,6 +124,8 @@ export function setupControlPanelTabs() {
                 renderSettingsOrganizationTab();
             } else if (tabId === 'compliance') {
                 renderSettingsComplianceTab();
+            } else if (tabId === 'review') {
+                renderSettingsReviewTab();
             } else if (tabId === 'profile') {
                 renderSettingsMyProfileTab();
             } else if (tabId === 'agents') {

@@ -28,7 +28,26 @@ export function setupConscienceModalContent(payload) {
         ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>${policyVersion ? ` (v${esc(policyVersion)})` : ''}, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
         : `${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>'s` : "this agent's"} values and standards`;
 
-    // 1. Group ledger items
+    // Build the report body from the shared string builders, then attach the
+    // modal-specific listeners (copy button, dashboard link).
+    container.innerHTML = `
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            This report shows how this response was evaluated against ${evaluatedAgainst}.
+        </p>
+        ${renderConscienceReport(payload)}
+    `;
+
+    attachModalEventListeners(container, payload);
+}
+
+/**
+ * Pure string builder for the governance report (score gauge + trend +
+ * grouped ledger tabs). Reused outside the conscience modal (e.g. the Review
+ * tab's detail pane): pass an idPrefix so tab-panel ids stay unique when the
+ * report renders in more than one container, and call attachTabSwitching()
+ * on the host container afterwards.
+ */
+export function renderConscienceReport(payload, idPrefix = '') {
     const ledger = payload.ledger || [];
     const groups = {
         upholds: ledger.filter(r => r.score > 0),
@@ -39,36 +58,27 @@ export function setupConscienceModalContent(payload) {
         groups[key].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     });
 
-    // 2. Build the new HTML structure
-    // ADDED w-full to nav to ensure tabs span full width
-    container.innerHTML = `
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            This report shows how this response was evaluated against ${evaluatedAgainst}.
-        </p>
-        
+    return `
         ${renderScoreAndTrend(payload)}
-        
+
         <div>
             <!-- Tab Buttons -->
             <div class="border-b border-gray-200 dark:border-gray-700">
-                <nav class="flex -mb-px w-full" aria-label="Tabs" id="conscience-tabs">
-                    ${renderTabButton('upholds', 'Upholds', groups.upholds.length, true)}
-                    ${renderTabButton('conflicts', 'Conflicts', groups.conflicts.length, false)}
-                    ${renderTabButton('neutral', 'Neutral', groups.neutral.length, false)}
+                <nav class="flex -mb-px w-full" aria-label="Tabs">
+                    ${renderTabButton('upholds', 'Upholds', groups.upholds.length, true, idPrefix)}
+                    ${renderTabButton('conflicts', 'Conflicts', groups.conflicts.length, false, idPrefix)}
+                    ${renderTabButton('neutral', 'Neutral', groups.neutral.length, false, idPrefix)}
                 </nav>
             </div>
 
             <!-- Tab Panels -->
             <div class="py-5">
-                ${renderTabPanel('upholds', groups.upholds, true)}
-                ${renderTabPanel('conflicts', groups.conflicts, false)}
-                ${renderTabPanel('neutral', groups.neutral, false)}
+                ${renderTabPanel('upholds', groups.upholds, true, idPrefix)}
+                ${renderTabPanel('conflicts', groups.conflicts, false, idPrefix)}
+                ${renderTabPanel('neutral', groups.neutral, false, idPrefix)}
             </div>
         </div>
     `;
-
-    // 3. Attach all event listeners for the new content
-    attachModalEventListeners(container, payload);
 }
 
 /**
@@ -205,7 +215,7 @@ function renderScoreAndTrend(payload) {
 /**
  * Renders a single tab button.
  */
-function renderTabButton(key, title, count, isActive) {
+function renderTabButton(key, title, count, isActive, idPrefix = '') {
     const groupConfig = {
         upholds: { icon: 'M5 13l4 4L19 7', color: 'green' },
         conflicts: { icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z', color: 'red' },
@@ -223,7 +233,7 @@ function renderTabButton(key, title, count, isActive) {
     }[config.color];
 
     return `
-        <button data-tab-target="#tab-${key}" 
+        <button data-tab-target="#${idPrefix}tab-${key}"
                 class="conscience-tab-btn tab-btn status-${config.color} ${isActive ? 'active' : ''} ${layoutClasses}" 
                 aria-current="${isActive ? 'page' : 'false'}">
             
@@ -246,7 +256,7 @@ function renderTabButton(key, title, count, isActive) {
 /**
  * Renders a single tab panel with its ledger items.
  */
-function renderTabPanel(key, items, isActive) {
+function renderTabPanel(key, items, isActive, idPrefix = '') {
     let content = '';
     if (items.length > 0) {
         content = items.map(item => renderLedgerItem(item, key)).join('');
@@ -255,7 +265,7 @@ function renderTabPanel(key, items, isActive) {
     }
 
     return `
-        <div id="tab-${key}" class="tab-panel space-y-4 ${isActive ? '' : 'hidden'}">
+        <div id="${idPrefix}tab-${key}" class="tab-panel space-y-4 ${isActive ? '' : 'hidden'}">
             ${content}
         </div>
     `;
@@ -302,8 +312,12 @@ function renderLedgerItem(item, key) {
 /**
  * Attaches event listeners for tabs, copy button, and dashboard link.
  */
-function attachModalEventListeners(container, payload) {
-    // --- Tab switching logic ---
+/**
+ * Wires the Upholds/Conflicts/Neutral tab switching for a rendered
+ * conscience report, scoped to the given container. Exported so other
+ * surfaces embedding renderConscienceReport() can reuse it.
+ */
+export function attachTabSwitching(container) {
     const tabButtons = container.querySelectorAll('.tab-btn');
     const tabPanels = container.querySelectorAll('.tab-panel');
 
@@ -330,6 +344,10 @@ function attachModalEventListeners(container, payload) {
             });
         });
     });
+}
+
+function attachModalEventListeners(container, payload) {
+    attachTabSwitching(container);
 
     // --- "Show More" logic ---
     // This is now handled by the persistent, delegated listener in ui-settings-core.js

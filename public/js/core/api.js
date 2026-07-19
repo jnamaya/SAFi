@@ -517,3 +517,53 @@ export function recordsExportUrl(orgId, from, to, userId) {
     const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
     return j(`/api/organizations/${orgId}/records/export?from=${from}&to=${to}${u}`);
 }
+
+// --- HUMAN REVIEW QUEUE API Functions (FINRA supervisory / EU Art. 14; admin|auditor) ---
+
+export async function listReviewQueue(orgId, { status, trigger, profile, limit, offset } = {}) {
+    const q = new URLSearchParams();
+    if (status) q.set('status', status);
+    if (trigger) q.set('trigger', trigger);
+    if (profile) q.set('profile', profile);
+    if (limit) q.set('limit', limit);
+    if (offset) q.set('offset', offset);
+    const qs = q.toString();
+    return httpGet(j(`/api/organizations/${orgId}/review/queue${qs ? '?' + qs : ''}`));
+}
+
+export async function getReviewItem(orgId, queueId) {
+    return httpGet(j(`/api/organizations/${orgId}/review/queue/${queueId}`));
+}
+
+// action: 'approve' | 'override'; reason mandatory for override
+export async function actOnReviewItem(orgId, queueId, action, reason) {
+    return httpJSON(j(`/api/organizations/${orgId}/review/queue/${queueId}/action`), 'POST', { action, reason });
+}
+
+export async function getReviewConfig(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/review/config`));
+}
+
+export async function updateReviewConfig(orgId, changes) {
+    return httpJSON(j(`/api/organizations/${orgId}/review/config`), 'PUT', changes);
+}
+
+export async function getReviewReport(orgId, from, to) {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    const qs = q.toString();
+    return httpGet(j(`/api/organizations/${orgId}/review/report${qs ? '?' + qs : ''}`));
+}
+
+// CSV download (logs chain of custody server-side) — plain URL for window.open.
+export function reviewReportCsvUrl(orgId, from, to) {
+    const q = new URLSearchParams({ format: 'csv' });
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    return j(`/api/organizations/${orgId}/review/report?${q}`);
+}
+
+export async function listReviewAlerts(orgId, limit = 10) {
+    return httpGet(j(`/api/organizations/${orgId}/review/alerts?limit=${limit}`));
+}

@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260717.1" rel="stylesheet">
+  <link href="css/main.css?v=20260719.1" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
   <script>
     const theme = localStorage.theme;
@@ -486,6 +486,18 @@
                         </button>
                       </li>
                       <li>
+                        <button data-tab="review" id="nav-review"
+                          class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors hidden">
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                          </svg>
+                          Review
+                        </button>
+                      </li>
+                      <li>
                         <button data-tab="dashboard" id="nav-dashboard"
                           class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors hidden">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -611,6 +623,11 @@
                   <p class="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">Evidence log, provider governance, records retention, and incident response — the org's examiner-facing controls in one place.</p>
                   <div id="compliance-cards"></div>
                   <div id="compliance-incidents" class="mt-6"></div>
+                </div>
+                <div id="tab-review" class="tab-content hidden">
+                  <h1 class="text-2xl font-bold mb-4">Supervisory Review</h1>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 -mt-2 mb-6">Human oversight of sampled AI turns: approve or override with a documented reason. Dispositions are appended to each record's tamper-evident audit trail.</p>
+                  <div id="review-content"></div>
                 </div>
                 <div id="tab-dashboard"
                   class="tab-content hidden absolute inset-0 w-full h-full bg-gray-50 dark:bg-neutral-900 z-10 flex flex-col">

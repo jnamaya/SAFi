@@ -3251,13 +3251,11 @@ def evaluate_review_triggers(cfg, message_id, conversation_id, score, drift,
         thr = trig_cfg.get("alignment_threshold", 6)
         if score < thr:
             triggers.append("low_alignment")
-            detail["spirit_score"] = score
             detail["alignment_threshold"] = thr
     if trig_cfg.get("drift_spike") and drift is not None:
         dthr = trig_cfg.get("drift_threshold", 0.4)
         if drift > dthr:
             triggers.append("drift_spike")
-            detail["drift"] = drift
             detail["drift_threshold"] = dthr
     pct = cfg.get("random_sample_pct") or 0
     if pct > 0:
@@ -3265,6 +3263,12 @@ def evaluate_review_triggers(cfg, message_id, conversation_id, score, drift,
         if bucket < int(round(pct * 100)):
             triggers.append("random_sample")
     if triggers:
+        # Snapshot the governance numbers for every sampled turn (not just the
+        # ones whose trigger fired on them) so the queue list can render
+        # Alignment/Consistency without touching the encrypted row. None stays
+        # None — the UI renders N/A, never a default.
+        detail["spirit_score"] = score
+        detail["drift"] = drift
         detail["will_decision"] = will_decision
         detail["will_stage"] = will_stage
     return triggers, detail

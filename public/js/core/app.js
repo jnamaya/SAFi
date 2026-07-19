@@ -460,7 +460,11 @@ function renderControlPanel() {
   // Incidents (Reg S-P registry): Admin only
   const canSeeIncidents = user.role === 'admin';
 
-  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels, canSeeIncidents });
+  // Supervisory Review (FINRA/Art. 14 queue): Admin & Auditor — the reviewer
+  // set. Editors are content authors and don't supervise themselves.
+  const canSeeReview = ['admin', 'auditor'].includes(user.role);
+
+  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels, canSeeIncidents, canSeeReview });
 
   const navOrg = document.getElementById('nav-organization'); // NEW ID
   if (navOrg) {
@@ -494,10 +498,16 @@ function renderControlPanel() {
     else navCompliance.classList.add('hidden');
   }
 
+  const navReview = document.getElementById('nav-review');
+  if (navReview) {
+    if (canSeeReview) navReview.classList.remove('hidden');
+    else navReview.classList.add('hidden');
+  }
+
   // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {
-    if (canSeeOrg || canSeeGovernance || canSeeDashboard) {
+    if (canSeeOrg || canSeeGovernance || canSeeDashboard || canSeeReview) {
       navGroupManagement.classList.remove('hidden');
     } else {
       navGroupManagement.classList.add('hidden');
