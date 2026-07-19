@@ -7,7 +7,9 @@ source /var/www/safi/venv/bin/activate
 #    The Python script will use this to find the 'logs' folder.
 export SAFI_PROJECT_ROOT="/var/www/safi"
 export FLASK_ENV="production"
-export FLASK_SECRET_KEY="69928764834209457830418816255427"
+# FLASK_SECRET_KEY deliberately NOT set here: safi_app/config.py loads .env
+# with override=True, so the dashboard verifies JWTs with the same secret the
+# app signs them with. Never hardcode secrets in this git-tracked script.
 
 echo "============================================="
 echo "SAFi Dashboard Runner"
