@@ -544,12 +544,39 @@ def init_db():
                 ag_delay_reference VARCHAR(500) NULL,
                 ag_delay_until DATETIME NULL,
                 customers_notified_at DATETIME NULL,
+                regimes JSON NULL,
+                eu_incident_class VARCHAR(40) NULL,
+                hipaa_role VARCHAR(20) NULL,
+                affected_count INT NULL,
+                authority_notified_at DATETIME NULL,
+                individuals_notified_at DATETIME NULL,
+                hhs_notified_at DATETIME NULL,
+                media_notified_at DATETIME NULL,
+                ce_notified_at DATETIME NULL,
                 created_by VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_incident_org (org_id)
             )
         ''')
+
+        # Regime generalization (Phase D): which notification regimes an
+        # incident is reportable under (NULL = legacy row, reads as reg_sp),
+        # the per-regime clock inputs, and one stop timestamp per regime
+        # notice (stamped by the matching *_notified event, like
+        # customers_notified_at).
+        cursor.execute("SHOW COLUMNS FROM security_incidents LIKE 'regimes'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN regimes JSON NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN eu_incident_class VARCHAR(40) NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN hipaa_role VARCHAR(20) NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN affected_count INT NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN authority_notified_at DATETIME NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN individuals_notified_at DATETIME NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN hhs_notified_at DATETIME NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN media_notified_at DATETIME NULL")
+            cursor.execute("ALTER TABLE security_incidents ADD COLUMN ce_notified_at DATETIME NULL")
+            logging.info("Incident migration: added regime-clock columns to security_incidents")
 
         # Append-only event log per incident (who/when/what, field diffs).
         # No UPDATE/DELETE helpers exist for it by construction.
@@ -2654,8 +2681,9 @@ _INCIDENT_MUTABLE = [
     "affected_scope", "affected_user_ids", "assessment_notes",
     "containment_notes", "harm_assessment", "harm_determination",
     "ag_delay", "ag_delay_reference", "ag_delay_until",
+    "regimes", "eu_incident_class", "hipaa_role", "affected_count",
 ]
-_INCIDENT_JSON_COLS = ("data_types", "affected_user_ids")
+_INCIDENT_JSON_COLS = ("data_types", "affected_user_ids", "regimes")
 _INCIDENT_DT_COLS = ("occurred_at", "occurred_range_end", "firm_aware_at",
                      "vendor_aware_at", "vendor_notified_firm_at", "ag_delay_until")
 
@@ -2811,19 +2839,32 @@ def update_security_incident(org_id, incident_id, changes, actor_id, actor_email
         conn.close()
     return get_security_incident(org_id, incident_id)
 
+# Regime-notice events → the stop-timestamp column they stamp. Stamps are
+# first-occurrence-only: the FIRST notice stops the clock, later events of the
+# same type are evidence entries without a re-stamp.
+_EVENT_STAMP_COLS = {
+    "notification_sent": "customers_notified_at",     # reg_sp customers
+    "authority_notified": "authority_notified_at",    # eu_ai_act Art. 73
+    "individuals_notified": "individuals_notified_at",  # hipaa CE → individuals
+    "hhs_notified": "hhs_notified_at",                # hipaa → HHS (or annual log)
+    "media_notified": "media_notified_at",            # hipaa ≥500 media
+    "ce_notified": "ce_notified_at",                  # hipaa BA → covered entity
+}
+
 def append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
-    """Manual event log entry. 'notification_sent' also stamps
-    customers_notified_at (first notice stops the 30-day clock)."""
+    """Manual event log entry. Regime-notice event types also stamp their
+    clock's stop timestamp (see _EVENT_STAMP_COLS)."""
+    stamp_col = _EVENT_STAMP_COLS.get(event_type)
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT customers_notified_at FROM security_incidents "
+        cursor.execute(f"SELECT {stamp_col or 'id'} FROM security_incidents "
                        "WHERE id=%s AND org_id=%s FOR UPDATE", (incident_id, org_id))
         row = cursor.fetchone()
         if not row:
             return False
-        if event_type == "notification_sent" and row[0] is None:
-            cursor.execute("UPDATE security_incidents SET customers_notified_at=UTC_TIMESTAMP() "
+        if stamp_col and row[0] is None:
+            cursor.execute(f"UPDATE security_incidents SET {stamp_col}=UTC_TIMESTAMP() "
                            "WHERE id=%s AND org_id=%s", (incident_id, org_id))
         _incident_event_append(cursor, org_id, incident_id, event_type, detail,
                                actor_id, actor_email)
@@ -3078,6 +3119,66 @@ def set_org_provider_allowlist(org_id, allowlist, actor):
     from ..core.services import provider_governance
     provider_governance.invalidate_org(org_id)
     return get_org_provider_config(org_id)
+
+# --- Incident notification regimes (Phase D) --------------------------------
+# The org's default regime set for NEW incidents, stored in
+# organizations.settings.incident_regimes. Per-incident tags live on the
+# incident row itself (regimes JSON) and override this at create time.
+# Canonical key order matches REGIME_RULES in api/incidents_api.py.
+
+INCIDENT_REGIME_KEYS = ("reg_sp", "eu_ai_act", "hipaa")
+
+def get_org_incident_regimes(org_id):
+    """The org's default regime set; reg_sp when unset (the registry's
+    original, always-applicable baseline for regulated firms)."""
+    org = get_organization(org_id)
+    stored = ((org or {}).get("settings") or {}).get("incident_regimes")
+    if isinstance(stored, list) and stored:
+        kept = [k for k in INCIDENT_REGIME_KEYS if k in stored]
+        if kept:
+            return kept
+    return ["reg_sp"]
+
+def set_org_incident_regimes(org_id, regimes, actor):
+    """Sets the org's default regime set AND appends the compliance-log
+    evidence row in the same transaction — same contract as
+    set_org_provider_allowlist. Raises ValueError on invalid input."""
+    if not isinstance(regimes, list) or not regimes:
+        raise ValueError("regimes must be a non-empty list of regime keys")
+    unknown = sorted({str(r) for r in regimes} - set(INCIDENT_REGIME_KEYS))
+    if unknown:
+        raise ValueError(f"unknown regimes: {', '.join(unknown)} "
+                         f"(valid: {', '.join(INCIDENT_REGIME_KEYS)})")
+    regimes = [k for k in INCIDENT_REGIME_KEYS if k in {str(r) for r in regimes}]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+
+        old = settings.get("incident_regimes")
+        old = [k for k in INCIDENT_REGIME_KEYS if isinstance(old, list) and k in old] or None
+        if old != regimes:
+            settings["incident_regimes"] = regimes
+            append_compliance_log(org_id, "incident_regimes_changed", actor,
+                                  {"changed": {"incident_regimes": {"old": old, "new": regimes}}},
+                                  cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return {"regimes": get_org_incident_regimes(org_id)}
 
 # --- Human review queue: config, sampling, enqueue (Phase E) ---------------
 # Config lives in organizations.settings.review_config, changed only through

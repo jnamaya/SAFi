@@ -481,6 +481,14 @@ export async function logIncidentEvent(orgId, incidentId, data) {
     return httpJSON(j(`/api/organizations/${orgId}/incidents/${incidentId}/events`), 'POST', data);
 }
 
+export async function getIncidentRegimes(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/incident-regimes`));
+}
+
+export async function setIncidentRegimes(orgId, regimes) {
+    return httpJSON(j(`/api/organizations/${orgId}/incident-regimes`), 'PUT', { regimes });
+}
+
 // Export is a file download — used as a plain href/window.open target,
 // not through the JSON pipeline.
 export function incidentExportUrl(orgId, incidentId, format) {

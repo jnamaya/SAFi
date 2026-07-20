@@ -128,6 +128,101 @@ class TestIncidentRegistry(unittest.TestCase):
         ids = [e["id"] for e in events]
         self.assertEqual(ids, sorted(ids))
 
+    # --- Phase D: regime tags + per-regime notice stamps -------------------
+
+    def test_regime_fields_round_trip(self):
+        iid = self._create(regimes=["reg_sp", "hipaa"], hipaa_role="business_associate",
+                           affected_count=42, eu_incident_class=None)
+        row = db.get_security_incident(self.org_id, iid)
+        self.assertEqual(row["regimes"], ["reg_sp", "hipaa"])
+        self.assertEqual(row["hipaa_role"], "business_associate")
+        self.assertEqual(row["affected_count"], 42)
+
+    def test_regime_update_diffed(self):
+        iid = self._create(regimes=["reg_sp"])
+        db.update_security_incident(self.org_id, iid,
+                                    {"regimes": ["reg_sp", "eu_ai_act"],
+                                     "eu_incident_class": "widespread"}, *ACTOR)
+        events = db.list_incident_events(self.org_id, iid)
+        diff = events[-1]["changes"]
+        self.assertIn("regimes", diff)
+        self.assertEqual(diff["eu_incident_class"]["to"], "widespread")
+
+    def test_regime_notice_events_stamp_their_own_columns(self):
+        iid = self._create(regimes=["eu_ai_act", "hipaa"], affected_count=600)
+        db.append_incident_event(self.org_id, iid, "authority_notified",
+                                 "Reported to market surveillance authority", *ACTOR)
+        row = db.get_security_incident(self.org_id, iid)
+        self.assertIsNotNone(row["authority_notified_at"])
+        self.assertIsNone(row["individuals_notified_at"])
+        self.assertIsNone(row["customers_notified_at"])
+        db.append_incident_event(self.org_id, iid, "hhs_notified", "HHS portal filing", *ACTOR)
+        row = db.get_security_incident(self.org_id, iid)
+        self.assertIsNotNone(row["hhs_notified_at"])
+        first = row["authority_notified_at"]
+        # Re-notifying does not move the first stamp
+        db.append_incident_event(self.org_id, iid, "authority_notified", "follow-up", *ACTOR)
+        self.assertEqual(db.get_security_incident(self.org_id, iid)["authority_notified_at"], first)
+
+    def test_note_event_stamps_nothing(self):
+        iid = self._create(regimes=["hipaa"])
+        db.append_incident_event(self.org_id, iid, "note", "just a note", *ACTOR)
+        row = db.get_security_incident(self.org_id, iid)
+        for col in ("customers_notified_at", "authority_notified_at",
+                    "individuals_notified_at", "hhs_notified_at",
+                    "media_notified_at", "ce_notified_at"):
+            self.assertIsNone(row[col], col)
+
+
+class TestOrgIncidentRegimes(unittest.TestCase):
+    """Org-level default regime set (organizations.settings.incident_regimes)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.org_id = str(uuid.uuid4())
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO organizations (id, name) VALUES (%s, %s)",
+                    (cls.org_id, "regime-test-org"))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM org_compliance_log WHERE org_id=%s", (cls.org_id,))
+        cur.execute("DELETE FROM organizations WHERE id=%s", (cls.org_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    def test_default_is_reg_sp(self):
+        self.assertEqual(db.get_org_incident_regimes(self.org_id), ["reg_sp"])
+
+    def test_set_canonicalizes_and_evidence_logs(self):
+        out = db.set_org_incident_regimes(self.org_id, ["hipaa", "reg_sp"], ACTOR[1])
+        self.assertEqual(out["regimes"], ["reg_sp", "hipaa"])  # canonical order
+        self.assertEqual(db.get_org_incident_regimes(self.org_id), ["reg_sp", "hipaa"])
+        conn = db.get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM org_compliance_log WHERE org_id=%s "
+                    "AND event_type='incident_regimes_changed'", (self.org_id,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["actor"], ACTOR[1])
+
+    def test_rejects_bad_input(self):
+        with self.assertRaises(ValueError):
+            db.set_org_incident_regimes(self.org_id, [], ACTOR[1])
+        with self.assertRaises(ValueError):
+            db.set_org_incident_regimes(self.org_id, ["gdpr"], ACTOR[1])
+        with self.assertRaises(ValueError):
+            db.set_org_incident_regimes(str(uuid.uuid4()), ["reg_sp"], ACTOR[1])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
