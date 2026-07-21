@@ -524,8 +524,7 @@ function renderControlPanel() {
     availableProfiles,
     activeProfileData.key,
     handleProfileChange,
-    user, // Pass user for ownership checks
-    availableModels // Pass models for wizard
+    user // Pass user for ownership checks
   );
 
   // Render AI Models Tab

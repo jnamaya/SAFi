@@ -17,8 +17,6 @@ import {
     renderReviewStep
 } from './ui-wizard-review.js';
 
-import { setAvailableModels, availableModelsCache } from './ui-wizard-utils.js';
-
 // --- WIZARD STATE ---
 let currentStep = 1;
 const TOTAL_STEPS = 5;
@@ -53,14 +51,15 @@ export let agentData = {
 };
 
 // --- MAIN ENTRANCE ---
-export function openAgentWizard(existingAgent = null, availableModels = []) {
+export function openAgentWizard(existingAgent = null) {
     currentStep = 1;
-    setAvailableModels(availableModels);
 
     if (existingAgent) {
-        // Edit Mode Pre-fill
+        // Pre-fill from an existing agent. A null key means this is a
+        // duplicate (create-from-copy), not an edit — it must POST, not PUT.
+        const isUpdate = !!existingAgent.key;
         agentData = {
-            key: existingAgent.key,
+            key: existingAgent.key || "",
             name: existingAgent.name,
             description: existingAgent.description || "",
             avatar: existingAgent.avatar || "",
@@ -69,7 +68,7 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
             values: existingAgent.values || [],
             policy_id: existingAgent.policy_id || "standalone",
             visibility: existingAgent.visibility || "private",
-            is_update_mode: true,
+            is_update_mode: isUpdate,
             intellect_model: existingAgent.intellect_model || "",
             will_model: existingAgent.will_model || "",
             conscience_model: existingAgent.conscience_model || "",
@@ -123,7 +122,7 @@ export function openAgentWizard(existingAgent = null, availableModels = []) {
     }
 
     const title = document.getElementById('wizard-title');
-    if (title) title.innerText = existingAgent ? "Edit Agent" : "Create New Agent";
+    if (title) title.innerText = agentData.is_update_mode ? "Edit Agent" : "Create New Agent";
 
     renderStep(1);
 
@@ -219,7 +218,9 @@ function updateProgress() {
         else el.classList.remove('text-blue-600', 'dark:text-blue-400');
     });
 
-    const isEdit = !!agentData.key;
+    // Key presence is not a reliable edit signal: create mode auto-generates
+    // a key at the Review step, and duplicates start with no key at all.
+    const isEdit = !!agentData.is_update_mode;
     if (currentStep === TOTAL_STEPS) {
         nextBtn.innerText = isEdit ? 'Save Changes' : 'Create Agent';
         nextBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
@@ -240,7 +241,7 @@ async function renderStep(step) {
         switch (step) {
             case 1: renderIdentityStep(container, agentData); break;
             case 2: renderKnowledgeStep(container, agentData); break;
-            case 3: renderIntellectStep(container, agentData, availableModelsCache); break;
+            case 3: renderIntellectStep(container, agentData); break;
             case 4: renderSafetyStep(container, agentData); break;
             case 5:
                 // Auto-generate key for review visualization

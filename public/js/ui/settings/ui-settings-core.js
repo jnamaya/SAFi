@@ -134,8 +134,7 @@ export function setupControlPanelTabs() {
                     settingsState.profiles,
                     settingsState.activeProfileKey,
                     settingsState.onProfileChange,
-                    currentUser,
-                    settingsState.availableModels
+                    currentUser
                 );
             } else if (tabId === 'models') {
                 // Pass args from state

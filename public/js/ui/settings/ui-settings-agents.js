@@ -10,9 +10,8 @@ import { ensureProfileModalExists } from './ui-settings-core.js'; // Circular de
  * @param {string} activeProfileKey - The key of the currently active profile
  * @param {Function} onProfileChange - Callback function when a profile is selected
  * @param {Object} currentUser - The current user object
- * @param {Array} availableModels - List of available AI models (for wizard)
  */
-export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange, currentUser, availableModels = []) {
+export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange, currentUser) {
     ui._ensureElements();
     const container = ui.elements.cpTabProfile;
     if (!container) return;
@@ -143,7 +142,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
             try {
                 const res = await api.getAgent(key);
                 if (res && res.ok && res.agent) {
-                    openAgentWizard(res.agent, availableModels); // Updated to pass models
+                    openAgentWizard(res.agent);
                 } else {
                     ui.showToast("Failed to load agent details", "error");
                 }
@@ -169,7 +168,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                 const res = await api.getAgent(key);
                 if (res && res.ok && res.agent) {
                     const clone = { ...res.agent, key: null, name: `Copy of ${res.agent.name}` };
-                    openAgentWizard(clone, availableModels);
+                    openAgentWizard(clone);
                 } else {
                     ui.showToast("Failed to load agent details", "error");
                 }
@@ -212,7 +211,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     if (createBtn) {
         createBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            openAgentWizard(null, availableModels); // Updated to pass models
+            openAgentWizard(null);
         });
     }
 }
