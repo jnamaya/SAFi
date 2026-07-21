@@ -184,7 +184,6 @@ function applyTheme(theme) {
       uiSettingsModals.renderSettingsAppTab(
         theme,
         applyTheme,
-        handleLogout,
         () => ui.showModal('delete') // Show modal instead of direct delete
       );
     }
@@ -565,7 +564,6 @@ function renderControlPanel() {
   uiSettingsModals.renderSettingsAppTab(
     localStorage.theme || 'system',
     applyTheme,
-    handleLogout,
     () => ui.showModal('delete') // Open "are you sure" modal
   );
 

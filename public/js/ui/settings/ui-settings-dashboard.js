@@ -37,7 +37,7 @@ export async function renderSettingsDashboardTab() {
             // Iframes are unreliable in Android WebView — open in the Capacitor in-app browser
             container.innerHTML = `
                 <div class="flex flex-col items-center justify-center w-full h-full text-center p-8 gap-4">
-                    <h3 class="text-xl font-semibold">Trace & Analyze</h3>
+                    <h3 class="text-xl font-semibold">Audit Hub</h3>
                     <p class="text-neutral-500 dark:text-neutral-400 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
                     <button id="open-dashboard-btn"
                         class="mt-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition">
@@ -54,7 +54,7 @@ export async function renderSettingsDashboardTab() {
             const headerDiv = document.createElement('div');
             headerDiv.className = "p-6 shrink-0";
             headerDiv.innerHTML = `
-                <h3 class="text-xl font-semibold mb-4">Trace & Analyze</h3>
+                <h3 class="text-xl font-semibold mb-4">Audit Hub</h3>
                 <p class="text-neutral-500 dark:text-neutral-400 mb-0 text-sm">Analyze logs and monitor consistency across policies and agents.</p>
             `;
 

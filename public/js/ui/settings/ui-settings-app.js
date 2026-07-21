@@ -2,13 +2,13 @@ import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 
 /**
- * Renders the App Settings tab (Theme, Logout, Delete Account).
+ * Renders the App Settings tab (Theme, Connected Accounts, Delete Account).
+ * Sign-out lives in the sidebar (Log Out) — not duplicated here.
  * @param {string} currentTheme - The current theme ('light', 'dark', 'system')
  * @param {Function} onThemeChange - Callback for theme selection
- * @param {Function} onLogout - Callback for logout button
  * @param {Function} onDelete - Callback for delete button
  */
-export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDelete) {
+export function renderSettingsAppTab(currentTheme, onThemeChange, onDelete) {
     ui._ensureElements();
     const container = ui.elements.cpTabAppSettings;
     if (!container) return;
@@ -41,9 +41,6 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onLogout, onDe
         <div class="settings-card">
             <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Account</h4>
             <div class="space-y-3">
-                <button id="cp-logout-btn" data-tab="logout" class="w-full text-left px-4 py-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-colors">
-                    Sign Out
-                </button>
                 <button id="cp-delete-account-btn" class="w-full text-left px-4 py-3 text-sm font-medium text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg border border-red-300 dark:border-red-700 transition-colors">
                     Delete Account...
                 </button>

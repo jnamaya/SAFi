@@ -148,7 +148,6 @@ export function setupControlPanelTabs() {
                 renderSettingsAppTab(
                     settingsState.currentTheme,
                     settingsState.onThemeChange,
-                    settingsState.onLogout,
                     settingsState.onDeleteAccount
                 );
             } else if (tabId === 'help') {

@@ -33,13 +33,27 @@ export async function renderSettingsGovernanceTab() {
         const demoPolicies = allPolicies.filter(p => p.is_demo);
         const myPolicies = allPolicies.filter(p => !p.is_demo);
 
+        // Constraint count must handle both shapes of will_rules: legacy
+        // list-of-rules, and the structured dict (whose .length is undefined).
+        const constraintCount = (wr) => {
+            if (Array.isArray(wr)) return wr.length;
+            if (wr && typeof wr === 'object') {
+                const sr = wr.structural_requirements || {};
+                return (wr.early_prompt_blacklist || []).length
+                    + (sr.banned_markdown_syntaxes || []).length
+                    + (sr.require_disclaimer ? 1 : 0)
+                    + (Array.isArray(wr.allowed_tools) ? 1 : 0);
+            }
+            return 0;
+        };
+
         const renderPolicyCard = (p, isReadOnly) => `
             <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow mb-3">
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                      <div class="min-w-0 sm:flex-1">
                          <div class="flex items-center flex-wrap gap-2">
                             <h4 class="font-bold text-lg text-gray-900 dark:text-white break-words min-w-0">${p.name}</h4>
-                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold shrink-0">DEMO</span>' : ''}
+                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold shrink-0">EXAMPLE</span>' : ''}
                          </div>
                          <p class="text-xs text-gray-500 font-mono mt-1 mb-3 break-all">ID: ${p.id}</p>
                          <div class="flex gap-2">
@@ -47,7 +61,7 @@ export async function renderSettingsGovernanceTab() {
                                 ${(p.values_weights || []).length} Values
                              </span>
                              <span class="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-xs rounded-full font-medium">
-                                ${(p.will_rules || []).length} Constraints
+                                ${constraintCount(p.will_rules)} Constraints
                              </span>
                          </div>
                      </div>
@@ -82,21 +96,22 @@ export async function renderSettingsGovernanceTab() {
             </div>
 
             <div class="space-y-8">
-                <!-- DEMO POLICIES -->
+                <!-- YOUR POLICIES (lead — this is the org's real governance) -->
                 <div>
-                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">DEMO Policy</h4>
-                    ${demoPolicies.length === 0 ? '<p class="text-sm text-gray-400 italic">No demo policies available.</p>' : demoPolicies.map(p => renderPolicyCard(p, true)).join('')}
-                </div>
-
-                <!-- MY POLICIES -->
-                <div>
-                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">Custom Policies</h4>
+                    <h4 class="text-sm font-bold text-gray-400 uppercase mb-3">Your Policies</h4>
                      ${myPolicies.length === 0 ? `
                         <div class="p-8 text-center border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl">
-                            <p class="text-gray-500 mb-4">No custom policies defined yet.</p>
+                            <p class="text-gray-500 mb-4">No policies defined yet. Create one above, or start from an example below.</p>
                         </div>
                     ` : myPolicies.map(p => renderPolicyCard(p, false)).join('')}
                 </div>
+
+                <!-- EXAMPLE POLICIES (read-only demos; collapsed once the org has its own) -->
+                ${demoPolicies.length === 0 ? '' : `
+                <details ${myPolicies.length === 0 ? 'open' : ''}>
+                    <summary class="text-sm font-bold text-gray-400 uppercase mb-3 cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-300">Example Policies (${demoPolicies.length}) — read-only, duplicate to customize</summary>
+                    ${demoPolicies.map(p => renderPolicyCard(p, true)).join('')}
+                </details>`}
             </div>
         `;
 
