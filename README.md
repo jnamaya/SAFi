@@ -18,6 +18,7 @@
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
 - [Benchmarks & Validation](#benchmarks--validation)
+- [For Developers](#for-developers)
 - [Contributing](#contributing)
 - [Live Demo](#live-demo)
 - [About the Author](#about-the-author)
@@ -183,6 +184,15 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 
 ---
+
+## For Developers
+
+Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — it covers:
+
+- **The repository map** — where the faculties, API blueprints, persistence layer, and frontend modules live, and what each is responsible for.
+- **The request lifecycle** — how a prompt flows through the seven phases and why every turn terminates in a single atomic transaction (audit trail + governance record + review sampling together).
+- **The invariants** — the rules that back the compliance claims: accessor-layer encryption with dual-read, evidence-logging in the same transaction, the append-only hash chain, fail-closed provider governance, AI-output marking, and the UI vocabulary.
+- **Testing patterns and recipes** — how the integration tests work, and step-by-step recipes for adding a provider, an API surface, a table, or a Control Panel tab.
 
 ## Contributing
 
