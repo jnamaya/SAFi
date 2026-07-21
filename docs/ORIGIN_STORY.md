@@ -2,8 +2,6 @@
 
 > This is the full story behind SAFi. For the project overview and quick start, see the [README](../README.md).
 
-SAFi's architecture didn't start as an AI project. It is rooted in more than two thousand years of thinking about human cognition and decision making — and in a personal question I started chasing long before large language models existed.
-
 I started thinking about what eventually became SAFi about twenty years ago as a personal quest to answer a few simple questions: What is the meaning of life? How do people think? Why do we make the decisions we make? The kind of questions that usually lead to more questions than answers.
 
 But being an IT guy, I naturally approached the problem like an engineer. Instead of trying to answer those questions directly, I started trying to understand the machinery behind them. I began breaking my own thinking into components, or what I called functions. I wanted to understand how decisions were actually produced.
