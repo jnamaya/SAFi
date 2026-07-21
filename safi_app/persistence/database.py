@@ -3147,6 +3147,79 @@ def set_org_retention_config(org_id, changes, actor):
         conn.close()
     return get_org_retention_config(org_id)
 
+def export_user_data(user_id):
+    """Right-of-access export (GDPR Art. 15 / HIPAA §164.524): everything
+    SAFi holds about ONE user, decrypted, for self-service download. A
+    deliberate subset of the examiner export — the requesting user's own
+    records only: account row (credential material stripped), conversations
+    with their messages and per-turn governance verdicts, projects, saved
+    content, profile memory, and per-agent work memories. No audit-trail
+    states, no other users' data. Returns None for an unknown user.
+    The CALLER must custody-log the export before returning bytes."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, email, name, picture, active_profile, created_at, "
+            "last_login, org_id, role, intellect_model, will_model, "
+            "conscience_model FROM users WHERE id=%s", (user_id,))
+        account = cursor.fetchone()
+        if not account:
+            return None
+
+        cursor.execute(
+            "SELECT id, title, is_pinned, project_id, created_at "
+            "FROM conversations WHERE user_id=%s ORDER BY created_at", (user_id,))
+        conversations = cursor.fetchall()
+        total_messages = 0
+        for c in conversations:
+            c["title"] = crypto.decrypt_value(c["title"])
+            cursor.execute(
+                "SELECT message_id, role, content, timestamp, audit_status, "
+                "profile_name, policy_id, policy_version, spirit_score, drift, "
+                "will_decision, will_stage FROM chat_history "
+                "WHERE conversation_id=%s ORDER BY id", (c["id"],))
+            msgs = cursor.fetchall()
+            for m in msgs:
+                m["content"] = crypto.decrypt_value(m["content"])
+            c["messages"] = msgs
+            total_messages += len(msgs)
+
+        cursor.execute("SELECT id, name, created_at FROM projects WHERE user_id=%s", (user_id,))
+        projects = cursor.fetchall()
+
+        cursor.execute(
+            "SELECT id, project_id, conversation_id, title, content, "
+            "profile_name, spirit_score, created_at FROM saved_content "
+            "WHERE user_id=%s ORDER BY created_at", (user_id,))
+        saved = cursor.fetchall()
+        for s in saved:
+            s["content"] = crypto.decrypt_value(s["content"])
+
+        cursor.execute("SELECT profile_json FROM user_profiles WHERE user_id=%s", (user_id,))
+        row = cursor.fetchone()
+        profile_memory = crypto.decrypt_value(row["profile_json"]) if row else None
+
+        cursor.execute(
+            "SELECT agent_id, context_json, updated_at FROM agent_context_memory "
+            "WHERE user_id=%s", (user_id,))
+        agent_memories = cursor.fetchall()
+        for a in agent_memories:
+            a["context_json"] = crypto.decrypt_value(a["context_json"])
+    finally:
+        cursor.close()
+        conn.close()
+    return {
+        "account": account,
+        "conversations": conversations,
+        "projects": projects,
+        "saved_content": saved,
+        "profile_memory": profile_memory,
+        "agent_memories": agent_memories,
+        "counts": {"conversations": len(conversations), "messages": total_messages,
+                   "projects": len(projects), "saved_content": len(saved)},
+    }
+
 def get_org_offline_config(org_id):
     """Offline/PWA kill switch. Regulated posture: default OFF — members'
     browsers keep no local copies of org content (GET cache, write queue,

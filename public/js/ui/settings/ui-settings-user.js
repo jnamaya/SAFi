@@ -193,7 +193,26 @@ function _buildProfileUI(container) {
                 Save Changes
             </button>
         </div>
+
+        <!-- Right of access (GDPR Art. 15 / HIPAA §164.524) -->
+        <div class="profile-section-container shadow-sm mt-6">
+            <div class="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">My Data</h4>
+                <span class="text-xs text-neutral-400 font-normal ml-auto">Right of access</span>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <p class="text-sm text-neutral-500 dark:text-neutral-400">Download a copy of everything SAFi stores about you — your account, conversations with their governance results, projects, saved items, and memory. The download is recorded in the compliance evidence log.</p>
+                <button id="export-my-data-btn"
+                    class="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-sm font-medium whitespace-nowrap">
+                    Download my data (JSON)
+                </button>
+            </div>
+        </div>
     `;
+
+    container.querySelector('#export-my-data-btn')?.addEventListener('click', () => {
+        window.open(api.myDataExportUrl(), '_blank');
+    });
 
     _attachProfileEventListeners(container);
 }

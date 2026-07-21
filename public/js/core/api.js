@@ -505,6 +505,11 @@ export async function updateOfflineConfig(orgId, enabled) {
     return httpJSON(j(`/api/organizations/${orgId}/offline-config`), 'PUT', { offline_enabled: enabled });
 }
 
+// Right-of-access self-export (custody-logged server-side) — plain URL for window.open.
+export function myDataExportUrl() {
+    return j('/api/me/export');
+}
+
 export async function getComplianceLog(orgId, limit = 20) {
     return httpGet(j(`/api/organizations/${orgId}/compliance-log?limit=${limit}`));
 }

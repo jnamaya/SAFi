@@ -40,6 +40,42 @@ def _parse_date(value):
     return dt
 
 
+@records_bp.route('/me/export', methods=['GET'])
+def export_my_data():
+    """Right-of-access export (Phase H — GDPR Art. 15 / HIPAA §164.524):
+    any authenticated user downloads everything SAFi holds about them,
+    decrypted. Self-service — no role gate, but strictly self-scoped (the
+    user id comes from the session, never from the request). Custody-logged
+    as user_data_export: to the user's org log when they belong to one
+    (admins/auditors see that a member exported), globally otherwise."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+    try:
+        data = db.export_user_data(user_id)
+    except Exception as e:
+        current_app.logger.error(f"Error building user data export: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+    if data is None:
+        return jsonify({"error": "User not found"}), 404
+    try:
+        db.append_compliance_log(data["account"].get("org_id"), "user_data_export",
+                                 _actor(), {"user_id": user_id, "counts": data["counts"]})
+    except Exception as e:
+        # Custody evidence is the point — no evidence, no export.
+        current_app.logger.error(f"user_data_export custody log failed — refusing export: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+    payload = {
+        "export_type": "user_data_export",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": user_id,
+        **data,
+    }
+    fname = f"safi-my-data-{user_id[:12]}-{datetime.now(timezone.utc).date()}.json"
+    return Response(json.dumps(payload, indent=2, default=str), mimetype="application/json",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
 @records_bp.route('/organizations/<org_id>/retention', methods=['GET'])
 @require_role('admin')
 def get_retention(org_id):

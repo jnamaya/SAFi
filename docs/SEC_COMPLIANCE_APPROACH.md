@@ -153,6 +153,12 @@ where an examiner would encounter them in exported records.
   optionally pushed to a firm webhook signed with HMAC-SHA256 (delivery
   outcomes journaled). Thresholds are org-configurable and evidence-logged.
   The written monitoring plan is published at `docs/MONITORING_PLAN.md`.
+- **Right of access** — any user can self-service download everything the
+  platform stores about them (account, conversations with their governance
+  results, projects, saved items, memory), decrypted and strictly
+  self-scoped. Every download is recorded in the compliance evidence log.
+  Supports GDPR Art. 15 and HIPAA §164.524 access requests without operator
+  involvement.
 - **Audit Hub** — an org-scoped analytics surface over the encrypted
   governance records: alignment/consistency KPIs and trends, a filterable
   log explorer, and a per-turn drill-down showing the full evidence behind
