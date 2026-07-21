@@ -108,6 +108,17 @@ def init_db():
             )
         ''')
 
+        # Titles are encrypted at rest (2026-07-21, Phase F): a Fernet token
+        # over a 255-char plaintext needs ~420 chars, so the column widens to
+        # 512. Plaintext is capped at 255 on write to guarantee fit.
+        cursor.execute(
+            "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='conversations' AND COLUMN_NAME='title'")
+        _tlen = cursor.fetchone()
+        if _tlen and _tlen[0] and _tlen[0] < 512:
+            cursor.execute("ALTER TABLE conversations MODIFY title VARCHAR(512)")
+            logging.info("Encryption migration: widened conversations.title to VARCHAR(512)")
+
         # --- Projects (workspaces that group conversations) ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS projects (
@@ -1251,12 +1262,45 @@ def delete_user(user_id):
         cursor.close()
         conn.close()
 
+# --- suggested_prompts codec -------------------------------------------------
+# The column is JSON-typed, so the encrypted form is a JSON *string* holding
+# the Fernet token. Dual-read: legacy rows hold a plain JSON array and pass
+# through unchanged (same contract as crypto.decrypt_value).
+
+def _encode_suggested_prompts(prompts):
+    if prompts is None:
+        return json.dumps(None)
+    return json.dumps(crypto.encrypt_value(json.dumps(prompts)))
+
+def _decode_suggested_prompts(value):
+    """Returns a Python list (or None). Accepts every historical shape:
+    NULL, plain JSON array text, or a JSON string wrapping a Fernet token."""
+    if value is None:
+        return None
+    obj = value
+    if isinstance(obj, (bytes, bytearray)):
+        obj = obj.decode("utf-8", errors="replace")
+    if isinstance(obj, str):
+        try:
+            obj = json.loads(obj)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(obj, str):
+        try:
+            obj = json.loads(crypto.decrypt_value(obj))
+        except (ValueError, TypeError):
+            return None
+    return obj if isinstance(obj, list) else None
+
 def fetch_user_conversations(user_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT id, title, is_pinned, project_id, created_at FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        for r in rows:
+            r["title"] = crypto.decrypt_value(r["title"])
+        return rows
     finally:
         cursor.close()
         conn.close()
@@ -1487,6 +1531,8 @@ def fetch_chat_history_for_conversation(cid, limit=50, offset=0, user_id=None):
         rows = list(reversed(cursor.fetchall()))
         for r in rows:
             crypto.decrypt_fields(r, ("content", "spirit_note", "conscience_ledger", "reasoning_log"))
+            if "suggested_prompts" in r:
+                r["suggested_prompts"] = _decode_suggested_prompts(r["suggested_prompts"])
         return rows
     finally:
         cursor.close()
@@ -1761,7 +1807,7 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
         cursor.execute(sql, (crypto.encrypt_value(json.dumps(ledger)), score, drift, crypto.encrypt_value(note),
                              pname, policy_id, policy_version, model_attribution,
                              will_decision, will_stage,
-                             json.dumps(pvals), json.dumps(prompts), msg_id))
+                             json.dumps(pvals), _encode_suggested_prompts(prompts), msg_id))
         # Review sampling shares this transaction so a committed turn and its
         # "was this due for review" decision are atomic — a turn can never
         # commit without its due queue row. Isolation is one-way: a sampling
@@ -1810,7 +1856,7 @@ def update_suggested_prompts(msg_id, prompts):
                                "system:suggester", {"suggested_prompts": row[2]})
         cursor.execute(
             "UPDATE chat_history SET suggested_prompts=%s WHERE message_id=%s",
-            (json.dumps(prompts), msg_id),
+            (_encode_suggested_prompts(prompts), msg_id),
         )
         conn.commit()
     finally:
@@ -1930,7 +1976,7 @@ def get_audit_result(msg_id, user_id=None):
                 "policy_id": row['policy_id'],
                 "policy_version": row['policy_version'],
                 "values": row['profile_values'],
-                "suggested_prompts": row['suggested_prompts'],
+                "suggested_prompts": _decode_suggested_prompts(row['suggested_prompts']),
                 "reasoning_log": row['reasoning_log']
             }
         return None
@@ -1966,10 +2012,15 @@ def rename_conversation(cid, title, user_id=None):
     try:
         # SECURITY: scope the write to the owning user when a user_id is supplied
         # (request paths) so one user cannot rename another user's conversation.
+        # Titles are derived from user prompts, so they are encrypted at rest
+        # like the content they summarize (dual-read: legacy plaintext rows
+        # pass through crypto.decrypt_value unchanged). Plaintext is capped
+        # at 255 chars so the token always fits VARCHAR(512).
+        enc_title = crypto.encrypt_value((title or "")[:255])
         if user_id is not None:
-            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s AND user_id=%s", (title, cid, user_id))
+            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s AND user_id=%s", (enc_title, cid, user_id))
         else:
-            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s", (title, cid))
+            cursor.execute("UPDATE conversations SET title=%s WHERE id=%s", (enc_title, cid))
         conn.commit()
         return cursor.rowcount > 0
     finally:

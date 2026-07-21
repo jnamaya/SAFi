@@ -30,16 +30,45 @@ from safi_app.persistence import crypto
 # (table, pk_cols, columns, journaled)
 MANIFEST = [
     ("oauth_tokens", ("user_id", "provider"), ("access_token", "refresh_token"), False),
-    ("conversations", ("id",), ("memory_summary",), False),
+    ("conversations", ("id",), ("memory_summary", "title"), False),
     ("user_profiles", ("user_id",), ("profile_json",), False),
     ("agent_context_memory", ("user_id", "agent_id"), ("context_json",), False),
     ("saved_content", ("id",), ("content", "conscience_ledger"), False),
-    ("chat_history", ("id",), ("content", "spirit_note", "conscience_ledger", "reasoning_log"), True),
+    ("chat_history", ("id",), ("content", "spirit_note", "conscience_ledger", "reasoning_log",
+                               "suggested_prompts"), True),
 ]
 
 
 def needs_encryption(value):
     return isinstance(value, str) and value != "" and not crypto.is_token(value)
+
+
+# suggested_prompts is a JSON column: legacy plaintext is a JSON array,
+# encrypted form is a JSON *string* wrapping the Fernet token (see
+# db._encode_suggested_prompts). The generic string path would write a bare
+# token, which MySQL's JSON validation rejects — so it gets its own codec.
+def _sp_needs(value):
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        return isinstance(json.loads(value), list)
+    except (ValueError, TypeError):
+        return False
+
+
+def _sp_transform(value):
+    return db._encode_suggested_prompts(json.loads(value))
+
+
+def _sp_verify_ok(value):
+    try:
+        parsed = json.loads(value)
+    except (ValueError, TypeError):
+        return False
+    return parsed is None or (isinstance(parsed, str) and crypto.is_token(parsed))
+
+
+SPECIAL = {("chat_history", "suggested_prompts"): (_sp_needs, _sp_transform)}
 
 
 def count_candidates(table, columns):
@@ -48,10 +77,16 @@ def count_candidates(table, columns):
     try:
         counts = {}
         for col in columns:
-            cur.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {col} IS NOT NULL AND {col} != '' "
-                f"AND {col} NOT LIKE 'gAAAA%'"
-            )
+            if (table, col) in SPECIAL:
+                cur.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {col} IS NOT NULL "
+                    f"AND JSON_TYPE({col}) = 'ARRAY'"
+                )
+            else:
+                cur.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {col} IS NOT NULL AND {col} != '' "
+                    f"AND {col} NOT LIKE 'gAAAA%'"
+                )
             counts[col] = cur.fetchone()[0]
         return counts
     finally:
@@ -87,7 +122,15 @@ def backfill_table(table, pk_cols, columns, journaled, batch_size):
                 conn.commit()
                 break
             for row in rows:
-                changed = {c: crypto.encrypt_value(row[c]) for c in columns if needs_encryption(row[c])}
+                changed = {}
+                for c in columns:
+                    special = SPECIAL.get((table, c))
+                    if special:
+                        needs, transform = special
+                        if needs(row[c]):
+                            changed[c] = transform(row[c])
+                    elif needs_encryption(row[c]):
+                        changed[c] = crypto.encrypt_value(row[c])
                 if changed:
                     set_sql = ", ".join(f"{c}=%s" for c in changed)
                     where_sql = " AND ".join(f"{p}=%s" for p in pk_cols)
@@ -126,6 +169,11 @@ def verify_table(table, pk_cols, columns, journaled, sample=25):
             for c in columns:
                 v = row[c]
                 if v is None or v == "":
+                    continue
+                if (table, c) in SPECIAL:
+                    if not _sp_verify_ok(v):
+                        print(f"  VERIFY FAIL {table}.{c} pk={row[pk_cols[0]]}: not a wrapped token")
+                        problems += 1
                     continue
                 if not crypto.is_token(v):
                     print(f"  VERIFY FAIL {table}.{c} pk={row[pk_cols[0]]}: not encrypted")

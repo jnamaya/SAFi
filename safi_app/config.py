@@ -196,6 +196,11 @@ class Config:
     # edge-tts voices: en-US-AvaMultilingualNeural, en-US-AndrewNeural, en-US-AriaNeural
     TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AvaMultilingualNeural")
     TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
+    # TTS audio is derived from (possibly sensitive) AI responses, so cached
+    # MP3s must not persist on disk indefinitely: files older than the TTL
+    # are swept opportunistically on cache access. 0 disables caching
+    # entirely (synthesize every time, keep nothing on disk).
+    TTS_CACHE_TTL_DAYS = int(os.environ.get("SAFI_TTS_CACHE_TTL_DAYS", "7"))
 
     # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))

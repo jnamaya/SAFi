@@ -409,8 +409,10 @@ def purge_log_files(args, orgs):
         return
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).date()
     victims = []
-    for f in log_dir.glob("*.jsonl"):
-        m = re.search(r"-(\d{4}-\d{2}-\d{2})\.jsonl$", f.name)
+    # Legacy logs were Fernet-encrypted in place (scripts/encrypt_jsonl_logs.py)
+    # and carry a .jsonl.enc suffix; retention applies to both forms.
+    for f in list(log_dir.glob("*.jsonl")) + list(log_dir.glob("*.jsonl.enc")):
+        m = re.search(r"-(\d{4}-\d{2}-\d{2})\.jsonl(\.enc)?$", f.name)
         if not m:
             continue
         try:

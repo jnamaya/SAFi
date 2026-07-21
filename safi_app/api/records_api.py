@@ -173,7 +173,7 @@ def export_records(org_id):
             if cid not in conversations:
                 conversations[cid] = {
                     "id": cid,
-                    "title": r["conversation_title"],
+                    "title": crypto.decrypt_value(r["conversation_title"]),
                     "created_at": r["conversation_created_at"],
                     "user_id": r["user_id"],
                     "user_email": r["user_email"],

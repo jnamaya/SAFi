@@ -7,9 +7,25 @@ from pathlib import Path
 import hashlib
 import asyncio
 import logging
+import time
 
 class TtsMixin:
     """Mixin for Text-to-Speech functionality."""
+
+    def _sweep_tts_cache(self, cache_dir, ttl_days: int):
+        """Deletes cached MP3s older than the TTL (data-at-rest hygiene:
+        the audio is derived from AI responses). Runs opportunistically on
+        cache access — the directory stays small, so a listing is cheap.
+        Failures are logged and ignored; the sweep must never break TTS."""
+        if ttl_days <= 0:
+            return
+        cutoff = time.time() - ttl_days * 86400
+        try:
+            for f in Path(cache_dir).glob("*.mp3"):
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except OSError as e:
+            self.log.warning(f"TTS cache sweep failed: {e}")
 
     def generate_speech_audio(self, text: str) -> Optional[bytes]:
         """
@@ -34,11 +50,14 @@ class TtsMixin:
         if provider == "gemini":
             tts_voice = getattr(self.config, "GEMINI_TTS_VOICE", "Puck")
 
-        # 2. Check Cache
+        # 2. Check Cache (TTL-bounded; 0 = no disk caching at all)
+        ttl_days = getattr(self.config, "TTS_CACHE_TTL_DAYS", 7)
+        if Path(cache_dir).is_dir():
+            self._sweep_tts_cache(cache_dir, ttl_days)
         cache_hash = hashlib.sha256(f"{text}|{tts_model}|{tts_voice}".encode('utf-8')).hexdigest()
         cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
 
-        if cache_path.exists():
+        if ttl_days > 0 and cache_path.exists():
             try:
                 with open(cache_path, "rb") as f: return f.read()
             except IOError: pass
@@ -85,7 +104,8 @@ class TtsMixin:
                 audio_content = resp.candidates[0].content.parts[0].inline_data.data
 
             if audio_content:
-                with open(cache_path, "wb") as f: f.write(audio_content)
+                if ttl_days > 0:
+                    with open(cache_path, "wb") as f: f.write(audio_content)
                 return audio_content
 
         except Exception as e:
