@@ -5,7 +5,7 @@ import {
     renderIdentityStep, validateIdentityStep
 } from './ui-wizard-step1.js';
 import {
-    renderKnowledgeStep, validateKnowledgeStep
+    renderToolsStep, validateToolsStep
 } from './ui-wizard-step2.js';
 import {
     renderIntellectStep, validateIntellectStep
@@ -140,7 +140,7 @@ export function closeWizard() {
     if (prevTabId) {
         const prevTab = document.getElementById(prevTabId);
         if (prevTab) prevTab.classList.remove('hidden');
-        document.body.removeAttribute('data-wizardPreviousTab');
+        delete document.body.dataset.wizardPreviousTab;
     } else {
         // Fallback: Show agents tab if nothing stored
         const agentsTab = document.getElementById('tab-agents');
@@ -176,13 +176,13 @@ function ensureWizardInlineExists() {
                 <div id="wizard-progress-track" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
             </div>
             
-            <!-- Step Labels -->
-            <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
-                <span class="${currentStep >= 1 ? 'text-blue-600' : ''}">Profile</span>
-                <span class="${currentStep >= 2 ? 'text-blue-600' : ''}">Tools</span>
-                <span class="${currentStep >= 3 ? 'text-blue-600' : ''}">Personality</span>
-                <span class="${currentStep >= 4 ? 'text-blue-600' : ''}">Settings</span>
-                <span class="${currentStep >= 5 ? 'text-blue-600' : ''}">Review</span>
+            <!-- Step Labels (highlighted by updateProgress) -->
+            <div id="wizard-step-labels" class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
+                <span>Identity</span>
+                <span>Tools</span>
+                <span>Personality</span>
+                <span>Settings</span>
+                <span>Review</span>
             </div>
 
             <!-- Content Area - Scrollable -->
@@ -208,11 +208,10 @@ function updateProgress() {
 
     const backBtn = document.getElementById('wizard-back-btn');
     const nextBtn = document.getElementById('wizard-next-btn');
-    const labels = document.querySelectorAll('.text-\\[10px\\] span');
+    const labels = document.querySelectorAll('#wizard-step-labels span');
 
     backBtn.disabled = currentStep === 1;
 
-    // Update labels highlight (hacky index match)
     labels.forEach((el, idx) => {
         if (idx + 1 <= currentStep) el.classList.add('text-blue-600', 'dark:text-blue-400');
         else el.classList.remove('text-blue-600', 'dark:text-blue-400');
@@ -240,7 +239,7 @@ async function renderStep(step) {
     try {
         switch (step) {
             case 1: renderIdentityStep(container, agentData); break;
-            case 2: renderKnowledgeStep(container, agentData); break;
+            case 2: renderToolsStep(container, agentData); break;
             case 3: renderIntellectStep(container, agentData); break;
             case 4: renderSafetyStep(container, agentData); break;
             case 5:
@@ -302,7 +301,7 @@ function prevStep() {
 function validateCurrentStep() {
     switch (currentStep) {
         case 1: return validateIdentityStep(agentData);
-        case 2: return validateKnowledgeStep(agentData);
+        case 2: return validateToolsStep(agentData);
         case 3: return validateIntellectStep(agentData);
         case 4: return validateSafetyStep(agentData);
         case 5: return true; // Review always valid
@@ -322,10 +321,12 @@ async function finishWizard() {
             agentData.key = await generateAgentKey(agentData.name);
         }
 
-        const payload = {
-            ...agentData,
-            worldview: agentData.instructions // Map back to backend expectation
-        };
+        // Underscore-prefixed fields (_policyData, _hasCharter) are wizard
+        // internals — keep them out of the request body.
+        const payload = Object.fromEntries(
+            Object.entries(agentData).filter(([k]) => !k.startsWith('_'))
+        );
+        payload.worldview = agentData.instructions; // Map back to backend expectation
 
         const res = await api.saveAgent(payload);
 
@@ -353,7 +354,7 @@ async function finishWizard() {
             }
         } catch (parseErr) { /* ignore */ }
 
-        if (msg.includes("already exists")) {
+        if (msg.includes("already exists") || msg.includes("Agent exists")) {
             ui.showToast("An agent with this name already exists. Please choose a different name.", "error");
         } else {
             ui.showToast(`Error: ${msg}`, "error");

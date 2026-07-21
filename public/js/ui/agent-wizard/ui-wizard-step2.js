@@ -1,8 +1,7 @@
 import * as api from '../../core/api.js';
-import * as ui from './../ui.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
 
-export async function renderKnowledgeStep(container, agentData) {
+export async function renderToolsStep(container, agentData) {
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools</h2>
         <p class="text-gray-500 mb-6">Select the tools and data sources this agent can access.</p>
@@ -109,7 +108,7 @@ async function resolvePolicyAllowlist(agentData) {
     return null;
 }
 
-export function validateKnowledgeStep(agentData) {
+export function validateToolsStep(agentData) {
     // Tools are optional
     return true;
 }

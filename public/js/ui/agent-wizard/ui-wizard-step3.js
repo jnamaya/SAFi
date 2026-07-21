@@ -1,5 +1,6 @@
 import * as api from '../../core/api.js';
 import * as ui from './../ui.js';
+import { escapeHtml } from '../../core/utils.js';
 
 export function renderIntellectStep(container, agentData) {
     container.innerHTML = `
@@ -20,7 +21,7 @@ export function renderIntellectStep(container, agentData) {
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${agentData.instructions}</textarea>
+                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${escapeHtml(agentData.instructions)}</textarea>
             </div>
 
             <div>
@@ -34,7 +35,7 @@ export function renderIntellectStep(container, agentData) {
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-style" class="w-full h-40 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${agentData.style}</textarea>
+                <textarea id="wiz-style" class="w-full h-40 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${escapeHtml(agentData.style)}</textarea>
             </div>
         </div>
     `;

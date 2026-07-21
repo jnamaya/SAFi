@@ -1,7 +1,9 @@
+import { escapeHtml } from '../../core/utils.js';
+
 export function renderReviewStep(container, agentData) {
     const hasRAG = !!agentData.rag_knowledge_base;
     const hasPolicy = !!(agentData.policy_id && agentData.policy_id !== 'standalone');
-    const policyLabel = hasPolicy ? (agentData._policyData?.name || agentData.policy_id) : 'None (Charter only)';
+    const policyLabel = escapeHtml(hasPolicy ? (agentData._policyData?.name || agentData.policy_id) : 'None (Charter only)');
     const maxTurns = agentData.max_agent_turns || 'Default';
     const trackWork = agentData.track_work_context !== false;
 
@@ -13,15 +15,15 @@ export function renderReviewStep(container, agentData) {
             
              <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg p-4 border border-gray-200 dark:border-neutral-700 flex gap-4">
                 <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                     ${agentData.avatar ? `<img src="${agentData.avatar}" class="w-full h-full object-cover">` : `<span class="text-2xl">🤖</span>`}
+                     ${agentData.avatar ? `<img src="${escapeHtml(agentData.avatar)}" class="w-full h-full object-cover">` : `<span class="text-2xl">🤖</span>`}
                 </div>
                 <div>
-                     <h3 class="font-bold text-lg dark:text-white">${agentData.name || 'Unnamed Agent'}</h3>
-                     <p class="text-sm text-gray-500">${agentData.description || 'No description'}</p>
+                     <h3 class="font-bold text-lg dark:text-white">${escapeHtml(agentData.name || 'Unnamed Agent')}</h3>
+                     <p class="text-sm text-gray-500">${escapeHtml(agentData.description || 'No description')}</p>
                      <div class="flex gap-2 mt-2 items-center flex-wrap">
-                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-mono">ID: ${agentData.key}</span>
-                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Visibility: ${agentData.visibility}</span>
-                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Policy: ${agentData.policy_id}</span>
+                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-mono">ID: ${escapeHtml(agentData.key)}</span>
+                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Visibility: ${escapeHtml(agentData.visibility)}</span>
+                        <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Policy: ${escapeHtml(agentData.policy_id)}</span>
                      </div>
                 </div>
             </div>
@@ -63,7 +65,7 @@ export function renderReviewStep(container, agentData) {
             <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
                 <h4 class="font-bold text-sm text-gray-500 uppercase mb-2">System Instructions (Preview)</h4>
                 <div class="text-xs font-mono bg-gray-50 dark:bg-neutral-900 p-3 rounded max-h-32 overflow-y-auto whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-${agentData.instructions || '(Empty instructions)'}
+${escapeHtml(agentData.instructions || '(Empty instructions)')}
                 </div>
             </div>
 

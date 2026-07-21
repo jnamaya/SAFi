@@ -1,5 +1,6 @@
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
+import { escapeHtml } from '../../core/utils.js';
 
 export async function renderIdentityStep(container, agentData) {
     container.innerHTML = `
@@ -33,16 +34,16 @@ export async function renderIdentityStep(container, agentData) {
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Agent Name <span class="text-red-500">*</span></label>
-                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. The Stoic Coach" value="${agentData.name}">
-                    ${agentData.is_update_mode && agentData.key ? `<p class="text-xs text-gray-400 mt-1">Key: ${agentData.key} (Cannot be changed)</p>` : ''}
+                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. The Stoic Coach" value="${escapeHtml(agentData.name)}">
+                    ${agentData.is_update_mode && agentData.key ? `<p class="text-xs text-gray-400 mt-1">Key: ${escapeHtml(agentData.key)} (Cannot be changed)</p>` : ''}
                 </div>
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Short Description</label>
-                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. A wise mentor based on Marcus Aurelius" value="${agentData.description}">
+                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. A wise mentor based on Marcus Aurelius" value="${escapeHtml(agentData.description)}">
                 </div>
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Avatar URL (Optional)</label>
-                    <input type="text" id="wiz-avatar" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="https://example.com/image.png" value="${agentData.avatar}">
+                    <input type="text" id="wiz-avatar" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="https://example.com/image.png" value="${escapeHtml(agentData.avatar)}">
                 </div>
             </div>
 
@@ -156,17 +157,17 @@ async function loadPolicies(agentData) {
                     const policyValues = policy.values_weights || [];
                     const valuesHtml = policyValues.slice(0, 3).map(v => {
                         const label = typeof v === 'object' ? (v.name || v.value || 'Untitled') : v;
-                        return `<li>${label}</li>`;
+                        return `<li>${escapeHtml(String(label))}</li>`;
                     }).join('');
                     const moreHtml = policyValues.length > 3
                         ? `<li class="text-gray-400">+${policyValues.length - 3} more</li>` : '';
 
                     preview.innerHTML = `
-                        <strong class="block mb-2 text-blue-800 dark:text-blue-200">${policy.name}</strong>
+                        <strong class="block mb-2 text-blue-800 dark:text-blue-200">${escapeHtml(policy.name)}</strong>
                         <div class="space-y-2">
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Purpose</span>
-                                <p class="italic">${missionSnippet}</p>
+                                <p class="italic">${escapeHtml(missionSnippet)}</p>
                             </div>
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Standards (inherited)</span>
