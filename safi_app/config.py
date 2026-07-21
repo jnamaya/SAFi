@@ -157,7 +157,7 @@ class Config:
 
     # Model assignments for each faculty (defaults — apply to authenticated users and bots)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-20b")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.1-flash-lite")
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.5-flash-lite")
 
     # Models used exclusively by the public WordPress chatbot endpoint.
     # Falls back to the global defaults above if not set.
@@ -168,7 +168,7 @@ class Config:
     BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "openai/gpt-oss-20b")
     # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
     # note-taking can run on Gemini while suggestions/summaries stay on Groq/Llama.
-    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", "gemini-3.1-flash-lite")
+    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", "gemini-3.5-flash-lite")
 
     # --- Agent work-context ("note-taker") memory tuning ---
     # Sampling temperature for the background extraction call (deterministic by default).
@@ -219,8 +219,8 @@ class Config:
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
 
         # Google Models
-        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
-        {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
+        {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite"},
+        {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash"},
 
         # DeepSeek Models
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},

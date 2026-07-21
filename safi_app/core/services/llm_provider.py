@@ -374,7 +374,7 @@ class LLMProvider:
                     user_prompt=user_prompt,
                     temperature=1.0,
                     # 8192 (up from 4096): the Intellect produces long, structured
-                    # answers and runs on thinking models (e.g. gemini-3.5-flash)
+                    # answers and runs on thinking models (e.g. gemini-3.6-flash)
                     # whose reasoning tokens also draw from this budget. 4096 was
                     # too tight and silently truncated answers mid-output.
                     max_tokens=8192,
