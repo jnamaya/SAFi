@@ -244,24 +244,12 @@ async function renderStep(step) {
             case 3: renderIntellectStep(container, agentData); break;
             case 4: renderSafetyStep(container, agentData); break;
             case 5:
-                // Auto-generate key for review visualization
-                if (!agentData.key && agentData.name) {
-                    let prefix = "org";
-                    try {
-                        const res = await api.getMyOrganization();
-                        const org = res ? res.organization : null;
-
-                        if (org) {
-                            if (org.domain_verified && org.domain_to_verify) {
-                                prefix = org.domain_to_verify.replace(/\./g, '_').toLowerCase();
-                            } else if (org.id) {
-                                prefix = `org_${org.id.substring(0, 4)}`;
-                            }
-                        }
-                    } catch (e) { console.warn("Naming fetch failed", e); }
-
-                    const nameSlug = agentData.name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-                    agentData.key = `${prefix}_${nameSlug}`;
+                // Regenerate the key from the current name on every Review
+                // render in create mode, so a rename after backtracking
+                // doesn't leave a key slugged from the old name. Edit mode
+                // never touches the key — it's immutable on the backend.
+                if (!agentData.is_update_mode && agentData.name) {
+                    agentData.key = await generateAgentKey(agentData.name);
                 }
                 renderReviewStep(container, agentData);
                 break;
@@ -270,6 +258,27 @@ async function renderStep(step) {
         console.error("Render Step Failed", e);
         container.innerHTML = `<div class="text-red-500">Error rendering step ${step}: ${e.message}</div>`;
     }
+}
+
+// Org-prefixed key slug, e.g. "acme_com_stoic_coach". Mirrors the backend's
+// key normalization in agent_api_routes.py.
+async function generateAgentKey(name) {
+    let prefix = "org";
+    try {
+        const res = await api.getMyOrganization();
+        const org = res ? res.organization : null;
+
+        if (org) {
+            if (org.domain_verified && org.domain_to_verify) {
+                prefix = org.domain_to_verify.replace(/\./g, '_').toLowerCase();
+            } else if (org.id) {
+                prefix = `org_${org.id.substring(0, 4)}`;
+            }
+        }
+    } catch (e) { console.warn("Naming fetch failed", e); }
+
+    const nameSlug = name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    return `${prefix}_${nameSlug}`;
 }
 
 function nextStep() {
@@ -308,24 +317,9 @@ async function finishWizard() {
     btn.disabled = true;
 
     try {
-        // Fix: Auto-generate key if missing (Robust Fallback)
+        // Fallback: the Review step normally sets the key, but guard anyway.
         if (!agentData.key && agentData.name) {
-            let prefix = "org";
-            try {
-                const res = await api.getMyOrganization();
-                const org = res ? res.organization : null;
-
-                if (org) {
-                    if (org.domain_verified && org.domain_to_verify) {
-                        prefix = org.domain_to_verify.replace(/\./g, '_').toLowerCase();
-                    } else if (org.id) {
-                        prefix = `org_${org.id.substring(0, 4)}`;
-                    }
-                }
-            } catch (e) { console.warn("Naming fetch failed in finishWizard", e); }
-
-            const nameSlug = agentData.name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-            agentData.key = `${prefix}_${nameSlug}`;
+            agentData.key = await generateAgentKey(agentData.name);
         }
 
         const payload = {
