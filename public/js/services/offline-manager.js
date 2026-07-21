@@ -23,6 +23,35 @@ const storage = {
 const QUEUE_KEY = 'safi_offline_queue_v1';
 const CACHE_KEY_PREFIX = 'safi_cache_v1:'; // cache per URL
 let isOnline = true;
+// Offline/PWA kill switch (Phase F): org admins can forbid local copies of
+// org content. When false, nothing is cached or queued, and everything this
+// module (or the service worker) previously persisted is purged.
+let offlineAllowed = true;
+
+async function setOfflineAllowed(allowed) {
+  offlineAllowed = allowed !== false;
+  if (offlineAllowed) return;
+  // localStorage: GET cache + write queue
+  try {
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith(CACHE_KEY_PREFIX) || k.startsWith('safi_cache:') || k === QUEUE_KEY)) doomed.push(k);
+    }
+    doomed.forEach(k => localStorage.removeItem(k));
+  } catch { }
+  // Service-worker caches (app shell + GET API cache) and the worker itself
+  try {
+    if (typeof caches !== 'undefined') {
+      const names = await caches.keys();
+      await Promise.all(names.filter(n => n.startsWith('safi-')).map(n => caches.delete(n)));
+    }
+  } catch { }
+  try {
+    const regs = await navigator.serviceWorker?.getRegistrations?.();
+    if (regs) for (const r of regs) await r.unregister();
+  } catch { }
+}
 
 /* ---------- Helpers ---------- */
 
@@ -93,7 +122,7 @@ async function initNetworkListener() {
 async function fetchWithCache(request) {
   const key = cacheKeyForRequest(request);
   if (!isOnline) {
-    const cached = await storage.get(key);
+    const cached = offlineAllowed ? await storage.get(key) : null;
     if (cached != null) return { data: cached, fromCache: true };
     throw new Error('Offline and no cached data available');
   }
@@ -103,7 +132,7 @@ async function fetchWithCache(request) {
     res = await fetch(request);
   } catch (e) {
     // If network failed but we have cache, return it
-    const cached = await storage.get(key);
+    const cached = offlineAllowed ? await storage.get(key) : null;
     if (cached != null) return { data: cached, fromCache: true };
     throw e;
   }
@@ -136,7 +165,7 @@ async function fetchWithCache(request) {
   // Only proceed to JSON parsing if res.ok is true (status 200-299)
   try {
     const data = await res.json();
-    await storage.set(key, data);
+    if (offlineAllowed) await storage.set(key, data);
     return { data, fromCache: false };
   } catch (e) {
     // This catches issues like 'empty body on successful response' OR if the HTML failed to parse as JSON
@@ -201,7 +230,13 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
           throw err;
         }
 
-        // Queue on 5xx errors or network failures
+        // Queue on 5xx errors or network failures (unless offline is forbidden)
+        if (!offlineAllowed) {
+          const msg = await res.text().catch(() => '');
+          const err = new Error(msg || res.statusText);
+          err.status = res.status;
+          throw err;
+        }
         await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
         return 'QUEUED';
       }
@@ -215,11 +250,15 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
       if (e.status && e.status >= 400 && e.status < 500) {
         throw e;
       }
+      if (!offlineAllowed) throw e; // no local persistence of request bodies
       console.warn("Fetch failed, queuing:", e);
       await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
       return 'QUEUED';
     }
   } else {
+    if (!offlineAllowed) {
+      throw new Error('You are offline. Offline mode is disabled by your organization.');
+    }
     // Offline, queue immediately
     await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
     return 'QUEUED';
@@ -242,7 +281,7 @@ async function queueRequest(parts) {
  * Attempts to send all queued writes. Called on reconnect.
  */
 async function flushQueue() {
-  if (!isOnline) return;
+  if (!isOnline || !offlineAllowed) return;
 
   let queue = await loadQueue();
   if (!queue.length) return;
@@ -279,5 +318,6 @@ async function flushQueue() {
 export default {
   initNetworkListener,
   fetchWithCache,
-  postWithQueue
+  postWithQueue,
+  setOfflineAllowed
 };

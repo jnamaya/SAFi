@@ -87,6 +87,18 @@ export async function renderSettingsComplianceTab() {
         </div>
 
         <div class="settings-card">
+             <h4 class="text-lg font-semibold mb-1">Offline &amp; Device Caching</h4>
+             <p class="text-xs text-gray-500 mb-4">When disabled (the default), members' browsers and devices keep no local copies of org conversations — no offline cache, no queued messages, no app-shell caching. Members' clients purge existing local data on their next sign-in. Changes are recorded in the evidence log.</p>
+             <div class="flex items-center justify-between gap-4">
+                 <label class="flex items-center gap-2 text-sm">
+                     <input type="checkbox" id="chk-offline-enabled" ${org.settings?.offline_enabled ? 'checked' : ''}>
+                     <span class="font-bold text-gray-700 dark:text-gray-300">Allow offline mode on member devices</span>
+                 </label>
+                 <button id="btn-save-offline" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all whitespace-nowrap">Save Offline Settings</button>
+             </div>
+        </div>
+
+        <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">Examiner Export (Records Production)</h4>
              <p class="text-xs text-gray-500 mb-4">Decrypted message records plus audit-trail integrity metadata for a date range. Every export is logged to the evidence log as chain of custody.</p>
              <div class="flex flex-wrap items-center gap-2">
@@ -134,6 +146,17 @@ export async function renderSettingsComplianceTab() {
         try {
             await api.updateRetention(org.id, payload);
             ui.showToast('Retention settings saved', 'success');
+            loadComplianceLog(org.id);
+        } catch (e) {
+            ui.showToast(e.message || 'Save failed', 'error');
+        }
+    });
+
+    // --- Offline kill-switch wiring ---
+    cards.querySelector('#btn-save-offline').addEventListener('click', async () => {
+        try {
+            await api.updateOfflineConfig(org.id, cards.querySelector('#chk-offline-enabled').checked);
+            ui.showToast('Offline settings saved — members pick this up on their next sign-in', 'success');
             loadComplianceLog(org.id);
         } catch (e) {
             ui.showToast(e.message || 'Save failed', 'error');

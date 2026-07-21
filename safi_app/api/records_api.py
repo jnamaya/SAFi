@@ -71,6 +71,34 @@ def update_retention(org_id):
         return jsonify({"error": "Internal Server Error"}), 500
 
 
+@records_bp.route('/organizations/<org_id>/offline-config', methods=['GET'])
+@require_role('admin')
+def get_offline_config(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify(db.get_org_offline_config(org_id))
+
+
+@records_bp.route('/organizations/<org_id>/offline-config', methods=['PUT'])
+@require_role('admin')
+def update_offline_config(org_id):
+    """Offline/PWA kill switch (Phase F). Members' devices pick the change up
+    on their next /api/me bootstrap; disabling also makes their clients purge
+    any locally cached org content."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    if "offline_enabled" not in data:
+        return jsonify({"error": "pass offline_enabled: true|false"}), 400
+    try:
+        return jsonify(db.set_org_offline_config(org_id, bool(data["offline_enabled"]), _actor()))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating offline config: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @records_bp.route('/organizations/<org_id>/providers', methods=['GET'])
 @require_role('admin')
 def get_providers(org_id):

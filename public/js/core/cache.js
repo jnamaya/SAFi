@@ -215,7 +215,18 @@ const CACHE_KEYS = {
   CONVO_PREFIX: 'safi_convo_' // Followed by convoId
 };
 
+// Offline/PWA kill switch (Phase F): when the user's org forbids offline
+// mode, conversation content must not persist on the device. Auth token and
+// UI preferences are unaffected — only content caches are gated and purged.
+let persistenceAllowed = true;
+
+export async function setPersistenceAllowed(allowed) {
+  persistenceAllowed = allowed !== false;
+  if (!persistenceAllowed) await clearAllCache();
+}
+
 export async function saveConvoList(conversations) {
+  if (!persistenceAllowed) return;
   try {
     // Ensure all objects have is_pinned property, defaulting to false if missing
     const sanitizedConversations = conversations.map(c => ({
@@ -277,6 +288,7 @@ export async function deleteConvo(convoId) {
 }
 
 export async function saveConvoHistory(convoId, history) {
+  if (!persistenceAllowed) return;
   try {
     await NativeStorage.set(CACHE_KEYS.CONVO_PREFIX + convoId, history);
   } catch (e) {
@@ -316,6 +328,17 @@ export async function clearAllCache() {
         await NativeStorage.remove(CACHE_KEYS.CONVO_PREFIX + convo.id);
       }
     }
+    // Sweep stragglers not referenced by the list (web storage only —
+    // native Preferences has no key enumeration, but the list removal
+    // above covers everything saved through this module).
+    try {
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(CACHE_KEYS.CONVO_PREFIX)) doomed.push(k);
+      }
+      doomed.forEach(k => localStorage.removeItem(k));
+    } catch { }
   } catch (e) {
     console.error('Failed to clear all cache:', e);
   }

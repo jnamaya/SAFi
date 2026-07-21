@@ -1038,6 +1038,18 @@ def get_me():
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
 
+        # Offline/PWA posture (Phase F): personal users keep offline support;
+        # org members follow their org's kill switch (default OFF — no local
+        # copies of org content on the device). The client purges its caches
+        # when this is false.
+        user_details['offline_enabled'] = True
+        if user_details.get('org_id'):
+            try:
+                user_details['offline_enabled'] = db.get_org_offline_config(
+                    user_details['org_id'])["offline_enabled"]
+            except Exception:
+                user_details['offline_enabled'] = False
+
         # Org-mandated MFA, not yet enrolled (restricted session): tell the
         # frontend to show the enrollment gate instead of the app.
         from flask import g as _g

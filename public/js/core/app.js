@@ -12,6 +12,7 @@ import * as uiSaved from '../ui/ui-saved.js';
 import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-settings-core.js';
 
 import offlineManager from '../services/offline-manager.js';
+import * as cache from './cache.js';
 
 // --- CAPACITOR GLOBAL STATE & PLUGINS ---
 const Cap = typeof window !== 'undefined' ? window.Capacitor : undefined;
@@ -300,6 +301,18 @@ async function checkLoginStatus() {
     uiAuthSidebar.updateUIForAuthState(user);
 
     if (user) {
+      // Offline/PWA kill switch (Phase F): org members follow their org's
+      // policy (server default: OFF for orgs). Applying it BEFORE the
+      // network listener init keeps a forbidden client from flushing or
+      // building any local cache; disabling also purges what exists.
+      try {
+        const offlineOk = user.offline_enabled !== false;
+        await offlineManager.setOfflineAllowed(offlineOk);
+        await cache.setPersistenceAllowed(offlineOk);
+      } catch (e) {
+        console.warn("Offline policy apply warning:", e);
+      }
+
       // FIX: Only initialize the offline manager (and flush queue) IF we are logged in.
       // This prevents the "401 Loop of Death" where pending prompts try to send while logged out.
       try {

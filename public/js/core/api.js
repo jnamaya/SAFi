@@ -501,6 +501,10 @@ export async function updateRetention(orgId, data) {
     return httpJSON(j(`/api/organizations/${orgId}/retention`), 'PUT', data);
 }
 
+export async function updateOfflineConfig(orgId, enabled) {
+    return httpJSON(j(`/api/organizations/${orgId}/offline-config`), 'PUT', { offline_enabled: enabled });
+}
+
 export async function getComplianceLog(orgId, limit = 20) {
     return httpGet(j(`/api/organizations/${orgId}/compliance-log?limit=${limit}`));
 }

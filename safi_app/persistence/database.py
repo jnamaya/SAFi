@@ -3147,6 +3147,56 @@ def set_org_retention_config(org_id, changes, actor):
         conn.close()
     return get_org_retention_config(org_id)
 
+def get_org_offline_config(org_id):
+    """Offline/PWA kill switch. Regulated posture: default OFF — members'
+    browsers keep no local copies of org content (GET cache, write queue,
+    conversation cache, service-worker caches) unless an admin opts in."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        return {"offline_enabled": bool(settings.get("offline_enabled", False))}
+    finally:
+        cursor.close()
+        conn.close()
+
+def set_org_offline_config(org_id, enabled, actor):
+    """Toggles the offline/PWA switch; evidence-logged in the same
+    transaction so the change can never dodge the compliance log."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        old = bool(settings.get("offline_enabled", False))
+        new = bool(enabled)
+        if old != new:
+            settings["offline_enabled"] = new
+            append_compliance_log(org_id, "offline_config_changed", actor,
+                                  {"old": old, "new": new}, cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_org_offline_config(org_id)
+
 def get_org_provider_config(org_id):
     """Reads the LLM provider allow-list from organizations.settings.
     {'allowlist': [...]} or {'allowlist': None} — None means unrestricted."""
