@@ -3836,6 +3836,10 @@ video {
   background-color: rgb(120 53 15 / 0.2);
 }
 
+.dark\:bg-amber-900\/40:is(.dark *) {
+  background-color: rgb(120 53 15 / 0.4);
+}
+
 .dark\:bg-amber-900\/60:is(.dark *) {
   background-color: rgb(120 53 15 / 0.6);
 }

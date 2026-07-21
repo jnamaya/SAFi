@@ -11,18 +11,45 @@ from __future__ import annotations
 # Provider governance metadata. baa_capable = the provider offers a HIPAA
 # Business Associate Agreement on an enterprise/API tier (OpenAI, Anthropic,
 # Google via Vertex, Mistral enterprise — verified July 2026); eu_hostable =
-# an EU/EEA-resident hosting option exists. Consumed by the per-org provider
-# allow-list (provider_governance.py), the /models endpoint, and the
-# org-settings UI badges. Keys MUST match build_providers_config below.
+# an EU/EEA-resident hosting option exists. zdr = zero-data-retention
+# posture, verified against official provider docs July 2026:
+#   "default"   — prompts/completions not retained by default
+#   "available" — ZDR offered on an enterprise/request basis (not automatic;
+#                 default is typically ~30-day abuse-monitoring retention)
+#   False       — no ZDR option, or only an unverifiable policy assertion
+#                 (Zhipu claims real-time processing but publishes no
+#                 contractual ZDR program or training-use statement, so it
+#                 is deliberately NOT badged; DeepSeek retains indefinitely
+#                 in China and trains on API data).
+# zdr_note is surfaced verbatim as the badge tooltip in the org-settings UI.
+# Consumed by the per-org provider allow-list (provider_governance.py), the
+# /models endpoint, and the org-settings UI badges. Keys MUST match
+# build_providers_config below.
 PROVIDER_METADATA = {
-    "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True},
-    "anthropic": {"label": "Anthropic",     "baa_capable": True,  "eu_hostable": True},
-    "gemini":    {"label": "Google Gemini", "baa_capable": True,  "eu_hostable": True},
-    "mistral":   {"label": "Mistral",       "baa_capable": True,  "eu_hostable": True},
-    "groq":      {"label": "Groq",          "baa_capable": False, "eu_hostable": False},
-    "cerebras":  {"label": "Cerebras",      "baa_capable": False, "eu_hostable": False},
-    "deepseek":  {"label": "DeepSeek",      "baa_capable": False, "eu_hostable": False},
-    "zhipu":     {"label": "Zhipu (Z.ai)",  "baa_capable": False, "eu_hostable": False},
+    "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True,
+                  "zdr": "available",
+                  "zdr_note": "Abuse-monitoring logs up to 30 days by default; zero data retention requires OpenAI approval."},
+    "anthropic": {"label": "Anthropic",     "baa_capable": True,  "eu_hostable": True,
+                  "zdr": "available",
+                  "zdr_note": "Deletion within 30 days by default; per-org zero-data-retention agreement via sales (some models/features excluded)."},
+    "gemini":    {"label": "Google Gemini", "baa_capable": True,  "eu_hostable": True,
+                  "zdr": "available",
+                  "zdr_note": "No at-rest storage; 24h in-memory cache can be disabled per project; abuse-logging exception on request."},
+    "mistral":   {"label": "Mistral",       "baa_capable": True,  "eu_hostable": True,
+                  "zdr": "available",
+                  "zdr_note": "30-day abuse-monitoring retention by default; zero data retention on request (paid tier)."},
+    "groq":      {"label": "Groq",          "baa_capable": False, "eu_hostable": False,
+                  "zdr": "default",
+                  "zdr_note": "Inference requests not retained by default; self-serve ZDR control removes the troubleshooting exception."},
+    "cerebras":  {"label": "Cerebras",      "baa_capable": False, "eu_hostable": False,
+                  "zdr": "default",
+                  "zdr_note": "States prompts, requests, and outputs are processed and discarded — no retention."},
+    "deepseek":  {"label": "DeepSeek",      "baa_capable": False, "eu_hostable": False,
+                  "zdr": False,
+                  "zdr_note": "Data stored in China, retained indefinitely, used for training; no ZDR option."},
+    "zhipu":     {"label": "Zhipu (Z.ai)",  "baa_capable": False, "eu_hostable": False,
+                  "zdr": False,
+                  "zdr_note": "Policy claims real-time processing without storage, but no contractual ZDR program or training-use statement."},
 }
 
 

@@ -162,17 +162,22 @@ where an examiner would encounter them in exported records.
   governance data is recorded in the append-only compliance evidence log
   (chain of custody), mirroring the examiner export.
 
+- **Provider data-retention posture (ZDR)** — each LLM provider in the
+  allow-list carries its verified zero-data-retention posture (retained by
+  default / ZDR available on an enterprise basis / no ZDR option), surfaced
+  next to the BAA and EU-hosting badges so an org can compose its provider
+  set against its retention obligations. Verified against official provider
+  documentation (July 2026); contractual ZDR agreements with providers remain
+  the customer's to execute.
+
 ## 3. Roadmap
 
 Planned work, in priority order:
 
-1. **Zero-data-retention LLM endpoints** — enabling provider ZDR options where
-   offered and documenting per-provider retention posture alongside the
-   existing per-org provider allow-list.
-2. **SOC 2 Type II program.**
-3. **SAML SSO and SCIM provisioning** — available on enterprise demand,
+1. **SOC 2 Type II program.**
+2. **SAML SSO and SCIM provisioning** — available on enterprise demand,
    building on the shipped OIDC per-tenant enforcement.
-5. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
+3. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
    amended paragraph (i) hosting-undertaking question for hosted deployments.
 
 ## 4. Key sources

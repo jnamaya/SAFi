@@ -50,7 +50,7 @@ export async function renderSettingsComplianceTab() {
                  <div id="provider-checklist" class="grid md:grid-cols-2 gap-2 ${org.settings?.provider_allowlist ? '' : 'hidden'}">
                      <div class="text-sm text-gray-400">Loading providers…</div>
                  </div>
-                 <p class="text-xs text-gray-400">BAA = provider offers a HIPAA Business Associate Agreement on an enterprise tier. EU = an EU/EEA-resident hosting option exists. Voice synthesis via edge-tts is governed separately.</p>
+                 <p class="text-xs text-gray-400">BAA = provider offers a HIPAA Business Associate Agreement on an enterprise tier. EU = an EU/EEA-resident hosting option exists. ZDR = prompts are not retained by default; ZDR* = zero data retention is available on an enterprise/request basis (hover a badge for the provider's exact posture, verified July 2026). Voice synthesis via edge-tts is governed separately.</p>
                  <div class="flex justify-end">
                      <button id="btn-save-providers" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Provider Settings</button>
                  </div>
@@ -235,14 +235,23 @@ async function loadProviderChecklist(orgId) {
     if (!el) return;
     try {
         const res = await api.getOrgProviders(orgId);
-        const badge = (on, label) => on
-            ? `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">${label}</span>`
+        const badge = (on, label, title = '') => on
+            ? `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" ${title ? `title="${title.replace(/"/g, '&quot;')}"` : ''}>${label}</span>`
             : '';
+        // ZDR: green = no retention by default; amber = zero-data-retention
+        // available on an enterprise/request basis (not automatic).
+        const zdrBadge = (p) => {
+            if (!p.zdr) return '';
+            const cls = p.zdr === 'default'
+                ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400'
+                : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400';
+            return `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${cls}" title="${(p.zdr_note || '').replace(/"/g, '&quot;')}">ZDR${p.zdr === 'available' ? '*' : ''}</span>`;
+        };
         el.innerHTML = (res.providers || []).map(p => `
             <label class="flex items-center gap-2 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2">
                 <input type="checkbox" value="${p.key}" ${p.allowed ? 'checked' : ''}>
                 <span class="font-medium">${p.label}</span>
-                ${badge(p.baa_capable, 'BAA')}${badge(p.eu_hostable, 'EU')}
+                ${badge(p.baa_capable, 'BAA')}${badge(p.eu_hostable, 'EU')}${zdrBadge(p)}
             </label>`).join('');
     } catch (e) {
         el.innerHTML = `<span class="text-sm text-red-500">Failed to load providers: ${e.message || e}</span>`;
