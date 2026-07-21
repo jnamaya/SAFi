@@ -117,7 +117,9 @@ where an examiner would encounter them in exported records.
   (default: keep forever), legal hold that suspends all destruction, a purge
   engine with safety rails, and a date-range examiner production/export API.
   All retention-config changes and exports are recorded in an append-only
-  compliance evidence log.
+  compliance evidence log. The written position reconciling GDPR erasure
+  with retention obligations (Art. 17(3)(b) legal-obligation carve-out,
+  legal-hold precedence) is published at `docs/DATA_ERASURE_AND_RETENTION.md`.
 - **Per-org LLM provider allow-list** — each organization can restrict which
   LLM providers may receive its content. Enforcement is fail-closed across
   every model call in the pipeline (including internal evaluation stages), a

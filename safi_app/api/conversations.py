@@ -11,6 +11,7 @@ from ..persistence import database as db
 from ..core.orchestrator import SAFi
 from ..core.faculties.synderesis import get_profile, list_profiles
 from ..core.services import provider_governance as pg
+from ..core import provenance
 from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
@@ -268,15 +269,15 @@ async def bot_process_prompt_endpoint():
         if not org_id:
             org_id = (db.get_policy(policy_id) or {}).get('org_id')
         result = await saf_system.process_prompt(
-            user_prompt, 
-            user_id, 
+            user_prompt,
+            user_id,
             conversation_id,
             user_name="Colleague",
             org_id=org_id
         )
-        
-        return jsonify(result)
-        
+        result["aiProvenance"] = provenance.ai_marker(model=selected_intellect)
+        return provenance.mark_json_response(jsonify(result))
+
     except Exception as e:
         current_app.logger.error(f"Bot Processing Error: {str(e)}")
         return jsonify({"finalOutput": "I encountered an internal error processing your request."}), 500
@@ -327,16 +328,18 @@ def tts_audio_endpoint():
                 audio_bytes = cache_path.read_bytes()
                 resp = Response(audio_bytes, mimetype='audio/mpeg')
                 resp.headers['Content-Length'] = len(audio_bytes)
-                return resp
+                return provenance.mark_json_response(resp)
             except IOError:
                 pass
 
-        # Cache miss: stream chunks as they arrive, cache on completion
-        return Response(
+        # Cache miss: stream chunks as they arrive, cache on completion.
+        # Synthetic audio carries the Art. 50(2) marking as a header — the
+        # only machine-readable channel an MP3 stream has.
+        return provenance.mark_json_response(Response(
             _tts_stream_generator(text_clean, voice, cache_path),
             mimetype='audio/mpeg',
             headers={'X-Accel-Buffering': 'no'},
-        )
+        ))
 
     except Exception as e:
         current_app.logger.error(f"Error processing TTS request: {e}")
@@ -402,7 +405,8 @@ async def public_process_prompt_endpoint():
         user_name="Guest",
         org_id=org_id
     )
-    return jsonify(result)
+    result["aiProvenance"] = provenance.ai_marker(model=Config.PUBLIC_INTELLECT_MODEL)
+    return provenance.mark_json_response(jsonify(result))
 
 
 @conversations_bp.route('/process_prompt', methods=['POST'])
@@ -510,14 +514,15 @@ async def process_prompt_endpoint():
     try:
         org_id = user_details.get('org_id')
         result = await saf_system.process_prompt(
-            data['message'], 
-            user_id, 
+            data['message'],
+            user_id,
             conversation_id,
             user_name=user_name,
             override_message_id=data.get('message_id'),
             org_id=org_id
         )
-        return jsonify(result)
+        result["aiProvenance"] = provenance.ai_marker(model=intellect_model)
+        return provenance.mark_json_response(jsonify(result))
     except Exception as e:
         import traceback
         current_app.logger.error(f"Process Prompt Failed: {str(e)}\n{traceback.format_exc()}")

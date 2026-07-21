@@ -244,12 +244,15 @@ def export_records(org_id):
                     "messages": [],
                     "trail": [],
                 }
-            conversations[cid]["messages"].append({
+            msg = {
                 k: r[k] for k in ("id", "message_id", "role", "content", "audit_status",
                                   "conscience_ledger", "spirit_score", "drift", "spirit_note",
                                   "profile_name", "policy_id", "policy_version",
                                   "reasoning_log", "timestamp")
-            })
+            }
+            # Art. 50(2): exported AI messages carry the machine-readable marker.
+            msg["ai_generated"] = (r["role"] == "ai")
+            conversations[cid]["messages"].append(msg)
 
         # Trail metadata per conversation — integrity evidence, states omitted.
         for cid, conv in conversations.items():

@@ -3182,6 +3182,8 @@ def export_user_data(user_id):
             msgs = cursor.fetchall()
             for m in msgs:
                 m["content"] = crypto.decrypt_value(m["content"])
+                # Art. 50(2): AI messages carry the machine-readable marker.
+                m["ai_generated"] = (m["role"] == "ai")
             c["messages"] = msgs
             total_messages += len(msgs)
 
@@ -3934,6 +3936,8 @@ def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
         except (ValueError, TypeError):
             record = None
         row["record"] = record
+        # Art. 50(2): every governance record captures an AI-generated turn.
+        row["ai_generated"] = True
         if isinstance(row.get("created_at"), datetime):
             row["created_at"] = row["created_at"].isoformat()
         out.append(row)
