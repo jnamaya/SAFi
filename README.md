@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/cover3.png" alt="SAFi: Self-Alignment Framework Interface" width="100%">
+  <img src="public/assets/cover4.png" alt="SAFi: a governed AI conversation beside the Audit Hub's governance analytics" width="100%">
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
