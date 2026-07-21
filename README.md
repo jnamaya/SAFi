@@ -13,7 +13,8 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
-- [The Origin Story](#the-origin-story-from-human-cognition-to-machine-governance)
+- [The SAFi Solution](#the-safi-solution)
+- [Built for Regulated Industries](#built-for-regulated-industries)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
 - [Benchmarks & Validation](#benchmarks--validation)
@@ -25,44 +26,39 @@
 
 ## The Problem
 
-Your organization is deploying AI agents. Your legal and compliance teams are probably asking hard questions: 
+Your organization is deploying AI agents. Your legal and compliance teams are probably asking hard questions:
 
-* What policies are being enforced, and how? 
-* Who audits the decisions? 
+* What policies are being enforced, and how?
+* Who audits the decisions?
 * What happens when the model drifts, gets jailbroken, or takes an unauthorized action?
+* When an examiner or auditor asks for the records, what do you actually hand them?
 
-You probably scratch your head, think about those PDF policies sitting on the Intranet that nobody looks at, and wonder: *How can I possibly enforce those policies in an AI agent?* 
+You probably scratch your head, think about those PDF policies sitting on the Intranet that nobody looks at, and wonder: *How can I possibly enforce those policies in an AI agent?*
 
-The current standard approach is downstream filters, guardrails that check the output after the fact. 
+The current standard approach is downstream filters — guardrails that check the output after the fact. They leave no evaluation record, enforce no policy you actually wrote, and produce nothing an auditor can verify. When the answer to "who approved this response?" is "a content filter," the governance conversation is over.
 
-SAFi takes a fundamentally different approach.
+## The SAFi Solution
 
-It governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime.
+SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime — and evidenced afterward.
 
-SAFi starts with your **Organizational Charter**: your mission statement and core values. It uses this as the guiding context for the agent. 
+It starts with your **Organizational Charter**: your mission statement and core values, used as the guiding context for every agent. Beneath the Charter sit your **Policies** (Financial Compliance, HR Protocols, GenAI Policies). SAFi uses the Charter to give the agent direction and cultural awareness, and strictly enforces the Policy through a deterministic layer: every response is drafted, evaluated value-by-value against the governing policy, and approved, blocked, or redirected by rules — not vibes — before it ships.
 
-Beneath the Charter are the **Policies** (e.g., Financial Compliance, HR Protocols, GenAI Policies).
+Just as important: every one of those decisions leaves evidence. Each turn produces an encrypted, tamper-evident governance record — the draft, the evaluation ledger, the enforcement decision, and the exact policy version in force — feeding an org-scoped **Audit Hub** for analytics and drill-down, a **supervisory review queue** for human oversight, and custody-logged exports for whoever comes asking.
 
-SAFi uses the Charter to give the agent direction and cultural awareness, and strictly enforces the Policy through a deterministic layer.
+---
 
-## The Origin Story: From Human Cognition to Machine Governance
+## Built for Regulated Industries
 
-At this point, you are probably wondering how SAFi actually works. If you are fond of classical philosophy, you may appreciate that SAFi's architecture is rooted in more than two thousand years of thinking about human cognition and decision making.
+SAFi's governance architecture was designed for auditability first, which is why it maps onto the world's strictest AI and record-keeping regimes. Each readiness document below states exactly what ships today and what remains on the roadmap — no certification claims, no hand-waving.
 
-> **Just want the code?**
-> If you'd rather skip the philosophy and get your hands dirty, jump straight to the [Quick Start](#quick-start) section.
+| Field | What SAFi is designed to support | Readiness document |
+| :--- | :--- | :--- |
+| **Financial services (SEC / FINRA)** | The SEA 17a-4 audit-trail alternative (hash-chained, tamper-evident records with re-creatable originals), Reg S-P incident response with notification clocks, retention & legal hold, examiner production exports, and FINRA 3110/3120-style supervisory review with auditable human sign-off. | [SEC / FINRA Readiness](docs/SEC_COMPLIANCE_READINESS.md) |
+| **EU AI Act** | The full limited-risk transparency tier: Art. 50(1) AI-interaction disclosure, Art. 50(2) machine-readable output marking, Art. 12 logging, Art. 13 per-decision explanations, Art. 14 human oversight, Art. 72 post-market monitoring with a published plan, and Art. 73 incident clocks. | [EU AI Act Readiness](docs/EU_AI_ACT_READINESS.md) |
+| **Healthcare (HIPAA)** | A per-org LLM provider allow-list with verified BAA-capable and zero-data-retention badges (fail-closed at every model call), application-layer encryption at rest, MFA and revocable sessions, §164.524 right-of-access export, breach-notification clocks, and a device-copy kill switch. | [HIPAA Readiness](docs/HIPAA_READINESS.md) |
+| **Data protection (GDPR)** | Self-service Art. 15 access export and a written position reconciling Art. 17 erasure with retention obligations, including the legal-obligation carve-out and legal-hold precedence. | [Data Erasure & Retention](docs/DATA_ERASURE_AND_RETENTION.md) |
 
-I started thinking about what eventually became SAFi about twenty years ago as a personal quest to answer a few simple questions: What is the meaning of life? How do people think? Why do we make the decisions we make? The kind of questions that usually lead to more questions than answers.
-
-But being an IT guy, I naturally approached the problem like an engineer. Instead of trying to answer those questions directly, I started trying to understand the machinery behind them. I began breaking my own thinking into components, or what I called functions. I wanted to understand how decisions were actually produced.
-
-A few years later, I discovered that Thomas Aquinas had spent considerable time thinking about many of the same questions eight hundred years earlier. As I became more familiar with his work, I noticed striking similarities between his understanding of human cognition and the way I had been modeling it.
-
-Studying Aquinas provided the foundation for what I eventually called the Self-Alignment Framework (SAF), a closed loop composed of five interlocking faculties:
-
-Values → Intellect → Will → Conscience → Spirit
-
-**Read the full story:** [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md)
+> **The honest fine print:** these are platform capabilities designed to *support* a compliance program, not substitutes for one. Contractual items — BAAs and zero-data-retention agreements with model providers, SOC 2 attestation — remain the deploying organization's to execute, and each readiness document says so explicitly.
 
 ---
 
@@ -104,9 +100,9 @@ SAFi will create the account automatically on first startup. The login form appe
 
 ## How Does It Work?
 
-Let me show you how those five faculties actually fit together in the code.
+SAFi's architecture is a closed loop of five interlocking faculties — Values → Intellect → Will → Conscience → Spirit — rooted in two thousand years of thinking about human cognition, from Aquinas to modern cognitive science. The structure is a separation of powers: the Intellect proposes, the Will decides, the Conscience evaluates, and the Spirit integrates.
 
-The structure follows the separation of powers I described above: the Intellect proposes, the Will decides, the Conscience evaluates, and the Spirit integrates.
+> **Curious where the five faculties come from?** Read the origin story: [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md).
 
 ### The Five Faculties
 
