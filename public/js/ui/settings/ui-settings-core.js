@@ -2,7 +2,6 @@ import * as ui from '../ui.js';
 import { renderSettingsDashboardTab } from './ui-settings-dashboard.js';
 import { renderSettingsOrganizationTab, setOrgCurrentUser } from './ui-settings-org.js';
 import { renderSettingsProfileTab } from './ui-settings-agents.js';
-import { renderSettingsModelsTab } from './ui-settings-models.js';
 import { renderSettingsMyProfileTab } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
@@ -135,13 +134,6 @@ export function setupControlPanelTabs() {
                     settingsState.activeProfileKey,
                     settingsState.onProfileChange,
                     currentUser
-                );
-            } else if (tabId === 'models') {
-                // Pass args from state
-                renderSettingsModelsTab(
-                    settingsState.availableModels,
-                    currentUser,
-                    settingsState.onSaveModels
                 );
             } else if (tabId === 'settings') {
                 // Pass args from state

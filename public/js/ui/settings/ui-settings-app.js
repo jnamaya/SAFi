@@ -1,8 +1,48 @@
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 
+// AI-model picker context, set once at app init (setModelsContext). The
+// picker used to be its own "AI Models" tab; it's a personal preference,
+// so it renders as a card here instead. null = card not shown.
+let _modelsCtx = null;
+
 /**
- * Renders the App Settings tab (Theme, Connected Accounts, Delete Account).
+ * @param {{availableModels: Array, user: object, visible: boolean, onSave: Function}} ctx
+ */
+export function setModelsContext(ctx) {
+    _modelsCtx = ctx;
+}
+
+function _modelCardHtml() {
+    if (!_modelsCtx || !_modelsCtx.visible) return '';
+    const { availableModels = [], user = {} } = _modelsCtx;
+    const intellectModels = availableModels.filter(m => {
+        if (typeof m === 'string') return true; // legacy string entries
+        return !m.categories || m.categories.includes('intellect');
+    });
+    if (!intellectModels.length) return '';
+    return `
+        <div class="settings-card">
+            <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">AI Model</h4>
+            <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-3">The model used to generate responses. Changes apply on the next page load.</p>
+            <select id="model-select-intellect" class="settings-modal-select">
+                ${intellectModels.map(m => {
+                    const id = m.id || m;
+                    const label = m.label || m;
+                    return `<option value="${id}" ${id === user.intellect_model ? 'selected' : ''}>${label}</option>`;
+                }).join('')}
+            </select>
+            <div class="mt-4 text-right">
+                <button id="save-models-btn" class="px-5 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Renders the App Settings tab (Theme, AI Model, Connected Accounts, Delete Account).
  * Sign-out lives in the sidebar (Log Out) — not duplicated here.
  * @param {string} currentTheme - The current theme ('light', 'dark', 'system')
  * @param {Function} onThemeChange - Callback for theme selection
@@ -38,6 +78,8 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onDelete) {
             </div>
         </div>
 
+        ${_modelCardHtml()}
+
         <div class="settings-card">
             <h4 class="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Account</h4>
             <div class="space-y-3">
@@ -65,6 +107,12 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onDelete) {
     });
 
     document.getElementById('cp-delete-account-btn').addEventListener('click', onDelete);
+
+    container.querySelector('#save-models-btn')?.addEventListener('click', () => {
+        _modelsCtx.onSave({
+            intellect_model: container.querySelector('#model-select-intellect').value,
+        });
+    });
 
     // Fetch and render connected accounts
     _renderConnectedAccounts(container);

@@ -471,12 +471,6 @@ function renderControlPanel() {
     else navOrg.classList.add('hidden');
   }
 
-  // Hide AI Models Tab if not authorized
-  const navModels = document.getElementById('nav-models');
-  if (navModels) {
-    if (canSeeModels) navModels.classList.remove('hidden');
-    else navModels.classList.add('hidden');
-  }
 
   const navGov = document.getElementById('nav-governance'); // NEW ID
   if (navGov) {
@@ -526,12 +520,14 @@ function renderControlPanel() {
     user // Pass user for ownership checks
   );
 
-  // Render AI Models Tab
-  uiSettingsModals.renderSettingsModelsTab(
+  // AI model picker renders as a card inside App Settings (it's a personal
+  // preference, not org management) — hand it its context here.
+  uiSettingsModals.setModelsContext({
     availableModels,
     user,
-    handleModelsSave
-  );
+    visible: canSeeModels,
+    onSave: handleModelsSave
+  });
 
   // --- NEW: Init Agent Selector ---
   uiAuthSidebar.initAgentSelector(
@@ -572,7 +568,6 @@ function renderControlPanel() {
   // We prioritize: Agents (Profile) > Organization > Dashboard
   const orgTab = document.getElementById('nav-organization');
   const agentsTab = document.getElementById('nav-agents'); // "Agents" tab
-  const modelsTab = document.getElementById('nav-models'); // "Models" tab
 
   // Safety fallback logic
   // If the *currently active* tab is now hidden, switch to a safe default.

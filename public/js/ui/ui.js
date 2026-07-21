@@ -20,7 +20,6 @@ export function _initElements() {
 
     // Updated IDs for New Sidebar
     cpNavProfile: document.getElementById('nav-agents'),      // "Agents" tab
-    cpNavModels: document.getElementById('nav-models'),
     cpNavDashboard: document.getElementById('nav-dashboard'), // Might be null
     cpNavAppSettings: document.getElementById('nav-settings'),
     cpNavMyProfile: document.getElementById('nav-profile'),   // "My Profile" tab
@@ -28,7 +27,6 @@ export function _initElements() {
     cpNavOrganization: document.getElementById('nav-organization'),
 
     cpTabProfile: document.getElementById('tab-agents'),      // Content ID for Agents
-    cpTabModels: document.getElementById('tab-models'),
     cpTabDashboard: document.getElementById('tab-dashboard'),
     cpTabAppSettings: document.getElementById('tab-settings'),
     cpTabMyProfile: document.getElementById('tab-profile'),   // Content ID for user profile
