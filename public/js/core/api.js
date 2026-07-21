@@ -575,3 +575,39 @@ export function reviewReportCsvUrl(orgId, from, to) {
 export async function listReviewAlerts(orgId, limit = 10) {
     return httpGet(j(`/api/organizations/${orgId}/review/alerts?limit=${limit}`));
 }
+
+// --- NATIVE AUDIT HUB API Functions (observe surface; admin|editor|auditor) ---
+
+function auditQs(params = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null && v !== '') q.set(k, v);
+    }
+    const qs = q.toString();
+    return qs ? `?${qs}` : '';
+}
+
+export async function getAuditFilters(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/filters`));
+}
+
+export async function getAuditSummary(orgId, params) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/summary${auditQs(params)}`));
+}
+
+export async function getAuditTrend(orgId, params) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/trend${auditQs(params)}`));
+}
+
+export async function listAuditEvents(orgId, params) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/events${auditQs(params)}`));
+}
+
+export async function getAuditEvent(orgId, messagePk) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/events/${messagePk}`));
+}
+
+// JSON download (custody-logs audit_export server-side) — plain URL for window.open.
+export function auditExportUrl(orgId, params) {
+    return j(`/api/organizations/${orgId}/audit/export${auditQs(params)}`);
+}
