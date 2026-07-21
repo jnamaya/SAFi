@@ -26,40 +26,27 @@ export function renderReviewStep(container, agentData) {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Config Stats -->
-                <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
-                     <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Configuration</h4>
-                     <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between">
-                            <span>Governing Policy</span>
-                            <span class="font-mono font-bold ${hasPolicy ? 'text-blue-600' : 'text-gray-400'}">${policyLabel}</span>
-                        </li>
-                        <li class="flex justify-between">
-                            <span>Knowledge Base</span>
-                            <span class="font-mono font-bold ${hasRAG ? 'text-green-600' : 'text-gray-400'}">${hasRAG ? 'Active' : 'None'}</span>
-                        </li>
-                        <li class="flex justify-between">
-                            <span>Max Tool Turns</span>
-                            <span class="font-mono font-bold">${maxTurns}</span>
-                        </li>
-                        <li class="flex justify-between">
-                            <span>Work &amp; Task Memory</span>
-                            <span class="font-mono font-bold ${trackWork ? 'text-green-600' : 'text-gray-400'}">${trackWork ? 'On' : 'Off'}</span>
-                        </li>
-                     </ul>
-                </div>
-
-                <!-- Models -->
-                <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
-                     <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">AI Model</h4>
-                     <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between">
-                            <span>Generation</span>
-                            <span class="font-mono text-xs text-gray-600 dark:text-gray-400">${agentData.intellect_model || 'Default'}</span>
-                        </li>
-                     </ul>
-                </div>
+            <!-- Config Stats -->
+            <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-4">
+                 <h4 class="font-bold text-sm text-gray-500 uppercase mb-3">Configuration</h4>
+                 <ul class="space-y-2 text-sm">
+                    <li class="flex justify-between">
+                        <span>Governing Policy</span>
+                        <span class="font-mono font-bold ${hasPolicy ? 'text-blue-600' : 'text-gray-400'}">${policyLabel}</span>
+                    </li>
+                    <li class="flex justify-between">
+                        <span>Knowledge Base</span>
+                        <span class="font-mono font-bold ${hasRAG ? 'text-green-600' : 'text-gray-400'}">${hasRAG ? 'Active' : 'None'}</span>
+                    </li>
+                    <li class="flex justify-between">
+                        <span>Max Tool Turns</span>
+                        <span class="font-mono font-bold">${maxTurns}</span>
+                    </li>
+                    <li class="flex justify-between">
+                        <span>Work &amp; Task Memory</span>
+                        <span class="font-mono font-bold ${trackWork ? 'text-green-600' : 'text-gray-400'}">${trackWork ? 'On' : 'Off'}</span>
+                    </li>
+                 </ul>
             </div>
             
             <!-- Governance Summary -->
