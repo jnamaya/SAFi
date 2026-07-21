@@ -9,6 +9,7 @@ import * as api from '../../core/api.js';
 import { renderIncidentsSection } from './ui-settings-incidents.js';
 
 export async function renderSettingsComplianceTab() {
+    logLimit = 20; // fresh visit starts with the compact window
     const cards = document.getElementById('compliance-cards');
     const incidents = document.getElementById('compliance-incidents');
     if (!cards) return;
@@ -30,7 +31,11 @@ export async function renderSettingsComplianceTab() {
         <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">Compliance Evidence Log</h4>
              <p class="text-xs text-gray-500 mb-4">Append-only record of governance actions: retention changes, legal holds, purges, examiner exports, provider policy changes. This is the artifact you show an examiner.</p>
-             <div id="compliance-log-list" class="text-sm text-gray-500">Loading…</div>
+             <div id="compliance-log-list" class="text-sm text-gray-500 max-h-80 overflow-y-auto custom-scrollbar">Loading…</div>
+             <div id="compliance-log-footer" class="hidden mt-3 flex items-center justify-between">
+                 <span id="compliance-log-count" class="text-xs text-gray-400"></span>
+                 <button id="compliance-log-more" class="hidden text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">Show more</button>
+             </div>
         </div>
 
         <div class="settings-card">
@@ -148,15 +153,40 @@ export async function renderSettingsComplianceTab() {
     renderIncidentsSection(incidents, org);
 }
 
+// The API returns newest-first and hard-caps at 100. Start with 20; "Show
+// more" raises the window to the cap. Kept module-level so refreshes after
+// retention saves / exports don't collapse an expanded view.
+const LOG_CAP = 100;
+let logLimit = 20;
+
 async function loadComplianceLog(orgId) {
     const el = document.getElementById('compliance-log-list');
     if (!el) return;
+    const footer = document.getElementById('compliance-log-footer');
+    const count = document.getElementById('compliance-log-count');
+    const more = document.getElementById('compliance-log-more');
     try {
-        const res = await api.getComplianceLog(orgId);
+        const res = await api.getComplianceLog(orgId, logLimit);
         const events = res.events || [];
         if (!events.length) {
             el.innerHTML = '<span class="text-gray-400">No compliance events yet.</span>';
+            if (footer) footer.classList.add('hidden');
             return;
+        }
+        if (footer && count && more) {
+            footer.classList.remove('hidden');
+            const truncated = events.length === logLimit;
+            if (truncated && logLimit < LOG_CAP) {
+                count.textContent = `Showing the latest ${events.length} events`;
+                more.classList.remove('hidden');
+                more.onclick = () => { logLimit = LOG_CAP; loadComplianceLog(orgId); };
+            } else if (truncated) {
+                count.textContent = `Showing the latest ${events.length} events — the full history is included in examiner exports`;
+                more.classList.add('hidden');
+            } else {
+                count.textContent = `${events.length} recorded event${events.length === 1 ? '' : 's'}`;
+                more.classList.add('hidden');
+            }
         }
         el.innerHTML = events.map(e => {
             const when = e.created_at ? new Date(e.created_at).toLocaleString() : '';
