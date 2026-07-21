@@ -2,7 +2,7 @@
 
 > This is the full story behind SAFi. For the project overview and quick start, see the [README](../README.md).
 
-At this point, you are probably wondering how SAFi actually works. If you are fond of classical philosophy, you may appreciate that SAFi's architecture is rooted in more than two thousand years of thinking about human cognition and decision making.
+SAFi's architecture didn't start as an AI project. It is rooted in more than two thousand years of thinking about human cognition and decision making — and in a personal question I started chasing long before large language models existed.
 
 I started thinking about what eventually became SAFi about twenty years ago as a personal quest to answer a few simple questions: What is the meaning of life? How do people think? Why do we make the decisions we make? The kind of questions that usually lead to more questions than answers.
 
