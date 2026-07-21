@@ -155,6 +155,13 @@ class Config:
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
+    # Plaintext JSONL governance logs on disk. The governance record's system
+    # of record is the encrypted governance_records table (written atomically
+    # with the turn); the disk JSONL is a debug sink. Default stays ON while
+    # the Streamlit Audit Hub (which reads these files) is still deployed —
+    # the decommission commit flips the default to off.
+    DEBUG_JSONL_LOGS = os.environ.get("SAFI_DEBUG_JSONL_LOGS", "true").strip().lower() in ("1", "true", "yes")
+
     # Model assignments for each faculty (defaults — apply to authenticated users and bots)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-20b")
     CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.5-flash-lite")

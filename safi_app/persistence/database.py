@@ -658,6 +658,42 @@ def init_db():
             )
         ''')
 
+        # --- Governance records (native Audit Hub data plane) ---
+        # One encrypted record per AI turn: the full per-turn governance
+        # capture (draft, reflection, will reason code, ledger, blocked draft,
+        # memory/context snapshots, spirit vectors) that previously existed
+        # only as plaintext JSONL on disk. Plaintext columns are exactly the
+        # filter/aggregate dimensions the Hub's KPIs, trend, and explorer
+        # need — decryption happens only in drill-down and downloads.
+        # message_pk cascades from chat_history, so the retention purge's
+        # whole-chain deletion (via conversations) reclaims these rows and
+        # legal hold blocks them along with everything else.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS governance_records (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                message_pk INT NOT NULL,
+                message_id CHAR(36) NOT NULL,
+                conversation_id CHAR(36) NOT NULL,
+                org_id CHAR(36) NULL,
+                user_id VARCHAR(255) NULL,
+                profile_key VARCHAR(100),
+                policy_id VARCHAR(255),
+                policy_version INT,
+                will_decision VARCHAR(16),
+                will_stage VARCHAR(16),
+                spirit_score DOUBLE NULL,
+                drift DOUBLE NULL,
+                intellect_model VARCHAR(120),
+                record_enc MEDIUMTEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_gov_msg (message_pk),
+                INDEX idx_gov_org_ts (org_id, created_at),
+                INDEX idx_gov_profile (org_id, profile_key, created_at),
+                INDEX idx_gov_policy (org_id, policy_id, created_at),
+                FOREIGN KEY (message_pk) REFERENCES chat_history(id) ON DELETE CASCADE
+            )
+        ''')
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id VARCHAR(255) NOT NULL,
@@ -1691,7 +1727,7 @@ def is_message_cancelled(msg_id):
 
 def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None, drift=None,
                          policy_id=None, policy_version=None, model_attribution=None,
-                         will_decision=None, will_stage=None):
+                         will_decision=None, will_stage=None, governance_record=None):
     # Org attribution comes from the turn's provider-governance context (set
     # once per turn via activate_org, copied into executor threads). It stamps
     # the trail entry (routing metadata, outside the hash — same contract as
@@ -1739,6 +1775,19 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
                 )
             except Exception:
                 logging.exception("Review sampling hook failed — turn commit unaffected.")
+            # Governance record shares this transaction so a committed turn
+            # and its encrypted per-turn capture are atomic. Same one-way
+            # isolation as the sampling hook: a record-write bug must never
+            # take down the governance commit itself.
+            if governance_record is not None:
+                try:
+                    _insert_governance_record(
+                        cursor, _org_id, row[0], msg_id, row[1], pname,
+                        policy_id, policy_version, will_decision, will_stage,
+                        score, drift, governance_record,
+                    )
+                except Exception:
+                    logging.exception("Governance record write failed — turn commit unaffected.")
         conn.commit()
     finally:
         cursor.close()
@@ -3406,6 +3455,32 @@ def _maybe_enqueue_review(cursor, org_id, message_pk, message_id, conversation_i
         "ON DUPLICATE KEY UPDATE triggers=VALUES(triggers), trigger_detail=VALUES(trigger_detail)",
         (org_id, message_pk, message_id, conversation_id, profile_name,
          policy_id, policy_version, json.dumps(triggers), json.dumps(detail)),
+    )
+
+def _insert_governance_record(cursor, org_id, message_pk, message_id, conversation_id,
+                              profile_key, policy_id, policy_version,
+                              will_decision, will_stage, score, drift, record):
+    """Runs on update_audit_results' cursor/transaction. Persists the full
+    per-turn governance capture (the dict the orchestrator's terminal paths
+    build — draft, reflection, will reason code, ledger, blocked draft,
+    memory/context snapshots, spirit vectors) as one Fernet-encrypted blob,
+    plus the plaintext filter/aggregate dimensions the Audit Hub queries.
+    ON DUPLICATE refreshes the capture without minting a second row (a
+    terminal commit normally happens exactly once per message — same
+    contract as the review-sampling hook)."""
+    record_enc = crypto.encrypt_value(json.dumps(record, ensure_ascii=False, default=str))
+    cursor.execute(
+        "INSERT INTO governance_records (message_pk, message_id, conversation_id, "
+        "org_id, user_id, profile_key, policy_id, policy_version, will_decision, "
+        "will_stage, spirit_score, drift, intellect_model, record_enc) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE record_enc=VALUES(record_enc), "
+        "spirit_score=VALUES(spirit_score), drift=VALUES(drift), "
+        "will_decision=VALUES(will_decision), will_stage=VALUES(will_stage)",
+        (message_pk, message_id, conversation_id, org_id,
+         record.get("userId"), profile_key, policy_id, policy_version,
+         will_decision, will_stage, score, drift,
+         record.get("intellectModel"), record_enc),
     )
 
 def _review_json(value, default):

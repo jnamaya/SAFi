@@ -1006,31 +1006,17 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # --- PHASE 6: Safe Execution (Will) ---
         db.update_message_reasoning(message_id, "Preparing your answer...")
         db.update_message_content(message_id, a_t, audit_status="complete")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
-                                drift=drift_val,
-                                policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution,
-                                will_decision="approve", will_stage=will_stage_final)
-
-        # Art. 72 monitoring runs off the request path; _submit_bg copies
-        # contextvars so the org context (active_org) still resolves inside.
-        self._submit_bg(review_alerts.evaluate_turn_alerts,
-                        self.active_profile_name, S_t, drift_val, "approve")
-
-        # Follow-up suggestions are a blocking sync LLM call — run them off the
-        # request path so they never delay the answer or block the event loop.
-        # The frontend polls the audit endpoint and injects them when ready.
-        S_p: List[str] = []
-        self._submit_bg(self._run_suggestions_thread, message_id, user_prompt, a_t)
 
         # Record the gate's approve reason unless a more specific note (e.g. a
         # blocked tool) was already set — approved turns used to log an empty reason.
         if not E_t:
             E_t = commit_reason
 
-        # Append safe log entry
-        self._append_log({
+        # The full per-turn governance capture. Built before the terminal
+        # commit so it rides update_audit_results' transaction (encrypted
+        # governance_records row, atomic with the turn); the same dict also
+        # feeds the optional JSONL debug sink below.
+        governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": spirit_turn,
             "userPrompt": user_prompt,
@@ -1056,7 +1042,28 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
-        })
+        }
+
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+                                drift=drift_val,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution,
+                                will_decision="approve", will_stage=will_stage_final,
+                                governance_record=governance_record)
+
+        # Art. 72 monitoring runs off the request path; _submit_bg copies
+        # contextvars so the org context (active_org) still resolves inside.
+        self._submit_bg(review_alerts.evaluate_turn_alerts,
+                        self.active_profile_name, S_t, drift_val, "approve")
+
+        # Follow-up suggestions are a blocking sync LLM call — run them off the
+        # request path so they never delay the answer or block the event loop.
+        # The frontend polls the audit endpoint and injects them when ready.
+        S_p: List[str] = []
+        self._submit_bg(self._run_suggestions_thread, message_id, user_prompt, a_t)
+
+        self._append_log(governance_record)
 
         self.log.info(
             f"[Governance | APPROVED] Profile: {self.active_profile_name} | "
@@ -1129,18 +1136,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                spirit_score: Optional[int], spirit_note: str,
                                drift_val: Optional[float]) -> Dict[str, Any]:
             db.update_message_content(message_id, evaluated, audit_status="complete")
-            db.update_audit_results(message_id, ledger, spirit_score, spirit_note,
-                                    self.active_profile_name, self.values, None,
-                                    drift=drift_val,
-                                    policy_id=(self.profile or {}).get("policy_id"),
-                                    policy_version=(self.profile or {}).get("policy_version"),
-                                    model_attribution=self.model_attribution,
-                                    will_decision=verdict,
-                                    will_stage=(stage if verdict != "approve" else None))
-            # Art. 72 monitoring off the request path (same as native turns).
-            self._submit_bg(review_alerts.evaluate_turn_alerts,
-                            self.active_profile_name, spirit_score, drift_val, verdict)
-            self._append_log({
+            governance_record = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "evaluate_gateway",
                 "userPrompt": user_prompt,
@@ -1158,7 +1154,20 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 "orgId": org_id or (self.profile or {}).get("org_id"),
                 "userId": user_id,
                 "agentName": self.active_profile_name,
-            })
+            }
+            db.update_audit_results(message_id, ledger, spirit_score, spirit_note,
+                                    self.active_profile_name, self.values, None,
+                                    drift=drift_val,
+                                    policy_id=(self.profile or {}).get("policy_id"),
+                                    policy_version=(self.profile or {}).get("policy_version"),
+                                    model_attribution=self.model_attribution,
+                                    will_decision=verdict,
+                                    will_stage=(stage if verdict != "approve" else None),
+                                    governance_record=governance_record)
+            # Art. 72 monitoring off the request path (same as native turns).
+            self._submit_bg(review_alerts.evaluate_turn_alerts,
+                            self.active_profile_name, spirit_score, drift_val, verdict)
+            self._append_log(governance_record)
             self.log.info(
                 f"[Governance | Gateway] Profile: {self.active_profile_name} | "
                 f"Decision: {verdict} ({stage}: {reason}) | "
@@ -1316,15 +1325,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # rock-bottom score in the dashboard). The failing audit's ledger is
         # preserved in the log entry so the dashboard can show WHY the draft failed.
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
-        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
-                                policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution,
-                                will_decision="redirected", will_stage=will_stage)
 
         _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
-        self._append_log({
+        governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": int(_sm_readonly.get("turn", 0)),
             "userPrompt": original_prompt,
@@ -1351,7 +1355,16 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
-        })
+        }
+
+        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution,
+                                will_decision="redirected", will_stage=will_stage,
+                                governance_record=governance_record)
+
+        self._append_log(governance_record)
 
         return {
             "finalOutput": notice,
@@ -1464,18 +1477,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
 
         # Release safe audited response and update audit results
         db.update_message_reasoning(message_id, "Preparing your answer...")
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
-                                policy_id=(self.profile or {}).get("policy_id"),
-                                policy_version=(self.profile or {}).get("policy_version"),
-                                model_attribution=self.model_attribution,
-                                will_decision="redirected", will_stage=will_stage)
 
-        # Suggestions run off the hot path (see process_prompt); frontend polls.
-        S_p: List[str] = []
-        self._submit_bg(self._run_suggestions_thread, message_id, original_prompt, safe_output)
-
-        # Save a clean pass log entry
-        self._append_log({
+        governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": redirect_turn,
             "userPrompt": original_prompt,
@@ -1505,7 +1508,20 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
-        })
+        }
+
+        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+                                policy_id=(self.profile or {}).get("policy_id"),
+                                policy_version=(self.profile or {}).get("policy_version"),
+                                model_attribution=self.model_attribution,
+                                will_decision="redirected", will_stage=will_stage,
+                                governance_record=governance_record)
+
+        # Suggestions run off the hot path (see process_prompt); frontend polls.
+        S_p: List[str] = []
+        self._submit_bg(self._run_suggestions_thread, message_id, original_prompt, safe_output)
+
+        self._append_log(governance_record)
 
         return {
             "finalOutput": safe_output,
@@ -1522,6 +1538,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         }
 
     def _append_log(self, log_entry: Dict[str, Any]):
+        # Debug sink only — the system of record is the encrypted
+        # governance_records row written inside update_audit_results.
+        # Default stays ON while the Streamlit Audit Hub still reads these
+        # files; the decommission commit flips SAFI_DEBUG_JSONL_LOGS off.
+        if not getattr(self.config, "DEBUG_JSONL_LOGS", True):
+            return
         log_path = Path(self.log_dir)
         if self.log_template:
             try:

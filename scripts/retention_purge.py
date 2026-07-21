@@ -167,6 +167,19 @@ def dry_run_counts(conn, org_id, cutoff):
         (org_id, cutoff),
     )
     counts["trail_chains_orphaned_now"], counts["trail_rows_orphaned_now"] = [int(v) for v in cur.fetchone()]
+    # governance_records cascade with chat_history via FK — previewed here so
+    # the dry run shows the encrypted captures a real run would reclaim.
+    cur.execute(
+        "SELECT COUNT(*) FROM governance_records g WHERE g.conversation_id IN ("
+        "  SELECT id FROM (SELECT c2.id FROM conversations c2 "
+        "  JOIN users u2 ON u2.id = c2.user_id "
+        "  LEFT JOIN chat_history ch2 ON ch2.conversation_id = c2.id "
+        "  WHERE u2.org_id = %s AND u2.id NOT LIKE 'demo\\_%' "
+        "  GROUP BY c2.id, c2.created_at "
+        "  HAVING COALESCE(MAX(ch2.timestamp), c2.created_at) < %s) x)",
+        (org_id, cutoff),
+    )
+    counts["governance_records"] = cur.fetchone()[0]
     for table, ts_col, key in (("saved_content", "created_at", "saved_content"),
                                ("prompt_usage", "timestamp", "prompt_usage"),
                                ("audit_snapshots", "created_at", "audit_snapshots")):
@@ -203,10 +216,14 @@ def purge_conversation_batch(conn, org_id, ids):
     )
     cur.execute(f"SELECT COUNT(*) FROM chat_history WHERE conversation_id IN ({placeholders})", tuple(ids))
     ch_rows = cur.fetchone()[0]
+    # governance_records cascade with chat_history (FK); counted here so the
+    # completion evidence shows how many encrypted captures were reclaimed.
+    cur.execute(f"SELECT COUNT(*) FROM governance_records WHERE conversation_id IN ({placeholders})", tuple(ids))
+    gov_rows = cur.fetchone()[0]
     cur.execute(f"DELETE FROM conversations WHERE id IN ({placeholders})", tuple(ids))
     conn.commit()
     cur.close()
-    return ch_rows
+    return ch_rows, gov_rows
 
 
 def purge_trail_chains(conn, org_id, cutoff, batch_size, max_batches):
@@ -316,7 +333,7 @@ def purge_org(conn, org, args):
     db.append_compliance_log(org_id, "purge_started", ACTOR,
                              {"run_id": run_id, "cutoff_utc": cutoff_iso, "retention_years": years})
 
-    done = {"conversations": 0, "chat_history": 0}
+    done = {"conversations": 0, "chat_history": 0, "governance_records": 0}
     batches = 0
     try:
         # Phase A
@@ -329,9 +346,10 @@ def purge_org(conn, org, args):
             cur.close()
             if not ids:
                 break
-            ch_rows = run_batch_with_retry(conn, purge_conversation_batch, org_id, ids)
+            ch_rows, gov_rows = run_batch_with_retry(conn, purge_conversation_batch, org_id, ids)
             done["conversations"] += len(ids)
             done["chat_history"] += ch_rows
+            done["governance_records"] += gov_rows
             batches += 1
 
         # Phase B
