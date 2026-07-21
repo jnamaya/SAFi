@@ -115,6 +115,7 @@ def create_app():
     from .api.records_api import records_bp
     from .api.evaluate_api import evaluate_bp
     from .api.review_api import review_bp
+    from .api.audit_api import audit_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -128,6 +129,7 @@ def create_app():
     app.register_blueprint(records_bp, url_prefix='/api')
     app.register_blueprint(evaluate_bp, url_prefix='/api')
     app.register_blueprint(review_bp, url_prefix='/api')
+    app.register_blueprint(audit_bp, url_prefix='/api')
 
     # Server-side session resolution (enterprise identity Phase 1).
     from .core.identity import resolve_session, strip_session_shim

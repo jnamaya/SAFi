@@ -3483,6 +3483,288 @@ def _insert_governance_record(cursor, org_id, message_pk, message_id, conversati
          record.get("intellectModel"), record_enc),
     )
 
+# ---------------------------------------------------------------------------
+# GOVERNANCE RECORDS READ SURFACE (native Audit Hub)
+# ---------------------------------------------------------------------------
+# KPIs, trend, and explorer read only the plaintext filter/aggregate columns;
+# decryption happens exclusively in the drill-down, prompt search, and export
+# paths. "Flagged" is computed, never stored — the same line as the Review
+# triggers' defaults (alignment < 6 or drift > 0.4).
+
+_GOV_FLAGGED_SQL = "(spirit_score < 6 OR drift > 0.4)"
+# Prompt text is not indexable by design (it lives only inside the encrypted
+# blob), so search decrypt-scans the filtered window under this hard cap.
+GOVERNANCE_SEARCH_CAP = 5_000
+GOVERNANCE_EXPORT_CAP = 10_000
+
+def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
+    where = ["org_id=%s"]
+    params = [org_id]
+    if profile:
+        where.append("profile_key=%s")
+        params.append(profile)
+    if policy_id:
+        where.append("policy_id=%s")
+        params.append(policy_id)
+    if date_from:
+        where.append("created_at>=%s")
+        params.append(date_from)
+    if date_to:
+        where.append("created_at<%s")
+        params.append(date_to)
+    return " AND ".join(where), params
+
+def list_governance_filters(org_id):
+    """Profiles and policies that actually have governance records for this
+    org — replaces the Streamlit 'scan the 5 newest files' heuristic."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT DISTINCT profile_key FROM governance_records "
+            "WHERE org_id=%s AND profile_key IS NOT NULL ORDER BY profile_key", (org_id,))
+        profiles = [r[0] for r in cursor.fetchall()]
+        cursor.execute(
+            "SELECT DISTINCT policy_id FROM governance_records "
+            "WHERE org_id=%s AND policy_id IS NOT NULL ORDER BY policy_id", (org_id,))
+        policies = [r[0] for r in cursor.fetchall()]
+        return {"profiles": profiles, "policies": policies}
+    finally:
+        cursor.close()
+        conn.close()
+
+def governance_summary(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
+    """One SQL pass over the plaintext columns. Metric definitions ported
+    exactly from the Streamlit Audit Hub (they encode deliberate decisions):
+    Alignment averages APPROVED turns only — redirected turns carry a
+    redirect-quality score from a separate rubric, reported on its own, so
+    pooling them would inflate compliance when an agent blocks gracefully.
+    Overall score = clip(avgAlignment − avgDrift×10, 1, 10). Empty windows
+    return None everywhere — the UI renders N/A, never a default."""
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT COUNT(*), "
+            f"AVG(CASE WHEN will_decision='approve' THEN spirit_score END), "
+            f"AVG(CASE WHEN will_decision='redirected' THEN spirit_score END), "
+            f"AVG(drift), "
+            f"SUM(will_decision='redirected'), "
+            f"SUM(will_decision='violation'), "
+            f"SUM({_GOV_FLAGGED_SQL}) "
+            f"FROM governance_records WHERE {where}", tuple(params))
+        (total, avg_alignment, avg_redirect_quality, avg_drift,
+         interventions, violations, flagged) = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    total = int(total or 0)
+    avg_alignment = float(avg_alignment) if avg_alignment is not None else None
+    avg_redirect_quality = float(avg_redirect_quality) if avg_redirect_quality is not None else None
+    avg_drift = float(avg_drift) if avg_drift is not None else None
+    consistency = (1 - avg_drift) * 100 if avg_drift is not None else None
+    if avg_alignment is not None and avg_drift is not None:
+        overall = min(max(avg_alignment - avg_drift * 10, 1.0), 10.0)
+    else:
+        overall = avg_alignment
+    interventions = int(interventions or 0)
+    return {
+        "total_audits": total,
+        "overall_score": overall,
+        "avg_alignment": avg_alignment,
+        "avg_redirect_quality": avg_redirect_quality,
+        "avg_consistency": consistency,
+        "interventions": interventions,
+        "intervention_rate": (interventions / total * 100) if total else None,
+        "violations": int(violations or 0),
+        "flagged": int(flagged or 0),
+    }
+
+def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
+                     date_from=None, date_to=None):
+    """Per-bucket mean drift/consistency + turn count for the trend chart.
+    Moving-average smoothing stays client-side (a display choice)."""
+    fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT DATE_FORMAT(created_at, '{fmt}'), AVG(drift), COUNT(*), "
+            f"COUNT(drift) FROM governance_records WHERE {where} "
+            f"GROUP BY 1 ORDER BY 1", tuple(params))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    out = []
+    for b, avg_drift, turns, drift_turns in rows:
+        avg_drift = float(avg_drift) if avg_drift is not None else None
+        out.append({
+            "bucket": b,
+            "avg_drift": avg_drift,
+            "avg_consistency": (1 - avg_drift) * 100 if avg_drift is not None else None,
+            "turns": int(turns),
+            "scored_turns": int(drift_turns),
+        })
+    return out
+
+_GOV_EVENT_COLUMNS = (
+    "message_pk, message_id, conversation_id, profile_key, policy_id, "
+    "policy_version, will_decision, will_stage, spirit_score, drift, "
+    "intellect_model, user_id, created_at"
+)
+
+def _gov_filter_clause(flt):
+    if flt == "flagged":
+        return _GOV_FLAGGED_SQL
+    if flt == "approved":
+        return "will_decision='approve'"
+    if flt == "redirected":
+        return "will_decision='redirected'"
+    if flt == "violation":
+        return "will_decision='violation'"
+    return None
+
+def list_governance_events(org_id, profile=None, policy_id=None, flt=None,
+                           date_from=None, date_to=None, limit=50, offset=0):
+    """Explorer rows from plaintext columns only — no decryption. Returns
+    (rows, total) where total counts everything matching the filters."""
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    clause = _gov_filter_clause(flt)
+    if clause:
+        where += f" AND {clause}"
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM governance_records WHERE {where}", tuple(params))
+        total = cursor.fetchone()["n"]
+        cursor.execute(
+            f"SELECT {_GOV_EVENT_COLUMNS} FROM governance_records WHERE {where} "
+            f"ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
+            tuple(params) + (limit, offset))
+        return cursor.fetchall(), total
+    finally:
+        cursor.close()
+        conn.close()
+
+def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
+                             date_from=None, date_to=None, limit=50):
+    """Prompt search: decrypt-and-scan within the filtered window under a hard
+    row cap (the examiner-export cap pattern — prompt text is deliberately not
+    indexable). Raises ValueError when the window exceeds the cap so the
+    caller can tell the user to narrow the range."""
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    clause = _gov_filter_clause(flt)
+    if clause:
+        where += f" AND {clause}"
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM governance_records WHERE {where}", tuple(params))
+        window = cursor.fetchone()["n"]
+        if window > GOVERNANCE_SEARCH_CAP:
+            raise ValueError(
+                f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) — narrow the date range")
+        cursor.execute(
+            f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
+            f"WHERE {where} ORDER BY created_at DESC, id DESC", tuple(params))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    needle = q.lower()
+    matches = []
+    for row in rows:
+        try:
+            record = json.loads(crypto.decrypt_value(row.pop("record_enc")))
+        except (ValueError, TypeError):
+            continue
+        prompt = str(record.get("userPrompt") or "")
+        if needle in prompt.lower():
+            row["prompt_preview"] = prompt[:160]
+            matches.append(row)
+            if len(matches) >= limit:
+                break
+    return matches, window
+
+def get_governance_event(org_id, message_pk):
+    """Drill-down: the decrypted capture + provenance columns + hash-chain
+    verification + a reviewed marker when a review_queue row exists (the
+    cross-link to the Review tab). Returns None when the record is missing
+    or belongs to another org."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
+            f"WHERE org_id=%s AND message_pk=%s", (org_id, message_pk))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        cursor.execute(
+            "SELECT audit_status, model_attribution, timestamp FROM chat_history WHERE id=%s",
+            (message_pk,))
+        chat = cursor.fetchone()
+        cursor.execute(
+            "SELECT id, status, triggers FROM review_queue WHERE message_pk=%s AND org_id=%s",
+            (message_pk, org_id))
+        review = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    try:
+        record = json.loads(crypto.decrypt_value(row.pop("record_enc")))
+    except (ValueError, TypeError):
+        record = None
+    if review:
+        review["triggers"] = _review_json(review.get("triggers"), [])
+    return {
+        "event": row,
+        "record": record,
+        "chat": chat,
+        "trail": verify_message_audit_trail(message_pk),
+        "review": review,
+    }
+
+def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
+                             date_from=None, date_to=None):
+    """Filtered records, decrypted, for download — capped like the examiner
+    export. The CALLER must custody-log the export (counts + filters, never
+    content) to org_compliance_log before returning bytes."""
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    clause = _gov_filter_clause(flt)
+    if clause:
+        where += f" AND {clause}"
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM governance_records WHERE {where}", tuple(params))
+        total = cursor.fetchone()["n"]
+        if total > GOVERNANCE_EXPORT_CAP:
+            raise ValueError(
+                f"export matches {total} records (cap {GOVERNANCE_EXPORT_CAP}) — narrow the date range")
+        cursor.execute(
+            f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
+            f"WHERE {where} ORDER BY created_at DESC, id DESC", tuple(params))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    out = []
+    for row in rows:
+        enc = row.pop("record_enc")
+        try:
+            record = json.loads(crypto.decrypt_value(enc))
+        except (ValueError, TypeError):
+            record = None
+        row["record"] = record
+        if isinstance(row.get("created_at"), datetime):
+            row["created_at"] = row["created_at"].isoformat()
+        out.append(row)
+    return out
+
 def _review_json(value, default):
     """Parses a JSON column value that may arrive as str or already-parsed."""
     if value is None:
