@@ -74,7 +74,9 @@ def create_app():
         authorize_url='https://accounts.google.com/o/oauth2/auth',
         api_base_url='https://www.googleapis.com/oauth2/v1/',
         userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
-        client_kwargs={'scope': 'openid email profile'},
+        # PKCE (S256) on top of the confidential-client secret — OIDC + PKCE
+        # is the standard DDQs cite (DESIGN_ENTERPRISE_IDENTITY.md §2.5).
+        client_kwargs={'scope': 'openid email profile', 'code_challenge_method': 'S256'},
         jwks_uri="https://www.googleapis.com/oauth2/v3/certs"
     )
 
@@ -93,7 +95,8 @@ def create_app():
             access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
             authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
             jwks_uri='https://login.microsoftonline.com/common/discovery/v2.0/keys',
-            client_kwargs={'scope': 'openid email profile User.Read'}
+            client_kwargs={'scope': 'openid email profile User.Read',
+                           'code_challenge_method': 'S256'}
         )
     else:
         app.logger.warning("Microsoft OAuth credentials not found. Microsoft login will be disabled.")
