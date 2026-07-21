@@ -55,11 +55,17 @@ public/                    Frontend: vanilla ES modules, no build step
 scripts/                   Operational scripts (run with venv python):
                            retention_purge.py, backfill_encryption.py,
                            encrypt_jsonl_logs.py
+deploy/systemd/            Example units: safi.service (gunicorn) and the
+                           daily safi-retention-purge timer (bare metal;
+                           the compose stack schedules the purge itself)
 tests/                     Integration tests (live MySQL, run individually)
 rag/                       RAG corpus + index builder (build_index_v2.py)
 docs/                      Public docs incl. the compliance readiness series
 run.py / wsgi.py / asgi.py Entrypoints; production runs gunicorn (gthread)
-teams_bot.py, telegram_bot.py   Optional channel adapters
+teams_bot.py, telegram_bot.py   Optional channel adapters — standalone Flask
+                           relays to /api/bot/process_prompt, authenticated
+                           with a policy API key (env-configured; see
+                           .env.example's channel-bots section)
 ```
 
 ## 2. Local development
@@ -77,7 +83,9 @@ Useful `.env` toggles for development: `SAFI_LOCAL_ADMIN_EMAIL/PASSWORD`
 (skip OAuth), `SAFI_ENABLE_DEMO=true` (one-click demo login),
 `SAFI_DEBUG_JSONL_LOGS=true` (plaintext per-turn logs on disk — debug only,
 default off). Production runs under systemd (`safi.service`, gunicorn) with
-a daily `safi-retention-purge.timer`.
+a daily `safi-retention-purge.timer` — example units for both live in
+`deploy/systemd/`. The Docker stack runs an equivalent `purge` service, so
+retention policies execute in both deployment styles.
 
 After backend changes, restart the service; after frontend changes that
 touch Tailwind classes:

@@ -25,13 +25,14 @@ EOF
 fi
 
 # SERVICE env var selects which process to start.
-# docker-compose sets SERVICE=dashboard for the dashboard container.
-if [ "${SERVICE}" = "dashboard" ]; then
-    exec streamlit run safi_app/dashboard/safi_dashboard.py \
-        --server.port=8501 \
-        --server.address=0.0.0.0 \
-        --server.headless=true \
-        --browser.gatherUsageStats=false
+# docker-compose sets SERVICE=purge for the retention-purge scheduler.
+if [ "${SERVICE}" = "purge" ]; then
+    echo "Retention purge scheduler: first run in 5 minutes, then every 24h."
+    sleep 300   # let the app finish first-boot schema migrations
+    while true; do
+        python scripts/retention_purge.py || echo "retention purge failed; retrying in 24h"
+        sleep 86400
+    done
 else
     exec gunicorn wsgi:app \
         --bind 0.0.0.0:5000 \

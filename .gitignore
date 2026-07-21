@@ -13,6 +13,8 @@ safi_memory.db
 
 # Any local environment files (if you create them later)
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -27,8 +29,6 @@ build/
 .coverage
 htmlcov/
 debug.py
-teams_bot.py
-telegram_bot.py
 whatsapp_bot.py
 cache/
 

@@ -34,15 +34,16 @@ services:
       - ./cache:/app/cache
     restart: unless-stopped
 
-  # ── SAFi Dashboard (Streamlit) ────────────────────────────────────────────────
-  dashboard:
+  # ── Retention purge (daily) ──────────────────────────────────────────────────
+  # Runs scripts/retention_purge.py once a day so per-org retention policies
+  # and legal holds actually execute. Bare-metal deployments use the systemd
+  # timer in deploy/systemd/ instead.
+  purge:
     build: .
-    ports:
-      - "${DASHBOARD_PORT:-8501}:8501"
     env_file: .env
     environment:
       DB_HOST: db
-      SERVICE: dashboard
+      SERVICE: purge
     depends_on:
       db:
         condition: service_healthy
