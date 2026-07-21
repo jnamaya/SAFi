@@ -1,6 +1,7 @@
 # Data Erasure and Retention — SAFi's Written Position
 
-*Last updated: July 21, 2026. Companion to `SEC_COMPLIANCE_APPROACH.md`.
+*Last updated: July 21, 2026. Companion to the readiness series
+(`SEC_COMPLIANCE_READINESS.md`, `EU_AI_ACT_READINESS.md`, `HIPAA_READINESS.md`).
 Vocabulary note: this document describes data lifecycle mechanics; it makes
 no claims about AI capability or compliance outcomes.*
 

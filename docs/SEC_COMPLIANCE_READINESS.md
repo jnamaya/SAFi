@@ -1,10 +1,11 @@
-# SAFi and SEC/FINRA-Regulated Deployments
+# SEC / FINRA Compliance Readiness
 
-**Last updated:** July 2026.
+**Last updated:** July 2026. Part of SAFi's per-regime readiness series, with
+`EU_AI_ACT_READINESS.md` and `HIPAA_READINESS.md`.
 
 This document describes the regulatory landscape that applies when a broker-dealer
-(BD) or registered investment adviser (RIA) deploys AI systems, and the SAFi
-platform capabilities designed to support firms operating under those rules.
+(BD) or registered investment adviser (RIA) deploys AI systems, the SAFi platform
+capabilities that ship today (§2), and what remains on the roadmap (§3).
 
 > **This is not legal advice, and nothing here is a compliance certification.**
 > SAFi is a governance platform; regulatory compliance is always the deploying
@@ -78,10 +79,11 @@ institution must have:
 
 ---
 
-## 2. Platform capabilities
+## 2. What SAFi provides today
 
 SAFi's governance architecture was designed for auditability first, which maps
-directly onto the expectations above.
+directly onto the expectations above. Everything in this section is shipped
+and running, not planned.
 
 *A note on terminology:* SAFi's internal architecture names its pipeline stages
 after classical faculties (Intellect, Will, Conscience, Spirit), and audit
@@ -178,15 +180,22 @@ where an examiner would encounter them in exported records.
   documentation (July 2026); contractual ZDR agreements with providers remain
   the customer's to execute.
 
-## 3. Roadmap
+## 3. Pending / roadmap
 
-Planned work, in priority order:
+Planned or demand-triggered work, in priority order:
 
-1. **SOC 2 Type II program.**
+1. **SOC 2 Type II program** — the commercial attestation artifact for
+   enterprise security reviews; the technical controls it examines are
+   largely the ones described in §2.
 2. **SAML SSO and SCIM provisioning** — available on enterprise demand,
-   building on the shipped OIDC per-tenant enforcement.
+   building on the shipped OIDC per-tenant enforcement (Microsoft Entra
+   tenant and Google Workspace domain pinning).
 3. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
    amended paragraph (i) hosting-undertaking question for hosted deployments.
+4. **Deployment operations** — items that live with the deployment rather
+   than the product: verified database backup/disaster-recovery procedures
+   sized to the firm's retention obligations, and the firm's own written
+   supervisory procedures referencing the review queue and Audit Hub.
 
 ## 4. Key sources
 
