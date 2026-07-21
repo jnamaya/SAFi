@@ -495,6 +495,10 @@ async function renderDetail(messagePk) {
     const reviewNote = doc.review
         ? `<span class="${BADGE} bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 capitalize" title="This turn was sampled into the supervisory review queue">In review queue · ${esc(doc.review.status)}</span>`
         : '';
+    // Org governance records deliberately survive member deletion — flag it.
+    const deletedNote = !doc.chat
+        ? `<span class="${BADGE} bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300" title="The member deleted this conversation. The organization's governance record is retained and will be destroyed by the retention policy.">Conversation deleted by member</span>`
+        : '';
 
     const sections = [
         ['draft', 'AI Draft'],
@@ -563,7 +567,7 @@ async function renderDetail(messagePk) {
     el.innerHTML = `
         <button id="ah-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to explorer</button>
         <div class="flex flex-wrap items-center gap-2 mb-1">
-            ${decisionBadge(ev.will_decision)} ${chainBadge(doc.trail)} ${reviewNote}
+            ${decisionBadge(ev.will_decision)} ${chainBadge(doc.trail)} ${reviewNote} ${deletedNote}
         </div>
         <div class="text-xs text-gray-400 mb-4">
             ${fmtDate(ev.created_at)} · ${esc((ev.profile_key || '—').replace(/_/g, ' '))}

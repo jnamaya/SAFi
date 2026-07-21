@@ -22,17 +22,29 @@ in the compliance evidence log.
 
 ## 2. Erasure by default, for unregulated data
 
-Users can delete their conversations at any time. Deletion removes the live
-records immediately: the conversation, its messages, and the associated
-encrypted governance records are destroyed in one cascade.
+Users can delete their conversations at any time. For personal
+(no-organization) users, deletion removes the live records immediately: the
+conversation, its messages, and the associated encrypted governance records
+are destroyed together.
 
-One nuance is stated plainly rather than hidden: SAFi's audit trail is
-append-only and tamper-evident, and a deletion is itself an auditable event.
-Deleting a conversation journals a snapshot of the deleted rows into the
-audit trail before the live data is destroyed. Those journal entries are not
-served by any product surface; they persist only until the retention sweep
-reclaims orphaned trail chains, at which point the content is gone entirely.
-All stored copies — live and journaled — are encrypted at rest throughout.
+Two nuances are stated plainly rather than hidden:
+
+1. SAFi's audit trail is append-only and tamper-evident, and a deletion is
+   itself an auditable event. Deleting a conversation journals a snapshot of
+   the deleted rows into the audit trail before the live data is destroyed.
+   Those journal entries are not served by any product surface; they persist
+   only until the retention sweep reclaims orphaned trail chains, at which
+   point the content is gone entirely. All stored copies — live and
+   journaled — are encrypted at rest throughout.
+2. For **organization-governed** conversations, the member's deletion
+   removes the conversation from their own account, but the organization's
+   per-turn governance record survives: it is the firm's supervisory
+   evidence (the same Art. 17(3)(b) legal-obligation ground as §3, and the
+   supervision surface would otherwise be erasable by the person under
+   supervision). Those records remain visible to the organization's
+   admins and auditors in the Audit Hub, marked as belonging to a deleted
+   conversation, and are destroyed by the organization's retention policy —
+   never earlier, never selectively.
 
 ## 3. The legal-obligation carve-out (GDPR Art. 17(3)(b))
 

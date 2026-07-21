@@ -117,6 +117,8 @@ class TestAuditApi(unittest.TestCase):
         provider_governance.activate_org(None)
         for sql, params in [
             ("DELETE FROM review_queue WHERE org_id=%s", (cls.org_id,)),
+            # No FK by design — sweep the org's test records explicitly.
+            ("DELETE FROM governance_records WHERE org_id=%s", (cls.org_id,)),
             ("DELETE FROM chat_audit_trail WHERE conversation_id=%s", (cls.cid,)),
             ("DELETE FROM chat_history WHERE conversation_id=%s", (cls.cid,)),
             ("DELETE FROM conversations WHERE id=%s", (cls.cid,)),

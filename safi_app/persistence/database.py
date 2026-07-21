@@ -676,9 +676,15 @@ def init_db():
         # only as plaintext JSONL on disk. Plaintext columns are exactly the
         # filter/aggregate dimensions the Hub's KPIs, trend, and explorer
         # need — decryption happens only in drill-down and downloads.
-        # message_pk cascades from chat_history, so the retention purge's
-        # whole-chain deletion (via conversations) reclaims these rows and
-        # legal hold blocks them along with everything else.
+        # DELIBERATELY NO FK CASCADE from chat_history: org-attributed
+        # governance records are the ORGANIZATION's supervisory evidence and
+        # must survive a member deleting their conversation (otherwise a
+        # flagged user could erase the org's Audit Hub evidence and skew its
+        # metrics). Deletion is explicit per path: user-initiated deletes
+        # remove only org_id-NULL (personal) records — the GDPR erasure
+        # promise; the retention purge (legal-hold aware) is the only path
+        # that destroys org records; demo cleanup removes everything
+        # (disposable fixtures).
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS governance_records (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -700,10 +706,20 @@ def init_db():
                 UNIQUE KEY uq_gov_msg (message_pk),
                 INDEX idx_gov_org_ts (org_id, created_at),
                 INDEX idx_gov_profile (org_id, profile_key, created_at),
-                INDEX idx_gov_policy (org_id, policy_id, created_at),
-                FOREIGN KEY (message_pk) REFERENCES chat_history(id) ON DELETE CASCADE
+                INDEX idx_gov_policy (org_id, policy_id, created_at)
             )
         ''')
+
+        # Migration (2026-07-21): the table originally cascaded from
+        # chat_history; drop the constraint where it exists so member
+        # deletions stop destroying org supervisory records.
+        cursor.execute(
+            "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='governance_records' "
+            "AND CONSTRAINT_TYPE='FOREIGN KEY'")
+        for (_fk_name,) in cursor.fetchall():
+            cursor.execute(f"ALTER TABLE governance_records DROP FOREIGN KEY {_fk_name}")
+            logging.info(f"Governance migration: dropped {_fk_name} — org records now survive member deletion")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_profiles (
@@ -1255,6 +1271,9 @@ def delete_user(user_id):
             (user_id,), f"user:{user_id}",
             org_id=_org_id_for_user(cursor, user_id),
         )
+        # Account deletion erases the user's PERSONAL governance records;
+        # org-attributed ones remain the organization's supervisory evidence.
+        _erase_personal_governance_records(cursor, "WHERE c.user_id=%s", (user_id,))
         cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
         cursor.execute("DELETE FROM prompt_usage WHERE user_id=%s", (user_id,))
         conn.commit()
@@ -2042,6 +2061,19 @@ def toggle_conversation_pin(cid, is_pinned, user_id=None):
         cursor.close()
         conn.close()
 
+def _erase_personal_governance_records(cursor, conversation_where_sql, params):
+    """User-initiated deletion of governance records: PERSONAL (org_id NULL)
+    records only — the GDPR-erasure promise. Org-attributed records are the
+    organization's supervisory evidence and deliberately survive; only the
+    retention purge (legal-hold aware) destroys those. conversation_where_sql
+    must alias conversations as c and scope ownership."""
+    cursor.execute(
+        f"DELETE g FROM governance_records g "
+        f"JOIN conversations c ON c.id = g.conversation_id "
+        f"{conversation_where_sql} AND g.org_id IS NULL",
+        params,
+    )
+
 def delete_conversation(cid, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2054,11 +2086,14 @@ def delete_conversation(cid, user_id=None):
                 (cid, user_id), f"user:{user_id}",
                 org_id=_org_id_for_user(cursor, user_id),
             )
+            _erase_personal_governance_records(
+                cursor, "WHERE c.id=%s AND c.user_id=%s", (cid, user_id))
             cursor.execute("DELETE FROM conversations WHERE id=%s AND user_id=%s", (cid, user_id))
         else:
             _chat_trail_snapshot_delete(
                 cursor, "WHERE ch.conversation_id=%s", (cid,), "system",
             )
+            _erase_personal_governance_records(cursor, "WHERE c.id=%s", (cid,))
             cursor.execute("DELETE FROM conversations WHERE id=%s", (cid,))
         conn.commit()
         return cursor.rowcount > 0
@@ -2080,6 +2115,8 @@ def delete_all_conversations(user_id):
             (user_id,), f"user:{user_id}",
             org_id=_org_id_for_user(cursor, user_id),
         )
+        _erase_personal_governance_records(
+            cursor, "WHERE c.user_id=%s AND c.project_id IS NULL", (user_id,))
         cursor.execute("DELETE FROM conversations WHERE user_id=%s AND project_id IS NULL", (user_id,))
         conn.commit()
     finally:
@@ -4986,6 +5023,15 @@ def cleanup_old_demo_users():
             # --- MANUALLY DELETE DEPENDENCIES TO PREVENT FK ERRORS ---
             # Even if CASCADE is set, strict SQL modes or missing permissions can block it.
             
+            # A0. Governance records — demo sandboxes are disposable fixtures,
+            # so ALL their records go (governance_records has no FK by
+            # design, see init_db). Matched by the record's own user
+            # attribution, NOT via conversations: records whose conversation
+            # the demo user already deleted would escape a join.
+            cursor.execute(
+                f"DELETE FROM governance_records WHERE user_id IN ({format_strings})",
+                tuple_ids)
+
             # A. Conversations (Cascades to chat_history usually, but good to be sure)
             cursor.execute(f"DELETE FROM conversations WHERE user_id IN ({format_strings})", tuple_ids)
             
@@ -5011,6 +5057,11 @@ def cleanup_old_demo_users():
         # We only delete orgs that were gathered from these specific expiring users.
         if expired_org_ids:
             format_strings = ','.join(['%s'] * len(expired_org_ids))
+            # Any remaining demo-org governance records (e.g. gateway turns
+            # attributed to the org but not a demo user id) go with the org.
+            cursor.execute(
+                f"DELETE FROM governance_records WHERE org_id IN ({format_strings})",
+                tuple(expired_org_ids))
             delete_orgs_sql = f"DELETE FROM organizations WHERE id IN ({format_strings})"
             cursor.execute(delete_orgs_sql, tuple(expired_org_ids))
             logging.info(f"Cleaned up {cursor.rowcount} expired demo organizations.")

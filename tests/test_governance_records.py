@@ -84,6 +84,9 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         for sql, params in [
             ("DELETE FROM chat_audit_trail WHERE org_id=%s OR conversation_id IN "
              "(SELECT id FROM conversations WHERE user_id=%s)", (cls.org_id, cls.user_id)),
+            # No FK by design — org records survive deletes; sweep test rows
+            # by the org and by the test-record userId convention.
+            ("DELETE FROM governance_records WHERE org_id=%s OR user_id LIKE 'gov-user-%'", (cls.org_id,)),
             ("DELETE FROM conversations WHERE user_id=%s", (cls.user_id,)),
             ("DELETE FROM users WHERE id=%s", (cls.user_id,)),
             ("DELETE FROM organizations WHERE id=%s", (cls.org_id,)),
@@ -180,14 +183,20 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         self.assertEqual(ch["audit_status"], "complete")
         self.assertEqual(ch["will_decision"], "approve")
 
-    def test_06_purging_conversation_cascades_record(self):
+    def test_06_member_delete_preserves_org_record(self):
+        """Org governance records are the ORG's supervisory evidence — a
+        member deleting their conversation must not erase them from the
+        Audit Hub (only the retention purge destroys them)."""
         provider_governance.activate_org(self.org_id)
         cid, mid = self._make_turn()
         self._commit_turn(mid, record=_record(mid))
-        self.assertIsNotNone(self._gov_row(mid))
-        _exec("DELETE FROM conversations WHERE id=%s", (cid,))
-        self.assertIsNone(self._gov_row(mid),
-                          "governance record must cascade with its chain")
+        self.assertTrue(db.delete_conversation(cid, self.user_id))
+        row = self._gov_row(mid)
+        self.assertIsNotNone(row, "org governance record must survive member deletion")
+        # The Audit Hub drill-down still serves the record without its chat row
+        detail = db.get_governance_event(self.org_id, row["message_pk"])
+        self.assertIsNone(detail["chat"])
+        self.assertEqual(detail["record"]["userPrompt"], "what is our fiduciary duty?")
 
     def test_07_personal_turn_without_org_still_recorded(self):
         provider_governance.activate_org(None)
@@ -196,6 +205,35 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         row = self._gov_row(mid)
         self.assertIsNotNone(row, "no-org turns still get an encrypted record")
         self.assertIsNone(row["org_id"])
+
+    def test_08_personal_delete_erases_record(self):
+        """Personal (no-org) records keep the GDPR-erasure promise: user
+        deletion destroys them immediately."""
+        provider_governance.activate_org(None)
+        cid, mid = self._make_turn()
+        self._commit_turn(mid, record=_record(mid))
+        self.assertIsNotNone(self._gov_row(mid))
+        self.assertTrue(db.delete_conversation(cid, self.user_id))
+        self.assertIsNone(self._gov_row(mid),
+                          "personal governance record must erase with the conversation")
+
+    def test_09_account_delete_spares_org_records(self):
+        provider_governance.activate_org(self.org_id)
+        cid_org, mid_org = self._make_turn()
+        self._commit_turn(mid_org, record=_record(mid_org))
+        provider_governance.activate_org(None)
+        cid_p, mid_p = self._make_turn()
+        self._commit_turn(mid_p, record=_record(mid_p))
+        db.delete_user(self.user_id)
+        try:
+            self.assertIsNotNone(self._gov_row(mid_org),
+                                 "org record survives account deletion")
+            self.assertIsNone(self._gov_row(mid_p),
+                              "personal record erases with the account")
+        finally:
+            # Recreate the shared fixture user for any later tests/teardown.
+            _exec("INSERT INTO users (id, email, name) VALUES (%s, %s, 'Gov Records Test')",
+                  (self.user_id, f"{self.user_id}@example.test"))
 
 
 if __name__ == "__main__":
