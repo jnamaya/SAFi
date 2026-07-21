@@ -41,9 +41,8 @@ python-dotenv>=1.0.0
 # Encryption at rest (Fernet) — pinned explicitly; was only a transitive dep
 cryptography==48.0.0
 
-# ── Dashboard (Streamlit) ─────────────────────────────────────────────────────
-streamlit>=1.35.0
+# pandas: NOT a dashboard dep — required at import time by yfinance
+# (core/plugins/fiduciary_data.py)
 pandas>=2.0.0
-plotly>=5.20.0
 pycryptodome
 edge-tts==7.2.8

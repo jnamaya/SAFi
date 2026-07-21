@@ -52,9 +52,6 @@ class Config:
     # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"
 
-    # 4. External Services URLs
-    DASHBOARD_URL = os.environ.get("SAFI_DASHBOARD_URL")
-
     # --- Session Security ---
     # FIX: Automatically enforce Secure cookies if the Base URL is HTTPS.
     # Allow override via environment variable for local testing (HTTP)
@@ -155,12 +152,10 @@ class Config:
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
-    # Plaintext JSONL governance logs on disk. The governance record's system
-    # of record is the encrypted governance_records table (written atomically
-    # with the turn); the disk JSONL is a debug sink. Default stays ON while
-    # the Streamlit Audit Hub (which reads these files) is still deployed —
-    # the decommission commit flips the default to off.
-    DEBUG_JSONL_LOGS = os.environ.get("SAFI_DEBUG_JSONL_LOGS", "true").strip().lower() in ("1", "true", "yes")
+    # Plaintext JSONL governance logs on disk — a DEBUG sink only, default
+    # OFF. The system of record is the encrypted governance_records table,
+    # written atomically with each turn and served by the native Audit Hub.
+    DEBUG_JSONL_LOGS = os.environ.get("SAFI_DEBUG_JSONL_LOGS", "false").strip().lower() in ("1", "true", "yes")
 
     # Model assignments for each faculty (defaults — apply to authenticated users and bots)
     INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-20b")

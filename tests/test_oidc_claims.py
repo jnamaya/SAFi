@@ -160,38 +160,9 @@ class TestClaimGate(unittest.TestCase):
         self.assertIsNone(ev["mfa"])  # no amr → unknown, not false
 
 
-class TestDashboardTokenExpiry(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        cls.app = create_app()  # seeds local admin (role admin)
-
-    @classmethod
-    def tearDownClass(cls):
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE email=%s", (EMAIL,))
-        row = cur.fetchone()
-        if row:
-            cur.execute("DELETE FROM sessions WHERE user_id=%s", (row[0],))
-            cur.execute("DELETE FROM users WHERE id=%s", (row[0],))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    def test_token_expires(self):
-        import jwt as pyjwt
-        from safi_app.config import Config
-        c = self.app.test_client()
-        r = c.post("/api/login/local", json={"email": EMAIL, "password": PASSWORD})
-        self.assertTrue(r.get_json().get("ok"), r.get_data(as_text=True))
-        r = c.post("/api/auth/dashboard-token")
-        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        token = r.get_json()["token"]
-        payload = pyjwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        self.assertIn("exp", payload)
-        remaining = payload["exp"] - time.time()
-        self.assertTrue(0 < remaining <= 15 * 60 + 5, f"remaining={remaining}")
+# TestDashboardTokenExpiry was removed with the /auth/dashboard-token
+# endpoint itself: the Streamlit Audit Hub is decommissioned and the native
+# Hub uses server-side sessions, so there is no dashboard JWT to expire.
 
 
 if __name__ == "__main__":

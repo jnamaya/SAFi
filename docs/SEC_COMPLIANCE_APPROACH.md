@@ -104,8 +104,11 @@ where an examiner would encounter them in exported records.
 - **Immutable policy versioning** — policy snapshots survive policy deletion, so
   an auditor can always retrieve the exact policy version that governed a given
   turn.
-- **Encryption at rest** — user content and OAuth tokens are encrypted at the
-  application layer with key-rotation support.
+- **Encryption at rest** — user content, OAuth tokens, and the full per-turn
+  governance record (drafts, evaluations, context snapshots) are encrypted at
+  the application layer with key-rotation support. Governance detail is
+  written only to the encrypted database, where the retention engine and
+  legal hold govern its lifecycle.
 - **Incident registry** — an org-scoped, append-only incident log with the
   Reg S-P 30-day customer-notification clock computed from firm awareness, the
   72-hour vendor-notice check, documented harm-determination support, and
@@ -150,6 +153,14 @@ where an examiner would encounter them in exported records.
   optionally pushed to a firm webhook signed with HMAC-SHA256 (delivery
   outcomes journaled). Thresholds are org-configurable and evidence-logged.
   The written monitoring plan is published at `docs/MONITORING_PLAN.md`.
+- **Audit Hub** — an org-scoped analytics surface over the encrypted
+  governance records: alignment/consistency KPIs and trends, a filterable
+  log explorer, and a per-turn drill-down showing the full evidence behind
+  each enforcement decision, with the record's hash-chain verification
+  displayed inline. Access uses the same server-side revocable sessions and
+  role checks as the rest of the product, and every download of decrypted
+  governance data is recorded in the append-only compliance evidence log
+  (chain of custody), mirroring the examiner export.
 
 ## 3. Roadmap
 

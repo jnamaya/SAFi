@@ -283,10 +283,6 @@ export async function disconnectProvider(provider) {
     return httpJSON(j(`/api/auth/${provider}/disconnect`), 'POST', {});
 }
 
-export async function getDashboardToken() {
-    return httpJSON(j('/api/auth/dashboard-token'), 'POST', {});
-}
-
 // --- GOVERNANCE API Functions ---
 
 export async function fetchPolicies() {

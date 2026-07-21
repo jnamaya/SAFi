@@ -242,54 +242,6 @@ def app_config():
     })
 
 # =================================================================
-# DASHBOARD AUTHENTICATION (Token Issuance)
-# =================================================================
-
-@auth_bp.route('/auth/dashboard-token', methods=['POST'])
-def get_dashboard_token():
-    """
-    Generates a short-lived JWT for accessing the Streamlit Dashboard.
-    RBAC: Only 'admin', 'editor', 'auditor' roles allowed.
-    """
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    
-    user = db.get_user_details(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    role = user.get('role', 'member')
-    if role not in ['admin', 'editor', 'auditor']:
-        return jsonify({"error": "Access denied: Insufficient permissions."}), 403
-
-    try:
-        payload = {
-            "sub": user_id,
-            "role": role,
-            "org_id": user.get('org_id'),
-            "email": user.get('email'),
-            "type": "dashboard_access",
-            # Short-lived by contract (docstring) — was minted with NO exp
-            # until 2026-07-16, i.e. it never expired. PyJWT enforces exp
-            # automatically wherever the dashboard decodes it.
-            "iat": datetime.utcnow(),
-            "exp": datetime.utcnow() + timedelta(minutes=15),
-        }
-        
-        token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
-        if isinstance(token, bytes):
-            token = token.decode('utf-8')
-            
-        return jsonify({
-            "token": token,
-            "url": Config.DASHBOARD_URL
-        })
-    except Exception as e:
-        current_app.logger.error(f"Token generation failed: {e}")
-        return jsonify({"error": "Internal error generating token"}), 500
-
-# =================================================================
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
 # =================================================================
 
