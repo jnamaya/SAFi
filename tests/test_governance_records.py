@@ -82,8 +82,13 @@ class GovernanceRecordsDbTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         for sql, params in [
-            ("DELETE FROM chat_audit_trail WHERE org_id=%s OR conversation_id IN "
-             "(SELECT id FROM conversations WHERE user_id=%s)", (cls.org_id, cls.user_id)),
+            # Sweep by actor too: delete-entries are journaled AFTER their
+            # conversation row is gone (the subquery no longer matches) and
+            # may carry no org_id — matching them any other way leaves
+            # orphaned partial chains that fail backup_verify.py.
+            ("DELETE FROM chat_audit_trail WHERE org_id=%s OR actor=%s OR conversation_id IN "
+             "(SELECT id FROM conversations WHERE user_id=%s)",
+             (cls.org_id, f"user:{cls.user_id}", cls.user_id)),
             # No FK by design — org records survive deletes; sweep test rows
             # by the org and by the test-record userId convention.
             ("DELETE FROM governance_records WHERE org_id=%s OR user_id LIKE 'gov-user-%'", (cls.org_id,)),
