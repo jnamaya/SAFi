@@ -26,9 +26,13 @@ PyJWT>=2.8.0
 requests>=2.31.0
 google-auth>=2.29.0
 google-auth-oauthlib>=1.2.0
+# DNS TXT-record lookups for org domain verification (api/organizations.py)
+dnspython>=2.4.0
 
 # ── Document Processing ────────────────────────────────────────────────────────
 PyPDF2>=3.0.1
+# pypdf (successor to PyPDF2) is used by the SharePoint MCP server
+pypdf>=6.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 lxml>=5.0.0
@@ -36,8 +40,18 @@ lxml>=5.0.0
 # ── MCP Protocol ──────────────────────────────────────────────────────────────
 mcp>=1.0.0
 
+# ── MCP Servers / Plugins ─────────────────────────────────────────────────────
+ddgs>=9.0.0                        # web_search MCP server
+PyGithub>=2.0.0                    # github MCP server
+google-api-python-client>=2.100.0  # google_drive MCP server
+yfinance>=0.2.0                    # fiduciary plugin + MCP server
+beautifulsoup4>=4.12.0             # bible_scholar_readings plugin
+httpx>=0.27.0                      # bible_scholar_readings plugin (direct import; also an openai/anthropic dep)
+
 # ── Config & Utils ────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
+# Directly imported in safi_app/models.py (also a transitive dep of openai/mcp)
+pydantic>=2.0.0
 # Encryption at rest (Fernet) — pinned explicitly; was only a transitive dep
 cryptography==48.0.0
 
