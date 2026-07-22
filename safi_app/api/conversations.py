@@ -63,6 +63,22 @@ def _tts_stream_generator(text: str, voice: str, cache_path):
             except Exception:
                 pass
 
+def _mistral_tts_bytes(text: str, model: str, voice_id: str) -> bytes:
+    """Synthesize speech via Mistral's /v1/audio/speech (Voxtral TTS).
+    Non-streaming: the response is JSON with base64-encoded MP3 audio."""
+    import base64
+    import requests
+    resp = requests.post(
+        "https://api.mistral.ai/v1/audio/speech",
+        headers={"Authorization": f"Bearer {Config.MISTRAL_API_KEY}"},
+        json={"model": model, "input": text, "voice_id": voice_id,
+              "response_format": "mp3"},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return base64.b64decode(resp.json()["audio_data"])
+
+
 def _strip_markdown(text: str) -> str:
     """Strip markdown so TTS reads clean prose instead of symbols."""
     text = re.sub(r'#{1,6}\s*', '', text)          # headings
@@ -296,19 +312,27 @@ def tts_audio_endpoint():
             return jsonify({"error": "Missing 'text' in request body."}), 400
 
         text_clean = _strip_markdown(text_to_speak)
-        voice     = getattr(Config, "TTS_VOICE",     "en-US-AndrewNeural")
         model     = getattr(Config, "TTS_MODEL",     "edge-tts")
         cache_dir = getattr(Config, "TTS_CACHE_DIR", "tts_cache")
 
-        # Per-org provider governance for voice synthesis: OpenAI/Gemini TTS
-        # models map to registry providers and are enforced; edge-tts has no
-        # registry provider and is a documented residual until Phase F of the
-        # compliance roadmap (TTS hardening).
+        # Provider follows the model id; the voice must match the provider
+        # (edge and Mistral use disjoint voice namespaces).
+        tts_provider = ("openai" if model.startswith("gpt-")
+                        else "gemini" if model.startswith("gemini")
+                        else "mistral" if model.startswith(("voxtral-", "mistral-"))
+                        else None)  # None = edge-tts
+        if tts_provider == "mistral":
+            voice = getattr(Config, "MISTRAL_TTS_VOICE", "en_paul_neutral")
+        else:
+            voice = getattr(Config, "TTS_VOICE", "en-US-AndrewNeural")
+
+        # Per-org provider governance for voice synthesis: OpenAI/Gemini/
+        # Mistral TTS models map to registry providers and are enforced;
+        # edge-tts has no registry provider and is a documented residual
+        # until Phase F of the compliance roadmap (TTS hardening).
         user_details = db.get_user_details(user_id) or {}
         allowlist = pg.get_org_allowlist(user_details.get('org_id'))
         if allowlist is not None:
-            tts_provider = ("openai" if model.startswith("gpt-")
-                            else "gemini" if model.startswith("gemini") else None)
             if tts_provider and tts_provider not in allowlist:
                 return jsonify({
                     "error": "Voice synthesis is disabled: its provider is blocked by your organization's provider policy.",
@@ -332,9 +356,24 @@ def tts_audio_endpoint():
             except IOError:
                 pass
 
-        # Cache miss: stream chunks as they arrive, cache on completion.
-        # Synthetic audio carries the Art. 50(2) marking as a header — the
-        # only machine-readable channel an MP3 stream has.
+        # Cache miss. Synthetic audio carries the Art. 50(2) marking as a
+        # header — the only machine-readable channel an MP3 stream has.
+        if tts_provider == "mistral":
+            # Mistral's speech API returns the full clip as base64 JSON, so
+            # this path serves complete bytes rather than streaming chunks.
+            audio_bytes = _mistral_tts_bytes(text_clean, model, voice)
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_bytes(audio_bytes)
+            except OSError:
+                pass
+            resp = Response(audio_bytes, mimetype='audio/mpeg')
+            resp.headers['Content-Length'] = len(audio_bytes)
+            return provenance.mark_json_response(resp)
+
+        # edge-tts (also the current fallback for OpenAI/Gemini TTS models,
+        # which the streaming path does not yet synthesize natively):
+        # stream chunks as they arrive, cache on completion.
         return provenance.mark_json_response(Response(
             _tts_stream_generator(text_clean, voice, cache_path),
             mimetype='audio/mpeg',

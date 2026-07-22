@@ -236,10 +236,14 @@ class Config:
     }
 
     # --- TTS CONFIGURATION ---
-    # Provider: "edge-tts" (free), "gpt-4o-mini-tts" (OpenAI), or "gemini-*"
-    TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "edge-tts")
+    # Provider: "edge-tts" (free), "voxtral-*" (Mistral), "gpt-4o-mini-tts"
+    # (OpenAI), or "gemini-*"
+    TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "voxtral-mini-tts-2603")
     # edge-tts voices: en-US-AvaMultilingualNeural, en-US-AndrewNeural, en-US-AriaNeural
     TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AvaMultilingualNeural")
+    # Mistral preset voice slug — GET https://api.mistral.ai/v1/audio/voices
+    # lists them (en_paul_*, gb_jane_*, gb_oliver_*, fr_marie_*).
+    MISTRAL_TTS_VOICE = os.environ.get("SAFI_MISTRAL_TTS_VOICE", "en_paul_neutral")
     TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
     # TTS audio is derived from (possibly sensitive) AI responses, so cached
     # MP3s must not persist on disk indefinitely: files older than the TTL

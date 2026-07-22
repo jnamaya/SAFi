@@ -70,7 +70,7 @@ def detect_provider(model_name: str) -> str:
         return "gemini"
     if m.startswith("deepseek-"):
         return "deepseek"
-    if m.startswith("mistral-") or m.startswith("ministral-") or m.startswith("codestral-") or m.startswith("open-mi"):
+    if m.startswith("mistral-") or m.startswith("ministral-") or m.startswith("codestral-") or m.startswith("open-mi") or m.startswith("voxtral-"):
         return "mistral"
     if m.startswith("glm-"):
         return "zhipu"
