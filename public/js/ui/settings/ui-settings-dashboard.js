@@ -466,10 +466,11 @@ async function renderExplorer() {
 
 // --- Drill-down --------------------------------------------------------------------
 
-function textCard(title, body) {
+function textCard(title, body, help = '') {
     return `
         <div class="rounded-lg border border-gray-200 dark:border-neutral-700">
             <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">${title}</div>
+            ${help ? `<div class="px-4 pt-2 text-xs text-gray-400">${help}</div>` : ''}
             <div class="px-4 py-3 text-sm whitespace-pre-wrap break-words">${body}</div>
         </div>`;
 }
@@ -526,6 +527,8 @@ async function renderDetail(messagePk) {
                 ${r.memorySummary ? textCard('Context — memory summary', esc(r.memorySummary)) : ''}
                 ${r.recentTurns ? textCard('Context — recent turns', esc(r.recentTurns)) : ''}
                 ${r.retrievedContext ? textCard('Context — retrieved documents', esc(r.retrievedContext)) : ''}
+                ${r.spiritFeedback ? textCard('Context — self-correction nudge', esc(r.spiritFeedback),
+                    'Injected into the agent’s prompt for this turn because recent consistency had slipped. Deliberately blind: it names at most one value and never contains scoring criteria, so the agent cannot optimize toward the audit.') : ''}
             </div>`,
         decision: `
             <div class="space-y-4">
@@ -562,7 +565,6 @@ async function renderDetail(messagePk) {
                     </div>
                 </div>
                 ${r.spiritNote ? textCard('Consistency note', esc(r.spiritNote)) : ''}
-                ${r.spiritFeedback ? textCard('Consistency feedback', esc(r.spiritFeedback)) : ''}
             </div>`,
         output: `
             <div class="space-y-4">
