@@ -289,6 +289,9 @@ class Config:
         {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite"},
         {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash"},
 
+        # Mistral Models
+        {"id": "mistral-medium-latest", "label": "Mistral-Medium-3.5"},
+
         # DeepSeek Models
         {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
         {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
