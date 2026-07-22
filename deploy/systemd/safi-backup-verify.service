@@ -1,0 +1,14 @@
+[Unit]
+Description=SAFi weekly backup restore-verification (17a-4 evidence)
+After=mysql.service
+
+[Service]
+Type=oneshot
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+ExecStart=/var/www/safi/venv/bin/python /var/www/safi/scripts/backup_verify.py
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true

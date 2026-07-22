@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly SAFi backup restore-verification
+
+[Timer]
+OnCalendar=Sun *-*-* 05:15:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

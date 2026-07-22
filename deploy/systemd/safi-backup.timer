@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly SAFi MySQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
