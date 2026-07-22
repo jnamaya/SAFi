@@ -130,7 +130,7 @@ export async function renderSettingsDashboardTab() {
     const container = ui.elements.cpTabDashboard;
     if (!container) return;
 
-    container.innerHTML = `<div class="flex items-center justify-center w-full h-full"><div class="thinking-spinner"></div></div>`;
+    container.innerHTML = `<div class="flex items-center justify-center w-full py-16"><div class="thinking-spinner"></div></div>`;
 
     let org = null;
     try {
@@ -138,7 +138,7 @@ export async function renderSettingsDashboardTab() {
         org = orgRes ? orgRes.organization : null;
     } catch (e) { /* fall through */ }
     if (!org) {
-        container.innerHTML = `<div class="p-8"><p class="text-sm text-gray-500">You need an organization (and the admin, editor, or auditor role) to use the Audit Hub.</p></div>`;
+        container.innerHTML = `<p class="text-sm text-gray-500">You need an organization (and the admin, editor, or auditor role) to use the Audit Hub.</p>`;
         return;
     }
     orgId = org.id;
@@ -150,21 +150,17 @@ export async function renderSettingsDashboardTab() {
     } catch (e) { /* pickers stay empty; data may simply not exist yet */ }
 
     container.innerHTML = `
-        <div class="flex-1 overflow-y-auto min-h-0">
-            <div class="max-w-6xl mx-auto p-6 space-y-6">
+        <div class="space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <h1 class="text-2xl font-bold">Audit Hub</h1>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Governance analytics over the encrypted audit record: alignment, consistency, interventions, and the per-turn evidence behind each decision.</p>
-                        </div>
-                        <div id="ah-controls" class="flex flex-wrap items-center gap-2"></div>
-                    </div>
+                    <h1 class="text-2xl font-bold">Audit Hub</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Governance analytics over the encrypted audit record: alignment, consistency, interventions, and the per-turn evidence behind each decision.</p>
                 </div>
-                <div id="ah-kpis"></div>
-                <div id="ah-trend" class="settings-card"></div>
-                <div id="ah-explorer" class="settings-card"></div>
+                <div id="ah-controls" class="flex flex-wrap items-center gap-2"></div>
             </div>
+            <div id="ah-kpis"></div>
+            <div id="ah-trend" class="settings-card"></div>
+            <div id="ah-explorer" class="settings-card"></div>
         </div>`;
 
     renderControls();
