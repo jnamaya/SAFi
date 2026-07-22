@@ -32,6 +32,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./cache:/app/cache
+      # RAG indexes persist across rebuilds; the entrypoint auto-builds the
+      # small `safi` knowledge base here on first boot if it's missing.
+      - vector_store:/app/vector_store
     restart: unless-stopped
 
   # ── Retention purge (daily) ──────────────────────────────────────────────────
@@ -53,3 +56,4 @@ services:
 
 volumes:
   db_data:
+  vector_store:

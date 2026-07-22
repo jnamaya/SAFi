@@ -86,6 +86,8 @@ docker compose up
 
 > **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, and `ZHIPU_API_KEY` — whichever key you set, SAFi automatically selects working default models for that provider. Once you're familiar with the system, pin specific models with the `SAFI_*_MODEL` variables in [`.env.example`](.env.example).
 
+A fresh install starts with two built-in agents: the **Socratic Tutor** (the default) and the **SAFi Steward**, which answers questions about SAFi itself using a small knowledge base that builds automatically on first boot. Four more demo agents (Bible Scholar, Fiduciary, Health Navigator, Contoso Admin) ship in the codebase — enable them with `SAFI_BUILTIN_AGENTS=all` in `.env` (their RAG indexes need building; see `rag/build_index_v2.py`).
+
 #### Local Admin Account (No OAuth Required)
 
 For private or self-hosted instances, you can skip Google/Microsoft OAuth entirely by creating a persistent local admin account. Add these two lines to your `.env` before starting:

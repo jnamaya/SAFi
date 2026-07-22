@@ -1,7 +1,7 @@
 import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
-from ..core.faculties.synderesis import PERSONAS, get_profile
+from ..core.faculties.synderesis import PERSONAS, ALL_PERSONAS, get_profile
 from ..core.rbac import check_permission
 from ..config import Config
 from .conversations import global_safi_cache  # Import Cache
@@ -45,7 +45,9 @@ def save_agent():
         key = key.lower().strip().replace(" ", "_")
         key = "".join(c for c in key if c.isalnum() or c == '_')
         
-        if key in PERSONAS: return jsonify({"error": "Reserved name"}), 409
+        # Check the FULL built-in catalog, not just the enabled subset — a custom
+        # agent must never shadow a built-in key that could be enabled later.
+        if key in ALL_PERSONAS: return jsonify({"error": "Reserved name"}), 409
 
         is_valid, err = validate_agent_data(data)
         if not is_valid: return jsonify({"error": err}), 400

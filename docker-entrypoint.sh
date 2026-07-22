@@ -34,6 +34,18 @@ if [ "${SERVICE}" = "purge" ]; then
         sleep 86400
     done
 else
+    # First-boot RAG bootstrap: build the small `safi` knowledge base (used by
+    # the SAFi Steward agent) if it's missing. The embedding model download
+    # lands in the mounted ./cache volume, so this only costs time once.
+    # Set SAFI_SKIP_INDEX_BOOTSTRAP=true to disable.
+    if [ "${SAFI_SKIP_INDEX_BOOTSTRAP}" != "true" ] \
+        && [ ! -f vector_store/safi.index ] && [ -d rag/docs ]; then
+        echo "Building the 'safi' RAG index (first boot only)..."
+        SAFI_VECTOR_STORE_PATH=/app/vector_store SAFI_MODEL_CACHE_DIR=/app/cache \
+            python rag/build_index_v2.py --name safi --source_dir rag/docs \
+            || echo "WARNING: safi index build failed — the SAFi Steward agent will answer without RAG."
+    fi
+
     exec gunicorn wsgi:app \
         --bind 0.0.0.0:5000 \
         --workers 4 \

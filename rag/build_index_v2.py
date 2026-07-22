@@ -8,8 +8,10 @@ from typing import List, Dict, Any
 from collections import defaultdict
 
 # --- ENVIRONMENT SETUP ---
-# (Assuming these paths are correct for your environment)
-CACHE_DIR = "/var/www/safi/cache"
+# Paths derive from the repo layout (this file lives in <repo>/rag/) and can be
+# overridden via env, so the script works on any checkout — bare metal or Docker.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_REPO_ROOT, "cache"))
 os.environ["NLTK_DATA"] = CACHE_DIR
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
 os.environ["HF_HUB_CACHE"] = CACHE_DIR
@@ -17,12 +19,39 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # ----------------------------->
 
 from sentence_transformers import SentenceTransformer
-from unstructured.partition.auto import partition
-from unstructured.chunking.title import chunk_by_title
 
 # --- CONFIGURATION ---
-VECTOR_STORE_PATH = "/var/www/safi/vector_store"
+VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_REPO_ROOT, "vector_store"))
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
+
+# Chunking limits for the built-in markdown/text chunker.
+_MD_MAX_CHUNK_CHARS = 2000
+
+
+def _chunk_markdown(text: str) -> List[str]:
+    """Heading-aware chunker for .md/.txt sources — no third-party deps.
+    Splits on markdown headings, then packs sections into chunks of at most
+    _MD_MAX_CHUNK_CHARS, splitting oversized sections on blank lines."""
+    import re
+    sections = re.split(r"(?m)^(?=#{1,6}\s)", text)
+    chunks: List[str] = []
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        if len(section) <= _MD_MAX_CHUNK_CHARS:
+            chunks.append(section)
+            continue
+        current = ""
+        for para in re.split(r"\n\s*\n", section):
+            if current and len(current) + len(para) + 2 > _MD_MAX_CHUNK_CHARS:
+                chunks.append(current.strip())
+                current = para
+            else:
+                current = f"{current}\n\n{para}" if current else para
+        if current.strip():
+            chunks.append(current.strip())
+    return chunks
 
 def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
     """Processes all files in a directory, chunks them, and returns metadata."""
@@ -36,11 +65,21 @@ def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
         filepath = os.path.join(source_dir, filename)
         if os.path.isfile(filepath):
             try:
-                print(f"Partitioning file: {filename}")
-                elements = partition(filename=filepath)
-                print(f"Chunking by title for: {filename}")
-                chunks = chunk_by_title(elements)
-                
+                if filename.lower().endswith((".md", ".txt")):
+                    # Markdown/plain text: dependency-free heading-aware chunker.
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        chunks = _chunk_markdown(f.read())
+                else:
+                    # Other formats (pdf, docx, …) need the optional
+                    # `unstructured` package — imported lazily so md-only
+                    # corpora (like rag/docs) build without it.
+                    from unstructured.partition.auto import partition
+                    from unstructured.chunking.title import chunk_by_title
+                    print(f"Partitioning file: {filename}")
+                    elements = partition(filename=filepath)
+                    print(f"Chunking by title for: {filename}")
+                    chunks = chunk_by_title(elements)
+
                 for i, chunk in enumerate(chunks):
                     meta = {
                         "source": filename,

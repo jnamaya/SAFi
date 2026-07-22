@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 # 1. Import Governance
 from ..governance.contoso.policy import CONTOSO_GLOBAL_POLICY
 from ...persistence import database as db
+from ...config import Config
 
 # 2. Import Personas
 from ..personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
@@ -29,7 +30,9 @@ from ..personas.safi_steward import THE_SAFI_STEWARD_PERSONA
 from ..personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
 
 # 3. Define the Persona Registry
-PERSONAS: Dict[str, Dict[str, Any]] = {
+# ALL_PERSONAS is the complete built-in catalog — used for reserved-name checks
+# so a custom agent can never shadow a built-in key, even one currently disabled.
+ALL_PERSONAS: Dict[str, Dict[str, Any]] = {
     "contoso_admin": THE_CONTOSO_ADMIN_PERSONA,
     "fiduciary": THE_FIDUCIARY_PERSONA,
     "health_navigator": THE_HEALTH_NAVIGATOR_PERSONA,
@@ -37,6 +40,23 @@ PERSONAS: Dict[str, Dict[str, Any]] = {
     "safi": THE_SAFI_STEWARD_PERSONA,
     "tutor": THE_SOCRATIC_TUTOR_PERSONA,
 }
+
+# PERSONAS is the ACTIVE registry: only agents enabled via SAFI_BUILTIN_AGENTS
+# (default "tutor,safi"; "all" enables the full demo suite) register, list, and
+# seed. Everything downstream — list_profiles, get_profile, the agent API,
+# demo-policy seeding — keys off this filtered dict.
+PERSONAS: Dict[str, Dict[str, Any]] = {
+    k: v for k, v in ALL_PERSONAS.items() if Config.builtin_agent_enabled(k)
+}
+for _unknown in set(Config.BUILTIN_AGENTS) - set(ALL_PERSONAS) - {"all"}:
+    logging.warning(f"SAFI_BUILTIN_AGENTS names unknown persona '{_unknown}' — ignored. "
+                    f"Valid keys: {', '.join(sorted(ALL_PERSONAS))}, or 'all'.")
+if not PERSONAS:
+    logging.warning("SAFI_BUILTIN_AGENTS matched no personas — falling back to 'tutor,safi'.")
+    PERSONAS = {k: ALL_PERSONAS[k] for k in ("tutor", "safi")}
+if Config.DEFAULT_PROFILE not in PERSONAS:
+    logging.warning(f"SAFI_PROFILE '{Config.DEFAULT_PROFILE}' is not an enabled built-in agent; "
+                    f"users without a stored profile will fall back to another agent.")
 
 # 4. Governance Mapping
 GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {

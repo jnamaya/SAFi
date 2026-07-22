@@ -32,10 +32,12 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 # Copy application code
 COPY safi_app/ ./safi_app/
 COPY public/   ./public/
+COPY scripts/  ./scripts/
+COPY rag/      ./rag/
 COPY wsgi.py   .
 
 # Create persistent data directories (overridden by docker-compose volumes)
-RUN mkdir -p logs cache
+RUN mkdir -p logs cache vector_store
 
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

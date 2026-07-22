@@ -257,6 +257,21 @@ class Config:
     # Default profile to use when none is specified
     DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "tutor").strip().lower()
 
+    # Which built-in demo agents to register and seed. Comma-separated persona
+    # keys (see core/faculties/synderesis.py PERSONAS), or "all" for the full
+    # demo suite. The lean default keeps fresh installs to the two agents that
+    # work with zero extra setup: the Socratic Tutor (no RAG, no plugins) and
+    # the SAFi Steward (explains SAFi; its small index auto-builds in Docker).
+    BUILTIN_AGENTS = [
+        a.strip().lower()
+        for a in os.environ.get("SAFI_BUILTIN_AGENTS", "tutor,safi").split(",")
+        if a.strip()
+    ] or ["tutor", "safi"]
+
+    @classmethod
+    def builtin_agent_enabled(cls, key: str) -> bool:
+        return "all" in cls.BUILTIN_AGENTS or key in cls.BUILTIN_AGENTS
+
        # --- CONFIGURATION: AUTOMATIC PROFILE EXTRACTION ---
     # Set to False to disable the AI from silently adding facts to the user profile.
     ENABLE_PROFILE_EXTRACTION = False 

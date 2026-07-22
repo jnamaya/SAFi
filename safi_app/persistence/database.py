@@ -914,10 +914,22 @@ def _ensure_demo_agent_policies_exist():
     gets its version-1 history row, then flips is_demo so the policies are
     visible to every user.
     """
-    from ..core.governance.demo.policies import DEMO_AGENT_POLICIES
+    from ..core.governance.demo.policies import DEMO_AGENT_POLICIES, DEMO_AGENT_POLICY_MAP
+    from ..config import Config
+
+    # Only seed policies for the built-in agents enabled via SAFI_BUILTIN_AGENTS —
+    # a lean install shouldn't grow governance rows for agents it never shows.
+    # Already-seeded policies are left untouched (idempotency below), so enabling
+    # more agents later just seeds the missing ones on the next restart.
+    enabled_policy_ids = {
+        pid for key, pid in DEMO_AGENT_POLICY_MAP.items()
+        if Config.builtin_agent_enabled(key)
+    }
 
     for pid, pol in DEMO_AGENT_POLICIES.items():
         try:
+            if pid not in enabled_policy_ids:
+                continue
             if get_policy(pid):
                 continue
             create_policy(
