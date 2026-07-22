@@ -154,9 +154,18 @@ function renderScoreAndTrend(payload) {
         .filter(s => s !== null && s !== undefined) // Filter out null/undefined
         .slice(-10); // Get last 10
 
-    let sparkline = '<div class="flex-1 flex items-center justify-center text-sm text-gray-400">Not enough data for trend.</div>';
+    // A trend needs history. Single-record contexts (Audit Hub drill-down,
+    // Review detail pane) never pass any — the record is evidence of ONE turn,
+    // and trend-over-time lives in the Audit Hub chart. Render the gauge alone
+    // rather than a "not enough data" placeholder that reads like missing
+    // evidence. Also covers a first chat turn (one point).
+    if (scores.length < 2) {
+        return `<div class="flex justify-center conscience-trend-grid rounded-lg p-5 mb-6">${radialGauge}</div>`;
+    }
 
-    if (scores.length > 1) {
+    let sparkline = '';
+
+    {
         const width = 200, height = 60, padding = 5;
         const maxScore = 10, minScore = 0;
         const range = maxScore - minScore;
