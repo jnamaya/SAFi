@@ -124,3 +124,16 @@ def build_providers_config(config) -> dict:
             "base_url": "https://api.cerebras.ai/v1",
         },
     }
+
+
+def configured_providers(config) -> frozenset:
+    """Provider keys whose API key is actually set in the running config.
+
+    Derived from build_providers_config so it can never drift from the set of
+    providers the dispatch layer knows how to reach.
+    """
+    return frozenset(
+        name
+        for name, p in build_providers_config(config).items()
+        if (p.get("api_key") or "").strip()
+    )

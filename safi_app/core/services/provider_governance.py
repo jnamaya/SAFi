@@ -23,7 +23,7 @@ import threading
 from contextvars import ContextVar
 from typing import FrozenSet, List, Optional
 
-from .model_routing import PROVIDER_METADATA, detect_provider
+from .model_routing import PROVIDER_METADATA, configured_providers, detect_provider
 
 _ACTIVE_ALLOWLIST: ContextVar[Optional[FrozenSet[str]]] = ContextVar(
     "safi_provider_allowlist", default=None
@@ -102,13 +102,18 @@ def model_allowed(model_id: str, allowlist: Optional[FrozenSet[str]]) -> bool:
 
 
 def list_models_for_org(org_id) -> List[dict]:
-    """Config.AVAILABLE_MODELS enriched with provider metadata and filtered by
-    the org's allow-list. Single source of truth for every model picker."""
+    """Config.AVAILABLE_MODELS enriched with provider metadata, filtered to
+    providers whose API key is configured, then by the org's allow-list.
+    Single source of truth for every model picker — a model that can't
+    actually be dispatched is never offered."""
     from ...config import Config
     allow = get_org_allowlist(org_id)
+    configured = configured_providers(Config)
     out = []
     for m in Config.AVAILABLE_MODELS:
         prov = detect_provider(m["id"])
+        if prov not in configured:
+            continue
         if allow is not None and prov not in allow:
             continue
         meta = PROVIDER_METADATA.get(prov, {})
