@@ -3,9 +3,14 @@ set -e
 
 # Wait for MySQL to accept connections before starting the app.
 # Uses the python client so no extra tools are required in the image.
+# Prints the real connection error and fails fast instead of retrying
+# forever, so credential problems (e.g. a db volume initialized with an
+# older DB_PASSWORD) are visible instead of hanging the install.
 if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ]; then
     echo "Waiting for MySQL at $DB_HOST..."
-    until python - <<EOF
+    attempts=0
+    max_attempts=30
+    until error=$(python - <<EOF 2>&1
 import sys, mysql.connector
 try:
     mysql.connector.connect(
@@ -15,10 +20,30 @@ try:
         database="${DB_NAME:-safi}"
     )
     sys.exit(0)
-except Exception:
+except Exception as e:
+    print(f"{type(e).__name__}: {e}")
     sys.exit(1)
 EOF
+    )
     do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge "$max_attempts" ]; then
+            echo "ERROR: could not connect to MySQL at $DB_HOST after $attempts attempts."
+            echo "Last error: $error"
+            case "$error" in
+                *"Access denied"*|*"Unknown database"*)
+                    echo ""
+                    echo "This usually means the database volume was initialized with"
+                    echo "different credentials than the current .env. MySQL only applies"
+                    echo "DB_PASSWORD/DB_NAME on the volume's FIRST boot. To start fresh:"
+                    echo ""
+                    echo "    docker compose down -v"
+                    echo ""
+                    echo "(This deletes the local database volume.)"
+                    ;;
+            esac
+            exit 1
+        fi
         sleep 2
     done
     echo "MySQL is ready."
