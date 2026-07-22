@@ -581,6 +581,11 @@ def login_demo():
             # Initialize Profile
             default_profile = Config.DEFAULT_PROFILE
             db.update_user_profile(demo_id, default_profile)
+
+            # Public-demo default model (user-level, so guests can still
+            # switch in Settings). Conscience stays on the global default.
+            if Config.DEMO_INTELLECT_MODEL:
+                db.update_user_models(demo_id, Config.DEMO_INTELLECT_MODEL, None, None)
             
             # Prepare for session
             user_to_login = user_info

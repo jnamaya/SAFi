@@ -178,6 +178,12 @@ class Config:
     # Set to false for private/self-hosted instances that don't need a public demo.
     ENABLE_DEMO_LOGIN = os.environ.get("SAFI_ENABLE_DEMO", "false").lower() == "true"
 
+    # Default Intellect model for fresh demo sandbox accounts. Stored as the
+    # user-level selection, so demo guests can still switch models in Settings.
+    # Empty = inherit the global INTELLECT_MODEL default. Conscience is
+    # deliberately not set here (gemma-family models must not audit).
+    DEMO_INTELLECT_MODEL = os.environ.get("SAFI_DEMO_INTELLECT_MODEL", "gemma-4-31b")
+
     # Local admin account for dev/self-hosted instances (no OAuth required).
     # When both vars are set, a persistent admin account is auto-created on startup.
     LOCAL_ADMIN_EMAIL    = os.environ.get("SAFI_LOCAL_ADMIN_EMAIL", "").strip()
