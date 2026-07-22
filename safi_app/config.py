@@ -8,6 +8,47 @@ dotenv_path = os.path.join(project_root, '.env')
 
 load_dotenv(dotenv_path=dotenv_path, override=True)
 
+# ── Faculty model auto-detection ──────────────────────────────────────────────
+# A fresh install should work with whichever single provider key the operator
+# has — not silently require Groq. When a SAFI_*_MODEL env var is unset, the
+# faculty default follows the first configured provider key (detection order
+# below). Explicit SAFI_*_MODEL values always win — set them to change models
+# once you know which ones you want.
+# "light" covers the background roles: summarizer, backend, and note-taker.
+_FACULTY_DEFAULTS_BY_PROVIDER = {
+    "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
+    "gemini":    {"intellect": "gemini-3.6-flash",          "conscience": "gemini-3.6-flash",          "light": "gemini-3.5-flash-lite"},
+    "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
+    "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
+    "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
+    # gemma-4-31b is deliberately excluded from Conscience duty: its audits fail closed.
+    "cerebras":  {"intellect": "gpt-oss-120b",              "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
+    "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
+    "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
+}
+
+# Groq first preserves the historical default when several keys are present.
+_PROVIDER_KEY_ENV_ORDER = [
+    ("groq", "GROQ_API_KEY"),
+    ("gemini", "GEMINI_API_KEY"),
+    ("anthropic", "ANTHROPIC_API_KEY"),
+    ("openai", "OPENAI_API_KEY"),
+    ("mistral", "MISTRAL_API_KEY"),
+    ("cerebras", "CEREBRAS_API_KEY"),
+    ("deepseek", "DEEPSEEK_API_KEY"),
+    ("zhipu", "ZHIPU_API_KEY"),
+]
+
+
+def _detect_faculty_defaults() -> dict:
+    for provider, env_var in _PROVIDER_KEY_ENV_ORDER:
+        if os.environ.get(env_var):
+            return _FACULTY_DEFAULTS_BY_PROVIDER[provider]
+    # No key at all: Config.validate() aborts startup with a clear "no LLM API
+    # key" error before any of these defaults is used; the shape just has to exist.
+    return _FACULTY_DEFAULTS_BY_PROVIDER["groq"]
+
+
 class Config:
     """
     Central configuration class for SAFi.
@@ -157,20 +198,24 @@ class Config:
     # written atomically with each turn and served by the native Audit Hub.
     DEBUG_JSONL_LOGS = os.environ.get("SAFI_DEBUG_JSONL_LOGS", "false").strip().lower() in ("1", "true", "yes")
 
-    # Model assignments for each faculty (defaults — apply to authenticated users and bots)
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", "openai/gpt-oss-20b")
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", "gemini-3.5-flash-lite")
+    # Model assignments for each faculty (apply to authenticated users and bots).
+    # Explicit SAFI_*_MODEL vars win; otherwise defaults follow the first
+    # configured provider key so a fresh install works with any single key
+    # (see _detect_faculty_defaults at module level).
+    _faculty_defaults = _detect_faculty_defaults()
+    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", _faculty_defaults["intellect"])
+    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", _faculty_defaults["conscience"])
 
     # Models used exclusively by the public WordPress chatbot endpoint.
     # Falls back to the global defaults above if not set.
     PUBLIC_INTELLECT_MODEL = os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
     PUBLIC_CONSCIENCE_MODEL = os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
-    SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", "openai/gpt-oss-20b")
-    # General-purpose background model (suggestions, etc.). Groq/GPT-OSS by default.
-    BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", "openai/gpt-oss-20b")
+    SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", _faculty_defaults["light"])
+    # General-purpose background model (suggestions, etc.).
+    BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", _faculty_defaults["light"])
     # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
-    # note-taking can run on Gemini while suggestions/summaries stay on Groq/Llama.
-    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", "gemini-3.5-flash-lite")
+    # note-taking can run on a different provider than suggestions/summaries.
+    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", _faculty_defaults["light"])
 
     # --- Agent work-context ("note-taker") memory tuning ---
     # Sampling temperature for the background extraction call (deterministic by default).

@@ -84,7 +84,7 @@ docker compose up
 # Open http://localhost:5000
 ```
 
-> **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, and `DEEPSEEK_API_KEY`. See [`.env.example`](.env.example) for all options.
+> **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, and `ZHIPU_API_KEY` — whichever key you set, SAFi automatically selects working default models for that provider. Once you're familiar with the system, pin specific models with the `SAFI_*_MODEL` variables in [`.env.example`](.env.example).
 
 #### Local Admin Account (No OAuth Required)
 
