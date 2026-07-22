@@ -3455,6 +3455,10 @@ REVIEW_CONFIG_DEFAULTS = {
     "triggers": {
         "hard_gate_block": True,
         "gateway_violation": True,
+        # Off by default, unlike its siblings: turning it on changes queue
+        # volume for orgs already running review, so it must be an admin's
+        # journaled opt-in rather than arrive silently via a deploy.
+        "persona_redirect": False,
         "low_alignment": True,
         "alignment_threshold": 6,
         "drift_spike": True,
@@ -3504,7 +3508,7 @@ def validate_review_config_changes(changes):
     unknown = set(trig) - allowed_trig
     if unknown:
         raise ValueError(f"unknown trigger keys: {', '.join(sorted(unknown))}")
-    for key in ("hard_gate_block", "gateway_violation", "low_alignment", "drift_spike"):
+    for key in ("hard_gate_block", "gateway_violation", "persona_redirect", "low_alignment", "drift_spike"):
         if key in trig and not isinstance(trig[key], bool):
             raise ValueError(f"{key} must be true or false")
     if "alignment_threshold" in trig and not (_is_num(trig["alignment_threshold"]) and 0 <= trig["alignment_threshold"] <= 10):
@@ -3602,11 +3606,17 @@ def evaluate_review_triggers(cfg, message_id, conversation_id, score, drift,
     config an examiner can recompute exactly which turns were due — there is
     no cherry-picking a hash function. Native hard-gate blocks ship as
     persona redirects, so the trigger keys on will_stage alone (it also
-    catches gateway hard-gate violations)."""
+    catches gateway hard-gate violations). persona_redirect covers the
+    remaining redirect paths (phase-zero, soft Will violations, two-strike
+    reflexion failures); hard-gate redirects are excluded so each event class
+    answers to exactly one checkbox."""
     trig_cfg = cfg.get("triggers", {})
     triggers, detail = [], {}
     if trig_cfg.get("hard_gate_block") and will_stage == "hard_gate":
         triggers.append("hard_gate_block")
+    if (trig_cfg.get("persona_redirect") and will_decision == "redirected"
+            and will_stage != "hard_gate"):
+        triggers.append("persona_redirect")
     if (trig_cfg.get("gateway_violation") and will_decision == "violation"
             and str(conversation_id or "").startswith("gw_")):
         triggers.append("gateway_violation")

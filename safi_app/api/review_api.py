@@ -29,8 +29,8 @@ review_bp = Blueprint('review', __name__)
 
 REVIEWER_ROLES = ("admin", "auditor")
 VALID_STATUS = ("pending", "approved", "overridden")
-VALID_TRIGGERS = ("hard_gate_block", "gateway_violation", "low_alignment",
-                  "drift_spike", "random_sample")
+VALID_TRIGGERS = ("hard_gate_block", "gateway_violation", "persona_redirect",
+                  "low_alignment", "drift_spike", "random_sample")
 REPORT_DEFAULT_WINDOW_DAYS = 30
 
 
