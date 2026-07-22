@@ -496,6 +496,17 @@ async function renderDetail(messagePk) {
         ? `<span class="${BADGE} bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300" title="The member deleted this conversation. The organization's governance record is retained and will be destroyed by the retention policy.">Conversation deleted by member</span>`
         : '';
 
+    // Which model performed the policy audit. New records carry it in the
+    // encrypted capture; older ones fall back to chat_history.model_attribution
+    // ("provider/model"), which is lost if the member deleted the conversation.
+    let auditModel = r.conscienceModel || null;
+    if (!auditModel && doc.chat && doc.chat.model_attribution) {
+        try {
+            const attr = JSON.parse(doc.chat.model_attribution).conscience || '';
+            auditModel = attr.split('/').slice(1).join('/') || attr;
+        } catch { /* unparseable legacy value — omit */ }
+    }
+
     const sections = [
         ['draft', 'AI Draft'],
         ['decision', 'Decision'],
@@ -569,6 +580,7 @@ async function renderDetail(messagePk) {
             ${fmtDate(ev.created_at)} · ${esc((ev.profile_key || '—').replace(/_/g, ' '))}
             ${ev.policy_id ? ` · policy ${esc(String(ev.policy_id).replace(/_/g, ' '))}${ev.policy_version ? ` (v${esc(ev.policy_version)})` : ''}` : ''}
             ${ev.intellect_model ? ` · <span class="font-mono">${esc(ev.intellect_model)}</span>` : ''}
+            ${auditModel ? ` · <span title="Model that performed the per-value policy audit for this turn">audited by <span class="font-mono">${esc(auditModel)}</span></span>` : ''}
         </div>
         ${!doc.record ? `<p class="text-sm text-amber-600 dark:text-amber-400 mb-4">The encrypted record for this turn could not be decoded — provenance columns and the chain verification above remain valid.</p>` : ''}
         <div class="border-b border-gray-200 dark:border-gray-700 mb-4">

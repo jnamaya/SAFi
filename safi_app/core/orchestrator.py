@@ -127,6 +127,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         i_model = intellect_model or getattr(config, "INTELLECT_MODEL")
         c_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
         self.intellect_model = i_model
+        self.conscience_model = c_model
 
         # --- 1. Construct LLM Configuration ---
         llm_config = {
@@ -1042,6 +1043,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
+            "conscienceModel": self.conscience_model,
         }
 
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
@@ -1154,6 +1156,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 "orgId": org_id or (self.profile or {}).get("org_id"),
                 "userId": user_id,
                 "agentName": self.active_profile_name,
+                # No intellectModel: the output under evaluation is external.
+                # The audit model is the only model provenance for this record.
+                "conscienceModel": self.conscience_model,
             }
             db.update_audit_results(message_id, ledger, spirit_score, spirit_note,
                                     self.active_profile_name, self.values, None,
@@ -1355,6 +1360,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
+            "conscienceModel": self.conscience_model,
         }
 
         db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
@@ -1508,6 +1514,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userId": user_id,
             "agentName": self.active_profile_name,
             "intellectModel": self.intellect_model,
+            "conscienceModel": self.conscience_model,
         }
 
         db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
