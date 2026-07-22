@@ -111,7 +111,16 @@ export async function renderIncidentsSection(container, org) {
     }
 }
 
+// The incidents section shares the Compliance tab with the other cards. The
+// form and detail sub-views take over the tab (cards hidden, scrolled to top)
+// so they read as their own page instead of dangling under the whole tab.
+function enterSubview(container, on) {
+    document.getElementById('compliance-cards')?.classList.toggle('hidden', on);
+    if (on) container.closest('.overflow-y-auto')?.scrollTo(0, 0);
+}
+
 async function renderList(container) {
+    enterSubview(container, false);
     const [res, regimeCfg] = await Promise.all([
         api.listIncidents(orgId),
         api.getIncidentRegimes(orgId).catch(() => null),
@@ -195,10 +204,12 @@ function renderForm(container, incident) {
         <label class="flex items-center gap-1.5 text-sm">
             <input type="checkbox" name="regimes" value="${k}" data-regime-box ${tagged.includes(k) ? 'checked' : ''}> ${label}
         </label>`).join('');
+    enterSubview(container, true);
     container.innerHTML = `
         <button id="incident-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to incidents</button>
+        <div class="settings-card max-w-2xl">
         <h2 class="text-xl font-semibold mb-4">${incident ? "Edit Incident" : "New Incident"}</h2>
-        <form id="incident-form" class="max-w-2xl space-y-4">
+        <form id="incident-form" class="space-y-4">
             ${formField('Title *', `<input name="title" required maxlength="255" class="${INPUT_CLS}" value="${esc(i.title || '')}">`)}
             ${formField('Description', `<textarea name="description" rows="3" class="${INPUT_CLS}">${esc(i.description || '')}</textarea>`)}
             <div class="grid grid-cols-2 gap-4">
@@ -256,7 +267,8 @@ function renderForm(container, incident) {
                 <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">${incident ? 'Save changes' : 'Create incident'}</button>
                 <button type="button" id="incident-cancel" class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Cancel</button>
             </div>
-        </form>`;
+        </form>
+        </div>`;
 
     container.querySelector('#incident-source').addEventListener('change', e =>
         container.querySelector('#vendor-fields').classList.toggle('hidden', e.target.value !== 'vendor'));
@@ -309,6 +321,7 @@ function renderForm(container, incident) {
 }
 
 async function renderDetail(container, incidentId) {
+    enterSubview(container, true);
     container.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
     const res = await api.getIncident(orgId, incidentId);
     const i = res.incident;

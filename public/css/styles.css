@@ -1502,10 +1502,12 @@ html.native body { font-size: 14px; }
 
 /* 1. Wrapper for the input area (The "Dock") */
 
-/* UPDATED: Separated logic. This handles generic classes and the new wrapper */
+/* UPDATED: Separated logic. This handles generic classes and the new wrapper.
+   Deliberately NOT a bare `form` selector: that leaked chat-composer styling
+   (flex row, translucent bg, 1rem padding) into every form in the app —
+   login, incident registry — mangling their layout. */
 .input-dock-container,
-.input-wrapper,
-form {
+.input-wrapper {
   position: relative;
   /* Crucial for button positioning */
   background: rgba(255, 255, 255, 0.9);
@@ -1524,8 +1526,7 @@ form {
 
 /* UPDATED: Dark mode support for wrapper */
 .dark .input-dock-container,
-.dark .input-wrapper,
-.dark form {
+.dark .input-wrapper {
   background: rgba(0, 0, 0, 0.8);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
