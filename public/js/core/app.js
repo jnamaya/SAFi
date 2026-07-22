@@ -466,9 +466,6 @@ function renderControlPanel() {
   // Dashboard: Admin, Editor, Auditor (Member = No Access)
   const canSeeDashboard = ['admin', 'editor', 'auditor'].includes(user.role);
 
-  // Models: Admin, Editor, Auditor (Member = No Access)
-  const canSeeModels = ['admin', 'editor', 'auditor'].includes(user.role);
-
   // Incidents (Reg S-P registry): Admin only
   const canSeeIncidents = user.role === 'admin';
 
@@ -476,7 +473,7 @@ function renderControlPanel() {
   // set. Editors are content authors and don't supervise themselves.
   const canSeeReview = ['admin', 'auditor'].includes(user.role);
 
-  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeModels, canSeeIncidents, canSeeReview });
+  console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeIncidents, canSeeReview });
 
   const navOrg = document.getElementById('nav-organization'); // NEW ID
   if (navOrg) {
@@ -533,15 +530,6 @@ function renderControlPanel() {
     user // Pass user for ownership checks
   );
 
-  // AI model picker renders as a card inside App Settings (it's a personal
-  // preference, not org management) — hand it its context here.
-  uiSettingsModals.setModelsContext({
-    availableModels,
-    user,
-    visible: canSeeModels,
-    onSave: handleModelsSave
-  });
-
   // --- NEW: Init Agent Selector ---
   uiAuthSidebar.initAgentSelector(
     availableProfiles,
@@ -562,8 +550,7 @@ function renderControlPanel() {
     currentTheme: localStorage.theme || 'system',
     onThemeChange: applyTheme,
     onLogout: handleLogout,
-    onDeleteAccount: () => ui.showModal('delete'),
-    onSaveModels: handleModelsSave
+    onDeleteAccount: () => ui.showModal('delete')
   });
 
   // Render "My Profile" Tab. This will fetch the data.
@@ -708,28 +695,6 @@ async function handleQuickModelSwitch(modelId) {
   } catch(e) {
     console.error('Model switch failed:', e);
     ui.showToast('Could not switch model.', 'error');
-  }
-}
-
-async function handleModelsSave(newModels) {
-  hapticImpactLight();
-  try {
-    const response = await api.updateUserModels(newModels);
-
-    if (response === 'QUEUED') {
-      ui.showToast('Model changes queued.', 'info');
-      // Optimistically update UI
-      user.intellect_model = newModels.intellect_model;
-      ui.closeModal(); // Close the control panel
-      return;
-    }
-
-    ui.showToast('Model preferences saved. Reloading...', 'success');
-    setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
-  } catch (error) {
-    console.error('Failed to save models:', error);
-    ui.showToast('Could not save model preferences.', 'error');
-    hapticError();
   }
 }
 

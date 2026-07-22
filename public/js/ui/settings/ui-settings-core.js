@@ -20,9 +20,7 @@ const settingsState = {
     currentTheme: 'system',
     onThemeChange: null,
     onLogout: null,
-    onDeleteAccount: null,
-    // Model handlers
-    onSaveModels: null
+    onDeleteAccount: null
 };
 
 export function updateCurrentUser(u) {
