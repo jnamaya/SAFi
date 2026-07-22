@@ -134,45 +134,28 @@ class BackgroundTasksMixin:
             self.log.warning(f"Background follow-up suggester failed: {e}")
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        """Runs the summarization logic in a background thread using Sync client."""
-        if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
-            return
-
-        # Direct Groq dispatch — honor the org provider allow-list (skip, never reroute).
-        try:
-            assert_provider_allowed("groq", context="summarizer")
-        except ProviderNotAllowedError as e:
-            self.log.warning(f"[Governance] Summarization skipped: {e}")
-            return
-
+        """Runs the summarization logic in a background thread (provider-routed
+        via _backend_completion, so it follows SUMMARIZER_MODEL to any provider)."""
         summarizer_prompt_config = self.prompts.get("summarizer")
         if not summarizer_prompt_config: return
 
         try:
             system_prompt = summarizer_prompt_config["system_prompt"]
             content = (f"PREVIOUS MEMORY:\n{old_summary if old_summary else 'No history.'}\n\n" f"LATEST EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\nUPDATED MEMORY:")
-            
-            response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL", "openai/gpt-oss-20b"),
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
-                temperature=0.0,
+
+            summary = self._backend_completion(
+                system_prompt, content,
+                model=getattr(self.config, "SUMMARIZER_MODEL", None),
+                temperature=0.0, json_mode=False,
             )
-            db.update_conversation_summary(conversation_id, response.choices[0].message.content.strip())
+            if summary:
+                db.update_conversation_summary(conversation_id, summary)
         except Exception as e:
             self.log.warning(f"Summarization thread failed: {e}")
 
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
-        """Runs the long-term user profile update logic in a background thread."""
-        if not hasattr(self, 'groq_client_sync') or not self.groq_client_sync:
-            return
-
-        # Direct Groq dispatch — honor the org provider allow-list (skip, never reroute).
-        try:
-            assert_provider_allowed("groq", context="profile_extractor")
-        except ProviderNotAllowedError as e:
-            self.log.warning(f"[Governance] Profile extraction skipped: {e}")
-            return
-
+        """Runs the long-term user profile update logic in a background thread
+        (provider-routed via _backend_completion)."""
         profile_prompt_config = self.prompts.get("profile_extractor")
         if not profile_prompt_config: return
 
@@ -183,72 +166,141 @@ class BackgroundTasksMixin:
                 f"LATEST_EXCHANGE:\nUser: {user_prompt}\nAI: {ai_response}\n\n"
                 "Return the new, updated JSON object."
             )
-            response = self.groq_client_sync.chat.completions.create(
-                model=getattr(self.config, "SUMMARIZER_MODEL", "openai/gpt-oss-20b"),
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
-                temperature=0.0,
-                response_format={"type": "json_object"},
+            profile = self._backend_completion(
+                system_prompt, content,
+                model=getattr(self.config, "SUMMARIZER_MODEL", None),
+                temperature=0.0, json_mode=True,
             )
-            db.upsert_user_profile_memory(user_id, response.choices[0].message.content.strip())
-            self.log.info(f"Successfully updated user profile for {user_id}")
+            if profile:
+                db.upsert_user_profile_memory(user_id, profile)
+                self.log.info(f"Successfully updated user profile for {user_id}")
         except Exception as e:
             self.log.warning(f"User profile update thread failed: {e}")
 
-    def _backend_json_completion(self, system_prompt: str, user_content: str, model: str | None = None, temperature: float | None = None):
+    def _get_backend_sync_client(self, provider: str):
         """
-        Synchronous JSON-returning completion, routed by provider so background tasks
-        aren't pinned to Groq. gemini-* models use the (sync-capable) google-genai client
-        the LLMProvider already built; everything else uses the OpenAI-compatible sync
-        client (Groq, etc.). Returns raw model text, or None.
+        Lazily builds and caches a synchronous client for the given provider, from
+        the same provider config the LLMProvider uses (build_providers_config), so
+        background threads can reach every provider the faculties can. Returns
+        None when the provider has no API key configured. Gemini is excluded —
+        its google-genai client is already sync-capable and shared via self.clients.
+        """
+        cache = getattr(self, "_backend_sync_clients", None)
+        if cache is None:
+            cache = self._backend_sync_clients = {}
+        if provider in cache:
+            return cache[provider]
+
+        from ..services.model_routing import build_providers_config
+        details = build_providers_config(self.config).get(provider)
+        client = None
+        if details and details.get("api_key"):
+            try:
+                if details["type"] == "openai":
+                    from openai import OpenAI
+                    client = OpenAI(api_key=details["api_key"], base_url=details.get("base_url"))
+                elif details["type"] == "anthropic":
+                    from anthropic import Anthropic
+                    client = Anthropic(api_key=details["api_key"])
+            except Exception as e:
+                self.log.warning(f"[Backend] sync client init failed for '{provider}': {e}")
+        cache[provider] = client
+        return client
+
+    def _backend_completion(self, system_prompt: str, user_content: str, model: str | None = None,
+                            temperature: float | None = None, json_mode: bool = True):
+        """
+        Synchronous completion for background tasks (summaries, note-taker,
+        suggestions), routed to whichever provider serves `model` — any provider
+        the faculties support works here too. Returns raw model text, or None.
+
+        json_mode enables native JSON constraints where the API supports them
+        (OpenAI-compatible response_format / Gemini response_mime_type); Anthropic
+        has no equivalent, so it gets a system-prompt instruction instead and
+        callers' fence-tolerant parsers handle the rest.
 
         model defaults to BACKEND_MODEL (general-purpose); the note-taker passes
-        NOTETAKER_MODEL. temperature defaults to AGENT_MEMORY_TEMPERATURE; callers that
-        want more variety (e.g. suggestions) can pass their own.
+        NOTETAKER_MODEL, the summarizer SUMMARIZER_MODEL. temperature defaults to
+        AGENT_MEMORY_TEMPERATURE; callers that want variety pass their own.
         """
         if model is None:
             model = self.config.BACKEND_MODEL
         if temperature is None:
             temperature = self.config.AGENT_MEMORY_TEMPERATURE
-        # Per-org provider governance. Dispatch below is binary — gemini-*
-        # models use the Gemini client, EVERYTHING else goes to the Groq sync
-        # client regardless of what detect_provider says about the model id —
-        # so the assertion checks the provider that actually receives content.
-        # Background conveniences degrade gracefully: skip, never reroute.
-        effective_provider = "gemini" if detect_provider(model) == "gemini" else "groq"
+        # Per-org provider governance, asserted on the provider that actually
+        # receives content. Background conveniences degrade gracefully: skip,
+        # never reroute.
+        provider = detect_provider(model)
         try:
-            assert_provider_allowed(effective_provider, context=f"backend:{model}")
+            assert_provider_allowed(provider, context=f"backend:{model}")
         except ProviderNotAllowedError as e:
             self.log.warning(f"[Governance] Background completion skipped: {e}")
             return None
         try:
-            if detect_provider(model) == "gemini":
+            if provider == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")
                 if client is None:
-                    self.log.warning("[AgentMemory] gemini client unavailable; skipping update.")
+                    self.log.warning("[Backend] gemini client unavailable; skipping.")
                     return None
                 from google.genai import types as _gtypes
                 cfg = _gtypes.GenerateContentConfig(
                     system_instruction=system_prompt,
                     temperature=temperature,
-                    response_mime_type="application/json",
+                    response_mime_type="application/json" if json_mode else None,
                 )
                 resp = client.models.generate_content(model=model, contents=user_content, config=cfg)
                 return (getattr(resp, "text", "") or "").strip()
 
-            # Default: OpenAI-compatible sync client (Groq / DeepSeek / etc.)
-            if not getattr(self, "groq_client_sync", None):
+            if provider == "anthropic":
+                client = self._get_backend_sync_client("anthropic")
+                if client is None:
+                    self.log.warning("[Backend] anthropic client unavailable; skipping.")
+                    return None
+                system = system_prompt
+                if json_mode:
+                    system += "\n\nRespond with only the valid JSON object — no prose, no code fences."
+                resp = client.messages.create(
+                    model=model,
+                    max_tokens=4096,
+                    system=system,
+                    messages=[{"role": "user", "content": user_content}],
+                    temperature=temperature,
+                )
+                text = "".join(
+                    b.text for b in resp.content if getattr(b, "type", "") == "text"
+                ).strip()
+                if json_mode:
+                    # No native JSON mode: the model may fence the object anyway,
+                    # and some callers parse with plain json.loads — trim to the
+                    # outermost braces so they always get a bare object.
+                    start, end = text.find("{"), text.rfind("}")
+                    if start != -1 and end > start:
+                        text = text[start:end + 1]
+                return text
+
+            # OpenAI-compatible providers (Groq, OpenAI, DeepSeek, Mistral, Zhipu, Cerebras)
+            client = self._get_backend_sync_client(provider)
+            if client is None:
+                self.log.warning(f"[Backend] {provider} client unavailable; skipping.")
                 return None
-            resp = self.groq_client_sync.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system_prompt},
-                          {"role": "user", "content": user_content}],
-                temperature=temperature,
-                response_format={"type": "json_object"},
-            )
+            params = {
+                "model": model,
+                "messages": [{"role": "system", "content": system_prompt},
+                             {"role": "user", "content": user_content}],
+                "temperature": temperature,
+            }
+            if json_mode:
+                params["response_format"] = {"type": "json_object"}
+            resp = client.chat.completions.create(**params)
             return resp.choices[0].message.content.strip()
         except Exception as e:
-            self.log.warning(f"[AgentMemory] backend completion failed ({model}): {e}")
+            self.log.warning(f"[Backend] completion failed ({model}): {e}")
             return None
+
+    def _backend_json_completion(self, system_prompt: str, user_content: str, model: str | None = None, temperature: float | None = None):
+        """JSON-mode wrapper kept for existing callers (note-taker, suggestions)."""
+        return self._backend_completion(system_prompt, user_content, model=model,
+                                        temperature=temperature, json_mode=True)
 
     def _extract_agent_context_raw(self, current_context_json: str, user_prompt: str, ai_response: str):
         """

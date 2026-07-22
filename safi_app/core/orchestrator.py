@@ -156,12 +156,9 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         })
 
         # --- 2. RESTORE SYNC CLIENTS ---
-        if config.GROQ_API_KEY:
-            self.groq_client_sync = OpenAI(
-                api_key=config.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-            )
-        
+        # Background-task sync clients are built lazily per provider by
+        # BackgroundTasksMixin._get_backend_sync_client; only TTS still needs
+        # a dedicated sync OpenAI client here.
         if config.OPENAI_API_KEY:
             self.openai_client_sync = OpenAI(api_key=config.OPENAI_API_KEY)
         else:
@@ -1073,8 +1070,8 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             f"Turn: {spirit_turn}"
         )
 
-        if hasattr(self, 'groq_client_sync'):
-            self._submit_bg(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
+        # Provider-routed via _backend_completion — no longer gated on the Groq client.
+        self._submit_bg(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
 
         if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
             if hasattr(self.config, "SUMMARIZER_MODEL"):
