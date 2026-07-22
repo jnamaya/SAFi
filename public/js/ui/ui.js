@@ -249,8 +249,10 @@ const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const Toast = Cap?.Plugins?.Toast;
 
 export async function showToast(message, type = 'info', duration = 3000) {
-  // Only surface errors and warnings — suppress success/info to reduce noise.
-  if (type !== 'error' && type !== 'warning') return;
+  // 'success' confirms a user-initiated action (saves, deletes, copies) and
+  // is always shown — silent saves read as broken buttons. 'info' is ambient
+  // (offline-queue notices etc.) and stays suppressed to reduce noise.
+  if (type === 'info') return;
 
   _ensureElements();
 
@@ -266,7 +268,7 @@ export async function showToast(message, type = 'info', duration = 3000) {
 
   if (activeToast) activeToast.remove();
   const toast = document.createElement('div');
-  const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600' };
+  const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600', warning: 'bg-amber-500' };
   toast.className = `toast text-white px-4 py-2 rounded-lg shadow-lg ${colors[type]} cursor-default`;
   toast.textContent = message;
   elements.toastContainer.appendChild(toast);
