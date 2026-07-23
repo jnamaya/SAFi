@@ -131,3 +131,8 @@ docker compose up
 
 Visit `http://localhost:5000` once it's up.
 
+## 5. Understanding SAFi
+
+SAFi, at its core, is a model-agnostic cognitive system that uses an LLM
+as the substrate for the Intellect and Conscience. The Intellect — the
+LLM itself — runs fully contained, in an air-gapped mode.
