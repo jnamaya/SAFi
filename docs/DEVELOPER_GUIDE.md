@@ -21,6 +21,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 10. [Internal API architecture](#10-internal-api-architecture)
 11. [Setting up a policy](#11-setting-up-a-policy)
 12. [The audit trail & hash chain](#12-the-audit-trail--hash-chain)
+13. [Encryption at rest](#13-encryption-at-rest)
 
 ## 1. Front-end structure
 
@@ -633,3 +634,65 @@ distinguishing them is the retention/compliance log's row count — there
 is no cryptographic manifest of what was purged. Keep this in mind if
 you're ever asked to prove a specific purge was legitimate after the
 fact.
+
+## 13. Encryption at rest
+
+`SAFI_ENCRYPTION_KEY` is a comma-separated list, loaded into a
+`MultiFernet` (`safi_app/persistence/crypto.py:32-43`):
+
+```python
+keys = [k.strip() for k in Config.ENCRYPTION_KEY.split(",") if k.strip()]
+_fernet = MultiFernet([Fernet(k) for k in keys])
+```
+
+`MultiFernet` semantics do the work: **the first key encrypts new
+writes; every key is tried on decrypt.** Rotation is exactly what the
+module docstring says it is — prepend a new key to the list, then
+re-run `scripts/backfill_encryption.py` to re-encrypt existing rows
+under it. No custom rotation logic to maintain.
+
+**`encrypt_value`/`decrypt_value`** (`crypto.py:56-78`) are the accessor
+layer — `None`/empty/already-encrypted values pass through
+`encrypt_value` unchanged; `decrypt_value` passes through anything that
+doesn't look like ciphertext. Two deliberate choices worth knowing:
+
+- **`is_token()`** (`crypto.py:51-53`) — the encrypted/plaintext test is
+  a literal prefix check, `value.startswith("gAAAA")` (Fernet's own
+  token prefix). The module's own docstring admits the limitation: a
+  plaintext value that happens to start with `gAAAA` would be
+  misclassified as already-encrypted. That's not a hole nobody noticed —
+  it's the reason decrypt falls back gracefully instead of raising (next
+  point), and `backfill_encryption.py` has a JSON-aware check that
+  catches this exact case for at least one field type (see below).
+- **If a value fails to decrypt under every key**, `decrypt_value`
+  logs a warning and **returns the ciphertext as-is rather than raising**
+  (`crypto.py:74-78`). The rationale in the docstring: serving ciphertext
+  back is recoverable once the right key is available again; a hard
+  failure on one bad row would take down the whole read path for
+  everyone else's data too.
+
+**What's actually covered** — every one of these goes through
+`encrypt_value`/`decrypt_fields` in `database.py`, not ad hoc: chat
+content, spirit notes, the Conscience ledger, and reasoning logs on
+`chat_history`; conversation titles and memory summaries; saved-content
+bodies; the encrypted `governance_records` fields (`record_enc`,
+`reason_enc`); user profile and agent-memory JSON blobs; TOTP secrets;
+and OAuth access/refresh tokens.
+
+**`scripts/backfill_encryption.py` is safe to interrupt and re-run.**
+`needs_encryption()` (line 42-43) is the idempotency check — a plain
+string that isn't already a token needs encrypting, skip otherwise (with
+a JSON-aware variant for `suggested_prompts`, lines 50-56). It processes
+in batches with `FOR UPDATE` and commits per batch (not all-or-nothing),
+tracking a `last_pk` cursor — a crash mid-run just means re-running picks
+up from the uncommitted batch, and already-encrypted rows are skipped
+rather than double-encrypted. `chat_history` rows are journaled into
+`chat_audit_trail` (§12) as the transform happens — recording only which
+*fields* were touched, never the plaintext itself.
+
+**Test coverage is the real thing, not a mock.**
+`tests/test_encryption_at_rest.py`'s `test_lifecycle` queries MySQL
+directly (bypassing the app entirely) and asserts `crypto.is_token(...)`
+on the raw bytes in `chat_history`, `saved_content`, and `oauth_tokens` —
+proving the data is actually encrypted at rest, not just that the
+encrypt/decrypt functions round-trip in isolation.
