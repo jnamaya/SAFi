@@ -20,6 +20,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 9. [The `/evaluate` gateway](#9-the-evaluate-gateway)
 10. [Internal API architecture](#10-internal-api-architecture)
 11. [Setting up a policy](#11-setting-up-a-policy)
+12. [The audit trail & hash chain](#12-the-audit-trail--hash-chain)
 
 ## 1. Front-end structure
 
@@ -573,3 +574,62 @@ The schema and scoring engine support an arbitrary `scoring_guide` array
 with intermediate points — there's just no UI for adding one. If a
 policy needs finer-grained scoring criteria, that's an API/direct-edit
 case, not something you can build through the wizard.
+
+## 12. The audit trail & hash chain
+
+`chat_audit_trail` (`database.py:481-498`) journals every create, update,
+and delete on a `chat_history` row: `id, message_pk, message_id,
+conversation_id, action, actor, state, event_at, prev_hash, entry_hash,
+org_id, created_at`. **No foreign key to `chat_history`** — deliberate
+(comment at 473-476): entries must survive a cascade delete of the live
+message so a deleted record can still be reconstructed for its retention
+period. `org_id` is a later migration-added column, and it's excluded
+from the hash on purpose (`"UNAUTHENTICATED routing metadata"`).
+
+**How a chain entry is built** — `_chat_trail_append`
+(`database.py:1590-1626`): `entry_hash = sha256(json({message_pk,
+message_id, conversation_id, action, actor, state, event_at, prev_hash},
+sort_keys=True))`. Two details worth knowing:
+
+- **`state` is stored as `LONGTEXT`, not native `JSON`.** MySQL's `JSON`
+  type normalizes documents on write — reorders keys, reformats numbers
+  — which would silently change the bytes being hashed. Storing it as a
+  plain string keeps the hash byte-exact and reproducible.
+- **The previous-hash lookup takes a row lock**:
+  `SELECT entry_hash ... ORDER BY id DESC LIMIT 1 FOR UPDATE`
+  (line 1597-1599). This is what prevents two concurrent writers on the
+  same message from both reading the same `prev_hash` and forking the
+  chain — the lock serializes them.
+
+**Verification is real, but scoped per-message, not per-ledger.**
+`verify_message_audit_trail` (`database.py:1663-1696`) walks every entry
+for one `message_pk`, recomputes each hash, and checks the `prev_hash`
+linkage — a genuine chain-walk, not a bare per-row check. The gap:
+**zero rows returns `{"valid": true}`.** If a message's entire chain
+were ever deleted outside the sanctioned path, live verification has
+nothing to notice — it isn't missing a record, from its point of view
+there was never a record. The only thing that walks the *whole* table
+across all messages is `scripts/backup_verify.py`, and it only runs
+weekly against a **restored backup**, not live data.
+
+**Eight call sites** trigger an append (`grep _chat_trail_append(`):
+message creation (`insert_turn_atomic`), the governance pipeline's
+commit (`update_audit_results`, actor `system:pipeline` — this is where
+every turn's ledger/decision gets journaled), cancellation, content and
+reasoning edits, suggested-prompt updates, and a supervisory review
+disposition (`apply_review_action`). Deletion has its own path:
+`_chat_trail_snapshot_delete` (`database.py:1636-1661`) reads the full
+prior `chat_history` row and journals it (`action="delete"`) **on the
+same cursor, before the actual delete runs** — snapshot and destruction
+commit or roll back together, never one without the other.
+
+**Retention purge is a designed exception, not a hole — but it's
+under-evidenced.** The purge script deletes whole expired chains
+directly via SQL, bypassing `_chat_trail_append` entirely, which is
+correct (a lawful purge shouldn't itself be an audit event forever
+retained). But it means a chain's disappearance from the live table can
+mean either "lawfully purged" or "tampered," and the only thing
+distinguishing them is the retention/compliance log's row count — there
+is no cryptographic manifest of what was purged. Keep this in mind if
+you're ever asked to prove a specific purge was legitimate after the
+fact.
