@@ -848,7 +848,13 @@ the ad hoc pattern every current integration follows):
 1. Add `core/mcp_servers/your_tool.py` with plain `async def` functions
    (model it on `google_maps.py` or `web_search.py`).
 2. Register its schema in `MCPManager.get_tools_for_agent` and
-   `list_all_tools` (`mcp_manager.py:57-327`).
+   `list_all_tools` (`mcp_manager.py:57-327`). **This step alone makes it
+   show up in the UI** — `GET /api/agents/tools`
+   (`agent_api_routes.py:406-415`) returns `list_all_tools()` directly,
+   and the shared `tool-picker.js` (used by both the agent-wizard's
+   Tools step and the policy-wizard's Tools & Guardrails step) renders
+   whatever that endpoint returns. Neither wizard has its own hardcoded
+   tool list, so there's no separate front-end file to touch.
 3. Add a dispatch branch in `execute_tool` (`mcp_manager.py:419-502`).
 4. Add the tool name to the agent's `tools_json`
    (`agent_api_routes.py:81,116`).
