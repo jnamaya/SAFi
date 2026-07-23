@@ -133,6 +133,38 @@ Visit `http://localhost:5000` once it's up.
 
 ## 5. Understanding SAFi
 
-SAFi, at its core, is a model-agnostic cognitive system that uses an LLM
-as the substrate for the Intellect and Conscience. The Intellect — the
-LLM itself — runs fully contained, in an air-gapped mode.
+SAFi is a governance layer, not a chatbot framework. It wraps whatever LLM
+you point it at in a deterministic evaluation-and-enforcement pipeline
+that decides what actually reaches the user — and produces a verifiable
+record of that decision. The model is a component it governs, not the
+thing it is.
+
+The architecture is a separation of powers across five faculties,
+modeled on the classical faculties of the soul (see
+[ORIGIN_STORY.md](ORIGIN_STORY.md) and [PHILOSOPHY.md](PHILOSOPHY.md) for
+why):
+
+- **Synderesis** compiles the immutable baseline before any turn runs —
+  the governing policy, scope boundaries, and value weights for the
+  agent.
+- **Intellect** is the LLM itself. It drafts a response or proposes a
+  tool call, nothing more. It operates inside an **Air Gap**: it can
+  produce *intents*, never execute them — whatever the model outputs, it
+  cannot itself take an action.
+- **Will** approves or vetoes the Intellect's proposal, checking
+  structural rules and the Conscience's ledger.
+- **Conscience** evaluates the proposal against the governing policy's
+  values, producing a scored ledger (−1.0 to +1.0 per value) with a
+  written justification for each score.
+- **Spirit** is long-term memory: it integrates Conscience's scores into
+  a rolling per-agent EMA, detecting behavioral drift over time and
+  feeding coaching back into future turns.
+
+Every turn runs this as a synchronous, seven-phase loop — Phase 0's
+pre-generation gate through Phase 6's commit (the phase-by-phase
+mechanics get their own section later in this doc). The loop doesn't
+just produce a response: it produces a governance record — the draft,
+the ledger, the enforcement decision, and the exact policy version in
+force — written to a hash-chained, tamper-evident audit trail. That
+record, not the chat reply, is what an auditor or examiner actually
+relies on afterward.
