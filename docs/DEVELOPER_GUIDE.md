@@ -21,7 +21,7 @@ public/
 ├── package.json, package-lock.json, tailwind.config.js   # Tailwind build only
 ├── css/
 │   ├── input.css          # Tailwind source
-│   ├── main.css            # built output — regenerate after class changes (§3)
+│   ├── main.css            # built output — regenerate after class changes (§4)
 │   ├── styles.css          # hand-written styles outside Tailwind
 │   └── highlight-theme.css
 ├── assets/                # images, SVG icons, static reference/marketing pages
@@ -38,7 +38,7 @@ public/
         ├── ui.js, ui-messages.js, ui-composer-menu.js, ...   # chat UI
         ├── agent-wizard/    # multi-step agent creation flow
         ├── policy-wizard/   # multi-step policy authoring flow
-        ├── settings/        # Control Panel tabs, one module per tab (§7 recipe)
+        ├── settings/        # Control Panel tabs, one module per tab (§8 recipe)
         └── shared/          # shared widgets (tool-picker.js)
 ```
 
@@ -70,7 +70,7 @@ safi_app/
 │   ├── evaluate_api.py        # /evaluate gateway for external callers
 │   └── organizations.py, audit_api.py, review_api.py, incidents_api.py, ...
 └── core/
-    ├── orchestrator.py        # SAFi.process_prompt — the §4 phase pipeline
+    ├── orchestrator.py        # SAFi.process_prompt — the §5 phase pipeline
     ├── orchestrator_mixins/   # suggestions, tasks, tts
     ├── faculties/             # intellect, will, conscience, spirit, synderesis
     ├── governance/            # per-org policy definitions (safi/, contoso/, demo/)
@@ -85,13 +85,39 @@ Supporting top-level directories:
 ```
 run.py, wsgi.py, asgi.py   # entry points — dev server, WSGI, ASGI
 scripts/                    # retention_purge.py, backfill_encryption.py, backup_verify.py, ...
-tests/                       # integration tests against live MySQL (§6)
+tests/                       # integration tests against live MySQL (§7)
 rag/                          # index builder + doc sources for agent retrieval
 deploy/systemd/                # example units for production
 teams_bot.py, telegram_bot.py   # bot-channel integrations
 ```
 
-## 3. Local development
+## 3. Mobile structure
+
+The Android app is a thin Capacitor shell around the same web app the
+browser serves — no separate UI to maintain. `chat/`, the folder
+Capacitor actually bundles into the APK, is never hand-edited or
+committed: `build.sh` regenerates it from `public/` via `rsync` before
+every build, so the app can't ship a stale copy of the front-end. See
+[§1](#1-front-end-structure) for what's in `public/`.
+
+```
+mobile/
+├── build.sh                # rsyncs public/ → chat/, then npx cap sync && gradlew
+├── capacitor.config.ts       # app id, webDir, GoogleAuth client IDs, allowNavigation
+├── package.json, package-lock.json   # Capacitor CLI + plugin deps
+├── icons/, assets/            # app icon source images (input to @capacitor/assets)
+├── www/                       # PWA manifest.json (unused by the current webDir)
+├── chat/                      # generated from ../public — gitignored, never commit
+└── android/                  # native Android project
+    ├── local.properties        # SDK path — machine-specific, gitignored, recreate per machine
+    ├── app/
+    │   ├── src/main/AndroidManifest.xml
+    │   ├── src/main/java/com/safi/app/MainActivity.java
+    │   └── src/main/res/        # launcher icons, splash screens
+    └── build.gradle, settings.gradle, gradlew, ...   # standard Gradle wrapper project
+```
+
+## 4. Local development
 
 **Fastest:** `docker compose up` (see the README Quick Start) — includes
 MySQL. **Native:**
@@ -118,7 +144,7 @@ cd public && npx tailwindcss -i ./css/input.css -o ./css/main.css
 # then bump the css/main.css?v=... cache-buster in public/index.html
 ```
 
-## 4. The request lifecycle (read this before touching the pipeline)
+## 5. The request lifecycle (read this before touching the pipeline)
 
 A chat turn enters at `conversations.py:process_prompt_endpoint` and flows
 through `SAFi.process_prompt` (orchestrator.py):
@@ -144,7 +170,7 @@ runs the review-sampling hook, and writes the encrypted per-turn
 turn, it goes on that cursor, isolated the same way (an exception in your
 hook must log and skip, never block the commit).
 
-## 5. Invariants — break these and you break the product's claims
+## 6. Invariants — break these and you break the product's claims
 
 - **Encryption is accessor-layer with dual-read.** Sensitive columns are
   Fernet tokens written via `crypto.encrypt_value` and read via
@@ -179,7 +205,7 @@ hook must log and skip, never block the commit).
   `aiProvenance` body object and/or the `X-AI-Generated` header, and
   per-message `ai_generated` flags in exports.
 
-## 6. Testing
+## 7. Testing
 
 Tests are integration tests against a live local MySQL — no mocks of the
 database layer. Run them individually:
@@ -197,7 +223,7 @@ suites are the spec: `test_review_api.py` (API + RBAC),
 `test_governance_records.py` (transactional write paths),
 `test_retention_purge.py` (purge semantics).
 
-## 7. Recipes
+## 8. Recipes
 
 - **Add an LLM provider:** entry in `PROVIDER_METADATA` (label + verified
   `baa_capable` / `eu_hostable` / `zdr` flags — do not guess these) and
@@ -218,7 +244,7 @@ suites are the spec: `test_review_api.py` (API + RBAC),
   `cd rag && ../venv/bin/python build_index_v2.py --name safi --source_dir docs`,
   then restart the service.
 
-## 8. Documentation map
+## 9. Documentation map
 
 | Doc | What it is |
 |---|---|
