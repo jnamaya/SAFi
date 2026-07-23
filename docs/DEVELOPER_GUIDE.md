@@ -172,4 +172,5 @@ relies on afterward.
 One important caveat: keeping the philosophical vocabulary doesn't mean
 SAFi tries to replicate the human soul. The terms are borrowed the way
 the Wright brothers borrowed "wing" from birds — for the concept, not to
-replicate the mechanism. SAFi is an actor, not a human agent.
+replicate the mechanism. SAFi is a moral actor — it acts within a moral framework — not a moral
+agent capable of bearing responsibility for it.
