@@ -1,10 +1,11 @@
 # SAFi Developer Guide
 
 **Last updated:** July 2026. This is the orientation document for anyone
-working on SAFi's code — repo map, request lifecycle, the invariants you
-must not break, testing patterns, and recipes for common changes. For the
-product overview see the [README](../README.md); for the formal model see
-the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
+working on SAFi's code — the front-end, back-end, and mobile layouts, how
+to run it locally, the five-faculty architecture and the math behind it,
+multi-agent design, and how to authenticate against and extend the API.
+For the product overview see the [README](../README.md); for the formal
+model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 
 ## Table of Contents
 
