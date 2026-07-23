@@ -6,6 +6,19 @@ must not break, testing patterns, and recipes for common changes. For the
 product overview see the [README](../README.md); for the formal model see
 the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 
+## Table of Contents
+
+1. [Front-end structure](#1-front-end-structure)
+2. [Back-end structure](#2-back-end-structure)
+3. [Mobile structure](#3-mobile-structure)
+4. [Setting up SAFi on your local machine](#4-setting-up-safi-on-your-local-machine)
+5. [Understanding SAFi](#5-understanding-safi)
+6. [The math, briefly](#6-the-math-briefly)
+7. [Multi-agent architecture](#7-multi-agent-architecture)
+8. [SSO authentication](#8-sso-authentication)
+9. [The `/evaluate` gateway](#9-the-evaluate-gateway)
+10. [Internal API architecture](#10-internal-api-architecture)
+
 ## 1. Front-end structure
 
 The front-end is plain HTML, JavaScript, and CSS — no framework. That's a
