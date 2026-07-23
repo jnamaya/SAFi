@@ -313,3 +313,95 @@ Two things worth knowing before touching this code:
   `SAFI_ENABLE_DEMO`) is unrelated to any of this — it never touches
   `_resolve_membership`, and mints a fresh, isolated, 24h-expiring
   sandbox org per visitor instead.
+
+## 9. The `/evaluate` gateway
+
+`POST /api/evaluate` (`safi_app/api/evaluate_api.py:28`) is how an
+external system — your own agent, a Teams/Telegram bot, anything —
+routes its output through SAFi's governance pipeline. **The critical
+thing to get right: this endpoint doesn't generate a response, it
+evaluates one you already have.** You send the prompt *and* your
+agent's already-generated output; SAFi audits and enforces against it.
+There is no Intellect call here — SAFi is the evaluator, never the
+author, and the response reflects that (`aiProvenance.generator` is
+`"external-agent"`, not SAFi).
+
+**Auth:** an `X-API-KEY` header or `Authorization: Bearer <key>`,
+checked against the `api_keys` table (SHA-256 hash, never the raw key)
+via `get_policy_id_by_api_key` (`database.py:4924`). Keys are scoped to
+a **policy**, not an org — mint one with
+`POST /api/policies/<policy_id>/keys`, rotate with
+`.../rotate_key` (`policy_api_routes.py:255-320`). The raw key is shown
+exactly once at creation; only its hash persists after that.
+
+**Request:**
+
+```json
+{
+  "agent_id": "fiduciary",
+  "input": "What's your recommended asset allocation for a 30-year-old?",
+  "output": "Here's what I'd suggest: 80% equities, 20% bonds...",
+  "persona": "safi",
+  "session_id": "my-app-conversation-42"
+}
+```
+
+`agent_id`, `input`, and `output` are required — a `400` lists whichever
+are missing. `persona` defaults to `"safi"`; `session_id` defaults to
+`agent_id` and gets a `gw_` prefix if you don't supply one.
+
+**Response** (built in `orchestrator.py:1178-1190`, then two fields
+added by the route handler):
+
+```json
+{
+  "decision": "approve",
+  "stage": "conscience",
+  "reason": "...",
+  "evaluatedOutput": "Here's what I'd suggest: 80% equities, 20% bonds...",
+  "outputRepaired": false,
+  "conscienceLedger": [ { "value": "Fiduciary Duty", "score": 0.8, "confidence": 0.9 } ],
+  "spirit_score": 8,
+  "drift": 0.02,
+  "policyId": "fiduciary_advisory_policy",
+  "policyVersion": 3,
+  "messageId": "b2e1...",
+  "conversationId": "gw_my-app-conversation-42",
+  "audit_status": "complete",
+  "caller_obligations": {
+    "eu_ai_act_art_50_1": "If this output is presented to end users, the duty to disclose that they are interacting with an AI system rests with the deploying caller."
+  },
+  "aiProvenance": {
+    "ai_generated": true,
+    "marking_standard": "EU-AI-Act-Art-50(2)",
+    "evaluator": "SAFi",
+    "generator": "external-agent"
+  }
+}
+```
+
+The `X-AI-Generated: true` header is set alongside the body
+(`provenance.mark_json_response`). `caller_obligations` exists because
+the Art. 50(1) disclosure duty follows whoever actually faces the end
+user — that's your app, not SAFi, so the gateway reminds you of it on
+every call rather than assuming you've read the compliance docs.
+
+A few things worth knowing before integrating against this:
+
+- **A governed rejection is still `200 OK`.** Blocked or violating
+  output comes back as `"decision": "violation"` with a normal success
+  status — check the `decision` field, not the HTTP status code, to
+  know whether your output was approved.
+- **It's a reduced pipeline, not the full five faculties.** No
+  Intellect (nothing to generate), no Will redirect/reflexion machinery
+  — just Phase 0's injection gate on the input, then Conscience → hard
+  gates → Spirit's alignment threshold, the same `_finalize_draft` path
+  native chat turns use. It still writes a full governance record and a
+  hash-chained audit trail entry (mode `evaluate_gateway`) — evaluated
+  turns are audited exactly like native ones.
+- **Provider governance still applies fail-closed.** The Conscience
+  call respects the org's LLM allow-list the same way native turns do.
+- **There's no rate limiting or request-size cap today.** Nothing in
+  `create_app()` enforces one — worth knowing if you're integrating a
+  high-volume caller, and worth adding before this becomes a
+  production bottleneck.
