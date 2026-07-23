@@ -295,3 +295,21 @@ Two things worth knowing before touching this code:
   MFA is treated as attested by Workspace policy, not verified in code.
   An org relying on `require_mfa` to cover Google logins specifically is
   relying on something the code doesn't check.
+- **`join_policy` defaults to `domain_auto_join`, silently, for every
+  org.** `_resolve_membership()` (`auth.py:156-226`) auto-adds a user as
+  `member` — no invite, no admin approval — when the org's `join_policy`
+  is `domain_auto_join`/`both` (the three values live in
+  `JOIN_POLICIES`, `database.py:4427`) and their email domain matches an
+  org via `get_organization_by_domain()` (`database.py:2650-2659`). That
+  lookup only ever matches orgs with `domain_verified=TRUE`, a flag set
+  exclusively through a deliberate DNS TXT-record proof flow
+  (`organizations.py:9-101`) — so a fresh, unverified org is inert to
+  this path, not silently walk-in-able. But once an admin *does* verify
+  their domain (a natural thing to do while setting up SSO), auto-join
+  is live by default unless they've explicitly switched `join_policy` to
+  `invite_only` in the Organization tab. Worth calling out to anyone
+  configuring SSO for an org that doesn't want unapproved joins.
+  Separately: the live demo (`/api/login/demo`, gated by
+  `SAFI_ENABLE_DEMO`) is unrelated to any of this — it never touches
+  `_resolve_membership`, and mints a fresh, isolated, 24h-expiring
+  sandbox org per visitor instead.
