@@ -168,3 +168,8 @@ the ledger, the enforcement decision, and the exact policy version in
 force — written to a hash-chained, tamper-evident audit trail. That
 record, not the chat reply, is what an auditor or examiner actually
 relies on afterward.
+
+One important caveat: keeping the philosophical vocabulary doesn't mean
+SAFi tries to replicate the human soul. The terms are borrowed the way
+the Wright brothers borrowed "wing" from birds — for the concept, not to
+replicate the mechanism. SAFi is an actor, not a human agent.
