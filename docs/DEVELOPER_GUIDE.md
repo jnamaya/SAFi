@@ -253,3 +253,45 @@ demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
   always come from the attached policy (or the Charter as a floor), never
   from the wizard itself. Custom agents are real; custom scoring criteria
   still route through the policy system.
+
+## 8. SSO authentication
+
+Two OIDC providers are supported today: **Google Workspace** and
+**Microsoft Entra ID (Azure AD)**. **SAML is not implemented yet** — it's
+scoped as future work in
+[SAML_SSO_PLAN.md](SAML_SSO_PLAN.md); don't point a customer at SAML
+support until that plan is actually built. GitHub OAuth also exists in
+`auth.py`, but it's a tool-connection flow (like Google Drive/SharePoint),
+not a login method — don't confuse the two when reading the auth code.
+
+**Local setup:** register an app with each provider and set the client
+credentials in `.env`:
+
+```bash
+# Google — console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# redirect URI must include: {WEB_BASE_URL}/api/callback/google
+
+# Microsoft — portal.azure.com/#view/Microsoft_AAD_RegisteredApps
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+```
+
+**Per-org enforcement** lives in `_org_claim_gate()`
+(`safi_app/api/auth.py:135-169`), called from the Google web/mobile flows
+(`auth.py:248-328`, `333-434`) and the Microsoft flow (`auth.py:615-707`).
+Two things worth knowing before touching this code:
+
+- **Pinning is opt-in, fail-open by default.** Until an org sets
+  `google_hd` (Workspace domain) or `ms_tenant_id` (Entra tenant) — via
+  `get_org_identity_config`/`set_org_identity_config`
+  (`database.py:4594-4711`), surfaced in the Control Panel's Organization
+  tab under "Identity & Sessions" (`ui-settings-org.js:252-301`) — *any*
+  Google or Microsoft account can sign in. Configuring the tenant/domain
+  is what turns on rejection, not a platform default.
+- **`require_mfa` only checks Microsoft's `amr` claim, not Google's.**
+  There's no equivalent MFA-evidence check in the Google branch — Google
+  MFA is treated as attested by Workspace policy, not verified in code.
+  An org relying on `require_mfa` to cover Google logins specifically is
+  relying on something the code doesn't check.
