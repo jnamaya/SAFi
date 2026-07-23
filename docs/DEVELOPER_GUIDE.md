@@ -21,7 +21,7 @@ public/
 ├── package.json, package-lock.json, tailwind.config.js   # Tailwind build only
 ├── css/
 │   ├── input.css          # Tailwind source
-│   ├── main.css            # built output — regenerate after class changes (§2)
+│   ├── main.css            # built output — regenerate after class changes (§3)
 │   ├── styles.css          # hand-written styles outside Tailwind
 │   └── highlight-theme.css
 ├── assets/                # images, SVG icons, static reference/marketing pages
@@ -38,11 +38,60 @@ public/
         ├── ui.js, ui-messages.js, ui-composer-menu.js, ...   # chat UI
         ├── agent-wizard/    # multi-step agent creation flow
         ├── policy-wizard/   # multi-step policy authoring flow
-        ├── settings/        # Control Panel tabs, one module per tab (§6 recipe)
+        ├── settings/        # Control Panel tabs, one module per tab (§7 recipe)
         └── shared/          # shared widgets (tool-picker.js)
 ```
 
-## 2. Local development
+## 2. Back-end structure
+
+The backend is pure Python — it's the core of the system. SAFi uses MySQL
+as its database, also a deliberate choice: it's the database I'm most
+familiar with. Unlike the front-end, this one isn't a free swap — the
+persistence layer (`persistence/database.py`) leans on MySQL-specific SQL
+and runs its own ad hoc schema-migration guards at startup rather than
+using a migration tool, so moving to Postgres or another database would
+mean a real rewrite, not a drop-in change.
+
+SAFi's backend is headless: you can connect to it from any API-based
+client — Teams, Telegram, or anything else that can make API calls.
+
+```
+safi_app/
+├── __init__.py            # create_app() factory; calls init_db() at boot
+├── config.py               # env-driven Config class
+├── models.py
+├── extensions.py
+├── persistence/
+│   ├── database.py          # ~5k lines — all SQL, schema guards, init_db()
+│   └── crypto.py             # Fernet encrypt/decrypt, key rotation
+├── api/                    # Flask blueprints, one per surface
+│   ├── auth.py               # OIDC/SSO, sessions, local login
+│   ├── conversations.py      # chat turn endpoint (process_prompt_endpoint)
+│   ├── evaluate_api.py        # /evaluate gateway for external callers
+│   └── organizations.py, audit_api.py, review_api.py, incidents_api.py, ...
+└── core/
+    ├── orchestrator.py        # SAFi.process_prompt — the §4 phase pipeline
+    ├── orchestrator_mixins/   # suggestions, tasks, tts
+    ├── faculties/             # intellect, will, conscience, spirit, synderesis
+    ├── governance/            # per-org policy definitions (safi/, contoso/, demo/)
+    ├── personas/              # persona system prompts
+    ├── plugins/, mcp_servers/ # tool/plugin integrations
+    ├── services/              # llm_provider, model_routing, provider_governance, rag_service, ...
+    └── rbac.py, permissions.py, provenance.py, totp.py, threat_intel.py, ...
+```
+
+Supporting top-level directories:
+
+```
+run.py, wsgi.py, asgi.py   # entry points — dev server, WSGI, ASGI
+scripts/                    # retention_purge.py, backfill_encryption.py, backup_verify.py, ...
+tests/                       # integration tests against live MySQL (§6)
+rag/                          # index builder + doc sources for agent retrieval
+deploy/systemd/                # example units for production
+teams_bot.py, telegram_bot.py   # bot-channel integrations
+```
+
+## 3. Local development
 
 **Fastest:** `docker compose up` (see the README Quick Start) — includes
 MySQL. **Native:**
@@ -69,7 +118,7 @@ cd public && npx tailwindcss -i ./css/input.css -o ./css/main.css
 # then bump the css/main.css?v=... cache-buster in public/index.html
 ```
 
-## 3. The request lifecycle (read this before touching the pipeline)
+## 4. The request lifecycle (read this before touching the pipeline)
 
 A chat turn enters at `conversations.py:process_prompt_endpoint` and flows
 through `SAFi.process_prompt` (orchestrator.py):
@@ -95,7 +144,7 @@ runs the review-sampling hook, and writes the encrypted per-turn
 turn, it goes on that cursor, isolated the same way (an exception in your
 hook must log and skip, never block the commit).
 
-## 4. Invariants — break these and you break the product's claims
+## 5. Invariants — break these and you break the product's claims
 
 - **Encryption is accessor-layer with dual-read.** Sensitive columns are
   Fernet tokens written via `crypto.encrypt_value` and read via
@@ -130,7 +179,7 @@ hook must log and skip, never block the commit).
   `aiProvenance` body object and/or the `X-AI-Generated` header, and
   per-message `ai_generated` flags in exports.
 
-## 5. Testing
+## 6. Testing
 
 Tests are integration tests against a live local MySQL — no mocks of the
 database layer. Run them individually:
@@ -148,7 +197,7 @@ suites are the spec: `test_review_api.py` (API + RBAC),
 `test_governance_records.py` (transactional write paths),
 `test_retention_purge.py` (purge semantics).
 
-## 6. Recipes
+## 7. Recipes
 
 - **Add an LLM provider:** entry in `PROVIDER_METADATA` (label + verified
   `baa_capable` / `eu_hostable` / `zdr` flags — do not guess these) and
@@ -169,7 +218,7 @@ suites are the spec: `test_review_api.py` (API + RBAC),
   `cd rag && ../venv/bin/python build_index_v2.py --name safi --source_dir docs`,
   then restart the service.
 
-## 7. Documentation map
+## 8. Documentation map
 
 | Doc | What it is |
 |---|---|
