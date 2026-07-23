@@ -191,10 +191,10 @@ SAFi is continuously tested in both live adversarial environments and controlled
 
 Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — it covers:
 
-- **The repository map** — where the faculties, API blueprints, persistence layer, and frontend modules live, and what each is responsible for.
-- **The request lifecycle** — how a prompt flows through the seven phases and why every turn terminates in a single atomic transaction (audit trail + governance record + review sampling together).
-- **The invariants** — the rules that back the compliance claims: accessor-layer encryption with dual-read, evidence-logging in the same transaction, the append-only hash chain, fail-closed provider governance, AI-output marking, and the UI vocabulary.
-- **Testing patterns and recipes** — how the integration tests work, and step-by-step recipes for adding a provider, an API surface, a table, or a Control Panel tab.
+- **Repo structure** — how the front-end (`public/`), back-end (`safi_app/`), and mobile (`mobile/`) trees are laid out, plus local setup.
+- **The architecture** — the five-faculty separation of powers (Synderesis, Intellect, Will, Conscience, Spirit), the Air Gap containment principle, and a condensed math primer linking to the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
+- **Multi-agent design** — how an org runs multiple agents side by side, the persona/policy two-tier binding, and how Synderesis compiles a governance profile fresh on every turn.
+- **SSO authentication** — the supported providers (Google Workspace, Microsoft Entra), local setup, and the org-join policy behavior worth knowing before configuring SSO for a customer.
 
 ## Contributing
 
