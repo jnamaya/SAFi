@@ -549,12 +549,27 @@ increments `version` and snapshots the full policy on *any* field change
 new version rather than rewinding to the old one.
 
 **Two ways to create a policy — only one of them is the real runtime
-path.** `POST /policies` (`policy_api_routes.py:67-144`) is what actually
-creates a policy in the database; use it, or the policy-wizard UI that
-calls it. The Python modules under `core/governance/{safi,contoso,demo}/`
-are **seed data, not live policies** — they're inserted into the
-`policies` table once, at first startup, by an idempotent seeder
+path.** `POST /policies`/`PUT /policies/<id>` (`policy_api_routes.py:67-144`)
+is what actually creates or edits a policy in the database. The Python
+modules under `core/governance/{safi,contoso,demo}/` are **seed data, not
+live policies** — they're inserted into the `policies` table once, at
+first startup, by an idempotent seeder
 (`_ensure_demo_agent_policies_exist()`, `database.py:908-956`, which
 checks `get_policy(pid)` first). After that seeding, the database row is
 authoritative — editing the Python file does nothing on an existing
 deployment, only on a fresh one.
+
+**The policy-wizard is a first-class way to build one, not just a thin
+form over the API.** Unlike the agent-wizard (§7), which can only attach
+an *existing* policy, the policy-wizard (`public/js/ui/policy-wizard/`,
+six steps: identity → worldview → scope → values/standards → tools &
+guardrails → review) lets an admin author a genuinely custom policy —
+name, worldview, scope statement, and fully custom values with a weight
+slider, a hard-gate checkbox, and a rubric builder — then submits to the
+same `POST`/`PUT /policies` endpoint above (`api.js:292-297`). One real
+gap worth knowing: **the wizard's rubric builder is fixed to exactly
+three score points** (+1 / 0 / -1, `ui-policy-wizard-step4.js:265-301`).
+The schema and scoring engine support an arbitrary `scoring_guide` array
+with intermediate points — there's just no UI for adding one. If a
+policy needs finer-grained scoring criteria, that's an API/direct-edit
+case, not something you can build through the wizard.
