@@ -23,6 +23,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 12. [The audit trail & hash chain](#12-the-audit-trail--hash-chain)
 13. [Encryption at rest](#13-encryption-at-rest)
 14. [Retention & legal hold](#14-retention--legal-hold)
+15. [RAG & tool/"MCP" integrations](#15-rag--toolmcp-integrations)
 
 ## 1. Front-end structure
 
@@ -761,3 +762,96 @@ genuinely asserts Phase A does nothing under a hold. There's no test
 for the B/B2/C mid-run gap or for user-initiated delete respecting a
 hold — because neither path enforces it, so there's nothing correct to
 assert.
+
+## 15. RAG & tool/"MCP" integrations
+
+Two separate systems live under `core/`, and they don't share a
+mechanism — knowing which is which matters before you touch either.
+
+**RAG is real vector search, not a wrapper you'd guess at from the
+name.** `retriever.py` does FAISS similarity search (`IndexFlatIP`) over
+`sentence-transformers` embeddings (`all-MiniLM-L6-v2` by default,
+env-overridable). One hybrid carve-out: if the knowledge-base name
+starts with `"bible"` and the query matches a scripture-citation regex
+(`John 3`), it does exact keyword/metadata matching instead of vector
+search — otherwise it's pure semantic search. An agent's KB binding
+lives on the `agents` row (`rag_knowledge_base`, `rag_format_string`),
+and it's the **Intellect** faculty that consumes it directly
+(`intellect.py:51-109` — instantiates a `Retriever`, searches, formats
+each hit with `rag_format_string.format(**doc)`). There's a separate
+`RAGService`/`rag_service.py` class that looks like the real integration
+point but isn't — the orchestrator wires `intellect_engine.retriever`
+directly (`orchestrator.py:219-231`), making `RAGService` dead-code
+adjacent to the real path, not a layer in front of it.
+
+Each knowledge base is its own `.index`/`_metadata.pkl` pair in
+`vector_store/` (e.g. `bible_bsb_v1`, `sop_index`, `safi`). **There's no
+self-service ingestion API** — `documents.py`'s `/documents/extract`
+only pulls text out of an uploaded file for the user to paste into a
+prompt; it never touches a vector store. Adding org documents to RAG
+means running `rag/build_index_v2.py` yourself; there's no incremental
+update either — it's a full re-embed that overwrites the index files,
+and a running process needs a restart to pick up the new one (each
+`Retriever` loads its index once, at construction). One thing worth a
+security note: the metadata side of each index is a Python `pickle`
+file, and `retriever.py`'s own comment flags `pickle.load` as an
+RCE-shaped risk if that file ever came from an untrusted source — it
+doesn't today, since index-building is a local, admin-run script, but
+it's a reason not to make index generation self-service later without
+addressing this first.
+
+**"MCP" doesn't mean the real Model Context Protocol at runtime — this
+is worth being precise about.** `mcp_manager.py` imports the genuine SDK
+(`from mcp import ClientSession, StdioServerParameters`), but the
+connection function ends in a bare `pass` with a comment admitting the
+context manager is never held open, `MCPManager.initialize()` is defined
+but never called anywhere in the app, and the config file
+(`mcp_servers.json`) is empty. What actually runs tools is
+`execute_tool`'s hardcoded if/elif chain, calling plain in-process async
+functions from `core/mcp_servers/*.py` directly — no JSON-RPC, no
+subprocess/SSE transport, none of the actual protocol. Functionally it
+works fine; just don't expect to find real MCP wire semantics if you go
+looking for them.
+
+**`plugins/` and `mcp_servers/` are different mechanisms, not two names
+for the same thing.** `core/plugins/*` (e.g. `bible_scholar_readings.py`)
+are always-run context injectors — called concurrently *before* the
+Intellect prompt is even built, feeding a `preformatted_context_string`
+the same way RAG results do. `core/mcp_servers/*` are on-demand: the LLM
+has to propose calling one as a tool-call intent, and it only runs if
+approved.
+
+**Sequencing, and why it matters for the Air Gap principle (§5):**
+Intellect proposes a tool call → Will's `evaluate_tool_intent` gates it
+→ only if approved does `mcp_manager.execute_tool` actually run, looping
+the result back to Intellect (up to `MAX_AGENT_TURNS`). Conscience and
+Spirit only ever see the final text output, after tool results are
+already in hand — they score the finished response, not the tool-use
+process.
+
+**Two similarly-named keys control tool access, and only one of them
+actually does anything today.** `agents.tools_json` (→
+`profile["tools"]`) controls which tool *schemas* get advertised to the
+LLM at all — this is what's wired up and effective. Separately,
+`WillGate.evaluate_tool_intent` (`will.py:231-238`) checks
+`profile.get("allowed_tools", [])` as what looks like the real security
+gate on tool use. **Nothing in the app ever populates
+`profile["allowed_tools"]`** for a real agent — it only appears in a
+unit test and in a comment describing a `will_rules` shape that no
+loading code actually copies out. An empty list skips the gate entirely,
+so as it stands today, `allowed_tools` is a designed control that isn't
+wired to anything — don't rely on it as an enforcement point until
+someone actually populates it from agent/policy config.
+
+**Adding a new tool integration** (no formal interface exists — this is
+the ad hoc pattern every current integration follows):
+1. Add `core/mcp_servers/your_tool.py` with plain `async def` functions
+   (model it on `google_maps.py` or `web_search.py`).
+2. Register its schema in `MCPManager.get_tools_for_agent` and
+   `list_all_tools` (`mcp_manager.py:57-327`).
+3. Add a dispatch branch in `execute_tool` (`mcp_manager.py:419-502`).
+4. Add the tool name to the agent's `tools_json`
+   (`agent_api_routes.py:81,116`).
+5. Add it to `READ_ONLY_TOOLS` (`will.py:32-40`) if it's read-only, or it
+   gets routed through the deterministic write-tool approval path
+   instead.
