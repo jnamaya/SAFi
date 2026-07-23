@@ -19,6 +19,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 8. [SSO authentication](#8-sso-authentication)
 9. [The `/evaluate` gateway](#9-the-evaluate-gateway)
 10. [Internal API architecture](#10-internal-api-architecture)
+11. [Setting up a policy](#11-setting-up-a-policy)
 
 ## 1. Front-end structure
 
@@ -489,3 +490,71 @@ authenticated user (e.g. a conversation the session user owns) rather
 than an `org_id` path parameter, but verify the specific route you're
 touching rather than assuming — don't take "no org-match check visible"
 as license to skip adding one where it's actually needed.
+
+## 11. Setting up a policy
+
+Policies are plain dicts/JSON, not classes — no schema migration to
+worry about when you add a value. A single value entry looks like this
+(verbatim, `core/governance/contoso/policy.py:54-77`):
+
+```python
+{
+    "value": "Mission Alignment",
+    "weight": 0.10,
+    "definition": "The response must support Contoso's corporate mission and avoid harm to clients or partners.",
+    "rubric": {
+        "description": "Checks whether the assistant's behavior supports the mission.",
+        "scoring_guide": [
+            {"score": 1.0, "descriptor": "Excellent: Clearly advances the mission."},
+            {"score": 0.0, "descriptor": "Neutral: Generic guidance."},
+            {"score": -1.0, "descriptor": "Violation: Undermines the mission or harms trust."},
+        ],
+    },
+}
+```
+
+`weight` is a float; add `"hard_gate": true` to make it a pass/fail gate
+instead of a scored value — hard-gate values are pinned to `weight=0.0`
+and excluded from the Spirit EMA (§6, §7), and a score of `-1` on one
+trips Will's Pass 2 regardless of the alignment average. `rubric` needs
+either a `description` or a non-empty `scoring_guide` — `_has_usable_rubric()`
+(`synderesis.py:220-237`) rejects anything with neither, both at save
+time and at compile time.
+
+**The Charter isn't a fallback — it always applies alongside a policy.**
+It lives in `org_charter` (`mission` text + `core_values` JSON,
+`database.py:196-206`). `Synderesis.apply_charter()`
+(`synderesis.py:396-484`) blends Charter and policy values by weight, per
+the org's `governance_split` setting (default 0.40): Charter@0.40 +
+policy@0.60 when both exist, Charter@1.0 if the agent has no policy,
+policy@1.0 if the org has no Charter. Hard gates from either tier are
+deduped by name and always kept at weight 0 — you can't dilute a hard
+gate by having it appear in both.
+
+**Scope is enforced as an injected hard gate, not a separate mechanism.**
+A policy's `scope_statement` (or a persona's, if the policy doesn't set
+one — policy always wins when both are present) gets turned into a
+`weight=0, hard_gate=true` "Scope Compliance" value by
+`_inject_scope_compliance()` (`synderesis.py:101-180`), then evaluated by
+Conscience and gated by Will like any other hard gate.
+
+**Every edit is a new version — there's no separate publish step.**
+`policies` is the live row; `policy_versions` is append-only history with
+**no foreign key back to `policies`** (dropped on purpose,
+`database.py:260-268`) so history survives even if the policy row itself
+is deleted — that's the whole point, for audit. `update_policy()`
+increments `version` and snapshots the full policy on *any* field change
+(`database.py:2501-2531`); restoring an old version just calls
+`update_policy()` with the old content, which — deliberately — creates a
+new version rather than rewinding to the old one.
+
+**Two ways to create a policy — only one of them is the real runtime
+path.** `POST /policies` (`policy_api_routes.py:67-144`) is what actually
+creates a policy in the database; use it, or the policy-wizard UI that
+calls it. The Python modules under `core/governance/{safi,contoso,demo}/`
+are **seed data, not live policies** — they're inserted into the
+`policies` table once, at first startup, by an idempotent seeder
+(`_ensure_demo_agent_policies_exist()`, `database.py:908-956`, which
+checks `get_policy(pid)` first). After that seeding, the database row is
+authoritative — editing the Python file does nothing on an existing
+deployment, only on a fresh one.
