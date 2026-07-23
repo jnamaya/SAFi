@@ -738,6 +738,28 @@ function attachEventListeners() {
     }
   }
 
+  // 3. Guest / Demo Login
+  // No OAuth involved, so unlike Microsoft this doesn't need the Browser
+  // plugin — a same-origin-with-credentials fetch to the real backend is
+  // enough. On native, the default <a href="/api/login/demo"> would
+  // navigate against the bundled local assets (spoofed origin) instead of
+  // the real server, 404ing before the session cookie is ever set.
+  const demoBtn = document.getElementById('login-demo-button');
+  if (demoBtn && isNative) {
+    demoBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        await fetch('https://safi.selfalignmentframework.com/api/login/demo', {
+          credentials: 'include'
+        });
+        window.location.href = '/';
+      } catch (err) {
+        console.error('[Demo] Guest login failed:', err);
+        ui.showToast('Could not start guest session.', 'error');
+      }
+    });
+  }
+
   // --- Chat Composer ---
   if (ui.elements.sendButton) {
     ui.elements.sendButton.addEventListener('click', () => { hapticImpactLight(); chat.sendMessage(activeProfileData, user); });
