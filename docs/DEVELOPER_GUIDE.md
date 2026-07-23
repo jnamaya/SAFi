@@ -177,3 +177,32 @@ SAFi tries to replicate the human soul. The terms are borrowed the way
 the Wright brothers borrowed "wing" from birds — for the concept, not to
 replicate the mechanism. SAFi is a moral actor — it acts within a moral framework — not a moral
 agent capable of bearing responsibility for it.
+
+## 6. The math, briefly
+
+The full formal model — every stage's signature, the reflexion-retry
+mechanics, and the worked equations — lives in
+[MATHEMATICAL_SPECIFICATION.md](MATHEMATICAL_SPECIFICATION.md). This is
+just enough notation to read that document without starting cold.
+
+**Core objects per turn `t`:**
+
+| Symbol | Meaning |
+|---|---|
+| $x_t$ | Input context (prompt + metadata) |
+| $V = \{(v_i, w_i)\}$ | The agent's value set, weights summing to 1 |
+| $a_t$ | The Intellect's draft response |
+| $L_t = \{(v_i, s_{i,t}, c_{i,t})\}$ | Conscience's ledger: a continuous score $s_{i,t} \in [-1, 1]$ and confidence $c_{i,t} \in [0, 1]$ per value — **not** a discrete $\{-1, 0, +1\}$; the anchors are reference points, not buckets |
+| $A_t \in [0, 1]$ | Spirit's *gating* alignment (confidence-free) — what Will's third pass checks against the threshold |
+| $S_t \in [1, 10]$ | Spirit's *display* coherence score (confidence-weighted) — what the Audit Hub shows as "Alignment." **Not the same number as $A_t$** — the spec is explicit that conflating them is a bug class |
+| $M_t$ | Memory state carried into the next turn |
+
+**Faculties as functions:**
+
+$$a_t = I(x_t, V, M_t) \quad\quad L_t = C(a_t, x_t, V) \quad\quad S_t, d_t, \mu_t = \text{Spirit}(L_t, V, M_t)$$
+
+Will isn't a single decision — it's three separate deterministic passes
+(structural, hard-gate, alignment), each able to redirect independently;
+only the third can trigger a single reflexion retry. See §5 above for why
+the faculties are shaped this way, and the full spec for exactly how each
+pass gates the next.
