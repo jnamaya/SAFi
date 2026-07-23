@@ -1,0 +1,5 @@
+# npm deps for the Capacitor tooling
+node_modules/
+
+# Generated from ../public by build.sh — never hand-edit or commit
+chat/

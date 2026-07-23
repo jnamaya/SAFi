@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SAFi </string>
+    <string name="title_activity_main">SAFi </string>
+    <string name="package_name">com.safi.app</string>
+    <string name="custom_url_scheme">com.safi.app</string>
+    <string name="server_web_client_id">391499357887-ggqkfpcqptcr93raffcv5mhgufmlu92v.apps.googleusercontent.com</string>
+
+</resources>

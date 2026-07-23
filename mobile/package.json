@@ -1,0 +1,32 @@
+{
+  "name": "v1.1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/browser": "^6.0.5",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/haptics": "^7.0.2",
+    "@capacitor/network": "^6.0.3",
+    "@capacitor/preferences": "^7.0.2",
+    "@capacitor/share": "^7.0.2",
+    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1",
+    "@capacitor/toast": "^7.0.2",
+    "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "typescript": "^5.9.3"
+  }
+}
