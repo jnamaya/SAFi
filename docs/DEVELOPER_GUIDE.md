@@ -22,6 +22,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 11. [Setting up a policy](#11-setting-up-a-policy)
 12. [The audit trail & hash chain](#12-the-audit-trail--hash-chain)
 13. [Encryption at rest](#13-encryption-at-rest)
+14. [Retention & legal hold](#14-retention--legal-hold)
 
 ## 1. Front-end structure
 
@@ -696,3 +697,67 @@ directly (bypassing the app entirely) and asserts `crypto.is_token(...)`
 on the raw bytes in `chat_history`, `saved_content`, and `oauth_tokens` —
 proving the data is actually encrypted at rest, not just that the
 encrypt/decrypt functions round-trip in isolation.
+
+## 14. Retention & legal hold
+
+`scripts/retention_purge.py` runs as a daily job (`deploy/systemd/safi-retention-purge.timer`)
+in four phases per org, orchestrated by `purge_org` (326-423):
+
+- **Phase A** — the conversation-delete loop (`purge_conversation_batch`,
+  216-234): deletes expired conversations + their governance records,
+  one commit per batch.
+- **Phase B** (`purge_trail_chains`, 237-276) — reclaims whole orphaned
+  `chat_audit_trail` chains (§12) past the retention cutoff.
+- **Phase B2** (`purge_governance_orphans`, 279-303) — governance
+  records orphaned by a member deleting their own conversation (the
+  org's copy survives that; retention still governs when it's actually
+  destroyed).
+- **Phase C** (`purge_aged_table`, 306-323) — generic aged-row cleanup
+  for `saved_content`, `prompt_usage`, `audit_snapshots`.
+- **Phase D** (`purge_log_files`, 438-475) — a separate global sweep of
+  JSONL log files by filename date, run once for the whole instance,
+  not per org.
+
+**Safety rails are real, not just documented.** A single-runner
+`GET_LOCK('safi_retention_purge')` (61-66) stops overlapping runs; a
+blast-radius guard (`BLAST_PCT=0.25`, `BLAST_ROWS=100_000`, lines 48-49,
+enforced 359-364) `sys.exit(2)`s rather than deleting more than a
+quarter of an org's conversations or 100K rows unless you pass
+`--force`; dry-run mode (352-353) prints counts and writes nothing.
+
+**Legal hold is checked per-batch in Phase A, but only once for the
+whole run everywhere else.** `purge_org` checks
+`cfg["legal_hold"]["active"]` a single time before any phase starts
+(340-342) and bails if set. Phase A *additionally* re-checks
+`legal_hold_active(org_id)` inside its own loop, every batch (line 376)
+— so a hold placed mid-run stops Phase A immediately. **Phases B, B2,
+and C have no equivalent internal check** — they only inherit the
+once-at-start gate. On an org large enough for a purge run to take a
+while, a hold placed after that initial check but before B/B2/C execute
+won't stop them. Worth knowing if you're ever asked whether a hold is
+airtight against mid-run timing, and worth fixing if you're touching
+this code for another reason.
+
+**User-initiated deletion doesn't check legal hold at all.**
+`delete_conversation`/`delete_all_conversations` (`database.py:2089-2136`)
+— confirmed by grep, no `legal_hold_active` reference in either function.
+A member can delete their own conversation during an active hold; only
+the org's separate governance-record copy is protected (by Phase B2's
+purge-timing, not by any hold check on the user's own delete path). What
+*is* solid: both functions are properly atomic — the audit-trail
+snapshot (§12) and the actual `DELETE` share one cursor and commit
+together (line 2110 / 2133), so there's no window where a delete
+succeeds without leaving a trail entry.
+
+**Legal hold itself** lives as JSON under `organizations.settings`, not
+a dedicated table — read via `get_org_retention_config` (3100-3129),
+written via `set_org_retention_config` (3131-3189). Activating a hold
+**requires a non-empty reason** (line 3172, raises otherwise) and both
+`legal_hold_set`/`legal_hold_cleared` are evidence-logged.
+
+**Test coverage matches the code, not the docs' claims.**
+`tests/test_retention_purge.py::test_legal_hold_blocks_everything` (142)
+genuinely asserts Phase A does nothing under a hold. There's no test
+for the B/B2/C mid-run gap or for user-initiated delete respecting a
+hold — because neither path enforces it, so there's nothing correct to
+assert.
