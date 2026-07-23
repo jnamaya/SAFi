@@ -740,16 +740,21 @@ function attachEventListeners() {
 
   // 3. Guest / Demo Login
   // No OAuth involved, so unlike Microsoft this doesn't need the Browser
-  // plugin — a same-origin-with-credentials fetch to the real backend is
-  // enough. On native, the default <a href="/api/login/demo"> would
-  // navigate against the bundled local assets (spoofed origin) instead of
-  // the real server, 404ing before the session cookie is ever set.
+  // plugin. But it IS cross-origin — bundled assets are served under a
+  // spoofed local origin (mobile/capacitor.config.ts server.hostname),
+  // different from the real backend host below. ?client=native asks the
+  // backend for a plain JSON response instead of a 302 redirect: a
+  // fetch() that follows a redirect needs BOTH hops to pass CORS, a
+  // single JSON response only needs the one. On native, the default
+  // <a href="/api/login/demo"> would navigate against the bundled local
+  // assets instead of the real server, 404ing before the session cookie
+  // is ever set.
   const demoBtn = document.getElementById('login-demo-button');
   if (demoBtn && isNative) {
     demoBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
-        await fetch('https://safi.selfalignmentframework.com/api/login/demo', {
+        await fetch('https://safi.selfalignmentframework.com/api/login/demo?client=native', {
           credentials: 'include'
         });
         window.location.href = '/';

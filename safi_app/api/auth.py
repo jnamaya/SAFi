@@ -536,6 +536,12 @@ def login_demo():
     - RESUMABLE: Checks for 'safi_demo_id' cookie to reuse existing session.
     - CLEANUP: Triggers cleanup of old accounts.
     - DISABLED: Returns 404 if SAFI_ENABLE_DEMO is false.
+    - NATIVE: ?client=native returns JSON instead of a 302 redirect. The
+      Capacitor app calls this cross-origin (bundled assets are served
+      under a spoofed local origin); a fetch() that follows a redirect
+      needs BOTH hops to pass CORS, while a single JSON response only
+      needs the one. The session cookie itself is unaffected either way —
+      Flask sets it on whatever response is returned.
     """
     if not Config.ENABLE_DEMO_LOGIN:
         return jsonify({"error": "Demo login is not available on this instance."}), 404
@@ -598,7 +604,10 @@ def login_demo():
                            extra_context={"is_demo": True})
         
         # 5. Return Response with Cookie
-        resp = redirect('/')
+        if request.args.get('client') == 'native':
+            resp = jsonify({"ok": True})
+        else:
+            resp = redirect('/')
         # Set cookie for 24 hours (86400 seconds)
         resp.set_cookie('safi_demo_id', user_to_login['id'], max_age=86400, httponly=True, samesite='Lax')
         return resp
