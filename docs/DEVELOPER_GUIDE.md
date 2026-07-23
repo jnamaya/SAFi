@@ -206,3 +206,50 @@ Will isn't a single decision — it's three separate deterministic passes
 only the third can trigger a single reflexion retry. See §5 above for why
 the faculties are shaped this way, and the full spec for exactly how each
 pass gates the next.
+
+## 7. Multi-agent architecture
+
+SAFi isn't single-agent — an org runs as many agents side by side as it
+wants. Each is a row in the `agents` table (`persistence/database.py:283-301`):
+identity (name, avatar, worldview, style), a `policy_id`, its own model
+per faculty (`intellect_model`/`will_model`/`conscience_model`), a scope
+statement, a tool allow-list, and a `visibility` level (private / member /
+auditor / editor / admin) gating who in the org can see it. `list_agents()`
+(`database.py:2313-2340`) always returns the caller's own agents plus
+org-mates' agents whose visibility clears the caller's role; built-in
+demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
+
+- **Persona and policy are two tiers, not one binding.** `core/personas/*.py`
+  (bible_scholar, contoso_admin, fiduciary, health_navigator, safi_steward,
+  socratic_tutor) are default templates — each ships a fallback `policy_id`,
+  but that's just a default an agent row can override. Policies are their
+  own versioned entity (`policies` / `policy_versions`), so the same
+  persona can run under different policies across agents, or be
+  reattached to a new one without touching its identity. See
+  `core/governance/demo/policies.py` for the two-tier model spelled out.
+- **Synderesis compiles fresh every turn, not once at agent creation.**
+  `Synderesis.get_profile()` (`faculties/synderesis.py:553-622`) — "the
+  sole governance compiler" — resolves persona → policy → org Charter into
+  the normalized value set, rubric set, and scope hard-gate that feed the
+  rest of the pipeline (§5, §6). It runs per message from
+  `api/conversations.py`, through a caching wrapper keyed on a governance
+  fingerprint (`SAFiInstanceCache.get_or_create`, `database.py:128-134`) —
+  not once at creation and cached forever. Practical consequence: editing
+  a policy's values takes effect on the very next turn, for every agent
+  attached to it, with no redeploy or per-agent rebuild step.
+- **Selecting an agent is per-user, not per-conversation.** Agent choice
+  lives on the user (`users.active_profile`, `database.py:67`), read on
+  every send (`conversations.py:505`). Switching (`PUT /api/me/profile`,
+  `auth.py:1083`) forces a full page reload and starts a new conversation
+  (`app.js:628-650`) — there's no live, mid-thread agent switcher.
+  `ui-model-selector.js` is a separate concern: it only picks the LLM
+  model per faculty, not the agent itself.
+- **The agent-wizard creates real agents, not just cosmetic variants.**
+  `public/js/ui/agent-wizard/` is five steps — identity + policy attach,
+  tools, model, safety, review — and produces a genuine new agent row
+  (new `agent_key`, custom name/avatar/scope/model). Step 1 lets an admin
+  attach an existing org policy or fall back to "Charter only." What it
+  doesn't do is let an admin author values/rubrics inline: scored values
+  always come from the attached policy (or the Charter as a floor), never
+  from the wizard itself. Custom agents are real; custom scoring criteria
+  still route through the policy system.
