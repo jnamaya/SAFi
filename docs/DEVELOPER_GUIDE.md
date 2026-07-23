@@ -405,3 +405,73 @@ A few things worth knowing before integrating against this:
   `create_app()` enforces one — worth knowing if you're integrating a
   high-volume caller, and worth adding before this becomes a
   production bottleneck.
+
+## 10. Internal API architecture
+
+13 Flask blueprints live under `safi_app/api/`, all registered in
+`create_app()` (`safi_app/__init__.py:104-132`) with the same
+`url_prefix='/api'` — there's no per-blueprint prefix; each route's own
+path carries the resource nesting (e.g.
+`/organizations/<org_id>/audit/filters`).
+
+**RBAC is two separate checks, not one — this is the thing to
+internalize.** `safi_app/core/rbac.py` (72 lines total) provides:
+
+- `require_role(role)` — hierarchical: `ROLES = {admin: 4, editor: 3,
+  auditor: 2, member: 1}`, passes if the caller's role outranks the
+  required one.
+- `require_any_role(*roles)` — set membership, for rules the hierarchy
+  can't express (e.g. the audit/review reviewer set is `admin|auditor`
+  — editors outrank auditors but aren't reviewers).
+
+Both read `session['user']['role']` and return
+`{"error": "Forbidden: ..."}`, `403` on failure. **Neither one looks at
+`org_id` at all.** A `member` at Org A satisfies `require_role('member')`
+regardless of whose URL they're hitting — the role decorator only
+answers "is this user privileged enough," never "privileged enough *for
+this org's data*." That second question is a separate, mandatory check
+every org-scoped route has to add itself:
+
+```python
+# safi_app/api/audit_api.py:31-32
+def _org_forbidden(org_id):
+    return str(org_id) != str(get_current_org_id())
+```
+
+```python
+# safi_app/api/audit_api.py:72-76
+@audit_bp.route('/organizations/<org_id>/audit/filters', methods=['GET'])
+@require_any_role(*OBSERVER_ROLES)
+def audit_filters(org_id):
+    if _org_forbidden(org_id):
+        return jsonify({"error": "Forbidden"}), 403
+    ...
+```
+
+**Recipe: adding a new API surface.** Copy the shape above —
+`_org_forbidden` (or import the one from `audit_api.py`) plus the role
+decorator on every route touching a specific org's data — then register
+the blueprint next to the others in `create_app()`:
+
+```python
+from .api.my_feature import my_bp
+app.register_blueprint(my_bp, url_prefix='/api')
+```
+
+Skipping the org-match check because the role decorator "already passed"
+is exactly the mistake this pattern exists to prevent — it repeats
+verbatim across `records_api.py`, `incidents_api.py`, `organizations.py`,
+and `review_api.py` (each with its own `_org_forbidden`), because there's
+no shared middleware enforcing it; it's a convention every route owner
+has to apply by hand.
+
+**Exceptions, not bugs:** `auth.py` runs pre-session (login itself), so
+RBAC doesn't apply. `evaluate_api.py` authenticates via a policy-scoped
+API key (§9), not session RBAC, by design. A few files —
+`conversations.py`, `agent_api_routes.py`, `model_api_routes.py`,
+`profile_api_routes.py`, `documents.py` — don't show the same
+`_org_forbidden` grep hits; that likely means they scope by the
+authenticated user (e.g. a conversation the session user owns) rather
+than an `org_id` path parameter, but verify the specific route you're
+touching rather than assuming — don't take "no org-match check visible"
+as license to skip adding one where it's actually needed.
