@@ -550,6 +550,32 @@ def _standalone_base(raw_persona: Dict[str, Any]) -> Dict[str, Any]:
     return _inject_scope_compliance(normalized)
 
 
+def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Layer-2 tool authorization for WillGate.evaluate_tool_intent.
+
+    The advertised tool list (agents.tools_json / a persona's "tools") is the
+    baseline authorization; a policy's will_rules.allowed_tools narrows it
+    further when present (it cannot grant tools the agent wasn't given).
+    Always stamps profile["allowed_tools"] — an agent with no tools gets [],
+    which the Will treats as deny-all: a tool intent from an agent that was
+    offered no tools is never legitimate. Also hoists
+    will_rules.tool_parameter_constraints to the top-level key the Will reads.
+    """
+    advertised = [t for t in (profile.get("tools") or []) if isinstance(t, str)]
+    wr = profile.get("will_rules")
+    policy_allowed = wr.get("allowed_tools") if isinstance(wr, dict) else None
+    if isinstance(policy_allowed, list) and policy_allowed:
+        allowed_set = {t for t in policy_allowed if isinstance(t, str)}
+        profile["allowed_tools"] = [t for t in advertised if t in allowed_set]
+    else:
+        profile["allowed_tools"] = advertised
+    constraints = wr.get("tool_parameter_constraints") if isinstance(wr, dict) else None
+    if isinstance(constraints, dict) and "tool_parameter_constraints" not in profile:
+        profile["tool_parameter_constraints"] = constraints
+    return profile
+
+
 def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     """
     THE sole governance compiler.
@@ -661,6 +687,11 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_name"] = policy_name
     final["org_name"] = org_name
     final["has_charter"] = bool(charter)
+
+    # 6b. Stamp the effective tool authorization so the Will's per-intent gate
+    # (evaluate_tool_intent Step 1) actually enforces the advertised tool list
+    # rather than trusting schema advertisement alone.
+    final = _stamp_tool_authorization(final)
 
     # 7. Backfill rephrase directives so every agent (notably custom/DB agents,
     #    which define none) has a corrective ethical_violation directive. Any

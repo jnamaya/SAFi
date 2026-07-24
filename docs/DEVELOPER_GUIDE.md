@@ -842,19 +842,21 @@ Spirit only ever see the final text output, after tool results are
 already in hand — they score the finished response, not the tool-use
 process.
 
-**Two similarly-named keys control tool access, and only one of them
-actually does anything today.** `agents.tools_json` (→
-`profile["tools"]`) controls which tool *schemas* get advertised to the
-LLM at all — this is what's wired up and effective. Separately,
-`WillGate.evaluate_tool_intent` (`will.py`) checks
-`profile.get("allowed_tools", [])` as what looks like the real security
-gate on tool use. **Nothing in the app ever populates
-`profile["allowed_tools"]`** for a real agent — it only appears in a
-unit test and in a comment describing a `will_rules` shape that no
-loading code actually copies out. An empty list skips the gate entirely,
-so as it stands today, `allowed_tools` is a designed control that isn't
-wired to anything — don't rely on it as an enforcement point until
-someone actually populates it from agent/policy config.
+**Tool access is two layers — advertisement and enforcement — and both
+are wired.** `agents.tools_json` (→ `profile["tools"]`) controls which
+tool *schemas* get advertised to the LLM. Separately, Synderesis stamps
+`profile["allowed_tools"]` at compile time
+(`_stamp_tool_authorization()`, `synderesis.py`): the advertised list is
+the baseline, and a policy's `will_rules.allowed_tools` can *narrow* it
+(never grant tools the agent wasn't given). `WillGate.evaluate_tool_intent`
+(`will.py`) then blocks any tool intent whose name isn't on that list —
+before the read-only fast pass, so it catches hallucinated or injected
+tool names even for read-only tools. **An empty list is deny-all**, not
+skip: an agent with no tools has no legitimate tool intents. The only
+profile that skips the check is one with no `allowed_tools` key at all,
+i.e. not built by the governance compiler. The same compile step hoists
+a policy's `will_rules.tool_parameter_constraints` to the top-level key
+the Will's Step-3 parameter gate reads.
 
 **Adding a new tool integration** (no formal interface exists — this is
 the ad hoc pattern every current integration follows):
@@ -939,5 +941,6 @@ orphaned test rows behind, which is one more reason to use a throwaway
 schema. A few are worth knowing by name because the compliance docs
 lean on them: `test_encryption_at_rest.py` asserts on raw MySQL bytes
 (§13), `test_retention_purge.py` covers the purge phases and legal
-hold (§14), and `test_will_tool_gate.py` is the only place the
-`allowed_tools` gate (§15) is exercised at all.
+hold (§14), and `test_will_tool_gate.py` covers the `allowed_tools`
+gate and its compile-time stamping (§15) — it's also the one file in
+`tests/` that runs without a database.

@@ -228,8 +228,14 @@ class WillGate:
           3. Fast pass / Auto approve for allowed tools.
         """
         # --- Step 1: Profile allow-list check (Structural Security) ---
-        allowed_tools: List[str] = profile.get("allowed_tools", [])
-        if allowed_tools and tool_name not in allowed_tools:
+        # Compiled profiles (synderesis.get_profile) always carry allowed_tools:
+        # the advertised tool list, optionally narrowed by the policy's
+        # will_rules.allowed_tools. An empty list is deny-all — an agent that
+        # was offered no tools has no legitimate tool intents (a name arriving
+        # here anyway means hallucination or injection). Only a profile with no
+        # key at all (not built by the compiler) skips the check.
+        allowed_tools: Optional[List[str]] = profile.get("allowed_tools")
+        if allowed_tools is not None and tool_name not in allowed_tools:
             self.log.warning(f"WillGate: Blocked '{tool_name}' — not in agent's allowed_tools.")
             return (
                 "violation",
