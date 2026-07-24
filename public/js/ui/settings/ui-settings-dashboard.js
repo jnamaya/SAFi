@@ -39,12 +39,18 @@ function consistencyLabel(drift) {
 const ALIGNMENT_HELP =
     'How well this response expressed the agent’s declared values, as assessed by ' +
     'the governance audit. Each value’s score is weighted by importance and audit ' +
-    'confidence, then combined into a 1–10 grade for the turn. Higher is better.';
+    'confidence, then combined into a 1–10 grade for the turn. Higher is better. ' +
+    'Expect both this and Consistency to look unstable while a policy is still being ' +
+    'tested — scores settle down once enough turns accumulate against a finished ' +
+    'policy, so it’s best to test a policy through to stability before relying on it in production.';
 const CONSISTENCY_HELP =
     'How closely this turn’s value expression matches the agent’s own historical ' +
     'pattern. 100% means the agent behaved as it usually does; a low value flags an ' +
     'out-of-character turn, even if that turn scored well on its own. N/A on an ' +
-    'agent’s first turns, before a history exists.';
+    'agent’s first turns, before a history exists. Expect both this and Alignment to ' +
+    'look unstable while a policy is still being tested — scores settle down once enough ' +
+    'turns accumulate against a finished policy, so it’s best to test a policy through to ' +
+    'stability before relying on it in production.';
 
 // The WillGate is pure code with a finite set of exit paths, so its reason
 // codes are enumerable and translated deterministically — ported verbatim
