@@ -11,13 +11,13 @@
   <script src="js/lib/marked.min.js"></script>
   <script src="js/lib/purify.min.js"></script>
   <link rel="stylesheet" href="css/highlight-theme.css">
-  <!-- No external font loads: the sans stack resolves to the OS UI font
-       (SF Pro / Segoe UI / Roboto), keeping the app fully self-hosted —
-       no fonts.googleapis.com callout on every page view. -->
+  <!-- Inter is self-hosted (see @font-face in css/styles.css) — no
+       fonts.googleapis.com callout; the app loads zero external resources. -->
+  <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <script src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
   <link href="css/main.css?v=20260722.4" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=20260724.2">
+  <link rel="stylesheet" href="css/styles.css?v=20260724.3">
   <script>
     const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
