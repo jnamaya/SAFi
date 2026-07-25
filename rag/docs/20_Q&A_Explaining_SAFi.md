@@ -32,6 +32,11 @@ Because LLMs are stochastic generators that cannot police themselves at runtime.
 ## Is this too slow and expensive?
 No. SAFi's published benchmarks: sub-5-second average latency at approximately $0.005 per interaction. The Will faculty runs in sub-millisecond time because it is pure Python with no network call. The Conscience uses smaller open-source models. The full five-faculty pipeline is cheaper and faster than monolithic guardrails using large commercial models for validation.
 
+## Why does the demo run a small model like GLM 4.7 instead of a frontier model?
+Because SAFi is not an intelligent system, it is a governance system, and it is meant to govern any model. Small models are also fast and cheap, which keeps a public demo responsive. Judge SAFi on whether the policy holds, not on the eloquence of the prose underneath it — those are two different products, and only one of them is ours.
+
+This is also the cleanest way to demonstrate the claim. In the domain-compliance benchmark the baseline runs the *same* Intellect model with the governance layers removed, so the 30-point gap on adversarial trap prompts is attributable to governance rather than to a better model. A frontier model would actually make the demonstration weaker, because a well-aligned model behaves reasonably on its own and you could no longer tell which layer deserved the credit.
+
 ## What are SAFi's published benchmarks?
 From 1,824 live governed interactions on the publicly red-teamed Socratic Tutor agent, tested via Reddit and Discord between 2025-11-21 and 2026-05-25:
 - 99.89% jailbreak defense rate (2 confirmed answer-in-refusal leaks, with no recurrence across the 745 interactions that followed)

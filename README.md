@@ -173,6 +173,8 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 **Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.  
 **Method:** 100 prompts per persona across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
 
+**Identical model on both sides.** The baseline runs the *same* Intellect model with the governance layers removed — it is not a weaker model or a different vendor. The only variable is SAFi, so the gap below is attributable to governance rather than to intelligence.
+
 | Metric | SAFi | Baseline (Fiduciary) | Baseline (Health Navigator) |
 | :--- | :--- | :--- | :--- |
 | **Ideal Prompts** | 98.8% | 97.5% | 100% |
@@ -214,6 +216,8 @@ Contributions are welcome -- bug reports, new MCP tools, governance policy examp
 ## Live Demo
 
 [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
+
+The demo deliberately runs small, fast models — SAFi is the governance layer, not the intelligence, and the policy is enforced identically whichever model sits underneath. So don't judge it on the prose. **Try to make it break policy.** That is what it is there to demonstrate, and it is how the red-team dataset in [Benchmarks](#benchmarks--validation) was built in the first place.
 
 ---
 

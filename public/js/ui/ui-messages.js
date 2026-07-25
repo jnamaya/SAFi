@@ -5,6 +5,7 @@ import * as ui from './ui.js';
 import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import { playSpeech } from '../services/tts-audio.js';
 import { iconPlay } from './ui-render-constants.js';
+import { getActiveModelLabel } from './ui-model-selector.js';
 
 // --- ICONS ---
 const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
@@ -822,6 +823,20 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>`
         : '';
 
+    // SAFi is the governance layer, not the intelligence. Visitors otherwise read
+    // a small model's prose as SAFi's quality, so name the model and the claim
+    // here — the last surface before the first message sets the expectation.
+    // Deliberately neutral: this renders in customer deployments too, not only
+    // the public demo.
+    const modelLabel = getActiveModelLabel();
+    const modelHtml = modelLabel
+        ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">
+             Running <span class="font-medium">${escapeHtml(modelLabel)}</span> — SAFi is the
+             governance layer, not the intelligence. The policy is enforced identically
+             whichever model sits underneath.
+           </p>`
+        : '';
+
     container.innerHTML = `
       <div class="text-center pt-8 pb-4">
         ${greetingHtml}
@@ -837,6 +852,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
         ${scopeHtml}
         ${kbHtml}
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
+        ${modelHtml}
         <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
           Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar.
         </p>

@@ -44,6 +44,16 @@ function _renderDropdown() {
             </svg>` : ''}
         </button>`;
     }).join('');
+
+    // Opening this menu is the moment someone notices the models are small and
+    // unfamiliar and quietly concludes SAFi is unserious. Answer it in place:
+    // the model is a performance choice, the governance is the product.
+    dropdown.insertAdjacentHTML('beforeend', `
+        <p class="mt-1 pt-2 px-3 pb-1 border-t border-neutral-200 dark:border-neutral-700
+                  text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">
+            SAFi governs whichever model you pick — enforcement is identical. These are
+            fast, low-cost models chosen to keep responses quick.
+        </p>`);
 }
 
 function _attachDropdownListener() {
