@@ -37,6 +37,16 @@ Usage
       --signatures ../../safi_app/core/threat_intel.py \
       --out summary.json --manifest manifest.sha256
 
+  # Adjudication loop — the way to get a real attack count:
+  #   1. emit the worksheet (publishable) and the transcripts (local only)
+  python3 jailbreak_log_analysis.py /path/to/logs --persona the_socratic_tutor \
+      --signatures ../../safi_app/core/threat_intel.py \
+      --sessions worksheet.csv --dump-sessions review.jsonl
+  #   2. read review.jsonl, fill the verdict column of worksheet.csv
+  #      (attack | benign | mixed + attack_turns), then:
+  python3 jailbreak_log_analysis.py /path/to/logs --persona the_socratic_tutor \
+      --verdicts worksheet.csv --out summary.json
+
 Notes
 -----
 - An "interaction" is one JSONL line (one governed turn).
@@ -55,6 +65,13 @@ Notes
   adversarial traffic, not a total: it misses paraphrase and plain-language
   coercion by design (see Benchmarks/PHASE0_IMPROVEMENT_PLAN.md §1). Report
   it as "at least N attacks", never "N attacks occurred".
+- Attack volume is measured per SESSION, not per prompt. A red-team campaign
+  is mostly turns that carry no signature at all — pretext, escalation,
+  follow-up — so the signature count is a poor proxy for how much attacking
+  happened. --sessions clusters by userId and emits a worksheet; a human marks
+  each session attack/benign/mixed; --verdicts folds the marks back into a
+  count. Between the two bounds the script reports (signature hits below,
+  signalled-session turns above) the adjudicated number is the honest one.
 - "Confirmed jailbreak" is a manual label: review the --dump-interventions
   file (and any approve-decision entries flagged during testing) and record
   the determination in the methodology note. This script counts; it does not
@@ -63,6 +80,7 @@ Notes
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import importlib.util
 import json
@@ -97,7 +115,170 @@ def parse_args() -> argparse.Namespace:
                         "INJECTION_SIGNATURES to produce a floor on adversarial traffic")
     p.add_argument("--manifest", metavar="PATH",
                    help="write a SHA-256 chain-of-custody manifest of every scanned log file")
+    p.add_argument("--sessions", metavar="PATH",
+                   help="write the adjudication worksheet (CSV, no prompt text — publishable)")
+    p.add_argument("--all-sessions", action="store_true",
+                   help="worksheet includes every session, not just those with a signal")
+    p.add_argument("--dump-sessions", metavar="PATH",
+                   help="write full session transcripts for review (JSONL, CONTAINS PROMPT "
+                        "TEXT — keep local, never commit)")
+    p.add_argument("--verdicts", metavar="PATH",
+                   help="read a filled-in worksheet back and report adjudicated attack counts")
     return p.parse_args()
+
+
+# --- session clustering -----------------------------------------------------
+#
+# A "session" is one userId's traffic within the filtered set. That is the unit
+# a human can actually judge: an attack is a campaign of turns, most of which
+# carry no signature at all, so per-prompt counting badly understates it. The
+# script clusters and counts; a human decides which sessions were attacks.
+
+
+def new_session() -> dict:
+    return {"turns": 0, "sig_hits": 0, "sig_cats": set(), "violations": 0,
+            "error_blocks": 0, "days": set(), "first": None, "last": None,
+            "records": []}
+
+
+def session_signals(s: dict) -> bool:
+    """Did anything about this session suggest adversarial intent?"""
+    return s["sig_hits"] > 0 or s["violations"] > 0
+
+
+def assign_session_ids(sessions: dict) -> dict[str, str]:
+    """Session id = short hash of the userId.
+
+    Deliberately NOT an ordinal. An ordinal id depends on which sessions the
+    filters happened to include, so re-running with a different date range
+    would silently repoint an existing worksheet's rows at different users and
+    corrupt the adjudication. Hashing makes the id a property of the user, so
+    a worksheet stays valid across any filter change, and rows that drop out
+    of scope surface as unknown_session_ids instead of quietly shifting.
+
+    The userIds in these logs are opaque provider identifiers, and the hash is
+    one-way, so the worksheet stays publishable.
+    """
+    ids: dict[str, str] = {}
+    taken: dict[str, str] = {}
+    for key in sorted(sessions):
+        digest = hashlib.sha256(str(key).encode("utf-8")).hexdigest()
+        width = 8
+        while digest[:width] in taken and taken[digest[:width]] != str(key):
+            width += 2  # collision: lengthen rather than silently merge sessions
+        sid = f"S{digest[:width]}"
+        taken[digest[:width]] = str(key)
+        ids[key] = sid
+    return ids
+
+
+WORKSHEET_COLUMNS = [
+    "session_id", "turns", "signature_hits", "signature_categories",
+    "governance_violations", "error_blocks", "first_seen", "last_seen",
+    "active_days", "verdict", "attack_turns", "notes",
+]
+
+
+def write_worksheet(path: str, sessions: dict, ids: dict, include_all: bool) -> int:
+    rows = []
+    for key, s in sessions.items():
+        if not include_all and not session_signals(s):
+            continue
+        rows.append({
+            "session_id": ids[key],
+            "turns": s["turns"],
+            "signature_hits": s["sig_hits"],
+            "signature_categories": "|".join(sorted(s["sig_cats"])),
+            "governance_violations": s["violations"],
+            "error_blocks": s["error_blocks"],
+            "first_seen": (s["first"] or "")[:19],
+            "last_seen": (s["last"] or "")[:19],
+            "active_days": len(s["days"]),
+            "verdict": "",        # attack | benign | mixed
+            "attack_turns": "",   # required for mixed; defaults to turns for attack
+            "notes": "",
+        })
+    rows.sort(key=lambda r: (-r["turns"], r["session_id"]))
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=WORKSHEET_COLUMNS)
+        w.writeheader()
+        w.writerows(rows)
+    return len(rows)
+
+
+def write_session_dump(path: str, sessions: dict, ids: dict, include_all: bool) -> int:
+    """Transcripts for the human doing the adjudication. Contains prompts, so
+    it is a local working file — the worksheet is the publishable artifact."""
+    n = 0
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "_meta": "REVIEW FILE — CONTAINS USER PROMPT TEXT. Keep local; do not commit "
+                     "or publish. Only the CSV worksheet and the summary JSON are "
+                     "publishable artifacts.",
+        }, ensure_ascii=False) + "\n")
+        for key, s in sorted(sessions.items(), key=lambda kv: -kv[1]["turns"]):
+            if not include_all and not session_signals(s):
+                continue
+            fh.write(json.dumps({
+                "session_id": ids[key],
+                "turns": s["turns"],
+                "signature_hits": s["sig_hits"],
+                "signature_categories": sorted(s["sig_cats"]),
+                "governance_violations": s["violations"],
+                "transcript": s["records"],
+            }, ensure_ascii=False) + "\n")
+            n += 1
+    return n
+
+
+def read_verdicts(path: str, sessions: dict, ids: dict) -> dict:
+    """Fold a filled-in worksheet back into counts.
+
+    attack  -> every turn in the session counts (a campaign's benign-looking
+               setup turns are part of the attack)
+    mixed   -> only the attack_turns the reviewer recorded
+    benign  -> nothing
+    blank   -> unreviewed, reported separately so partial work is visible
+    """
+    by_id = {ids[key]: (key, s) for key, s in sessions.items()}
+    tally = Counter()
+    attack_turns = 0
+    unknown_ids, bad_rows = [], []
+    with open(path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            sid = (row.get("session_id") or "").strip()
+            if sid not in by_id:
+                unknown_ids.append(sid)
+                continue
+            verdict = (row.get("verdict") or "").strip().lower() or "unreviewed"
+            _, s = by_id[sid]
+            if verdict == "attack":
+                attack_turns += s["turns"]
+            elif verdict == "mixed":
+                raw = (row.get("attack_turns") or "").strip()
+                try:
+                    n = int(raw)
+                except ValueError:
+                    bad_rows.append(f"{sid}: mixed verdict needs a numeric attack_turns")
+                    verdict = "invalid"
+                else:
+                    if not 0 <= n <= s["turns"]:
+                        bad_rows.append(f"{sid}: attack_turns {n} outside 0..{s['turns']}")
+                        verdict = "invalid"
+                    else:
+                        attack_turns += n
+            elif verdict not in ("benign", "unreviewed"):
+                bad_rows.append(f"{sid}: unrecognised verdict {verdict!r}")
+                verdict = "invalid"
+            tally[verdict] += 1
+    return {
+        "worksheet": path,
+        "sessions_by_verdict": dict(tally.most_common()),
+        "adjudicated_attack_turns": attack_turns,
+        "unreviewed_sessions": tally.get("unreviewed", 0),
+        "unknown_session_ids": unknown_ids,
+        "problems": bad_rows,
+    }
 
 
 def load_signatures(path: str) -> tuple[dict[str, list[str]], dict]:
@@ -198,6 +379,8 @@ def main() -> None:
     sig_matched = 0                           # prompts matching >= 1 category
     error_blocks = 0
     parse_errors = 0
+    sessions: dict[str, dict] = defaultdict(new_session)
+    want_sessions = bool(args.sessions or args.dump_sessions or args.verdicts)
     skipped_persona = 0
     skipped_date = 0
     cancelled = 0
@@ -247,15 +430,44 @@ def main() -> None:
                         max_d = d if max_d is None or d > max_d else max_d
                     score = entry.get("spiritScore")
                     spirit_hist[str(score) if score is not None else "null"] += 1
-                    if decision != APPROVE and \
-                            str(entry.get("willReason", "")).startswith(ERROR_BLOCK_PREFIXES):
+                    is_error_block = decision != APPROVE and \
+                        str(entry.get("willReason", "")).startswith(ERROR_BLOCK_PREFIXES)
+                    if is_error_block:
                         error_blocks += 1
+                    hits: list[str] = []
                     if sigs:
                         hits = match_signatures(str(entry.get("userPrompt", "")), sigs)
                         if hits:
                             sig_matched += 1
                             for cat in hits:
                                 sig_cats[cat] += 1
+                    if want_sessions:
+                        # userId is absent on a few early records; they group under one
+                        # pseudo-session rather than vanishing from the worksheet.
+                        s = sessions[str(entry.get("userId") or "<no-userId>")]
+                        s["turns"] += 1
+                        s["sig_hits"] += 1 if hits else 0
+                        s["sig_cats"].update(hits)
+                        if decision != APPROVE and not is_error_block:
+                            s["violations"] += 1
+                        if is_error_block:
+                            s["error_blocks"] += 1
+                        ts = str(entry.get("timestamp") or "")
+                        if d:
+                            s["days"].add(d.isoformat())
+                        if s["first"] is None or ts < s["first"]:
+                            s["first"] = ts
+                        if s["last"] is None or ts > s["last"]:
+                            s["last"] = ts
+                        if args.dump_sessions:
+                            s["records"].append({
+                                "timestamp": ts,
+                                "userPrompt": entry.get("userPrompt"),
+                                "willDecision": decision,
+                                "willReason": entry.get("willReason"),
+                                "signature_categories": hits,
+                                "finalOutput": entry.get("finalOutput"),
+                            })
                     if dump and decision != APPROVE:
                         dump.write(json.dumps({"_file": str(f), **entry}, ensure_ascii=False) + "\n")
             files_used.add(str(f))
@@ -303,6 +515,30 @@ def main() -> None:
                                 "in the methodology note.",
     }
 
+    session_ids: dict[str, str] = {}
+    if want_sessions:
+        session_ids = assign_session_ids(sessions)
+        flagged = [s for s in sessions.values() if session_signals(s)]
+        summary["session_clustering"] = {
+            "unit": "one userId's traffic within the filtered set",
+            "rationale": "An attack is a campaign of turns, most carrying no signature at "
+                         "all. Per-prompt counting understates it; per-session counting "
+                         "with human adjudication does not.",
+            "total_sessions": len(sessions),
+            "sessions_with_a_signal": len(flagged),
+            "turns_in_signalled_sessions": sum(s["turns"] for s in flagged),
+            "signal_definition": "session contains >=1 signature-matched prompt or >=1 "
+                                 "governance intervention",
+            "caution": "turns_in_signalled_sessions is an UPPER bound on adversarial "
+                       "traffic and includes benign users who merely tripped a scope "
+                       "rule; signature counts are a LOWER bound and miss attacks that "
+                       "use no known pattern. The true figure needs the adjudication "
+                       "worksheet, not either bound.",
+        }
+
+    if args.verdicts:
+        summary["adjudication"] = read_verdicts(args.verdicts, sessions, session_ids)
+
     if sigs:
         summary["adversarial_classification"] = {
             "method": "Deterministic substring match of each userPrompt against "
@@ -337,6 +573,28 @@ def main() -> None:
               f"across {len(sig_cats)} categories")
         for cat, n in sig_cats.most_common():
             print(f"                        {n:>5}  {cat}")
+    if want_sessions:
+        sc = summary["session_clustering"]
+        print(f"sessions:             {sc['total_sessions']} total, "
+              f"{sc['sessions_with_a_signal']} with a signal "
+              f"({sc['turns_in_signalled_sessions']} turns)")
+    if args.sessions:
+        n = write_worksheet(args.sessions, sessions, session_ids, args.all_sessions)
+        print(f"worksheet written:    {args.sessions}  ({n} sessions to adjudicate)")
+    if args.dump_sessions:
+        n = write_session_dump(args.dump_sessions, sessions, session_ids, args.all_sessions)
+        print(f"session transcripts:  {args.dump_sessions}  ({n} sessions)")
+        print("                      ^ CONTAINS PROMPT TEXT — keep local, do not commit")
+    if args.verdicts:
+        adj = summary["adjudication"]
+        print(f"adjudicated:          {adj['sessions_by_verdict']}")
+        print(f"attack turns:         {adj['adjudicated_attack_turns']}")
+        if adj["unreviewed_sessions"]:
+            print(f"                      {adj['unreviewed_sessions']} session(s) still unreviewed")
+        for problem in adj["problems"]:
+            print(f"  worksheet problem:  {problem}")
+        if adj["unknown_session_ids"]:
+            print(f"  unknown session ids: {adj['unknown_session_ids'][:5]}")
     if args.manifest:
         # Chain of custody without disclosure: proves the archive these numbers
         # came from has not changed, while publishing no log content.

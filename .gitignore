@@ -80,6 +80,13 @@ purge_profile.py
 # Benchmark backup/scratch snapshots (top-level only; tracked results live in Benchmarks/Results & Scripts)
 /Benchmarks/*.json
 
+# Red-team session transcripts (--dump-sessions / --dump-interventions output).
+# These contain raw user prompts from the demo; only the CSV worksheet and the
+# aggregate summary JSON are publishable. Belt and braces against a stray commit.
+*_review.jsonl
+*sessions_review*
+interventions.jsonl
+
 # Local drafts / blog posts (not for version control)
 docs/building-and-managing-agents-post.md
 

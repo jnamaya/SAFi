@@ -162,6 +162,68 @@ Notably, **neither confirmed jailbreak matched any signature**: both were
 ordinary sentences applying social pressure. Cite this figure as "at least 41",
 never as a count of attacks that occurred.
 
+### Why the prompt count understates the testing: session clustering
+
+An attack is a campaign, not a string. A red-teamer spends most of their turns
+on pretext, escalation, and follow-up, none of which contains a known signature
+— so counting matched prompts measures the least sophisticated fraction of the
+effort. Clustering the same traffic by `userId` shows the gap:
+
+| Measure | Sessions | Turns |
+| :--- | :--- | :--- |
+| Prompts matching a signature | 27 | 41 |
+| All turns from users who tripped ≥1 signature | 27 | 280 |
+| Users with a signature hit **or** a governance intervention | 37 | 370 |
+
+Total distinct sessions in the set: 636. So 5.8% of users account for 20.3% of
+all traffic — attackers persist far longer than ordinary demo visitors.
+
+**Neither bound is the answer.** 41 is too low for the reason above. 370 is too
+high, because it sweeps in benign users who merely tripped a scope rule: one
+asked why the sky is blue and then asked for fewer questions at a time; another
+said only "How are you today" and was blocked as non-STEM. Both bounds are
+reported in `redteam_summary.json` under `session_clustering`, explicitly
+labelled as bounds.
+
+### The adjudication worksheet
+
+The honest number comes from human review of the 37 signalled sessions, which
+is a few hours of work rather than a research project. The tooling supports it
+as a closed loop:
+
+```bash
+# 1. emit the worksheet (publishable) and the transcripts (local only)
+python3 jailbreak_log_analysis.py /path/to/archive \
+    --persona the_socratic_tutor --persona "the socratic tutor" \
+    --signatures ../../safi_app/core/threat_intel.py \
+    --sessions ../Results/redteam_sessions_worksheet.csv \
+    --dump-sessions ~/local-review.jsonl
+
+# 2. read the transcripts, fill the verdict column: attack | benign | mixed
+#    (mixed also needs attack_turns)
+
+# 3. fold the verdicts back into a count
+python3 jailbreak_log_analysis.py /path/to/archive \
+    --persona the_socratic_tutor --persona "the socratic tutor" \
+    --verdicts ../Results/redteam_sessions_worksheet.csv \
+    --out ../Results/redteam_summary.json
+```
+
+[`Results/redteam_sessions_worksheet.csv`](Results/redteam_sessions_worksheet.csv)
+holds the 37 sessions with their signals, turn counts, and date spans, and
+**contains no prompt text** — it is a publishable ledger of how each session was
+judged. The transcript dump does contain prompts and is a local working file,
+gitignored, never committed.
+
+Session ids are a hash of the user identifier rather than a row number, so a
+worksheet stays valid if the date filters change; sessions that fall out of
+scope are reported as unknown ids instead of silently repointing at a different
+user. Verdicts are validated on read — an out-of-range `attack_turns` or an
+unrecognised verdict is rejected and reported, not counted.
+
+Until that review is done, the published figure stays at the conservative
+"at least 41".
+
 ---
 
 ## 5. Confirmed jailbreaks: the manual determination

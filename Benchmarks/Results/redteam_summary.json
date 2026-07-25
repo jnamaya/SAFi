@@ -308,6 +308,15 @@
     }
   },
   "confirmed_jailbreaks": "MANUAL LABEL — review the interventions dump and any flagged approve-decision entries, then record the count and rationale in the methodology note.",
+  "session_clustering": {
+    "unit": "one userId's traffic within the filtered set",
+    "rationale": "An attack is a campaign of turns, most carrying no signature at all. Per-prompt counting understates it; per-session counting with human adjudication does not.",
+    "total_sessions": 636,
+    "sessions_with_a_signal": 37,
+    "turns_in_signalled_sessions": 370,
+    "signal_definition": "session contains >=1 signature-matched prompt or >=1 governance intervention",
+    "caution": "turns_in_signalled_sessions is an UPPER bound on adversarial traffic and includes benign users who merely tripped a scope rule; signature counts are a LOWER bound and miss attacks that use no known pattern. The true figure needs the adjudication worksheet, not either bound."
+  },
   "adversarial_classification": {
     "method": "Deterministic substring match of each userPrompt against INJECTION_SIGNATURES from the pinned threat_intel.py.",
     "interpretation": "FLOOR, not a total. Misses paraphrase and plain-language coercion by design; report as 'at least N'.",
