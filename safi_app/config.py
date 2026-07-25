@@ -178,6 +178,18 @@ class Config:
     # Set to false for private/self-hosted instances that don't need a public demo.
     ENABLE_DEMO_LOGIN = os.environ.get("SAFI_ENABLE_DEMO", "false").lower() == "true"
 
+    # Showcase framing in the chat UI — naming the running model and explaining
+    # that SAFi is the governance layer, not the intelligence. That argument is
+    # aimed at someone evaluating SAFi; inside a customer's deployment the staff
+    # using the agent are not the audience, the model choice is an internal
+    # detail, and telling them "the intelligence isn't ours" only erodes trust
+    # in the tool. Defaults to the demo-login setting so the public showcase
+    # gets it with no extra configuration and a private deployment never does.
+    # Set SAFI_PUBLIC_DEMO_UI explicitly to decouple the two.
+    PUBLIC_DEMO_UI = os.environ.get(
+        "SAFI_PUBLIC_DEMO_UI", str(ENABLE_DEMO_LOGIN)
+    ).strip().lower() in ("1", "true", "yes")
+
     # Default Intellect model for fresh demo sandbox accounts. Stored as the
     # user-level selection, so demo guests can still switch models in Settings.
     # Empty = inherit the global INTELLECT_MODEL default. Conscience is

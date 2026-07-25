@@ -1,13 +1,21 @@
 let _models = [];
 let _activeModelId = null;
 let _onModelChange = null;
+// Showcase framing about model choice. Off unless the server says this is the
+// public demo — inside a customer deployment it is noise at best.
+let _publicDemoUi = false;
 
-export function initModelSelector(models, activeModelId, onModelChange) {
+export function initModelSelector(models, activeModelId, onModelChange, publicDemoUi = false) {
     _models = models || [];
     _activeModelId = activeModelId || null;
     _onModelChange = onModelChange;
+    _publicDemoUi = !!publicDemoUi;
     _renderDropdown();
     _attachDropdownListener();
+}
+
+export function isPublicDemoUi() {
+    return _publicDemoUi;
 }
 
 export function toggleModelDropdown() {
@@ -45,9 +53,11 @@ function _renderDropdown() {
         </button>`;
     }).join('');
 
-    // Opening this menu is the moment someone notices the models are small and
-    // unfamiliar and quietly concludes SAFi is unserious. Answer it in place:
-    // the model is a performance choice, the governance is the product.
+    // On the public demo, opening this menu is the moment someone notices the
+    // models are small and unfamiliar and quietly concludes SAFi is unserious.
+    // Answer it in place. A customer running their own deployment picked their
+    // own models and needs no such explanation.
+    if (!_publicDemoUi) return;
     dropdown.insertAdjacentHTML('beforeend', `
         <p class="mt-1 pt-2 px-3 pb-1 border-t border-neutral-200 dark:border-neutral-700
                   text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">

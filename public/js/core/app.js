@@ -345,6 +345,15 @@ async function checkLoginStatus() {
       // This function renders the content for all control panel tabs
       renderControlPanel();
 
+      // Initialize Model Selector BEFORE loading conversations: the empty state
+      // reads the active model label and the public-demo flag from this module,
+      // and on initial load loadConversations is what renders it. Initialising
+      // after would leave that first render with the module defaults.
+      initModelSelector(availableModels, user.intellect_model, (modelId) => {
+        handleQuickModelSwitch(modelId);
+        updateModelLabel(getActiveModelLabel());
+      }, modelsResponse.public_demo_ui === true);
+
       // Load the conversation list and the active chat
       await chat.loadConversations(
         activeProfileData,
@@ -356,12 +365,6 @@ async function checkLoginStatus() {
 
       // Initialize Data Sources UI
       initDataSources();
-
-      // Initialize Model Selector
-      initModelSelector(availableModels, user.intellect_model, (modelId) => {
-        handleQuickModelSwitch(modelId);
-        updateModelLabel(getActiveModelLabel());
-      });
 
       // Initialize File Upload
       chat.initFileUpload();
