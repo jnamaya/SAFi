@@ -1,5 +1,5 @@
 // sw.js - minimal offline + background refresh
-const STATIC_CACHE = 'safi-static-v3';
+const STATIC_CACHE = 'safi-static-v4';
 const API_CACHE = 'safi-api-v1';
 
 // App shell to precache (adjust paths if your structure differs)
@@ -10,6 +10,8 @@ const APP_SHELL = [
   'css/styles.css',
   'assets/fonts/InterVariable.woff2',
   'assets/fonts/InterVariable-Italic.woff2',
+  'assets/fonts/SourceSerif4Variable-Roman.woff2',
+  'assets/fonts/SourceSerif4Variable-Italic.woff2',
   'js/main.js',      // Target the js/ folder directly
   'js/ui.js',
   'js/api.js',

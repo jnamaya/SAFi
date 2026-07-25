@@ -18,6 +18,25 @@
   font-display: swap;
 }
 
+/* Self-hosted Source Serif 4 (variable, weights 200-900) — the reading
+   face for generated responses only; all UI chrome stays on Inter.
+   License: assets/fonts/LICENSE-SourceSerif4.md (SIL OFL 1.1). */
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../assets/fonts/SourceSerif4Variable-Roman.woff2') format('woff2');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('../assets/fonts/SourceSerif4Variable-Italic.woff2') format('woff2');
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   font-size: 16px;
@@ -266,9 +285,14 @@ html.native body { font-size: 14px; }
   color: var(--ai-fg);
   padding: 8px 0;
   position: relative;
-  /* Generated text reads slightly larger than UI chrome (18px at the
-     16px root; scales down proportionally under html.native). */
-  font-size: 1.125rem;
+  /* Generated responses are reading material, not interface: they get
+     the serif reading face; all UI chrome (and user bubbles) stays on
+     Inter. 19px at the 16px root — serifs run optically smaller than
+     Inter at equal px, so this matches the approved 18px optical size.
+     Scales proportionally under html.native. Code spans/fences keep
+     their own monospace stack. */
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  font-size: 1.1875rem;
   line-height: 1.75;
   text-rendering: optimizeLegibility;
 }
