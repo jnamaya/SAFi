@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.7  
-> **Last Updated:** 2026-06-08  
+> **Version:** 1.8  
+> **Last Updated:** 2026-07-24  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -79,9 +79,18 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The only reflexion retry in the pipeline is the one driven by **Will Pass 3**
-(Spirit alignment). Will Pass 1 (structural) and Will Pass 2 (hard-gate)
-short-circuit straight to a governed redirect with no retry.
+The reflexion retry is driven by **Will Pass 3** (Spirit alignment) and by one
+class of Pass 2 failure: a *correctable* content-quality hard gate (see Pass 2).
+The other exits differ by failure kind:
+
+- **Pass 1 (structural)** first attempts deterministic repair (a missing
+  mandatory disclaimer is appended and the repaired draft re-audited in full);
+  a residual structural failure — like an audit-availability failure — ships a
+  deterministic **system failure notice**, not a persona redirect, because it
+  is a system fault rather than a verdict on the user's request.
+- **Pass 2 (hard-gate)** failures whose mapped reason is a scope or grounding
+  breach redirect directly with no retry; failures mapped to
+  `ethical_violation` (content-quality gates) take the reflexion retry.
 
 ---
 
@@ -105,21 +114,25 @@ $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lo
 
 $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
 
-**3. Entropy heuristic** — flags a high-entropy payload *prefix* followed later by embedded
-instruction markers (catches obfuscated injections that evade signature matching). A minimum
-length guard prevents false positives on short strings where entropy is statistically
-unstable. Entropy is measured over the first $\tau_{\text{sample}}$ characters only; the
-instruction marker must appear in the remainder *after* that prefix:
+**3. Entropy heuristic** — flags a high-entropy payload *anywhere in the prompt* combined
+with an embedded instruction marker (catches obfuscated injections that evade signature
+matching). A minimum length guard prevents false positives on short strings where entropy
+is statistically unstable. The check requires a marker somewhere in the prompt, then scans
+the whole prompt with a sliding window of width $\tau_{\text{sample}}$ (stride
+$\tau_{\text{sample}}/2$), flagging if any window's entropy crosses the threshold:
 
-$$\text{pre} = x_t[:\tau_{\text{sample}}], \quad \text{rem} = x_t[\tau_{\text{sample}}:]$$
-
-$$|x_t| \geq \tau_{\text{len}} \quad \wedge \quad H(\text{pre}) \geq \tau_H \quad \wedge \quad \text{has-instr-marker}(\text{rem})$$
+$$|x_t| \geq \tau_{\text{len}} \quad \wedge \quad \text{has-instr-marker}(x_t) \quad \wedge \quad \exists\, k : H\!\left(x_t[k : k + \tau_{\text{sample}}]\right) \geq \tau_H$$
 
 $$H(s) = -\sum_c P(c) \log_2 P(c)$$
 
-Where $\tau_{\text{len}} = 150$ chars (configurable via `MIN_LENGTH_FOR_ENTROPY_CHECK`),
+Where $\tau_{\text{len}} = 150$ chars (`MIN_LENGTH_FOR_ENTROPY_CHECK`),
 $\tau_{\text{sample}} = 300$ chars (`ENTROPY_SAMPLE_LENGTH`), and $\tau_H = 4.5$ bits/char
-(configurable via `ENTROPY_THRESHOLD`). Markers come from `EMBEDDED_INSTRUCTION_MARKERS`.
+(`ENTROPY_THRESHOLD`). Markers come from `EMBEDDED_INSTRUCTION_MARKERS`. Windows shorter
+than $\tau_{\text{len}}$ (the tail of the prompt) are not scored.
+
+> Earlier versions sampled only the first $\tau_{\text{sample}}$ characters and required
+> the marker *after* that prefix — prepending a paragraph of benign prose defeated that
+> check entirely, which is why the scan now slides over the whole prompt.
 
 **If any check fails** → `trigger_persona_redirect(violation_type=gate_reason)` and return.  
 **If all pass** → proceed to Stage 1.
@@ -161,8 +174,16 @@ Checks in order (`evaluate_draft_structure`):
    fence not explicitly permitted; otherwise a legacy `banned_markdown_syntaxes`
    blacklist applies.
 
-**If $D^1_t = \text{violation}$** → call `trigger_persona_redirect()` immediately.
-There is **no reflexion retry at this pass.**  
+**Deterministic repair before violation:** a missing mandatory disclaimer is
+mechanically repairable — the orchestrator appends it and the repaired draft
+$a_t \leftarrow a_t \oplus \text{disclaimer}$ then runs the **full** audit path.
+Only structurally unrepairable drafts produce $D^1_t = \text{violation}$.
+
+**If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice**
+(`_ship_system_failure_notice`): a structural failure is a fault of the system,
+not a verdict on the user's request, so it is *not* voiced as a persona redirect.
+There is **no reflexion retry at this pass.** The same routing applies to an
+audit-availability failure (Conscience unreachable/garbled — fail-closed).  
 **If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
 
 ### Pass 2 — Hard-Gate Check (after Conscience, before Spirit)
@@ -179,7 +200,15 @@ The violation reason is mapped per value via `HARD_GATE_VIOLATION_REASONS`
 defaulting to `hard_gate_violation`. Hard-gate values carry `weight = 0.0` and are excluded
 from the Spirit EMA.
 
-**If $D^2_t = \text{violation}$** → call `trigger_persona_redirect()`.  
+**If $D^2_t = \text{violation}$**, the exit depends on the mapped reason:
+- Scope/grounding-class reasons (a verdict on engaging the request at all) →
+  call `trigger_persona_redirect()` directly, no retry.
+- `ethical_violation`-class reasons (a *correctable* content-quality gate, e.g.
+  Pedagogical Integrity — the request is fine, the draft is the problem) →
+  route to **Stage 2.1 (Reflexion Retry)**, which regenerates with the blocked
+  draft visible. A vacuum redirect cannot see the question and misreported
+  in-scope requests as out of scope.
+
 **If $D^2_t = \text{approve}$** → proceed to Stage 4 (Spirit).
 
 ### Pass 3 — Alignment Check (after Spirit aggregation)
@@ -208,6 +237,26 @@ the outcome depends on the residual reason:
 
 **If $D^3_t = \text{approve}$** → return $a_t$ to user.
 
+### Tool-Intent Gate (agentic turns only)
+
+When the Intellect proposes a tool call instead of a text draft, a fourth
+deterministic Will check runs **before any execution** (`evaluate_tool_intent`).
+Given a proposed tool name $\tau$ with parameters $\pi$ and the compiled profile's
+authorization list $T_{\text{allow}}$ (stamped by Synderesis: the agent's advertised
+tools, optionally narrowed — never widened — by the policy's
+`will_rules.allowed_tools`):
+
+```math
+W_{\text{tool}}(\tau, \pi) = \begin{cases} \text{violation} & \tau \notin T_{\text{allow}} \\ \text{approve} & \tau \in T_{\text{allow}} \cap T_{\text{read-only}} \\ \text{violation} & \exists\, k : \pi_k \notin \text{constraints}(\tau, k) \ \vee\ \pi_k\ \text{omitted while constrained} \\ \text{approve} & \text{otherwise} \end{cases}
+```
+
+$T_{\text{allow}} = \varnothing$ is **deny-all**, not skip — an agent offered no
+tools has no legitimate tool intents. Parameter constraints are default-deny: an
+omitted constrained parameter is a violation (the tool's server-side default is
+unvetted). A blocked intent feeds the block reason back to the Intellect for a
+governed text response; it never redirects the whole turn. Conscience and Spirit
+score only the final text output — the tool-use process is gated here, not scored.
+
 **Code Reference:** [`will.py`](../safi_app/core/faculties/will.py),
 [`orchestrator.py#Phase5`](../safi_app/core/orchestrator.py)
 
@@ -215,9 +264,11 @@ the outcome depends on the residual reason:
 
 ## Stage 2.1: Reflexion Retry
 
-Triggered **only by Will Pass 3** (Spirit alignment violation — `ethical_violation` or
-`low_alignment_score`). The system attempts self-correction exactly once. Will Pass 1 and
-Pass 2 violations do **not** reach this stage; they redirect directly.
+Triggered by **Will Pass 3** (Spirit alignment violation — `ethical_violation` or
+`low_alignment_score`) and by a **correctable Pass 2 hard-gate failure** (mapped reason
+`ethical_violation`; see Pass 2). The system attempts self-correction exactly once.
+Structural (Pass 1) failures and scope/grounding hard-gate failures do **not** reach
+this stage.
 
 **Step 1:** Construct reflexion prompt embedding the original draft and the persona's
 rephrase directive for the violation reason
@@ -227,10 +278,13 @@ $$x'_t = x_t \oplus a_t \oplus \text{directive}(E^3_t)$$
 **Step 2:** Generate corrected draft (the original retrieved context is reused):
 $$a'_t, r'_t = I(x'_t, V, M_t)$$
 
-**Step 3:** Re-run the **Conscience → Spirit aggregation → Will Pass 3** segment on the
-corrected draft (not Pass 1):
+**Step 3:** Re-run the **full gate path** on the corrected draft — structural check
+(with deterministic repair), Conscience, coverage fail-closed, hard gates, Spirit
+aggregation, Will Pass 3 — the same `_finalize_draft` sequence the original draft ran.
+(Earlier versions re-ran only Conscience → Spirit → Pass 3, letting a retry skip
+structure and hard gates; the implementation closed that.)
 ```math
-L'_t = C(a'_t, x_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integrate}(L'_t), \quad D'^3_t, E'^3_t = W_3(\text{critical\_violation}', A'_t)
+D'^1_t = W_1(a'_t), \quad L'_t = C(a'_t, x_t, V), \quad D'^2_t = W_2(L'_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integrate}(L'_t), \quad D'^3_t, E'^3_t = W_3(\text{critical\_violation}', A'_t)
 ```
 
 **If $D'^3_t = \text{approve}$:**
@@ -244,7 +298,7 @@ L'_t = C(a'_t, x_t, V), \quad (\text{critical\_violation}', A'_t) = \text{integr
   quality dip.
 - `ethical_violation` → call `trigger_persona_redirect()`.
 
-**Code Reference:** [`orchestrator.py#L738-818`](../safi_app/core/orchestrator.py)
+**Code Reference:** [`orchestrator.py#_finalize_draft`](../safi_app/core/orchestrator.py)
 
 ---
 
@@ -311,9 +365,21 @@ The implementation uses clipping followed by linear rescaling — there is no si
 
 ### Exponential Moving Average (EMA)
 
-$$\mu_t = \beta \mu_{t-1} + (1-\beta) p_t$$
+Per value $i$, only **observed** values (those the ledger actually scored) receive
+the EMA update; an unobserved value **holds** its previous memory — a missing
+observation is not evidence of neutrality, so its memory neither decays nor moves:
 
-Where $\beta = 0.9$ by default (configurable via `SPIRIT_BETA`).
+$$\mu_{t,i} = \begin{cases} \beta\, \mu_{t-1,i} + (1-\beta)\, p_{t,i} & \text{if } v_i \text{ observed in } L_t \\ \mu_{t-1,i} & \text{otherwise} \end{cases}$$
+
+Where $\beta = 0.9$ by default. $\beta$ resolves per turn: policy-level override
+(`ethical_memory`, the wizard's Consistency slider) → org setting (`spirit_beta`,
+the Organization tab's "Ethical Memory" slider) → instance default
+(`SAFI_SPIRIT_BETA`).
+
+A **partially-scored ledger** is scored over the values it did cover — for $S_t$,
+missing values contribute score $0$ at confidence $0$ (i.e. nothing), the analog of
+the neutral default `integrate()` applies when gating. Only a ledger that matched
+*none* of the agent's values skips the update entirely.
 
 **Initial state:** $\mu_0 = \mathbf{0}$ (zero vector). On the first interaction the
 epsilon guard in the drift calculation returns `null` rather than dividing by zero
@@ -352,6 +418,7 @@ non-content scores.
 | Will — Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
 | Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
 | Will — Pass 2 | $W_2: (L_t, V) \rightarrow (D^2_t, E^2_t)$ |
+| Will — Tool Gate (agentic) | $`W_{\text{tool}}: (\tau, \pi, T_{\text{allow}}) \rightarrow (D_t, E_t)`$ |
 | Spirit (integrate) | $`\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)`$ |
 | Will — Pass 3 | $`W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)`$ |
 | Spirit (compute) | $\text{compute}: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
@@ -404,8 +471,12 @@ Ollama via configuration; see
    the $0.5$ gate threshold applies to $A_t$, never to $S_t$.
 
 3. **No hard rejections:** SAFi never returns silence or an error to the user.
-   Every violation — including double Will failure (main + reflexion) — routes
-   through `trigger_persona_redirect()`, which always produces a governed response.
+   Every failure produces a governed response — but through two distinct channels:
+   verdicts on the *request* (scope/grounding gates, Phase 0, residual ethical
+   violations) route through `trigger_persona_redirect()`, while faults of the
+   *system* (structural failures after repair, audit unavailability) ship a
+   deterministic system failure notice that is honest about being an internal
+   issue rather than blaming the user's request.
 
 4. **Reflexion limit:** Only one retry is attempted to prevent infinite loops.
 
