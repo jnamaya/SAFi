@@ -247,6 +247,11 @@ html.native body { font-size: 14px; }
   color: var(--ai-fg);
   padding: 8px 0;
   position: relative;
+  /* Generated text reads slightly larger than UI chrome (17px at the
+     16px root; scales down proportionally under html.native). */
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  text-rendering: optimizeLegibility;
 }
 
 .message.user .chat-bubble {
@@ -340,8 +345,9 @@ html.native body { font-size: 14px; }
 .chat-bubble h1,
 .chat-bubble h2,
 .chat-bubble h3 {
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .chat-bubble h1 {
@@ -359,7 +365,7 @@ html.native body { font-size: 14px; }
 }
 
 .chat-bubble h3 {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   margin-top: 1.1em;
   margin-bottom: 0.4em;
 }
