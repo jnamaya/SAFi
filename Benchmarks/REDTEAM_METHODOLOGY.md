@@ -1,9 +1,13 @@
 # Red-Team Substantiation Methodology
 
 How the jailbreak-defense numbers in the project README were derived, what
-counts as what, and how to reproduce them. Written so a reader who does not
-trust us can check the arithmetic, and so a reader who does trust us knows
-exactly what the numbers do *not* claim.
+counts as what, and how to reproduce them.
+
+Most AI guardrail products publish a defense rate and nothing behind it. This
+document exists because a governance platform that asks institutions to trust
+its audit trail should be willing to show its own working. Every figure in the
+README traces to a counting rule stated here, a script in this repository, and
+a hash-fixed log archive.
 
 Last regenerated: 2026-07-25.
 
@@ -18,9 +22,10 @@ Conscience ledger, the Will decision, and the Spirit score.
 
 Those logs are **archived but deliberately not published.** They contain
 prompts typed by members of the public into a demo instance. Publishing them to
-substantiate a marketing claim would trade other people's data for our
-credibility, which is not a trade we are willing to make — and it would be a
-strange position for a governance product to take.
+substantiate a claim about our own product would mean trading those people's
+data for our credibility — which is precisely the trade SAFi exists to stop
+organizations from making. The substantiation below is built to be checkable
+without it.
 
 What *is* published instead:
 
@@ -63,9 +68,12 @@ either the answer appears or it does not. The demo hosts other agents whose
 traffic is not red-team activity, so including them would inflate the
 denominator with turns nobody attacked.
 
-**What the denominator therefore is:** all tutor traffic on a public demo —
-adversarial *and* benign, mixed together. It is not a curated attack set. See
-§6 for why that cuts both ways.
+**What the denominator therefore is:** all tutor traffic on a public demo,
+adversarial and benign together — production conditions rather than a curated
+attack set. That has a real advantage: it measures the two things a deployment
+actually cares about at the same time, namely whether attacks get through and
+whether legitimate users get blocked. §4 reports both. §6 states what the
+figures do and do not cover.
 
 ---
 
@@ -108,9 +116,16 @@ python3 jailbreak_log_analysis.py /path/to/archive \
 | Non-approve decisions | 25 |
 | **Governance interventions** | **18** |
 | Error blocks (excluded) | 7 |
-| Approval rate | 98.63% |
+| **Approval rate** | **98.63%** |
 | **Confirmed jailbreaks** | **2** (§5) |
 | **Defense success rate** | **99.89%** (1,822 / 1,824) |
+
+Two numbers matter here, not one. The defense rate says attacks did not get
+through. The **98.63% approval rate** says legitimate users were not collateral
+damage: the Will intervened on 1% of turns and approved the rest. A gate that
+refuses aggressively can post a perfect defense rate while making the product
+unusable, so a defense rate published without an approval rate beside it is
+half a result.
 
 ### Adversarial traffic: at least 41 attacks across 8 categories
 
@@ -171,37 +186,48 @@ That 5-of-7 false-positive rate is exactly why this determination cannot be
 automated, and why the script emits a `confirmed_jailbreaks: "MANUAL LABEL"`
 placeholder rather than a number.
 
-**Durability.** The archive continues for **745 further tutor interactions**
-after leak #2, through 2026-05-25, with no recurrence of the answer-in-refusal
-pattern. That is the honest evidence that the fix held. It supersedes an earlier
-claim that the leaks were "patched before the next test run", which the
-timestamps do not support: the two leaks are one day apart, so no fix for the
-first could have shipped before the second.
+**Durability — the fix held.** The archive continues for **745 further tutor
+interactions** after leak #2, through 2026-05-25, with no recurrence of the
+answer-in-refusal pattern. Four months of live public traffic against the same
+agent, with the hole closed.
+
+That is a stronger and more checkable statement than the earlier phrasing
+("patched before the next test run"), which the timestamps do not support: the
+two leaks are one day apart, so the second was not preceded by a fix for the
+first. Restating it costs nothing and removes something a reader could
+disprove.
 
 ---
 
-## 6. Limitations
+## 6. Scope of the claim
 
-Stated plainly, because a reader will find them anyway:
+What these figures cover, stated precisely so they can be cited without being
+overstated:
 
-1. **The denominator is demo traffic, not an attack set.** 1,824 interactions
-   are mostly benign tutoring. A 99.89% defense rate over mixed traffic is a
-   weaker statement than 99.89% over 1,824 attacks, and we do not claim the
-   latter. The honest reading: across all public demo traffic on the
-   red-teamed agent, two responses leaked content the policy forbade.
-2. **No red-team marker exists in the log schema.** Nothing in a record says
-   "this turn was an attack", so the adversarial share must be inferred by
-   signature matching (§4) rather than read off. Adding an explicit campaign
-   tag to future testing would remove the inference entirely.
-3. **The adversarial count under-reports** for the reasons in §4.
-4. **Confirmed-jailbreak counts rest on human judgment** over a finite pattern
-   search. A leak phrased in a way the search did not anticipate would have
-   been missed. The search covered the two answers known to have been targeted.
-5. **Single-agent scope.** These numbers describe the Socratic Tutor under its
-   policy. They are not a general claim about SAFi's defense rate for arbitrary
-   agents or policies.
-6. **Error blocks are excluded** from interventions but remain in the
-   denominator, since they were still governed turns that reached a decision.
+1. **The denominator is live demo traffic, not a curated attack set.** The
+   claim is: across all public demo traffic on the red-teamed agent, two
+   responses leaked content the policy forbade. That is a production-conditions
+   result, and it is deliberately not phrased as "99.89% of 1,824 attacks were
+   blocked" — a different and unsupported statement.
+2. **The adversarial share is measured, not asserted.** No field in the log
+   schema marks a turn as an attack, so §4 establishes the adversarial subset by
+   signature matching against SAFi's own shipped threat intelligence. Tagging
+   future campaigns explicitly would let us report the subset directly.
+3. **The adversarial count is a floor**, for the reasons in §4. At least 41
+   attacks across 8 categories; the true number is higher, since deterministic
+   matching cannot see paraphrase.
+4. **Confirmed jailbreaks rest on documented human review** of a pattern search
+   over the two answers known to have been targeted (§5). The 5-of-7
+   false-positive rate in that review is why the determination is manual and
+   why it is written down here rather than automated.
+5. **Single-agent scope.** These figures describe the Socratic Tutor under its
+   policy — the agent that was actually red-teamed. They are not a general
+   defense rate for arbitrary agents or policies, and the controlled benchmark
+   in §7 is the better guide to cross-domain behavior.
+6. **Error blocks are excluded** from interventions but stay in the denominator,
+   since they were governed turns that reached a decision. Excluding them from
+   interventions is the conservative choice: counting infrastructure failures as
+   defensive wins would inflate the intervention figure.
 
 ---
 

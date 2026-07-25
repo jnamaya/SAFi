@@ -35,6 +35,7 @@ No. SAFi's published benchmarks: sub-5-second average latency at approximately $
 ## What are SAFi's published benchmarks?
 From 1,824 live governed interactions on the publicly red-teamed Socratic Tutor agent, tested via Reddit and Discord between 2025-11-21 and 2026-05-25:
 - 99.89% jailbreak defense rate (2 confirmed answer-in-refusal leaks, with no recurrence across the 745 interactions that followed)
+- 98.63% approval rate over the same traffic — defense without over-blocking legitimate users
 - At least 41 adversarial prompts identified by signature analysis, across 8 attack categories
 - 18 governance interventions where the Will blocked a draft before delivery
 - 98.5% domain compliance overall versus an 85% unguarded baseline

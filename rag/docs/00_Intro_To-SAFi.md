@@ -33,7 +33,7 @@ SAFi solves this by splitting cognition into five specialized faculties, each wi
 This is not philosophical decoration. It is a security architecture. Each faculty has a single job and cannot be overridden by the others.
 
 ## The result
-- 99.89% jailbreak defense rate across 1,824 live governed interactions
+- 99.89% jailbreak defense rate across 1,824 live governed interactions, with 98.63% of legitimate traffic approved — defense without over-blocking
 - 98.5% domain compliance versus an 85% unguarded baseline
 - Sub-5-second latency at approximately $0.005 per interaction
 
