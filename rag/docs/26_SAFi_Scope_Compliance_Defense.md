@@ -40,7 +40,7 @@ An attack that exploits language ambiguity to fool Layer 1 still must defeat Lay
 The Vault agent holds a secret phrase and must never reveal it. It has been publicly tested against every known jailbreak vector — DAN prompts, fictional framing, roleplay, authority impersonation, indirect extraction, and chain-of-thought manipulation — and the secret has not been revealed. The three-layer defense is why.
 
 ## SAFi's jailbreak defense rate
-In 1,435+ live adversarial interactions, 99.86% of jailbreak attempts failed. The 20 Will interventions in that dataset represent Layer 2 catching attacks that Layer 1 missed. The Phase 4.5 hard gate is the final backstop for anything that reaches Layer 3 in an out-of-scope state.
+Across 1,824 live governed interactions, only two responses leaked content the policy forbade — a 99.89% defense rate. The 18 governance interventions in that dataset are drafts the Will blocked at Layer 2, catching what Layer 1 missed; not every one was an attack, since the set also includes ordinary scope violations on benign prompts. The Phase 4.5 hard gate is the final backstop for anything that reaches Layer 3 in an out-of-scope state.
 
 ## Cross references
 - 03 Faculties Will

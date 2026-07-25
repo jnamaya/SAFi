@@ -12,7 +12,7 @@ version: 2.0
 No. Prompt engineering nudges a single model. SAFi is a runtime governance system with five distinct faculties: Synderesis, Intellect, Will, Conscience, and Spirit. Each has its own function and security boundary. No single faculty has unchecked power over the others.
 
 ## What is the Blind Will, and why does it matter?
-The Will faculty is written in pure Python with zero LLM calls. It enforces structural rules by running Python conditionals, not by reasoning in language. This means you cannot trick it with a clever prompt, a fictional scenario, or a social engineering attack. Prompt injections that fool the Intellect cannot fool a Python conditional. This is why SAFi achieves a 99.86% jailbreak defense rate in live adversarial testing.
+The Will faculty is written in pure Python with zero LLM calls. It enforces structural rules by running Python conditionals, not by reasoning in language. This means you cannot trick it with a clever prompt, a fictional scenario, or a social engineering attack. Prompt injections that fool the Intellect cannot fool a Python conditional. This is why SAFi achieves a 99.89% jailbreak defense rate in live adversarial testing.
 
 ## What is the Intent Air Gap?
 The Intellect faculty is architecturally severed from execution. It can propose responses and tool calls, but it cannot execute them directly. Even if the Intellect hallucinates a destructive action or a policy violation, the Will gate intercepts it before it reaches the user or any execution environment.
@@ -33,9 +33,10 @@ Because LLMs are stochastic generators that cannot police themselves at runtime.
 No. SAFi's published benchmarks: sub-5-second average latency at approximately $0.005 per interaction. The Will faculty runs in sub-millisecond time because it is pure Python with no network call. The Conscience uses smaller open-source models. The full five-faculty pipeline is cheaper and faster than monolithic guardrails using large commercial models for validation.
 
 ## What are SAFi's published benchmarks?
-From 1,435+ live adversarial tests conducted publicly via Reddit and Discord:
-- 99.86% jailbreak defense rate (2 confirmed jailbreaks, both patched)
-- 20 Will interventions that caught attacks the Intellect failed to block
+From 1,824 live governed interactions on the publicly red-teamed Socratic Tutor agent, tested via Reddit and Discord between 2025-11-21 and 2026-05-25:
+- 99.89% jailbreak defense rate (2 confirmed answer-in-refusal leaks, with no recurrence across the 745 interactions that followed)
+- At least 41 adversarial prompts identified by signature analysis, across 8 attack categories
+- 18 governance interventions where the Will blocked a draft before delivery
 - 98.5% domain compliance overall versus an 85% unguarded baseline
 - 97.5% on adversarial trap prompts versus a 67.5% baseline
 - Average latency 3–5 seconds, average cost ~$0.005 per interaction

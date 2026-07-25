@@ -43,7 +43,7 @@ The Will performs a second check after Phase 4. Once the Conscience audits the r
 This is the third and final layer of jailbreak defense: it catches responses that were structurally valid but semantically out of scope.
 
 ## Why zero LLM makes this powerful
-Because the Will uses no LLM, a user cannot craft a prompt that convinces the Will to change its mind. The Will does not reason about exceptions or weigh context. It checks a set of Python conditions and returns a binary result. This is why SAFi's jailbreak defense rate reaches 99.86% in live testing: attacks that bypass the Intellect's scope instructions cannot bypass a Python conditional.
+Because the Will uses no LLM, a user cannot craft a prompt that convinces the Will to change its mind. The Will does not reason about exceptions or weigh context. It checks a set of Python conditions and returns a binary result. This is why SAFi's jailbreak defense rate reaches 99.89% in live testing: attacks that bypass the Intellect's scope instructions cannot bypass a Python conditional.
 
 ## Cross references
 - 02 Faculties Intellect
