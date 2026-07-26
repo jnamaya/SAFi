@@ -49,6 +49,39 @@ def _detect_faculty_defaults() -> dict:
     return _FACULTY_DEFAULTS_BY_PROVIDER["groq"]
 
 
+DEPLOYMENT_MODES = ("production", "trial", "showcase")
+
+# Set when SAFI_DEPLOYMENT_MODE is present but not a recognised mode, so
+# Config.validate() can surface it at startup instead of leaving the operator
+# to wonder why the mode they set had no effect.
+_INVALID_DEPLOYMENT_MODE: str = ""
+
+
+def _resolve_deployment_mode(raw: str) -> str:
+    """Normalise SAFI_DEPLOYMENT_MODE, falling back to the safe mode.
+
+    Fails toward 'production' rather than raising: an unparseable mode should
+    cost an operator their demo login button, never quietly hand a customer
+    deployment the promotional UI.
+    """
+    global _INVALID_DEPLOYMENT_MODE
+    mode = (raw or "").strip().lower()
+    if mode in DEPLOYMENT_MODES:
+        return mode
+    if mode:
+        _INVALID_DEPLOYMENT_MODE = mode
+    return "production"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """Explicit env var wins over a mode-derived default, so pre-existing .env
+    files keep behaving exactly as they did before deployment modes existed."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
 class Config:
     """
     Central configuration class for SAFi.
@@ -174,9 +207,38 @@ class Config:
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
+    # --- Deployment mode ----------------------------------------------------
+    #
+    # One declaration of what this instance IS, so an operator states intent
+    # once instead of reasoning about several independent demo switches and
+    # their interactions:
+    #
+    #   production (default) — demo login off, showcase framing off.
+    #   trial                — demo login on, showcase framing off. The Quick
+    #                          Start experience: evaluate locally without
+    #                          configuring OAuth, but nothing promotional in
+    #                          the UI, because a trial can become a deployment
+    #                          without anyone revisiting the config.
+    #   showcase             — demo login on, showcase framing on. Only the
+    #                          public demo instance should ever be this.
+    #
+    # Note these are two concepts, not one: demo LOGIN is an auth convenience
+    # that is legitimate locally and publicly, while the showcase FRAMING is
+    # promotional and belongs only on the public instance. 'trial' exists
+    # precisely so the useful half is available without the promotional half.
+    #
+    # Unrecognised values fall back to production and are reported by validate().
+    # A typo must never be the reason someone's deployment starts advertising.
+    DEPLOYMENT_MODE = _resolve_deployment_mode(
+        os.environ.get("SAFI_DEPLOYMENT_MODE", "production")
+    )
+
     # Show or hide the "Try Demo (Admin)" button on the login page.
-    # Set to false for private/self-hosted instances that don't need a public demo.
-    ENABLE_DEMO_LOGIN = os.environ.get("SAFI_ENABLE_DEMO", "false").lower() == "true"
+    # Derived from the mode; SAFI_ENABLE_DEMO still wins if set explicitly, so
+    # existing .env files keep working unchanged.
+    ENABLE_DEMO_LOGIN = _env_bool(
+        "SAFI_ENABLE_DEMO", DEPLOYMENT_MODE in ("trial", "showcase")
+    )
 
     # Showcase framing in the chat UI — naming the running model and explaining
     # that SAFi is the governance layer, not the intelligence. That argument is
@@ -185,19 +247,19 @@ class Config:
     # detail, and telling them "the intelligence isn't ours" only erodes trust
     # in the tool.
     #
-    # Hard default OFF, and deliberately NOT derived from ENABLE_DEMO_LOGIN:
-    # .env.example ships SAFI_ENABLE_DEMO=true and the Quick Start tells every
-    # new user to copy that file, so deriving from it would switch promotional
-    # copy ON for exactly the self-hosted deployments that must never show it.
-    # The public showcase opts in explicitly instead.
-    PUBLIC_DEMO_UI = os.environ.get(
-        "SAFI_PUBLIC_DEMO_UI", "false"
-    ).strip().lower() in ("1", "true", "yes")
+    # Derived ONLY from mode == showcase, never from ENABLE_DEMO_LOGIN: the
+    # shipped .env.example enables demo login and the Quick Start tells every
+    # new user to copy that file, so keying off it would switch promotional copy
+    # on for exactly the self-hosted deployments that must never show it.
+    PUBLIC_DEMO_UI = _env_bool("SAFI_PUBLIC_DEMO_UI", DEPLOYMENT_MODE == "showcase")
 
     # Default Intellect model for fresh demo sandbox accounts. Stored as the
     # user-level selection, so demo guests can still switch models in Settings.
     # Empty = inherit the global INTELLECT_MODEL default. Conscience is
     # deliberately not set here (gemma-family models must not audit).
+    #
+    # Not folded into DEPLOYMENT_MODE: this is a value, not a switch, and it is
+    # simply unused when demo login is off. Nothing to derive.
     DEMO_INTELLECT_MODEL = os.environ.get("SAFI_DEMO_INTELLECT_MODEL", "gemma-4-31b")
 
     # Local admin account for dev/self-hosted instances (no OAuth required).
@@ -343,6 +405,13 @@ class Config:
         """
         _log = logging.getLogger(__name__)
         errors: List[str] = []
+
+        if _INVALID_DEPLOYMENT_MODE:
+            _log.warning(
+                "SAFI_DEPLOYMENT_MODE=%r is not a recognised mode (%s) — falling back to "
+                "'production'. Demo login and showcase framing are OFF.",
+                _INVALID_DEPLOYMENT_MODE, "|".join(DEPLOYMENT_MODES),
+            )
 
         if cls.APP_ENV == 'production':
             if cls.SECRET_KEY == "dev-secret-key-should-be-changed":

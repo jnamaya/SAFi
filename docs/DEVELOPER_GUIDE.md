@@ -158,10 +158,21 @@ Two ways to get past the login page without configuring SSO (§8):
   `SAFI_LOCAL_ADMIN_PASSWORD` in `.env`; a permanent admin account is
   auto-created (or updated) on startup. This is the account you'll use
   for the Control Panel, policy authoring, and org setup.
-- **Demo login** — `SAFI_ENABLE_DEMO=true` shows a "Try Demo (Admin)"
-  button on the login page. It mints a fresh, isolated, 24h-expiring
-  sandbox org per visitor — good for a quick look, wrong for real work,
-  and something to turn off on private instances.
+- **Demo login** — enabled by `SAFI_DEPLOYMENT_MODE=trial` (or `showcase`),
+  which shows a "Try Demo (Admin)" button on the login page. It mints a
+  fresh, isolated, 24h-expiring sandbox org per visitor — good for a quick
+  look, wrong for real work. `SAFI_ENABLE_DEMO=true` still forces it on
+  independently of the mode.
+- **Deployment mode** — `SAFI_DEPLOYMENT_MODE` is `production` (default),
+  `trial`, or `showcase`. It declares what the instance *is* rather than
+  making you set several demo switches consistently: `production` turns demo
+  login and the showcase UI framing off, `trial` enables demo login only, and
+  `showcase` additionally shows the framing that names the running model and
+  explains SAFi is the governance layer rather than the intelligence. That
+  framing is aimed at people evaluating SAFi, so only the public demo should
+  use `showcase`. An unrecognised value falls back to `production` and logs a
+  warning, and `SAFI_ENABLE_DEMO` / `SAFI_PUBLIC_DEMO_UI` still override the
+  mode individually.
 
 ## 5. Understanding SAFi
 
@@ -342,7 +353,7 @@ Two things worth knowing before touching this code:
   `invite_only` in the Organization tab. Worth calling out to anyone
   configuring SSO for an org that doesn't want unapproved joins.
   Separately: the live demo (`/api/login/demo`, gated by
-  `SAFI_ENABLE_DEMO`) is unrelated to any of this — it never touches
+  `SAFI_DEPLOYMENT_MODE` / `SAFI_ENABLE_DEMO`) is unrelated to any of this — it never touches
   `_resolve_membership`, and mints a fresh, isolated, 24h-expiring
   sandbox org per visitor instead.
 
