@@ -183,11 +183,15 @@ class Config:
     # aimed at someone evaluating SAFi; inside a customer's deployment the staff
     # using the agent are not the audience, the model choice is an internal
     # detail, and telling them "the intelligence isn't ours" only erodes trust
-    # in the tool. Defaults to the demo-login setting so the public showcase
-    # gets it with no extra configuration and a private deployment never does.
-    # Set SAFI_PUBLIC_DEMO_UI explicitly to decouple the two.
+    # in the tool.
+    #
+    # Hard default OFF, and deliberately NOT derived from ENABLE_DEMO_LOGIN:
+    # .env.example ships SAFI_ENABLE_DEMO=true and the Quick Start tells every
+    # new user to copy that file, so deriving from it would switch promotional
+    # copy ON for exactly the self-hosted deployments that must never show it.
+    # The public showcase opts in explicitly instead.
     PUBLIC_DEMO_UI = os.environ.get(
-        "SAFI_PUBLIC_DEMO_UI", str(ENABLE_DEMO_LOGIN)
+        "SAFI_PUBLIC_DEMO_UI", "false"
     ).strip().lower() in ("1", "true", "yes")
 
     # Default Intellect model for fresh demo sandbox accounts. Stored as the
