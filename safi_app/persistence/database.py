@@ -16,6 +16,20 @@ from . import crypto
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+class SelfReviewError(PermissionError):
+    """A reviewer tried to dispose of a turn they authored. Distinct from
+    ValueError so the API can answer 403 (you are not permitted) rather than
+    400 (your request was malformed) — the request was well formed, the actor
+    was wrong."""
+
+
+class LastAdminError(RuntimeError):
+    """The change would leave an organization with no admin. Refused: an org
+    with zero admins loses policy authoring, member management and the
+    provider allow-list, and has no in-product way back."""
+
+
 db_pool = None
 
 def get_db_connection():
@@ -4128,9 +4142,16 @@ def apply_review_action(org_id, queue_id, action, reason, reviewer_id, reviewer_
     documented supervisory determination about a delivered message — it does
     NOT retract or alter the message itself.
 
+    Separation of duties: a reviewer may not dispose of a turn from their own
+    conversation. FINRA 3110/3120 supervisory review means someone OTHER than
+    the principal signs off, and self-approval is the first thing an examiner
+    tests. Enforced here rather than in the route so every caller — API, and
+    any future batch or scripted path — inherits it.
+
     Returns the updated queue row, or None when the row doesn't exist in this
     org. Raises ValueError on invalid action, missing override reason, or a
-    row that is no longer pending."""
+    row that is no longer pending; SelfReviewError when the reviewer authored
+    the turn."""
     if action not in ("approve", "override"):
         raise ValueError("action must be 'approve' or 'override'")
     reason = (reason or "").strip()
@@ -4149,6 +4170,18 @@ def apply_review_action(org_id, queue_id, action, reason, reviewer_id, reviewer_
         if row["status"] != "pending":
             conn.rollback()
             raise ValueError(f"already reviewed: this item is '{row['status']}'")
+        # Separation of duties. A purged conversation leaves no owner to compare
+        # against; that is allowed through rather than blocking review of every
+        # aged turn, since an unknown author cannot be shown to be the reviewer.
+        cursor.execute("SELECT user_id FROM conversations WHERE id=%s",
+                       (row["conversation_id"],))
+        owner = cursor.fetchone()
+        if owner and str(owner["user_id"]) == str(reviewer_id):
+            conn.rollback()
+            raise SelfReviewError(
+                "separation of duties: you cannot review a turn from your own "
+                "conversation — another admin or auditor must dispose of this item"
+            )
         reason_enc = crypto.encrypt_value(reason) if reason else None
         cursor.execute(
             "UPDATE review_queue SET status=%s, reviewed_by=%s, reviewer_email=%s, "
@@ -4371,17 +4404,38 @@ def list_orgs_with_retention():
         cursor.close()
         conn.close()
 
+def _would_orphan_org(cursor, user_id, org_id):
+    """True when removing this user's admin rights leaves the org with none.
+    Counted inside the caller's transaction so a concurrent demotion of the
+    other admin cannot slip between the check and the write."""
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE org_id=%s AND role='admin' AND id<>%s",
+        (org_id, user_id))
+    return (cursor.fetchone()[0] or 0) == 0
+
+
 def update_member_role(user_id, org_id, new_role, actor="system"):
     """Role change revokes the target's live sessions in the SAME transaction
     and journals the change — a demoted admin must not keep an admin session
     (fresh role is re-read per request, but revocation forces a clean re-auth
-    and provides the examiner-facing event)."""
+    and provides the examiner-facing event).
+
+    Refuses to demote the last admin (LastAdminError): an org with no admin
+    cannot author policy, manage members, or set the provider allow-list, and
+    nothing in the product can restore it."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT role FROM users WHERE id=%s AND org_id=%s", (user_id, org_id))
+        cursor.execute("SELECT role FROM users WHERE id=%s AND org_id=%s FOR UPDATE",
+                       (user_id, org_id))
         row = cursor.fetchone()
         prior_role = row[0] if row else None
+        if prior_role == 'admin' and new_role != 'admin' and _would_orphan_org(cursor, user_id, org_id):
+            conn.rollback()
+            raise LastAdminError(
+                "this is the organization's only admin — promote another member "
+                "to admin before changing this role"
+            )
         cursor.execute("UPDATE users SET role=%s WHERE id=%s AND org_id=%s", (new_role, user_id, org_id))
         revoked = _revoke_user_sessions_cursor(cursor, user_id, f"admin:{actor}")
         log_auth_event("role_changed", f"admin:{actor}", org_id=org_id, user_id=user_id,
@@ -4394,10 +4448,23 @@ def update_member_role(user_id, org_id, new_role, actor="system"):
 
 def remove_member_from_org(user_id, org_id, actor="system"):
     """Removal revokes all the member's live sessions in the SAME transaction
-    and journals member_removed — off-boarding evidence (design §3.4)."""
+    and journals member_removed — off-boarding evidence (design §3.4).
+
+    Refuses to remove the last admin (LastAdminError) for the same reason
+    update_member_role does — removal strips admin just as effectively as a
+    demotion, so guarding only the demotion path would leave the door open."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT role FROM users WHERE id=%s AND org_id=%s FOR UPDATE",
+                       (user_id, org_id))
+        row = cursor.fetchone()
+        if row and row[0] == 'admin' and _would_orphan_org(cursor, user_id, org_id):
+            conn.rollback()
+            raise LastAdminError(
+                "this is the organization's only admin — promote another member "
+                "to admin before removing this one"
+            )
         # We simply set org_id to NULL and role to 'member' (resetting them)
         cursor.execute("UPDATE users SET org_id=NULL, role='member' WHERE id=%s AND org_id=%s", (user_id, org_id))
         removed = cursor.rowcount > 0

@@ -122,6 +122,9 @@ def act_on_queue_item(org_id, queue_id):
         if row is None:
             return jsonify({"error": "Not found"}), 404
         return jsonify({"item": row})
+    except db.SelfReviewError as e:
+        # 403, not 400: the request was well formed, this actor may not make it.
+        return jsonify({"error": str(e)}), 403
     except ValueError as e:
         code = 409 if "already reviewed" in str(e) else 400
         return jsonify({"error": str(e)}), code

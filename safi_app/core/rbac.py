@@ -1,4 +1,29 @@
 
+"""Role-based access control.
+
+This module is the ONLY authorization model SAFi enforces. A parallel
+capability model once lived in core/permissions.py — naming permissions like
+"policy:read" and "logs:read" — but nothing ever called it, so it advertised
+an access-control system that did not exist. It was removed rather than left
+to mislead the next reader; if per-capability authorization is wanted, it
+should be built here, where the 60+ enforcement points already are.
+
+The four roles, and what they mean in practice:
+
+  admin   (Governor)             full authority: org settings, policies,
+                                 members, provider allow-list, all agents
+  editor  (Alignment Engineer)   builds agents and rubrics; reads policy
+  auditor (Compliance Officer)   read-only over agents, policy, logs, config
+  member  (Operator)             chat only
+
+Two enforcement styles, and the distinction matters:
+
+  require_role(x)      >= on the ladder below. Use for escalating authority.
+  require_any_role(..) explicit set membership, no ladder. Use where rank is
+                       the wrong question — supervisory review is admin|auditor
+                       because editors outrank auditors yet must not sign off
+                       on content they authored.
+"""
 from flask import session, jsonify, request
 from functools import wraps
 

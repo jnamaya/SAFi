@@ -250,6 +250,11 @@ def update_user_role(org_id, user_id):
     try:
         db.update_member_role(user_id, org_id, new_role, actor=_actor())
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
+    except db.LastAdminError as e:
+        # 409: valid request, conflicts with current state. The message is
+        # deliberately surfaced — a generic 500 here would leave the admin with
+        # no idea why the change was refused or how to proceed.
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
         current_app.logger.error(f"Error updating role: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
@@ -267,6 +272,8 @@ def remove_organization_member(org_id, user_id):
     try:
         db.remove_member_from_org(user_id, org_id, actor=_actor())
         return jsonify({"status": "removed", "user_id": user_id})
+    except db.LastAdminError as e:
+        return jsonify({"error": str(e)}), 409
     except Exception as e:
         current_app.logger.error(f"Error removing member: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
