@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.core.services import provider_governance
+from support import login_as
 
 
 def _exec(sql, params=()):
@@ -131,9 +132,7 @@ class TestAuditApi(unittest.TestCase):
 
     def client(self, role="auditor", org_id=None):
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": self.uid, "email": f"{self.uid}@example.test",
-                            "role": role, "org_id": org_id or self.org_id}
+        login_as(c, self.uid, role, org_id or self.org_id)
         return c
 
     def _pk(self, mid):

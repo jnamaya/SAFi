@@ -20,12 +20,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
 
-# A public-widget user id that exists in the DB (FK target for conversations).
-TEST_USER = "public_wp_safi_chat_1779847195268"
+# conversations.user_id is a FK to users.id, so the test owns its user rather
+# than assuming one. It previously hardcoded a public-widget id that happened
+# to exist on one machine; anywhere else the FK rejected the insert and every
+# test in the file errored.
+TEST_USER = f"insert_atomic_{uuid.uuid4().hex[:12]}"
 THREADS = 8
 
 
 class TestInsertTurnAtomic(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO users (id, email, name) VALUES (%s, %s, 'Insert Atomic Test')",
+                    (TEST_USER, f"{TEST_USER}@example.test"))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE id=%s", (TEST_USER,))
+        conn.commit()
+        cur.close()
+        conn.close()
 
     def setUp(self):
         self.conv = db.create_conversation(TEST_USER)["id"]

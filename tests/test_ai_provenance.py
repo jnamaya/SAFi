@@ -18,6 +18,7 @@ from safi_app import create_app
 from safi_app.core import provenance
 from safi_app.persistence import database as db
 from safi_app.persistence import crypto
+from support import login
 
 
 def _exec(sql, params=()):
@@ -72,10 +73,7 @@ class TestExportMarking(unittest.TestCase):
 
     def test_user_export_marks_ai_messages(self):
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": self.uid, "email": f"{self.uid}@example.test",
-                            "role": "member", "org_id": None}
-            sess["user_id"] = self.uid
+        login(c, self.uid)
         data = json.loads(c.get("/api/me/export").data)
         msgs = [m for conv in data["conversations"] for m in conv["messages"]]
         self.assertTrue(msgs)

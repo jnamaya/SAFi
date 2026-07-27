@@ -19,6 +19,7 @@ from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.persistence import crypto
 from safi_app.core.services import provider_governance
+from support import login_as
 
 
 def _exec(sql, params=()):
@@ -48,9 +49,15 @@ class TestReviewApi(unittest.TestCase):
         cls.app.config["TESTING"] = True
         cls.org_id = str(uuid.uuid4())
         cls.uid = f"revapi_{uuid.uuid4().hex[:8]}"
+        # A DISTINCT reviewer. The turns below belong to cls.uid's conversation,
+        # and separation of duties forbids disposing of your own turn, so a
+        # fixture that reviewed as cls.uid would be testing self-approval — the
+        # exact thing the guard exists to prevent.
+        cls.reviewer = f"revapi_rev_{uuid.uuid4().hex[:8]}"
         _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Review API Test Org')", (cls.org_id,))
-        _exec("INSERT INTO users (id, email, name, org_id, role) VALUES (%s, %s, 'Rev Test', %s, 'admin')",
-              (cls.uid, f"{cls.uid}@example.test", cls.org_id))
+        for uid, name in ((cls.uid, 'Rev Test'), (cls.reviewer, 'Rev Reviewer')):
+            _exec("INSERT INTO users (id, email, name, org_id, role) VALUES (%s, %s, %s, %s, 'admin')",
+                  (uid, f"{uid}@example.test", name, cls.org_id))
         db.set_org_review_config(cls.org_id, {"enabled": True, "random_sample_pct": 0},
                                  f"{cls.uid}@example.test")
         provider_governance.activate_org(cls.org_id)
@@ -92,17 +99,18 @@ class TestReviewApi(unittest.TestCase):
             ("DELETE FROM chat_audit_trail WHERE conversation_id=%s", (cls.cid,)),
             ("DELETE FROM chat_history WHERE conversation_id=%s", (cls.cid,)),
             ("DELETE FROM conversations WHERE id=%s", (cls.cid,)),
-            ("DELETE FROM users WHERE id=%s", (cls.uid,)),
+            ("DELETE FROM users WHERE id IN (%s, %s)", (cls.uid, cls.reviewer)),
             ("DELETE FROM org_compliance_log WHERE org_id=%s", (cls.org_id,)),
             ("DELETE FROM organizations WHERE id=%s", (cls.org_id,)),
         ]:
             _exec(sql, params)
 
-    def client(self, role="auditor", org_id=None):
+    def client(self, role="auditor", org_id=None, as_author=False):
+        """Authenticated as the REVIEWER by default. as_author=True logs in as
+        the user who owns the turns, for asserting the self-review refusal."""
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": self.uid, "email": f"{self.uid}@example.test",
-                            "role": role, "org_id": org_id or self.org_id}
+        uid = self.uid if as_author else self.reviewer
+        login_as(c, uid, role, org_id or self.org_id)
         return c
 
     def _queue_id(self, mid):
@@ -160,6 +168,20 @@ class TestReviewApi(unittest.TestCase):
 
     # -- dispositions ---------------------------------------------------------
 
+    def test_03b_author_cannot_dispose_of_own_turn(self):
+        """Separation of duties at the API layer: 403, and the item stays
+        pending so another reviewer can still act on it."""
+        # mid_gate stays pending here (the refusal must not consume it) so
+        # test_06 can still override it.
+        qid = self._queue_id(self.mid_gate)
+        res = self.client(role="admin", as_author=True).post(
+            f"/api/organizations/{self.org_id}/review/queue/{qid}/action",
+            json={"action": "approve"})
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("separation of duties", json.loads(res.data)["error"])
+        row = _fetchall("SELECT status FROM review_queue WHERE id=%s", (qid,))[0]
+        self.assertEqual(row["status"], "pending")
+
     def test_04_approve_appends_chained_review_evidence(self):
         qid = self._queue_id(self.mid_low)
         res = self.client(role="auditor").post(
@@ -168,11 +190,11 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         item = json.loads(res.data)["item"]
         self.assertEqual(item["status"], "approved")
-        self.assertEqual(item["reviewer_email"], f"{self.uid}@example.test")
+        self.assertEqual(item["reviewer_email"], f"{self.reviewer}@example.test")
         trail = _fetchall("SELECT * FROM chat_audit_trail WHERE message_id=%s AND action='review'",
                           (self.mid_low,))
         self.assertEqual(len(trail), 1)
-        self.assertEqual(trail[0]["actor"], f"user:{self.uid}")
+        self.assertEqual(trail[0]["actor"], f"user:{self.reviewer}")
         state = json.loads(trail[0]["state"])
         self.assertEqual(state["disposition"], "approved")
         self.assertEqual(state["queue_id"], qid)
@@ -247,7 +269,7 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(rep["trigger_counts"]["low_alignment"], 1)
         self.assertEqual(rep["trigger_counts"]["hard_gate_block"], 1)
         self.assertIsNotNone(rep["median_review_latency_seconds"])
-        self.assertEqual(rep["per_reviewer"][f"{self.uid}@example.test"], 2)
+        self.assertEqual(rep["per_reviewer"][f"{self.reviewer}@example.test"], 2)
         self.assertEqual(rep["purged_message_rows"], 0)
         # JSON read leaves no custody entry; CSV download logs one
         before = [e for e in db.list_compliance_log(self.org_id, 50)

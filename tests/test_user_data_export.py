@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.persistence import crypto
+from support import login_as
 
 
 def _exec(sql, params=()):
@@ -69,10 +70,7 @@ class TestUserDataExport(unittest.TestCase):
 
     def client(self, uid, org_id=None):
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": uid, "email": f"{uid}@example.test",
-                            "role": "member", "org_id": org_id}
-            sess["user_id"] = uid
+        login_as(c, uid, "member", org_id)
         return c
 
     def test_01_anonymous_401(self):

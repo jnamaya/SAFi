@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
 from safi_app.persistence import database as db
+from support import login_as
 
 
 def _exec(sql, params=()):
@@ -57,10 +58,7 @@ class TestOfflineConfig(unittest.TestCase):
 
     def client(self, uid, role, org_id):
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": uid, "email": f"{uid}@example.test",
-                            "role": role, "org_id": org_id}
-            sess["user_id"] = uid
+        login_as(c, uid, role, org_id)
         return c
 
     def test_01_default_is_off(self):

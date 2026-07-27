@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
 from safi_app.persistence import database as db
+from support import login_as
 
 
 class TestExaminerExport(unittest.TestCase):
@@ -51,9 +52,7 @@ class TestExaminerExport(unittest.TestCase):
 
     def client(self, role="admin", org_id=None):
         c = self.app.test_client()
-        with c.session_transaction() as sess:
-            sess["user"] = {"id": self.uid, "email": f"{self.uid}@example.test",
-                            "role": role, "org_id": org_id or self.org_id}
+        login_as(c, self.uid, role, org_id or self.org_id)
         return c
 
     def test_export_returns_decrypted_records_and_trail_metadata(self):

@@ -13,16 +13,29 @@ import os
 import sys
 import time
 import unittest
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 EMAIL = "mfa-e2e-test@test.local"
 PASSWORD = "e2e-Test-Password-1"
-os.environ.setdefault("SAFI_LOCAL_ADMIN_EMAIL", EMAIL)
-os.environ.setdefault("SAFI_LOCAL_ADMIN_PASSWORD", PASSWORD)
+# Deliberately NOT set via the environment. config.py:9 calls
+# load_dotenv(override=True), so .env beats anything the process sets — the
+# previous os.environ.setdefault here was silently a no-op whenever a real
+# .env defined SAFI_LOCAL_ADMIN_EMAIL. create_app() then seeded the
+# developer's own admin instead, the lookup for EMAIL returned None, and the
+# failure surfaced as "'NoneType' object is not subscriptable".
+#
+# /api/login/local authenticates ANY user carrying a password_hash, not only
+# the seeded local admin, so the test creates and owns its own account. That
+# removes the .env dependency entirely — and avoids the trap in the old
+# teardown, which deleted "the user with this email" and would have deleted
+# the developer's real admin account the moment EMAIL resolved to theirs.
+# ENABLE_LOCAL_LOGIN must still be on, which any configured .env satisfies.
 
 from safi_app import create_app
+from safi_app.config import Config
 from safi_app.core import totp as totp_lib
 from safi_app.core import identity as identity_mod
 from safi_app.persistence import database as db
@@ -55,20 +68,38 @@ class TestMfaLifecycle(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.app = create_app()  # seeds the local admin from the env vars
+        from werkzeug.security import generate_password_hash
+        cls.app = create_app()
+        if not Config.ENABLE_LOCAL_LOGIN:
+            raise unittest.SkipTest(
+                "local login disabled — set SAFI_LOCAL_ADMIN_EMAIL/PASSWORD in .env")
+        cls.uid = f"mfa_e2e_{uuid.uuid4().hex[:12]}"
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE email=%s AND id LIKE 'mfa_e2e_%%'", (EMAIL,))
+        cur.execute(
+            "INSERT INTO users (id, email, name, role, password_hash) "
+            "VALUES (%s, %s, 'MFA E2E Test', 'admin', %s)",
+            (cls.uid, EMAIL, generate_password_hash(PASSWORD)))
+        conn.commit()
+        cur.close()
+        conn.close()
 
     @classmethod
     def tearDownClass(cls):
         conn = db.get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT id, org_id FROM users WHERE email=%s", (EMAIL,))
+        # Key on the id this test created, never on the email. Selecting by
+        # email would delete whichever account happened to hold it — which,
+        # before this test owned its own user, could have been the developer's
+        # real local admin.
+        cur.execute("SELECT org_id FROM users WHERE id=%s", (cls.uid,))
         row = cur.fetchone()
-        if row:
-            uid, org = row
-            cur.execute("DELETE FROM sessions WHERE user_id=%s", (uid,))
-            cur.execute("DELETE FROM users WHERE id=%s", (uid,))
-            if org:
-                cur.execute("DELETE FROM organizations WHERE id=%s AND name='MFA E2E Org'", (org,))
+        org = row[0] if row else None
+        cur.execute("DELETE FROM sessions WHERE user_id=%s", (cls.uid,))
+        cur.execute("DELETE FROM users WHERE id=%s", (cls.uid,))
+        if org:
+            cur.execute("DELETE FROM organizations WHERE id=%s AND name='MFA E2E Org'", (org,))
         conn.commit()
         cur.close()
         conn.close()
@@ -89,12 +120,7 @@ class TestMfaLifecycle(unittest.TestCase):
     def test_full_lifecycle(self):
         c = self.app.test_client()
 
-        conn = db.get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE email=%s", (EMAIL,))
-        uid = cur.fetchone()[0]
-        cur.close()
-        conn.close()
+        uid = self.uid
         baseline = self._journal_counts(uid)
 
         # Plain password login while unenrolled

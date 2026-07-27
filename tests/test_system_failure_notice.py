@@ -32,7 +32,13 @@ def make_safi():
     s.values = VALUES
     s.profile = {"policy_id": "pol-1", "policy_version": 1, "org_id": "org-1"}
     s.active_profile_name = "test_agent"
+    # Mirrors SAFi.__init__ (orchestrator.py:129-130), which sets both models.
+    # This stub bypasses __init__ via object.__new__, so every attribute the
+    # code under test reads has to be mirrored by hand — when the notice path
+    # started reading conscience_model, the stub broke with a bare
+    # AttributeError rather than anything describing the real problem.
     s.intellect_model = "test-model"
+    s.conscience_model = "test-conscience-model"
     s.model_attribution = '{"intellect": "test/test-model"}'
     s.spirit = MagicMock(values=VALUES)
     # Deliberately NO intellect_engine / llm_provider / conscience attributes:
