@@ -1,0 +1,86 @@
+# Disposable test stack. Never points at the dev database.
+#
+# The suite is integration-first by design (docs/DEVELOPER_GUIDE.md §17): the
+# tests import safi_app.persistence.database and talk to real MySQL. So the
+# unit of isolation is the database, not a mock layer — this file gives the
+# suite its own MySQL on a tmpfs, wiped when the stack goes down.
+#
+#   docker compose -f docker-compose.test.yml run --rm tests
+#
+# Two things here are load-bearing, both because config.py:9 calls
+# load_dotenv(override=True) — the .env file beats the real environment:
+#
+#   1. No `env_file: .env`. Every value below would be silently overridden.
+#   2. Only ./tests is mounted, NOT the repo root. Bind-mounting the whole
+#      repo would place the developer's .env at /app/.env, load_dotenv would
+#      pick it up, and the suite would run against the DEV database — dropping
+#      real rows in teardown. .dockerignore excludes .env from the image, so
+#      keeping the mount narrow is what preserves that isolation.
+#
+# Application code therefore comes from the built image, which is also what CI
+# exercises. Rebuild (--build) to pick up source changes, per CLAUDE.md.
+
+# Its own project, so this stack and the dev stack cannot disturb each other.
+# Without it both default to the directory name and `docker compose down
+# --remove-orphans` on either one would tear down the other's containers.
+name: safi-test
+
+services:
+  test-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test-root
+      MYSQL_DATABASE: safi_test
+      MYSQL_USER: safi_test
+      MYSQL_PASSWORD: test-password
+    # Data lives in RAM: fast, and impossible to leave behind between runs.
+    tmpfs:
+      - /var/lib/mysql
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-flush-method=nosync
+      --innodb-doublewrite=0
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ptest-root"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  tests:
+    build: .
+    depends_on:
+      test-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: test-db
+      DB_PORT: "3306"
+      DB_USER: safi_test
+      DB_PASSWORD: test-password
+      DB_NAME: safi_test
+      # Config.validate() aborts startup unless at least one provider key is
+      # present. Nothing here makes a network call — the suite never reaches a
+      # live model — but the key has to exist for the app to build.
+      GROQ_API_KEY: ci-placeholder-not-a-real-key
+      # Throwaway Fernet key. Safe to commit: the only data it ever protects
+      # lives in a tmpfs database that is destroyed when the stack stops.
+      SAFI_ENCRYPTION_KEY: c2FmaS1jaS10ZXN0LWtleS1ub3QtYS1zZWNyZXQhISE=
+      FLASK_SECRET_KEY: ci-test-secret-key
+      # config.py:97 reads FLASK_ENV (not APP_ENV) and defaults to
+      # 'production', which makes validate() demand Google OAuth credentials.
+      # Any value other than 'production' or 'development' avoids both the
+      # production requirements and the debug branch at config.py:101.
+      FLASK_ENV: test
+      # Local login must be enabled for the MFA suite; the account it uses is
+      # created by the test itself.
+      SAFI_LOCAL_ADMIN_EMAIL: ci-admin@test.local
+      SAFI_LOCAL_ADMIN_PASSWORD: ci-test-password
+      # Keep the promotional UI out of any snapshot a test might assert on.
+      SAFI_DEPLOYMENT_MODE: production
+      SAFI_SKIP_INDEX_BOOTSTRAP: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      # tests/ is the ONLY mount — see the note at the top of this file.
+      - ./tests:/app/tests:ro
+    working_dir: /app
+    entrypoint: ["python", "scripts/ci_run_tests.py"]

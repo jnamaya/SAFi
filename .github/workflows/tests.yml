@@ -1,0 +1,115 @@
+name: tests
+
+# The deterministic suite only. Everything here runs offline against a
+# throwaway MySQL — no model provider is ever contacted.
+#
+# The LLM-dependent work (Benchmarks/Scripts/jailbreak_test.py and the
+# domain-compliance benchmark) is deliberately NOT wired in here: it costs real
+# money per run and is non-deterministic, so gating merges on it would produce
+# flaky red builds and a bill. Those belong on a schedule with their results
+# diffed — see docs/internal/GOVERNANCE_BACKLOG.md item 11.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-root
+          MYSQL_DATABASE: safi_test
+          MYSQL_USER: safi_test
+          MYSQL_PASSWORD: test-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptest-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: safi_test
+      DB_PASSWORD: test-password
+      DB_NAME: safi_test
+      # Config.validate() aborts without a provider key. Nothing in this suite
+      # makes a network call; the value only has to exist.
+      GROQ_API_KEY: ci-placeholder-not-a-real-key
+      # Throwaway Fernet key — the database it protects is destroyed with the runner.
+      SAFI_ENCRYPTION_KEY: c2FmaS1jaS10ZXN0LWtleS1ub3QtYS1zZWNyZXQhISE=
+      FLASK_SECRET_KEY: ci-test-secret-key
+      # config.py:97 reads FLASK_ENV (not APP_ENV) and defaults to
+      # 'production', which makes validate() demand Google OAuth credentials.
+      FLASK_ENV: test
+      SAFI_LOCAL_ADMIN_EMAIL: ci-admin@test.local
+      SAFI_LOCAL_ADMIN_PASSWORD: ci-test-password
+      SAFI_DEPLOYMENT_MODE: production
+      SAFI_SKIP_INDEX_BOOTSTRAP: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Assert no .env is present
+        # config.py:9 calls load_dotenv(override=True), so a .env file beats
+        # every value in `env:` above. A checkout should never contain one —
+        # if it ever does, the suite would silently run against whatever that
+        # file points at instead of the service container.
+        run: |
+          if [ -f .env ]; then
+            echo "::error::.env present in the checkout; it would override CI config"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u safi_test -ptest-password --silent; then
+              echo "mysql ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MySQL did not become ready"; exit 1
+
+      - name: Run the suite
+        run: python scripts/ci_run_tests.py
+
+      - name: Front-end build is committed and current
+        # public/css/main.css is generated but tracked (CLAUDE.md). A change to
+        # markup or JS without a rebuild ships a stale stylesheet, which no
+        # Python test would catch.
+        run: |
+          cd public
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          npx tailwindcss -i ./css/input.css -o ./css/main.css
+          cd ..
+          if ! git diff --quiet -- public/css/main.css; then
+            echo "::error::public/css/main.css is stale — rebuild it and commit"
+            git diff --stat -- public/css/main.css
+            exit 1
+          fi
