@@ -38,7 +38,6 @@ of your choice; nothing about the backend assumes vanilla JS.
 ```
 public/
 ├── index.html            # single-page app shell
-├── sw.js                 # service worker (offline cache)
 ├── package.json, package-lock.json, tailwind.config.js   # Tailwind build only
 ├── css/
 │   ├── input.css          # Tailwind source
