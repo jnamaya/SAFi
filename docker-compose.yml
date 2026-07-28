@@ -45,11 +45,17 @@ services:
   # and legal holds actually execute. Bare-metal deployments use the systemd
   # timer in deploy/systemd/ instead.
   purge:
-    # Reuses the app image rather than declaring its own `build:`. Both were
-    # built from the same Dockerfile, so this was building an identical 2.7 GB
-    # image a second time on every deploy — for a script whose imports are
-    # argparse/json/re/sys/os/time/uuid/datetime/pathlib and safi_app.config.
-    # Depends on `app` so compose builds the image before this starts.
+    # Same build context and the SAME image tag as `app`, so the two services
+    # share one image instead of producing two identical multi-gigabyte copies
+    # for a script that imports argparse/json/re/sys/os/time/uuid/datetime/
+    # pathlib and safi_app.config.
+    #
+    # `build:` must stay here even though app already declares it: a service
+    # with only `image:` and no `build:` is something compose tries to PULL, so
+    # `docker compose up` fails with "pull access denied for safi" on any
+    # machine that has not already built the tag locally. With both keys the
+    # second build is a fully cached no-op resolving to the same image id.
+    build: .
     image: safi:latest
     env_file: .env
     environment:
