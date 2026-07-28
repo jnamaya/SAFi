@@ -252,7 +252,7 @@ async function loadKpis() {
     const tile = (label, value, sub = '', help = '') => `
         <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-4 py-3" ${help ? `title="${esc(help)}"` : ''}>
             <div class="text-xs uppercase text-gray-400">${label}</div>
-            <div class="text-2xl font-bold mt-0.5">${value}</div>
+            <div class="text-2xl font-bold mt-0.5 tabular-nums">${value}</div>
             ${sub ? `<div class="text-xs text-gray-400 mt-0.5">${sub}</div>` : ''}
         </div>`;
     const redirectSub = s.avg_redirect_quality !== null && s.avg_redirect_quality !== undefined
@@ -563,11 +563,11 @@ async function renderDetail(messagePk) {
                 <div class="grid grid-cols-2 gap-3">
                     <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-4 py-3" title="${esc(ALIGNMENT_HELP)}">
                         <div class="text-xs uppercase text-gray-400">Alignment</div>
-                        <div class="text-2xl font-bold mt-0.5">${alignmentLabel(ev.spirit_score)}</div>
+                        <div class="text-2xl font-bold mt-0.5 tabular-nums">${alignmentLabel(ev.spirit_score)}</div>
                     </div>
                     <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-4 py-3" title="${esc(CONSISTENCY_HELP)}">
                         <div class="text-xs uppercase text-gray-400">Consistency</div>
-                        <div class="text-2xl font-bold mt-0.5">${consistencyLabel(ev.drift)}</div>
+                        <div class="text-2xl font-bold mt-0.5 tabular-nums">${consistencyLabel(ev.drift)}</div>
                     </div>
                 </div>
                 ${r.spiritNote ? textCard('Consistency note', esc(r.spiritNote)) : ''}

@@ -606,6 +606,29 @@ html.native body { font-size: 14px; }
   color: #dcfce7;
 }
 
+/* ── Tabular figures ─────────────────────────────────────────────────────
+   Inter's default figures are proportional: '1' is narrower than '7', so a
+   column of scores shimmers and cannot be compared down the page. Every
+   governance surface — Audit Hub scores, drift, counts, timestamps, the
+   review queue, the compliance log — is exactly the case tabular figures
+   exist for.
+
+   Scoped to tables inside the control panel rather than applied globally:
+   tabular figures are WRONG in running prose, where the even advance width
+   leaves visible gaps around narrow digits. Chat content and the serif
+   reading column keep proportional figures deliberately.
+
+   Handled here rather than by adding a class to every <td> across five
+   settings modules. Individual figures outside a table use Tailwind's own
+   `tabular-nums` utility — no second custom class for the same job. */
+#control-panel-view table,
+#control-panel-view th,
+#control-panel-view td,
+#control-panel-view time {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on, "calt" on, "liga" on;
+}
+
 .table-wrapper {
   display: block;
   width: 100%;
