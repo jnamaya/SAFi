@@ -20,6 +20,7 @@ services:
   # ── SAFi Application ──────────────────────────────────────────────────────────
   app:
     build: .
+    pull_policy: build
     # Explicit tag so `purge` can reference it. Without this, compose names the
     # image after the project directory, which differs between checkouts.
     image: safi:latest
@@ -56,6 +57,7 @@ services:
     # machine that has not already built the tag locally. With both keys the
     # second build is a fully cached no-op resolving to the same image id.
     build: .
+    pull_policy: build
     image: safi:latest
     env_file: .env
     environment:
