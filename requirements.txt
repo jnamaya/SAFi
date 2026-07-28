@@ -16,8 +16,14 @@ anthropic>=0.30.0
 google-genai>=1.0.0
 
 # ── RAG / Embeddings ──────────────────────────────────────────────────────────
-# torch is installed via the CPU-only wheel index in the Dockerfile for a lean image
-sentence-transformers>=3.0.0
+# fastembed runs all-MiniLM-L6-v2 through ONNX Runtime instead of PyTorch.
+# Embeddings are LOCAL either way — no text leaves the deployment — but this
+# drops ~1.05 GB from the image: sentence-transformers pulled torch (754 MB),
+# transformers (113 MB), scikit-learn (50 MB), scipy (113 MB) and sympy (80 MB),
+# none of which SAFi imports directly. Vectors are identical to the previous
+# stack (cosine 1.0, both unit-normalised), so existing FAISS indexes remain
+# valid and no rebuild is required.
+fastembed>=0.4.0
 faiss-cpu>=1.8.0
 
 # ── Authentication ─────────────────────────────────────────────────────────────

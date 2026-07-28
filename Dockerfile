@@ -11,12 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# Install torch CPU-only first (avoids pulling the full CUDA build via sentence-transformers)
-RUN pip install --no-cache-dir \
-        torch \
-        --index-url https://download.pytorch.org/whl/cpu
-
-# Install remaining dependencies
+# No torch pre-install step any more: embeddings run through ONNX Runtime via
+# fastembed, so nothing pulls PyTorch and the CPU-wheel workaround that existed
+# to avoid the CUDA build is unnecessary.
 RUN pip install --no-cache-dir -r requirements.txt
 
 

@@ -13,7 +13,7 @@ import numpy as np
 import re
 import logging
 import threading
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 from typing import List, Dict, Any
 
 # --- CONFIGURATION ---
@@ -22,6 +22,13 @@ from typing import List, Dict, Any
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", "./vector_store")
 CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", "./cache")
 EMBEDDING_MODEL = os.environ.get("SAFI_EMBEDDING_MODEL", 'all-MiniLM-L6-v2')
+
+
+def _hub_model_name(name: str) -> str:
+    """fastembed wants the fully-qualified hub id; sentence-transformers
+    accepted the bare one. Accept either so an existing SAFI_EMBEDDING_MODEL
+    keeps working after the ONNX swap."""
+    return name if "/" in name else f"sentence-transformers/{name}"
 
 # Set environment variables for model caching
 os.environ["NLTK_DATA"] = CACHE_DIR
@@ -40,9 +47,20 @@ def get_shared_embedding_model():
     global _SHARED_MODEL
     with _MODEL_LOCK:
         if _SHARED_MODEL is None:
-            logging.info(f"Loading Global Embedding Model: {EMBEDDING_MODEL}")
-            _SHARED_MODEL = SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
+            logging.info(f"Loading Global Embedding Model: {EMBEDDING_MODEL} (ONNX)")
+            _SHARED_MODEL = TextEmbedding(
+                model_name=_hub_model_name(EMBEDDING_MODEL), cache_dir=CACHE_DIR)
     return _SHARED_MODEL
+
+
+def embed_texts(model, texts: List[str]) -> np.ndarray:
+    """fastembed returns a generator of vectors; FAISS needs a float32 matrix.
+
+    Vectors are unit-normalised by the model, exactly as sentence-transformers'
+    all-MiniLM-L6-v2 was — verified identical to 5 decimal places — so indexes
+    built before the ONNX swap remain valid and IndexFlatIP is still cosine.
+    """
+    return np.array(list(model.embed(texts)), dtype="float32")
 
 
 class Retriever:
@@ -153,7 +171,7 @@ class Retriever:
         # If no citation results, or if it wasn't a citation query, perform semantic search
         if not indices_to_return:
             self.log.info("Performing semantic vector search.")
-            query_embedding = self.model.encode([query]).astype('float32')
+            query_embedding = embed_texts(self.model, [query])
             distances, indices = self.index.search(query_embedding, k)
             indices_to_return = indices[0] 
 

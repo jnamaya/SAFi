@@ -18,7 +18,7 @@ os.environ["HF_HUB_CACHE"] = CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 # ----------------------------->
 
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 
 # --- CONFIGURATION ---
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_REPO_ROOT, "vector_store"))
@@ -161,17 +161,20 @@ def build_index(text_chunks: List[str], metadata_list: List[Dict[str, Any]], out
 
     print(f"--- Building index '{output_name}' ---")
     try:
-        print(f"Loading embedding model: {EMBEDDING_MODEL}")
-        model = SentenceTransformer(EMBEDDING_MODEL, cache_folder=CACHE_DIR)
+        print(f"Loading embedding model: {EMBEDDING_MODEL} (ONNX)")
+        _name = EMBEDDING_MODEL if "/" in EMBEDDING_MODEL else f"sentence-transformers/{EMBEDDING_MODEL}"
+        model = TextEmbedding(model_name=_name, cache_dir=CACHE_DIR)
     except Exception as e:
-        print(f"Fatal Error: Could not load SentenceTransformer model. {e}")
+        print(f"Fatal Error: Could not load the embedding model. {e}")
         print("Please ensure you have an internet connection or the model is cached.")
         return
 
     print("Encoding text chunks... This may take a while.")
     try:
-        embeddings = model.encode(text_chunks, show_progress_bar=True)
-        embeddings = np.array(embeddings).astype('float32') # FAISS requires float32
+        # fastembed yields a generator of unit-normalised vectors; FAISS needs a
+        # float32 matrix. Same values sentence-transformers produced for this
+        # model, so IndexFlatIP remains cosine and old indexes stay valid.
+        embeddings = np.array(list(model.embed(text_chunks)), dtype='float32')
     except Exception as e:
         print(f"Fatal Error: Could not encode text chunks. {e}")
         return
