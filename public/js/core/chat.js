@@ -927,7 +927,12 @@ export async function sendMessage(activeProfileData, user) {
     const now = new Date();
     // ADDED NULL CHECK: Safely get user info
     const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
-    const userMessageId = crypto.randomUUID();
+    // generateUUID(), never crypto.randomUUID() directly: the Web Crypto API is
+    // only exposed in a secure context, so on a self-hosted instance reached
+    // over plain HTTP by IP or hostname (http://192.168.1.218:5000) this throws
+    // TypeError and kills sendMessage before the fetch — the prompt silently
+    // never leaves the browser. Works on localhost, fails on every LAN deploy.
+    const userMessageId = generateUUID();
 
     // --- NEW: Retry Handler for optimistic message ---
     const retryHandler = (text) => {
