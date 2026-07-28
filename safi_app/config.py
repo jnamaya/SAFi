@@ -342,19 +342,28 @@ class Config:
     # Can be overridden per-agent via will_rules.structural_requirements.alignment_score_threshold.
     SPIRIT_ALIGNMENT_THRESHOLD = float(os.environ.get("SAFI_SPIRIT_THRESHOLD", "0.5"))
 
-    # Default profile to use when none is specified
-    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "tutor").strip().lower()
+    # Default profile to use when none is specified.
+    #
+    # The Fiduciary leads because it demonstrates what SAFi is for in a single
+    # interaction: a regulated-domain agent declining to give personalised
+    # financial advice. It is also the agent the published domain-compliance
+    # benchmark measures, and it needs no knowledge base — no index, no
+    # embedding model, nothing to download on first boot.
+    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "fiduciary").strip().lower()
 
     # Which built-in demo agents to register and seed. Comma-separated persona
     # keys (see core/faculties/synderesis.py PERSONAS), or "all" for the full
-    # demo suite. The lean default keeps fresh installs to the two agents that
-    # work with zero extra setup: the Socratic Tutor (no RAG, no plugins) and
-    # the SAFi Steward (explains SAFi; its small index auto-builds in Docker).
+    # demo suite.
+    #
+    # The default three all run with zero extra setup. Fiduciary and Tutor
+    # carry no rag_knowledge_base at all; the Steward has a small one that
+    # auto-builds in Docker. Bible Scholar and Contoso Admin are excluded from
+    # the default precisely because they DO require an index to be built first.
     BUILTIN_AGENTS = [
         a.strip().lower()
-        for a in os.environ.get("SAFI_BUILTIN_AGENTS", "tutor,safi").split(",")
+        for a in os.environ.get("SAFI_BUILTIN_AGENTS", "fiduciary,tutor,safi").split(",")
         if a.strip()
-    ] or ["tutor", "safi"]
+    ] or ["fiduciary", "tutor", "safi"]
 
     @classmethod
     def builtin_agent_enabled(cls, key: str) -> bool:

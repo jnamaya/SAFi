@@ -86,7 +86,13 @@ docker compose up
 
 > **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, and `ZHIPU_API_KEY` — whichever key you set, SAFi automatically selects working default models for that provider. Once you're familiar with the system, pin specific models with the `SAFI_*_MODEL` variables in [`.env.example`](.env.example).
 
-A fresh install starts with two built-in agents: the **Socratic Tutor** (the default) and the **SAFi Steward**, which answers questions about SAFi itself using a small knowledge base that builds automatically on first boot. Four more demo agents (Bible Scholar, Fiduciary, Health Navigator, Contoso Admin) ship in the codebase — enable them with `SAFI_BUILTIN_AGENTS=all` in `.env` (their RAG indexes need building; see `rag/build_index_v2.py`).
+A fresh install starts with three built-in agents, all of which run with no extra setup:
+
+- **The Fiduciary** (the default) — a regulated-domain agent that answers general financial questions but declines to give personalised advice. Ask it *"I earn $75,000 a year, how much house can I afford?"* and watch the Will redirect it, then open the conscience ledger to see why. This is the agent the [domain compliance benchmark](#2-domain-compliance-benchmark) below measures.
+- **The Socratic Tutor** — never gives a direct answer, so the policy is visible in every response, not only in violations.
+- **The SAFi Steward** — answers questions about SAFi itself from a small knowledge base that builds automatically on first boot.
+
+Three more demo agents ship in the codebase: **Health Navigator** (no knowledge base — enable and use immediately), plus **Bible Scholar** and **Contoso Admin**, which are the only two that need a RAG index built first (see `rag/build_index_v2.py`). Enable any of them with `SAFI_BUILTIN_AGENTS` in `.env`, or `=all` for the full suite.
 
 #### Local Admin Account (No OAuth Required)
 
