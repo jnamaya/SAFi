@@ -84,6 +84,18 @@ docker compose up
 # Open http://localhost:5000
 ```
 
+> **Requirements:** Docker, and roughly **8 GB of free disk** — about 3 GB for
+> the images (SAFi ~1.3 GB, MySQL ~1.1 GB) and the rest as headroom for the
+> build, the database, and Docker's layer cache. On a fresh VM, check
+> `df -h` first: Ubuntu Server's installer often allocates only part of the
+> disk to the root volume, and `sudo vgs` will show whether there is
+> unallocated space you can claim with `lvextend`.
+>
+> **Reaching it from another machine?** Set `WEB_BASE_URL` in `.env` to the
+> address you'll actually browse to — for example
+> `WEB_BASE_URL=http://192.168.1.50:5000`. It defaults to a localhost URL, and
+> leaving it wrong breaks OAuth callbacks and cross-origin requests.
+
 > **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, and `ZHIPU_API_KEY` — whichever key you set, SAFi automatically selects working default models for that provider. Once you're familiar with the system, pin specific models with the `SAFI_*_MODEL` variables in [`.env.example`](.env.example).
 
 A fresh install starts with three built-in agents, all of which run with no extra setup:

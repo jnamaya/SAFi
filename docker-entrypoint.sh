@@ -59,16 +59,34 @@ if [ "${SERVICE}" = "purge" ]; then
         sleep 86400
     done
 else
-    # First-boot RAG bootstrap: build the small `safi` knowledge base (used by
-    # the SAFi Steward agent) if it's missing. The embedding model download
-    # lands in the mounted ./cache volume, so this only costs time once.
-    # Set SAFI_SKIP_INDEX_BOOTSTRAP=true to disable.
-    if [ "${SAFI_SKIP_INDEX_BOOTSTRAP}" != "true" ] \
-        && [ ! -f vector_store/safi.index ] && [ -d rag/docs ]; then
-        echo "Building the 'safi' RAG index (first boot only)..."
-        SAFI_VECTOR_STORE_PATH=/app/vector_store SAFI_MODEL_CACHE_DIR=/app/cache \
+    # First-boot RAG bootstrap for the SAFi Steward's knowledge base.
+    #
+    # Guards on BOTH artifacts, not just the index. They live in different
+    # places with different lifetimes: the index is in the `vector_store` NAMED
+    # VOLUME (survives `compose down`, image rebuilds, even deleting the repo)
+    # while the embedding model is in ./cache, a BIND MOUNT that only survives
+    # if the host directory does. Rebuild a host and the index persists while
+    # the model vanishes — the old index-only check then skipped this block,
+    # and the model got downloaded inside the first user request instead:
+    # under a lock, behind gunicorn's --timeout, with the browser spinning and
+    # nothing in the logs to explain it.
+    if [ "${SAFI_SKIP_INDEX_BOOTSTRAP}" != "true" ] && [ -d rag/docs ]; then
+        export SAFI_VECTOR_STORE_PATH=/app/vector_store SAFI_MODEL_CACHE_DIR=/app/cache
+
+        if [ ! -f vector_store/safi.index ]; then
+            echo "Building the 'safi' RAG index (first boot only)..."
             python rag/build_index_v2.py --name safi --source_dir rag/docs \
-            || echo "WARNING: safi index build failed — the SAFi Steward agent will answer without RAG."
+                || echo "WARNING: safi index build failed — the SAFi Steward agent will answer without RAG."
+        fi
+
+        # Warm the embedding model even when the index already exists. Cheap and
+        # idempotent once cached; the alternative is paying for it in a request.
+        python - <<'WARM' || echo "WARNING: embedding model warm-up failed — the first Steward query will be slow."
+import os
+from safi_app.core.services.retriever import get_shared_embedding_model, EMBEDDING_MODEL
+get_shared_embedding_model()
+print(f"Embedding model ready: {EMBEDDING_MODEL}")
+WARM
     fi
 
     exec gunicorn wsgi:app \

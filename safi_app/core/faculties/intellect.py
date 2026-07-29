@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 import json
 import logging
-from ..services.retriever import Retriever
+# Retriever is imported lazily inside __init__ — see the note there.
 from ...persistence import database as db
 
 class IntellectEngine:
@@ -46,11 +46,24 @@ class IntellectEngine:
         self.last_error = None
         self.mcp_manager = mcp_manager
 
-        # Initialize Retriever if configured
+        # Initialize Retriever if configured.
+        #
+        # Imported HERE rather than at module scope: importing the retriever
+        # pulls in faiss and the ONNX embedding runtime, and most agents have no
+        # knowledge base at all — of the built-ins, only the Steward, Bible
+        # Scholar and Contoso Admin do. A top-level import made every
+        # deployment pay for a vector-search stack it may never call.
         self.retriever = None
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
-            self.retriever = Retriever(knowledge_base_name=kb_name)
+            try:
+                from ..services.retriever import Retriever
+                self.retriever = Retriever(knowledge_base_name=kb_name)
+            except ImportError as e:
+                # A build without the RAG extras should degrade, not crash: the
+                # agent answers without retrieval rather than failing to start.
+                self.log.error(
+                    f"RAG unavailable for '{kb_name}' ({e}) — answering without retrieval.")
 
     async def generate(
         self,
