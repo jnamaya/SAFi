@@ -446,8 +446,24 @@ class Config:
                 errors.append("FLASK_SECRET_KEY must be set to a strong random value in production")
             if not cls.DB_PASSWORD:
                 errors.append("DB_PASSWORD is required")
-            if not cls.GOOGLE_CLIENT_ID or not cls.GOOGLE_CLIENT_SECRET:
-                errors.append("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for user login")
+            # At least one WAY IN must be configured — not Google specifically.
+            # Requiring Google forced anyone standardised on Microsoft Entra
+            # (a first-class option, see /api/login/microsoft) or running purely
+            # on the local admin account to register a Google OAuth app they
+            # would never use, just to boot.
+            _logins = {
+                "Google (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)":
+                    bool(cls.GOOGLE_CLIENT_ID and cls.GOOGLE_CLIENT_SECRET),
+                "Microsoft (MICROSOFT_CLIENT_ID + MICROSOFT_CLIENT_SECRET)":
+                    bool(cls.MICROSOFT_CLIENT_ID and cls.MICROSOFT_CLIENT_SECRET),
+                "Local admin (SAFI_LOCAL_ADMIN_EMAIL + SAFI_LOCAL_ADMIN_PASSWORD)":
+                    cls.ENABLE_LOCAL_LOGIN,
+            }
+            if not any(_logins.values()):
+                errors.append(
+                    "No login method is configured — production needs at least one of:\n"
+                    + "\n".join(f"      • {name}" for name in _logins)
+                )
             if not cls.ENCRYPTION_KEY:
                 errors.append(
                     "SAFI_ENCRYPTION_KEY is required in production — generate with: "
