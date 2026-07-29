@@ -2262,12 +2262,12 @@ video {
   --tw-gradient-to: transparent var(--tw-gradient-to-position);
 }
 
-.fill-emerald-500\/25 {
-  fill: rgb(16 185 129 / 0.25);
-}
-
 .fill-gray-400 {
   fill: #9ca3af;
+}
+
+.fill-gray-500 {
+  fill: #6b7280;
 }
 
 .stroke-emerald-500 {
@@ -4079,6 +4079,10 @@ video {
 
 .dark\:to-transparent:is(.dark *) {
   --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+
+.dark\:fill-gray-400:is(.dark *) {
+  fill: #9ca3af;
 }
 
 .dark\:stroke-emerald-400:is(.dark *) {

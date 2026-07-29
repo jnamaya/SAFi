@@ -1988,6 +1988,57 @@ html.native body { font-size: 14px; }
 }
 
 /* Reusable white card for grouping settings sections on the grey canvas. */
+/* Audit Hub categorical series slots. Assigned in fixed order off the org's
+   agent roster so a scope change never repaints the surviving lines. Both
+   columns validated against the card surfaces (#ffffff / #111111): worst
+   adjacent CVD dE 9.1 light / 8.4 dark, normal-vision 19.6 / 19.3. Three light
+   slots (aqua, yellow, magenta) sit under 3:1 on white, so the chart always
+   ships a legend and direct-labels up to 4 series — that is the relief, not a
+   nice-to-have. Do not reorder or substitute without re-validating. */
+:root {
+  --ah-series-1: #2a78d6;
+  --ah-series-2: #eb6834;
+  --ah-series-3: #1baf7a;
+  --ah-series-4: #eda100;
+  --ah-series-5: #e87ba4;
+  --ah-series-6: #008300;
+  --ah-series-7: #4a3aa7;
+  --ah-series-8: #e34948;
+}
+
+.dark {
+  --ah-series-1: #3987e5;
+  --ah-series-2: #d95926;
+  --ah-series-3: #199e70;
+  --ah-series-4: #c98500;
+  --ah-series-5: #d55181;
+  --ah-series-6: #008300;
+  --ah-series-7: #9085e9;
+  --ah-series-8: #e66767;
+}
+
+.ah-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+}
+
+.ah-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ah-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 .settings-card {
   background: #ffffff;
   border: 1px solid #ececec;

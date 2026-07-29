@@ -148,8 +148,10 @@ export async function renderSettingsDashboardTab() {
         return;
     }
     orgId = org.id;
+    // view defaults to 'consistency' so the card's heading and its y-axis agree
+    // on load; it used to open on 'deviation' under a "Consistency Trend" title.
     state = { mode: 'agent', entity: '', range: '30d', filter: '', q: '', offset: 0,
-              maDays: 7, view: 'deviation', showPoints: false, filters: { profiles: [], policies: [] } };
+              maDays: 7, view: 'consistency', showPoints: false, filters: { profiles: [], policies: [] } };
 
     try {
         state.filters = await api.getAuditFilters(orgId);
@@ -279,29 +281,95 @@ async function loadKpis() {
 
 // --- Consistency trend ---------------------------------------------------------
 
+// Fixed categorical order (see --ah-series-N in styles.css). Slots are handed
+// out by position in the org's agent roster, NOT by position in the filtered
+// result — narrowing the range must never repaint the lines that survive.
+const AH_SERIES_SLOTS = 8;
+
+function seriesColor(profileKey) {
+    const roster = [...(state.filters.profiles || [])].map(String).sort();
+    const i = roster.indexOf(String(profileKey));
+    // An agent absent from the roster (deleted, or a NULL profile_key row) gets
+    // the last slot rather than colliding with slot 1.
+    const slot = i < 0 ? AH_SERIES_SLOTS : (i % AH_SERIES_SLOTS) + 1;
+    return `var(--ah-series-${slot})`;
+}
+
+const humanAgent = k => String(k || '').replace(/_/g, ' ') || 'unattributed';
+
+// What the y-axis is actually showing, so the heading can never contradict it.
+const VIEW_METRIC = {
+    consistency: 'Consistency Trend',
+    drift: 'Drift Trend',
+    deviation: 'Drift vs. Period Average',
+};
+
+// The heading names the real scope. Previously it read "Agent Consistency
+// Trend" in every state — including "All agents", and including policy mode.
+function trendHeading() {
+    const metric = VIEW_METRIC[state.view] || 'Consistency Trend';
+    const scope = state.entity
+        ? humanAgent(state.entity)
+        : (state.mode === 'policy' ? 'All policies' : 'All agents');
+    return `${scope} · ${metric}`;
+}
+
 async function loadTrend() {
     const el = document.getElementById('ah-trend');
     if (!el) return;
     el.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
-    let buckets;
+    let buckets, rawSeries;
     try {
-        buckets = (await api.getAuditTrend(orgId, entityParams())).buckets || [];
+        const res = await api.getAuditTrend(orgId, entityParams());
+        buckets = res.buckets || [];
+        rawSeries = res.series || [];
     } catch (e) {
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load the trend: ${esc(e.message || e)}</p>`;
         return;
     }
-    const scored = buckets.filter(b => b.avg_drift !== null && b.avg_drift !== undefined);
+    const hasDrift = b => b.avg_drift !== null && b.avg_drift !== undefined;
+    const scored = buckets.filter(hasDrift);
+
+    // One line per agent. Drift is per-agent by construction (spirit_memory is
+    // keyed on profile_name), so pooling it across agents is turn-weighted and
+    // describes no agent in particular — splitting is what makes the label true.
+    const split = rawSeries
+        .map(s => ({ key: s.profile_key, label: humanAgent(s.profile_key),
+                     color: seriesColor(s.profile_key), days: toDays(s.buckets.filter(hasDrift)) }))
+        .filter(s => s.days.length > 0);
+
+    // Past the palette's fixed slots, N lines stop being readable. Fall back to
+    // the pooled line and say so, rather than cycling hues into spaghetti.
+    const tooMany = split.length > AH_SERIES_SLOTS;
+    const perAgent = split.length > 1 && !tooMany;
+    const series = perAgent
+        ? split
+        : [{ key: '', label: 'All turns (pooled)', color: 'var(--ah-series-1)', days: toDays(scored) }];
+
+    let subtitle;
+    if (state.entity && state.mode === 'agent') {
+        subtitle = `Daily consistency of value expression against this agent's own history.`;
+    } else if (perAgent) {
+        subtitle = `One line per agent — ${split.length} with data in this period. Each turn is measured against its own agent's history, so the lines are not comparable as levels, only as stability.`;
+    } else if (tooMany) {
+        subtitle = `${split.length} agents in this period — too many to plot separately, so this is the turn-weighted mean across all of them and it may describe no single agent. Pick an agent above to see its own line.`;
+    } else {
+        subtitle = `Turn-weighted mean across all turns in scope. Each turn is measured against its own agent's history.`;
+    }
 
     const sel = (id, entries, cur) => `
         <select id="${id}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
             ${entries.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${l}</option>`).join('')}
         </select>`;
 
+    const plottable = series.filter(s => s.days.length > 0);
+    const enoughData = perAgent ? plottable.length > 0 : scored.length >= 2;
+
     el.innerHTML = `
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
-                <h4 class="text-lg font-semibold">Agent Consistency Trend</h4>
-                <p class="text-xs text-gray-500 mt-0.5" title="${esc(CONSISTENCY_HELP)}">Daily consistency of value expression against the agent's own history.</p>
+                <h4 class="text-lg font-semibold">${esc(trendHeading())}</h4>
+                <p class="text-xs text-gray-500 mt-0.5 max-w-2xl" title="${esc(CONSISTENCY_HELP)}">${esc(subtitle)}</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 ${sel('ah-ma', [[3, 'MA: 3 days'], [7, 'MA: 7 days'], [14, 'MA: 14 days'], [30, 'MA: 30 days']], state.maDays)}
@@ -309,27 +377,35 @@ async function loadTrend() {
                 <label class="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" id="ah-points" ${state.showPoints ? 'checked' : ''}> Raw points</label>
             </div>
         </div>
-        <div id="ah-trend-chart">${scored.length < 2
-            ? `<p class="text-sm text-gray-400 py-8 text-center">Not enough drift data in this period to draw a trend line.</p>`
-            : buildTrendChart(scored)}</div>`;
+        <div id="ah-trend-chart">${enoughData
+            ? buildTrendChart(plottable)
+            : `<p class="text-sm text-gray-400 py-8 text-center">Not enough drift data in this period to draw a trend line.</p>`}</div>`;
 
     el.querySelector('#ah-ma')?.addEventListener('change', e => { state.maDays = parseInt(e.target.value, 10); loadTrend(); });
     el.querySelector('#ah-view')?.addEventListener('change', e => { state.view = e.target.value; loadTrend(); });
     el.querySelector('#ah-points')?.addEventListener('change', e => { state.showPoints = e.target.checked; loadTrend(); });
 }
 
-// Reusable SVG line chart over daily buckets. Moving average is turn-weighted
-// over a trailing window of state.maDays days — the smoothing (like the view
-// mode) is a display choice, mirroring the Streamlit selectors.
-function buildTrendChart(scored) {
-    const days = scored.map(b => ({
+function toDays(bkts) {
+    return bkts.map(b => ({
         t: new Date(b.bucket + 'T00:00:00Z').getTime(),
         drift: b.avg_drift,
         n: b.scored_turns || 1,
-    }));
-    const avgDrift = days.reduce((a, d) => a + d.drift * d.n, 0) / days.reduce((a, d) => a + d.n, 0);
+    })).sort((a, b) => a.t - b.t);
+}
+
+// SVG line chart over daily buckets, one line per series. Moving average is
+// turn-weighted over a trailing window of state.maDays days — the smoothing
+// (like the view mode) is a display choice, mirroring the Streamlit selectors.
+//
+// `series` is [{key, label, color, days:[{t, drift, n}]}]. A single pooled
+// series renders exactly as this chart always did.
+function buildTrendChart(series) {
     const windowMs = state.maDays * 86400000;
-    const ma = days.map((d, i) => {
+
+    // Turn-weighted trailing mean, computed within a series — never across
+    // them, which is the whole point of the split.
+    const movingAvg = days => days.map((d, i) => {
         let num = 0, den = 0;
         for (let k = i; k >= 0 && d.t - days[k].t < windowMs; k--) {
             num += days[k].drift * days[k].n;
@@ -338,50 +414,106 @@ function buildTrendChart(scored) {
         return num / den;
     });
 
-    let raw, smooth, yMin, yMax, yLabel, zeroLine = false;
+    const prepared = series.map(s => {
+        const days = s.days;
+        const totalN = days.reduce((a, d) => a + d.n, 0) || 1;
+        // Each series deviates from its OWN period average: "is this agent off
+        // its own norm" is the only question the deviation view can answer once
+        // the lines are per-agent. For one pooled series this is unchanged.
+        const ownAvg = days.reduce((a, d) => a + d.drift * d.n, 0) / totalN;
+        const ma = movingAvg(days);
+        let raw, smooth;
+        if (state.view === 'consistency') {
+            raw = days.map(d => (1 - d.drift) * 100);
+            smooth = ma.map(v => (1 - v) * 100);
+        } else if (state.view === 'deviation') {
+            raw = days.map(d => d.drift - ownAvg);
+            smooth = ma.map(v => v - ownAvg);
+        } else {
+            raw = days.map(d => d.drift);
+            smooth = ma;
+        }
+        return { ...s, days, raw, smooth };
+    });
+
+    let yMin, yMax, yLabel, zeroLine = false;
     if (state.view === 'consistency') {
-        raw = days.map(d => (1 - d.drift) * 100);
-        smooth = ma.map(v => (1 - v) * 100);
         yMin = 0; yMax = 100; yLabel = 'Consistency (%)';
     } else if (state.view === 'deviation') {
-        raw = days.map(d => d.drift - avgDrift);
-        smooth = ma.map(v => v - avgDrift);
-        const amp = Math.max(...raw.map(Math.abs), 0.01) * 1.15;
-        yMin = -amp; yMax = amp; yLabel = 'Drift vs. period average'; zeroLine = true;
+        const amp = Math.max(...prepared.flatMap(s => s.raw.map(Math.abs)), 0.01) * 1.15;
+        yMin = -amp; yMax = amp; yLabel = 'Drift vs. each series’ period average'; zeroLine = true;
     } else {
-        raw = days.map(d => d.drift);
-        smooth = ma;
         yMin = 0; yMax = 1; yLabel = 'Drift (lower is better)';
     }
 
-    const W = 800, H = 260, PL = 46, PR = 12, PT = 12, PB = 28;
-    const tMin = days[0].t, tMax = days[days.length - 1].t || tMin + 1;
-    const x = t => PL + ((t - tMin) / Math.max(1, tMax - tMin)) * (W - PL - PR);
+    const allT = prepared.flatMap(s => s.days.map(d => d.t));
+    const tMin = Math.min(...allT), tMaxRaw = Math.max(...allT);
+    const tMax = tMaxRaw === tMin ? tMin + 1 : tMaxRaw;
+
+    // ≤4 series are direct-labeled as well as legended, so identity never rests
+    // on hue alone — this is also the relief the palette's light-mode contrast
+    // warning requires. More than that and the labels would collide.
+    const labelled = prepared.length > 1 && prepared.length <= 4;
+    const W = 800, H = 260, PL = 46, PT = 12, PB = 28;
+    const PR = labelled ? 116 : 12;
+    const x = t => PL + ((t - tMin) / (tMax - tMin)) * (W - PL - PR);
     const y = v => PT + (1 - (v - yMin) / (yMax - yMin)) * (H - PT - PB);
     const fmt = v => state.view === 'consistency' ? `${Math.round(v)}%` : v.toFixed(2);
     const dateLabel = t => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
     const ticks = [yMin, (yMin + yMax) / 2, yMax];
-    const xticks = days.length > 1
-        ? [days[0].t, days[Math.floor(days.length / 2)].t, days[days.length - 1].t]
-        : [days[0].t];
+    const dayCount = new Set(allT).size;
+    const sortedT = [...new Set(allT)].sort((a, b) => a - b);
+    const xticks = sortedT.length > 1
+        ? [sortedT[0], sortedT[Math.floor(sortedT.length / 2)], sortedT[sortedT.length - 1]]
+        : [sortedT[0]];
 
-    const line = pts => pts.map((v, i) => `${x(days[i].t).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const path = s => s.smooth.map((v, i) => `${x(s.days[i].t).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+
+    // Direct labels: nudge apart vertically so two series ending at a similar
+    // value stay legible. Text stays in muted ink with a colored dot carrying
+    // identity, rather than coloring the text itself.
+    const endLabels = [];
+    if (labelled) {
+        const ends = prepared.map(s => ({
+            label: s.label, color: s.color,
+            yv: y(s.smooth[s.smooth.length - 1]),
+            xv: x(s.days[s.days.length - 1].t),
+        })).sort((a, b) => a.yv - b.yv);
+        let prev = -Infinity;
+        for (const e of ends) {
+            const yy = Math.max(e.yv, prev + 12);
+            endLabels.push({ ...e, yy: Math.min(yy, H - PB) });
+            prev = yy;
+        }
+    }
 
     return `
         <div class="overflow-x-auto">
-        <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto min-w-[480px]" role="img" aria-label="${esc(yLabel)} over time">
+        <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto min-w-[480px]" role="img"
+             aria-label="${esc(yLabel)} over time${prepared.length > 1 ? `, ${prepared.length} series: ${esc(prepared.map(s => s.label).join(', '))}` : ''}">
             ${ticks.map(v => `
                 <line x1="${PL}" y1="${y(v)}" x2="${W - PR}" y2="${y(v)}" class="stroke-neutral-300/40 dark:stroke-neutral-700/40" stroke-width="1" stroke-dasharray="2 2"/>
                 <text x="${PL - 6}" y="${y(v) + 3}" text-anchor="end" class="fill-gray-400 text-[10px]">${fmt(v)}</text>`).join('')}
             ${zeroLine ? `<line x1="${PL}" y1="${y(0)}" x2="${W - PR}" y2="${y(0)}" class="stroke-gray-400/70" stroke-width="1" stroke-dasharray="3 3"/>` : ''}
             ${xticks.map(t => `<text x="${x(t)}" y="${H - 8}" text-anchor="middle" class="fill-gray-400 text-[10px]">${dateLabel(t)}</text>`).join('')}
-            ${state.showPoints ? raw.map((v, i) =>
-                `<circle cx="${x(days[i].t).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" class="fill-emerald-500/25"><title>${dateLabel(days[i].t)}: ${fmt(v)} (${days[i].n} turns)</title></circle>`).join('') : ''}
-            <polyline fill="none" class="stroke-emerald-500 dark:stroke-emerald-400" stroke-width="2" points="${line(smooth)}"/>
+            ${prepared.map(s => `
+                ${state.showPoints ? s.raw.map((v, i) =>
+                    `<circle cx="${x(s.days[i].t).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="${s.color}" fill-opacity="0.3"><title>${esc(s.label)} · ${dateLabel(s.days[i].t)}: ${fmt(v)} (${s.days[i].n} turns)</title></circle>`).join('') : ''}
+                ${s.days.length === 1
+                    // A one-day series draws nothing as a polyline; show the point
+                    // so the agent isn't silently missing from the chart.
+                    ? `<circle cx="${x(s.days[0].t).toFixed(1)}" cy="${y(s.smooth[0]).toFixed(1)}" r="3.5" fill="${s.color}"><title>${esc(s.label)} · ${dateLabel(s.days[0].t)}: ${fmt(s.smooth[0])}</title></circle>`
+                    : `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${path(s)}"><title>${esc(s.label)}</title></polyline>`}
+            `).join('')}
+            ${endLabels.map(e => `
+                <circle cx="${(W - PR + 8).toFixed(1)}" cy="${e.yy.toFixed(1)}" r="3.5" fill="${e.color}"/>
+                <text x="${(W - PR + 16).toFixed(1)}" y="${(e.yy + 3.5).toFixed(1)}" class="fill-gray-500 dark:fill-gray-400 text-[10px]">${esc(e.label.length > 18 ? e.label.slice(0, 17) + '…' : e.label)}</text>`).join('')}
         </svg>
         </div>
-        <p class="text-xs text-gray-400 mt-1">${esc(yLabel)} · ${state.maDays}-day moving average over ${days.length} day${days.length === 1 ? '' : 's'}.</p>`;
+        ${prepared.length > 1 ? `<div class="ah-legend">${prepared.map(s => `
+            <span class="ah-legend-item"><span class="ah-legend-swatch" style="background:${s.color}"></span>${esc(s.label)}</span>`).join('')}</div>` : ''}
+        <p class="text-xs text-gray-400 mt-1">${esc(yLabel)} · ${state.maDays}-day moving average over ${dayCount} day${dayCount === 1 ? '' : 's'}.</p>`;
 }
 
 // --- Log Explorer ----------------------------------------------------------------

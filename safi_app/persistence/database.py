@@ -3859,6 +3859,55 @@ def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
         })
     return out
 
+def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=None,
+                                date_from=None, date_to=None):
+    """The same buckets as governance_trend(), split one series per agent.
+
+    Why this exists: governance_trend()'s mean is taken over *turns*, so a
+    high-volume agent dominates it. On 2026-07-24 in dev, the_socratic_tutor
+    sat at drift 0.0 over 7 turns and the_safi_guide at 0.6163 over 2, and the
+    pooled line plotted 0.137 — a consistency of 86% that described neither
+    agent. Drift is only ever meaningful per agent (spirit_memory is keyed on
+    profile_name, so every turn's drift is a distance from that agent's own mu),
+    which is what makes the split the honest default rather than a nicety.
+
+    Returns a list of series ordered by scored turns, descending:
+        [{"profile_key", "turns", "scored_turns", "buckets": [...]}, ...]
+    Each series' buckets carry the same keys governance_trend() returns.
+    """
+    fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT profile_key, DATE_FORMAT(created_at, '{fmt}'), AVG(drift), "
+            f"COUNT(*), COUNT(drift) FROM governance_records WHERE {where} "
+            f"GROUP BY 1, 2 ORDER BY 1, 2", tuple(params))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+    series = {}
+    for key, b, avg_drift, turns, drift_turns in rows:
+        # profile_key is NULL on pre-attribution rows; keep them in their own
+        # bucket rather than silently folding them into a named agent.
+        key = key or ""
+        s = series.setdefault(key, {"profile_key": key, "turns": 0,
+                                    "scored_turns": 0, "buckets": []})
+        avg_drift = float(avg_drift) if avg_drift is not None else None
+        s["turns"] += int(turns)
+        s["scored_turns"] += int(drift_turns)
+        s["buckets"].append({
+            "bucket": b,
+            "avg_drift": avg_drift,
+            "avg_consistency": (1 - avg_drift) * 100 if avg_drift is not None else None,
+            "turns": int(turns),
+            "scored_turns": int(drift_turns),
+        })
+    return sorted(series.values(), key=lambda s: s["scored_turns"], reverse=True)
+
 _GOV_EVENT_COLUMNS = (
     "message_pk, message_id, conversation_id, profile_key, policy_id, "
     "policy_version, will_decision, will_stage, spirit_score, drift, "

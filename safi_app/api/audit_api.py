@@ -113,7 +113,14 @@ def audit_trend(org_id):
         return err
     filters.pop("flt", None)  # the trend tracks all turns, like the KPIs
     try:
-        return jsonify({"buckets": db.governance_trend(org_id, bucket=bucket, **filters)})
+        payload = {"buckets": db.governance_trend(org_id, bucket=bucket, **filters)}
+        # Per-agent split so the chart can draw one line per agent instead of a
+        # turn-weighted pool that describes no agent. Only meaningful when the
+        # scope isn't already a single agent. `buckets` keeps its exact shape.
+        if not filters.get("profile"):
+            payload["series"] = db.governance_trend_by_profile(
+                org_id, bucket=bucket, **filters)
+        return jsonify(payload)
     except Exception as e:
         current_app.logger.error(f"Error building audit trend: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
