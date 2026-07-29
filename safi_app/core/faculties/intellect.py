@@ -228,7 +228,15 @@ class IntellectEngine:
             raw_turn = None
 
         if not answer:
-            self.last_error = "LLM provider returned an empty response."
+            # Prefer the provider's actual cause (bad key, rate limit, model not
+            # found, no egress) over the generic symptom — see
+            # LLMProvider.explain_provider_error.
+            cause = getattr(self.llm_provider, "last_intellect_error", None)
+            self.last_error = (
+                f"could not reach the language model — {cause}" if cause
+                else "the language model returned an empty response. If this is a new "
+                     "install, check that a valid LLM API key is set in .env."
+            )
             return None, r_t, final_context_for_audit
 
         # --- 4. Detect and Intercept Tool Call Intent (never execute here) ---
@@ -303,7 +311,15 @@ class IntellectEngine:
             answer, r_t, context = response_tuple
             
         if not answer:
-            self.last_error = "LLM provider returned an empty response."
+            # Prefer the provider's actual cause (bad key, rate limit, model not
+            # found, no egress) over the generic symptom — see
+            # LLMProvider.explain_provider_error.
+            cause = getattr(self.llm_provider, "last_intellect_error", None)
+            self.last_error = (
+                f"could not reach the language model — {cause}" if cause
+                else "the language model returned an empty response. If this is a new "
+                     "install, check that a valid LLM API key is set in .env."
+            )
             return {"type": "text", "content": "I am currently unable to process this request under governance rules."}, r_t
             
         return {"type": "text", "content": answer}, r_t

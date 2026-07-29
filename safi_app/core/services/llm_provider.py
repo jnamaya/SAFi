@@ -350,6 +350,40 @@ class LLMProvider:
     _INTELLECT_MAX_ATTEMPTS = 3
 
     @staticmethod
+    def explain_provider_error(exc: Exception) -> str:
+        """Turn a provider exception into something an operator can act on.
+
+        The provider layer knows exactly why a call failed — a 401 with
+        'Invalid API Key' is unambiguous — but that detail used to be logged and
+        then discarded, leaving the user with "LLM provider returned an empty
+        response." True, and useless: it names a symptom and hides the cause.
+        A first-time deployer reads it as "SAFi is broken" rather than "my key
+        is wrong".
+        """
+        text = f"{type(exc).__name__}: {exc}"
+        low = text.lower()
+        if "401" in text or "invalid_api_key" in low or "authenticationerror" in low:
+            return ("the model provider rejected the API key (HTTP 401). Set a valid key for "
+                    "your provider in .env — GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, "
+                    "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, CEREBRAS_API_KEY or "
+                    "ZHIPU_API_KEY — then recreate the container (docker compose up -d) or "
+                    "restart the service. A restart alone does not reload .env.")
+        if "429" in text or "rate limit" in low or "ratelimit" in low:
+            return ("the model provider rate-limited the request (HTTP 429). Wait and retry, "
+                    "or switch to a model with more headroom.")
+        if "404" in text or "model_not_found" in low or "does not exist" in low:
+            return ("the provider does not recognise the configured model. Check the model "
+                    "selected for this agent and SAFI_INTELLECT_MODEL in .env.")
+        if any(k in low for k in ("connection", "timeout", "timed out", "resolve",
+                                  "network", "unreachable", "getaddrinfo")):
+            return ("the model provider could not be reached. Check outbound network access "
+                    "from this host, and any proxy or firewall between it and the provider.")
+        if "insufficient" in low or "quota" in low or "billing" in low:
+            return ("the provider rejected the request for quota or billing reasons. Check the "
+                    "account behind the configured API key.")
+        return f"the model provider call failed — {text[:200]}"
+
+    @staticmethod
     def _is_contentless_intellect_answer(answer: Optional[str]) -> bool:
         """True if the Intellect produced no real text (empty, or only the
         empty-content "{}" / "[]" sentinel)."""
@@ -366,6 +400,9 @@ class LLMProvider:
         handles it instead of surfacing the sentinel.
         """
         last_exc: Optional[Exception] = None
+        # Cleared per call so a stale cause from an earlier turn is never
+        # reported against a later one.
+        self.last_intellect_error: Optional[str] = None
         for attempt in range(1, self._INTELLECT_MAX_ATTEMPTS + 1):
             try:
                 raw_content = await self._chat_completion(
@@ -421,6 +458,9 @@ class LLMProvider:
         # contract (None); on persistent blanks, return an empty answer so the
         # caller shows its graceful empty-response message, never a literal "{}".
         if last_exc is not None:
+            # Preserve WHY, so the Intellect can report a cause rather than a
+            # symptom. Read by IntellectEngine when the answer comes back None.
+            self.last_intellect_error = self.explain_provider_error(last_exc)
             return None, None, context_for_audit, None
         self.log.error("Intellect returned blank after %d attempts.", self._INTELLECT_MAX_ATTEMPTS)
         return "", "", context_for_audit, None
