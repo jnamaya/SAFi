@@ -109,6 +109,13 @@ docker pull ghcr.io/jnamaya/safi:0.1.0       # a specific version
 Note the image tag has no `v` prefix — the git tag `v0.1.0` publishes as
 `0.1.0`, following container convention.
 
+#### Not using containers?
+
+See **[Bare-metal deployment](docs/DEPLOY_BAREMETAL.md)** for systemd, a system
+MySQL, a virtualenv and a reverse proxy — the way the public demo runs. It also
+covers the things Docker handles for you that bare metal does not, including
+warming the embedding model and running the retention-purge timer.
+
 Every release carries **SLSA provenance, an SBOM, and a keyless cosign
 signature**, so you can verify the image was built from the tagged source
 rather than taking our word for it:
