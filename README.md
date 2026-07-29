@@ -102,8 +102,12 @@ docker compose up
 supported. Released versions are also published to GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/jnamaya/safi:latest
+docker pull ghcr.io/jnamaya/safi:latest      # newest release
+docker pull ghcr.io/jnamaya/safi:0.1.0       # a specific version
 ```
+
+Note the image tag has no `v` prefix — the git tag `v0.1.0` publishes as
+`0.1.0`, following container convention.
 
 Every release carries **SLSA provenance, an SBOM, and a keyless cosign
 signature**, so you can verify the image was built from the tagged source
