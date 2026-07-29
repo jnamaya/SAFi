@@ -91,30 +91,49 @@ class Config:
 
     # --- Environment-Aware URL Setup ---
     
-    # 1. Determine the environment. 
-    # IMPORTANT: Set FLASK_ENV=development on your Dev server.
-    # Set FLASK_ENV=production on your Live server.
+    # 1. Determine the environment.
+    #
+    # NOTE — there are TWO independent switches and both use the word
+    # "production". They are orthogonal and every combination is valid:
+    #
+    #   FLASK_ENV            controls STRICTNESS. 'production' makes validate()
+    #                        refuse to start without FLASK_SECRET_KEY,
+    #                        DB_PASSWORD, Google OAuth credentials and
+    #                        SAFI_ENCRYPTION_KEY. Anything else skips those
+    #                        checks — which also means encryption at rest can
+    #                        be silently absent. Read by APP_ENV below.
+    #
+    #   SAFI_DEPLOYMENT_MODE controls AUDIENCE. production | trial | showcase:
+    #                        whether demo login and the showcase UI framing are
+    #                        on. See DEPLOYMENT_MODE further down.
+    #
+    # The public demo runs FLASK_ENV=production with
+    # SAFI_DEPLOYMENT_MODE=showcase — strict validation, promotional UI. A
+    # customer runs production/production. A laptop runs development/trial.
     APP_ENV = os.environ.get('FLASK_ENV', 'production')
 
-    # 2. Set URLs based on the environment
-    # WEB_BASE_URL can be overridden via env for Docker/self-hosted deployments.
-    if APP_ENV == 'development':
-        _default_base_url = "https://chat.selfalignmentframework.com"
-        _default_origins = [
-            "https://chat.selfalignmentframework.com",
-            "capacitor://localhost",
-            "http://localhost",
-            "ionic://localhost"
-        ]
-    else:
-        _default_base_url = "https://safi.selfalignmentframework.com"
-        _default_origins = [
-            "https://safi.selfalignmentframework.com",
-            "https://selfalignmentframework.com",
-            "capacitor://localhost",
-            "http://localhost",
-            "ionic://localhost"
-        ]
+    # 2. Base URL and allowed origins.
+    #
+    # Defaults to localhost, NOT to any particular deployment's hostname. These
+    # previously defaulted to the selfalignmentframework.com hosts, which meant
+    # every self-hoster who did not set WEB_BASE_URL silently inherited someone
+    # else's domain as their CORS origin and OAuth callback base — a
+    # configuration that cannot work for them and fails in ways (blocked
+    # cross-origin calls, callbacks redirecting off-site) that give no clue as
+    # to the cause. Any real deployment, including the public demo, sets
+    # WEB_BASE_URL explicitly in its own .env.
+    #
+    # The capacitor:// and ionic:// origins stay in the default list because the
+    # mobile shell serves bundled assets from a spoofed local origin and cannot
+    # set them per-deployment.
+    _default_base_url = "http://localhost:5000"
+    _default_origins = [
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+        "capacitor://localhost",
+        "http://localhost",
+        "ionic://localhost",
+    ]
 
     WEB_BASE_URL = os.environ.get("WEB_BASE_URL", _default_base_url)
 
