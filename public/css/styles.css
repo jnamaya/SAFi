@@ -1476,10 +1476,80 @@ html.native body { font-size: 14px; }
 .dark .score-seg.seg-yellow { color: #facc15; }
 .dark .score-seg.seg-red    { color: #f87171; }
 
+.dark .score-seg.seg-pending { color: #a3a3a3; }
+.score-seg.seg-pending { color: #737373; }
+.score-seg.seg-pending .score-dot {
+  background: #a3a3a3;
+  box-shadow: none;
+}
+
+/* Conflict count on the chip. Inherits the tier colour rather than forcing
+   red: a firm conflict on an 8.5 turn is still worth reading, and recolouring
+   the whole chip would contradict the score sitting next to it. */
+.score-seg .score-conflicts {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  padding-left: 6px;
+  margin-left: 1px;
+  border-left: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+.score-seg:hover .score-conflicts {
+  opacity: 1;
+}
+
+.conflict-warn {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
 .actionbar-time {
   font-size: 11px;
   color: var(--muted);
   padding: 0 8px 0 4px;
+}
+
+/* Named top conflict, on its own line above the action bar. `.meta` is a flex
+   row, so the full-basis + order pair is what puts this above the bar without
+   restructuring the meta footer for every message. */
+.message.ai .meta {
+  flex-wrap: wrap;
+}
+
+.conflict-note {
+  flex: 0 0 100%;
+  order: -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  color: #b45309;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.conflict-note strong {
+  font-weight: 650;
+}
+
+.conflict-note:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dark .conflict-note {
+  color: #fbbf24;
 }
 
 /* compact the action buttons so they sit neatly inside the bar */

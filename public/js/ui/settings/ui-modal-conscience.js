@@ -58,6 +58,12 @@ export function renderConscienceReport(payload, idPrefix = '') {
         groups[key].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     });
 
+    // Open on Conflicts whenever there are any. The costs are asymmetric — a
+    // missed conflict ships a misaligned answer, a noticed non-issue costs the
+    // reviewer five seconds — so the default view must not be the flattering
+    // one. Falls back to Upholds only when the turn is genuinely clean.
+    const active = groups.conflicts.length > 0 ? 'conflicts' : 'upholds';
+
     return `
         ${renderScoreAndTrend(payload)}
 
@@ -65,16 +71,16 @@ export function renderConscienceReport(payload, idPrefix = '') {
             <!-- Tab Buttons -->
             <div class="border-b border-gray-200 dark:border-gray-700">
                 <nav class="flex -mb-px w-full" aria-label="Tabs">
-                    ${renderTabButton('upholds', 'Upholds', groups.upholds.length, true, idPrefix)}
-                    ${renderTabButton('conflicts', 'Conflicts', groups.conflicts.length, false, idPrefix)}
+                    ${renderTabButton('upholds', 'Upholds', groups.upholds.length, active === 'upholds', idPrefix)}
+                    ${renderTabButton('conflicts', 'Conflicts', groups.conflicts.length, active === 'conflicts', idPrefix)}
                     ${renderTabButton('neutral', 'Neutral', groups.neutral.length, false, idPrefix)}
                 </nav>
             </div>
 
             <!-- Tab Panels -->
             <div class="py-5">
-                ${renderTabPanel('upholds', groups.upholds, true, idPrefix)}
-                ${renderTabPanel('conflicts', groups.conflicts, false, idPrefix)}
+                ${renderTabPanel('upholds', groups.upholds, active === 'upholds', idPrefix)}
+                ${renderTabPanel('conflicts', groups.conflicts, active === 'conflicts', idPrefix)}
                 ${renderTabPanel('neutral', groups.neutral, false, idPrefix)}
             </div>
         </div>

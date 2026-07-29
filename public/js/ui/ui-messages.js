@@ -105,12 +105,37 @@ function _makeDivider() {
     return d;
 }
 
-function _createScoreSegment(score, onClick) {
-    const numScore = (score === null || score === undefined) ? 10.0 : parseFloat(score);
+// Conflicts below this confidence stay in the modal rather than on the chip —
+// the inline treatment is only worth its space when the finding is firm.
+const CONFLICT_CONF_MIN = 0.7;
+
+const iconWarn = `<svg class="conflict-warn" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.5h.01M10.36 3.59L2.7 16.5A1.9 1.9 0 004.34 19.4h15.32a1.9 1.9 0 001.64-2.9L13.64 3.59a1.9 1.9 0 00-3.28 0z"/></svg>`;
+
+// Conflicts worth surfacing without opening anything, strongest first. A
+// missing `confidence` counts as qualifying: dropping a conflict because its
+// metadata is absent is the wrong direction to be wrong in.
+function _significantConflicts(payload) {
+    const ledger = Array.isArray(payload?.ledger) ? payload.ledger : [];
+    return ledger
+        .filter(r => (r?.score || 0) < 0 && (r?.confidence ?? 1) >= CONFLICT_CONF_MIN)
+        .sort((a, b) => (b?.confidence ?? 1) - (a?.confidence ?? 1));
+}
+
+function _createScoreSegment(payload, onClick) {
+    const raw = payload?.spirit_score;
+    // No score means the audit has not completed. Never fabricate one — the
+    // conscience modal shows "N/A · audit pending" for the same state, and a
+    // chip reading "10.0 Aligned" for a turn nothing has judged is the single
+    // most misleading thing this bar could say.
+    const hasScore = raw !== null && raw !== undefined && !Number.isNaN(parseFloat(raw));
+    const numScore = hasScore ? parseFloat(raw) : null;
 
     let tier = 'seg-green';
     let label = 'Aligned';
-    if (numScore < 5.0) {
+    if (!hasScore) {
+        tier = 'seg-pending';
+        label = 'Audit pending';
+    } else if (numScore < 5.0) {
         tier = 'seg-red';
         label = 'Concern';
     } else if (numScore < 8.0) {
@@ -118,14 +143,21 @@ function _createScoreSegment(score, onClick) {
         label = 'Caution';
     }
 
+    const conflicts = _significantConflicts(payload);
+    const n = conflicts.length;
+    const countText = n === 1 ? '1 conflict' : `${n} conflicts`;
+
     const button = document.createElement('button');
-    button.className = `score-seg ${tier}`;
-    button.setAttribute('aria-label', `Alignment score ${numScore.toFixed(1)} out of 10, ${label}. Click to view reasoning.`);
-    button.setAttribute('title', 'View alignment reasoning');
+    button.className = `score-seg ${tier}${n > 0 ? ' has-conflicts' : ''}`;
+    button.setAttribute('aria-label', hasScore
+        ? `Alignment score ${numScore.toFixed(1)} out of 10, ${label}${n > 0 ? `, ${countText}` : ''}. Click to view reasoning.`
+        : 'Alignment audit pending. Click to view reasoning.');
+    button.setAttribute('title', n > 0 ? 'View the conflicts' : 'View alignment reasoning');
     button.innerHTML = `
         <span class="score-dot"></span>
-        <span class="score-val">${numScore.toFixed(1)}</span>
+        <span class="score-val">${hasScore ? numScore.toFixed(1) : '—'}</span>
         <span class="score-label">${label}</span>
+        ${n > 0 ? `<span class="score-conflicts">${iconWarn}${countText}</span>` : ''}
         ${iconChevronRight}
     `;
     button.addEventListener('click', (e) => {
@@ -135,12 +167,34 @@ function _createScoreSegment(score, onClick) {
     return button;
 }
 
+// Names the strongest conflicting value under the bubble. Deliberately not
+// gated on score tier: a turn can score 8.5 "Aligned" and still carry a firm
+// conflict, and that is exactly the turn a reviewer must not skim past.
+function _createConflictNote(payload, onClick) {
+    const conflicts = _significantConflicts(payload);
+    if (conflicts.length === 0) return null;
+
+    const top = conflicts[0];
+    const name = String(top.value || top.name || top.Value || 'an unnamed value');
+    const others = conflicts.length - 1;
+
+    const note = document.createElement('button');
+    note.className = 'conflict-note';
+    note.setAttribute('title', 'View the conflicts');
+    note.innerHTML = `${iconWarn}<span>Conflicts with <strong>${escapeHtml(name)}</strong>${others > 0 ? ` and ${others} other${others === 1 ? '' : 's'}` : ''}</span>`;
+    note.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onClick();
+    });
+    return note;
+}
+
 // Score segment + trailing divider, grouped so it can be injected/replaced
 // atomically when the audit score arrives after the bar is first rendered.
-function _createScoreWrap(score, onClick) {
+function _createScoreWrap(payload, onClick) {
     const wrap = document.createElement('div');
     wrap.className = 'score-wrap';
-    wrap.appendChild(_createScoreSegment(score, onClick));
+    wrap.appendChild(_createScoreSegment(payload, onClick));
     wrap.appendChild(_makeDivider());
     return wrap;
 }
@@ -513,7 +567,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 
         const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
         if (hasScore && whyHandler) {
-            bar.appendChild(_createScoreWrap(payload.spirit_score, () => whyHandler(payload)));
+            bar.appendChild(_createScoreWrap(payload, () => whyHandler(payload)));
         }
         if (copyBtn) bar.appendChild(copyBtn);
         if (saveBtn) bar.appendChild(saveBtn);
@@ -524,6 +578,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         stamp.textContent = formatTime(date);
         bar.appendChild(stamp);
 
+        // Conflict note claims its own line above the bar (see .conflict-note).
+        const conflictNote = whyHandler ? _createConflictNote(payload, () => whyHandler(payload)) : null;
+        if (conflictNote) metaDiv.appendChild(conflictNote);
         metaDiv.appendChild(bar);
     } else {
         // User message: optional retry button + timestamp, right-aligned.
@@ -607,7 +664,14 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         if (bar) {
             // Replace any existing score (idempotent) and inject at the front.
             bar.querySelector('.score-wrap')?.remove();
-            bar.prepend(_createScoreWrap(payload.spirit_score, () => whyHandler(payload)));
+            bar.prepend(_createScoreWrap(payload, () => whyHandler(payload)));
+        }
+        // Same for the conflict note: the ledger only arrives with the audit,
+        // so this is where it appears on a live turn. Replace, never duplicate.
+        if (metaDiv) {
+            metaDiv.querySelector('.conflict-note')?.remove();
+            const note = _createConflictNote(payload, () => whyHandler(payload));
+            if (note) metaDiv.prepend(note);
         }
     }
 
