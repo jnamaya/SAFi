@@ -577,6 +577,15 @@ export function reviewReportCsvUrl(orgId, from, to) {
     return j(`/api/organizations/${orgId}/review/report?${q}`);
 }
 
+// Per-item export: one row per reviewed turn, including the reviewer's
+// rationale. Logged server-side with a sha256 of the emitted body.
+export function reviewItemsCsvUrl(orgId, from, to) {
+    const q = new URLSearchParams({ format: 'csv' });
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    return j(`/api/organizations/${orgId}/review/export?${q}`);
+}
+
 export async function listReviewAlerts(orgId, limit = 10) {
     return httpGet(j(`/api/organizations/${orgId}/review/alerts?limit=${limit}`));
 }

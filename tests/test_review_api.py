@@ -7,6 +7,9 @@ report, and the alerts surface.
 
 Requires local MySQL. Run:  venv/bin/python tests/test_review_api.py
 """
+import csv
+import hashlib
+import io
 import json
 import sys
 import uuid
@@ -282,6 +285,90 @@ class TestReviewApi(unittest.TestCase):
                  if e["event_type"] == "review_report_exported"]
         self.assertEqual(len(after), 1)
         self.assertEqual(after[0]["detail"]["counts"]["sampled"], 2)
+
+    # -- per-item export ------------------------------------------------------
+
+    def test_09b_items_export_carries_rationale_and_digest(self):
+        """The aggregate report proves coverage; this proves the reviews happened.
+        Runs after test_04/test_06, so one item is approved (no reason) and one
+        overridden (with a reason) — the two dispositions an examiner cares about.
+        """
+        base = f"/api/organizations/{self.org_id}/review/export"
+        override_reason = "REVAPI gate fired correctly but the redirect copy needs work"
+
+        # Same reviewer set-check as the rest of the blueprint.
+        self.assertEqual(self.client(role="editor").get(base).status_code, 403)
+
+        doc = json.loads(self.client().get(f"{base}?format=json").data)
+        self.assertEqual(doc["count"], 2)
+        self.assertFalse(doc["truncated"])
+        by_status = {it["status"]: it for it in doc["items"]}
+        self.assertEqual(set(by_status), {"approved", "overridden"})
+
+        # The rationale is the point of this export: stored encrypted, decrypted
+        # here, and absent from every other export path.
+        self.assertEqual(by_status["overridden"]["reason"], override_reason)
+        self.assertFalse(by_status["approved"]["reason"],
+                         "approve was recorded without a reason; it must not invent one")
+
+        for it in doc["items"]:
+            self.assertEqual(it["agent"], "test_agent")
+            self.assertEqual(it["policy_id"], "pol-rev")
+            self.assertEqual(it["policy_version"], 2)
+            self.assertEqual(it["reviewer_email"], f"{self.reviewer}@example.test")
+            self.assertTrue(it["evidence_present"], "message rows still exist in this fixture")
+            self.assertTrue(it["chain_valid"], "review entries must extend the chain")
+            self.assertGreater(it["chain_entries"], 0)
+            self.assertIsNotNone(it["review_latency_seconds"])
+            self.assertIsNotNone(it["message_id"])
+
+        # Cross-check against the aggregate report: two views of one dataset
+        # that disagree on counts would make both untrustworthy.
+        rep = json.loads(self.client().get(
+            f"/api/organizations/{self.org_id}/review/report").data)
+        self.assertEqual(rep["sampled"], doc["count"])
+
+        # --- CSV: real tabular output, not JSON smuggled into cells ---
+        res = self.client().get(f"{base}?format=csv")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("attachment", res.headers.get("Content-Disposition", ""))
+        body = res.data.decode("utf-8")
+        rows = list(csv.DictReader(io.StringIO(body)))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["agent"], "test_agent")
+        # triggers is flat and pivotable, not a JSON blob
+        triggers = {r["triggers"] for r in rows}
+        self.assertEqual(triggers, {"low_alignment", "hard_gate_block"})
+        for t in triggers:
+            self.assertNotIn("[", t)
+        # trigger_detail keeps its own column and stays parseable JSON
+        self.assertIsInstance(json.loads(rows[0]["trigger_detail"]), dict)
+        # the reason survives CSV quoting exactly
+        reasons = {r["reason"] for r in rows}
+        self.assertIn(override_reason, reasons)
+
+        # --- integrity + custody ---
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        self.assertEqual(res.headers.get("X-SAFi-Export-SHA256"), digest,
+                         "header digest must cover the exact bytes served")
+        self.assertEqual(res.headers.get("X-SAFi-Export-Truncated"), "false")
+        logged = [e for e in db.list_compliance_log(self.org_id, 50)
+                  if e["event_type"] == "review_items_exported"]
+        self.assertEqual(len(logged), 2, "json and csv exports are both logged")
+        csv_entry = next(e for e in logged if e["detail"]["format"] == "csv")
+        self.assertEqual(csv_entry["detail"]["sha256"], digest,
+                         "the log is the authoritative copy of the digest")
+        self.assertEqual(csv_entry["detail"]["count"], 2)
+        self.assertFalse(csv_entry["detail"]["truncated"])
+
+        # A window that predates the fixture returns nothing rather than
+        # falling back to a default range.
+        empty = json.loads(self.client().get(
+            f"{base}?format=json&from=2020-01-01&to=2020-02-01").data)
+        self.assertEqual(empty["count"], 0)
+        self.assertEqual(empty["items"], [])
+        self.assertEqual(self.client().get(f"{base}?from=2026-01-01&to=2020-01-01").status_code, 400)
+        self.assertEqual(self.client().get(f"{base}?format=xml").status_code, 400)
 
     # -- alerts ---------------------------------------------------------------
 

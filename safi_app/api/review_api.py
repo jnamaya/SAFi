@@ -14,6 +14,7 @@ about it. Each disposition rides the message's chat_audit_trail hash chain
 inherits the same tamper-evidence as the record it supervises.
 """
 import csv
+import hashlib
 import io
 import json
 import threading
@@ -199,6 +200,91 @@ def coverage_report(org_id):
                         headers={"Content-Disposition": f"attachment; filename={fname}"})
     except Exception as e:
         current_app.logger.error(f"Error building review report: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+REVIEW_EXPORT_COLUMNS = (
+    "queue_id", "message_id", "conversation_id", "agent", "policy_id",
+    "policy_version", "triggers", "trigger_detail", "status", "reviewer_email",
+    "reviewed_by", "created_at", "reviewed_at", "review_latency_seconds",
+    "evidence_present", "chain_entries", "chain_valid", "chain_first_bad_id",
+    "reason",
+)
+
+
+@review_bp.route('/organizations/<org_id>/review/export', methods=['GET'])
+@require_any_role(*REVIEWER_ROLES)
+def export_review_items(org_id):
+    """Per-item supervisory review export for [from, to) — one row per queue
+    item, defaulting to the last 30 days. The examiner-grade counterpart to
+    /review/report, which is aggregates only and cannot evidence that any
+    individual review happened.
+
+    Carries the decrypted reviewer rationale, so it is treated like the
+    examiner production in records_api: always logged to org_compliance_log,
+    with a sha256 of the exact emitted body. The digest is what lets someone
+    re-hash the file later and prove it is the artifact this export produced —
+    exported_at/exported_by rows inside a file are self-asserted and editable.
+    """
+    if _org_forbidden(org_id):
+        return jsonify({"error": "Forbidden"}), 403
+    fmt = request.args.get("format", "csv")
+    if fmt not in ("json", "csv"):
+        return jsonify({"error": "format must be json or csv"}), 400
+    date_to = _parse_date(request.args.get("to")) or datetime.utcnow()
+    date_from = _parse_date(request.args.get("from")) or (date_to - timedelta(days=REPORT_DEFAULT_WINDOW_DAYS))
+    if date_from >= date_to:
+        return jsonify({"error": "'from' must be earlier than 'to'"}), 400
+    try:
+        items, truncated = db.get_review_items_for_export(org_id, date_from, date_to)
+        _, actor_email = _actor()
+
+        if fmt == "json":
+            body = json.dumps({
+                "organization_id": org_id,
+                "range": {"from": str(date_from), "to": str(date_to)},
+                "count": len(items),
+                "truncated": truncated,
+                "cap": db.REVIEW_EXPORT_CAP,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "exported_by": actor_email or "unknown",
+                "items": items,
+            }, default=str)
+            mimetype = "application/json"
+            fname = f"review-items-{org_id[:8]}-{date_from.date()}-{date_to.date()}.json"
+        else:
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(REVIEW_EXPORT_COLUMNS)
+            for it in items:
+                row = dict(it)
+                # Flat, semicolon-joined so the column pivots in a spreadsheet.
+                # trigger_detail has no flat equivalent and stays JSON, in its
+                # own column rather than smuggled into another.
+                row["triggers"] = ";".join(row.get("triggers") or [])
+                row["trigger_detail"] = json.dumps(row.get("trigger_detail") or {}, default=str)
+                w.writerow(["" if row.get(c) is None else row.get(c) for c in REVIEW_EXPORT_COLUMNS])
+            body = buf.getvalue()
+            mimetype = "text/csv"
+            fname = f"review-items-{org_id[:8]}-{date_from.date()}-{date_to.date()}.csv"
+
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        db.append_compliance_log(org_id, "review_items_exported", actor_email or "unknown", {
+            "range": {"from": str(date_from), "to": str(date_to)},
+            "format": fmt,
+            "count": len(items),
+            "truncated": truncated,
+            "sha256": digest,
+        })
+        return Response(body, mimetype=mimetype, headers={
+            "Content-Disposition": f"attachment; filename={fname}",
+            # Also recorded in org_compliance_log above; the log is the
+            # authoritative copy, this header is for scripted callers.
+            "X-SAFi-Export-SHA256": digest,
+            "X-SAFi-Export-Truncated": "true" if truncated else "false",
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error building per-item review export: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
 

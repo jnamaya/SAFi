@@ -1674,6 +1674,37 @@ def _chat_trail_snapshot_delete(cursor, where_sql, params, actor, org_id=None):
             "delete", actor, state, org_id=org_id,
         )
 
+def _verify_chain_entries(entries):
+    """Recomputes one message's trail hash chain from entries already fetched,
+    ordered by id. Returns {'entries': n, 'valid': bool, 'first_bad_id': id}.
+
+    Extracted so bulk callers (the per-item review export) can verify many
+    messages from one batched query instead of one connection per message, and
+    — more importantly — so they verify with EXACTLY this rule. A second copy
+    of the payload construction would drift, and an export would then certify
+    chains the real verifier rejects.
+    """
+    prev_hash = None
+    for e in entries:
+        payload = json.dumps(
+            {
+                "message_pk": e["message_pk"],
+                "message_id": e["message_id"],
+                "conversation_id": e["conversation_id"],
+                "action": e["action"],
+                "actor": e["actor"],
+                "state": e["state"],
+                "event_at": e["event_at"],
+                "prev_hash": prev_hash,
+            },
+            sort_keys=True,
+        )
+        expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        if e["prev_hash"] != prev_hash or e["entry_hash"] != expected:
+            return {"entries": len(entries), "valid": False, "first_bad_id": e["id"]}
+        prev_hash = e["entry_hash"]
+    return {"entries": len(entries), "valid": True, "first_bad_id": None}
+
 def verify_message_audit_trail(message_pk):
     """Recomputes the hash chain for one chat_history row's trail entries.
     Returns {'entries': n, 'valid': bool, 'first_bad_id': id or None}."""
@@ -1684,27 +1715,7 @@ def verify_message_audit_trail(message_pk):
             "SELECT * FROM chat_audit_trail WHERE message_pk=%s ORDER BY id",
             (message_pk,),
         )
-        entries = cursor.fetchall()
-        prev_hash = None
-        for e in entries:
-            payload = json.dumps(
-                {
-                    "message_pk": e["message_pk"],
-                    "message_id": e["message_id"],
-                    "conversation_id": e["conversation_id"],
-                    "action": e["action"],
-                    "actor": e["actor"],
-                    "state": e["state"],
-                    "event_at": e["event_at"],
-                    "prev_hash": prev_hash,
-                },
-                sort_keys=True,
-            )
-            expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-            if e["prev_hash"] != prev_hash or e["entry_hash"] != expected:
-                return {"entries": len(entries), "valid": False, "first_bad_id": e["id"]}
-            prev_hash = e["entry_hash"]
-        return {"entries": len(entries), "valid": True, "first_bad_id": None}
+        return _verify_chain_entries(cursor.fetchall())
     finally:
         cursor.close()
         conn.close()
@@ -4319,6 +4330,85 @@ def get_review_report(org_id, date_from, date_to):
                  "provenance shipped (trail entries carrying an org stamp); earlier "
                  "turns are pre-Phase-E and not in the denominator."),
     }
+
+REVIEW_EXPORT_CAP = 5000
+
+def get_review_items_for_export(org_id, date_from, date_to, cap=REVIEW_EXPORT_CAP):
+    """One row per review_queue item created in [date_from, date_to) — the
+    examiner-grade counterpart to get_review_report()'s aggregates.
+
+    Carries what the aggregate report cannot: the decrypted reviewer rationale
+    (the artifact that proves a human looked and said why), the governance
+    provenance the turn was judged under (agent, policy id + version), whether
+    the underlying message still exists, and each item's hash-chain verdict.
+
+    Returns (items, truncated). `truncated` is True when more rows matched than
+    the cap emitted — the caller MUST surface it, because a silently short
+    export reads as "this is all of it".
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            f"SELECT rq.*, ch.id AS live_pk FROM review_queue rq "
+            "LEFT JOIN chat_history ch ON ch.id = rq.message_pk "
+            "WHERE rq.org_id=%s AND rq.created_at >= %s AND rq.created_at < %s "
+            "ORDER BY rq.created_at, rq.id LIMIT %s",
+            (org_id, date_from, date_to, cap + 1))
+        rows = cursor.fetchall()
+        truncated = len(rows) > cap
+        rows = rows[:cap]
+
+        # One batched query for every trail entry we need, then verify in
+        # Python — verify_message_audit_trail() opens its own connection per
+        # message, which would be one connection per exported row.
+        chains = {}
+        pks = [r["message_pk"] for r in rows if r["message_pk"] is not None]
+        if pks:
+            placeholders = ",".join(["%s"] * len(pks))
+            cursor.execute(
+                f"SELECT * FROM chat_audit_trail WHERE message_pk IN ({placeholders}) "
+                "ORDER BY message_pk, id", tuple(pks))
+            grouped = {}
+            for e in cursor.fetchall():
+                grouped.setdefault(e["message_pk"], []).append(e)
+            chains = {pk: _verify_chain_entries(entries) for pk, entries in grouped.items()}
+    finally:
+        cursor.close()
+        conn.close()
+
+    items = []
+    for r in rows:
+        reason = crypto.decrypt_value(r.pop("reason_enc", None))
+        live_pk = r.pop("live_pk", None)
+        latency = None
+        if r["reviewed_at"] and r["created_at"]:
+            latency = round((r["reviewed_at"] - r["created_at"]).total_seconds(), 1)
+        # No trail rows at all is not a passing chain — it is an absence of
+        # evidence, and must not read as "verified".
+        chain = chains.get(r["message_pk"])
+        items.append({
+            "queue_id": r["id"],
+            "message_id": r["message_id"],
+            "conversation_id": r["conversation_id"],
+            "agent": r["profile_name"],
+            "policy_id": r["policy_id"],
+            "policy_version": r["policy_version"],
+            "triggers": _review_json(r.get("triggers"), []),
+            "trigger_detail": _review_json(r.get("trigger_detail"), {}),
+            "status": r["status"],
+            "reviewer_email": r["reviewer_email"],
+            "reviewed_by": r["reviewed_by"],
+            "created_at": r["created_at"],
+            "reviewed_at": r["reviewed_at"],
+            "review_latency_seconds": latency,
+            "evidence_present": live_pk is not None,
+            "chain_entries": chain["entries"] if chain else 0,
+            "chain_valid": chain["valid"] if chain else None,
+            "chain_first_bad_id": chain["first_bad_id"] if chain else None,
+            "reason": reason,
+        })
+    return items, truncated
 
 def recent_org_profile_scores(org_id, profile_name, limit):
     """Last N Alignment scores for an org+profile, newest first — the rolling

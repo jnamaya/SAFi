@@ -197,9 +197,14 @@ async function loadStats() {
             : latency < 86400 ? `${(latency / 3600).toFixed(1)}h`
             : `${(latency / 86400).toFixed(1)}d`;
         el.innerHTML = `
-            <div class="flex items-center justify-between mb-3">
-                <p class="text-xs text-gray-400">Coverage, last 30 days. The CSV export is logged to the compliance evidence log as chain of custody.</p>
-                <button id="review-report-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap">Export report CSV</button>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <p class="text-xs text-gray-400 max-w-xl">Coverage, last 30 days. Both exports are logged to the compliance evidence log as chain of custody.</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="review-report-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap"
+                            title="The coverage summary above, as 11 aggregate fields.">Export summary CSV</button>
+                    <button id="review-items-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap"
+                            title="One row per reviewed turn: agent, policy version, triggers, disposition, reviewer, latency, hash-chain verdict and the reviewer's written rationale. Use this for an examiner.">Export items CSV</button>
+                </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
                 ${tile('Governed turns', rep.total_turns)}
@@ -210,6 +215,8 @@ async function loadStats() {
             </div>`;
         el.querySelector('#review-report-csv')?.addEventListener('click', () =>
             window.open(api.reviewReportCsvUrl(orgId), '_blank'));
+        el.querySelector('#review-items-csv')?.addEventListener('click', () =>
+            window.open(api.reviewItemsCsvUrl(orgId), '_blank'));
     } catch (e) {
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load coverage stats: ${esc(e.message || e)}</p>`;
     }
