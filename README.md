@@ -96,6 +96,29 @@ docker compose up
 > `WEB_BASE_URL=http://192.168.1.50:5000`. It defaults to a localhost URL, and
 > leaving it wrong breaks OAuth callbacks and cross-origin requests.
 
+#### Prefer a prebuilt image?
+
+`docker compose up` builds from source, which is the default and stays
+supported. Released versions are also published to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/jnamaya/safi:latest
+```
+
+Every release carries **SLSA provenance, an SBOM, and a keyless cosign
+signature**, so you can verify the image was built from the tagged source
+rather than taking our word for it:
+
+```bash
+cosign verify ghcr.io/jnamaya/safi:latest \
+  --certificate-identity-regexp 'https://github.com/jnamaya/SAFi/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+For production, pin by digest (`ghcr.io/jnamaya/safi@sha256:…`) rather than by
+tag — that is what makes "which version is running?" answerable during an
+audit.
+
 > **Tip:** [Groq](https://console.groq.com) offers a generous free tier -- it's the easiest way to get a working API key in under 2 minutes. SAFi also supports `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CEREBRAS_API_KEY`, and `ZHIPU_API_KEY` — whichever key you set, SAFi automatically selects working default models for that provider. Once you're familiar with the system, pin specific models with the `SAFI_*_MODEL` variables in [`.env.example`](.env.example).
 
 A fresh install starts with three built-in agents, all of which run with no extra setup:

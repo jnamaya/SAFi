@@ -1,0 +1,108 @@
+name: release
+
+# Publishes a container image to GHCR on a version tag.
+#
+# The point is not convenience — it is verifiability. A published image that
+# asks to be trusted is worth little to the audience SAFi targets. This one
+# ships with SLSA provenance, an SBOM, and a keyless cosign signature tied to
+# this workflow's identity, so anyone can prove the image was built from the
+# tagged source without building it themselves. That is the same argument the
+# product makes about its own audit trail: don't trust the assertion, check
+# the record.
+#
+# Building from source stays fully supported — docker-compose.yml still builds
+# locally. This is an additional path, not a replacement.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  # GHCR requires a lowercase path; the repo is jnamaya/SAFi.
+  IMAGE: ghcr.io/jnamaya/safi
+
+jobs:
+  # Gate: never publish from a commit whose suite is red.
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  publish:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # push to GHCR
+      id-token: write        # keyless cosign signing via OIDC
+      attestations: write    # provenance attestation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # `latest` follows the newest TAG, never the newest push to main —
+          # that distinction is what stops people running an untagged commit.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Sign the image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 \
+            -o /usr/local/bin/cosign && chmod +x /usr/local/bin/cosign
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo '```'
+            echo "${IMAGE}@${DIGEST}"
+            echo '```'
+            echo ""
+            echo "Pin by digest in production. Verify with:"
+            echo ""
+            echo '```bash'
+            echo "cosign verify ${IMAGE}@${DIGEST} \\"
+            echo "  --certificate-identity-regexp 'https://github.com/${{ github.repository }}/.github/workflows/release.yml@.*' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
