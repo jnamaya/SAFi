@@ -240,7 +240,7 @@ function createModalSection(title, content) {
     return `
         <div class="mb-6">
             <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">${title}</h3>
-            <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300">
+            <div class="chat-bubble text-sm max-w-none text-neutral-700 dark:text-neutral-300">
                 ${contentHtml}
             </div>
         </div>
@@ -329,7 +329,7 @@ function renderValuesSection(values, title = 'Values &amp; Standards') {
     return `
         <div class="mb-6">
             <h3 class="text-lg font-semibold text-neutral-800 dark:text-neutral-200 mb-3">${title}</h3>
-            <div class="prose prose-sm dark:prose-invert max-w-none text-neutral-700 dark:text-neutral-300">
+            <div class="chat-bubble text-sm max-w-none text-neutral-700 dark:text-neutral-300">
                 ${valuesHtml}
             </div>
         </div>

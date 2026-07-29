@@ -316,7 +316,7 @@ function renderLedgerItem(item, key) {
                 <div class="font-semibold text-gray-800 dark:text-gray-100">${item.value || item.name || item.Value || 'Unknown Value'}</div>
                 ${confidenceDisplayHtml}
             </div>
-            <div class="prose prose-sm text-gray-600 dark:text-gray-400 max-w-none">
+            <div class="text-sm text-gray-600 dark:text-gray-400 max-w-none">
                 <div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>
                 ${isLong ? '<button class="expand-btn">Show More</button>' : ''}
             </div>
