@@ -145,7 +145,8 @@ function _createScoreSegment(payload, onClick) {
 
     const conflicts = _significantConflicts(payload);
     const n = conflicts.length;
-    const countText = n === 1 ? '1 conflict' : `${n} conflicts`;
+    const countWord = n === 1 ? 'conflict' : 'conflicts';
+    const countText = `${n} ${countWord}`;
 
     const button = document.createElement('button');
     button.className = `score-seg ${tier}${n > 0 ? ' has-conflicts' : ''}`;
@@ -157,7 +158,7 @@ function _createScoreSegment(payload, onClick) {
         <span class="score-dot"></span>
         <span class="score-val">${hasScore ? numScore.toFixed(1) : '—'}</span>
         <span class="score-label">${label}</span>
-        ${n > 0 ? `<span class="score-conflicts">${iconWarn}${countText}</span>` : ''}
+        ${n > 0 ? `<span class="score-conflicts">${iconWarn}<span class="conflict-n">${n}</span> <span class="conflict-word">${countWord}</span></span>` : ''}
         ${iconChevronRight}
     `;
     button.addEventListener('click', (e) => {

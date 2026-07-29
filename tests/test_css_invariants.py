@@ -1,17 +1,25 @@
 """
-Markdown type-scale invariants for public/css/styles.css.
+CSS invariants for public/css/styles.css that regress silently.
 
-Nothing else in the suite touches CSS, and a type scale is exactly the kind of
-thing that regresses silently: someone nudges one heading a hair and the
-hierarchy quietly collapses without any test going red. That is how the scale
-this file guards got broken in the first place — h2 at 1.32rem and h3 at
-1.25rem, a 1.056 step (1.1px at a 16px body) at identical weight, which read as
-one size rather than two levels.
+Nothing else in the suite touches CSS, and these are exactly the properties
+that break without any test going red — someone nudges one heading a hair, or
+drops a flex-wrap while tidying, and the result only shows up on a particular
+screen width in front of a user.
 
-Parses the stylesheet rather than a browser, so it checks the declarations, not
-the render. Layout still needs eyes.
+Two groups so far, both from real defects:
 
-Requires no database. Run:  venv/bin/python tests/test_type_scale.py
+- **Type scale.** h2 was 1.32rem and h3 1.25rem — a 1.056 step, 1.1px at a 16px
+  body, at identical weight. Two levels that differ by one pixel are one level.
+- **Action bar overflow.** The message action bar is `inline-flex` and
+  `.score-seg` is `white-space: nowrap`, so before `flex-wrap` it could not
+  reflow: adding the conflict segment pushed it out of the bubble on a phone.
+  Wrapping is what makes overflow impossible at any content width, so that is
+  the property worth pinning, not the individual pixel widths.
+
+Parses the stylesheet rather than a browser, so it checks declarations, not the
+render. Actual layout still needs eyes.
+
+Requires no database. Run:  venv/bin/python tests/test_css_invariants.py
 """
 import re
 import unittest
@@ -44,12 +52,15 @@ def _decls(css, selector):
     Returns {} when nothing matches, so callers can tell "no rule" from
     "rule without this property".
     """
+    strip_comments = lambda s: re.sub(r"/\*.*?\*/", "", s, flags=re.S)
     out = {}
     for m in re.finditer(r"(?:^|\})([^{}]*)\{([^}]*)\}", css, re.MULTILINE):
-        raw = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.S)
-        if selector not in [s.strip() for s in raw.split(",")]:
+        if selector not in [s.strip() for s in strip_comments(m.group(1)).split(",")]:
             continue
-        for line in m.group(2).split(";"):
+        # Comments must come out of the BODY too, not just the selector: a
+        # comment mentioning `min-width:auto` above a `min-width: 0` line got
+        # parsed as the declaration itself and the real one was never seen.
+        for line in strip_comments(m.group(2)).split(";"):
             if ":" in line:
                 prop, _, val = line.partition(":")
                 out[prop.strip()] = val.strip()
@@ -168,6 +179,82 @@ class TestMarkdownTypeScale(unittest.TestCase):
                 if re.search(r'class="[^"]*\bprose\b', line):
                     offenders.append(f"{js.name}:{i}")
         self.assertEqual(offenders, [], f"inert prose classes: {offenders}")
+
+
+def _media_block(css, query_fragment):
+    """The body of the first @media block whose condition contains the fragment.
+    Brace-counts rather than regexing, because media blocks nest rules."""
+    i = css.find(f"@media {query_fragment}")
+    if i < 0:
+        return None
+    start = css.find("{", i)
+    if start < 0:
+        return None
+    depth, j = 0, start
+    while j < len(css):
+        if css[j] == "{":
+            depth += 1
+        elif css[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[start + 1:j]
+        j += 1
+    return None
+
+
+class TestActionBarFitsNarrowScreens(unittest.TestCase):
+    """The audit pill overflowed the bubble on a phone as soon as a turn carried
+    a conflict. Pins the properties that make that impossible, not the widths."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.css = CSS.read_text(encoding="utf-8")
+        cls.mobile = _media_block(cls.css, "(max-width: 639px)")
+
+    def test_01_action_bar_can_wrap_on_narrow_screens(self):
+        """The load-bearing assertion. Without wrap the bar is a single
+        non-shrinkable row — `inline-flex` plus `white-space: nowrap` on
+        .score-seg — so it pushes out of the bubble instead of reflowing."""
+        self.assertIsNotNone(self.mobile, "no max-width:639px block; the mobile fix is gone")
+        bar = _decls(self.mobile, ".msg-actionbar")
+        self.assertTrue(bar, ".msg-actionbar has no narrow-screen rule")
+        self.assertEqual(bar.get("flex-wrap"), "wrap",
+                         "without flex-wrap the action bar can overflow the bubble again")
+        self.assertEqual(bar.get("max-width"), "100%",
+                         "max-width bounds the wrap to the bubble")
+
+    def test_02_wrapped_bar_is_not_a_broken_stadium(self):
+        """A 999px radius wrapped onto two rows reads as a rendering fault."""
+        base_radius = _decl(self.css, ".msg-actionbar", "border-radius")
+        self.assertEqual(base_radius, "999px", "desktop pill should stay a stadium")
+        mobile_radius = _decls(self.mobile, ".msg-actionbar").get("border-radius")
+        self.assertIsNotNone(mobile_radius, "wrapped bar needs a smaller radius")
+        self.assertNotEqual(mobile_radius, "999px")
+
+    def test_03_conflict_wording_shortens_rather_than_the_count(self):
+        """"2 conflicts" -> "2" on narrow screens. The word is hidden, never the
+        number: the count is the information, the noun is decoration."""
+        self.assertIn(".conflict-word", self.mobile)
+        self.assertEqual(_decls(self.mobile, ".score-seg .conflict-word").get("display"), "none")
+        self.assertIsNone(_decls(self.mobile, ".score-seg .conflict-n").get("display"),
+                          "the count itself must never be hidden")
+
+    def test_04_tier_word_is_dropped_only_when_a_conflict_is_present(self):
+        """A clean turn's bar is ~89px narrower and has room for the tier word,
+        so hiding it unconditionally would remove information for no gain."""
+        narrow = _media_block(self.css, "(max-width: 419px)")
+        self.assertIsNotNone(narrow)
+        self.assertEqual(_decls(narrow, ".score-seg.has-conflicts .score-label").get("display"), "none")
+        self.assertFalse(_decls(narrow, ".score-seg .score-label"),
+                         "must be scoped to .has-conflicts, not all score chips")
+
+    def test_05_conflict_note_can_wrap_instead_of_pushing_out(self):
+        """flex-basis:100% with the default min-width:auto floors the item at its
+        min-content width, so a long value name would overflow the bubble."""
+        note = _decls(self.css, ".conflict-note")
+        self.assertEqual(note.get("flex"), "0 0 100%")
+        self.assertEqual(note.get("min-width"), "0",
+                         "without min-width:0 a long value name can overflow")
 
 
 if __name__ == "__main__":

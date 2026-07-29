@@ -400,7 +400,7 @@ html.native body { font-size: 14px; }
    these are real weights and not synthesized). h1 also keeps its rule as a
    third cue; h2 and h3 had no second cue at all before.
 
-   tests/test_type_scale.py asserts the ratios. Change the numbers there too,
+   tests/test_css_invariants.py asserts the ratios. Change the numbers there too,
    deliberately, or don't change them. */
 .chat-bubble h1,
 .chat-bubble h2,
@@ -1587,6 +1587,11 @@ html.native body { font-size: 14px; }
 
 .conflict-note {
   flex: 0 0 100%;
+  /* min-width:auto is the flex default and would floor this item at its
+     min-content width, so a long unbroken value name would push past the
+     bubble instead of wrapping inside it. */
+  min-width: 0;
+  text-wrap: pretty;
   order: -1;
   display: inline-flex;
   align-items: center;
@@ -1615,6 +1620,49 @@ html.native body { font-size: 14px; }
 
 .dark .conflict-note {
   color: #fbbf24;
+}
+
+/* --- Narrow screens: the action bar must not be able to overflow ---------
+   The conflict segment added ~89px to a bar that already ran ~265px, and at a
+   360px viewport the bubble only gets ~336px (message-container's 12px side
+   padding; the AI bubble adds no horizontal padding of its own). The bar was
+   `inline-flex` with no wrap and `.score-seg` is `white-space: nowrap`, so it
+   could not reflow — it simply pushed out of the bubble. That is why the
+   distortion only appeared on a turn with a conflict.
+
+   Two-part fix, in this order of importance:
+
+   1. `flex-wrap` makes overflow structurally impossible at ANY content width,
+      font size or accessibility zoom, rather than fitting today's string by
+      luck. The radius drops to 14px because a wrapped 999px stadium reads as
+      a broken shape.
+   2. The label shortening below just keeps it on one line in the common case,
+      so the wrap is a safety net and not the normal appearance. */
+@media (max-width: 639px) {
+  .msg-actionbar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    max-width: 100%;
+    min-width: 0;
+    border-radius: 14px;
+  }
+
+  /* "2 conflicts" -> "2". The note directly below always names the conflict
+     (both render on exactly the same _significantConflicts() predicate), so
+     nothing is lost here — and the button's aria-label keeps the full wording
+     for screen readers regardless. */
+  .score-seg .conflict-word {
+    display: none;
+  }
+}
+
+/* Very narrow: drop the tier word too, but only on a bar carrying a conflict
+   segment — a clean turn has room for it, and the dot colour already encodes
+   the tier. */
+@media (max-width: 419px) {
+  .score-seg.has-conflicts .score-label {
+    display: none;
+  }
 }
 
 /* compact the action buttons so they sit neatly inside the bar */
