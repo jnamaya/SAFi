@@ -19,7 +19,7 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 
 | Symbol | Description |
 |--------|-------------|
-| $t$ | Interaction index (turn number) |
+| $t$ | Interaction index (turn number). Indexes the **agent's** Spirit-memory sequence, not a conversation. `spirit_memory` is keyed on `profile_name` alone, so for a built-in agent this counter — and $\mu_t$ — are shared by every organization using that agent. Custom agents are namespaced by their org-prefixed key. Governance records carry `t_sequence` to state this. |
 | $x_t$ | Input context (prompt + metadata) |
 | $V = \{(v_i, w_i)\}$ | Value set with weights, where $\sum w_i = 1$ |
 | $a_t$ | Draft response from Intellect |

@@ -1017,6 +1017,12 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": spirit_turn,
+            # t is the spec's interaction index (MATHEMATICAL_SPECIFICATION, symbol
+            # table), but the sequence it counts is the AGENT's spirit_memory
+            # baseline — keyed on profile_name alone, so shared by every org using
+            # a built-in agent. Stated explicitly because "t": 13 next to one
+            # conversation reads as that conversation's 13th turn, and is not.
+            "t_sequence": "agent_baseline_shared",
             "userPrompt": user_prompt,
             "intellectDraft": a_t,
             "intellectReflection": r_t or "",
@@ -1333,6 +1339,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": int(_sm_readonly.get("turn", 0)),
+            "t_sequence": "agent_baseline_shared",
             "userPrompt": original_prompt,
             "intellectDraft": notice,
             "intellectReflection": "",
@@ -1484,6 +1491,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": redirect_turn,
+            "t_sequence": "agent_baseline_shared",
             "userPrompt": original_prompt,
             "intellectDraft": safe_output,
             "intellectReflection": "",

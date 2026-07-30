@@ -1151,35 +1151,99 @@ def save_spirit_memory(agent_id, mu, turn, score=None, drift=None):
         conn.close()
 
 
-def reset_spirit_memory(agent_id: str) -> bool:
+def spirit_memory_scope(agent_id: str):
+    """Who a spirit_memory row belongs to.
+
+    spirit_memory is keyed on profile_name ALONE, so a built-in agent's baseline
+    is shared by every org using it — intentionally: with an identical persona
+    and policy, "how this agent expresses its values" is a property of the agent,
+    and pooling gives a better-estimated baseline. Custom agents are namespaced
+    by construction because their keys carry the org (`org_1022_...`).
+
+    Returns {'shared': bool, 'orgs': n, 'users': n, 'turns': n} so a caller can
+    see the blast radius before touching anything.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT COUNT(DISTINCT org_id) o, COUNT(DISTINCT user_id) u, COUNT(*) t "
+            "FROM governance_records WHERE profile_key=%s", (agent_id,))
+        row = cursor.fetchone() or {}
+        orgs = int(row.get("o") or 0)
+        # An org-prefixed key cannot collide across tenants; anything else is a
+        # built-in whose baseline more than one org MAY be writing.
+        shared_by_name = not str(agent_id or "").startswith("org_")
+        return {
+            "shared": shared_by_name,
+            # The refusal condition is real blast radius, not naming: a built-in
+            # used by one org (or a throwaway test fixture with no records at
+            # all) has no other tenant to disturb, and refusing there would be
+            # friction with no safety value.
+            "cross_tenant": shared_by_name and orgs > 1,
+            "orgs": orgs,
+            "users": int(row.get("u") or 0),
+            "turns": int(row.get("t") or 0),
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
     """
     Resets the Spirit memory for a specific agent.
-    
+
     Use this when:
     - An agent's value structure has changed (added/removed values)
     - Spirit memory is corrupted (dimension mismatch)
     - You want to start fresh with a clean ethical baseline
-    
+
+    OPERATOR TOOL — no API route calls this. It is reachable only from a shell,
+    which is why the guard below is a refusal rather than a permission check.
+
+    For a BUILT-IN agent the baseline is shared by every org using it, so a reset
+    silently moves the Consistency figures of tenants you were not thinking
+    about. This used to delete unconditionally and report a bare True/False, with
+    nothing to indicate how many orgs were affected. It now refuses unless
+    `confirm_shared=True` and always reports the scope it found.
+
     Args:
         agent_id: The profile_name/agent_key to reset (e.g., 'contoso_admin')
-        
+        confirm_shared: Required to reset a shared (non org-prefixed) baseline.
+
     Returns:
-        True if a row was deleted, False if the agent had no Spirit memory.
-        
+        {'deleted': bool, 'refused': bool, 'scope': {...}} — never a bare bool,
+        so the caller cannot miss the blast radius.
+
     Example usage:
-        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('contoso_admin'))"
+        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('org_1022_my_agent'))"
+        # shared built-in, deliberately:
+        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('the_socratic_tutor', confirm_shared=True))"
     """
+    scope = spirit_memory_scope(agent_id)
+    if scope["cross_tenant"] and not confirm_shared:
+        logging.warning(
+            "REFUSED spirit memory reset for shared built-in agent %s: baseline is "
+            "shared by %d org(s)/%d user(s) across %d recorded turns. Pass "
+            "confirm_shared=True if that is genuinely intended.",
+            agent_id, scope["orgs"], scope["users"], scope["turns"])
+        return {"deleted": False, "refused": True, "scope": scope}
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM spirit_memory WHERE profile_name = %s", (agent_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
+        if deleted and scope["shared"]:
+            logging.warning(
+                "Spirit memory reset for SHARED agent %s — affects %d org(s)/%d user(s).",
+                agent_id, scope["orgs"], scope["users"])
         if deleted:
             logging.info(f"Spirit memory reset for agent: {agent_id}")
         else:
             logging.info(f"No Spirit memory found for agent: {agent_id}")
-        return deleted
+        return {"deleted": deleted, "refused": False, "scope": scope}
     finally:
         cursor.close()
         conn.close()
