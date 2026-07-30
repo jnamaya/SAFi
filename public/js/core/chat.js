@@ -773,9 +773,14 @@ function renderHistory(history, user, showModal, activeProfileData) {
             options
         );
 
-        // For historical messages that pre-date inline audit data, do a single fetch.
+        // For historical messages that pre-date inline audit data, fetch once —
+        // and if the audit is genuinely still running (a turn reloaded seconds
+        // after it was sent), keep watching rather than giving up until the
+        // next reload.
         if (turn.role === 'ai' && turn.message_id && turn.audit_status === 'pending') {
-            fetchAndApplyAuditResult(turn.message_id);
+            fetchAndApplyAuditResult(turn.message_id).then((outcome) => {
+                if (outcome === 'pending') _pollForAudit(turn.message_id);
+            });
         }
     });
 }
@@ -1134,7 +1139,12 @@ export async function sendMessage(activeProfileData, user) {
 
         // Follow-up suggestions are generated off the request path on the
         // backend; poll the audit endpoint and inject them once ready.
-        if (messageId && (!suggestions || suggestions.length === 0)) {
+        // An incomplete audit is the broader case: applying it brings the score,
+        // the chip, the conflict note AND the suggestions, so it replaces the
+        // suggestions poll rather than running beside it (they share a cache key).
+        if (messageId && auditNeedsPolling(initialResponse)) {
+            _pollForAudit(messageId);
+        } else if (messageId && (!suggestions || suggestions.length === 0)) {
             _pollForSuggestions(messageId);
         }
 
@@ -1245,11 +1255,40 @@ function _pollForSuggestions(messageId, attempts = 0) {
     }, DELAY);
 }
 
+// True only when the server says the audit is finished. A null spirit_score
+// with a 'complete' status is legitimate (Spirit can decline to score a turn),
+// so status is the authority here, not the presence of a score.
+export function auditIsComplete(res) {
+    return !!res && res.status === 'complete';
+}
+
+// Whether the live path still needs to poll. `audit_status` is the server's own
+// word for it; a missing score alone is not proof of incompleteness, but on this
+// path it means the chip, the conflict note and the trend are all still absent,
+// so it is worth one confirming fetch.
+export function auditNeedsPolling(initialResponse) {
+    if (!initialResponse) return false;
+    if (initialResponse.audit_status && initialResponse.audit_status !== 'complete') return true;
+    const s = initialResponse.spirit_score;
+    return s === null || s === undefined;
+}
+
+/**
+ * Applies a finished audit to the cache and the rendered message.
+ * Returns 'complete' (applied), 'pending' (try again later), or 'unavailable'
+ * (not_found / cancelled / error — stop asking).
+ */
 async function fetchAndApplyAuditResult(messageId) {
-    if (!currentConversationId) return;
+    if (!currentConversationId) return 'unavailable';
     try {
         const auditResult = await api.fetchAuditResult(messageId);
-        if (!auditResult || auditResult.status === 'not_found') return;
+        if (!auditResult || auditResult.status === 'not_found') return 'unavailable';
+        // Do NOT write a pending audit into the cache. This used to hardcode
+        // audit_status:'complete' below regardless of what came back, so calling
+        // it too early stamped the row complete with a null score — which also
+        // disabled the reload-path retry, since that is gated on 'pending'.
+        if (auditResult.status === 'pending') return 'pending';
+        if (!auditIsComplete(auditResult)) return 'unavailable';
 
         const rawLedger = auditResult.conscienceLedger || auditResult.ledger;
         const rawSuggestions = auditResult.suggestedPrompts || auditResult.suggested_prompts;
@@ -1290,9 +1329,33 @@ async function fetchAndApplyAuditResult(messageId) {
                 : [...spiritScoresHistory];
             ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
         });
+        return 'complete';
     } catch (e) {
         console.warn(`Could not fetch audit result for historical message ${messageId}:`, e);
+        return 'unavailable';
     }
+}
+
+// The audit can land after process_prompt returns. Without this, that turn keeps
+// spirit_score null in the cache for the whole session — no score chip, no
+// conflict note, and a spirit_scores_history one entry short, which silently
+// drops the Alignment Trend on every later turn until a reload.
+//
+// Deliberately NOT run alongside _pollForSuggestions: both read-modify-write the
+// same cache key and would clobber each other. fetchAndApplyAuditResult applies
+// suggestions too, so this subsumes it.
+function _pollForAudit(messageId, attempts = 0) {
+    const MAX_ATTEMPTS = 10;
+    const DELAY = 2000;
+    if (attempts >= MAX_ATTEMPTS) return;
+
+    setTimeout(async () => {
+        if (!currentConversationId) return;
+        const outcome = await fetchAndApplyAuditResult(messageId);
+        // 'complete' applied it; 'unavailable' means cancelled/missing — either
+        // way there is nothing to gain by asking again.
+        if (outcome === 'pending') _pollForAudit(messageId, attempts + 1);
+    }, DELAY);
 }
 
 
