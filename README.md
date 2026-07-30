@@ -41,11 +41,13 @@ The industry's answer to that gap is the filter. Guardrails inspect output — t
 
 ## The SAFi Solution
 
-SAFi governs AI agents the exact same way you manage human employees, so your current policies can actually be enforced at runtime — and evidenced afterward.
+SAFi governs AI agents with the instruments you already use — a charter, policies, supervision, and a record — so your current policies can actually be enforced at runtime, and evidenced afterward.
 
-It starts with your **Organizational Charter**: your mission statement and core values, used as the guiding context for every agent. Beneath the Charter sit your **Policies** (Financial Compliance, HR Protocols, GenAI Policies). SAFi uses the Charter to give the agent direction and cultural awareness, and strictly enforces the Policy through a deterministic layer: every response is drafted, evaluated value-by-value against the governing policy, and approved, blocked, or redirected by rules — not vibes — before it ships.
+An agent can be governed by your **Organizational Charter** — your mission statement and core values — by a specific **Policy** (Finance, HR, Legal, GenAI), or by both. Declare a Charter under **Organization** and it applies to every agent in the organization automatically. Its values are not background context: they are compiled into the value set the agent is scored against, taking a fixed share of every evaluation — 40% by default, configurable per organization.
 
-Just as important: every one of those decisions leaves evidence. Each turn produces an encrypted, tamper-evident governance record — the draft, the evaluation ledger, the enforcement decision, and the exact policy version in force — feeding an org-scoped **Audit Hub** for analytics and drill-down, a **supervisory review queue** for human oversight, and custody-logged exports for whoever comes asking.
+Enforcement is deterministic. Every response is drafted, evaluated value-by-value against the governing policy, then approved, blocked, or redirected by rules — not vibes — before it ships.
+
+Every one of those decisions leaves evidence. Each turn produces an encrypted governance record — the draft, the evaluation ledger, the enforcement decision, and the exact policy version in force — journaled to a hash-chained audit trail. That record feeds an org-scoped **Audit Hub** for analytics and drill-down, a **supervisory review queue** for human oversight, and custody-logged exports for whoever comes asking.
 
 ---
 
