@@ -28,16 +28,16 @@
 
 ## The Problem
 
-Your organization is deploying AI agents. Your legal and compliance teams are probably asking hard questions:
+Your organization is deploying AI agents. Your legal and compliance teams are asking hard questions:
 
-* What policies are being enforced, and how?
-* Who audits the decisions?
-* What happens when the model drifts, gets jailbroken, or takes an unauthorized action?
-* When an examiner or auditor asks for the records, what do you actually hand them?
+- How do we enforce our AI policy?
+- How do we know our AI agents actually follow it?
+- How do we catch drift and prevent unauthorized actions?
+- How do we prove any of it to an examiner?
 
-You probably scratch your head, think about those PDF policies sitting on the Intranet that nobody looks at, and wonder: *How can I possibly enforce those policies in an AI agent?*
+The answers are usually in a policy document — a PDF on an intranet. Nothing in your AI stack reads it, and nothing checks a response against it.
 
-The current standard approach is downstream filters — guardrails that check the output after the fact. They leave no evaluation record, enforce no policy you actually wrote, and produce nothing an auditor can verify. When the answer to "who approved this response?" is "a content filter," the governance conversation is over.
+The industry's answer to that gap is the filter. Guardrails inspect output — they can tell you a filter fired, not whether your policy was upheld. When the answer to "who approved this response?" is "a content filter," the governance conversation is over.
 
 ## The SAFi Solution
 
