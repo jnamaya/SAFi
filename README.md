@@ -141,6 +141,33 @@ role changes, forced session revocation, review configuration, retention and
 legal hold, the provider allowlist, the offline/device-caching policy, the
 incident register, the compliance evidence log, and examiner production exports.
 
+### How an organization gets its first admin
+
+Onboarding is self-service, and the role a person lands on depends on whether
+their organization already exists:
+
+1. **First person in** — a user who signs in with no organization gets one
+   created for them automatically, seeded with a complete default policy, and is
+   promoted to **`admin`** of it. They are its owner.
+2. **Verify the domain** — that admin verifies ownership of their email domain.
+   Verification is `admin`-only, so it can only ever be performed by someone who
+   already administers the organization.
+3. **Everyone after that** — a user signing in with an email on a **verified**
+   domain is matched to that organization and joined as a **`member`**, never an
+   admin. Whether that happens at all is controlled by the org's `join_policy`:
+
+   | `join_policy` | effect |
+   |---|---|
+   | `invite_only` | no automatic joining; the login is refused and journaled |
+   | `domain_auto_join` | same-domain users join as `member` |
+   | `both` | invitations and domain joining |
+
+   Promotion beyond `member` is a deliberate act by an existing admin.
+
+Ownership is also self-healing: if the recorded owner of an organization is
+somehow not an admin of it, the next `/api/me` promotes them back and logs it —
+so an organization cannot end up with no one able to administer it.
+
 ### Guarantees that hold across all roles
 
 - **Organization scoping.** Every org-scoped route rejects a mismatch between
@@ -177,9 +204,6 @@ Stated plainly, because knowing the edges matters more than the summary:
 - **No SCIM or automated deprovisioning.** Off-boarding is manual today;
   `remove_member_from_org` revokes sessions correctly, but nothing is driven from
   an identity provider. See [`docs/SAML_SSO_PLAN.md`](docs/SAML_SSO_PLAN.md).
-- **Any authenticated user can create an organization** and becomes its admin.
-  Appropriate for self-service and the public demo; if you need to prevent it,
-  gate `POST /api/organizations` in your deployment.
 
 Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
 `check_permission`), with per-surface role sets in `audit_api.py`
