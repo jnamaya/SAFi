@@ -1,5 +1,19 @@
 import * as ui from '../ui.js';
 
+// Whether the current user may open the Audit Hub. Set once from app.js, which
+// already computes exactly this rule for the nav (`canSeeDashboard`), so the
+// role list has ONE definition rather than a copy that can drift.
+//
+// Defaults to FALSE — fail closed. The previous guard read
+// `payload.user_role === 'member'`, and `user_role` was never set on any
+// payload, so it was permanently `undefined`: the check always passed and every
+// member was shown a link to a surface they get a 403 from.
+let canSeeDashboard = false;
+
+export function setConscienceDashboardAccess(allowed) {
+    canSeeDashboard = allowed === true;
+}
+
 /**
  * Main function to build and inject the Conscience ("Ethical Reasoning") modal content.
  * @param {object} payload - The audit payload from the message
@@ -213,13 +227,13 @@ function renderScoreAndTrend(payload) {
                 </svg>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center md:text-left">Recent score history (${scores.length} turns)</p>
                 
-                ${payload.user_role === 'member' ? '' : `
+                ${canSeeDashboard ? `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
                     <a href="#" id="view-full-dashboard-link" class="font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
                         View Full Audit Report &rarr;
                     </a>
                 </p>
-                `}
+                ` : ''}
             </div>
         `;
     }
@@ -380,7 +394,7 @@ function attachModalEventListeners(container, payload) {
 
     // --- Dashboard Link logic ---
     const dashboardLink = container.querySelector('#view-full-dashboard-link');
-    if (dashboardLink) {
+    if (dashboardLink && canSeeDashboard) {
         dashboardLink.addEventListener('click', (e) => {
             e.preventDefault();
             // 1. Close this modal

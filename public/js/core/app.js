@@ -478,6 +478,12 @@ function renderControlPanel() {
 
   console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeIncidents, canSeeReview });
 
+  // The conscience modal offers a "View Full Audit Report" link into the Audit
+  // Hub. Members get a 403 there, so it must not be offered to them — and the
+  // decision has to come from here, where the rule is already defined, rather
+  // than from a second copy of the role list.
+  uiSettingsModals.setConscienceDashboardAccess(canSeeDashboard);
+
   const navOrg = document.getElementById('nav-organization'); // NEW ID
   if (navOrg) {
     if (canSeeOrg) navOrg.classList.remove('hidden');
