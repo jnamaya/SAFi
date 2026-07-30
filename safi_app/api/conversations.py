@@ -571,6 +571,16 @@ async def process_prompt_endpoint():
             org_id=org_id
         )
         result["aiProvenance"] = provenance.ai_marker(model=intellect_model)
+        # This is the endpoint the signed-in UI actually calls (api.js -> PROCESS),
+        # so this is where the Alignment Trend's series has to be attached. See
+        # the note on /bot/process_prompt: derived server-side because the client
+        # used to assemble it from a conversation cache that is empty whenever an
+        # org disables offline persistence, which is the default.
+        try:
+            result["spirit_scores_history"] = db.spirit_score_history_for_message(
+                result.get("messageId"))
+        except Exception as e:
+            current_app.logger.warning(f"Could not attach spirit score history: {e}")
         return provenance.mark_json_response(jsonify(result))
     except Exception as e:
         import traceback
