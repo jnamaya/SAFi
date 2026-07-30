@@ -75,7 +75,8 @@ agents; the people who use them do so under least privilege.
 | Own conversations, projects, saved content | ✅ | ✅ | ✅ | ✅ |
 | Own account, sessions, MFA, data export | ✅ | ✅ | ✅ | ✅ |
 | See the governance verdict on **their own** turns | ✅ | ✅ | ✅ | ✅ |
-| Read the org charter, agent list, policy list | ✅ | ✅ | ✅ | ✅ |
+| See which agents exist, and each one's **governing values and standards** | ✅ | ✅ | ✅ | ✅ |
+| See which Charter and Policy govern the agent they are using | ✅ | ✅ | ✅ | ✅ |
 | **Audit Hub** — KPIs, trends, log explorer, export | — | ✅ | ✅ | ✅ |
 | **Supervisory review** — queue, dispositions, reports | — | ✅ | **—** | ✅ |
 | **Author agents** — create, edit, delete, assign tools | — | — | ✅ | ✅ |
@@ -101,10 +102,24 @@ non-hierarchy for *supervising*.
 ### What each role means in practice
 
 **`member`** — consumes agents. Full use of chat, their own conversation
-history, projects, saved content, document upload, and the per-turn governance
-verdict on their own turns (score, values ledger, why it was approved or
-redirected). No access to other people's conversations, the Audit Hub, the
-review queue, or any authoring or configuration surface.
+history, projects, saved content, and document upload.
+
+Members are not governed in the dark. Without any elevated role they can see:
+
+- **which rules apply to them** — the agent list, and for any agent its
+  compiled Values & Standards. Under the two-tier model those are assembled
+  from the organization's Charter and the governing Policy, weighted (Charter
+  share defaults to 40%), so what a member sees is the operative standard their
+  turns are actually scored against — not a summary of it.
+- **who constrains the agent they are using** — rendered as
+  `Governed by <Org> Charter → <Policy>`, plus the agent's scope statement and
+  the fact that out-of-scope requests are redirected.
+- **how their own turn was judged** — the alignment score, every value that was
+  upheld or conflicted, each with a confidence and a written reason, and whether
+  the answer was approved or redirected.
+
+What a member cannot reach: other people's conversations, the Audit Hub, the
+review queue, and any authoring or configuration surface.
 
 **`auditor`** — oversight without authorship. Everything a member has, plus the
 full Audit Hub across the org (alignment and consistency analytics, per-turn
