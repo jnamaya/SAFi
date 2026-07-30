@@ -277,6 +277,62 @@ class TestAuditApi(unittest.TestCase):
             res = self.client().get(f"/api/organizations/{self.org_id}/audit/export")
         self.assertEqual(res.status_code, 413)
 
+    def test_13b_drilldown_carries_the_hashes_not_just_a_verdict(self):
+        """The detail view rendered a green "Chain verified" badge off
+        {entries, valid, first_bad_id} alone — our conclusion, with nothing the
+        viewer could check. The tip digest has to travel with the verdict."""
+        pk = self._pk(self.mid_clean)
+        doc = json.loads(self.client().get(
+            f"/api/organizations/{self.org_id}/audit/events/{pk}").data)
+        trail = doc["trail"]
+        self.assertTrue(trail["valid"])
+        self.assertGreater(trail["entries"], 0)
+        self.assertRegex(trail["entry_hash"], r"^[0-9a-f]{64}$")
+
+        # Must be the stored chain head, not a recomputation — the point is to
+        # expose what IS in the table so a reader can compare it elsewhere.
+        stored = _fetchall(
+            "SELECT entry_hash, prev_hash FROM chat_audit_trail "
+            "WHERE message_pk=%s ORDER BY id DESC LIMIT 1", (pk,))[0]
+        self.assertEqual(trail["entry_hash"], stored["entry_hash"])
+        self.assertEqual(trail["prev_hash"], stored["prev_hash"])
+
+        # Same tip as the export reports for the same turn: one source of truth.
+        exported = json.loads(self.client().get(
+            f"/api/organizations/{self.org_id}/audit/export").data)
+        rec = next(r for r in exported["records"] if r["message_pk"] == pk)
+        self.assertEqual(rec["integrity"]["entry_hash"], trail["entry_hash"])
+        self.assertEqual(rec["integrity"]["prev_hash"], trail["prev_hash"])
+
+    def test_13c_empty_chain_is_not_reported_as_valid(self):
+        """_verify_chain_entries([]) used to return valid=True, so a turn whose
+        trail had been purged rendered as a green tick over zero entries. The
+        export already treated that as null; the drill-down did not."""
+        pk = self._pk(self.mid_clean)
+        saved = _fetchall("SELECT * FROM chat_audit_trail WHERE message_pk=%s", (pk,))
+        self.assertTrue(saved, "fixture must have trail rows to remove")
+        _exec("DELETE FROM chat_audit_trail WHERE message_pk=%s", (pk,))
+        try:
+            verdict = db.verify_message_audit_trail(pk)
+            self.assertIsNone(verdict["valid"], "absence of evidence is not a pass")
+            self.assertEqual(verdict["entries"], 0)
+            self.assertIsNone(verdict["entry_hash"])
+            self.assertIsNone(verdict["prev_hash"])
+            doc = json.loads(self.client().get(
+                f"/api/organizations/{self.org_id}/audit/events/{pk}").data)
+            self.assertIsNone(doc["trail"]["valid"])
+        finally:
+            for e in saved:
+                _exec("INSERT INTO chat_audit_trail (id, message_pk, message_id, "
+                      "conversation_id, action, actor, state, event_at, prev_hash, "
+                      "entry_hash, org_id, created_at) VALUES "
+                      "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                      (e["id"], e["message_pk"], e["message_id"], e["conversation_id"],
+                       e["action"], e["actor"], e["state"], e["event_at"],
+                       e["prev_hash"], e["entry_hash"], e["org_id"], e["created_at"]))
+        self.assertTrue(db.verify_message_audit_trail(pk)["valid"],
+                        "restore must leave the chain verifying again")
+
     def test_14_export_carries_verifiable_integrity_evidence(self):
         """This was the one export a recipient could not check at all: it shipped
         decrypted records with no entry_hash, prev_hash or chain verdict, while

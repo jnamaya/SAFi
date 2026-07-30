@@ -2152,6 +2152,43 @@ html.native body { font-size: 14px; }
   flex-shrink: 0;
 }
 
+/* Chain-head digest shown next to the "Chain verified" badge. user-select:all
+   so one click selects the whole hash even where the clipboard API is
+   unavailable (it requires a secure context, which plain-HTTP self-hosting
+   does not provide — see item 15). */
+.chain-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  padding: 2px 6px;
+  margin-left: 2px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: all;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.dark .chain-hash {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.chain-hash:hover,
+.chain-hash:focus-visible {
+  color: var(--fg);
+}
+
+.chain-hash.copied {
+  color: #15803d;
+  user-select: none;
+}
+
+.dark .chain-hash.copied {
+  color: #4ade80;
+}
+
 .settings-card {
   background: #ffffff;
   border: 1px solid #ececec;

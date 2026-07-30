@@ -103,11 +103,27 @@ function decisionBadge(decision) {
     return `<span class="${BADGE} ${cls}">${esc(label)}</span>`;
 }
 
+// The digest is rendered beside the verdict so a reader can copy it, compare it
+// against an earlier export, and re-walk the chain — a badge alone is our
+// assertion, not evidence.
+function chainHash(chain) {
+    if (!chain?.entry_hash) return '';
+    const h = String(chain.entry_hash);
+    return ` <code class="chain-hash" data-hash="${esc(h)}" role="button" tabindex="0"
+        title="Chain head digest (SHA-256): ${esc(h)}\nprev: ${esc(chain.prev_hash ?? 'none (first entry)')}\nClick to copy.">${esc(h.slice(0, 12))}…</code>`;
+}
+
 function chainBadge(chain) {
     if (!chain) return '';
+    // valid === null means there are no trail entries at all. That is an absence
+    // of evidence, not a pass: this used to fall through to the green tick and
+    // claim "verified" over zero entries, which is what a purged trail looks like.
+    if (chain.valid === null || chain.valid === undefined || !chain.entries) {
+        return `<span class="${BADGE} bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200" title="No chat_audit_trail entries exist for this turn, so there is nothing to verify. Expected if the trail was purged under the retention policy.">No trail entries</span>`;
+    }
     return chain.valid
-        ? `<span class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200" title="${chain.entries} audit-trail entries recomputed and verified">Chain verified ✓</span>`
-        : `<span class="${BADGE} bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200" title="First bad entry: ${esc(chain.first_bad_id)}">CHAIN INVALID</span>`;
+        ? `<span class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200" title="${chain.entries} audit-trail entries recomputed and verified">Chain verified ✓</span>${chainHash(chain)}`
+        : `<span class="${BADGE} bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200" title="First bad entry: ${esc(chain.first_bad_id)}">CHAIN INVALID</span>${chainHash(chain)}`;
 }
 
 function flaggedBadge(ev) {

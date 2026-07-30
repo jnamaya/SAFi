@@ -170,6 +170,29 @@ function setupDelegatedModalListeners() {
             }
         });
     }
+
+    // --- Chain-digest copy ---
+    // One document-level listener rather than one per surface: the digest is
+    // rendered by chainBadge() in BOTH the Audit Hub drill-down and the Review
+    // detail pane, and both rebuild their DOM on every load. `.chain-hash` also
+    // carries user-select:all, so a click still selects the full digest if the
+    // clipboard API is unavailable (it needs a secure context — see the
+    // plain-HTTP self-hosting note in the deploy guide).
+    document.addEventListener('click', (event) => {
+        const el = event.target.closest?.('.chain-hash');
+        if (!el) return;
+        const hash = el.dataset.hash;
+        if (!hash || !navigator.clipboard) return;
+        navigator.clipboard.writeText(hash).then(() => {
+            const shown = el.textContent;
+            el.classList.add('copied');
+            el.textContent = 'copied ✓';
+            setTimeout(() => {
+                el.classList.remove('copied');
+                el.textContent = shown;
+            }, 1200);
+        }, () => { /* selection fallback already available */ });
+    });
 }
 
 /**

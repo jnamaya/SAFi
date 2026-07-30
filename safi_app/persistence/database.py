@@ -1684,6 +1684,21 @@ def _verify_chain_entries(entries):
     of the payload construction would drift, and an export would then certify
     chains the real verifier rejects.
     """
+    # The tip's stored hashes travel with the verdict so callers can show the
+    # digest itself, not just our conclusion about it. Read from the row rather
+    # than recomputed: the point is to expose what IS stored, so a reader can
+    # compare it against an earlier export and re-walk the chain themselves.
+    tip = entries[-1] if entries else None
+    result = {
+        "entries": len(entries),
+        # No entries is an ABSENCE of evidence, not a pass. This used to return
+        # True, so a purged trail rendered as a green "Chain verified" tick with
+        # "0 entries recomputed" in the tooltip.
+        "valid": None if not entries else True,
+        "first_bad_id": None,
+        "entry_hash": tip["entry_hash"] if tip else None,
+        "prev_hash": tip["prev_hash"] if tip else None,
+    }
     prev_hash = None
     for e in entries:
         payload = json.dumps(
@@ -1701,9 +1716,11 @@ def _verify_chain_entries(entries):
         )
         expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         if e["prev_hash"] != prev_hash or e["entry_hash"] != expected:
-            return {"entries": len(entries), "valid": False, "first_bad_id": e["id"]}
+            result["valid"] = False
+            result["first_bad_id"] = e["id"]
+            return result
         prev_hash = e["entry_hash"]
-    return {"entries": len(entries), "valid": True, "first_bad_id": None}
+    return result
 
 def verify_message_audit_trail(message_pk):
     """Recomputes the hash chain for one chat_history row's trail entries.
@@ -4075,12 +4092,13 @@ def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
                 grouped.setdefault(e["message_pk"], []).append(e)
             for pk, entries in grouped.items():
                 verdict = _verify_chain_entries(entries)
+                # entry_hash/prev_hash come from the verdict now — one source
+                # for the tip, so this export and the drill-down cannot drift.
+                # prev_hash is included so a recipient can re-walk the chain
+                # rather than take the verdict on trust.
                 chains[pk] = {
-                    # The tip is this message's current chain head; prev_hash
-                    # links it to the entry before, so a recipient can re-walk
-                    # the chain rather than take the verdict on trust.
-                    "entry_hash": entries[-1]["entry_hash"],
-                    "prev_hash": entries[-1]["prev_hash"],
+                    "entry_hash": verdict["entry_hash"],
+                    "prev_hash": verdict["prev_hash"],
                     "chain_entries": verdict["entries"],
                     "chain_valid": verdict["valid"],
                     "chain_first_bad_id": verdict["first_bad_id"],
