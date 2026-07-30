@@ -49,6 +49,14 @@ Enforcement is deterministic. Every response is drafted, evaluated value-by-valu
 
 Every one of those decisions leaves evidence. Each turn produces an encrypted governance record — the draft, the evaluation ledger, the enforcement decision, and the exact policy version in force — journaled to a hash-chained audit trail. That record feeds an org-scoped **Audit Hub** for analytics and drill-down, a **supervisory review queue** for human oversight, and custody-logged exports for whoever comes asking.
 
+<p align="center">
+  <img src="public/assets/demo.gif" alt="A governed turn in SAFi: the enforcement pipeline advancing through its stages, the alignment score it produced, and the values ledger behind that score — then a second turn, adding a point to the alignment trend" width="100%">
+</p>
+
+<p align="center">
+  <sub>One governed turn, end to end: the pipeline advancing through real enforcement stages, the score it produced, and the value-by-value ledger behind it — then a second turn, adding a point to the trend.</sub>
+</p>
+
 ---
 
 ## Built for Regulated Industries
