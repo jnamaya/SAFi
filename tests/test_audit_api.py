@@ -9,6 +9,7 @@ custody-logged export.
 
 Requires local MySQL. Run:  venv/bin/python tests/test_audit_api.py
 """
+import hashlib
 import json
 import sys
 import uuid
@@ -275,6 +276,85 @@ class TestAuditApi(unittest.TestCase):
         with patch.object(db, "GOVERNANCE_EXPORT_CAP", 1):
             res = self.client().get(f"/api/organizations/{self.org_id}/audit/export")
         self.assertEqual(res.status_code, 413)
+
+    def test_14_export_carries_verifiable_integrity_evidence(self):
+        """This was the one export a recipient could not check at all: it shipped
+        decrypted records with no entry_hash, prev_hash or chain verdict, while
+        records/export and the review item export both carried them."""
+        res = self.client().get(f"/api/organizations/{self.org_id}/audit/export")
+        self.assertEqual(res.status_code, 200)
+        body = res.data.decode("utf-8")
+        payload = json.loads(body)
+
+        # --- per record ---
+        self.assertTrue(payload["records"], "fixture should export something")
+        for rec in payload["records"]:
+            integ = rec["integrity"]
+            self.assertEqual(
+                set(integ),
+                {"entry_hash", "prev_hash", "chain_entries", "chain_valid",
+                 "chain_first_bad_id"})
+            self.assertGreater(integ["chain_entries"], 0,
+                               "fixture turns all have trail entries")
+            self.assertTrue(integ["chain_valid"], "untampered chain must verify")
+            self.assertIsNone(integ["chain_first_bad_id"])
+            # A real sha256 hex digest, not a placeholder or a truncation.
+            self.assertRegex(integ["entry_hash"], r"^[0-9a-f]{64}$")
+
+        # The exported tip must be the actual chain head in the database, not a
+        # recomputation that could drift from what is stored.
+        rec = payload["records"][0]
+        stored = _fetchall(
+            "SELECT entry_hash, prev_hash FROM chat_audit_trail "
+            "WHERE message_pk=%s ORDER BY id DESC LIMIT 1", (rec["message_pk"],))
+        self.assertEqual(rec["integrity"]["entry_hash"], stored[0]["entry_hash"])
+        self.assertEqual(rec["integrity"]["prev_hash"], stored[0]["prev_hash"])
+
+        # And it must agree with the canonical verifier.
+        verdict = db.verify_message_audit_trail(rec["message_pk"])
+        self.assertEqual(verdict["entries"], rec["integrity"]["chain_entries"])
+        self.assertEqual(verdict["valid"], rec["integrity"]["chain_valid"])
+
+        # --- document level ---
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        self.assertEqual(res.headers.get("X-SAFi-Export-SHA256"), digest,
+                         "header digest must cover the exact bytes served")
+        ev = next(e for e in db.list_compliance_log(self.org_id, 10)
+                  if e["event_type"] == "audit_export")
+        self.assertEqual(ev["detail"]["sha256"], digest,
+                         "the custody log is the authoritative copy of the digest")
+        self.assertNotIn("records", ev["detail"], "custody log must never carry content")
+
+        # The file must state the limits of what it proves, so a reader working
+        # from the artifact alone cannot overstate it.
+        scope = payload["integrity"]["scope"]
+        self.assertIn("not", scope.lower())
+        self.assertIn("integrity evidence", scope)
+
+    def test_15_absent_trail_is_not_reported_as_verified(self):
+        """No trail rows is an absence of evidence. Reporting chain_valid=true
+        there would certify exactly the records with nothing backing them."""
+        pk = _fetchall("SELECT message_pk FROM governance_records WHERE org_id=%s "
+                       "LIMIT 1", (self.org_id,))[0]["message_pk"]
+        saved = _fetchall("SELECT * FROM chat_audit_trail WHERE message_pk=%s", (pk,))
+        _exec("DELETE FROM chat_audit_trail WHERE message_pk=%s", (pk,))
+        try:
+            res = self.client().get(f"/api/organizations/{self.org_id}/audit/export")
+            rec = next(r for r in json.loads(res.data)["records"]
+                       if r["message_pk"] == pk)
+            self.assertIsNone(rec["integrity"]["chain_valid"],
+                              "must be null, never true, with no trail rows")
+            self.assertEqual(rec["integrity"]["chain_entries"], 0)
+            self.assertIsNone(rec["integrity"]["entry_hash"])
+        finally:
+            for e in saved:
+                _exec("INSERT INTO chat_audit_trail (id, message_pk, message_id, "
+                      "conversation_id, action, actor, state, event_at, prev_hash, "
+                      "entry_hash, org_id, created_at) VALUES "
+                      "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                      (e["id"], e["message_pk"], e["message_id"], e["conversation_id"],
+                       e["action"], e["actor"], e["state"], e["event_at"],
+                       e["prev_hash"], e["entry_hash"], e["org_id"], e["created_at"]))
 
 
 if __name__ == "__main__":

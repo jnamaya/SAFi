@@ -12,6 +12,7 @@ KPI/trend/explorer endpoints read plaintext filter/aggregate columns only;
 decryption happens exclusively in the drill-down, prompt search, and export
 paths (see database.py's governance-records section for the caps).
 """
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -189,9 +190,41 @@ def audit_export(org_id):
     except Exception as e:
         current_app.logger.error(f"Error exporting audit events: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_by": _actor_email(),
+        "org_id": org_id,
+        "count": len(rows),
+        # Says plainly what the hashes do and do not establish, in the artifact
+        # itself — a recipient reading only the file should not overstate it.
+        "integrity": {
+            "hash_algorithm": "SHA-256",
+            "per_record": "records[].integrity carries that turn's chat_audit_trail "
+                          "chain head (entry_hash), its link to the preceding entry "
+                          "(prev_hash), the entry count, and the recomputed verdict, "
+                          "so the chain can be re-walked rather than taken on trust. "
+                          "chain_valid is null, not true, when a turn has no trail rows.",
+            "document_digest": "SHA-256 of this file's exact bytes, recorded in "
+                               "org_compliance_log and returned in the "
+                               "X-SAFi-Export-SHA256 response header. It cannot appear "
+                               "inside the file it covers.",
+            "scope": "Confirms this export matches the database and detects edits to "
+                     "individual trail rows. It does NOT prove the database was never "
+                     "rewritten and re-chained: the chain is unkeyed and written by the "
+                     "same process that writes the records, so this is integrity "
+                     "evidence, not proof of non-tampering.",
+        },
+        "records": rows,
+    }
+    # Serialize once, digest those exact bytes, serve those exact bytes — a
+    # digest over a second serialization would be a digest of a different file.
+    body = json.dumps(payload, indent=2, default=str)
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+
     try:
         db.append_compliance_log(org_id, "audit_export", _actor_email(), {
             "count": len(rows),
+            "sha256": digest,
             "filters": {
                 "profile": filters["profile"], "policy_id": filters["policy_id"],
                 "filter": filters["flt"],
@@ -200,16 +233,16 @@ def audit_export(org_id):
             },
         })
     except Exception as e:
-        # Custody log is the point of this surface — no evidence, no export.
+        # Custody log is the point of this surface — no evidence, no export. The
+        # body is built before this only so the digest can be logged with it;
+        # nothing has been sent to the client yet, so refusing here still means
+        # no records leave without an evidence entry.
         current_app.logger.error(f"audit_export custody log failed — refusing export: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
-    payload = {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "exported_by": _actor_email(),
-        "org_id": org_id,
-        "count": len(rows),
-        "records": rows,
-    }
+
     fname = f"safi-audit-export-{org_id[:8]}-{filters['date_from'].date()}-{filters['date_to'].date()}.json"
-    return Response(json.dumps(payload, indent=2, default=str), mimetype="application/json",
-                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+    return Response(body, mimetype="application/json", headers={
+        "Content-Disposition": f"attachment; filename={fname}",
+        # org_compliance_log holds the authoritative copy; this is for scripts.
+        "X-SAFi-Export-SHA256": digest,
+    })

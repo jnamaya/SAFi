@@ -4058,9 +4058,43 @@ def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
             f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
             f"WHERE {where} ORDER BY created_at DESC, id DESC", tuple(params))
         rows = cursor.fetchall()
+
+        # Integrity evidence per record. governance_records is a separate table
+        # from chat_audit_trail, so the hashes have to be joined in — batched in
+        # ONE query, because verify_message_audit_trail() opens its own
+        # connection per message and this export is capped at 10,000 rows.
+        chains = {}
+        pks = sorted({r["message_pk"] for r in rows if r["message_pk"] is not None})
+        if pks:
+            placeholders = ",".join(["%s"] * len(pks))
+            cursor.execute(
+                f"SELECT * FROM chat_audit_trail WHERE message_pk IN ({placeholders}) "
+                "ORDER BY message_pk, id", tuple(pks))
+            grouped = {}
+            for e in cursor.fetchall():
+                grouped.setdefault(e["message_pk"], []).append(e)
+            for pk, entries in grouped.items():
+                verdict = _verify_chain_entries(entries)
+                chains[pk] = {
+                    # The tip is this message's current chain head; prev_hash
+                    # links it to the entry before, so a recipient can re-walk
+                    # the chain rather than take the verdict on trust.
+                    "entry_hash": entries[-1]["entry_hash"],
+                    "prev_hash": entries[-1]["prev_hash"],
+                    "chain_entries": verdict["entries"],
+                    "chain_valid": verdict["valid"],
+                    "chain_first_bad_id": verdict["first_bad_id"],
+                }
     finally:
         cursor.close()
         conn.close()
+
+    # No trail rows is an ABSENCE of evidence, not a passing chain: report nulls
+    # and a zero count, never chain_valid=true. Same rule as the N/A-not-10.0
+    # score chip and the review export.
+    no_chain = {"entry_hash": None, "prev_hash": None, "chain_entries": 0,
+                "chain_valid": None, "chain_first_bad_id": None}
+
     out = []
     for row in rows:
         enc = row.pop("record_enc")
@@ -4073,6 +4107,7 @@ def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
         row["ai_generated"] = True
         if isinstance(row.get("created_at"), datetime):
             row["created_at"] = row["created_at"].isoformat()
+        row["integrity"] = dict(chains.get(row["message_pk"], no_chain))
         out.append(row)
     return out
 
