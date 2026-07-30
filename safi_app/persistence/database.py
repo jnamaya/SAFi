@@ -1601,6 +1601,34 @@ _CHAT_TRAIL_ROW_FIELDS = [
     "profile_values", "suggested_prompts", "reasoning_log", "timestamp",
 ]
 
+def trail_payload(message_pk, message_id, conversation_id, action, actor,
+                  state_json, event_at, prev_hash):
+    """The canonical bytes an entry's hash covers. Exactly one definition.
+
+    The writer built this from locals and _verify_chain_entries rebuilt it from
+    row dicts — two copies of the same construction, either of which could be
+    edited without the other. A drift there does not fail loudly in an obvious
+    place; it makes every chain unverifiable at once. Keyed field order is fixed
+    by sort_keys, so this must never change for existing entries: any change is
+    a new hash algorithm and needs a version marker, not an edit.
+
+    org_id is deliberately NOT covered — it is unauthenticated routing metadata
+    for the retention purge, not part of the record.
+    """
+    return json.dumps(
+        {
+            "message_pk": message_pk,
+            "message_id": message_id,
+            "conversation_id": conversation_id,
+            "action": action,
+            "actor": actor,
+            "state": state_json,
+            "event_at": event_at,
+            "prev_hash": prev_hash,
+        },
+        sort_keys=True,
+    )
+
 def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, actor, state, org_id=None):
     """Appends one entry to chat_audit_trail on the caller's cursor/transaction.
 
@@ -1617,19 +1645,8 @@ def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, 
     prev_hash = (row["entry_hash"] if isinstance(row, dict) else row[0]) if row else None
     event_at = datetime.now(timezone.utc).isoformat()
     state_json = json.dumps(state, default=str) if state is not None else None
-    payload = json.dumps(
-        {
-            "message_pk": message_pk,
-            "message_id": message_id,
-            "conversation_id": conversation_id,
-            "action": action,
-            "actor": actor,
-            "state": state_json,
-            "event_at": event_at,
-            "prev_hash": prev_hash,
-        },
-        sort_keys=True,
-    )
+    payload = trail_payload(message_pk, message_id, conversation_id, action,
+                            actor, state_json, event_at, prev_hash)
     entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     cursor.execute(
         "INSERT INTO chat_audit_trail (message_pk, message_id, conversation_id, "
@@ -1701,19 +1718,9 @@ def _verify_chain_entries(entries):
     }
     prev_hash = None
     for e in entries:
-        payload = json.dumps(
-            {
-                "message_pk": e["message_pk"],
-                "message_id": e["message_id"],
-                "conversation_id": e["conversation_id"],
-                "action": e["action"],
-                "actor": e["actor"],
-                "state": e["state"],
-                "event_at": e["event_at"],
-                "prev_hash": prev_hash,
-            },
-            sort_keys=True,
-        )
+        payload = trail_payload(e["message_pk"], e["message_id"],
+                                e["conversation_id"], e["action"], e["actor"],
+                                e["state"], e["event_at"], prev_hash)
         expected = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         if e["prev_hash"] != prev_hash or e["entry_hash"] != expected:
             result["valid"] = False
