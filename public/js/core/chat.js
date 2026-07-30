@@ -759,10 +759,13 @@ function renderHistory(history, user, showModal, activeProfileData) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                // On a cache miss, keep the payload's history instead of
-                // erasing the trend with an empty array.
+                // The server derives this now (get_audit_result), so it is
+                // authoritative and independent of whether the client is even
+                // allowed to cache. Recompute from the cache only when the
+                // payload has no server-provided series, and never let a cache
+                // miss erase a series we already have.
                 let freshScores = p.spirit_scores_history || [];
-                if (msgIndex > -1) {
+                if (!freshScores.length && msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
                         .map(t => t.spirit_score)
                         .filter(s => s !== null && s !== undefined);
@@ -1076,12 +1079,24 @@ export async function sendMessage(activeProfileData, user) {
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
 
         // Filter out null/undefined scores *before* passing to the trend line.
-        const scoresHistoryForPayload = historyForPayload
-            .map(t => t.spirit_score)
-            .filter(s => s !== null && s !== undefined);
-        // Add the new score (if it exists) to the history for the trend line
-        if (spiritScore !== null && spiritScore !== undefined) {
-            scoresHistoryForPayload.push(spiritScore);
+        // Prefer the server-derived series: the local cache is empty whenever
+        // the org disables offline persistence (the default), which used to
+        // leave this array one entry long and silently drop the trend.
+        const serverScores = Array.isArray(initialResponse.spiritScoresHistory)
+            ? initialResponse.spiritScoresHistory
+            : (Array.isArray(initialResponse.spirit_scores_history)
+                ? initialResponse.spirit_scores_history : null);
+        let scoresHistoryForPayload;
+        if (serverScores && serverScores.length) {
+            scoresHistoryForPayload = serverScores.slice();
+        } else {
+            scoresHistoryForPayload = historyForPayload
+                .map(t => t.spirit_score)
+                .filter(s => s !== null && s !== undefined);
+            // Add the new score (if it exists) to the history for the trend line
+            if (spiritScore !== null && spiritScore !== undefined) {
+                scoresHistoryForPayload.push(spiritScore);
+            }
         }
 
         const aiMessageObject = {
@@ -1123,10 +1138,13 @@ export async function sendMessage(activeProfileData, user) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                // On a cache miss, keep the payload's history instead of
-                // erasing the trend with an empty array.
+                // The server derives this now (get_audit_result), so it is
+                // authoritative and independent of whether the client is even
+                // allowed to cache. Recompute from the cache only when the
+                // payload has no server-provided series, and never let a cache
+                // miss erase a series we already have.
                 let freshScores = p.spirit_scores_history || [];
-                if (msgIndex > -1) {
+                if (!freshScores.length && msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
                         .map(t => t.spirit_score)
                         .filter(s => s !== null && s !== undefined);
@@ -1310,9 +1328,11 @@ async function fetchAndApplyAuditResult(messageId) {
             await cache.saveConvoHistory(currentConversationId, history);
         }
 
-        const spiritScoresHistory = history
-            .map(t => t.spirit_score)
-            .filter(s => s !== null && s !== undefined);
+        // Server-derived when available (get_audit_result), else from cache.
+        const spiritScoresHistory = Array.isArray(auditResult.spirit_scores_history)
+            && auditResult.spirit_scores_history.length
+            ? auditResult.spirit_scores_history.slice()
+            : history.map(t => t.spirit_score).filter(s => s !== null && s !== undefined);
 
         const payload = {
             ...auditResult,
@@ -1324,9 +1344,14 @@ async function fetchAndApplyAuditResult(messageId) {
 
         uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
             const idx = history.findIndex(m => m.message_id === p.message_id);
-            const freshScores = idx > -1
-                ? history.slice(0, idx + 1).map(t => t.spirit_score).filter(s => s !== null && s !== undefined)
-                : [...spiritScoresHistory];
+            // spiritScoresHistory came from the server (auditResult), so it is
+            // authoritative; the cache recomputation is only a fallback for a
+            // payload that predates the server-derived series.
+            const freshScores = spiritScoresHistory.length
+                ? [...spiritScoresHistory]
+                : (idx > -1
+                    ? history.slice(0, idx + 1).map(t => t.spirit_score).filter(s => s !== null && s !== undefined)
+                    : []);
             ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
         });
         return 'complete';

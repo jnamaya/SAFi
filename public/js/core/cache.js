@@ -220,13 +220,59 @@ const CACHE_KEYS = {
 // UI preferences are unaffected — only content caches are gated and purged.
 let persistenceAllowed = true;
 
+// --- Memory tier -----------------------------------------------------------
+// Always on, bounded, and never written to NativeStorage. persistenceAllowed
+// governs DURABILITY, not whether the app has working state: an in-heap Map
+// with the same lifetime as the DOM that is already displaying this content is
+// not "persisting on the device", which is what the kill switch exists to
+// prevent. Before this existed, disabling persistence made writes silent
+// no-ops while reads kept succeeding with [] — six loadConvoHistory call sites
+// quietly received an empty conversation, which is what broke the Alignment
+// Trend on every live turn for orgs on the default (offline_enabled: False).
+const _mem = new Map();
+const MEM_MAX_ENTRIES = 12;
+
+function _memSet(key, value) {
+  // Re-insert so iteration order is LRU: oldest key is first.
+  _mem.delete(key);
+  _mem.set(key, value);
+  while (_mem.size > MEM_MAX_ENTRIES) {
+    _mem.delete(_mem.keys().next().value);
+  }
+}
+
+function _memGet(key) {
+  if (!_mem.has(key)) return null;
+  const value = _mem.get(key);
+  _memSet(key, value); // touch
+  return value;
+}
+
+export function _memoryStats() {
+  return { entries: _mem.size, keys: [..._mem.keys()], persistenceAllowed };
+}
+
 export async function setPersistenceAllowed(allowed) {
-  persistenceAllowed = allowed !== false;
-  if (!persistenceAllowed) await clearAllCache();
+  const next = allowed !== false;
+  const changed = next !== persistenceAllowed;
+  persistenceAllowed = next;
+  if (!persistenceAllowed) {
+    // Say so exactly once. This used to be entirely silent, which is why an
+    // empty cache looked like a rendering bug for as long as it did.
+    console.info('[cache] Local persistence is disabled by org policy — '
+      + 'this session is memory-only; nothing is written to device storage.');
+    _mem.clear();
+    await clearAllCache();
+  } else if (changed) {
+    _mem.clear();
+  }
 }
 
 export async function saveConvoList(conversations) {
-  if (!persistenceAllowed) return;
+  _memSet(CACHE_KEYS.CONVO_LIST, conversations.map(c => ({
+    ...c, is_pinned: c.is_pinned === true
+  })));
+  if (!persistenceAllowed) return 'memory-only';
   try {
     // Ensure all objects have is_pinned property, defaulting to false if missing
     const sanitizedConversations = conversations.map(c => ({
@@ -241,7 +287,10 @@ export async function saveConvoList(conversations) {
 
 export async function loadConvoList() {
   try {
-    const convos = (await NativeStorage.get(CACHE_KEYS.CONVO_LIST)) || [];
+    const cached = _memGet(CACHE_KEYS.CONVO_LIST);
+    const convos = cached || (persistenceAllowed
+      ? ((await NativeStorage.get(CACHE_KEYS.CONVO_LIST)) || [])
+      : []);
     // Sanitize on load to ensure old entries work
     return convos.map(c => ({
       ...c,
@@ -281,24 +330,40 @@ export async function deleteConvo(convoId) {
   try {
     const convos = (await loadConvoList()).filter(c => c.id !== convoId);
     await saveConvoList(convos);
+    _mem.delete(CACHE_KEYS.CONVO_PREFIX + convoId);
     await NativeStorage.remove(CACHE_KEYS.CONVO_PREFIX + convoId);
   } catch (e) {
     console.error('Failed to delete convo from cache:', e);
   }
 }
 
+/**
+ * Returns what it actually did: 'persisted' | 'memory-only' | 'failed'.
+ * Callers mostly ignore it, but a write path that reports success identically
+ * whether it stored or discarded is what hid this bug — silence is the defect.
+ */
 export async function saveConvoHistory(convoId, history) {
-  if (!persistenceAllowed) return;
+  const key = CACHE_KEYS.CONVO_PREFIX + convoId;
+  _memSet(key, history);
+  if (!persistenceAllowed) return 'memory-only';
   try {
-    await NativeStorage.set(CACHE_KEYS.CONVO_PREFIX + convoId, history);
+    await NativeStorage.set(key, history);
+    return 'persisted';
   } catch (e) {
     console.error(`Failed to save history for ${convoId}:`, e);
+    return 'failed';
   }
 }
 
 export async function loadConvoHistory(convoId) {
+  const key = CACHE_KEYS.CONVO_PREFIX + convoId;
+  const inMemory = _memGet(key);
+  if (inMemory) return inMemory;
+  if (!persistenceAllowed) return [];
   try {
-    return (await NativeStorage.get(CACHE_KEYS.CONVO_PREFIX + convoId)) || [];
+    const stored = (await NativeStorage.get(key)) || [];
+    if (stored.length) _memSet(key, stored); // warm the memory tier
+    return stored;
   } catch (e) {
     console.error(`Failed to load history for ${convoId}:`, e);
     return [];
@@ -318,6 +383,9 @@ export async function addMessageToHistory(convoId, message) {
 }
 
 export async function clearAllCache() {
+  // Memory first: it must never outlive a purge, or logout would leave one
+  // user's conversations readable to the next session in the same tab.
+  _mem.clear();
   try {
     const convos = await loadConvoList();
 

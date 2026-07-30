@@ -2016,6 +2016,49 @@ def update_message_reasoning(msg_id, step_text, phase=None):
         cursor.close()
         conn.close()
 
+SPIRIT_HISTORY_LIMIT = 10
+
+def _spirit_score_history(cursor, conversation_id, up_to_pk, limit=SPIRIT_HISTORY_LIMIT):
+    """Scored turns in this conversation up to and including `up_to_pk`, oldest
+    first — the series the Alignment Trend draws.
+
+    Runs on the caller's cursor so it costs one extra query, not a connection.
+    Nulls are excluded here rather than client-side: an unscored turn is not a
+    zero, and the trend must not imply one. Capped because the chart only ever
+    plots the last few points.
+    """
+    if not conversation_id or up_to_pk is None:
+        return []
+    cursor.execute(
+        "SELECT spirit_score FROM chat_history "
+        "WHERE conversation_id=%s AND id<=%s AND spirit_score IS NOT NULL "
+        "ORDER BY id DESC LIMIT %s",
+        (conversation_id, up_to_pk, limit))
+    rows = cursor.fetchall()
+    scores = [(r['spirit_score'] if isinstance(r, dict) else r[0]) for r in rows]
+    return [float(v) for v in reversed(scores)]
+
+def spirit_score_history_for_message(message_id, limit=SPIRIT_HISTORY_LIMIT):
+    """Public wrapper: the Alignment Trend series for one message_id, oldest
+    first. Opens its own connection, for callers outside a cursor scope (the
+    process_prompt response). Returns [] for an unknown message rather than
+    raising — a missing trend must never fail a turn."""
+    if not message_id:
+        return []
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, conversation_id FROM chat_history WHERE message_id=%s",
+            (message_id,))
+        row = cursor.fetchone()
+        if not row:
+            return []
+        return _spirit_score_history(cursor, row["conversation_id"], row["id"], limit)
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_audit_result(msg_id, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -2027,7 +2070,8 @@ def get_audit_result(msg_id, user_id=None):
         # user's audit ledger / reasoning log by guessing a message_id.
         if user_id is not None:
             cursor.execute(
-                """SELECT ch.audit_status, ch.conscience_ledger, ch.spirit_score, ch.drift, ch.spirit_note,
+                """SELECT ch.id, ch.conversation_id,
+                          ch.audit_status, ch.conscience_ledger, ch.spirit_score, ch.drift, ch.spirit_note,
                           ch.profile_name, ch.policy_id, ch.policy_version,
                           ch.profile_values, ch.suggested_prompts, ch.reasoning_log
                    FROM chat_history ch
@@ -2037,7 +2081,8 @@ def get_audit_result(msg_id, user_id=None):
             )
         else:
             cursor.execute(
-                """SELECT audit_status, conscience_ledger, spirit_score, drift, spirit_note,
+                """SELECT id, conversation_id,
+                          audit_status, conscience_ledger, spirit_score, drift, spirit_note,
                           profile_name, policy_id, policy_version,
                           profile_values, suggested_prompts, reasoning_log
                    FROM chat_history WHERE message_id=%s""",
@@ -2057,7 +2102,14 @@ def get_audit_result(msg_id, user_id=None):
                 "policy_version": row['policy_version'],
                 "values": row['profile_values'],
                 "suggested_prompts": _decode_suggested_prompts(row['suggested_prompts']),
-                "reasoning_log": row['reasoning_log']
+                "reasoning_log": row['reasoning_log'],
+                # Derived server-side on purpose. The Alignment Trend used to be
+                # assembled from the client's conversation cache, which is empty
+                # whenever an org disables offline persistence (the default), so
+                # a compliance view silently lost its history. A governance
+                # surface should not depend on client-side storage policy.
+                "spirit_scores_history": _spirit_score_history(
+                    cursor, row['conversation_id'], row['id']),
             }
         return None
     finally:

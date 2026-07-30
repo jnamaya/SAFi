@@ -292,6 +292,16 @@ async def bot_process_prompt_endpoint():
             org_id=org_id
         )
         result["aiProvenance"] = provenance.ai_marker(model=selected_intellect)
+        # The Alignment Trend's series, derived server-side. Attached here rather
+        # than in the orchestrator because that has several return points; and
+        # attached at all because the client used to assemble it from its own
+        # conversation cache, which is empty whenever an org disables offline
+        # persistence (the default) — silently dropping the trend on live turns.
+        try:
+            result["spirit_scores_history"] = db.spirit_score_history_for_message(
+                result.get("messageId"))
+        except Exception as e:
+            current_app.logger.warning(f"Could not attach spirit score history: {e}")
         return provenance.mark_json_response(jsonify(result))
 
     except Exception as e:
