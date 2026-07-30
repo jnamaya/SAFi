@@ -3897,9 +3897,26 @@ _GOV_FLAGGED_SQL = "(spirit_score < 6 OR drift > 0.4)"
 GOVERNANCE_SEARCH_CAP = 5_000
 GOVERNANCE_EXPORT_CAP = 10_000
 
+# Sentinel scope for records whose org_id is NULL. `org_id = NULL` is never true
+# in SQL, so an unqualified "org_id=%s" makes those rows invisible to every Audit
+# Hub read and to both exports.
+#
+# OPERATOR TOOLING ONLY — must never be reachable from an org-scoped HTTP route.
+# A record with no org belongs to no tenant, so surfacing it in one org's Audit
+# Hub would show that org's admin turns that are not theirs (public-bot
+# conversations from anyone). Every role in rbac.ROLES is org-scoped; there is no
+# platform superuser to gate it behind, so the exposure would be unavoidable.
+# That would be a worse defect than the invisibility. The real fix is upstream:
+# stop creating unattributed records. See scripts/audit_unattributed.py.
+UNATTRIBUTED_ORG = "__unattributed__"
+
 def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
-    where = ["org_id=%s"]
-    params = [org_id]
+    if org_id == UNATTRIBUTED_ORG:
+        where = ["org_id IS NULL"]
+        params = []
+    else:
+        where = ["org_id=%s"]
+        params = [org_id]
     if profile:
         where.append("profile_key=%s")
         params.append(profile)
@@ -5304,19 +5321,22 @@ def accept_invitation(invite_id, user_id, actor):
         conn.close()
 
 def get_policy_id_by_api_key(raw_key):
-    # DEBUG LOGGING (Temporary)
+    # Never log the key, any prefix of it, or its hash. This used to emit
+    # `logging.error("DEBUG_KEY_CHECK: Input: <first 15 chars>, Hash: <10>")` on
+    # EVERY call, under a comment calling it temporary — so partial live
+    # credentials were being written into the journal at error level, where they
+    # are the most likely thing to be shipped to an aggregator or pasted into a
+    # bug report. A failed lookup logs that a lookup failed, and nothing else.
+    if not raw_key:
+        return None
     try:
-        masked_input = raw_key[:15] + "..." if raw_key else "None"
         h = hashlib.sha256(raw_key.encode()).hexdigest()
-        logging.error(f"DEBUG_KEY_CHECK: Input: {masked_input}, Hash: {h[:10]}...")
-        
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT policy_id FROM api_keys WHERE key_hash=%s", (h,))
             row = cursor.fetchone()
             if row:
-                logging.error(f"DEBUG_KEY_CHECK: Match Found! Policy ID: {row[0]}")
                 # Update usage stats
                 cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
                 conn.commit()

@@ -370,6 +370,15 @@ class Config:
     # embedding model, nothing to download on first boot.
     DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "fiduciary").strip().lower()
 
+    # Org that turns from /api/public/process_prompt are attributed to. Anonymous
+    # public users carry no org of their own, so without this their governance
+    # records land with org_id = NULL — and `org_id = NULL` matches nothing in
+    # SQL, which makes them invisible to every Audit Hub read and both exports.
+    # Unset is allowed (the endpoint warns rather than refusing: breaking the
+    # embedded widget would be worse than an unauditable turn), but any operator
+    # who wants the public bot auditable must set it.
+    PUBLIC_ORG_ID = (os.environ.get("SAFI_PUBLIC_ORG_ID") or "").strip() or None
+
     # Which built-in demo agents to register and seed. Comma-separated persona
     # keys (see core/faculties/synderesis.py PERSONAS), or "all" for the full
     # demo suite.

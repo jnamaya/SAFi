@@ -431,6 +431,24 @@ async def public_process_prompt_endpoint():
         })
     user_details = db.get_user_details(anonymous_user_id) or {"org_id": None}
 
+    # Anonymous public users have no org of their own, so without a fallback every
+    # turn here is recorded with org_id = NULL — and `org_id = NULL` matches
+    # nothing in SQL, so the record exists but is unreachable from the Audit Hub
+    # and from both exports. Same fallback order as /bot/process_prompt (the
+    # governing policy's org), then an explicitly configured public org.
+    org_id = user_details.get('org_id')
+    if not org_id:
+        org_id = Config.PUBLIC_ORG_ID
+    if not org_id:
+        # Warn, do not refuse: dropping the turn would break the embedded widget,
+        # and an unauditable turn is still better than no answer. But it must not
+        # be silent — this is exactly how 5 invisible records accumulated.
+        current_app.logger.warning(
+            "public/process_prompt: no org for %s — this turn's governance record "
+            "will have org_id NULL and will NOT appear in any Audit Hub view. "
+            "Set SAFI_PUBLIC_ORG_ID to make the public bot auditable.",
+            anonymous_user_id)
+
     # --- Ensure conversation row exists, reuse it on subsequent turns ---
     # ensure_conversation_access() creates the row only if it doesn't exist yet,
     # preserving history and Spirit EMA memory across the full session.
@@ -446,7 +464,9 @@ async def public_process_prompt_endpoint():
         Config.PUBLIC_CONSCIENCE_MODEL
     )
 
-    org_id = user_details.get('org_id')
+    # org_id was already resolved above (user -> policy -> configured public org).
+    # It used to be re-read from user_details here, which silently discarded that
+    # fallback and put every public turn back to NULL.
     result = await saf_system.process_prompt(
         data['message'],
         anonymous_user_id,
