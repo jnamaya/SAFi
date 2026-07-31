@@ -2773,6 +2773,16 @@ def list_policies(user_id=None, org_id=None):
         for row in rows:
             row['will_rules'] = json.loads(row['will_rules']) if isinstance(row['will_rules'], str) else row['will_rules']
             row['values_weights'] = json.loads(row['values_weights']) if isinstance(row['values_weights'], str) else row['values_weights']
+            # policy_config MUST be decoded here too, exactly as get_policy does.
+            # Leaving it as a JSON string is not cosmetic: the Governance tab opens
+            # the policy editor from THIS list, and hydratePolicy reads
+            # `existingPolicy.policy_config.<key>`. On a string every key is
+            # undefined, so business_unit and scope_statement came back empty and
+            # — worse — alignment_threshold and ethical_memory silently fell back
+            # to the wizard defaults (0.5 / 0.90). alignment_threshold is the
+            # Will's blocking threshold, so a routine edit-and-save reset an
+            # enforcement parameter with no warning and no diff.
+            row['policy_config'] = json.loads(row['policy_config']) if isinstance(row['policy_config'], str) else row['policy_config'] or {}
         return rows
     finally:
         cursor.close()

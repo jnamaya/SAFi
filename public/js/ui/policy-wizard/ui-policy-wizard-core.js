@@ -131,7 +131,16 @@ export function closeWizard(skipReload = false) {
 // --- HYDRATION: map a DB policy (possibly legacy shape) to wizard state ---
 function hydratePolicy(existingPolicy) {
     const init = getInitialState();
-    const cfg  = existingPolicy.policy_config || {};
+    // Tolerate policy_config arriving as a JSON string. The server is supposed to
+    // decode it (db.list_policies / db.get_policy both do now), but a string here
+    // fails SILENTLY and expensively: every cfg.<key> becomes undefined, so
+    // alignment_threshold and ethical_memory fall back to wizard defaults and a
+    // plain edit-and-save rewrites the Will's blocking threshold. Worth a guard
+    // when the cost of being wrong is an enforcement parameter.
+    let cfg = existingPolicy.policy_config || {};
+    if (typeof cfg === 'string') {
+        try { cfg = JSON.parse(cfg) || {}; } catch (e) { cfg = {}; }
+    }
     const wr   = existingPolicy.will_rules;
 
     // will_rules may be a list (legacy) or a structured dict (new shape)
