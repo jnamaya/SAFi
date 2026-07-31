@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How SAFi's Intellect Works</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .flow-arrow {
+            position: relative;
+            padding-bottom: 3.5rem; /* Space for arrow */
+        }
+        .flow-arrow::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: 1rem;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 2rem;
+            background-color: #60a5fa; /* blue-400 */
+        }
+        .flow-arrow::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: 1rem;
+            transform: translateX(-50%) translateY(100%);
+            width: 0; 
+            height: 0; 
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #60a5fa; /* blue-400 */
+        }
+    </style>
+</head>
+<body class="bg-white text-gray-800 min-h-screen flex items-center justify-center p-4 md:p-8">
+
+    <div class="w-full max-w-6xl mx-auto">
+       
+
+        <main class="space-y-8">
+            <!-- Inputs Section -->
+            <div class="text-center">
+                <h2 class="text-xl font-semibold text-gray-700 mb-6">1. The Intellect Weaves Together Three Streams of Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+                    
+                    <!-- Context (xt) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Context (x_t)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The user's direct prompt or instruction.</p>
+                    </div>
+
+                    <!-- Values (V) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="m12 3-1.41 1.41L16.17 10H4v4h12.17l-5.58 5.59L12 21l8-8-8-8z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Values (V)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The active ethical profile, including worldview, style, and core values.</p>
+                    </div>
+
+                    <!-- Memory (Mt) -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
+                        <div class="flex items-center justify-center mb-3">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M4.5 12.5a8.5 8.5 0 1 0 15 0a8.5 8.5 0 1 0-15 0Z"></path><path d="M12 4.8v2.6"></path><path d="M16.4 7.6l-2 1.2"></path><path d="M19.2 12h-2.6"></path><path d="M16.4 16.4l-2-1.2"></path><path d="M12 19.2v-2.6"></path><path d="M7.6 16.4l2-1.2"></path><path d="M4.8 12h2.6"></path><path d="M7.6 7.6l2 1.2"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Memory (M_t)</h3>
+                        </div>
+                        <div class="text-sm text-gray-600 space-y-2 text-left">
+                           <p><span class="font-semibold text-gray-700">Conversation Memory:</span> A summary of the current interaction.</p>
+                           <p><span class="font-semibold text-gray-700">Historical Performance:</span> Feedback from the Spirit faculty on past ethical alignment.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arrow Down to Intellect -->
+             <div class="h-16 flex justify-center items-center">
+                <div class="w-px h-full bg-blue-300"></div>
+            </div>
+            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
+
+            <!-- The Intellect Engine Section -->
+            <div class="text-center">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">2. The Intellect Synthesizes the Inputs</h2>
+                <div class="bg-white p-8 rounded-xl border-2 border-blue-500 shadow-xl max-w-3xl mx-auto">
+                    <div class="flex items-center justify-center mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M9.5 2.1C9.8 1.8 10.3 1.5 10.8 1.5c.5 0 1 .3 1.3.6"></path><path d="M14.5 2.1c-.3-.3-.8-.6-1.3-.6a2.1 2.1 0 0 0-1.4.6"></path><path d="M12 15.5c-4.2 0-7.5-1.9-7.5-4.5V6c0-1 .9-2 2-2h11c1.1 0 2 .9 2 2v5c0 2.6-3.3 4.5-7.5 4.5Z"></path><path d="M12 15.5v6"></path><path d="M9.5 18.5h5"></path></svg>
+                        <h3 class="text-2xl font-bold ml-3 text-gray-900">The Intellect (I)</h3>
+                    </div>
+                    <p class="text-gray-600 mb-6">The Intellect acts as the reasoning and creative force, using a large language model to process the combined context and generate a response.</p>
+                    <div class="bg-gray-100 p-4 rounded-md text-center text-sm border border-gray-200">
+                        <p class="font-mono text-base text-gray-800">(a_t, r_t) = I(x_t, V, M_t)</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="h-16 flex justify-center items-center">
+                <div class="w-px h-full bg-blue-300"></div>
+            </div>
+            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
+
+            <!-- Outputs Section -->
+            <div class="text-center">
+                 <h2 class="text-xl font-semibold text-gray-700 mb-6">3. Two Outputs are Produced</h2>
+                <div class="flex flex-col md:flex-row justify-center items-stretch gap-8">
+                    <!-- Draft Answer -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md w-full md:w-1/3 flow-arrow">
+                        <div class="flex items-center justify-center mb-3">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Draft Answer (a_t)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">The proposed response to the user's prompt.</p>
+                    </div>
+                    <!-- Reflection -->
+                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md w-full md:w-1/3 flow-arrow">
+                        <div class="flex items-center justify-center mb-3">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Reflection (r_t)</h3>
+                        </div>
+                        <p class="text-gray-600 text-sm">A short explanation of the reasoning behind the draft answer.</p>
+                    </div>
+                </div>
+            </div>
+
+             <!-- Final Step -->
+            <div class="text-center pt-4">
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-r-lg max-w-md mx-auto text-left">
+                    <p class="font-semibold">Next Step:</p>
+                    <p class="text-sm">Both outputs are passed to the <strong>Will</strong> for evaluation.</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+        <!-- In safi-infographic.html -->
+<script>
+    function sendHeight() {
+        const height = document.body.scrollHeight;
+        // **Correction:** Specify the exact domain of the parent website
+        parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
+    }
+    window.onload = sendHeight;
+    const resizeObserver = new ResizeObserver(sendHeight);
+    resizeObserver.observe(document.body);
+</script>
+</body>
+</html>
