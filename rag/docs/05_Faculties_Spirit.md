@@ -49,10 +49,18 @@ drift  = 1.0 - float(
 ```
 
 ## Coaching feedback
-After computing these values, Spirit generates a coaching note for the Intellect's next call. An example: "Coherence 9/10, drift 0.01. Main improvement area: Justice (score: 0.21)." This note is injected into the Intellect's context in Phase 2 of the following request. This creates a closed-loop feedback system: the agent learns from each turn without requiring a retraining cycle.
+After computing these values, Spirit produces a short coaching note injected into the Intellect's context on the following request. This closes the loop: the agent adjusts from each turn without a retraining cycle.
+
+The note is deliberately blind, and this is an enforced contract rather than a stylistic choice. If the Intellect could see the criteria it is scored against, it would optimise toward them and the audit would stop measuring anything — the classic Goodhart failure. So the note carries only two things: a qualitative signal about the trend, and at most the NAME of the single value most worth attention. It excludes rubrics, scoring guides, weights, and every numeric score, including the coherence figure and the drift value.
+
+An actual example: "Self-check: your recent responses have trended below your usual standard, most notably around Justice. Be more deliberate and thorough this turn."
+
+Severity is expressed in words, never figures — "slipped slightly", "trended below", "fallen well below your usual standard". When nothing is off, the note is empty, so on-track turns and cold-start agents stay entirely blind. Value names are permissible only because they already appear in the agent's worldview as its declared identity, so naming one reveals nothing new about the test.
 
 ## The King Solomon problem
-Without Spirit, an agent's behavior drifts gradually under pressure. Repeated adversarial interactions, edge cases, or model updates can shift the agent's effective behavior away from its declared values with no visible signal. Spirit makes this drift visible, measurable, and correctable. The drift allegory document describes this pattern and its classical philosophical precedent in detail.
+Without Spirit, an agent's behavior can shift gradually under pressure — adversarial interactions, edge cases, or model updates moving effective behavior away from declared values with no visible signal. Spirit makes that shift visible and measurable.
+
+It does not make it correctable on its own, and drift alone does not catch the slowest version of it. Because the memory updates every turn, drift is always measured against the previous character, so a compromise that is small relative to recent behavior reads as low drift even while the baseline itself migrates. A measure that learns from what it observes cannot also be the standard those observations are judged against. What guards against the gradual case is the Charter, which is compiled fresh each turn and never blended with recent behavior, together with hard gates, a fixed alignment floor, and a retained audit trail that supports comparison across long spans. See the drift allegory document for the full treatment.
 
 ## Cross references
 - 04 Faculties Conscience
