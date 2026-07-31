@@ -1,158 +1,493 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>How SAFi's Intellect Works</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            overflow-x: hidden;
-        }
-        .flow-arrow {
-            position: relative;
-            padding-bottom: 3.5rem; /* Space for arrow */
-        }
-        .flow-arrow::after {
-            content: '';
-            position: absolute;
-            left: 50%;
-            bottom: 1rem;
-            transform: translateX(-50%);
-            width: 2px;
-            height: 2rem;
-            background-color: #60a5fa; /* blue-400 */
-        }
-        .flow-arrow::before {
-            content: '';
-            position: absolute;
-            left: 50%;
-            bottom: 1rem;
-            transform: translateX(-50%) translateY(100%);
-            width: 0; 
-            height: 0; 
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-top: 8px solid #60a5fa; /* blue-400 */
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How SAFi's Intellect Works</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Tokens mirror the parent site's palette (neve-fse, resolved from its --nv-*
+   customizer vars — NOT from theme.json, which still carries upstream blue).
+   The site switches on prefers-color-scheme with no toggle, and this iframe is
+   a separate document, so it answers the same media query and stays in step.
+
+   Contrast computed, not eyeballed, against the panel fill:
+     light  fg #1C2230 13.26:1 · muted #4E5766 6.08:1 · accent #B07D3C 3.00:1
+     dark   fg #F8F6F1 14.36:1 · muted #9BA4B5 6.18:1 · accent #C89A5B 6.08:1
+
+   Light-mode gold clears 3:1, which is the bar for a UI component or large
+   text but NOT for body copy. So gold is confined to rules, borders and
+   headings at >=24px; every small label uses fg or muted. Panel-vs-page
+   separation is only 1.11:1 in both modes, so a card is defined by fill AND
+   border together, never by fill alone.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg:      #F8F6F1;
+  --panel:   #EFEAE0;
+  --fg:      #1C2230;
+  --muted:   #4E5766;
+  --accent:  #B07D3C;
+  --line:    #C4B79E;
+  --line-strong: #B07D3C;
+  --code-bg: #E5DFD2;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #161B26;
+    --panel:   #1E2432;
+    --fg:      #F8F6F1;
+    --muted:   #9BA4B5;
+    --accent:  #C89A5B;
+    --line:    #3E4860;
+    --line-strong: #C89A5B;
+    --code-bg: #131824;
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem 1rem 2.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 60rem; margin: 0 auto; }
+
+h2 {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+}
+
+/* ── Step scaffolding ─────────────────────────────────────────────────────── */
+.step { margin-top: 2.25rem; }
+.step:first-of-type { margin-top: 0; }
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+.step-num {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.6rem;            /* large text — gold is legal at >=3:1 here */
+  color: var(--accent);
+  line-height: 1;
+  flex: none;
+}
+.step-title { font-size: 1.15rem; }
+.step-note {
+  margin: 0 0 1.1rem;
+  color: var(--muted);
+  max-width: 46rem;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.85rem 0.95rem;
+}
+.card-t {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+.card-t .ord {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+  flex: none;
+}
+.card p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+/* A card whose point is emphasis gets a gold edge — 3:1 clears the
+   UI-component bar, and it does not rely on the 1.11:1 fill difference. */
+.card.lead { border-left: 3px solid var(--line-strong); }
+
+code, .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  background: var(--code-bg);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+/* ── The "not given" counterweight ───────────────────────────────────────── */
+.negative {
+  margin-top: 0.75rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 0.85rem 0.95rem;
+}
+.negative .card-t { color: var(--fg); }
+.negative p:last-child { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+/* ── Connector between steps ─────────────────────────────────────────────── */
+.link {
+  display: block;
+  width: 1px;
+  height: 1.6rem;
+  margin: 0.9rem auto 0;
+  background: var(--line-strong);
+  position: relative;
+}
+.link::after {
+  content: '';
+  position: absolute;
+  left: 50%; bottom: -1px;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--line-strong);
+}
+
+/* ── The single call ─────────────────────────────────────────────────────── */
+.call {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 1.1rem;
+}
+.call > p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.call > p strong { color: var(--fg); }
+.sig {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.7rem 0.8rem;
+  margin: 0.75rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.84rem;
+}
+
+/* ── Air gap ─────────────────────────────────────────────────────────────── */
+/* The barrier is carried by form — a dashed rule, a gap, and a label — not by
+   colour. The site has no status palette, and a red would both clash and put
+   the whole point on a hue some readers cannot separate. */
+.airgap {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.airgap-row { padding: 0.85rem 1rem; }
+.airgap-row p:last-child { margin: 0; font-size: 0.87rem; }
+.airgap-bar {
+  border-top: 2px dashed var(--line-strong);
+  border-bottom: 2px dashed var(--line-strong);
+  background: var(--panel);
+  padding: 0.7rem 1rem;
+  text-align: center;
+}
+.airgap-bar strong { font-size: 0.9rem; }
+.airgap-bar span { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+.airgap-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.2rem;
+}
+
+/* ── Outcomes ────────────────────────────────────────────────────────────── */
+.outcome .card-t {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+/* ── Loop position ───────────────────────────────────────────────────────── */
+.loop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+.loop-step {
+  flex: 1 1 8rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+}
+.loop-step .who { font-weight: 600; display: block; }
+.loop-step .what { color: var(--muted); font-size: 0.75rem; }
+.loop-step.here {
+  border: 2px solid var(--line-strong);
+  background: var(--bg);
+}
+.loop-caption { margin: 0.8rem 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.footnote {
+  margin: 2.25rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+@media (max-width: 34rem) {
+  body { padding: 1rem 0.75rem 2rem; font-size: 14.5px; }
+  .step-num { font-size: 1.35rem; }
+  .loop-step { flex: 1 1 100%; }
+}
+</style>
 </head>
-<body class="bg-white text-gray-800 min-h-screen flex items-center justify-center p-4 md:p-8">
+<body>
+<div class="wrap">
 
-    <div class="w-full max-w-6xl mx-auto">
-       
-
-        <main class="space-y-8">
-            <!-- Inputs Section -->
-            <div class="text-center">
-                <h2 class="text-xl font-semibold text-gray-700 mb-6">1. The Intellect Weaves Together Three Streams of Information</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
-                    
-                    <!-- Context (xt) -->
-                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
-                        <div class="flex items-center justify-center mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Context (x_t)</h3>
-                        </div>
-                        <p class="text-gray-600 text-sm">The user's direct prompt or instruction.</p>
-                    </div>
-
-                    <!-- Values (V) -->
-                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
-                        <div class="flex items-center justify-center mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="m12 3-1.41 1.41L16.17 10H4v4h12.17l-5.58 5.59L12 21l8-8-8-8z"></path></svg>
-                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Values (V)</h3>
-                        </div>
-                        <p class="text-gray-600 text-sm">The active ethical profile, including worldview, style, and core values.</p>
-                    </div>
-
-                    <!-- Memory (Mt) -->
-                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md h-full">
-                        <div class="flex items-center justify-center mb-3">
-                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M4.5 12.5a8.5 8.5 0 1 0 15 0a8.5 8.5 0 1 0-15 0Z"></path><path d="M12 4.8v2.6"></path><path d="M16.4 7.6l-2 1.2"></path><path d="M19.2 12h-2.6"></path><path d="M16.4 16.4l-2-1.2"></path><path d="M12 19.2v-2.6"></path><path d="M7.6 16.4l2-1.2"></path><path d="M4.8 12h2.6"></path><path d="M7.6 7.6l2 1.2"></path></svg>
-                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Memory (M_t)</h3>
-                        </div>
-                        <div class="text-sm text-gray-600 space-y-2 text-left">
-                           <p><span class="font-semibold text-gray-700">Conversation Memory:</span> A summary of the current interaction.</p>
-                           <p><span class="font-semibold text-gray-700">Historical Performance:</span> Feedback from the Spirit faculty on past ethical alignment.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Arrow Down to Intellect -->
-             <div class="h-16 flex justify-center items-center">
-                <div class="w-px h-full bg-blue-300"></div>
-            </div>
-            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
-
-            <!-- The Intellect Engine Section -->
-            <div class="text-center">
-                <h2 class="text-xl font-semibold text-gray-700 mb-4">2. The Intellect Synthesizes the Inputs</h2>
-                <div class="bg-white p-8 rounded-xl border-2 border-blue-500 shadow-xl max-w-3xl mx-auto">
-                    <div class="flex items-center justify-center mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M9.5 2.1C9.8 1.8 10.3 1.5 10.8 1.5c.5 0 1 .3 1.3.6"></path><path d="M14.5 2.1c-.3-.3-.8-.6-1.3-.6a2.1 2.1 0 0 0-1.4.6"></path><path d="M12 15.5c-4.2 0-7.5-1.9-7.5-4.5V6c0-1 .9-2 2-2h11c1.1 0 2 .9 2 2v5c0 2.6-3.3 4.5-7.5 4.5Z"></path><path d="M12 15.5v6"></path><path d="M9.5 18.5h5"></path></svg>
-                        <h3 class="text-2xl font-bold ml-3 text-gray-900">The Intellect (I)</h3>
-                    </div>
-                    <p class="text-gray-600 mb-6">The Intellect acts as the reasoning and creative force, using a large language model to process the combined context and generate a response.</p>
-                    <div class="bg-gray-100 p-4 rounded-md text-center text-sm border border-gray-200">
-                        <p class="font-mono text-base text-gray-800">(a_t, r_t) = I(x_t, V, M_t)</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="h-16 flex justify-center items-center">
-                <div class="w-px h-full bg-blue-300"></div>
-            </div>
-            <div class="w-0 h-0 border-l-8 border-l-transparent border-r-8 border-r-transparent border-t-8 border-t-blue-400 mx-auto -mt-16"></div>
-
-            <!-- Outputs Section -->
-            <div class="text-center">
-                 <h2 class="text-xl font-semibold text-gray-700 mb-6">3. Two Outputs are Produced</h2>
-                <div class="flex flex-col md:flex-row justify-center items-stretch gap-8">
-                    <!-- Draft Answer -->
-                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md w-full md:w-1/3 flow-arrow">
-                        <div class="flex items-center justify-center mb-3">
-                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Draft Answer (a_t)</h3>
-                        </div>
-                        <p class="text-gray-600 text-sm">The proposed response to the user's prompt.</p>
-                    </div>
-                    <!-- Reflection -->
-                    <div class="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-md w-full md:w-1/3 flow-arrow">
-                        <div class="flex items-center justify-center mb-3">
-                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                            <h3 class="text-lg font-semibold ml-2 text-gray-900">Reflection (r_t)</h3>
-                        </div>
-                        <p class="text-gray-600 text-sm">A short explanation of the reasoning behind the draft answer.</p>
-                    </div>
-                </div>
-            </div>
-
-             <!-- Final Step -->
-            <div class="text-center pt-4">
-                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 rounded-r-lg max-w-md mx-auto text-left">
-                    <p class="font-semibold">Next Step:</p>
-                    <p class="text-sm">Both outputs are passed to the <strong>Will</strong> for evaluation.</p>
-                </div>
-            </div>
-
-        </main>
+  <!-- ── 1. What it is given ─────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2 class="step-title">The Intellect is handed an assembled brief</h2>
     </div>
-        <!-- In safi-infographic.html -->
+    <p class="step-note">
+      Nothing reaches the model raw. Before the call, SAFi composes these parts in
+      a fixed order into one system prompt. Each is present only when it has
+      something to say.
+    </p>
+
+    <div class="grid">
+      <div class="card lead">
+        <p class="card-t"><span class="ord">01</span>Worldview</p>
+        <p>The agent's purpose and the principles it should reason from. Anything
+           retrieved from a knowledge base is folded into this text.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">02</span>Who it is talking to</p>
+        <p>The user's name and profile, when known.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">03</span>Work context memory</p>
+        <p>Facts accumulated across <em>every</em> past conversation with this
+           agent, so it need not re-ask what it already knows.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">04</span>Conversation summary</p>
+        <p>A condensed account of the exchange so far.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">05</span>Recent turns, verbatim</p>
+        <p>The last few exchanges unsummarised, where exact wording matters.</p>
+      </div>
+      <div class="card lead">
+        <p class="card-t"><span class="ord">06</span>Coaching from the Spirit</p>
+        <p>Feedback on how earlier answers scored against the agent's values —
+           the loop's only path back into the drafting step.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">07</span>Available tools</p>
+        <p>Names and descriptions only. A list of what <em>could</em> be asked
+           for, not a key to any of it.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">08</span>Formatting and style</p>
+        <p>How the answer should be shaped, carrying the agent's tone.</p>
+      </div>
+    </div>
+
+    <div class="negative">
+      <p class="card-t">What it is deliberately <em>not</em> given</p>
+      <p>The agent's values, their weights, and their rubrics never enter this
+         prompt. The Intellect is directed by worldview and style; the values are
+         the <strong>Conscience's</strong> instrument, applied to the draft after
+         it exists. A drafter that graded itself would be marking its own paper.</p>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 2. One call ─────────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2 class="step-title">One model call, and no execution</h2>
+    </div>
+    <p class="step-note">
+      The Intellect makes a single request to the language model. Which model is a
+      configuration choice, not a property of the framework — the faculty is a
+      role, and any sufficiently capable model can fill it.
+    </p>
+    <div class="call">
+      <p>It returns a <strong>typed intent</strong> — a description of what it
+         wants to happen, never the happening itself.</p>
+      <code class="sig">intent, reflection, context = Intellect(prompt, worldview, style, memory, tools)</code>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 3. Air gap ──────────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2 class="step-title">The Air Gap of Intent</h2>
+    </div>
+    <p class="step-note">
+      This is the property that matters most, and the one most easily lost in an
+      ordinary agent framework. When the model asks to call a tool, SAFi
+      <em>intercepts</em> the request. The Intellect holds zero execution rights.
+    </p>
+
+    <div class="airgap">
+      <div class="airgap-row">
+        <p class="airgap-label">Above the gap — apprehension</p>
+        <p>The Intellect may <strong>propose</strong>: draft an answer, or ask that
+           a tool be called with particular arguments.</p>
+      </div>
+      <div class="airgap-bar">
+        <strong>No execution crosses this line</strong>
+        <span>A proposed tool call is captured as data and returned. Nothing runs.</span>
+      </div>
+      <div class="airgap-row">
+        <p class="airgap-label">Below the gap — authority</p>
+        <p>The <strong>Will</strong> decides whether the proposal may act, checking
+           the agent's permissions and the arguments themselves. Only then does a
+           tool run, and the result comes back for the Intellect to continue from.</p>
+      </div>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 4. Outcomes ─────────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">4</span>
+      <h2 class="step-title">Three things can come back</h2>
+    </div>
+    <div class="grid">
+      <div class="card outcome lead">
+        <p class="card-t">type: "text"</p>
+        <p>A draft answer, with a short reflection on the reasoning behind it.
+           Passed on to be judged.</p>
+      </div>
+      <div class="card outcome lead">
+        <p class="card-t">type: "tool_call"</p>
+        <p>A named tool and its arguments — a request awaiting authorisation, not
+           an action already taken.</p>
+      </div>
+      <div class="card outcome">
+        <p class="card-t">nothing at all</p>
+        <p>The model could not be reached. SAFi reports the actual cause — bad
+           key, rate limit, no such model — rather than a generic failure.</p>
+      </div>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 5. Position in the loop ─────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">5</span>
+      <h2 class="step-title">Where the Intellect sits</h2>
+    </div>
+    <div class="loop">
+      <div class="loop-step">
+        <span class="who">Will</span>
+        <span class="what">screens the incoming prompt</span>
+      </div>
+      <div class="loop-step here">
+        <span class="who">Intellect</span>
+        <span class="what">drafts, or proposes a tool</span>
+      </div>
+      <div class="loop-step">
+        <span class="who">Will</span>
+        <span class="what">authorises any tool call</span>
+      </div>
+      <div class="loop-step">
+        <span class="who">Conscience</span>
+        <span class="what">scores it against the values</span>
+      </div>
+      <div class="loop-step">
+        <span class="who">Will</span>
+        <span class="what">enforces the hard gates</span>
+      </div>
+      <div class="loop-step">
+        <span class="who">Spirit</span>
+        <span class="what">tracks alignment over time</span>
+      </div>
+    </div>
+    <p class="loop-caption">
+      The Will appears three times. Governing an agent that can act means
+      authorising <em>before</em> the action, not only reviewing after it — so the
+      Intellect is bracketed by judgment on both sides.
+    </p>
+  </section>
+
+  <p class="footnote">
+    The Intellect is the only faculty in SAFi permitted to be creative, and the
+    only one given no power to act on it.
+  </p>
+
+</div>
+
 <script>
-    function sendHeight() {
-        const height = document.body.scrollHeight;
-        // **Correction:** Specify the exact domain of the parent website
-        parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
-    }
-    window.onload = sendHeight;
-    const resizeObserver = new ResizeObserver(sendHeight);
-    resizeObserver.observe(document.body);
+/* Height handshake with the parent article. The page at
+   selfalignmentframework.com listens for message events, verifies the origin is
+   this app, and applies event.data.frameHeight to the iframe. Keep both the
+   message shape and the target origin in step with that handler. */
+(function () {
+  var last = 0;
+
+  function height() {
+    var b = document.body, d = document.documentElement;
+    return Math.max(b.scrollHeight, b.offsetHeight, d.scrollHeight, d.offsetHeight);
+  }
+
+  function send() {
+    var h = height();
+    if (Math.abs(h - last) < 2) return;   // don't loop on sub-pixel churn
+    last = h;
+    parent.postMessage({ frameHeight: h }, 'https://selfalignmentframework.com');
+  }
+
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+
+  /* Fraunces and Inter change the layout height when they land, and on a cold
+     cache that happens after load. */
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(send);
+
+  send();
+})();
 </script>
 </body>
 </html>
