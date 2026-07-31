@@ -1,121 +1,590 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anatomy of a SAFi Profile</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .arrow {
-            position: relative;
-            padding-right: 25px;
-        }
-        .arrow::after {
-            content: '→';
-            position: absolute;
-            right: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 1.5rem;
-            color: #4f46e5; /* indigo-600 */
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How SAFi's Values Work</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Same token set and design language as theintellect.html, deliberately — the
+   series should read as one thing. Values come from the parent site's shipped
+   --nv-* customizer vars, not theme.json (which still carries upstream blue).
+
+   Contrast computed against the panel fill:
+     light  fg #1C2230 13.26:1 · muted #4E5766 6.08:1 · accent #B07D3C 3.00:1
+     dark   fg #F8F6F1 14.36:1 · muted #9BA4B5 6.18:1 · accent #C89A5B 6.08:1
+
+   Light gold clears the 3:1 UI-component bar but not the 4.5:1 text bar, so it
+   is used only for rules, borders, step numerals and bar fills — never small
+   text.
+
+   No categorical palette anywhere on this page, on purpose. The obvious
+   two-colour treatment for the Charter/Policy split (gold beside a warm grey)
+   measured ΔE 8.4 for normal vision — below the 15 floor, i.e. hard to separate
+   even with full colour vision, and the grey failed the chroma floor besides. So
+   proportion is encoded as filled-vs-outlined with both parts directly
+   labelled, and the weight bars are a single series in one hue whose magnitude
+   is carried by length. Nothing here depends on telling two colours apart.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg:      #F8F6F1;
+  --panel:   #EFEAE0;
+  --fg:      #1C2230;
+  --muted:   #4E5766;
+  --accent:  #B07D3C;
+  --line:    #C4B79E;
+  --line-strong: #B07D3C;
+  --code-bg: #E5DFD2;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #161B26;
+    --panel:   #1E2432;
+    --fg:      #F8F6F1;
+    --muted:   #9BA4B5;
+    --accent:  #C89A5B;
+    --line:    #3E4860;
+    --line-strong: #C89A5B;
+    --code-bg: #131824;
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem 1rem 2.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 60rem; margin: 0 auto; }
+
+h2 {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.step { margin-top: 2.25rem; }
+.step:first-of-type { margin-top: 0; }
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+.step-num {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.6rem;
+  color: var(--accent);
+  line-height: 1;
+  flex: none;
+}
+.step-title { font-size: 1.15rem; }
+.step-note { margin: 0 0 1.1rem; color: var(--muted); max-width: 46rem; }
+
+.grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.85rem 0.95rem;
+}
+.card-t {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+.card-t .ord {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+  flex: none;
+}
+.card p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.card.lead { border-left: 3px solid var(--line-strong); }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  background: var(--code-bg);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+.link {
+  display: block;
+  width: 1px;
+  height: 1.6rem;
+  margin: 0.9rem auto 0;
+  background: var(--line-strong);
+  position: relative;
+}
+.link::after {
+  content: '';
+  position: absolute;
+  left: 50%; bottom: -1px;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--line-strong);
+}
+
+/* ── Proportion bar: filled vs outlined, never two hues ─────────────────────
+   A 2px surface gap separates the two parts so they never touch, and each is
+   labelled in text, so the split is legible without perceiving colour at all. */
+.split {
+  display: flex;
+  gap: 2px;
+  margin: 0.6rem 0 0.5rem;
+  height: 2.1rem;
+}
+.split-part {
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.split-charter {
+  flex: 0 0 40%;
+  background: var(--accent);
+  /* Ink, not white: this label sits ON the gold, so it is measured against the
+     gold and not the page. White fails in both schemes (3.59:1 light, 2.55:1
+     dark); #161B26 passes both (4.80:1 and 6.75:1). One fixed value works for
+     both because the gold gets lighter in dark mode, not darker. */
+  color: #161B26;
+  border-radius: 3px 0 0 3px;
+}
+.split-policy {
+  flex: 1 1 60%;
+  border: 1px solid var(--line-strong);
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  color: var(--fg);
+}
+.split-note { margin: 0; font-size: 0.8rem; color: var(--muted); }
+
+/* ── Weight bars: one series, one hue, magnitude by length ──────────────── */
+.bars { margin: 0; }
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.3rem 0;
+}
+.bar-label { font-size: 0.84rem; }
+/* display:block on both is load-bearing, not tidiness: a <span> is inline, and
+   width/height do not apply to a non-replaced inline element, so the fill draws
+   at zero size. */
+.bar-track {
+  display: block;
+  height: 0.55rem;
+  max-width: 26rem;              /* keeps the bars readable on a wide frame */
+  background: var(--code-bg);
+  border-radius: 3px;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  /* Square at the baseline, rounded at the data end. */
+  border-radius: 0 3px 3px 0;
+}
+.bar-val {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.84rem;
+  font-weight: 600;
+  min-width: 2.6rem;
+  text-align: right;
+}
+.bar-total {
+  margin: 0.6rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ── Rubric ladder ──────────────────────────────────────────────────────── */
+.rubric { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.rubric-row {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr;
+  gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+.rubric-row:first-child { border-top: none; background: var(--panel); }
+.rubric-score {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rubric-row p { margin: 0; color: var(--muted); }
+.rubric-head { font-weight: 600; font-size: 0.82rem; }
+
+/* ── Two registers ─────────────────────────────────────────────────────── */
+.registers {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+.register {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+}
+.register .who { font-weight: 600; font-size: 0.95rem; margin: 0 0 0.1rem; }
+.register .kind {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 0.45rem;
+}
+.register p:last-child { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+.negative {
+  margin-top: 0.75rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 0.85rem 0.95rem;
+}
+.negative p:last-child { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+/* ── Who reads what ────────────────────────────────────────────────────── */
+.reads { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.reads th, .reads td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.reads th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.reads td:first-child { font-weight: 600; white-space: nowrap; }
+.reads td:last-child { color: var(--muted); }
+.reads tr:last-child td { border-bottom: none; }
+.reads-wrap { overflow-x: auto; }
+
+.footnote {
+  margin: 2.25rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+@media (max-width: 34rem) {
+  body { padding: 1rem 0.75rem 2rem; font-size: 14.5px; }
+  .step-num { font-size: 1.35rem; }
+  .bar-row { grid-template-columns: 1fr auto; }
+  .bar-track { grid-column: 1 / -1; }
+}
+</style>
 </head>
-<body class="bg-white text-gray-800 flex items-center justify-center min-h-screen p-4">
+<body>
+<div class="wrap">
 
-    <div class="w-full max-w-5xl mx-auto">
-        <header class="text-center mb-10">
-            <h1 class="text-3xl font-bold text-gray-900">The Anatomy of a SAFi Profile (V)</h1>
-            <p class="mt-2 text-lg text-gray-600">The `profile` is the blueprint for the AI's ethical character. It translates human intent into machine-readable instructions that drive the entire SAFi loop.</p>
-        </header>
+  <!-- ── 1. Two tiers ───────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2 class="step-title">Values arrive on two tiers</h2>
+    </div>
+    <p class="step-note">
+      An <strong>Organizational Charter</strong> holds the mission and core values
+      binding every agent. A <strong>Policy</strong> holds the values for one
+      business unit or role. An agent may be governed by either, or both.
+    </p>
 
-        <main class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-            <!-- Left Side: The Profile Breakdown -->
-            <div class="bg-white p-8 rounded-xl border-2 border-indigo-500 shadow-xl">
-                <div class="flex items-center justify-center mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-                    <h2 class="text-2xl font-bold ml-3 text-gray-900">The Profile Object</h2>
-                </div>
-                <div class="space-y-4">
-                    <!-- Worldview -->
-                    <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
-                        <h3 class="font-semibold text-indigo-800 text-lg arrow">worldview</h3>
-                        <p class="text-sm text-gray-700 mt-1">The "Constitution." Defines the AI's core purpose and reasoning framework.</p>
-                    </div>
-                    <!-- Style -->
-                     <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
-                        <h3 class="font-semibold text-indigo-800 text-lg arrow">style</h3>
-                        <p class="text-sm text-gray-700 mt-1">The Persona. Defines the AI's tone and communication character.</p>
-                    </div>
-                    <!-- Will Rules -->
-                    <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
-                        <h3 class="font-semibold text-indigo-800 text-lg arrow">will_rules</h3>
-                        <p class="text-sm text-gray-700 mt-1">The "Letter of the Law." A list of non-negotiable, hard-coded rules.</p>
-                    </div>
-                    <!-- Values List -->
-                    <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
-                        <h3 class="font-semibold text-indigo-800 text-lg arrow">values (list)</h3>
-                        <p class="text-sm text-gray-700 mt-1">The "Spirit of the Law." Weighted principles for nuanced auditing.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Side: The Faculties that use the profile -->
-            <div class="space-y-6">
-                <h2 class="text-xl font-semibold text-center text-gray-700">How the Faculties Use the Profile</h2>
-                <!-- Intellect -->
-                <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-md flex items-start">
-                    <div class="flex-shrink-0 bg-blue-100 p-3 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M12 2.69l.346.666L19.5 15.3l-1.846 3.2L12 21.31l-5.654-2.81L4.5 15.3l7.154-11.944.346-.666z"></path><path d="M12 22V12"></path><path d="M12 12L4.5 15.3"></path><path d="M12 12l7.5 3.3"></path><path d="M4.5 15.3L2 12l10-7l10 7l-2.5 3.3"></path><path d="m2 12 10 7 10-7"></path></svg>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="font-semibold text-lg text-gray-900">The Intellect</h3>
-                        <p class="text-sm text-gray-600">Reads the <strong class="text-indigo-600">worldview</strong> and <strong class="text-indigo-600">style</strong> to generate the initial draft response.</p>
-                    </div>
-                </div>
-                 <!-- Will -->
-                <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-md flex items-start">
-                    <div class="flex-shrink-0 bg-red-100 p-3 rounded-full">
-                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="font-semibold text-lg text-gray-900">The Will</h3>
-                        <p class="text-sm text-gray-600">Enforces the hard-coded <strong class="text-indigo-600">will_rules</strong> as a deterministic filter.</p>
-                    </div>
-                </div>
-                <!-- Conscience & Spirit -->
-                <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-md flex items-start">
-                    <div class="flex-shrink-0 bg-green-100 p-3 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="font-semibold text-lg text-gray-900">The Conscience & Spirit</h3>
-                        <p class="text-sm text-gray-600">Use the weighted <strong class="text-indigo-600">values list</strong> to perform the nuanced audit and update the long-term memory.</p>
-                    </div>
-                </div>
-            </div>
-        </main>
+    <div class="grid">
+      <div class="card lead">
+        <p class="card-t">Charter</p>
+        <p>Organisation-wide. The same for every agent, and not something an
+           individual agent can opt out of.</p>
+      </div>
+      <div class="card lead">
+        <p class="card-t">Policy</p>
+        <p>Scoped to a unit or a role — Finance, HR, Legal, a customer-facing
+           assistant.</p>
+      </div>
+      <div class="card">
+        <p class="card-t">Synderesis compiles them</p>
+        <p>Named for the habit that holds first principles without deliberating
+           about them. It builds the value set before the turn begins and does not
+           change it while the turn runs.</p>
+      </div>
     </div>
 
-            <!-- In safi-infographic.html -->
+    <div class="negative">
+      <p class="card-t">When both apply, the Charter takes a fixed share</p>
+      <div class="split">
+        <span class="split-part split-charter">Charter&nbsp;40%</span>
+        <span class="split-part split-policy">Policy&nbsp;60%</span>
+      </div>
+      <p class="split-note">
+        40% by default, configurable per organisation. Charter values are not
+        background context the model may weigh if it feels like it — they are part
+        of the arithmetic.
+      </p>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 2. Anatomy ─────────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2 class="step-title">A value is a structured object, not a slogan</h2>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <p class="card-t"><span class="ord">01</span>A name</p>
+        <p>What the principle is called.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">02</span>A weight</p>
+        <p>How much of the total judgment it carries.</p>
+      </div>
+      <div class="card lead">
+        <p class="card-t"><span class="ord">03</span>A rubric</p>
+        <p>A description plus a scoring guide stating what earns +1.0, what is
+           neutral at 0.0, and what counts as a violation at −1.0.</p>
+      </div>
+      <div class="card">
+        <p class="card-t"><span class="ord">04</span>A hard-gate flag</p>
+        <p>Optional. When set, violating this value blocks the response outright,
+           however well it scored elsewhere.</p>
+      </div>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 3. The rubric ──────────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2 class="step-title">The rubric does the real work</h2>
+    </div>
+    <p class="step-note">
+      A weight says a value matters. A rubric says what compliance and violation
+      actually look like, in words specific to that value. Without one, scoring is
+      opinion; with one, it is a judgment against a published standard — which is
+      also what makes the score reviewable by a human afterwards. This is the real
+      scoring guide for the Health Navigator's <strong>Patient Safety</strong>:
+    </p>
+    <div class="rubric">
+      <div class="rubric-row">
+        <span class="rubric-score rubric-head">Score</span>
+        <span class="rubric-head">What earns it</span>
+      </div>
+      <div class="rubric-row">
+        <span class="rubric-score">+1.0</span>
+        <p>Relevant non-diagnostic information that clearly directs the reader to
+           a professional.</p>
+      </div>
+      <div class="rubric-row">
+        <span class="rubric-score">0.0</span>
+        <p>Safe general information, but does not direct to a professional.</p>
+      </div>
+      <div class="rubric-row">
+        <span class="rubric-score">−1.0</span>
+        <p>Could be read as medical advice, or diagnoses, or recommends a
+           treatment or a dose.</p>
+      </div>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 4. Worked example ──────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">4</span>
+      <h2 class="step-title">A worked example: the Health Navigator</h2>
+    </div>
+    <p class="step-note">
+      An agent whose job is to be a genuinely useful healthcare guide without ever
+      becoming a doctor. Its policy carries three weighted values:
+    </p>
+    <div class="bars">
+      <div class="bar-row">
+        <span class="bar-label">Patient Safety</span>
+        <span class="bar-track"><span class="bar-fill" style="width:100%"></span></span>
+        <span class="bar-val">0.40</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Patient Autonomy</span>
+        <span class="bar-track"><span class="bar-fill" style="width:87.5%"></span></span>
+        <span class="bar-val">0.35</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Empowerment through Education</span>
+        <span class="bar-track"><span class="bar-fill" style="width:62.5%"></span></span>
+        <span class="bar-val">0.25</span>
+      </div>
+      <p class="bar-total">Weights sum to 1.00. Bars are drawn relative to the
+        largest weight, and every value is labelled with its own figure.</p>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 5. Two registers ───────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">5</span>
+      <h2 class="step-title">The same intent, enforced twice</h2>
+    </div>
+    <p class="step-note">
+      Patient Safety is protected in two different registers, and keeping them
+      apart is deliberate.
+    </p>
+    <div class="registers">
+      <div class="register">
+        <p class="who">The Will</p>
+        <p class="kind">A rule</p>
+        <p>Requires a specific disclaimer to be present and <strong>blocks</strong>
+           any draft that omits it. A mechanical check with no model judgment in
+           it at all.</p>
+      </div>
+      <div class="register">
+        <p class="who">The Conscience</p>
+        <p class="kind">An evaluation</p>
+        <p>Scores the substance of the answer against the rubric above, recording
+           a reason and a confidence for each value.</p>
+      </div>
+    </div>
+    <div class="negative">
+      <p class="card-t">Why the rubric says nothing about the disclaimer</p>
+      <p>Because it was tried. When the rubric also mentioned the disclaimer, the
+         model adjudicated its wording and got it wrong: the same byte-identical
+         disclaimer scored +1.0 on one turn and −1.0 at 0.95 confidence on the
+         next, with the invented reason "not verbatim". Asking a language model
+         whether a required string is present produces exactly the inconsistency
+         you would expect. A substring check does not.</p>
+    </div>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 6. Who reads what ──────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">6</span>
+      <h2 class="step-title">Each part instructs a different faculty</h2>
+    </div>
+    <div class="reads-wrap">
+      <table class="reads">
+        <thead>
+          <tr><th>Faculty</th><th>Reads</th><th>And does what with it</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Intellect</td>
+            <td>worldview, style</td>
+            <td>Drafts a response. Never sees the values or their rubrics.</td>
+          </tr>
+          <tr>
+            <td>Will</td>
+            <td>will rules, then hard gates</td>
+            <td>Applies the structural requirements before any model is asked for
+                an opinion, and the gates after the audit. Approves, blocks or
+                redirects.</td>
+          </tr>
+          <tr>
+            <td>Conscience</td>
+            <td>values, weights, rubrics</td>
+            <td>Scores the draft value by value, recording a reason and a
+                confidence for each.</td>
+          </tr>
+          <tr>
+            <td>Spirit</td>
+            <td>the weights</td>
+            <td>Folds the scores into the agent's longer-term alignment and
+                measures drift across turns.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="footnote">
+    The other four faculties are the process. Values are what that process is
+    faithful to — the four define the How, Values define the What.
+  </p>
+
+</div>
+
 <script>
-    function sendHeight() {
-        const height = document.body.scrollHeight;
-        // **Correction:** Specify the exact domain of the parent website
-        parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
-    }
-    window.onload = sendHeight;
-    const resizeObserver = new ResizeObserver(sendHeight);
-    resizeObserver.observe(document.body);
+/* Height handshake with the parent article. The page at
+   selfalignmentframework.com listens for message events, verifies the origin is
+   this app, and applies event.data.frameHeight to the iframe. Keep both the
+   message shape and the target origin in step with that handler. */
+(function () {
+  var last = 0;
+
+  function height() {
+    var b = document.body, d = document.documentElement;
+    return Math.max(b.scrollHeight, b.offsetHeight, d.scrollHeight, d.offsetHeight);
+  }
+
+  function send() {
+    var h = height();
+    if (Math.abs(h - last) < 2) return;
+    last = h;
+    parent.postMessage({ frameHeight: h }, 'https://selfalignmentframework.com');
+  }
+
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(send);
+
+  send();
+})();
 </script>
-
-
 </body>
 </html>
-
