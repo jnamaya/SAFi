@@ -83,6 +83,26 @@ _TOOL_LABELS: Dict[str, str] = {
 AUDIT_PARAM_MAXLEN = 120
 
 
+def _tool_audit_entry(tool_name, parameters, decision, reason, agent_turn=None):
+    """One tool call as it is recorded, for BOTH the hash chain and the capture.
+
+    Built in one place so the chain entry and the governance record cannot
+    describe the same call differently — the chain is the tamper-evident copy and
+    the capture is what the Audit Hub and the examiner export actually show, so a
+    divergence between them would be the worst kind: verifiable and wrong.
+    """
+    entry = {
+        "tool": tool_name,
+        "decision": decision,
+        "reason": reason,
+        "params": _audit_params(parameters),
+    }
+    if agent_turn is not None:
+        entry["agent_turn"] = agent_turn
+    return entry
+
+
+
 def _audit_params(parameters) -> dict:
     """Parameter record for the audit trail: keys kept, values clipped.
 
@@ -613,6 +633,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             message_id=message_id
         )
 
+        # Accumulated across the tool loop so the governance CAPTURE carries it
+        # too, not just the hash chain. The chain already had each step, but the
+        # Audit Hub drill-down and the examiner export both read the capture, and
+        # it had no tool field at all — the record was tamper-evident and
+        # unreadable by the people it is for. Initialised here, before the intent
+        # dispatch, so a turn that calls no tools still has a defined (empty) list.
+        tool_audit: list = []
+
         if intent is None:
             msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
             db.update_message_content(message_id, msg, audit_status="complete")
@@ -659,17 +687,14 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                 parameters=parameters,
                 profile=self.profile or {}
             )
+            _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
+            tool_audit.append(_entry)
             db.update_message_reasoning(
                 message_id,
                 _tool_status(tool_name) if tool_decision == "approve"
                 else "Blocked a tool call",
                 phase="gather",
-                extra={
-                    "tool": tool_name,
-                    "decision": tool_decision,
-                    "reason": tool_reason,
-                    "params": _audit_params(parameters),
-                },
+                extra=_entry,
             )
 
             if tool_decision == "approve":
@@ -755,18 +780,16 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         parameters=current_parameters,
                         profile=self.profile or {}
                     )
+                    _entry = _tool_audit_entry(current_tool_name, current_parameters,
+                                               follow_decision, follow_reason,
+                                               agent_turn=agent_turn + 1)
+                    tool_audit.append(_entry)
                     db.update_message_reasoning(
                         message_id,
                         _tool_status(current_tool_name, agent_turn + 1)
                         if follow_decision == "approve" else "Blocked a tool call",
                         phase="gather",
-                        extra={
-                            "tool": current_tool_name,
-                            "decision": follow_decision,
-                            "reason": follow_reason,
-                            "params": _audit_params(current_parameters),
-                            "agent_turn": agent_turn + 1,
-                        },
+                        extra=_entry,
                     )
 
                     if follow_decision != "approve":
@@ -1086,6 +1109,11 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             "userPrompt": user_prompt,
             "intellectDraft": a_t,
             "intellectReflection": r_t or "",
+            # The tool loop, so the Audit Hub drill-down and the examiner export
+            # can answer "what did the agent DO" and not only "what did it say".
+            # Same entries as the hash chain (see _tool_audit_entry); parameter
+            # values are clipped, so this stays small even on a 5-turn loop.
+            "toolCalls": tool_audit,
             "finalOutput": a_t,
             "willDecision": D_t,
             "willReason": E_t,

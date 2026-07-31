@@ -629,6 +629,44 @@ function textCard(title, body, help = '') {
         </div>`;
 }
 
+// Renders the agent's tool loop — what it DID, not just what it said.
+//
+// The governance capture had no tool field at all until 2026-07-31: each tool
+// call was journaled into the hash-chained trail, but the Audit Hub and the
+// examiner export both read the capture, so the record was tamper-evident and
+// unreadable by the people it exists for. `params` values are clipped
+// server-side, so this never renders a payload.
+function toolCallsCard(calls) {
+    if (!Array.isArray(calls) || calls.length === 0) return '';
+    const rows = calls.map(c => {
+        const approved = c.decision === 'approve';
+        // A denial is the interesting row, so it gets the colour. Reuses the
+        // score chip's vocabulary rather than inventing a second one.
+        const badge = approved
+            ? `<span class="text-xs font-semibold" style="color:#15803d">approved</span>`
+            : `<span class="text-xs font-semibold" style="color:#b91c1c">${esc(c.decision || 'blocked')}</span>`;
+        const params = c.params && Object.keys(c.params).length
+            ? Object.entries(c.params).map(([k, v]) => `${esc(k)}=${esc(String(v))}`).join(', ')
+            : '—';
+        return `
+            <div class="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <code class="text-sm font-semibold">${esc(c.tool || 'unknown tool')}</code>
+                    ${badge}
+                    ${c.agent_turn ? `<span class="text-xs text-gray-400">step ${esc(String(c.agent_turn))}</span>` : ''}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 break-words">${params}</div>
+                ${c.reason ? `<div class="text-xs text-gray-400 mt-1 break-words">${esc(c.reason)}</div>` : ''}
+            </div>`;
+    }).join('');
+    return `
+        <div class="rounded-lg border border-gray-200 dark:border-neutral-700">
+            <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">Tools used</div>
+            <div class="px-4 pt-2 text-xs text-gray-400">Every tool call the agent proposed, and the Will's verdict on it before it ran. Parameter values are truncated in the record.</div>
+            ${rows}
+        </div>`;
+}
+
 async function renderDetail(messagePk) {
     const el = document.getElementById('ah-explorer');
     if (!el) return;
@@ -678,6 +716,7 @@ async function renderDetail(messagePk) {
             <div class="space-y-4">
                 ${textCard('Generated response', esc(r.intellectDraft || r.externalOutput || '—'))}
                 ${r.intellectReflection ? textCard('AI reasoning', esc(r.intellectReflection)) : ''}
+                ${toolCallsCard(r.toolCalls)}
                 ${r.memorySummary ? textCard('Context — memory summary', esc(r.memorySummary)) : ''}
                 ${r.recentTurns ? textCard('Context — recent turns', esc(r.recentTurns)) : ''}
                 ${r.retrievedContext ? textCard('Context — retrieved documents', esc(r.retrievedContext)) : ''}

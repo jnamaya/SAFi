@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
 from safi_app.persistence import crypto
+from safi_app.core.services import provider_governance
 
 
 def _exec(sql, params=()):
@@ -187,6 +188,139 @@ class ToolVerdictReachesTheChain(unittest.TestCase):
         self.assertEqual(step["tool"], "web_search", "non-reserved keys still apply")
 
 
+class ToolCallsReachTheAuditHubAndTheExport(unittest.TestCase):
+    """Recording is not the same as being readable.
+
+    The chain carried each tool step from `8503fb1`, but the Audit Hub drill-down
+    and the examiner export both read the governance CAPTURE, whose 27 keys had
+    nothing tool-related. So "what did the agent DO" was tamper-evident and
+    invisible to the people the record exists for. `toolCalls` now rides in the
+    capture, which is what both surfaces decrypt.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.org_id = str(uuid.uuid4())
+        cls.uid = f"toolcap_{uuid.uuid4().hex[:8]}"
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Tool Capture Org')",
+              (cls.org_id,))
+        _exec("INSERT INTO users (id, email, name, org_id, role) "
+              "VALUES (%s, %s, 'Tool Capture', %s, 'admin')",
+              (cls.uid, f"{cls.uid}@example.test", cls.org_id))
+        cls.cid = str(uuid.uuid4())
+        _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'tool capture')",
+              (cls.cid, cls.uid))
+        cls.mid = str(uuid.uuid4())
+        assert db.insert_turn_atomic(cls.cid, "AAPL price?", cls.mid)
+        cls.pk = _rows("SELECT id FROM chat_history WHERE message_id=%s AND role='ai'",
+                       (cls.mid,))[0]["id"]
+
+        # The governance record is only written when an org context is active:
+        # update_audit_results reads _pg.active_org(), not the user's row.
+        provider_governance.activate_org(cls.org_id)
+
+        cls.tool_calls = [
+            {"tool": "get_stock_price", "decision": "approve",
+             "reason": "Read-only fast pass.", "params": {"ticker": "AAPL"}},
+            {"tool": "upload_item", "decision": "violation",
+             "reason": "Tool 'upload_item' is not authorized for this agent profile.",
+             "params": {"name": "q3.txt", "content": "clipped..."}, "agent_turn": 2},
+        ]
+        db.update_audit_results(
+            cls.mid, ledger=[], score=9, note="ok", pname="the_fiduciary",
+            pvals=[], drift=0.01, will_decision="approve", will_stage=None,
+            governance_record={
+                "timestamp": "2026-07-31T00:00:00+00:00",
+                "userPrompt": "AAPL price?",
+                "finalOutput": "Apple is trading at ...",
+                "willDecision": "approve",
+                "willReason": "alignment_within_threshold",
+                "toolCalls": cls.tool_calls,
+                "orgId": cls.org_id,
+            })
+
+    @classmethod
+    def tearDownClass(cls):
+        provider_governance.activate_org(None)
+        _exec("DELETE FROM governance_records WHERE conversation_id=%s", (cls.cid,))
+        _exec("DELETE FROM chat_audit_trail WHERE conversation_id=%s", (cls.cid,))
+        _exec("DELETE FROM chat_history WHERE conversation_id=%s", (cls.cid,))
+        _exec("DELETE FROM conversations WHERE id=%s", (cls.cid,))
+        _exec("DELETE FROM users WHERE id=%s", (cls.uid,))
+        _exec("DELETE FROM organizations WHERE id=%s", (cls.org_id,))
+
+    def test_09_the_drill_down_returns_the_tool_calls(self):
+        detail = db.get_governance_event(self.org_id, self.pk)
+        self.assertIsNotNone(detail, "the governance record was not written")
+        calls = (detail.get("record") or {}).get("toolCalls")
+        self.assertTrue(calls, "the Audit Hub drill-down carries no toolCalls — the "
+                               "tool loop is recorded but unreadable")
+        self.assertEqual([c["tool"] for c in calls],
+                         ["get_stock_price", "upload_item"])
+        self.assertEqual(calls[1]["decision"], "violation",
+                         "the denial must be visible in the drill-down, not just "
+                         "the approval")
+
+    def test_10_the_export_carries_them_too(self):
+        """The export is what an examiner actually receives."""
+        rows = db.export_governance_events(self.org_id)
+        rows = rows.get("records", rows) if isinstance(rows, dict) else rows
+        mine = [r for r in rows if r.get("message_pk") == self.pk]
+        self.assertTrue(mine, "the record did not appear in the export")
+        rec = mine[0].get("record") or {}
+        self.assertTrue(rec.get("toolCalls"),
+                        "the examiner export has no tool record — 'what did the "
+                        "agent do' would be unanswerable from a production set")
+
+    def test_11_the_capture_and_the_chain_are_built_from_one_helper(self):
+        """A divergence between the tamper-evident copy and the copy people read
+        would be the worst kind: verifiable and wrong."""
+        src = (Path(__file__).resolve().parent.parent / "safi_app" / "core"
+               / "orchestrator.py").read_text(encoding="utf-8", errors="replace")
+        self.assertIn("def _tool_audit_entry", src)
+        # both gate sites build via the helper, then journal AND accumulate
+        self.assertEqual(src.count("_tool_audit_entry("), 3,
+                         "expected the definition plus both call sites")
+        self.assertEqual(src.count("tool_audit.append(_entry)"), 2,
+                         "both gate sites must accumulate into the capture")
+        self.assertIn('"toolCalls": tool_audit', src,
+                      "the capture must carry the accumulated tool loop")
+
+    def test_12_a_toolless_turn_still_has_a_defined_list(self):
+        """tool_audit is initialised before the intent dispatch, so a plain text
+        turn does not raise NameError when the capture is built."""
+        src = (Path(__file__).resolve().parent.parent / "safi_app" / "core"
+               / "orchestrator.py").read_text(encoding="utf-8", errors="replace")
+        init = src.index("tool_audit: list = []")
+        dispatch = src.index("if intent is None:")
+        self.assertLess(init, dispatch,
+                        "tool_audit must be initialised BEFORE the intent dispatch")
+
+    def test_13_the_drill_down_ui_renders_them(self):
+        """A field in the payload that nothing displays is the same as no field."""
+        js = (Path(__file__).resolve().parent.parent / "public" / "js" / "ui"
+              / "settings" / "ui-settings-dashboard.js").read_text(
+                  encoding="utf-8", errors="replace")
+        self.assertIn("function toolCallsCard", js)
+        self.assertIn("toolCallsCard(r.toolCalls)", js,
+                      "the card exists but is never rendered")
+        i = js.index("function toolCallsCard")
+        card = js[i:i + 2400]
+        for needed in ("c.tool", "c.decision", "c.reason", "c.params"):
+            with self.subTest(field=needed):
+                self.assertIn(needed, card,
+                              f"the card does not surface {needed}")
+        # Mentioning a field is not rendering it. An earlier version of this test
+        # passed while a mutation removed ${badge} from the template and left the
+        # `c.decision` string in an unused expression — so the verdict, the whole
+        # point of the card, was invisible.
+        self.assertIn("${badge}", card,
+                      "the verdict badge is built but never interpolated into the "
+                      "row — the decision would not be visible")
+        self.assertIn("${esc(c.tool", card.replace("|| 'unknown tool'", ""),
+                      "the tool name is not interpolated into the row")
+
+
 class BothGateSitesJournalAfterTheVerdict(unittest.TestCase):
     """There are two gate sites — the first intent and each follow-up in the
     agent loop — and both used to write the label BEFORE the verdict, which is
@@ -205,10 +339,19 @@ class BothGateSitesJournalAfterTheVerdict(unittest.TestCase):
         for pos in gates:
             with self.subTest(offset=pos):
                 after = self.src[pos:pos + 1200]
+                # Assert the PROPERTY, not the syntax: the verdict is built into
+                # an audit entry and that entry is what gets journaled. An earlier
+                # version of this test looked for a literal '"decision"' at the
+                # call site and broke when the two sites were refactored onto a
+                # shared builder — which was an improvement, since it is what
+                # stops the chain copy and the capture copy diverging.
+                self.assertIn("_tool_audit_entry(", after,
+                              "the verdict is not built into an audit entry here")
                 self.assertIn("update_message_reasoning", after,
                               "a gate verdict is not journaled after this call")
-                self.assertIn('"decision"', after,
-                              "the verdict itself must be journaled, not just a label")
+                self.assertIn("extra=_entry", after,
+                              "the entry must be the journaled payload, so the "
+                              "chain carries the verdict and not just a label")
 
     def test_08_no_bare_pre_gate_label_write_remains(self):
         """The regression to guard: writing `_tool_status(...)` immediately before
