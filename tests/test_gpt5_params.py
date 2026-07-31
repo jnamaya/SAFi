@@ -120,6 +120,63 @@ class Gpt5ParameterContract(unittest.TestCase):
                 self.assertNotIn("temperature", p)
 
 
+_TOOLS = [{
+    "name": "get_quote",
+    "description": "Get a stock quote",
+    "input_schema": {"type": "object",
+                     "properties": {"ticker": {"type": "string"}},
+                     "required": ["ticker"]},
+}]
+
+
+class Gpt5ToolCalling(unittest.TestCase):
+    """Tool calling on gpt-5.x needs reasoning explicitly disabled.
+
+    This shipped broken: an agent with tools configured got
+    "Function tools with reasoning_effort are not supported for gpt-5.6-luna in
+    /v1/chat/completions" on every turn, surfaced to the user as
+    "Intellect failed: could not reach the language model".
+
+    The API names reasoning_effort even when the caller never sent one, because
+    the model applies a default. Probed against the live API: omitted, "low",
+    "medium" and "high" all 400; "minimal" is not a valid value for this model;
+    only "none" works.
+    """
+
+    def test_12_tools_on_gpt5_disable_reasoning(self):
+        p = _params_for("gpt-5.6-luna", max_tokens=8192, tools=_TOOLS)
+        self.assertEqual(p.get("reasoning_effort"), "none",
+                         'gpt-5.x rejects function tools unless reasoning_effort is '
+                         '"none" — this is what made a tool-enabled agent fail on '
+                         'every turn')
+        self.assertTrue(p.get("tools"), "the tools must still be sent")
+
+    def test_13_reasoning_is_untouched_when_there_are_no_tools(self):
+        """The flag costs the model its reasoning for that turn, so it must not
+        leak onto ordinary turns — only tool calls pay for tool calls."""
+        p = _params_for("gpt-5.6-luna", max_tokens=8192)
+        self.assertNotIn("reasoning_effort", p,
+                         "a turn with no tools must keep the model's default "
+                         "reasoning")
+
+    def test_14_only_none_is_used(self):
+        """'low'/'medium'/'high' are all 400s with tools, and 'minimal' is not a
+        valid value for this model. If someone 'improves' this to a higher
+        effort, tool calling breaks again."""
+        p = _params_for("gpt-5.6-luna", max_tokens=8192, tools=_TOOLS)
+        self.assertNotIn(p.get("reasoning_effort"),
+                         ("minimal", "low", "medium", "high"))
+
+    def test_15_other_providers_get_no_reasoning_effort(self):
+        """Groq/Cerebras/Mistral do not take this parameter at all."""
+        for model in ("openai/gpt-oss-120b", "gpt-oss-120b", "mistral-medium-latest"):
+            with self.subTest(model=model):
+                p = _params_for(model, max_tokens=4096, tools=_TOOLS)
+                self.assertNotIn("reasoning_effort", p,
+                                 f"{model} does not accept reasoning_effort")
+                self.assertTrue(p.get("tools"))
+
+
 class OtherOpenAiCompatibleProvidersAreUnaffected(unittest.TestCase):
     """The gate. These providers share provider_type "openai" and still need
     max_tokens; a broadened condition would cap their output silently."""

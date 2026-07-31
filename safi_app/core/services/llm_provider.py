@@ -189,6 +189,23 @@ class LLMProvider:
                 params.pop("temperature", None)
                 params.pop("top_p", None)
                 params["max_completion_tokens"] = max_tokens
+                if params.get("tools"):
+                    # Function tools are rejected on /v1/chat/completions unless
+                    # reasoning is explicitly turned OFF. The error names
+                    # reasoning_effort even when the caller never sent one,
+                    # because the model applies a default. Probed 2026-07-30
+                    # against gpt-5.6-luna: omitted / "low" / "medium" / "high"
+                    # all 400; "minimal" is not a valid value for this model;
+                    # only "none" is accepted, and it returns a proper
+                    # tool_calls response.
+                    #
+                    # The trade-off is real and worth knowing: this buys tool
+                    # calling by giving up the model's reasoning for that turn.
+                    # Keeping tools AND reasoning requires the /v1/responses API,
+                    # which is a port rather than a parameter change. Only sent
+                    # when tools are actually present, so ordinary turns keep
+                    # the model's default reasoning.
+                    params["reasoning_effort"] = "none"
             else:
                  params["max_tokens"] = max_tokens
 
