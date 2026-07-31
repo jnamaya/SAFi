@@ -38,7 +38,7 @@ mu_t = (beta * mu_{t-1}) + ((1 - beta) * p_t)
 Beta defaults to 0.9, so the past dominates and character moves slowly. A disposition that could be overturned by a single turn would not be a disposition.
 
 ## Why drift alone is not a safeguard
-This is the important part, and earlier versions of this document got it wrong by claiming SAFi measures and prevents identity drift.
+Drift measures identity change but does not by itself prevent it, and the reason matters.
 
 Character updates after every action, and drift is measured against the previous character. The baseline therefore moves toward whatever the agent has recently been doing. Each of Solomon's compromises was only slightly off from the man he was that year, because the previous years had already shifted what that meant. Solomon never had a high-drift day; he would have passed a per-turn drift check every year of his reign.
 
