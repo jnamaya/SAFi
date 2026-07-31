@@ -159,12 +159,36 @@ class LLMProvider:
                 # o1 models do not support 'system' role in current API versions
                 params["messages"] = [{"role": "user", "content": f"System Instruction: {system_prompt}\n\nUser Query: {user_prompt}"}]
                 # o1 models do not support temperature
-                params.pop("temperature", None) 
+                params.pop("temperature", None)
                 # o1 uses max_completion_tokens
-                params.pop("max_tokens", None) 
+                params.pop("max_tokens", None)
                 params["max_completion_tokens"] = max_tokens
                 # o1 preview doesn't support tools well yet, so maybe skip tools for o1?
                 # For now let's leave it, it might just error if used.
+            elif model_name.lower().startswith("gpt-5"):
+                # OpenAI's gpt-5.x line. Verified against the live API on
+                # 2026-07-30 with gpt-5.6-luna: the system role and
+                # `response_format: json_object` both work, but `max_tokens`,
+                # `top_p`, and ANY temperature other than the default all return
+                # a hard 400. This is why the whole family was unusable — note
+                # that gpt-5-mini and gpt-5-nano are the configured `openai`
+                # route defaults (see DEFAULT_MODELS_BY_PROVIDER), so this path
+                # was broken for them too, not just for newly added models.
+                #
+                # Gated on `startswith("gpt-5")` deliberately. provider_type
+                # "openai" is shared with Groq, Cerebras, DeepSeek and Mistral,
+                # and those must keep sending max_tokens. The prefix excludes
+                # Groq's "openai/gpt-oss-*" (vendor-prefixed) and Cerebras'
+                # "gpt-oss-*" without needing to know the provider here.
+                #
+                # CAVEAT, deliberately not worked around: forcing the default
+                # temperature costs the Conscience its temperature=0.0
+                # determinism if an operator selects a gpt-5.x model for that
+                # route. That is the model's constraint, not ours, but it is a
+                # governance-visible behaviour change.
+                params.pop("temperature", None)
+                params.pop("top_p", None)
+                params["max_completion_tokens"] = max_tokens
             else:
                  params["max_tokens"] = max_tokens
 

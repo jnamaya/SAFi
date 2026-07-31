@@ -407,6 +407,13 @@ class Config:
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
 
+        # OpenAI Models. Ids must keep the "gpt-5" prefix exactly as OpenAI
+        # writes them: llm_provider.py switches on it to send
+        # max_completion_tokens and drop temperature/top_p, which the whole
+        # gpt-5.x family requires. Siblings gpt-5.6-sol and gpt-5.6-terra also
+        # exist and are deliberately not listed.
+        {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna"},
+
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
 
