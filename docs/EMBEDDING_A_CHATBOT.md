@@ -242,6 +242,48 @@ Notes on the above:
 
 ---
 
+## Don't boot your widget from `DOMContentLoaded` alone
+
+If any part of your widget runs in the browser, initialise it like this:
+
+```js
+function boot() { /* wire up the widget */ }
+
+if (document.readyState === "loading") {
+	document.addEventListener("DOMContentLoaded", boot);
+} else {
+	boot();   // already parsed — an event listener would never fire
+}
+```
+
+This is not defensive padding. Page-speed plugins routinely defer, combine or
+lazy-load JavaScript, and they inject the script **after** `DOMContentLoaded` has
+already fired. A listener registered for an event that has passed never runs, so
+the widget renders its markup and then does nothing — **with no console error**,
+which makes it painful to diagnose.
+
+Seen in production with LiteSpeed Cache: with JS Defer on and the script not in
+`js_defer_exc`, LiteSpeed combined it into
+`wp-content/litespeed/js/<hash>.js`, rewrote the tag to
+`type="litespeed/javascript"`, loaded it from its own loader on the first user
+event, and then dispatched **`DOMContentLiteSpeedLoaded`** — its own event name,
+not `DOMContentLoaded`. The widget was inert until the boot guard above replaced
+the listener. Test `readyState` rather than listening for a specific optimiser's
+event: it holds for inline, `defer`, `async` and late-injected scripts alike, and
+survives the optimiser being reconfigured.
+
+Two related traps from the same incident:
+
+- **A version bump is what exposes this.** Changing your enqueued `?ver=`
+  invalidates the optimiser's cached bundle and forces a fresh pass, so a latent
+  incompatibility surfaces on an unrelated edit. Purge the page cache after
+  changing plugin assets and check the widget, not just the page.
+- **Never leave a backup file inside the webroot.** `plugin.php.bak` is not mapped
+  to the PHP handler, so the server returns your **source** as plain text on
+  request. Keep backups outside the document root.
+
+---
+
 ## Confirm it is actually being audited
 
 After the first live turn:
