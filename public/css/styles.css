@@ -243,17 +243,17 @@ html.native body { font-size: 14px; }
   object-fit: cover;
   border-radius: 50%;
   background-color: #ffffff; /* Prevents back-bleeding of SVG transparent areas */
-  transform: scale(1.2); /* Zoomed out to show head and shoulders */
-  transform-origin: center 35%; /* Beautifully centered alignment */
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* NO transform on the image. This used to carry `scale(1.2)` with
+   `transform-origin: center 35%` to crop the old cartoon portraits to head and
+   shoulders, plus a scale(1.3) hover zoom. Both would slice the edges off a
+   monogram's letterform, which is now the identity channel — see
+   js/ui/ui-agent-mark.js. The parent `.ai-avatar:hover { transform: scale(1.05) }`
+   already provides the hover feedback. */
 
 .dark .ai-avatar img {
   background-color: #1a1a1a;
-}
-
-.ai-avatar:hover img {
-  transform: scale(1.3); /* Dynamic micro-zoom on hover */
 }
 
 .user-avatar img {

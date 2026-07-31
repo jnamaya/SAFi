@@ -503,7 +503,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         }
 
         messageDiv.innerHTML = `
-      <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
+      <div class="ai-avatar"><img src="${avatarUrl}" alt="${escapeHtml(profileName || 'AI agent')}" class="w-full h-full"></div>
       <div class="ai-content-wrapper">
         <div class="chat-bubble cursor-pointer"><div class="meta"></div></div>
       </div>
@@ -789,7 +789,7 @@ export function showLoadingIndicator(profileName) {
 
     container.innerHTML = `
     <div class="message ai">
-        <div class="ai-avatar"><img src="${avatarUrl}" class="w-full h-full"></div>
+        <div class="ai-avatar"><img src="${avatarUrl}" alt="${escapeHtml(profileName || 'AI agent')}" class="w-full h-full"></div>
         <div class="ai-content-wrapper">
             <div class="thinking-container">
                 <div class="thinking-pulse-wave">

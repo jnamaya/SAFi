@@ -4,6 +4,7 @@ import * as ui from './ui.js';
 import { formatRelativeTime } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
 import { updateAgentLabel } from './ui-composer-menu.js';
+import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
 
 /**
  * Icons (for pin feature)
@@ -742,40 +743,25 @@ export function updateActiveProfileChip(profileNameOrObject) {
 export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
-  // 1. Check known custom profiles first
+  // 1. An avatar the org supplied for its own agent always wins.
   const customProfile = _knownProfiles.find(p => p.name && p.name.trim().toLowerCase() === cleanName);
   if (customProfile && customProfile.avatar) {
     return customProfile.avatar;
   }
 
-  // 2. Fallback to hardcoded assets
-  switch (cleanName) {
-    case 'the contoso governance officer':
-    case 'contoso governance officer':
-    case 'the_contoso_governance_officer': // Sanitized backend key
-      return 'assets/contoso.svg';
-    case 'the fiduciary':
-    case 'fiduciary':
-    case 'the_fiduciary': // Sanitized backend key
-      return 'assets/fiduciary.svg';
-    case 'the health navigator':
-    case 'health navigator':
-    case 'the_health_navigator': // Sanitized backend key
-      return 'assets/the_health_navigator.svg';
-    case 'the socratic tutor':
-    case 'socratic tutor':
-    case 'the_socratic_tutor': // Sanitized backend key
-    case 'the tutor':
-      return 'assets/tutor.svg';
-    case 'the bible scholar':
-    case 'bible scholar':
-    case 'the_bible_scholar': // Sanitized backend key
-      return 'assets/bible_scholar.svg';
-    case 'the safi guide':
-    case 'the_safi_guide': // Sanitized backend key
-    default:
-      return 'assets/safi.svg';
-  }
+  // 2. The two real marks. Neither is a persona portrait, which is why they
+  //    survive: contoso.svg is the demo customer's own brand logo, and safi.svg
+  //    is the product wordmark, which The SAFi Guide is entitled to wear.
+  //
+  //    Every other agent gets a generated monogram — see ui-agent-mark.js for
+  //    why the illustrated faces were removed. Note that unknown agents now get
+  //    a monogram rather than falling through to safi.svg: an org's custom agent
+  //    should not appear wearing the vendor's logo.
+  const key = normalizeAgentName(profileName);
+  if (key === 'contoso governance officer') return 'assets/contoso.svg';
+  if (key === 'safi guide' || !key) return 'assets/safi.svg';
+
+  return agentMark(profileName);
 }
 
 /**
