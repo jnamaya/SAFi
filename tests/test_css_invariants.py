@@ -346,5 +346,133 @@ class TestThinkingRingSweep(unittest.TestCase):
                       "showLoadingIndicator must put is-thinking on the avatar")
 
 
+class TestOutcomeRing(unittest.TestCase):
+    """The avatar ring carries the turn's alignment tier once the audit lands.
+
+    The ring is the most prominent colour on the message, so a wrong state here
+    misrepresents a governance verdict — which is worse than a cosmetic bug.
+    """
+
+    # The score chip's existing vocabulary. The ring MUST reuse these, not invent
+    # new hexes, or the two signals drift into looking like different scales.
+    CHIP_DOT = {
+        "green": "#22c55e",
+        "yellow": "#eab308",
+        "red": "#ef4444",
+        "pending": "#a3a3a3",
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.css = CSS.read_text(encoding="utf-8")
+        cls.js = (CSS.parent.parent / "js" / "ui" / "ui-messages.js").read_text(
+            encoding="utf-8", errors="replace")
+
+    def _ring(self, state, dark=False):
+        sel = f"{'.dark ' if dark else ''}.ai-avatar.ring-{state}:not(.is-thinking)"
+        return _decls(self.css, sel)
+
+    def test_01_all_four_states_exist_in_both_themes(self):
+        for state in ("pending", "green", "yellow", "red"):
+            for dark in (False, True):
+                with self.subTest(state=state, dark=dark):
+                    d = self._ring(state, dark)
+                    self.assertTrue(d, f"ring-{state} missing for "
+                                       f"{'dark' if dark else 'light'} mode")
+                    self.assertIn("background", d)
+
+    def test_02_colours_come_from_the_chip_palette(self):
+        """Pins ring hue to the chip's dot colour for each tier."""
+        for state in ("green", "yellow", "red", "pending"):
+            with self.subTest(state=state):
+                bg = self._ring(state).get("background", "")
+                self.assertIn(self.CHIP_DOT[state], bg,
+                              f"ring-{state} must use the chip's {state} "
+                              f"{self.CHIP_DOT[state]}, not a new hue")
+
+    def test_03_pending_is_neutral_never_green(self):
+        """THE governance-relevant assertion. A turn the Conscience has not judged
+        must not wear the "aligned" colour on the most prominent element of the
+        message."""
+        for dark in (False, True):
+            with self.subTest(dark=dark):
+                bg = self._ring("pending", dark).get("background", "")
+                for green in ("#22c55e", "#86efac", "#4ade80", "#15803d"):
+                    self.assertNotIn(green, bg,
+                                     "audit-pending must not be green — that "
+                                     "asserts alignment nothing has verified")
+                self.assertIn("a3a3a3", bg.replace("#", "").lower() + bg.lower(),
+                              "pending should use the chip's neutral grey")
+
+    def test_04_state_rules_yield_to_the_thinking_sweep(self):
+        """"Working" is not a verdict. Scoped with :not(.is-thinking) so it holds
+        structurally rather than depending on rule order — in dark mode the state
+        rules come later and would otherwise win."""
+        for state in ("pending", "green", "yellow", "red"):
+            for dark in (False, True):
+                with self.subTest(state=state, dark=dark):
+                    self.assertTrue(
+                        self._ring(state, dark),
+                        f"ring-{state} must be scoped :not(.is-thinking)")
+
+    def test_05_a_surface_gap_separates_ring_from_mark(self):
+        """Load-bearing, not decoration: the monogram palette (blue/orange/aqua)
+        and the outcome palette (green/amber/red) share warm and green hues, so
+        without a surface hairline an amber ring blends into an orange fill and a
+        red ring around the aqua fill reads as one muddled object."""
+        light = _decls(self.css, ".ai-avatar img").get("box-shadow", "")
+        dark = _decls(self.css, ".dark .ai-avatar img").get("box-shadow", "")
+        self.assertIn("#ffffff", light,
+                      "light mode needs a white hairline between ring and mark")
+        self.assertIn("#1a1a1a", dark,
+                      "dark mode needs a dark-surface hairline")
+
+    def test_06_ring_is_wide_enough_to_read_a_colour(self):
+        """1.5px of amber was indistinguishable from an orange fill at 32px."""
+        to_px = lambda v: float(re.match(r"([\d.]+)", v).group(1)) if v and re.match(r"([\d.]+)", v) else 0.0
+        rest = to_px(_decls(self.css, ".ai-avatar").get("padding", ""))
+        think = to_px(_decls(self.css, ".ai-avatar.is-thinking").get("padding", ""))
+        self.assertGreaterEqual(rest, 3.0,
+                                f"resting ring {rest}px is too thin to carry an "
+                                f"outcome colour at 32px")
+        self.assertGreater(think, rest,
+                           "the thinking sweep still needs to be the thicker of "
+                           "the two, allowing for the surface gap")
+
+    def test_07_the_tier_thresholds_are_defined_exactly_once(self):
+        """A second copy of these numbers is how the ring and the chip end up
+        disagreeing about the same turn."""
+        self.assertIn("export function _scoreTier", self.js,
+                      "the shared tier function is gone")
+        self.assertEqual(self.js.count("'seg-yellow'"), 1,
+                         "seg-yellow is assigned in more than one place — the "
+                         "thresholds have been duplicated")
+        self.assertEqual(self.js.count("< 5.0"), 1, "the red threshold is duplicated")
+        self.assertEqual(self.js.count("< 8.0"), 1, "the yellow threshold is duplicated")
+
+    def test_08_the_ring_is_painted_at_both_render_paths(self):
+        """Once at first render (pending on a live turn, the real tier on history
+        reload) and again when the async audit lands. Missing the second call
+        leaves every live turn grey forever."""
+        self.assertGreaterEqual(
+            self.js.count("_applyRingState("), 3,
+            "expected the definition plus both call sites (initial render and "
+            "updateMessageWithAudit)")
+        i = self.js.index("export function updateMessageWithAudit")
+        self.assertIn("_applyRingState(", self.js[i:i + 1200],
+                      "updateMessageWithAudit must repaint the ring, or a live "
+                      "turn never leaves audit-pending grey")
+
+    def test_09_the_ring_repaints_even_without_a_usable_score(self):
+        """The repaint must not sit inside the `if (hasScore)` branch, or an audit
+        that completes without a score leaves the ring grey permanently."""
+        i = self.js.index("export function updateMessageWithAudit")
+        seg = self.js[i:i + 1200]
+        ring_at = seg.index("_applyRingState(")
+        guard_at = seg.index("if (hasScore)")
+        self.assertLess(ring_at, guard_at,
+                        "_applyRingState must run before the hasScore guard")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

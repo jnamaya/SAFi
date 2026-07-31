@@ -121,12 +121,23 @@ function _significantConflicts(payload) {
         .sort((a, b) => (b?.confidence ?? 1) - (a?.confidence ?? 1));
 }
 
-function _createScoreSegment(payload, onClick) {
+/**
+ * The single definition of a turn's alignment tier.
+ *
+ * Consumed by BOTH the score chip and the avatar's status ring. Kept in one
+ * place deliberately: two copies of these thresholds would eventually disagree,
+ * and a ring showing green beside a chip reading "Caution" on the same turn is
+ * worse than either signal alone in a product whose whole claim is that the
+ * displayed judgement is the recorded one.
+ *
+ * No score means the audit has not completed. Never fabricate one — the
+ * conscience modal shows "N/A · audit pending" for the same state, and a chip
+ * reading "10.0 Aligned" for a turn nothing has judged is the single most
+ * misleading thing this bar could say. The ring is larger and more prominent
+ * than the chip, so `pending` there must read as neutral, never as aligned.
+ */
+export function _scoreTier(payload) {
     const raw = payload?.spirit_score;
-    // No score means the audit has not completed. Never fabricate one — the
-    // conscience modal shows "N/A · audit pending" for the same state, and a
-    // chip reading "10.0 Aligned" for a turn nothing has judged is the single
-    // most misleading thing this bar could say.
     const hasScore = raw !== null && raw !== undefined && !Number.isNaN(parseFloat(raw));
     const numScore = hasScore ? parseFloat(raw) : null;
 
@@ -142,6 +153,30 @@ function _createScoreSegment(payload, onClick) {
         tier = 'seg-yellow';
         label = 'Caution';
     }
+    return { tier, label, hasScore, numScore };
+}
+
+/** Ring classes are derived mechanically from the chip's tier, so the two
+ *  vocabularies cannot drift into meaning different things. */
+const RING_CLASSES = ['ring-pending', 'ring-green', 'ring-yellow', 'ring-red'];
+
+/**
+ * Paint the avatar's status ring with the turn's outcome.
+ *
+ * Called at first render (usually `pending` on a live turn, the real tier when
+ * replaying history) and again from updateMessageWithAudit() when the async
+ * audit lands. Safe to call repeatedly.
+ */
+function _applyRingState(container, payload) {
+    const avatar = container?.querySelector('.ai-avatar');
+    if (!avatar) return;
+    const { tier } = _scoreTier(payload);
+    avatar.classList.remove(...RING_CLASSES);
+    avatar.classList.add(tier.replace('seg-', 'ring-'));
+}
+
+function _createScoreSegment(payload, onClick) {
+    const { tier, label, hasScore, numScore } = _scoreTier(payload);
 
     const conflicts = _significantConflicts(payload);
     const n = conflicts.length;
@@ -583,6 +618,12 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         const conflictNote = whyHandler ? _createConflictNote(payload, () => whyHandler(payload)) : null;
         if (conflictNote) metaDiv.appendChild(conflictNote);
         metaDiv.appendChild(bar);
+
+        // Paint the avatar ring with the same tier as the chip. On a live turn
+        // the score has not arrived yet, so this sets `pending` (neutral grey)
+        // and updateMessageWithAudit() repaints it; when replaying history the
+        // score is already present and the real outcome shows immediately.
+        _applyRingState(messageDiv, payload);
     } else {
         // User message: optional retry button + timestamp, right-aligned.
         const rightMeta = document.createElement('div');
@@ -657,6 +698,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     ui._ensureElements();
     const container = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!container) return;
+
+    // Repaint the ring first and unconditionally: it must leave `pending` even
+    // on an audit that came back without a usable score, rather than sitting
+    // grey forever.
+    _applyRingState(container, payload);
 
     const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
     if (hasScore) {

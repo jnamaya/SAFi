@@ -192,13 +192,19 @@ html.native body { font-size: 14px; }
   margin-top: 6px; /* Aligns avatar perfectly with the text's line-height and padding */
   border-radius: 50%;
   background: linear-gradient(135deg, #22c55e, #86efac); /* Active self-governing green gradient */
-  padding: 1.5px; /* Creates the micro-thin active status ring */
+  /* 4px, not the original 1.5px: the ring now carries the alignment outcome,
+     and 1.5px of amber was indistinguishable from an orange monogram fill at
+     32px. 1.5px of that is spent on the surface gap below. */
+  padding: 4px;
   box-shadow: 0 0 10px rgba(34, 197, 94, 0.15); /* Soft glowing aura */
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+  /* `background` is in the transition so a score landing eases the ring from
+     pending grey into its outcome colour rather than snapping. */
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease,
+              background 0.35s ease;
 }
 
 .dark .ai-avatar {
@@ -221,12 +227,17 @@ html.native body { font-size: 14px; }
    the thinking avatar lives in its own container that is destroyed when the
    answer arrives, so there is no morph between states and no size jitter. */
 .ai-avatar.is-thinking {
-  padding: 3px;
+  padding: 5.5px;
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.34);
+  /* "Working" is not a verdict: the sweep keeps its own green even if an
+     outcome class is present, so a prior turn's amber never bleeds into the
+     in-flight indicator. */
+  background: linear-gradient(135deg, #22c55e, #86efac);
 }
 
 .dark .ai-avatar.is-thinking {
   box-shadow: 0 0 14px rgba(34, 197, 94, 0.42);
+  background: linear-gradient(135deg, #22c55e, #4ade80);
 }
 
 .ai-avatar.is-thinking::before {
@@ -261,11 +272,85 @@ html.native body { font-size: 14px; }
       rgba(34, 197, 94, 0.30) 1turn);
 }
 
-/* Lifts the mark above the sweep so only the ring animates. */
+/* Lifts the mark above the sweep so only the ring animates, and separates the
+   mark from the ring with a hairline of SURFACE colour.
+
+   The gap is load-bearing, not decoration. The monogram palette (blue / burnt
+   orange / aqua) and the outcome palette (green / amber / red) both occupy warm
+   and green hues, so ring and fill would otherwise touch and blend: amber ring +
+   orange fill became one blob at 32px, and a red ring around the aqua fill read
+   as a single muddled object. A surface gap makes them two separate marks, which
+   is the standard remedy for adjacent fills. */
 .ai-avatar img {
   position: relative;
   z-index: 1;
+  box-shadow: 0 0 0 1.5px #ffffff;
 }
+
+.dark .ai-avatar img {
+  box-shadow: 0 0 0 1.5px #1a1a1a;
+}
+
+/* ── Outcome ring: the turn's alignment tier, once the audit lands ────────────
+   Set by _applyRingState() in js/ui/ui-messages.js from _scoreTier() — the SAME
+   function the score chip uses, so the ring and the chip can never disagree
+   about the same turn.
+
+   Colours are the chip's existing vocabulary, not new hexes:
+     seg-green  #22c55e   Aligned  (>= 8)
+     seg-yellow #eab308   Caution  (5..8)
+     seg-red    #ef4444   Concern  (< 5)
+     seg-pending #a3a3a3  Audit pending
+
+   Deliberately NOT per-agent colours. Green already means "governed/aligned"
+   here (it is also --accent), so an agent-coloured ring would assert a verdict
+   it does not have — and an amber ring would sit next to an amber caution dot on
+   every answer. Agent identity is already carried inside the ring by the
+   monogram's letters and its own palette. */
+
+/* Audit pending — neutral, never green. A turn the Conscience has not judged
+   must not wear the "aligned" colour, and the ring is far more prominent than
+   the chip. */
+.ai-avatar.ring-pending:not(.is-thinking) {
+  background: linear-gradient(135deg, #a3a3a3, #d4d4d4);
+  box-shadow: none;
+}
+
+.dark .ai-avatar.ring-pending:not(.is-thinking) {
+  background: linear-gradient(135deg, #737373, #a3a3a3);
+  box-shadow: none;
+}
+
+.ai-avatar.ring-green:not(.is-thinking) {
+  background: linear-gradient(135deg, #22c55e, #86efac);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.15);
+}
+
+.dark .ai-avatar.ring-green:not(.is-thinking) {
+  background: linear-gradient(135deg, #22c55e, #4ade80);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.25);
+}
+
+.ai-avatar.ring-yellow:not(.is-thinking) {
+  background: linear-gradient(135deg, #eab308, #fde047);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.22);
+}
+
+.dark .ai-avatar.ring-yellow:not(.is-thinking) {
+  background: linear-gradient(135deg, #eab308, #facc15);
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.3);
+}
+
+.ai-avatar.ring-red:not(.is-thinking) {
+  background: linear-gradient(135deg, #ef4444, #fca5a5);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+}
+
+.dark .ai-avatar.ring-red:not(.is-thinking) {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.32);
+}
+
 
 @keyframes safi-ring-sweep {
   to { transform: rotate(1turn); }
