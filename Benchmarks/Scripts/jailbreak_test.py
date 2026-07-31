@@ -670,6 +670,11 @@ def _load_threat_intel() -> Tuple[dict, float, int, int, list]:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
+    # Keep the loaded module addressable so _load_real_gate() can satisfy
+    # phase_zero.py's `from ..threat_intel import ...` without the app deps.
+    global _TI_MODULE
+    _TI_MODULE = mod
+
     return (
         mod.INJECTION_SIGNATURES,
         mod.ENTROPY_THRESHOLD,
@@ -677,6 +682,67 @@ def _load_threat_intel() -> Tuple[dict, float, int, int, list]:
         mod.MIN_LENGTH_FOR_ENTROPY_CHECK,
         mod.EMBEDDED_INSTRUCTION_MARKERS,
     )
+
+
+_TI_MODULE = None
+_REAL_GATE = None
+PHASE0_ENGINE = "unknown"
+
+
+def _load_real_gate():
+    """Load the PRODUCTION PhaseZeroGate, not a copy of it.
+
+    Why this matters: everything below used to be an inline reimplementation of
+    the gate, and it had already drifted. The real
+    `_has_embedded_instruction` slides the entropy window over the WHOLE prompt
+    — it was fixed precisely because sampling only the first
+    ENTROPY_SAMPLE_LENGTH characters meant "prepending a paragraph of benign
+    prose defeated the check entirely" — while the copy here still sampled only
+    the head. So this suite was grading production against a known-weaker
+    implementation, and a signature change could pass here and behave
+    differently in the app (or the reverse).
+
+    phase_zero.py imports only stdlib plus `..threat_intel`, so it can be loaded
+    without flask/faiss by registering a synthetic package tree that makes that
+    one relative import resolve.
+
+    Returns a callable(prompt, blacklist) -> (is_safe, reason), or None if the
+    real gate cannot be loaded (the inline fallback then applies, loudly).
+    """
+    global _REAL_GATE
+    if _REAL_GATE is not None:
+        return _REAL_GATE
+
+    import importlib.util
+    import sys
+    import types
+
+    pz_path = _PROJECT_ROOT / "safi_app" / "core" / "faculties" / "phase_zero.py"
+    if not pz_path.exists() or _TI_MODULE is None:
+        return None
+
+    try:
+        shim = types.ModuleType("safi_pz_shim")
+        shim.__path__ = [str(_PROJECT_ROOT / "safi_app" / "core")]
+        faculties = types.ModuleType("safi_pz_shim.faculties")
+        faculties.__path__ = [str(_PROJECT_ROOT / "safi_app" / "core" / "faculties")]
+        sys.modules["safi_pz_shim"] = shim
+        sys.modules["safi_pz_shim.faculties"] = faculties
+        sys.modules["safi_pz_shim.threat_intel"] = _TI_MODULE
+
+        spec = importlib.util.spec_from_file_location(
+            "safi_pz_shim.faculties.phase_zero", pz_path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["safi_pz_shim.faculties.phase_zero"] = mod
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+        gate = mod.PhaseZeroGate()
+        _REAL_GATE = gate.evaluate_prompt
+        return _REAL_GATE
+    except Exception as e:  # pragma: no cover - diagnostic path
+        print(f"  [warn] could not load the production PhaseZeroGate ({e}); "
+              f"falling back to the inline copy, which may not match the app.")
+        return None
 
 
 def _phase0_evaluate(
@@ -688,7 +754,16 @@ def _phase0_evaluate(
     entropy_markers: list,
     persona_blacklist: list,
 ) -> Tuple[bool, str]:
-    """Inline reimplementation of PhaseZeroGate.evaluate_prompt() — no imports needed."""
+    """Evaluate one prompt through the Phase 0 gate.
+
+    Prefers the PRODUCTION gate (see _load_real_gate). The inline
+    reimplementation below is a fallback for running this script somewhere the
+    app tree is unavailable — it is NOT authoritative and has drifted before.
+    """
+    real = _load_real_gate()
+    if real is not None:
+        return real(prompt, persona_blacklist)
+
     import math
     import collections
 
@@ -723,6 +798,20 @@ def _phase0_evaluate(
 
 def run_phase0(cases: List[TestCase], persona_key: str) -> List[TestResult]:
     """Run all cases through the Phase 0 gate directly (no server needed)."""
+    # State which engine produced the numbers. A run against the inline fallback
+    # is NOT authoritative — the copy has drifted from production before — and a
+    # results file that does not say so can be quoted as though it were.
+    global PHASE0_ENGINE
+    try:
+        _load_threat_intel()
+    except Exception:
+        pass
+    PHASE0_ENGINE = ("production PhaseZeroGate" if _load_real_gate() is not None
+                     else "INLINE FALLBACK - NOT AUTHORITATIVE")
+    print(f"\n  Phase 0 engine: {PHASE0_ENGINE}")
+    if _load_real_gate() is None:
+        print("  [WARNING] These results grade a reimplementation of the gate, not "
+              "the gate. Do not publish them.")
     try:
         (signatures, entropy_threshold, entropy_sample_len,
          min_len_entropy, entropy_markers) = _load_threat_intel()
