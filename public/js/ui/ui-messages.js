@@ -789,7 +789,7 @@ export function showLoadingIndicator(profileName) {
 
     container.innerHTML = `
     <div class="message ai">
-        <div class="ai-avatar"><img src="${avatarUrl}" alt="${escapeHtml(profileName || 'AI agent')}" class="w-full h-full"></div>
+        <div class="ai-avatar is-thinking"><img src="${avatarUrl}" alt="${escapeHtml(profileName || 'AI agent')}" class="w-full h-full"></div>
         <div class="ai-content-wrapper">
             <div class="thinking-container">
                 <div class="thinking-pulse-wave">

@@ -257,5 +257,94 @@ class TestActionBarFitsNarrowScreens(unittest.TestCase):
                          "without min-width:0 a long value name can overflow")
 
 
+class TestThinkingRingSweep(unittest.TestCase):
+    """The avatar's green status ring rotates while a turn is in flight.
+
+    Three of these pin traps that fail *silently* — the ring simply does not
+    animate, or animates in the wrong place, and nothing errors.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.css = CSS.read_text(encoding="utf-8")
+        cls.before = _decls(cls.css, ".ai-avatar.is-thinking::before")
+
+    def test_01_the_sweep_exists(self):
+        self.assertTrue(self.before,
+                        ".ai-avatar.is-thinking::before is gone — the ring no longer "
+                        "animates while the agent is thinking")
+        self.assertIn("animation", self.before)
+        self.assertIn("conic-gradient", self.before.get("background", ""),
+                      "the sweep needs a conic gradient; a linear-gradient angle is "
+                      "not interpolatable without @property")
+
+    def test_02_the_pseudo_element_is_absolutely_positioned(self):
+        """THE trap. `.ai-avatar` is display:flex, so a static pseudo-element is a
+        flex ITEM — it would be laid out beside the avatar image, shrinking it and
+        putting a rotating blob next to the mark instead of behind it. Nothing
+        errors; it just looks wrong."""
+        self.assertEqual(self.before.get("position"), "absolute",
+                         "a pseudo-element on a flex container must be absolutely "
+                         "positioned or it becomes a flex item")
+
+    def test_03_the_rotating_box_overhangs_the_circle(self):
+        """A rotating square inscribed in its parent leaves the corners empty for
+        part of every revolution, so the ring visibly breaks up as it turns."""
+        inset = self.before.get("inset", "")
+        self.assertTrue(inset.startswith("-"),
+                        f"inset must be negative so the rotating box always covers "
+                        f"the circle; got {inset!r}")
+
+    def test_04_the_mark_sits_above_the_sweep(self):
+        """Without a stacking context on the image the gradient paints over the
+        monogram, and the letters strobe once per revolution."""
+        img = _decls(self.css, ".ai-avatar img")
+        self.assertEqual(img.get("position"), "relative")
+        self.assertEqual(img.get("z-index"), "1")
+
+    def test_05_the_ring_thickens_enough_to_read(self):
+        """At the resting 1.5px the sweep was invisible at the 32px mobile size.
+        Free to thicken because the thinking avatar lives in its own container
+        that is destroyed when the answer arrives — there is no morph."""
+        rest = _decls(self.css, ".ai-avatar").get("padding", "")
+        think = _decls(self.css, ".ai-avatar.is-thinking").get("padding", "")
+        to_px = lambda v: float(re.match(r"([\d.]+)", v).group(1)) if re.match(r"([\d.]+)", v) else 0.0
+        self.assertGreater(to_px(think), to_px(rest),
+                           f"thinking ring ({think}) must be thicker than at rest "
+                           f"({rest}) or the motion does not read at 32px")
+
+    def test_06_reduced_motion_is_honoured(self):
+        """Rotation is the exact pattern that triggers vestibular symptoms. This
+        is the first honoured instance in the stylesheet, so it is easy to lose in
+        a later edit."""
+        block = _media_block(self.css, "(prefers-reduced-motion: reduce)")
+        self.assertIsNotNone(block,
+                             "no prefers-reduced-motion block — a spinning ring must "
+                             "be suppressible")
+        override = _decls(block, ".ai-avatar.is-thinking::before")
+        self.assertIn("animation", override,
+                      "the reduced-motion block must override the sweep animation")
+        self.assertNotIn("safi-ring-sweep", override.get("animation", ""),
+                         "reduced motion must not simply restate the rotation")
+
+    def test_07_both_themes_get_a_visible_comet(self):
+        """The peak has to invert per theme: a bright arc vanishes on white and a
+        deep-green arc vanishes on near-black."""
+        dark = _decls(self.css, ".dark .ai-avatar.is-thinking::before")
+        self.assertIn("conic-gradient", dark.get("background", ""),
+                      "dark mode needs its own comet colours, not the light ones")
+        self.assertNotEqual(self.before.get("background"), dark.get("background"),
+                            "light and dark must differ or one of them is invisible")
+
+    def test_08_the_class_is_actually_applied(self):
+        """CSS with no markup to attach to is the quietest failure of all."""
+        js = (CSS.parent.parent / "js" / "ui" / "ui-messages.js").read_text(
+            encoding="utf-8", errors="replace")
+        i = js.index("export function showLoadingIndicator")
+        body = js[i:i + 2000]
+        self.assertIn("ai-avatar is-thinking", body,
+                      "showLoadingIndicator must put is-thinking on the avatar")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

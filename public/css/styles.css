@@ -206,6 +206,86 @@ html.native body { font-size: 14px; }
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.25);
 }
 
+/* ── Thinking state: the status ring sweeps while a turn is in flight ──────────
+   Applied by showLoadingIndicator() in js/ui/ui-messages.js. chat.js removes
+   that whole container on every success AND error path, so there is no teardown
+   here and no way to leave a ring spinning after a failed turn.
+
+   The animation lives on a pseudo-element rather than on the ring itself:
+   a linear-gradient's angle cannot be interpolated without @property, and
+   rotating a symmetric ring is invisible anyway. Most of the conic gradient is
+   transparent so the static green above still shows through — what you see is a
+   bright arc sweeping over the existing ring, not a replacement for it. */
+/* The resting ring is 1.5px, which is too fine for motion to read — at 32px the
+   sweep disappeared entirely. Thickening it only while thinking is free here:
+   the thinking avatar lives in its own container that is destroyed when the
+   answer arrives, so there is no morph between states and no size jitter. */
+.ai-avatar.is-thinking {
+  padding: 3px;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.34);
+}
+
+.dark .ai-avatar.is-thinking {
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.42);
+}
+
+.ai-avatar.is-thinking::before {
+  content: '';
+  position: absolute;
+  /* MUST be absolute. .ai-avatar is display:flex, and a pseudo-element on a
+     flex container is otherwise a flex ITEM — it would be laid out beside the
+     image instead of behind it. */
+  inset: -30%; /* negative so the rotating box still covers the corners */
+  /* Comet arc over a dim base. The peak is a DEEP green on light surfaces, not
+     white: a white segment in a green annulus reads as a broken ring rather
+     than as rotation. Dark mode inverts the direction (see below). */
+  background: conic-gradient(from 0turn,
+      rgba(34, 197, 94, 0.28) 0turn,
+      rgba(34, 197, 94, 0.28) 0.52turn,
+      #22c55e 0.72turn,
+      #15803d 0.80turn,
+      rgba(34, 197, 94, 0.28) 0.90turn,
+      rgba(34, 197, 94, 0.28) 1turn);
+  animation: safi-ring-sweep 1.15s linear infinite;
+}
+
+/* On a near-black surface the deep-green peak vanishes, so the contrast runs
+   the other way — a bright mint arc over the mid-green ring. */
+.dark .ai-avatar.is-thinking::before {
+  background: conic-gradient(from 0turn,
+      rgba(34, 197, 94, 0.30) 0turn,
+      rgba(34, 197, 94, 0.30) 0.52turn,
+      #6ee7a2 0.72turn,
+      #d1fae5 0.80turn,
+      rgba(34, 197, 94, 0.30) 0.90turn,
+      rgba(34, 197, 94, 0.30) 1turn);
+}
+
+/* Lifts the mark above the sweep so only the ring animates. */
+.ai-avatar img {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes safi-ring-sweep {
+  to { transform: rotate(1turn); }
+}
+
+/* First honoured instance in this stylesheet — deliberately scoped to this
+   animation rather than a global sweep. Rotation is the exact pattern that
+   triggers vestibular symptoms, so it is replaced with a still ring that
+   breathes, which still communicates "working". */
+@media (prefers-reduced-motion: reduce) {
+  .ai-avatar.is-thinking::before {
+    animation: safi-ring-breathe 1.8s ease-in-out infinite;
+  }
+
+  @keyframes safi-ring-breathe {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+  }
+}
+
 .user-avatar {
   width: 42px;
   height: 42px;
