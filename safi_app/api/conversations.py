@@ -240,6 +240,16 @@ async def bot_process_prompt_endpoint():
     if not all([user_id, user_prompt, conversation_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
+    # Same char(36) ceiling as the public endpoint — this id is caller-supplied
+    # here too, and reached the same failing INSERT.
+    if not isinstance(conversation_id, str) or len(conversation_id.strip()) > db.CONVERSATION_ID_MAX_LEN:
+        return jsonify({
+            "error": f"'conversation_id' must be at most "
+                     f"{db.CONVERSATION_ID_MAX_LEN} characters.",
+            "code": "CONVERSATION_ID_TOO_LONG",
+        }), 400
+    conversation_id = conversation_id.strip()
+
     # 2. Ensure User Exists in DB (Just-in-Time Registration)
     try:
         user_details = db.get_user_details(user_id)
@@ -407,6 +417,21 @@ async def public_process_prompt_endpoint():
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
 
     incoming_convo_id = data['conversation_id']
+
+    # Reject an id the schema cannot store, rather than letting it reach
+    # `INSERT INTO conversations` and come back as an HTTP 500. Every
+    # conversation-id column is char(36); see db.CONVERSATION_ID_MAX_LEN for
+    # the full list and the incident that motivated this.
+    if not isinstance(incoming_convo_id, str) or not incoming_convo_id.strip():
+        return jsonify({"error": "'conversation_id' must be a non-empty string."}), 400
+    incoming_convo_id = incoming_convo_id.strip()
+    if len(incoming_convo_id) > db.CONVERSATION_ID_MAX_LEN:
+        return jsonify({
+            "error": f"'conversation_id' must be at most "
+                     f"{db.CONVERSATION_ID_MAX_LEN} characters.",
+            "code": "CONVERSATION_ID_TOO_LONG",
+        }), 400
+
     # Stable, namespaced user identity so public users don't collide with real accounts
     anonymous_user_id = f"public_{incoming_convo_id}"
 

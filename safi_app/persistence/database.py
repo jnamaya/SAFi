@@ -3910,6 +3910,26 @@ GOVERNANCE_EXPORT_CAP = 10_000
 # stop creating unattributed records. See scripts/audit_unattributed.py.
 UNATTRIBUTED_ORG = "__unattributed__"
 
+
+# Width of EVERY conversation-id column in the schema: conversations.id,
+# chat_history.conversation_id, governance_records.conversation_id,
+# chat_audit_trail.conversation_id, review_queue.conversation_id and
+# saved_content.conversation_id are all char(36) — the width is for a UUID.
+#
+# This is a caller-supplied value on /api/public/process_prompt and
+# /api/bot/process_prompt, and nothing used to check it. An over-long id reached
+# `INSERT INTO conversations` and MySQL raised 1406 "Data too long for column
+# 'id'", which the caller saw as a bare HTTP 500 with an HTML error page — and
+# a browser widget saw as "Unexpected token '<' ... is not valid JSON", pointing
+# nowhere near the real cause. Found the hard way: the WordPress plugin's
+# conversation id was lengthened to 128 CSPRNG bits, taking
+# "wp_safi_chat_" + 32 hex to 45 characters, and every send broke.
+#
+# Validate at the edge and return 400 instead. Widening the columns was
+# considered and rejected: six tables, a governance schema migration, and no
+# benefit over telling integrators the limit.
+CONVERSATION_ID_MAX_LEN = 36
+
 def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
     if org_id == UNATTRIBUTED_ORG:
         where = ["org_id IS NULL"]

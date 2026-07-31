@@ -60,6 +60,33 @@ Errors: `400` missing fields; `429` with `{"code": "LIMIT_REACHED"}` when the
 per-IP daily cap is hit. Handle 429 explicitly — it is a normal condition on a
 busy public page, not a fault.
 
+### `conversation_id` has a hard 36-character limit
+
+Every conversation-id column in the schema is `char(36)` — sized for a UUID —
+across `conversations`, `chat_history`, `governance_records`,
+`chat_audit_trail`, `review_queue` and `saved_content`. **Send more than 36
+characters and you now get a `400` with `{"code": "CONVERSATION_ID_TOO_LONG"}`.**
+
+Mind your prefix. A namespace tag plus a 32-hex-character random id does not fit:
+
+```php
+// 45 chars — REJECTED (13-char prefix + 32 hex)
+$cid = 'wp_safi_chat_' . bin2hex( random_bytes( 16 ) );
+
+// 35 chars — fits, and keeps all 128 bits
+$cid = 'wp_' . bin2hex( random_bytes( 16 ) );
+
+// 36 chars — also fine, and what the column was designed for
+$cid = wp_generate_uuid4();
+```
+
+This was a real outage: a widget whose id grew to 45 characters had every send
+fail on `INSERT INTO conversations` with MySQL `1406 Data too long for column
+'id'`, returned as a bare HTTP 500 with an HTML body. In the browser that
+appeared as `Unexpected token '<' ... is not valid JSON`, which points nowhere
+near the cause. The endpoint validates the length up front now, before any
+database work, so the error tells you what is wrong.
+
 ### `conversation_id` is a credential. Treat it as one.
 
 The server derives the visitor's identity from it (`public_<conversation_id>`) and
