@@ -14,7 +14,7 @@
 
 - [The Problem](#the-problem)
 - [The SAFi Solution](#the-safi-solution)
-- [The Four Principles Behind SAFi](#the-four-principles-behind-safi)
+- [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
 - [Built for Regulated Industries](#built-for-regulated-industries)
 - [Roles & Permissions](#roles--permissions)
 - [Quick Start](#quick-start)
@@ -60,7 +60,7 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 
 ---
 
-## The Four Principles Behind SAFi
+## The Five Principles Behind SAFi
 
 **Value Sovereignty** — You decide the mission and values your AI enforces, not the model provider.
 
@@ -69,6 +69,8 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 **Model Independence** — Your charter, policies, and audit trail live in your database, not the provider's. Switch or upgrade models and the governance layer moves with you.
 
 **Long-Term Consistency** — Maintain your AI's ethical identity over time, and measure drift against it rather than guessing.
+
+**Governed Action** — Agents act, not just answer. Every tool call is checked against the agent's allow-list before it runs, reads and writes are held to different standards, and the action taken is recorded alongside the decision.
 
 ---
 
