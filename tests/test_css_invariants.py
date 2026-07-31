@@ -459,19 +459,60 @@ class TestOutcomeRing(unittest.TestCase):
             "expected the definition plus both call sites (initial render and "
             "updateMessageWithAudit)")
         i = self.js.index("export function updateMessageWithAudit")
-        self.assertIn("_applyRingState(", self.js[i:i + 1200],
+        self.assertIn("_applyRingState(", self.js[i:i + 2600],
                       "updateMessageWithAudit must repaint the ring, or a live "
                       "turn never leaves audit-pending grey")
 
-    def test_09_the_ring_repaints_even_without_a_usable_score(self):
-        """The repaint must not sit inside the `if (hasScore)` branch, or an audit
-        that completes without a score leaves the ring grey permanently."""
+    def test_09_the_repaint_is_gated_on_the_payload_carrying_audit_info(self):
+        """A REGRESSION TEST for a bug this file previously enforced.
+
+        updateMessageWithAudit has two callers with different payload shapes. The
+        audit poller sends the full result; chat.js `_pollForSuggestions` — started
+        alongside it and firing on its own 1.5s timer — sends only
+        `{ suggested_prompts, message_id }`. An unconditional repaint scored that
+        partial payload as `pending` and reset the ring to grey moments after the
+        audit had coloured it, so the ring stayed grey until a reload replayed the
+        history. The earlier version of this test asserted the unconditional
+        ordering and therefore locked the bug in.
+
+        Gate on KEY PRESENCE, not truthiness: an audit that legitimately returns
+        spirit_score null still carries the key and must repaint (staying
+        neutral), while a suggestions-only update must not touch the ring.
+        """
         i = self.js.index("export function updateMessageWithAudit")
-        seg = self.js[i:i + 1200]
+        seg = self.js[i:i + 2600]
+        self.assertIn("'spirit_score' in payload", seg,
+                      "the repaint must be gated on the spirit_score KEY being "
+                      "present, not on its value")
+        self.assertIn("'ledger' in payload", seg,
+                      "accept a ledger-bearing payload too, so the gate does not "
+                      "depend on one field name")
         ring_at = seg.index("_applyRingState(")
         guard_at = seg.index("if (hasScore)")
         self.assertLess(ring_at, guard_at,
-                        "_applyRingState must run before the hasScore guard")
+                        "the gated repaint must still run before the hasScore "
+                        "branch, so a null-score audit leaves pending grey")
+
+    def test_10_a_suggestions_only_payload_cannot_reset_the_ring(self):
+        """Pins the shape that caused the bug: the poller's payload has neither
+        audit key, so it must fail the gate."""
+        suggestions_payload_keys = {"suggested_prompts", "message_id"}
+        gate_keys = {"spirit_score", "ledger"}
+        self.assertFalse(suggestions_payload_keys & gate_keys,
+                         "the suggestions payload must share no key with the "
+                         "audit gate, or it will repaint the ring again")
+        # and the poller's payload really is that shape
+        chat = (CSS.parent.parent / "js" / "core" / "chat.js").read_text(
+            encoding="utf-8", errors="replace")
+        i = chat.index("function _pollForSuggestions")
+        # Cut at the poller's own setTimeout close, not a fixed character count:
+        # the next function's comment mentions spirit_score and a loose window
+        # picked it up.
+        seg = chat[i:chat.index("}, DELAY);", i)]
+        self.assertIn("suggested_prompts: parsed", seg)
+        self.assertNotIn("spirit_score", seg,
+                         "if the suggestions poller starts sending spirit_score, "
+                         "revisit the gate in updateMessageWithAudit")
 
 
 if __name__ == "__main__":

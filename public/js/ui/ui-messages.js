@@ -699,10 +699,25 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
     const container = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!container) return;
 
-    // Repaint the ring first and unconditionally: it must leave `pending` even
-    // on an audit that came back without a usable score, rather than sitting
-    // grey forever.
-    _applyRingState(container, payload);
+    // Repaint the ring only when this payload is actually ABOUT the audit.
+    //
+    // This function has two callers and they send different shapes. The audit
+    // poller sends the full result; the SUGGESTIONS poller (chat.js
+    // _pollForSuggestions, started alongside the audit poller and firing on its
+    // own 1.5s timer) sends only `{ suggested_prompts, message_id }`. Repainting
+    // unconditionally meant that partial payload — which has no spirit_score —
+    // scored as `pending` and reset the ring to grey moments after the audit had
+    // just coloured it. The ring then stayed grey until a reload replayed the
+    // history with the score already attached, which is exactly the reported
+    // symptom.
+    //
+    // Gate on KEY PRESENCE rather than truthiness: an audit that legitimately
+    // completes with spirit_score null still carries the key, so it repaints and
+    // correctly stays neutral. A suggestions-only update carries neither key and
+    // must leave the ring alone.
+    const carriesAuditInfo = !!payload
+        && ('spirit_score' in payload || 'ledger' in payload);
+    if (carriesAuditInfo) _applyRingState(container, payload);
 
     const hasScore = payload?.spirit_score !== null && payload?.spirit_score !== undefined;
     if (hasScore) {
