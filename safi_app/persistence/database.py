@@ -2038,12 +2038,18 @@ def update_message_content(msg_id, content, audit_status=None):
         cursor.close()
         conn.close()
 
-def update_message_reasoning(msg_id, step_text, phase=None):
+def update_message_reasoning(msg_id, step_text, phase=None, extra=None):
     """
     Appends a new reasoning step to the message's reasoning_log.
     phase: optional tag ("gather" for agentic tool-call steps) so the
     frontend loader can map the step to a pipeline stage without
     string-matching every tool label.
+    extra: optional dict merged into the step — used to journal the Will's
+    verdict on a tool call (tool name, decision, reason, truncated parameters).
+    Before this existed the step carried only `_tool_status()`'s human-readable
+    label, so an APPROVED and a BLOCKED tool call left identical audit entries
+    and a denial existed only in the application log. `step`, `timestamp` and
+    `phase` are reserved and cannot be overwritten by `extra`.
     """
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -2066,6 +2072,12 @@ def update_message_reasoning(msg_id, step_text, phase=None):
         }
         if phase:
             new_step["phase"] = phase
+        if extra:
+            # Reserved keys win: a caller must not be able to rewrite the
+            # step label or its timestamp through `extra`.
+            for k, v in extra.items():
+                if k not in ("step", "timestamp", "phase"):
+                    new_step[k] = v
         current_log.append(new_step)
 
         # 3. Save back (step encrypted in the trail too — agentic tool steps

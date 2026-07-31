@@ -80,6 +80,37 @@ _TOOL_LABELS: Dict[str, str] = {
     "get_tasks":               "Fetching tasks",
 }
 
+AUDIT_PARAM_MAXLEN = 120
+
+
+def _audit_params(parameters) -> dict:
+    """Parameter record for the audit trail: keys kept, values clipped.
+
+    The arguments are what make a tool call an ACTION — "upload_item" says
+    nothing without knowing what went where — so the trail needs them. But
+    `content` on an upload can be megabytes, and chat_audit_trail is append-only
+    and hash-chained: copying payloads in would bloat every chain permanently and
+    irreversibly. Names plus clipped values identify the action without turning
+    the journal into a file store.
+
+    The step is encrypted before it reaches the chain (see
+    update_message_reasoning), so this is a size control, not a secrecy one.
+    """
+    if not isinstance(parameters, dict):
+        return {"_value": _clip(parameters)}
+    return {k: _clip(v) for k, v in parameters.items()}
+
+
+def _clip(value) -> str:
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+    except Exception:
+        text = str(value)
+    if len(text) <= AUDIT_PARAM_MAXLEN:
+        return text
+    return text[:AUDIT_PARAM_MAXLEN] + f"...[+{len(text) - AUDIT_PARAM_MAXLEN} chars]"
+
+
 def _tool_status(tool_name: str, turn: int = 0) -> str:
     """Return a human-friendly thinking-indicator message for a tool call."""
     label = _TOOL_LABELS.get(tool_name)
@@ -617,11 +648,28 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
-            db.update_message_reasoning(message_id, _tool_status(tool_name), phase="gather")
+            # Journalled AFTER the verdict, deliberately. evaluate_tool_intent is
+            # fully deterministic (no LLM, no awaits), so nothing is gained by
+            # pinging the UI first — and writing first meant an APPROVED and a
+            # BLOCKED tool call left identical audit entries, with the denial
+            # visible only in the application log. One entry per intent now
+            # carries the tool, the verdict and the reason into the hash chain.
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
                 profile=self.profile or {}
+            )
+            db.update_message_reasoning(
+                message_id,
+                _tool_status(tool_name) if tool_decision == "approve"
+                else "Blocked a tool call",
+                phase="gather",
+                extra={
+                    "tool": tool_name,
+                    "decision": tool_decision,
+                    "reason": tool_reason,
+                    "params": _audit_params(parameters),
+                },
             )
 
             if tool_decision == "approve":
@@ -702,11 +750,23 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     current_tool_name = next_intent["tool_name"]
                     current_parameters = next_intent["parameters"]
 
-                    db.update_message_reasoning(message_id, _tool_status(current_tool_name, agent_turn + 1), phase="gather")
                     follow_decision, follow_reason = await self.will_gate.evaluate_tool_intent(
                         tool_name=current_tool_name,
                         parameters=current_parameters,
                         profile=self.profile or {}
+                    )
+                    db.update_message_reasoning(
+                        message_id,
+                        _tool_status(current_tool_name, agent_turn + 1)
+                        if follow_decision == "approve" else "Blocked a tool call",
+                        phase="gather",
+                        extra={
+                            "tool": current_tool_name,
+                            "decision": follow_decision,
+                            "reason": follow_reason,
+                            "params": _audit_params(current_parameters),
+                            "agent_turn": agent_turn + 1,
+                        },
                     )
 
                     if follow_decision != "approve":
