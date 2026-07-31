@@ -14,6 +14,7 @@
 
 - [The Problem](#the-problem)
 - [The SAFi Solution](#the-safi-solution)
+- [The Four Principles Behind SAFi](#the-four-principles-behind-safi)
 - [Built for Regulated Industries](#built-for-regulated-industries)
 - [Roles & Permissions](#roles--permissions)
 - [Quick Start](#quick-start)
@@ -56,6 +57,18 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 <p align="center">
   <sub>One governed turn, end to end: the pipeline advancing through real enforcement stages, the score it produced, and the value-by-value ledger behind it — then a second turn, adding a point to the trend.</sub>
 </p>
+
+---
+
+## The Four Principles Behind SAFi
+
+**Value Sovereignty** — You decide the mission and values your AI enforces, not the model provider.
+
+**Full Traceability** — Every governed turn is logged, explainable, and auditable: the draft, the value-by-value ledger, the decision, and the policy version in force.
+
+**Model Independence** — Your charter, policies, and audit trail live in your database, not the provider's. Switch or upgrade models and the governance layer moves with you.
+
+**Long-Term Consistency** — Maintain your AI's ethical identity over time, and measure drift against it rather than guessing.
 
 ---
 
