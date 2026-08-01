@@ -23,7 +23,7 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
     # gemma-4-31b is deliberately excluded from Conscience duty: its audits fail closed.
     "cerebras":  {"intellect": "gpt-oss-120b",              "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
-    "deepseek":  {"intellect": "DeepSeek-V4-Flash-0731",    "conscience": "deepseek-v4-pro",           "light": "DeepSeek-V4-Flash-0731"},
+    "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
     "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
 }
 
@@ -425,10 +425,7 @@ class Config:
         {"id": "mistral-medium-latest", "label": "Mistral-Medium-3.5"},
 
         # DeepSeek Models
-        # Dated build id, sent to the API verbatim. detect_provider() lowercases
-        # before its "deepseek-" prefix test, so the capitalization is safe there;
-        # the label drops the date, as Claude Haiku's does.
-        {"id": "DeepSeek-V4-Flash-0731", "label": "DeepSeek-V4-Flash"},
+        {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
         {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
 
         # Zhipu (Z.ai) Models
