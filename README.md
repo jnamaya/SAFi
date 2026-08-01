@@ -500,7 +500,7 @@ Contributions are welcome -- bug reports, new MCP tools, governance policy examp
 
 **Nelson Amaya** is a Cloud & Infrastructure IT Director with more than 22 years of experience in the IT industry, and the architect of SAFi.
 
-- **Read the Philosophy:** [What is SAF](https://selfalignmentframework.com/what-is-saf/)
+- **Read the Philosophy:** [selfalignmentframework.com](https://selfalignmentframework.com)
 - **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
 - **Follow on X:** [@nelsonamaya_](https://x.com/nelsonamaya_)
 - **Follow on Reddit:** [u/forevergeeks](https://www.reddit.com/user/forevergeeks/)
