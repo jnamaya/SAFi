@@ -14,6 +14,7 @@
 
 - [The Problem](#the-problem)
 - [The SAFi Solution](#the-safi-solution)
+- [Start Here](#start-here)
 - [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
 - [Built for Regulated Industries](#built-for-regulated-industries)
 - [Roles & Permissions](#roles--permissions)
@@ -58,6 +59,39 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 <p align="center">
   <sub>One governed turn, end to end: the pipeline advancing through real enforcement stages, the score it produced, and the value-by-value ledger behind it — then a second turn, adding a point to the trend.</sub>
 </p>
+
+---
+
+## Start Here
+
+Three groups get the most out of SAFi, and they want different things first.
+
+### If you run the platform
+
+> Add a durable governance layer to your agentic systems without tying your policies or audit history to one model provider.
+
+**You do not have to rebuild your stack.** The [`/evaluate` gateway](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway) governs the output of an agent you have already built — your orchestration, prompts and tool layer stay where they are.
+
+- [Quick Start](#quick-start) — Docker and a database, nothing else
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) — repo layout, architecture, policy authoring, tool authorization, integration surfaces
+- [Good first issues](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+
+### If you own the technology strategy
+
+> Keep your organization's values in control of AI behavior, preserve an auditable record of decisions, and hold that governance in place when the underlying models change.
+
+**Portability is the strategic point.** Your charter, your policies and your audit trail live in *your* database. Switching or upgrading a model changes which model drafts and changes nothing about what it is held to, or what you can prove afterward.
+
+- [Built for Regulated Industries](#built-for-regulated-industries) — readiness documents for SEC/FINRA, the EU AI Act, HIPAA and GDPR, each stating what ships today against what is roadmap
+- [Live Demo](https://safi.selfalignmentframework.com) — the fastest way to see what a governed turn produces
+
+### If you practice governance
+
+> Turn organizational values into enforceable runtime policy, preserve the evidence behind every decision, and measure behavioral drift against the standard you defined.
+
+- [A worked example](https://selfalignmentframework.com/building-a-mission-aligned-persona-with-safi/) — a real organization's value set, the answer produced, the value-by-value ledger with a confidence on each score, and the audit record for that turn
+- [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — the formulas, and what each faculty is denied
+- [Benchmarks & Validation](#benchmarks--validation) — with the derivation published, not just the score
 
 ---
 
@@ -331,7 +365,7 @@ SAFi will create the account automatically on first startup. The login form appe
 
 SAFi's architecture is a closed loop of five interlocking faculties — Values → Intellect → Will → Conscience → Spirit — rooted in two thousand years of thinking about human cognition, from Aquinas to modern cognitive science. The structure is a separation of powers: the Intellect proposes, the Will decides, the Conscience evaluates, and the Spirit integrates.
 
-> **Curious where the five faculties come from?** Read the origin story: [From Human Cognition to Machine Governance](docs/ORIGIN_STORY.md).
+> **Curious where the five faculties come from?** Read the origin story: [How SAF Was Born](https://selfalignmentframework.com/the-birth-of-the-self-alignment-framework/).
 
 ### The Five Faculties
 
@@ -343,7 +377,7 @@ SAFi's architecture is a closed loop of five interlocking faculties — Values �
 | **Conscience** | `conscience.py` | The evaluator. It evaluates the Intellect's proposal against the agent's rubrics, generating a precise compliance ledger (−1.0 to +1.0 per value). |
 | **Spirit** | `spirit.py` | The long-term memory. Integrates Conscience scores into a rolling alignment vector using an EMA, detecting behavioral drift over time and generating coaching for future turns. |
 
-**Why these five?** See [Philosophy as Architecture](docs/PHILOSOPHY.md) for how the Thomistic faculties of the soul map to SAFi's modules.
+**Why these five?** See [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/) for what is inherited from the tradition, what is not, and why the vocabulary earns its place.
 
 ### The Seven-Phase Execution Loop
 
@@ -359,34 +393,18 @@ Every user prompt flows through a strict, synchronous pipeline:
 | **Phase 5** | Spirit & Alignment Gate | The Will checks the ledger for hard-gate failures. If it passes, Spirit integrates the scores into the agent's alignment vector and the Will applies the alignment threshold. A low or unethical score triggers one Reflexion retry (regenerate, then re-audit). |
 | **Phase 6** | Safe Execution | The fully audited response is finalized, logged with its vector coordinates, and delivered to the user. |
 
-For the formal model, see the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
+For the formal model, see the full [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — every formula, the two different alignment numbers, and what each faculty is deliberately denied.
 
 ---
 
 ## The Framework Behind It
 
-This README covers *how* SAFi works. The reasoning behind the design is written up on the project site — and the framework it implements, **SAF**, predates the software and is not about AI at all.
+SAFi implements **SAF** — a philosophical framework that predates the software and is not about AI at all. This README covers how SAFi works; the reasoning behind the design lives on the project site.
 
-**Start here**
-
-- **[What is SAF](https://selfalignmentframework.com/what-is-saf/)** — the framework itself: five functions describing how anyone, a person or an institution, moves from what they believe to what they actually do. Deliberately free of AI language.
-- **[Introducing SAFi](https://selfalignmentframework.com/safi/)** — what the implementation does, who it is for, and a governed turn end to end.
-
-**The faculties, one at a time**
-
-- [Values](https://selfalignmentframework.com/safi-values/) — the standard an agent is held to, and how a Charter and a Policy compile into one scored set.
-- [The Intellect](https://selfalignmentframework.com/safi-intellect/) — what drafts the answer, and why it is given no power to act on it.
-- [The Will](https://selfalignmentframework.com/will/) — the gatekeeper with no language model at all, and the five points it is consulted.
-- [The Conscience](https://selfalignmentframework.com/safi-conscience/) — the independent auditor, and why the judge cannot be the defendant.
-- [The Spirit](https://selfalignmentframework.com/safi-explained-the-spirit/) — long-term character, and why drift is measured rather than prevented.
-
-**Going deeper**
-
-- **[SAFi Math Specification](https://selfalignmentframework.com/safi-math-specification/)** — every formula, the two different alignment numbers, and what each faculty is deliberately denied.
-- **[The Separation of Powers in SAF](https://selfalignmentframework.com/the-separation-of-powers-in-saf/)** — why this is a separation of powers rather than a division of labour, and what each faculty is refused in order to make it one.
-- **[Building a Mission-Aligned Agent](https://selfalignmentframework.com/building-a-mission-aligned-persona-with-safi/)** — a worked example: a real organization's values, the answer produced, the value-by-value ledger with confidences, and the audit record for that turn.
-- **[The King Solomon Problem](https://selfalignmentframework.com/the-king-solomon-problem-drift/)** — why a drift metric alone cannot catch a slow slide, and what does.
-- **[Why SAF Will Always Be Open](https://selfalignmentframework.com/why-saf-will-always-be-open/)** — why AGPL-3.0 specifically, and what its network provision is there to prevent.
+- [What is SAF](https://selfalignmentframework.com/what-is-saf/) — five functions describing how anyone, a person or an institution, moves from what they believe to what they actually do
+- The faculties in depth — [Values](https://selfalignmentframework.com/safi-values/) · [Intellect](https://selfalignmentframework.com/safi-intellect/) · [Will](https://selfalignmentframework.com/will/) · [Conscience](https://selfalignmentframework.com/safi-conscience/) · [Spirit](https://selfalignmentframework.com/safi-explained-the-spirit/)
+- [The Separation of Powers](https://selfalignmentframework.com/the-separation-of-powers-in-saf/) — why this is a separation of powers rather than a division of labour
+- [Why SAF Will Always Be Open](https://selfalignmentframework.com/why-saf-will-always-be-open/) — why AGPL-3.0 specifically, and what its network provision prevents
 
 ---
 
@@ -448,7 +466,7 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — it covers:
 
 - **Repo structure & local setup** — how the front-end (`public/`), back-end (`safi_app/`), and mobile (`mobile/`) trees are laid out, the Docker quick start, and the two no-SSO login paths (local admin, demo).
-- **The architecture** — the five-faculty separation of powers (Synderesis, Intellect, Will, Conscience, Spirit), the Air Gap containment principle, and a condensed math primer linking to the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
+- **The architecture** — the five-faculty separation of powers (Synderesis, Intellect, Will, Conscience, Spirit), the Air Gap containment principle, and a condensed math primer linking to the full [Math Specification](https://selfalignmentframework.com/safi-math-specification/).
 - **Multi-agent design & policy authoring** — how an org runs multiple agents side by side, the agent/policy two-tier binding, how Synderesis compiles a governance profile fresh on every turn, policy versioning, and what the agent- and policy-wizards can (and can't) build.
 - **Integration surfaces** — the `/evaluate` gateway for governing an external agent's output, the internal Flask blueprint + two-check RBAC pattern for adding API routes, and SSO (Google Workspace, Microsoft Entra) with the org-join behavior worth knowing before configuring it for a customer.
 - **Compliance internals** — the hash-chained audit trail, encryption at rest and key rotation, and retention purging with legal hold (including its honestly-documented gaps).
@@ -478,7 +496,7 @@ The demo deliberately runs small, fast models — SAFi is the governance layer, 
 
 **Nelson Amaya** is a Cloud & Infrastructure IT Director and AI Architect specializing in Enterprise Governance and Cognitive Architectures. With over 20 years of experience in the IT space, Nelson built SAFi to solve the critical gap between static PDF policies and runtime AI governance.
 
-- **Read the Philosophy:** [SelfAlignmentFramework.com](https://selfalignmentframework.com)
+- **Read the Philosophy:** [What is SAF](https://selfalignmentframework.com/what-is-saf/)
 - **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
 - **Follow on X:** [@nelsonamaya_](https://x.com/nelsonamaya_)
 - **Follow on Reddit:** [u/forevergeeks](https://www.reddit.com/user/forevergeeks/)
