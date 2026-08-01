@@ -1,235 +1,406 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>How The SAFi System Works</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .flow-card {
-            opacity: 0;
-            transform: translateY(20px);
-            animation: fadeIn 0.5s forwards;
-        }
-        @keyframes fadeIn {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .flow-card:nth-child(1) { animation-delay: 0.1s; }
-        .flow-card:nth-child(2) { animation-delay: 0.2s; }
-        .flow-card:nth-child(3) { animation-delay: 0.3s; }
-        .flow-card:nth-child(4) { animation-delay: 0.4s; }
-        .flow-card:nth-child(5) { animation-delay: 0.5s; }
-        .flow-card:nth-child(6) { animation-delay: 0.6s; }
-        .flow-card:nth-child(7) { animation-delay: 0.7s; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How The SAFi System Works</title>
 
-        .arrow {
-            position: relative;
-            width: 100%;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .arrow::after {
-            content: '';
-            display: block;
-            width: 2px;
-            height: 100%;
-            background-color: #cbd5e1; /* slate-300 */
-        }
-        .arrow-head::before {
-            content: '';
-            position: absolute;
-            bottom: -1px;
-            left: 50%;
-            transform: translateX(-50%);
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-top: 8px solid #cbd5e1; /* slate-300 */
-        }
-    </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+/* ─────────────────────────────────────────────────────────────────────────────
+   The system-level overview, on the introduction page. Same tokens and design
+   language as the five faculty infographics so the set reads as one thing.
+
+   Contrast computed against the panel fill:
+     light  fg #1C2230 13.26:1 · muted #4E5766 6.08:1 · accent #B07D3C 3.00:1
+     dark   fg #F8F6F1 14.36:1 · muted #9BA4B5 6.18:1 · accent #C89A5B 6.08:1
+
+   Light gold clears the 3:1 UI-component bar but not the 4.5:1 text bar, so it
+   is confined to rules, borders and numerals. Text on a gold fill is #161B26,
+   measured against the gold (4.80:1 light, 6.75:1 dark).
+
+   No categorical palette: numbering and position carry identity, never hue.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg:      #F8F6F1;
+  --panel:   #EFEAE0;
+  --fg:      #1C2230;
+  --muted:   #4E5766;
+  --accent:  #B07D3C;
+  --line:    #C4B79E;
+  --line-strong: #B07D3C;
+  --code-bg: #E5DFD2;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #161B26;
+    --panel:   #1E2432;
+    --fg:      #F8F6F1;
+    --muted:   #9BA4B5;
+    --accent:  #C89A5B;
+    --line:    #3E4860;
+    --line-strong: #C89A5B;
+    --code-bg: #131824;
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem 1rem 2.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 60rem; margin: 0 auto; }
+
+h2 {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.step { margin-top: 2.25rem; }
+.step:first-of-type { margin-top: 0; }
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+.step-num {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.6rem;
+  color: var(--accent);
+  line-height: 1;
+  flex: none;
+}
+.step-title { font-size: 1.15rem; }
+.step-note { margin: 0 0 1.1rem; color: var(--muted); max-width: 46rem; }
+
+/* ── Principle rows: problem -> principle -> what it buys ────────────────── */
+.principles { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.prow {
+  display: grid;
+  grid-template-columns: 2rem 1fr 1.3fr;
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.8rem 0.95rem;
+  border-top: 1px solid var(--line);
+}
+.prow:first-child { border-top: none; background: var(--panel); }
+.prow-head { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.pnum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem; height: 1.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #161B26;                /* measured against the gold, not the page */
+  font-weight: 600;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.pname { font-weight: 600; font-size: 0.89rem; }
+.pname span { display: block; font-weight: 400; font-size: 0.82rem; color: var(--muted); margin-top: 0.1rem; }
+.pgain { font-size: 0.84rem; color: var(--muted); }
+
+/* ── The turn ───────────────────────────────────────────────────────────── */
+.standard {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.85rem;
+}
+.standard p:first-child { margin: 0 0 0.2rem; font-weight: 600; font-size: 0.9rem; }
+.standard p:last-child { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+.flow { display: grid; gap: 0.4rem; }
+.frow {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.8rem;
+  align-items: baseline;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+}
+.frow.gate { border-left: 3px solid var(--line-strong); }
+.frow .who { font-weight: 600; }
+.frow .what { color: var(--muted); }
+.flow-note { margin: 0.8rem 0 0; font-size: 0.84rem; color: var(--muted); }
+
+/* ── Denials table ──────────────────────────────────────────────────────── */
+.denied { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.denied th, .denied td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.denied th { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.denied td:first-child { font-weight: 600; white-space: nowrap; }
+.denied td:last-child { color: var(--muted); }
+.denied tr:last-child td { border-bottom: none; }
+.denied-wrap { overflow-x: auto; }
+
+.negative {
+  margin-top: 0.75rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 0.85rem 0.95rem;
+}
+.negative p:first-child { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.2rem; }
+.negative p:last-child { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+.link {
+  display: block;
+  width: 1px;
+  height: 1.6rem;
+  margin: 0.9rem auto 0;
+  background: var(--line-strong);
+  position: relative;
+}
+.link::after {
+  content: '';
+  position: absolute;
+  left: 50%; bottom: -1px;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--line-strong);
+}
+
+.footnote {
+  margin: 2.25rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+@media (max-width: 40rem) {
+  .prow { grid-template-columns: 2rem 1fr; }
+  .prow .pgain { grid-column: 2; }
+  .prow-head:nth-child(3) { display: none; }
+}
+@media (max-width: 34rem) {
+  body { padding: 1rem 0.75rem 2rem; font-size: 14.5px; }
+  .step-num { font-size: 1.35rem; }
+  .frow { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+</style>
 </head>
-<body class="bg-white text-slate-800">
+<body>
+<div class="wrap">
 
-    <div class="container mx-auto px-4 py-12 md:py-20">
-        
-        <!-- Header Section -->
-        <header class="text-center mb-12 md:mb-20">
-            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">How SAFi Works</h1>
-            <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">A step-by-step overview of how SAFi faithfully implements the Self-Alignment Framework.</p>
-        </header>
+  <!-- ── 1. The principles ──────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2 class="step-title">Five principles, and what each one buys you</h2>
+    </div>
+    <p class="step-note">
+      All five answer the same problem: you are asked to trust an AI system whose
+      values were chosen by someone else, whose reasoning you cannot inspect, and
+      whose behaviour you cannot hold to a standard over time.
+    </p>
+    <div class="principles">
+      <div class="prow">
+        <span class="prow-head"></span>
+        <span class="prow-head">Principle</span>
+        <span class="prow-head">What it gives you</span>
+      </div>
+      <div class="prow">
+        <span class="pnum">1</span>
+        <span class="pname">Value Sovereignty
+          <span>You decide the mission and values your AI enforces, not the model provider.</span></span>
+        <span class="pgain">Your ethics are configuration you own, not a vendor default you inherit.</span>
+      </div>
+      <div class="prow">
+        <span class="pnum">2</span>
+        <span class="pname">Full Traceability
+          <span>Every governed turn is logged, explainable and auditable.</span></span>
+        <span class="pgain">The draft, the value-by-value ledger, the decision and the policy version in force — no black box.</span>
+      </div>
+      <div class="prow">
+        <span class="pnum">3</span>
+        <span class="pname">Model Independence
+          <span>Your charter, policies and audit trail live in your database.</span></span>
+        <span class="pgain">Switch or upgrade the model and the governance layer moves with you.</span>
+      </div>
+      <div class="prow">
+        <span class="pnum">4</span>
+        <span class="pname">Long-Term Consistency
+          <span>Maintain an agent's identity over time.</span></span>
+        <span class="pgain">Drift is measured against a fixed standard rather than guessed at.</span>
+      </div>
+      <div class="prow">
+        <span class="pnum">5</span>
+        <span class="pname">Governed Action
+          <span>Agents act, not just answer.</span></span>
+        <span class="pgain">Every tool call is checked before it runs, reads and writes are held to different standards, and the action is recorded beside the decision.</span>
+      </div>
+    </div>
+  </section>
 
-        <!-- Main Infographic Flow -->
-        <div class="max-w-2xl mx-auto relative">
-            <div class="flex flex-col items-center">
+  <span class="link" aria-hidden="true"></span>
 
-                <!-- Step 1: User Prompt -->
-                <div class="flow-card w-full flex items-center space-x-6">
-                    <div class="flex-shrink-0 bg-white border border-slate-200 rounded-full w-16 h-16 flex items-center justify-center shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M18 10h-1.26A8 8 0 1 0 4.26 14"/><path d="M12 18V10l-4 4"/></svg>
-                    </div>
-                    <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-md flex-1">
-                        <h3 class="font-bold text-xl text-slate-900">1. User Submits a Prompt</h3>
-                        <p class="mt-2 text-slate-600">The process begins when a user asks a question or gives an instruction.</p>
-                    </div>
-                </div>
-
-                <div class="arrow arrow-head"></div>
-
-                <!-- Step 2: Intellect Engine -->
-                <div id="intellect-target" class="flow-card w-full flex items-center space-x-6">
-                    <div class="flex-shrink-0 bg-white border border-slate-200 rounded-full w-16 h-16 flex items-center justify-center shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M9.06 11.9 8 13v5h2l.94-2.06M13 13h2l-1.4-3.5L13 13z"/><path d="M3 13h2l1.4-3.5L7 13h2"/><circle cx="12" cy="12" r="10"/></svg>
-                    </div>
-                    <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-md flex-1">
-                        <h3 class="font-bold text-xl text-slate-900">2. The Intellect (The Creative Force)</h3>
-                        <p class="mt-2 text-slate-600">The Intellect engine generates an initial answer, using conversation history and performance feedback from the Spirit to continuously improve its drafts.</p>
-                    </div>
-                </div>
-
-                <div class="arrow arrow-head"></div>
-
-                <!-- Step 3: Will Gate -->
-                <div class="flow-card w-full flex items-center space-x-6">
-                    <div class="flex-shrink-0 bg-white border border-slate-200 rounded-full w-16 h-16 flex items-center justify-center shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M13 16.5V9.75a4.5 4.5 0 0 0-4.5-4.5v.001c0 1.66 1.34 3 3 3h.75a3.75 3.75 0 0 1 3.75 3.75v3"/><path d="M8 16.5a1.5 1.5 0 0 1-3 0V15a1.5 1.5 0 0 1 1.5-1.5h1.5a1.5 1.5 0 0 1 1.5 1.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-1.5Z"/><path d="M19 16.5a1.5 1.5 0 0 1-3 0V15a1.5 1.5 0 0 1 1.5-1.5h1.5a1.5 1.5 0 0 1 1.5 1.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-1.5Z"/></svg>
-                    </div>
-                    <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-md flex-1">
-                        <h3 class="font-bold text-xl text-slate-900">3. The Will (The Gatekeeper)</h3>
-                        <p class="mt-2 text-slate-600">The Intellect sends its draft to the Will, which checks it against a set of non-negotiable safety rules and ethical guidelines.</p>
-                    </div>
-                </div>
-
-                <!-- Decision Branch -->
-                <div class="w-full relative py-8">
-                    <div class="absolute h-full w-0.5 bg-slate-300 left-1/2 -translate-x-1/2 top-0"></div>
-                    <div class="absolute w-full h-0.5 bg-slate-300 left-0 top-8"></div>
-                    
-                    <div class="flex justify-between">
-                        <!-- Violation Path -->
-                        <div class="w-[45%] text-center">
-                            <div class="flow-card bg-red-100 border border-red-300 p-4 rounded-xl shadow-sm">
-                                <h4 class="font-semibold text-red-800">Violation Detected</h4>
-                                <p class="text-sm text-red-700 mt-1">The draft is blocked and a safe, generic response is sent to the user.</p>
-                            </div>
-                        </div>
-                        <!-- Approved Path -->
-                        <div class="w-[45%] text-center">
-                            <div class="flow-card bg-green-100 border border-green-300 p-4 rounded-xl shadow-sm">
-                                <h4 class="font-semibold text-green-800">Approved</h4>
-                                <p class="text-sm text-green-700 mt-1">The draft is approved and sent to the user. The learning process continues.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="arrow arrow-head"></div>
-
-                <!-- Step 4: Conscience Auditor -->
-                <div class="flow-card w-full flex items-center space-x-6">
-                    <div class="flex-shrink-0 bg-white border border-slate-200 rounded-full w-16 h-16 flex items-center justify-center shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    </div>
-                    <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-md flex-1">
-                        <h3 class="font-bold text-xl text-slate-900">4. The Conscience (The Auditor)</h3>
-                        <p class="mt-2 text-slate-600">Once approved, the Conscience evaluates the response in the background, scoring how well it aligns with the defined ethical principles.</p>
-                    </div>
-                </div>
-
-                <div class="arrow arrow-head"></div>
-
-                <!-- Step 5: Spirit Integrator -->
-                <div id="spirit-source" class="flow-card w-full flex items-center space-x-6">
-                     <div class="flex-shrink-0 bg-white border border-slate-200 rounded-full w-16 h-16 flex items-center justify-center shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><path d="M16 4.5V12l-4 2"/></svg>
-                    </div>
-                    <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-md flex-1">
-                        <h3 class="font-bold text-xl text-slate-900">5. The Spirit (The Integrator)</h3>
-                        <p class="mt-2 text-slate-600">The Spirit integrates the audit scores into the system's long-term memory. This memory creates the feedback loop that helps the Intellect learn for the future.</p>
-                    </div>
-                </div>
-
-            </div>
-            
-            <!-- Result Block -->
-            <div class="mt-12 bg-indigo-50 border-l-4 border-indigo-500 p-6 rounded-r-lg">
-                 <h3 class="font-bold text-xl text-slate-900 flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500 mr-3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-                    Result: A More Aligned System
-                </h3>
-                <p class="mt-2 text-slate-600 pl-9">This cycle of generation, checking, and auditing ensures the system not only provides safe responses but also learns to better embody its core ethical principles over time.</p>
-            </div>
-
-        </div>
-
-        <!-- UPDATED What Problems SAFi Solves Section -->
-        <div class="mt-20 pt-12 border-t border-slate-200">
-            <header class="text-center mb-12">
-                <h2 class="text-3xl md:text-4xl font-bold text-slate-900">What Problems Does SAFi Solve?</h2>
-                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">SAFi’s architecture tackles four of the biggest challenges in AI governance today. These problems affect every organization that wants to use AI safely, responsibly, and on its own terms.</p>
-            </header>
-
-            <div class="max-w-6xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-                
-                <!-- Pillar 1: Value Sovereignty -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
-                    <div class="flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                        <h3 class="mt-4 font-bold text-xl text-slate-900">Lack of Control Over AI Values</h3>
-                    </div>
-                    <p class="mt-2 text-slate-600 text-sm">Most AI systems reflect the values of the vendors who build them, not the organizations that use them. This creates a misalignment between mission and behavior, especially in sensitive fields like healthcare, education, or public service.</p>
-                </div>
-
-                <!-- Pillar 2: Full Traceability -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
-                    <div class="flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 10.5 2 2 2-2"/><path d="m12 12.5 v -2"/><path d="M16 16.5H8"/><path d="M16 12.5H8"/></svg>
-                        <h3 class="mt-4 font-bold text-xl text-slate-900">Black Box Decision-Making</h3>
-                    </div>
-                    <p class="mt-2 text-slate-600 text-sm">AI often produces answers without showing its reasoning. This lack of transparency makes it impossible to trust, audit, or comply with regulatory requirements. If you can’t see how a decision was made, you can’t be accountable for it.</p>
-                </div>
-
-                <!-- Pillar 3: Model Independence -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
-                    <div class="flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M18 8V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h8"/><path d="M10 20v-1a2 2 0 1 1 4 0v1"/><path d="M12 16a2 2 0 0 0-2 2v1h4v-1a2 2 0 0 0-2-2Z"/><path d="M18 12.5V10H6v2.5"/><path d="m18 16 4-4"/><path d="m22 16-4-4"/></svg>
-                        <h3 class="mt-4 font-bold text-xl text-slate-900">Vendor Lock-In and Loss of Autonomy</h3>
-                    </div>
-                    <p class="mt-2 text-slate-600 text-sm">Once an organization builds its workflows on a specific AI platform, switching becomes costly and complex. This traps organizations inside a single vendor’s ecosystem, limiting their ability to adapt or maintain control.</p>
-                </div>
-
-                <!-- Pillar 4: Long-Term Consistency -->
-                <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col">
-                    <div class="flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m16 8-8 8"/><path d="M12 16v-4h4"/></svg>
-                        <h3 class="mt-4 font-bold text-xl text-slate-900">Ethical Drift Over Time</h3>
-                    </div>
-                    <p class="mt-2 text-slate-600 text-sm">Even when an AI system starts aligned with your values, its behavior can shift as models evolve or new data enters the system. Without persistent alignment checks, the AI gradually drifts away from its original mission.</p>
-                </div>
-
-            </div>
-        </div>
-
+  <!-- ── 2. How a turn runs ─────────────────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2 class="step-title">What happens on a single turn</h2>
     </div>
 
-    <script>
-        function sendHeight() {
-            const height = document.body.scrollHeight;
-            parent.postMessage({ frameHeight: height }, 'https://selfalignmentframework.com');
-        }
-        window.onload = sendHeight;
-        const resizeObserver = new ResizeObserver(sendHeight);
-        resizeObserver.observe(document.body);
-    </script>
+    <div class="standard">
+      <p>Values — the standard, not a step</p>
+      <p>An organisation's Charter and a unit's Policy are compiled into one scored
+         value set <em>before</em> the turn begins, and held read-only while it
+         runs. Nothing below can alter what it is judged against while being
+         judged.</p>
+    </div>
 
+    <div class="flow">
+      <div class="frow gate">
+        <span class="who">Will</span>
+        <span class="what">screens the incoming prompt, before any model is called</span>
+      </div>
+      <div class="frow">
+        <span class="who">Intellect</span>
+        <span class="what">drafts an answer, or proposes a tool call — and can execute nothing</span>
+      </div>
+      <div class="frow gate">
+        <span class="who">Will</span>
+        <span class="what">authorises a proposed tool, checking the arguments and not just the name</span>
+      </div>
+      <div class="frow gate">
+        <span class="who">Will</span>
+        <span class="what">checks the draft's structure — required disclaimers, permitted syntax</span>
+      </div>
+      <div class="frow">
+        <span class="who">Conscience</span>
+        <span class="what">scores the draft value by value against the rubrics, with a reason and a confidence for each</span>
+      </div>
+      <div class="frow gate">
+        <span class="who">Will</span>
+        <span class="what">enforces the hard gates — a violation here blocks outright</span>
+      </div>
+      <div class="frow">
+        <span class="who">Spirit</span>
+        <span class="what">folds the scores into the agent's long-term alignment and measures drift</span>
+      </div>
+      <div class="frow gate">
+        <span class="who">Will</span>
+        <span class="what">rules on the alignment figure against a fixed threshold</span>
+      </div>
+    </div>
+
+    <p class="flow-note">
+      Every stage runs before the answer reaches you — the audit is a control, not a
+      report. The Will appears five times, marked by the gold edge: governing an
+      agent that can <em>act</em> means authorising before the action, not only
+      reviewing after the result.
+    </p>
+  </section>
+
+  <span class="link" aria-hidden="true"></span>
+
+  <!-- ── 3. The idea that makes it work ─────────────────────────────────── -->
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2 class="step-title">Why the record can be trusted</h2>
+    </div>
+    <p class="step-note">
+      One idea does most of the work, and it is a negative one. Each faculty is
+      refused the information that would let it do another's job.
+    </p>
+    <div class="denied-wrap">
+      <table class="denied">
+        <thead>
+          <tr><th>Faculty</th><th>Does</th><th>Is denied</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Values</td><td>Supplies the standard</td>
+              <td>Nothing — it <em>is</em> the standard, compiled before the turn and read-only while it runs</td></tr>
+          <tr><td>Intellect</td><td>Drafts</td>
+              <td>The rubrics it will be judged against, and any score</td></tr>
+          <tr><td>Will</td><td>Authorises and blocks</td>
+              <td>Meaning itself — it holds no language model and cannot read semantics</td></tr>
+          <tr><td>Conscience</td><td>Judges</td>
+              <td>The weights, so it cannot reason about downstream consequences</td></tr>
+          <tr><td>Spirit</td><td>Remembers and measures</td>
+              <td>Authority — it computes, and the Will decides</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="negative">
+      <p>And when something is missing, it refuses</p>
+      <p>A hard-gate value the audit never scored is a violation. An audit that
+         failed is a violation. A constrained tool parameter left unspecified is a
+         refusal. None of these are worked around, because the alternative is
+         shipping something ungoverned and calling it governed.</p>
+    </div>
+  </section>
+
+  <p class="footnote">
+    No faculty in the chain is ever in a position to write its own verdict. That is
+    what makes the record at the end of a turn worth reading.
+  </p>
+
+</div>
+
+<script>
+/* Height handshake with the parent article. The page at
+   selfalignmentframework.com listens for message events, verifies the origin is
+   this app, and applies event.data.frameHeight to the iframe. Keep both the
+   message shape and the target origin in step with that handler. */
+(function () {
+  var last = 0;
+
+  function height() {
+    var b = document.body, d = document.documentElement;
+    return Math.max(b.scrollHeight, b.offsetHeight, d.scrollHeight, d.offsetHeight);
+  }
+
+  function send() {
+    var h = height();
+    if (Math.abs(h - last) < 2) return;
+    last = h;
+    parent.postMessage({ frameHeight: h }, 'https://selfalignmentframework.com');
+  }
+
+  window.addEventListener('load', send);
+  window.addEventListener('resize', send);
+  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(send);
+
+  send();
+})();
+</script>
 </body>
 </html>
