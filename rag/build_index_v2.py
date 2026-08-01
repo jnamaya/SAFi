@@ -31,11 +31,48 @@ _MD_MAX_CHUNK_CHARS = 2000
 def _chunk_markdown(text: str) -> List[str]:
     """Heading-aware chunker for .md/.txt sources — no third-party deps.
     Splits on markdown headings, then packs sections into chunks of at most
-    _MD_MAX_CHUNK_CHARS, splitting oversized sections on blank lines."""
+    _MD_MAX_CHUNK_CHARS, splitting oversized sections on blank lines.
+
+    Two things this must NOT do, both of which it used to:
+
+    1. Emit a chunk that is only a heading. Splitting at every heading means an
+       `# H1` immediately followed by an `## H2` — the shape of every doc in
+       rag/docs — produced a chunk containing nothing but the title. Those were
+       11% of the index, and because a bare title is a pure topic statement it
+       embeds as an near-perfect match for topic questions, so they outranked
+       the prose and burned retrieval slots. A live turn retrieved five chunks,
+       four of which were titles; the Conscience then correctly scored the
+       answer -1 for being ungrounded, because the grounding never arrived.
+       Heading-only sections are now carried forward onto the next section,
+       which also gives that chunk its parent heading as context.
+
+    2. Index the YAML frontmatter. It was another 28 chunks of title/slug/tags,
+       duplicating the H1 and carrying no prose.
+    """
     import re
+    m = re.match(r"^---\n.*?\n---\n", text, re.S)   # drop YAML frontmatter
+    if m:
+        text = text[m.end():]
     sections = re.split(r"(?m)^(?=#{1,6}\s)", text)
-    chunks: List[str] = []
+
+    # Carry heading-only sections onto the following one.
+    merged: List[str] = []
+    carry = ""
     for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        body = re.sub(r"^#{1,6}\s.*$", "", section, flags=re.M).strip()
+        if not body:
+            carry = f"{carry}\n\n{section}" if carry else section
+            continue
+        merged.append(f"{carry}\n\n{section}" if carry else section)
+        carry = ""
+    if carry:                     # trailing heading with nothing under it
+        merged.append(carry)
+
+    chunks: List[str] = []
+    for section in merged:
         section = section.strip()
         if not section:
             continue
