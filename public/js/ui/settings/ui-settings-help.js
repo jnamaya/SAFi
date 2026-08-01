@@ -27,7 +27,7 @@ export function renderSettingsHelpTab() {
                     <a href="#help-policies"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Policies</a>
                     <a href="#help-org"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">Organization</a>
                     <a href="#help-models"      class="text-green-600 dark:text-green-400 hover:underline py-0.5">AI Models</a>
-                    <a href="#help-roles"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">Roles & Permissions</a>
+                    <a href="#help-roles"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">Roles &amp; Permissions</a>
                     <a href="#help-faq"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">FAQ</a>
                 </div>
             </div>
@@ -102,7 +102,7 @@ export function renderSettingsHelpTab() {
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Self-hosted by design</p>
                         <p>SAFi is designed to be self-hosted. You need a server — either on your private network or in the cloud — to run it. All data, including databases, conversation histories, and logs, stays on your server. The only external interactions are API calls to the AI models.</p>
-                        <p class="mt-2">If you need a fully private AI system, you can also self-host the language models and keep your entire setup air-gapped. <strong class="text-gray-900 dark:text-white">DeepSeek</strong> and <strong class="text-gray-900 dark:text-white">Mistral</strong> offer capable open-source models you can host locally. There are also US-based options such as <strong class="text-gray-900 dark:text-white">GPT OSS-120B</strong> that perform well on everyday reasoning tasks.</p>
+                        <p class="mt-2">If you need a fully private AI system, you can also self-host the language models and keep the whole setup air-gapped. Several open-weight model families are capable enough for everyday reasoning work and will run on your own hardware — and because SAFi is model-independent, the governance behaves the same whichever you choose.</p>
                     </div>
 
                     <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
@@ -139,8 +139,8 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 2 — Choose the AI model</p>
-                        <p>By default, SAFi is set up with the <strong class="text-gray-900 dark:text-white">GPT-OSS 20B</strong> model, which is a small model without strong built-in safety layers — it can be jailbroken fairly easily. This is intentional: it lets you test SAFi's governance layer independently of the model's own guardrails. To test whether the agent stays in its lane, this default model works well.</p>
-                        <p class="mt-2">If you want to test for response quality and capabilities, switch to <strong class="text-gray-900 dark:text-white">DeepSeek Flash V4</strong> or one of the <strong class="text-gray-900 dark:text-white">Gemini Flash</strong> models — both offer significantly stronger reasoning at low cost.</p>
+                        <p>Which model powers an agent is configuration, not architecture: the same policy is enforced identically whichever one sits underneath. Admins set the available options under <strong class="text-gray-900 dark:text-white">AI Models</strong>.</p>
+                        <p class="mt-2">What you pick depends on what you want to test. To test the <strong class="text-gray-900 dark:text-white">governance</strong>, choose a smaller model with weaker built-in safety layers — then what you are watching is SAFi holding the line rather than the model's own guardrails. To judge <strong class="text-gray-900 dark:text-white">answer quality</strong>, choose a stronger reasoning model.</p>
                     </div>
 
                     <div>
@@ -150,12 +150,13 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 4 — Try attaching a document</p>
-                        <p>Click the attachment icon in the chat input and upload a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong>, or <strong class="text-gray-900 dark:text-white">DOCX</strong> file. Ask the agent a question about it. SAFi will extract the content and include it in the agent's context.</p>
+                        <p>Click the attachment icon in the chat input and upload a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> or <strong class="text-gray-900 dark:text-white">Markdown</strong> file. Ask the agent a question about it. SAFi will extract the content and include it in the agent's context.</p>
                     </div>
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 5 — Check the alignment score</p>
-                        <p>After the agent responds, expand the response details to see the alignment score. This shows how well the response aligned with the agent's values and standards. A green score means it passed cleanly — anything lower triggered an automatic retry before you saw the result.</p>
+                        <p>After the agent responds, expand the response details to see how it was judged. The chip reads <strong class="text-gray-900 dark:text-white">Aligned</strong>, <strong class="text-gray-900 dark:text-white">Caution</strong> or <strong class="text-gray-900 dark:text-white">Concern</strong> depending on the score, or <strong class="text-gray-900 dark:text-white">Audit pending</strong> while the evaluation is still running.</p>
+                        <p class="mt-2">A Caution or Concern is not an error — it is the system's honest mark on the answer you were given. Requests that breach the agent's scope or a non-negotiable standard are stopped before they reach you. The alignment score works differently, as a soft threshold: falling below it prompts the agent to correct itself, and if the corrected draft is no better, the original is delivered <em>with its real low score</em> rather than leaving your question unanswered.</p>
                     </div>
 
                     <div>
@@ -251,7 +252,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Chat Interface</p>
-                        <p>The chat interface in SAFi is the native way you communicate with your agent. SAFi's backend engine is API-based, so you can use any other interface — such as <strong class="text-gray-900 dark:text-white">Microsoft Teams</strong>, <strong class="text-gray-900 dark:text-white">Slack</strong>, <strong class="text-gray-900 dark:text-white">Telegram</strong>, <strong class="text-gray-900 dark:text-white">WhatsApp</strong>, or any other chat application that supports custom API calls — to communicate with your agent. SAFi supports document extraction for <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong>, and <strong class="text-gray-900 dark:text-white">DOCX</strong> files, and you can listen to generated answers using the built-in audio playback.</p>
+                        <p>The chat interface in SAFi is the native way you communicate with your agent. SAFi's backend engine is API-based, so you can use any other interface — such as <strong class="text-gray-900 dark:text-white">Microsoft Teams</strong>, <strong class="text-gray-900 dark:text-white">Slack</strong>, <strong class="text-gray-900 dark:text-white">Telegram</strong>, <strong class="text-gray-900 dark:text-white">WhatsApp</strong>, or any other chat application that supports custom API calls — to communicate with your agent. SAFi extracts text from <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> and <strong class="text-gray-900 dark:text-white">Markdown</strong> files, and you can listen to generated answers using the built-in audio playback.</p>
                     </div>
 
                     <div>
@@ -286,7 +287,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Compliance Audits</p>
-                        <p>Each response includes an alignment score indicating how well it aligned with the agent's values and standards. You can view this by expanding the response details. Scores range from excellent to neutral to violation — violations trigger a retry or a redirect.</p>
+                        <p>Each response carries an alignment score showing how well it matched the agent's values and standards. Expand the response details for the value-by-value breakdown behind it. The chip reads Aligned, Caution or Concern — or Audit pending, while the evaluation is still running.</p>
                     </div>
 
                 </div>
@@ -342,13 +343,14 @@ export function renderSettingsHelpTab() {
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating a custom agent <span class="text-xs font-normal text-gray-400">(Admins & Editors only)</span></p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating a custom agent <span class="text-xs font-normal text-gray-400">(Admins &amp; Editors only)</span></p>
                         <p>Click <strong class="text-gray-900 dark:text-white">Create Agent</strong> on the Agents page to open the Agent Wizard. Because values and standards live in the Charter and the Policy, the agent builder focuses on the agent's <em>role</em>:</p>
                         <ul class="list-disc list-inside mt-1 space-y-0.5">
-                            <li><strong class="text-gray-900 dark:text-white">Profile</strong> — Name, description, avatar, and the governing <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to</li>
-                            <li><strong class="text-gray-900 dark:text-white">Tools &amp; Knowledge</strong> — Any tools the agent may use and an optional knowledge base</li>
-                            <li><strong class="text-gray-900 dark:text-white">Personality</strong> — The AI model that generates its responses</li>
-                            <li><strong class="text-gray-900 dark:text-white">Settings</strong> — Operational limits, then a final review</li>
+                            <li><strong class="text-gray-900 dark:text-white">Identity</strong> — Name, description, avatar, visibility, and the governing <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to</li>
+                            <li><strong class="text-gray-900 dark:text-white">Tools</strong> — Any tools the agent may use and an optional knowledge base</li>
+                            <li><strong class="text-gray-900 dark:text-white">Personality &amp; Style</strong> — How the agent thinks and speaks: its instructions and communication style</li>
+                            <li><strong class="text-gray-900 dark:text-white">Operational Settings</strong> — Limits such as how many turns it may take</li>
+                            <li><strong class="text-gray-900 dark:text-white">Review</strong> — A final check before the agent goes live</li>
                         </ul>
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">An agent needs at least a Charter or an attached Policy — otherwise it has no values or standards to be governed by.</p>
                     </div>
@@ -398,7 +400,7 @@ export function renderSettingsHelpTab() {
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating and managing policies <span class="text-xs font-normal text-gray-400">(Admins & Editors only)</span></p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating and managing policies <span class="text-xs font-normal text-gray-400">(Admins &amp; Editors only)</span></p>
                         <p>Go to <strong class="text-gray-900 dark:text-white">Policies</strong> in the sidebar to view, create, or edit policies. When creating a policy, you can define its standards and rules from scratch or start from the default SAFi template.</p>
                     </div>
 
@@ -461,7 +463,7 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
                     <p>The <strong class="text-gray-900 dark:text-white">AI Models</strong> page is where admins configure which underlying LLM powers the platform's conversational capabilities.</p>
-                    <p>Here, admins select the <strong class="text-gray-900 dark:text-white">Response Generator</strong>. This is the primary model responsible for generating the text you see in the chat. The backend governance layers (the Policy Gatekeeper and Compliance Auditor) operate independently to audit this model's outputs.</p>
+                    <p>Here, admins select the <strong class="text-gray-900 dark:text-white">Response Generator</strong> — the model that writes the text you see in the chat. The layers that rule on and score each response run independently of it, so changing this model changes who writes the answer, never what the answer is held to.</p>
                     <p class="text-gray-400 dark:text-gray-500">Model configuration is for admins only. If you're a regular user, the models are already set up and ready to go.</p>
                 </div>
             </div>
@@ -475,7 +477,7 @@ export function renderSettingsHelpTab() {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Roles & Permissions</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Roles &amp; Permissions</h2>
                     </div>
                     <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -496,7 +498,7 @@ export function renderSettingsHelpTab() {
                             </thead>
                             <tbody class="divide-y divide-gray-100 dark:divide-neutral-700">
                                 <tr class="bg-white dark:bg-neutral-900">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Use the chat & select agents</td>
+                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Use the chat &amp; select agents</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
@@ -510,14 +512,14 @@ export function renderSettingsHelpTab() {
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                 </tr>
                                 <tr class="bg-white dark:bg-neutral-900">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Create & edit agents/policies</td>
+                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Create &amp; edit agents/policies</td>
                                     <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
                                     <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                 </tr>
                                 <tr class="bg-gray-50/50 dark:bg-neutral-800/50">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Manage org, models, & users</td>
+                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Manage org, models, &amp; users</td>
                                     <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
                                     <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
                                     <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
@@ -550,13 +552,13 @@ export function renderSettingsHelpTab() {
                         "Agents are scoped to a specific purpose. If your request falls outside that scope, the agent will decline and explain its boundaries. This is intentional — it means the governance layer is working. Try rephrasing your question to stay within the agent's topic area.")}
 
                     ${faqItem("Why is the agent's response different from what I expected?",
-                        "Each response is evaluated against the agent's policy before it's sent to you. If the first draft didn't meet the standard, the agent generates a revised response automatically. What you see is always the version that passed the evaluation.")}
+                        "Each response is evaluated against the agent's policy before it reaches you. If the first draft falls short, the agent is asked to correct itself, and the corrected draft goes through the same evaluation. If neither clears the alignment threshold, you still get an answer — delivered with its honest low score, rather than the system quietly withholding a reply. Anything breaching the agent's scope or a non-negotiable standard is stopped outright instead.")}
 
                     ${faqItem("Can I use the same agent for different topics?",
                         "Each agent is designed for a specific purpose, so it works best when you stick to its intended topic area. If you need help with something different, check whether another agent covers that topic or ask your admin about creating a new one.")}
 
                     ${faqItem("What does the alignment score mean?",
-                        "After each response, SAFi scores it against the agent's values and standards on a scale from excellent (+1) to violation (-1). A high score means the response aligned well with the agent's purpose and principles. A low score would have triggered a retry — you only see responses that passed.")}
+                        "SAFi scores every response against the agent's values and standards, value by value, then combines those into the score on the chip: Aligned, Caution, or Concern. It reads Audit pending until the evaluation finishes. The score always describes the answer you actually received — a Caution or Concern is the system marking its own work, not a sign that something was hidden from you.")}
 
                     ${faqItem("How do I invite someone to my organization?",
                         "If your organization has verified its domain, users with a matching email address will join automatically when they sign up. You can also review current members in the Organization tab (Admins only).")}
