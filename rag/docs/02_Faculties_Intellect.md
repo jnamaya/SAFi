@@ -23,7 +23,7 @@ The Intellect receives four sources of information at each turn.
 The message sent by the user at turn t.
 
 ### Values profile (V)
-The Synderesis-compiled configuration for the active persona. The Intellect uses the worldview, style, and scope statement sections to shape the tone, framing, and boundaries of its draft.
+The Synderesis-compiled configuration for the active agent. The Intellect uses the worldview, style, and scope statement sections to shape the tone, framing, and boundaries of its draft.
 
 ### Memory (M_t)
 Two types of memory are provided:
@@ -42,7 +42,7 @@ The Intellect produces two outputs.
 Both outputs are passed to the Will faculty for Phase 3 evaluation. Neither reaches the user until it has cleared the Will and the Conscience.
 
 ## Phase 0: before the Intellect is called
-Before the Intellect generates anything, Phase 0 screens the incoming prompt against the persona's blacklists and known injection patterns. If the prompt fails this check, the Intellect is never called. This ensures the Intellect never processes adversarial inputs that can be caught structurally before generation, preventing unnecessary LLM exposure to attack content.
+Before the Intellect generates anything, Phase 0 screens the incoming prompt against the agent's blacklists and known injection patterns. If the prompt fails this check, the Intellect is never called. This ensures the Intellect never processes adversarial inputs that can be caught structurally before generation, preventing unnecessary LLM exposure to attack content.
 
 ## Model agnostic
 The Intellect faculty is model-agnostic. The underlying LLM can be GPT, Claude, Gemini, Llama, Groq, Mistral, or DeepSeek. Changing the model does not change the governance pipeline that wraps it.

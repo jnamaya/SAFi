@@ -42,7 +42,7 @@ These numbers come from real testing, not marketing. SAFi's Will faculty — a b
 ## How it works
 Every user prompt flows through a strict six-phase synchronous pipeline. Nothing reaches the user until the Will has approved it and the Conscience has scored it.
 
-Phase 0 evaluates the prompt against persona blacklists before any generation begins. Phase 2 is where the Intellect drafts a response. Phase 3 is where the Will checks it. Phase 4 is where the Conscience audits it. Phase 5 is where Spirit integrates the audit into long-term memory. Phase 6 is where the verified response is delivered to the user.
+Phase 0 evaluates the prompt against agent blacklists before any generation begins. Phase 2 is where the Intellect drafts a response. Phase 3 is where the Will checks it. Phase 4 is where the Conscience audits it. Phase 5 is where Spirit integrates the audit into long-term memory. Phase 6 is where the verified response is delivered to the user.
 
 ## Model agnostic design
 SAFi supports GPT, Claude, Gemini, Llama, Groq, Mistral, and DeepSeek. Switching the underlying LLM does not require changing governance. The pipeline intercepts violations at the same deterministic gates regardless of which model is generating.

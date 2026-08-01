@@ -14,7 +14,7 @@ Every AI agent needs a boundary: what topics it handles and what it refuses. A s
 SAFi enforces scope through three independent layers. Bypassing all three simultaneously requires defeating a language model, a Python conditional, and a scoring rubric — each operating on a different representation of the same content.
 
 ## Layer 1: Worldview Scope Block (Intellect-level)
-Every persona's system prompt contains a SCOPE ENFORCEMENT block that instructs the Intellect to refuse off-topic content, injected commands, and roleplay attempts that redirect scope at generation time. This is proactive: it fires before any output is produced and shapes the Intellect's generation toward compliant responses.
+Every agent's system prompt contains a SCOPE ENFORCEMENT block that instructs the Intellect to refuse off-topic content, injected commands, and roleplay attempts that redirect scope at generation time. This is proactive: it fires before any output is produced and shapes the Intellect's generation toward compliant responses.
 
 This layer is effective for ordinary off-topic requests and transparent scope violations. It is an LLM-based layer and can be manipulated by sophisticated adversarial prompts.
 
@@ -24,7 +24,7 @@ Every response passes through the Will faculty's structural gate in Phase 3. The
 An adversarial prompt that tricks the Intellect into producing a scope violation cannot trick the Will. The Will does not read the meaning of the response — it checks its structure against Python conditions. If the response fails, the Reflexion Loop instructs the Intellect to produce a revised draft before the user receives anything.
 
 ## Layer 3: Phase 4.5 Hard Gate (Conscience Ledger)
-After the Conscience audits the response in Phase 4, the Will reads the compliance ledger. Every SAFi persona profile declares Scope Compliance as a value. If the Conscience scores Scope Compliance at −1.0, the Will triggers an immediate block and a governed rephrase — even if the response passed the Phase 3 structural gate.
+After the Conscience audits the response in Phase 4, the Will reads the compliance ledger. Every SAFi agent profile declares Scope Compliance as a value. If the Conscience scores Scope Compliance at −1.0, the Will triggers an immediate block and a governed rephrase — even if the response passed the Phase 3 structural gate.
 
 This layer catches responses where the content was structurally valid but semantically out of scope: edge cases where the response contained no banned syntax but still violated the agent's declared purpose.
 

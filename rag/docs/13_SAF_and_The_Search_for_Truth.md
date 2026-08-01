@@ -34,7 +34,7 @@ SAF itself does not define the destination. Instead, it provides a reliable comp
 
 ## Cross references
 - 01_Faculties_Values_and_Profiles.md  
-- 06_Concepts_Personas.md  
+- 06_Concepts_Agents.md  
 - 07_Concepts_Drift_Allegory.md  
 - 04_Faculties_Conscience.md  
 - 05_Faculties_Spirit.md  

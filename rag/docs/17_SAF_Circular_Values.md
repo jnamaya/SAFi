@@ -37,6 +37,6 @@ SAF is designed to guard against drift. Anchoring values externally transforms t
 
 ## Cross references
 - 01_Faculties_Values_and_Profiles.md  
-- 06_Concepts_Personas.md  
+- 06_Concepts_Agents.md  
 - 07_Concepts_Drift_Allegory.md  
 - 11_Use_Cases_Practical_Applications.md  

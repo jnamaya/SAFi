@@ -12,7 +12,7 @@ version: 1.0
 SAFi ships as a complete web application with a governance UI, an audit hub, role-based access control, and a headless API for external integrations. The application is organized into seven functional areas.
 
 ## Agents
-Create, configure, and manage AI agents. Each agent has its own persona configuration (scope, worldview, style, Will rules, and value weights), tool set, and optional knowledge base. Three capability types are available:
+Create, configure, and manage AI agents. Each agent has its own agent configuration (scope, worldview, style, Will rules, and value weights), tool set, and optional knowledge base. Three capability types are available:
 
 - MCP Tools: live data access for stock prices, web search, Google Drive, SharePoint, GitHub, and Google Maps.
 - RAG: static knowledge bases indexed as FAISS vector stores for document-grounded responses.
@@ -22,7 +22,7 @@ Create, configure, and manage AI agents. Each agent has its own persona configur
 Configure global settings for the deployment: domain verification, policy weighting, drift sensitivity thresholds, and member management. This area controls organization-wide governance defaults.
 
 ## Policies
-Build governance constitutions for headless deployments. Each policy can generate an API key, allowing external applications to route traffic through SAFi's five-faculty pipeline without a human using the UI. Policies define the persona and scope for headless API consumers.
+Build governance constitutions for headless deployments. Each policy can generate an API key, allowing external applications to route traffic through SAFi's five-faculty pipeline without a human using the UI. Policies define the agent and scope for headless API consumers.
 
 ## Audit Hub
 The primary transparency interface. Every interaction produces a full log across all five faculties:
@@ -46,7 +46,7 @@ Switch the underlying LLM provider per faculty. Faculties can be configured inde
 Supported providers: OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek.
 
 ## My Profile
-Define user values, interests, goals, and context that the AI can use to personalize responses. This is the user's own profile, separate from any agent persona. The Intellect can draw on this to tailor its responses to the individual while still staying within the agent's governance constraints.
+Define user values, interests, goals, and context that the AI can use to personalize responses. This is the user's own profile, separate from any agent agent. The Intellect can draw on this to tailor its responses to the individual while still staying within the agent's governance constraints.
 
 ## App Settings
 Manage themes (light and dark), data source connections (Google Drive, OneDrive, GitHub), and account preferences.
@@ -75,7 +75,7 @@ SAFi uses four roles:
 SAFi supports Google OAuth, Microsoft OAuth, and GitHub OAuth. For private or self-hosted instances, a persistent local admin account can be created by setting SAFI_LOCAL_ADMIN_EMAIL and SAFI_LOCAL_ADMIN_PASSWORD in the environment. No OAuth setup required for local deployments.
 
 ## Cross references
-- 06 Concepts Personas
+- 06 Concepts Agents
 - 10 SAFi Technical Workflow
 - 11 Use Cases Practical Applications
 - 24 SAFi Benchmarks Validation

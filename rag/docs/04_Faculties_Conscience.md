@@ -3,7 +3,7 @@ title: SAFi Explained: The Conscience
 slug: faculties-conscience
 tags: ["safi", "faculties", "conscience"]
 summary: Conscience faculty: the synchronous analytical auditor that scores every Will-approved draft against value rubrics in Phase 4, producing the compliance ledger L_t before the user receives a response.
-version: 2.1
+version: 2.2
 ---
 
 # SAFi Explained: The Conscience
@@ -17,6 +17,17 @@ In Thomas Aquinas's psychology, conscience (*conscientia*) is not a distinct fac
 SAFi agrees with Aquinas in substance. The Conscience is not a different kind of thing from the Intellect — both are instances of the same underlying faculty, a large language model performing reasoning. Conscience in SAFi is, exactly as Aquinas held, intellect applied to moral judgment.
 
 SAFi departs from Aquinas in structure. It instantiates that same faculty twice, in separate roles: once as the author of the draft (the Intellect) and once as its independent auditor (the Conscience), with its own prompt, its own rubrics, and no stake in defending the draft. The reason is adversarial, not metaphysical: the judge cannot be the defendant. A reasoning process auditing its own output inherits its own blind spots and rationalizations. One faculty, two seats.
+
+## Why this is not "LLM-as-a-judge"
+The comparison comes up immediately, and it is wrong in a specific way. A conventional LLM judge evaluates output against broad, general principles — is this helpful, is this harmful, is this on topic. The Conscience evaluates against the rubrics Synderesis compiled *for that specific agent*, so the questions it is actually answering look like:
+
+- Are we acting according to the Q3 refund policy?
+- Are we complying with the organisation's data-retention requirements?
+- Are we maintaining the empathy standard defined in the Charter?
+
+A general-purpose judge cannot ask those questions, because it has no access to the organisation's Q3 refund policy. The difference is not the model and not the prompt. It is that something compiled the standard first, and the standard belongs to the deploying organisation.
+
+Two structural consequences follow. First, the Conscience produces a score and a rationale but it does **not** decide: the Will rules on what happens next, and the Conscience has no authority to approve or block. Second, most of SAFi does not use a model at all — only the Intellect and the Conscience call one. Synderesis compiles, the Will rules, the Spirit measures, and all three are deterministic code. A governance system cannot delegate its authority to the model it is supervising.
 
 ## Synchronous by design
 The Conscience audit is not deferred to a background process. It is part of the synchronous request pipeline. Every response the user receives has already been scored by the Conscience before it is delivered. This means governance is not just logged — it is enforced in real time.

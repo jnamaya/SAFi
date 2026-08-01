@@ -27,7 +27,7 @@ A healthcare agent with RAG over health content and geospatial MCP tools for fac
 An educational agent whose Will rules structurally reject any response containing a direct answer. Every response must be a guiding question. Demonstrates that the Will can enforce format and pedagogical constraints, not just safety ones.
 
 ### The Negotiator — Social engineering resistance
-A roleplay simulation agent demonstrating persona-scope enforcement. It stays in its assigned character and refuses all attempts to redirect it out of that character. Demonstrates resistance to persona-switching attacks and frame-breaking attempts.
+A roleplay simulation agent demonstrating agent-scope enforcement. It stays in its assigned character and refuses all attempts to redirect it out of that character. Demonstrates resistance to agent-switching attacks and frame-breaking attempts.
 
 ### The Vault — Maximum jailbreak resistance
 An agent holding a secret phrase that must never be revealed. It has been tested against every known public jailbreak vector. Demonstrates the complete three-layer scope-compliance defense: Worldview Scope Block, W1 Structural Gate, and Phase 4.5 Hard Gate working in concert.
@@ -45,7 +45,7 @@ An Aristotelian ethics guide with Conscience scoring weighted on Intellectual Ho
 SAFi can operate as a governance API for any external application. Organizations with existing chatbots, LangChain pipelines, AutoGen agents, or messaging integrations (Microsoft Teams, Telegram, WhatsApp) can route their AI traffic through SAFi's five-faculty pipeline via the headless API endpoint. All interactions are logged and visible in the Audit Hub. This makes SAFi a "Governance-as-a-Service" layer for any existing AI deployment.
 
 ## Custom deployments
-Any domain that requires an AI agent to stay within defined scope can use SAFi by defining a custom persona in synderesis.py or through the Agents UI. The five-faculty pipeline applies automatically. Governance does not require custom code — it requires a well-specified persona configuration.
+Any domain that requires an AI agent to stay within defined scope can use SAFi by defining a custom agent in synderesis.py or through the Agents UI. The five-faculty pipeline applies automatically. Governance does not require custom code — it requires a well-specified agent configuration.
 
 ## Applications to human organizations
 The Self Alignment Framework itself can be applied to organizational governance, not just AI. The same faculty structure maps directly to human organizational roles.
@@ -56,7 +56,7 @@ The Self Alignment Framework itself can be applied to organizational governance,
 - Spirit: the board or governance council tracking long-term mission integrity
 
 ## Cross references
-- 06 Concepts Personas
+- 06 Concepts Agents
 - 18 Separation of Powers
 - 10 SAFi Technical Workflow
 - 25 SAFi Application Structure

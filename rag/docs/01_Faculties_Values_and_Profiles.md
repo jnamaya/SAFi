@@ -1,8 +1,8 @@
 ---
 title: SAFi Explained: Values
 slug: faculties-values-and-profiles
-tags: ["safi", "faculties", "personas", "values"]
-summary: Foundational values and ethical profiles that condition SAFi's reasoning and persona behavior.
+tags: ["safi", "faculties", "agents", "values"]
+summary: Foundational values and ethical profiles that condition SAFi's reasoning and agent behavior.
 version: 1.0
 ---
 
@@ -19,7 +19,7 @@ SAFi turns abstract principles into a machine readable object called a profile. 
 
 ### Profile components
 - Worldview: a short constitution that defines purpose, goals, and principles. It guides the Intellect.
-- Style: the persona and tone, for example “empathetic, clear, educational.” It instructs the Intellect on voice.
+- Style: the agent and tone, for example “empathetic, clear, educational.” It instructs the Intellect on voice.
 - Will rules: a list of non negotiable rules enforced by the Will. These are hard guardrails.
 - Values: a list of ethical principles, each with a weight. The Conscience uses them for audits. The Spirit uses them for long term scoring.
 
@@ -32,4 +32,4 @@ Each profile component instructs one of the faculties.
 4. Spirit uses the weights to calculate memory updates and long term performance.
 
 ## Cross references
-- 07 Concepts Personas
+- 07 Concepts Agents

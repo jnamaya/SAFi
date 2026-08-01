@@ -32,12 +32,12 @@ version: 2.0
 
 ## Key architectural terms
 
-- **Synderesis**: The fifth faculty and constitution compiler. Establishes immutable rules, value weights, rubrics, and scope boundaries for each persona. Read-only after deployment; no other faculty can modify it at runtime.
+- **Synderesis**: The fifth faculty and constitution compiler. Establishes immutable rules, value weights, rubrics, and scope boundaries for each agent. Read-only after deployment; no other faculty can modify it at runtime.
 - **Intent Air Gap**: The architectural separation between the Intellect (generation) and execution. The Intellect can only produce proposals (intents); it cannot execute actions directly. This prevents a jailbroken Intellect from doing real harm.
 - **Blind Will**: The Will faculty's defining security property. Pure deterministic Python with zero LLM calls, incapable of semantic reasoning, and therefore immune to prompt injection and social engineering.
 - **Reflexion Loop**: When the Will blocks a draft, it instructs the Intellect to produce a revised, compliant response rather than immediately returning a refusal to the user. The Will then re-evaluates the new draft.
-- **Phase Zero (Phase 0)**: The pre-generation gate. Screens the incoming prompt against persona-specific blacklists before any LLM generation begins. If triggered, the Intellect is never called.
-- **Scope Compliance**: A special value declared in every SAFi persona profile. A Conscience score of −1.0 on Scope Compliance triggers the Phase 4.5 hard gate, blocking the response regardless of all other value scores.
+- **Phase Zero (Phase 0)**: The pre-generation gate. Screens the incoming prompt against agent-specific blacklists before any LLM generation begins. If triggered, the Intellect is never called.
+- **Scope Compliance**: A special value declared in every SAFi agent profile. A Conscience score of −1.0 on Scope Compliance triggers the Phase 4.5 hard gate, blocking the response regardless of all other value scores.
 - **Ethical ledger (L_t)**: The structured output of the Conscience audit: one record per value with a score (−1.0 to +1.0), confidence (0.0 to 1.0), and text rationale.
 - **Alignment profile (p_t)**: The per-turn ethical fingerprint vector, computed as the element-wise product of value weights and Conscience scores.
 - **Hard gate (Phase 4.5)**: The Will's second check after the Conscience audit. Reads the ledger for Scope Compliance score and triggers a block if it is −1.0.

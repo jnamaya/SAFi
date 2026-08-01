@@ -14,7 +14,7 @@ Every user prompt in SAFi flows through a strict, synchronous six-phase pipeline
 ## The six phases
 
 ### Phase 0: Pre-generation Gate
-Before any LLM generation begins, the prompt is evaluated against persona-specific blacklists and known injection pattern detectors. If the prompt matches a recognized attack signature or violates scope before generation, the pipeline halts here and returns a safe refusal. This is the first line of defense and the only phase where the Intellect is never called at all.
+Before any LLM generation begins, the prompt is evaluated against agent-specific blacklists and known injection pattern detectors. If the prompt matches a recognized attack signature or violates scope before generation, the pipeline halts here and returns a safe refusal. This is the first line of defense and the only phase where the Intellect is never called at all.
 
 ### Phase 1: Data Gathering
 The orchestrator performs any context retrieval needed: RAG vector search, plugin execution, and MCP tool output collection. This data is assembled and passed to the Intellect for Phase 2. The user does not see anything yet.
@@ -31,7 +31,7 @@ If the draft fails the structural check, the Will triggers the Reflexion Loop: i
 Once the Will has structurally approved the draft, the Conscience faculty audits it against the agent's value rubrics. The Conscience is a secondary LLM call that scores the draft on each declared value, producing a compliance ledger (L_t) with a score (−1.0 to +1.0), a confidence value, and a rationale for each value. This phase runs synchronously — the user is still waiting.
 
 ### Phase 4.5: Hard Gate
-After the Conscience produces the ledger, the Will reads it for a final check. Every SAFi persona profile includes Scope Compliance as a declared value. If the Conscience scores Scope Compliance at −1.0, the Will triggers an immediate block and a governed rephrase, regardless of how the response performed on other values. This is the third and final layer of jailbreak defense.
+After the Conscience produces the ledger, the Will reads it for a final check. Every SAFi agent profile includes Scope Compliance as a declared value. If the Conscience scores Scope Compliance at −1.0, the Will triggers an immediate block and a governed rephrase, regardless of how the response performed on other values. This is the third and final layer of jailbreak defense.
 
 ### Phase 5: Spirit Integration
 The approved and audited response passes to the Spirit faculty. Spirit is pure deterministic Python and NumPy — no LLM is involved. Spirit computes the current turn's alignment profile vector, updates the long-term memory vector using an exponential moving average (β = 0.9), calculates the cosine-distance drift from the historical baseline, and generates a coaching note for the next Intellect call.

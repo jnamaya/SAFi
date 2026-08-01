@@ -25,7 +25,7 @@ The proposed response or tool call from the Intellect.
 The original context, used to check structural relationships between the prompt and the draft.
 
 ### Will rules (P)
-The persona-specific ruleset from the Synderesis configuration: banned syntax, required structural elements (such as mandatory disclaimers), allowed tool lists, and scope constraints. These rules are Python conditionals, not natural language instructions.
+The agent-specific ruleset from the Synderesis configuration: banned syntax, required structural elements (such as mandatory disclaimers), allowed tool lists, and scope constraints. These rules are Python conditionals, not natural language instructions.
 
 ## Outputs from the Will
 

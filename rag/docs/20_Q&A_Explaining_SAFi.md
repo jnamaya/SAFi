@@ -18,7 +18,7 @@ The Will faculty is written in pure Python with zero LLM calls. It enforces stru
 The Intellect faculty is architecturally severed from execution. It can propose responses and tool calls, but it cannot execute them directly. Even if the Intellect hallucinates a destructive action or a policy violation, the Will gate intercepts it before it reaches the user or any execution environment.
 
 ## What is Synderesis?
-Synderesis is the fifth faculty — the constitution compiler. It holds the immutable rules, value weights, rubrics, and scope boundaries for each persona. No other faculty can modify the Synderesis configuration once deployed. It is the read-only foundation that all other faculties operate on top of.
+Synderesis is the fifth faculty — the constitution compiler. It holds the immutable rules, value weights, rubrics, and scope boundaries for each agent. No other faculty can modify the Synderesis configuration once deployed. It is the read-only foundation that all other faculties operate on top of.
 
 ## Why do you need Spirit?
 The Spirit integrates Conscience audit scores over time into a rolling alignment vector using an exponential moving average (β = 0.9). Without Spirit, the system has no way to detect gradual behavioral drift — when an agent's effective behavior slowly diverges from its declared values under pressure, edge cases, or model updates. Spirit makes drift visible and measurable.
