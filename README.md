@@ -14,17 +14,17 @@
 
 - [The Problem](#the-problem)
 - [The SAFi Solution](#the-safi-solution)
-- [Start Here](#start-here)
 - [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
-- [Built for Regulated Industries](#built-for-regulated-industries)
-- [Roles & Permissions](#roles--permissions)
+- [Start Here](#start-here)
+- [Live Demo](#live-demo)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
 - [The Framework Behind It](#the-framework-behind-it)
 - [Benchmarks & Validation](#benchmarks--validation)
+- [Regulatory Readiness](#regulatory-readiness)
 - [For Developers](#for-developers)
+- [Roles & Permissions](#roles--permissions)
 - [Contributing](#contributing)
-- [Live Demo](#live-demo)
 - [About the Author](#about-the-author)
 
 ---
@@ -41,6 +41,8 @@ Your organization is deploying AI agents. Your legal and compliance teams are as
 The answers are usually in a policy document — a PDF on an intranet. Nothing in your AI stack reads it, and nothing checks a response against it.
 
 The industry's answer to that gap is the filter. Guardrails inspect output — they can tell you a filter fired, not whether your policy was upheld. When the answer to "who approved this response?" is "a content filter," the governance conversation is over.
+
+---
 
 ## The SAFi Solution
 
@@ -59,6 +61,20 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 <p align="center">
   <sub>One governed turn, end to end: the pipeline advancing through real enforcement stages, the score it produced, and the value-by-value ledger behind it — then a second turn, adding a point to the trend.</sub>
 </p>
+
+---
+
+## The Five Principles Behind SAFi
+
+**Value Sovereignty** — You decide the mission and values your AI enforces, not the model provider.
+
+**Full Traceability** — Every governed turn is logged, explainable, and auditable: the draft, the value-by-value ledger, the decision, and the policy version in force.
+
+**Model Independence** — Your charter, policies, and audit trail live in your database, not the provider's. Switch or upgrade models and the governance layer moves with you.
+
+**Long-Term Consistency** — Maintain your AI's ethical identity over time, and measure drift against it rather than guessing.
+
+**Governed Action** — Agents act, not just answer. Every tool call is checked against the agent's allow-list before it runs, reads and writes are held to different standards, and the action taken is recorded alongside the decision.
 
 ---
 
@@ -82,7 +98,7 @@ Three groups get the most out of SAFi, and they want different things first.
 
 **Portability is the strategic point.** Your charter, your policies and your audit trail live in *your* database. Switching or upgrading a model changes which model drafts and changes nothing about what it is held to, or what you can prove afterward.
 
-- [Built for Regulated Industries](#built-for-regulated-industries) — readiness documents for SEC/FINRA, the EU AI Act, HIPAA and GDPR, each stating what ships today against what is roadmap
+- [Regulatory Readiness](#regulatory-readiness) — readiness documents for SEC/FINRA, the EU AI Act, HIPAA and GDPR, each stating what ships today against what is roadmap
 - [Live Demo](https://safi.selfalignmentframework.com) — the fastest way to see what a governed turn produces
 
 ### If you practice governance
@@ -95,179 +111,11 @@ Three groups get the most out of SAFi, and they want different things first.
 
 ---
 
-## The Five Principles Behind SAFi
+## Live Demo
 
-**Value Sovereignty** — You decide the mission and values your AI enforces, not the model provider.
+[safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
 
-**Full Traceability** — Every governed turn is logged, explainable, and auditable: the draft, the value-by-value ledger, the decision, and the policy version in force.
-
-**Model Independence** — Your charter, policies, and audit trail live in your database, not the provider's. Switch or upgrade models and the governance layer moves with you.
-
-**Long-Term Consistency** — Maintain your AI's ethical identity over time, and measure drift against it rather than guessing.
-
-**Governed Action** — Agents act, not just answer. Every tool call is checked against the agent's allow-list before it runs, reads and writes are held to different standards, and the action taken is recorded alongside the decision.
-
----
-
-## Built for Regulated Industries
-
-SAFi's governance architecture was designed for auditability first, which is why it maps onto the world's strictest AI and record-keeping regimes. Each readiness document below states exactly what ships today and what remains on the roadmap — no certification claims, no hand-waving.
-
-| Field | What SAFi is designed to support | Readiness document |
-| :--- | :--- | :--- |
-| **Financial services (SEC / FINRA)** | The SEA 17a-4 audit-trail alternative (hash-chained, tamper-evident records with re-creatable originals), Reg S-P incident response with notification clocks, retention & legal hold, examiner production exports, and FINRA 3110/3120-style supervisory review with auditable human sign-off. | [SEC / FINRA Readiness](docs/SEC_COMPLIANCE_READINESS.md) |
-| **EU AI Act** | The full limited-risk transparency tier: Art. 50(1) AI-interaction disclosure, Art. 50(2) machine-readable output marking, Art. 12 logging, Art. 13 per-decision explanations, Art. 14 human oversight, Art. 72 post-market monitoring with a published plan, and Art. 73 incident clocks. | [EU AI Act Readiness](docs/EU_AI_ACT_READINESS.md) |
-| **Healthcare (HIPAA)** | A per-org LLM provider allow-list with verified BAA-capable and zero-data-retention badges (fail-closed at every model call), application-layer encryption at rest, MFA and revocable sessions, §164.524 right-of-access export, breach-notification clocks, and a device-copy kill switch. | [HIPAA Readiness](docs/HIPAA_READINESS.md) |
-| **Data protection (GDPR)** | Self-service Art. 15 access export and a written position reconciling Art. 17 erasure with retention obligations, including the legal-obligation carve-out and legal-hold precedence. | [Data Erasure & Retention](docs/DATA_ERASURE_AND_RETENTION.md) |
-
-> **The honest fine print:** these are platform capabilities designed to *support* a compliance program, not substitutes for one. Contractual items — BAAs and zero-data-retention agreements with model providers, SOC 2 attestation — remain the deploying organization's to execute, and each readiness document says so explicitly.
-
----
-
-## Roles & Permissions
-
-SAFi has **four roles**, scoped to an organization. Institutions author governed
-agents; the people who use them do so under least privilege.
-
-| | `member` | `auditor` | `editor` | `admin` |
-|---|---|---|---|---|
-| Chat with the org's agents | ✅ | ✅ | ✅ | ✅ |
-| Own conversations, projects, saved content | ✅ | ✅ | ✅ | ✅ |
-| Own account, sessions, MFA, data export | ✅ | ✅ | ✅ | ✅ |
-| See the governance verdict on **their own** turns | ✅ | ✅ | ✅ | ✅ |
-| See which agents exist, and each one's **governing values and standards** | ✅ | ✅ | ✅ | ✅ |
-| See which Charter and Policy govern the agent they are using | ✅ | ✅ | ✅ | ✅ |
-| **Audit Hub** — KPIs, trends, log explorer, export | — | ✅ | ✅ | ✅ |
-| **Supervisory review** — queue, dispositions, reports | — | ✅ | **—** | ✅ |
-| **Author agents** — create, edit, delete, assign tools | — | — | ✅ | ✅ |
-| **Author policies** — create, edit, version, API keys | — | — | ✅ | ✅ |
-| Org settings, members, invitations, role changes | — | — | — | ✅ |
-| Retention, legal hold, provider allowlist, offline policy | — | — | — | ✅ |
-| Incident register, examiner export, compliance log | — | — | — | ✅ |
-
-Roles are ranked (`admin` 4 > `editor` 3 > `auditor` 2 > `member` 1) and a check
-passes at the required rank **or above** — with **one deliberate exception**.
-
-### The exception: editors cannot review
-
-`editor` outranks `auditor`, but supervisory review is restricted to
-`("admin", "auditor")` — **editors are excluded**. Editors are the people who
-author agents and policies, and FINRA 3110/3120 supervision means someone other
-than the author signs off. An editor reviewing turns produced by an agent they
-wrote is self-supervision, which is the first thing an examiner tests.
-
-So the model is a hierarchy for *reading* and *authoring*, and a deliberate
-non-hierarchy for *supervising*.
-
-### What each role means in practice
-
-**`member`** — consumes agents. Full use of chat, their own conversation
-history, projects, saved content, and document upload.
-
-Members are not governed in the dark. Without any elevated role they can see:
-
-- **which rules apply to them** — the agent list, and for any agent its
-  compiled Values & Standards. Under the two-tier model those are assembled
-  from the organization's Charter and the governing Policy, weighted (Charter
-  share defaults to 40%), so what a member sees is the operative standard their
-  turns are actually scored against — not a summary of it.
-- **who constrains the agent they are using** — rendered as
-  `Governed by <Org> Charter → <Policy>`, plus the agent's scope statement and
-  the fact that out-of-scope requests are redirected.
-- **how their own turn was judged** — the alignment score, every value that was
-  upheld or conflicted, each with a confidence and a written reason, and whether
-  the answer was approved or redirected.
-
-What a member cannot reach: other people's conversations, the Audit Hub, the
-review queue, and any authoring or configuration surface.
-
-**`auditor`** — oversight without authorship. Everything a member has, plus the
-full Audit Hub across the org (alignment and consistency analytics, per-turn
-drill-down with hash-chain verification, custody-logged exports) and the
-supervisory review workflow: the sampled queue, per-item evidence, approve and
-override with a written rationale, coverage reports, and both exports. Cannot
-create or change agents, policies or org settings — by design, so oversight
-stays independent of authorship.
-
-**`editor`** — builds governed agents. Everything a member has, plus the Audit
-Hub, plus authorship: create and edit agents (including which tools they may
-call), create and edit policies, restore policy versions, and mint or rotate
-policy API keys for external integrations. **Cannot perform supervisory
-review.** Cannot change org settings or compliance configuration.
-
-**`admin`** — accountable for the organization. Everything above, including
-review, plus org identity and domain verification, invitations, membership and
-role changes, forced session revocation, review configuration, retention and
-legal hold, the provider allowlist, the offline/device-caching policy, the
-incident register, the compliance evidence log, and examiner production exports.
-
-### How an organization gets its first admin
-
-Onboarding is self-service, and the role a person lands on depends on whether
-their organization already exists:
-
-1. **First person in** — a user who signs in with no organization gets one
-   created for them automatically, seeded with a complete default policy, and is
-   promoted to **`admin`** of it. They are its owner.
-2. **Verify the domain** — that admin verifies ownership of their email domain.
-   Verification is `admin`-only, so it can only ever be performed by someone who
-   already administers the organization.
-3. **Everyone after that** — a user signing in with an email on a **verified**
-   domain is matched to that organization and joined as a **`member`**, never an
-   admin. Whether that happens at all is controlled by the org's `join_policy`:
-
-   | `join_policy` | effect |
-   |---|---|
-   | `invite_only` | no automatic joining; the login is refused and journaled |
-   | `domain_auto_join` | same-domain users join as `member` |
-   | `both` | invitations and domain joining |
-
-   Promotion beyond `member` is a deliberate act by an existing admin.
-
-Ownership is also self-healing: if the recorded owner of an organization is
-somehow not an admin of it, the next `/api/me` promotes them back and logs it —
-so an organization cannot end up with no one able to administer it.
-
-### Guarantees that hold across all roles
-
-- **Organization scoping.** Every org-scoped route rejects a mismatch between
-  the path's organization and the caller's own with `403`, and the scoping is
-  applied again in SQL. An admin of one organization has no reach into another.
-- **Role changes take effect immediately.** Changing a member's role revokes
-  their sessions and journals the change in the same transaction, so a
-  downgrade cannot be outlived by an open tab.
-- **MFA can be mandated org-wide**, not left to individual choice.
-- **Supervisory separation of duties.** A reviewer cannot dispose of a turn from
-  their own conversation, enforced in the data layer so every caller inherits
-  it — not only the API.
-- **Dispositions are tamper-evident.** Each approval or override is appended to
-  the message's hash-chained audit trail, so a sign-off carries the same
-  integrity evidence as the record it supervises.
-
-### Current limitations
-
-Stated plainly, because knowing the edges matters more than the summary:
-
-- **Four fixed roles, no delegation.** There is no per-agent or per-policy
-  scoping, so "this team administers only these agents" cannot be expressed. An
-  editor can edit every agent in the organization.
-- **No approval workflow for capability changes.** An editor granting an agent a
-  new tool takes effect immediately; there is no request-and-approve step.
-- **Agent and policy changes are not yet written to the compliance evidence
-  log.** That log currently records organization-level changes (retention, legal
-  hold, provider allowlist, offline policy, review configuration) and every
-  export. The hash-chained trail covers *turn* decisions, not permission or
-  capability changes.
-- **Policy-authorship separation of duties is incomplete.** A reviewer cannot
-  dispose of a turn from their own conversation, but an admin may author a policy
-  and then review turns governed by it.
-- **No SCIM or automated deprovisioning.** Off-boarding is manual today;
-  `remove_member_from_org` revokes sessions correctly, but nothing is driven from
-  an identity provider. See [`docs/SAML_SSO_PLAN.md`](docs/SAML_SSO_PLAN.md).
-
-Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
-`check_permission`), with per-surface role sets in `audit_api.py`
-(`OBSERVER_ROLES`) and `review_api.py` (`REVIEWER_ROLES`).
+The demo deliberately runs small, fast models — SAFi is the governance layer, not the intelligence, and the policy is enforced identically whichever model sits underneath. So don't judge it on the prose. **Try to make it break policy.** That is what it is there to demonstrate, and it is how the red-team dataset in [Benchmarks](#benchmarks--validation) was built in the first place.
 
 ---
 
@@ -461,6 +309,21 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 
 ---
 
+## Regulatory Readiness
+
+SAFi's governance architecture was designed for auditability first, which is why it maps onto the world's strictest AI and record-keeping regimes. Each readiness document below states exactly what ships today and what remains on the roadmap — no certification claims, no hand-waving.
+
+| Field | What SAFi is designed to support | Readiness document |
+| :--- | :--- | :--- |
+| **Financial services (SEC / FINRA)** | The SEA 17a-4 audit-trail alternative (hash-chained, tamper-evident records with re-creatable originals), Reg S-P incident response with notification clocks, retention & legal hold, examiner production exports, and FINRA 3110/3120-style supervisory review with auditable human sign-off. | [SEC / FINRA Readiness](docs/SEC_COMPLIANCE_READINESS.md) |
+| **EU AI Act** | The full limited-risk transparency tier: Art. 50(1) AI-interaction disclosure, Art. 50(2) machine-readable output marking, Art. 12 logging, Art. 13 per-decision explanations, Art. 14 human oversight, Art. 72 post-market monitoring with a published plan, and Art. 73 incident clocks. | [EU AI Act Readiness](docs/EU_AI_ACT_READINESS.md) |
+| **Healthcare (HIPAA)** | A per-org LLM provider allow-list with verified BAA-capable and zero-data-retention badges (fail-closed at every model call), application-layer encryption at rest, MFA and revocable sessions, §164.524 right-of-access export, breach-notification clocks, and a device-copy kill switch. | [HIPAA Readiness](docs/HIPAA_READINESS.md) |
+| **Data protection (GDPR)** | Self-service Art. 15 access export and a written position reconciling Art. 17 erasure with retention obligations, including the legal-obligation carve-out and legal-hold precedence. | [Data Erasure & Retention](docs/DATA_ERASURE_AND_RETENTION.md) |
+
+> **The honest fine print:** these are platform capabilities designed to *support* a compliance program, not substitutes for one. Contractual items — BAAs and zero-data-retention agreements with model providers, SOC 2 attestation — remain the deploying organization's to execute, and each readiness document says so explicitly.
+
+---
+
 ## For Developers
 
 Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)** — it covers:
@@ -473,6 +336,155 @@ Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)
 - **RAG & tool integrations** — FAISS-backed retrieval, the plugin-vs-tool distinction, the two-layer tool authorization (advertised schemas + the Will's per-intent allow-list gate), and the recipe for adding a new tool.
 - **The Audit Hub metrics & testing** — what Alignment, Consistency, and the Beta retention setting actually measure, why scores stabilize only after a policy is finished being tested, and how to run the test suite.
 
+---
+
+## Roles & Permissions
+
+SAFi has **four roles**, scoped to an organization. Institutions author governed
+agents; the people who use them do so under least privilege.
+
+| | `member` | `auditor` | `editor` | `admin` |
+|---|---|---|---|---|
+| Chat with the org's agents | ✅ | ✅ | ✅ | ✅ |
+| Own conversations, projects, saved content | ✅ | ✅ | ✅ | ✅ |
+| Own account, sessions, MFA, data export | ✅ | ✅ | ✅ | ✅ |
+| See the governance verdict on **their own** turns | ✅ | ✅ | ✅ | ✅ |
+| See which agents exist, and each one's **governing values and standards** | ✅ | ✅ | ✅ | ✅ |
+| See which Charter and Policy govern the agent they are using | ✅ | ✅ | ✅ | ✅ |
+| **Audit Hub** — KPIs, trends, log explorer, export | — | ✅ | ✅ | ✅ |
+| **Supervisory review** — queue, dispositions, reports | — | ✅ | **—** | ✅ |
+| **Author agents** — create, edit, delete, assign tools | — | — | ✅ | ✅ |
+| **Author policies** — create, edit, version, API keys | — | — | ✅ | ✅ |
+| Org settings, members, invitations, role changes | — | — | — | ✅ |
+| Retention, legal hold, provider allowlist, offline policy | — | — | — | ✅ |
+| Incident register, examiner export, compliance log | — | — | — | ✅ |
+
+Roles are ranked (`admin` 4 > `editor` 3 > `auditor` 2 > `member` 1) and a check
+passes at the required rank **or above** — with **one deliberate exception**.
+
+### The exception: editors cannot review
+
+`editor` outranks `auditor`, but supervisory review is restricted to
+`("admin", "auditor")` — **editors are excluded**. Editors are the people who
+author agents and policies, and FINRA 3110/3120 supervision means someone other
+than the author signs off. An editor reviewing turns produced by an agent they
+wrote is self-supervision, which is the first thing an examiner tests.
+
+So the model is a hierarchy for *reading* and *authoring*, and a deliberate
+non-hierarchy for *supervising*.
+
+### What each role means in practice
+
+**`member`** — consumes agents. Full use of chat, their own conversation
+history, projects, saved content, and document upload.
+
+Members are not governed in the dark. Without any elevated role they can see:
+
+- **which rules apply to them** — the agent list, and for any agent its
+  compiled Values & Standards. Under the two-tier model those are assembled
+  from the organization's Charter and the governing Policy, weighted (Charter
+  share defaults to 40%), so what a member sees is the operative standard their
+  turns are actually scored against — not a summary of it.
+- **who constrains the agent they are using** — rendered as
+  `Governed by <Org> Charter → <Policy>`, plus the agent's scope statement and
+  the fact that out-of-scope requests are redirected.
+- **how their own turn was judged** — the alignment score, every value that was
+  upheld or conflicted, each with a confidence and a written reason, and whether
+  the answer was approved or redirected.
+
+What a member cannot reach: other people's conversations, the Audit Hub, the
+review queue, and any authoring or configuration surface.
+
+**`auditor`** — oversight without authorship. Everything a member has, plus the
+full Audit Hub across the org (alignment and consistency analytics, per-turn
+drill-down with hash-chain verification, custody-logged exports) and the
+supervisory review workflow: the sampled queue, per-item evidence, approve and
+override with a written rationale, coverage reports, and both exports. Cannot
+create or change agents, policies or org settings — by design, so oversight
+stays independent of authorship.
+
+**`editor`** — builds governed agents. Everything a member has, plus the Audit
+Hub, plus authorship: create and edit agents (including which tools they may
+call), create and edit policies, restore policy versions, and mint or rotate
+policy API keys for external integrations. **Cannot perform supervisory
+review.** Cannot change org settings or compliance configuration.
+
+**`admin`** — accountable for the organization. Everything above, including
+review, plus org identity and domain verification, invitations, membership and
+role changes, forced session revocation, review configuration, retention and
+legal hold, the provider allowlist, the offline/device-caching policy, the
+incident register, the compliance evidence log, and examiner production exports.
+
+### How an organization gets its first admin
+
+Onboarding is self-service, and the role a person lands on depends on whether
+their organization already exists:
+
+1. **First person in** — a user who signs in with no organization gets one
+   created for them automatically, seeded with a complete default policy, and is
+   promoted to **`admin`** of it. They are its owner.
+2. **Verify the domain** — that admin verifies ownership of their email domain.
+   Verification is `admin`-only, so it can only ever be performed by someone who
+   already administers the organization.
+3. **Everyone after that** — a user signing in with an email on a **verified**
+   domain is matched to that organization and joined as a **`member`**, never an
+   admin. Whether that happens at all is controlled by the org's `join_policy`:
+
+   | `join_policy` | effect |
+   |---|---|
+   | `invite_only` | no automatic joining; the login is refused and journaled |
+   | `domain_auto_join` | same-domain users join as `member` |
+   | `both` | invitations and domain joining |
+
+   Promotion beyond `member` is a deliberate act by an existing admin.
+
+Ownership is also self-healing: if the recorded owner of an organization is
+somehow not an admin of it, the next `/api/me` promotes them back and logs it —
+so an organization cannot end up with no one able to administer it.
+
+### Guarantees that hold across all roles
+
+- **Organization scoping.** Every org-scoped route rejects a mismatch between
+  the path's organization and the caller's own with `403`, and the scoping is
+  applied again in SQL. An admin of one organization has no reach into another.
+- **Role changes take effect immediately.** Changing a member's role revokes
+  their sessions and journals the change in the same transaction, so a
+  downgrade cannot be outlived by an open tab.
+- **MFA can be mandated org-wide**, not left to individual choice.
+- **Supervisory separation of duties.** A reviewer cannot dispose of a turn from
+  their own conversation, enforced in the data layer so every caller inherits
+  it — not only the API.
+- **Dispositions are tamper-evident.** Each approval or override is appended to
+  the message's hash-chained audit trail, so a sign-off carries the same
+  integrity evidence as the record it supervises.
+
+### Current limitations
+
+Stated plainly, because knowing the edges matters more than the summary:
+
+- **Four fixed roles, no delegation.** There is no per-agent or per-policy
+  scoping, so "this team administers only these agents" cannot be expressed. An
+  editor can edit every agent in the organization.
+- **No approval workflow for capability changes.** An editor granting an agent a
+  new tool takes effect immediately; there is no request-and-approve step.
+- **Agent and policy changes are not yet written to the compliance evidence
+  log.** That log currently records organization-level changes (retention, legal
+  hold, provider allowlist, offline policy, review configuration) and every
+  export. The hash-chained trail covers *turn* decisions, not permission or
+  capability changes.
+- **Policy-authorship separation of duties is incomplete.** A reviewer cannot
+  dispose of a turn from their own conversation, but an admin may author a policy
+  and then review turns governed by it.
+- **No SCIM or automated deprovisioning.** Off-boarding is manual today;
+  `remove_member_from_org` revokes sessions correctly, but nothing is driven from
+  an identity provider. See [`docs/SAML_SSO_PLAN.md`](docs/SAML_SSO_PLAN.md).
+
+Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
+`check_permission`), with per-surface role sets in `audit_api.py`
+(`OBSERVER_ROLES`) and `review_api.py` (`REVIEWER_ROLES`).
+
+---
+
 ## Contributing
 
 Contributions are welcome -- bug reports, new MCP tools, governance policy examples, documentation, and faculty improvements.
@@ -481,14 +493,6 @@ Contributions are welcome -- bug reports, new MCP tools, governance policy examp
 - 🟢 **Good first issues:** [issues labeled `good first issue`](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 - 💬 **Ask questions & propose features:** [GitHub Discussions](https://github.com/jnamaya/SAFi/discussions)
 - **Read the contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
-
----
-
-## Live Demo
-
-[safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
-
-The demo deliberately runs small, fast models — SAFi is the governance layer, not the intelligence, and the policy is enforced identically whichever model sits underneath. So don't judge it on the prose. **Try to make it break policy.** That is what it is there to demonstrate, and it is how the red-team dataset in [Benchmarks](#benchmarks--validation) was built in the first place.
 
 ---
 
