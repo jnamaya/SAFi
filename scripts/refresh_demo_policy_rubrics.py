@@ -65,7 +65,7 @@ def main():
                     help="write the changes (default is a dry run)")
     args = ap.parse_args()
 
-    from safi_app.core.governance.demo.policies import DEMO_AGENT_POLICIES
+    from safi_app.core.policies.demo.policies import DEMO_AGENT_POLICIES
 
     conn = db.get_db_connection()
     cur = conn.cursor(dictionary=True)

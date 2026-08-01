@@ -17,28 +17,28 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # 1. Import Governance
-from ..governance.contoso.policy import CONTOSO_GLOBAL_POLICY
+from ..policies.contoso.policy import CONTOSO_GLOBAL_POLICY
 from ...persistence import database as db
 from ...config import Config
 
 # 2. Import Personas
-from ..personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
-from ..personas.fiduciary import THE_FIDUCIARY_PERSONA
-from ..personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
-from ..personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
-from ..personas.safi_steward import THE_SAFI_STEWARD_PERSONA
-from ..personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
+from ..agents.contoso_admin import THE_CONTOSO_ADMIN_AGENT
+from ..agents.fiduciary import THE_FIDUCIARY_AGENT
+from ..agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
+from ..agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
+from ..agents.safi_steward import THE_SAFI_STEWARD_AGENT
+from ..agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
 
 # 3. Define the Persona Registry
 # ALL_PERSONAS is the complete built-in catalog — used for reserved-name checks
 # so a custom agent can never shadow a built-in key, even one currently disabled.
 ALL_PERSONAS: Dict[str, Dict[str, Any]] = {
-    "contoso_admin": THE_CONTOSO_ADMIN_PERSONA,
-    "fiduciary": THE_FIDUCIARY_PERSONA,
-    "health_navigator": THE_HEALTH_NAVIGATOR_PERSONA,
-    "bible_scholar": THE_BIBLE_SCHOLAR_PERSONA,
-    "safi": THE_SAFI_STEWARD_PERSONA,
-    "tutor": THE_SOCRATIC_TUTOR_PERSONA,
+    "contoso_admin": THE_CONTOSO_ADMIN_AGENT,
+    "fiduciary": THE_FIDUCIARY_AGENT,
+    "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
+    "bible_scholar": THE_BIBLE_SCHOLAR_AGENT,
+    "safi": THE_SAFI_STEWARD_AGENT,
+    "tutor": THE_SOCRATIC_TUTOR_AGENT,
 }
 
 # PERSONAS is the ACTIVE registry: only agents enabled via SAFI_BUILTIN_AGENTS

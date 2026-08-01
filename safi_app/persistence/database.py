@@ -886,7 +886,7 @@ def _ensure_safi_policy_exists():
     Ensures the SAFi default policy template exists in the database.
     This is the system-wide seed used as the starting point for new organizations.
     """
-    from ..core.governance.safi.policy import SAFI_DEFAULT_POLICY
+    from ..core.policies.safi.policy import SAFI_DEFAULT_POLICY
 
     SAFI_POLICY_ID = "safi_default_policy"
 
@@ -922,13 +922,13 @@ def _ensure_safi_policy_exists():
 def _ensure_demo_agent_policies_exist():
     """
     Seeds the demo business-unit policies that govern the built-in demo agents
-    (one per persona; see core/governance/demo/policies.py). Idempotent: any
+    (one per persona; see core/policies/demo/policies.py). Idempotent: any
     policy id already present is left untouched, so operator edits made through
     the Governance tab survive restarts. Uses create_policy() so each seed also
     gets its version-1 history row, then flips is_demo so the policies are
     visible to every user.
     """
-    from ..core.governance.demo.policies import DEMO_AGENT_POLICIES, DEMO_AGENT_POLICY_MAP
+    from ..core.policies.demo.policies import DEMO_AGENT_POLICIES, DEMO_AGENT_POLICY_MAP
     from ..config import Config
 
     # Only seed policies for the built-in agents enabled via SAFI_BUILTIN_AGENTS —
@@ -2592,7 +2592,7 @@ def delete_agent(key):
 # -------------------------------------------------------------------------
 
 def create_organization_atomic(org_name, user_id):
-    from ..core.governance.safi.policy import SAFI_DEFAULT_POLICY
+    from ..core.policies.safi.policy import SAFI_DEFAULT_POLICY
 
     conn = get_db_connection()
     cursor = conn.cursor()

@@ -825,14 +825,17 @@ def run_phase0(cases: List[TestCase], persona_key: str) -> List[TestResult]:
     blacklist: list = []
     try:
         import importlib.util
-        personas_path = _PROJECT_ROOT / "safi_app" / "core" / "personas" / f"{persona_key}.py"
-        if personas_path.exists():
-            spec = importlib.util.spec_from_file_location(persona_key, personas_path)
+        agent_path = _PROJECT_ROOT / "safi_app" / "core" / "agents" / f"{persona_key}.py"
+        if agent_path.exists():
+            spec = importlib.util.spec_from_file_location(persona_key, agent_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)  # type: ignore[union-attr]
-            # Each persona file exports a dict named THE_<NAME>_PERSONA
+            # Each agent file exports a dict named THE_<NAME>_AGENT. The suffix is
+            # matched rather than the exact name, so this must track the rename --
+            # it is wrapped in `except Exception: pass`, so a miss here degrades
+            # silently to "no blacklist" rather than failing loudly.
             for attr in dir(mod):
-                if attr.endswith("_PERSONA"):
+                if attr.endswith("_AGENT"):
                     persona_dict = getattr(mod, attr)
                     will_rules = persona_dict.get("will_rules", {})
                     if isinstance(will_rules, dict):

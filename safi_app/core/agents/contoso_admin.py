@@ -12,10 +12,10 @@ the orchestrator uses it.
 """
 from typing import Dict, Any
 
-from ..governance.contoso.policy import CONTOSO_GLOBAL_POLICY
+from ..policies.contoso.policy import CONTOSO_GLOBAL_POLICY
 
 # This persona is specifically designed to be governed by the Contoso Global Policy.
-THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
+THE_CONTOSO_ADMIN_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
     # Displayed in the UI and written to every log entry.
@@ -23,7 +23,7 @@ THE_CONTOSO_ADMIN_PERSONA: Dict[str, Any] = {
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Contoso Governance Officer",
     # Governing business-unit policy (seeded at startup from
-    # core/governance/demo/policies.py, sourced from governance/contoso).
+    # core/policies/demo/policies.py, sourced from policies/contoso).
     # If the policy row is ever deleted, the GOVERNANCE_MAP entry in
     # synderesis.py takes over as the in-code fallback.
     "policy_id": "demo_contoso_genai_policy",

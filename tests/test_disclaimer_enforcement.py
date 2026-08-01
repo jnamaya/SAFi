@@ -23,15 +23,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core.personas.fiduciary import THE_FIDUCIARY_PERSONA
-from safi_app.core.personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
+from safi_app.core.agents.fiduciary import THE_FIDUCIARY_AGENT
+from safi_app.core.agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
 
 # Personas that arm the Will's disclaimer gate. If a new one does, add it here —
 # the point of this file is that arming the gate and scoring it are mutually
 # exclusive.
 DISCLAIMER_PERSONAS = {
-    "fiduciary": THE_FIDUCIARY_PERSONA,
-    "health_navigator": THE_HEALTH_NAVIGATOR_PERSONA,
+    "fiduciary": THE_FIDUCIARY_AGENT,
+    "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
 }
 
 
@@ -98,7 +98,7 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
     def test_04_no_persona_anywhere_scores_the_disclaimer(self):
         """Widened past the two known agents: any persona arming the gate must
         not also score it, and any persona scoring it must be caught here."""
-        import safi_app.core.personas as pkg
+        import safi_app.core.agents as pkg
         import importlib, pkgutil
         offenders = []
         for mod in pkgutil.iter_modules(pkg.__path__):

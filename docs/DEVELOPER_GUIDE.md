@@ -93,8 +93,8 @@ safi_app/
     ├── orchestrator.py        # SAFi.process_prompt — the §5 phase pipeline
     ├── orchestrator_mixins/   # suggestions, tasks, tts
     ├── faculties/             # intellect, will, conscience, spirit, synderesis
-    ├── governance/            # per-org policy definitions (safi/, contoso/, demo/)
-    ├── personas/              # persona system prompts
+    ├── policies/              # per-org policy definitions (safi/, contoso/, demo/)
+    ├── agents/                # built-in agent definitions and system prompts
     ├── plugins/, mcp_servers/ # tool/plugin integrations
     ├── services/              # llm_provider, model_routing, provider_governance, rag_service, ...
     └── rbac.py, permissions.py, provenance.py, totp.py, threat_intel.py, ...
@@ -261,14 +261,14 @@ auditor / editor / admin) gating who in the org can see it. `list_agents()`
 org-mates' agents whose visibility clears the caller's role; built-in
 demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
 
-- **Persona and policy are two tiers, not one binding.** `core/personas/*.py`
+- **Persona and policy are two tiers, not one binding.** `core/agents/*.py`
   (bible_scholar, contoso_admin, fiduciary, health_navigator, safi_steward,
   socratic_tutor) are default templates — each ships a fallback `policy_id`,
   but that's just a default an agent row can override. Policies are their
   own versioned entity (`policies` / `policy_versions`), so the same
   persona can run under different policies across agents, or be
   reattached to a new one without touching its identity. See
-  `core/governance/demo/policies.py` for the two-tier model spelled out.
+  `core/policies/demo/policies.py` for the two-tier model spelled out.
 - **Synderesis compiles fresh every turn, not once at agent creation.**
   `Synderesis.get_profile()` (`faculties/synderesis.py`) — "the
   sole governance compiler" — resolves persona → policy → org Charter into
@@ -522,7 +522,7 @@ as license to skip adding one where it's actually needed.
 
 Policies are plain dicts/JSON, not classes — no schema migration to
 worry about when you add a value. A single value entry looks like this
-(verbatim, `core/governance/contoso/policy.py`):
+(verbatim, `core/policies/contoso/policy.py`):
 
 ```python
 {
@@ -578,7 +578,7 @@ new version rather than rewinding to the old one.
 **Two ways to create a policy — only one of them is the real runtime
 path.** `POST /policies`/`PUT /policies/<id>` (`policy_api_routes.py`)
 is what actually creates or edits a policy in the database. The Python
-modules under `core/governance/{safi,contoso,demo}/` are **seed data, not
+modules under `core/policies/{safi,contoso,demo}/` are **seed data, not
 live policies** — they're inserted into the `policies` table once, at
 first startup, by an idempotent seeder
 (`_ensure_demo_agent_policies_exist()`, `database.py`, which

@@ -12,7 +12,7 @@ the orchestrator uses it.
 """
 from typing import Dict, Any
 
-THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
+THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
     # Displayed in the UI and written to every log entry.
@@ -20,7 +20,7 @@ THE_BIBLE_SCHOLAR_PERSONA: Dict[str, Any] = {
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Bible Scholar",
     # Governing business-unit policy (seeded at startup from
-    # core/governance/demo/policies.py). The compiler pulls scored values and
+    # core/policies/demo/policies.py). The compiler pulls scored values and
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_religious_studies_policy",

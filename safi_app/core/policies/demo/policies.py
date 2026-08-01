@@ -29,12 +29,12 @@ editable in the Governance tab. Edits here only affect fresh databases.
 import copy
 from typing import Any, Dict, List
 
-from ...personas.fiduciary import THE_FIDUCIARY_PERSONA
-from ...personas.health_navigator import THE_HEALTH_NAVIGATOR_PERSONA
-from ...personas.bible_scholar import THE_BIBLE_SCHOLAR_PERSONA
-from ...personas.socratic_tutor import THE_SOCRATIC_TUTOR_PERSONA
-from ...personas.safi_steward import THE_SAFI_STEWARD_PERSONA
-from ...personas.contoso_admin import THE_CONTOSO_ADMIN_PERSONA
+from ...agents.fiduciary import THE_FIDUCIARY_AGENT
+from ...agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
+from ...agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
+from ...agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
+from ...agents.safi_steward import THE_SAFI_STEWARD_AGENT
+from ...agents.contoso_admin import THE_CONTOSO_ADMIN_AGENT
 from ..contoso.policy import CONTOSO_GLOBAL_POLICY
 
 
@@ -71,7 +71,7 @@ def _contoso_policy_values() -> List[Dict[str, Any]]:
 
     merged: Dict[str, Dict[str, Any]] = {}
     for v in _norm(CONTOSO_GLOBAL_POLICY["global_values"], 0.60) + \
-             _norm(THE_CONTOSO_ADMIN_PERSONA["values"], 0.40):
+             _norm(THE_CONTOSO_ADMIN_AGENT["values"], 0.40):
         name = v.get("value") or v.get("name")
         if name in merged:
             merged[name]["weight"] = round(merged[name]["weight"] + v["weight"], 6)
@@ -91,7 +91,7 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
         # persona's dict-shaped will_rules win the runtime merge, same as the
         # legacy GOVERNANCE_MAP path.
         "will_rules": CONTOSO_GLOBAL_POLICY["global_will_rules"],
-        "scope_statement": THE_CONTOSO_ADMIN_PERSONA.get("scope_statement", ""),
+        "scope_statement": THE_CONTOSO_ADMIN_AGENT.get("scope_statement", ""),
         "values": _contoso_policy_values(),
     },
 
@@ -112,8 +112,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "• Source honesty: Distinguish clearly between established market data and "
             "interpretation or opinion."
         ),
-        "scope_statement": THE_FIDUCIARY_PERSONA.get("scope_statement", ""),
-        "values": _lift_values(THE_FIDUCIARY_PERSONA.get("values", [])),
+        "scope_statement": THE_FIDUCIARY_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_FIDUCIARY_AGENT.get("values", [])),
     },
 
     "demo_patient_navigation_policy": {
@@ -132,8 +132,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "the decisions.\n"
             "• No false certainty: Medical evidence has limits; state them plainly."
         ),
-        "scope_statement": THE_HEALTH_NAVIGATOR_PERSONA.get("scope_statement", ""),
-        "values": _lift_values(THE_HEALTH_NAVIGATOR_PERSONA.get("values", [])),
+        "scope_statement": THE_HEALTH_NAVIGATOR_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_HEALTH_NAVIGATOR_AGENT.get("values", [])),
     },
 
     "demo_religious_studies_policy": {
@@ -153,8 +153,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "• Honest uncertainty: Where the historical record or manuscript evidence is "
             "disputed, say so."
         ),
-        "scope_statement": THE_BIBLE_SCHOLAR_PERSONA.get("scope_statement", ""),
-        "values": _lift_values(THE_BIBLE_SCHOLAR_PERSONA.get("values", [])),
+        "scope_statement": THE_BIBLE_SCHOLAR_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_BIBLE_SCHOLAR_AGENT.get("values", [])),
     },
 
     "demo_academic_tutoring_policy": {
@@ -171,8 +171,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "• Errors are material: Treat a student's mistake as the lesson's raw material, "
             "never as grounds for judgment."
         ),
-        "scope_statement": THE_SOCRATIC_TUTOR_PERSONA.get("scope_statement", ""),
-        "values": _lift_values(THE_SOCRATIC_TUTOR_PERSONA.get("values", [])),
+        "scope_statement": THE_SOCRATIC_TUTOR_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_SOCRATIC_TUTOR_AGENT.get("values", [])),
     },
 
     "demo_product_guidance_policy": {
@@ -190,8 +190,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "• Clarity over jargon: Prefer plain-language explanation; introduce framework "
             "terminology by defining it."
         ),
-        "scope_statement": THE_SAFI_STEWARD_PERSONA.get("scope_statement", ""),
-        "values": _lift_values(THE_SAFI_STEWARD_PERSONA.get("values", [])),
+        "scope_statement": THE_SAFI_STEWARD_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_SAFI_STEWARD_AGENT.get("values", [])),
     },
 }
 

@@ -14,7 +14,7 @@ Read the inline comments to understand what each section does.
 """
 from typing import Dict, Any
 
-THE_SAFI_STEWARD_PERSONA: Dict[str, Any] = {
+THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
     # name           : Displayed in the UI and written to every log entry.
@@ -23,7 +23,7 @@ THE_SAFI_STEWARD_PERSONA: Dict[str, Any] = {
     #                  Keep it one readable sentence.
     "name": "The SAFi Guide",
     # Governing business-unit policy (seeded at startup from
-    # core/governance/demo/policies.py). The compiler pulls scored values and
+    # core/policies/demo/policies.py). The compiler pulls scored values and
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_product_guidance_policy",
