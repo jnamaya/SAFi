@@ -498,7 +498,7 @@ Contributions are welcome -- bug reports, new MCP tools, governance policy examp
 
 ## About the Author
 
-**Nelson Amaya** is a Cloud & Infrastructure IT Director and AI Architect specializing in Enterprise Governance and Cognitive Architectures. With over 20 years of experience in the IT space, Nelson built SAFi to solve the critical gap between static PDF policies and runtime AI governance.
+**Nelson Amaya** is a Cloud & Infrastructure IT Director with more than 22 years of experience in the IT industry, and the architect of SAFi.
 
 - **Read the Philosophy:** [What is SAF](https://selfalignmentframework.com/what-is-saf/)
 - **Connect on LinkedIn:** [linkedin.com/in/amayanelson](https://www.linkedin.com/in/amayanelson/)
