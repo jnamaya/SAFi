@@ -95,35 +95,6 @@ h2 {
 .step-title { font-size: 1.15rem; }
 .step-note { margin: 0 0 1.1rem; color: var(--muted); max-width: 46rem; }
 
-/* ── Principle rows: problem -> principle -> what it buys ────────────────── */
-.principles { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.prow {
-  display: grid;
-  grid-template-columns: 2rem 1fr 1.3fr;
-  gap: 0.9rem;
-  align-items: start;
-  padding: 0.8rem 0.95rem;
-  border-top: 1px solid var(--line);
-}
-.prow:first-child { border-top: none; background: var(--panel); }
-.prow-head { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.pnum {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.55rem; height: 1.55rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #161B26;                /* measured against the gold, not the page */
-  font-weight: 600;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
-.pname { font-weight: 600; font-size: 0.89rem; }
-.pname span { display: block; font-weight: 400; font-size: 0.82rem; color: var(--muted); margin-top: 0.1rem; }
-.pgain { font-size: 0.84rem; color: var(--muted); }
-
 /* ── The turn ───────────────────────────────────────────────────────────── */
 .standard {
   border: 1px solid var(--line);
@@ -202,11 +173,6 @@ h2 {
   color: var(--muted);
 }
 
-@media (max-width: 40rem) {
-  .prow { grid-template-columns: 2rem 1fr; }
-  .prow .pgain { grid-column: 2; }
-  .prow-head:nth-child(3) { display: none; }
-}
 @media (max-width: 34rem) {
   body { padding: 1rem 0.75rem 2rem; font-size: 14.5px; }
   .step-num { font-size: 1.35rem; }
@@ -217,62 +183,10 @@ h2 {
 <body>
 <div class="wrap">
 
-  <!-- ── 1. The principles ──────────────────────────────────────────────── -->
+  <!-- ── 1. How a turn runs ─────────────────────────────────────────────── -->
   <section class="step">
     <div class="step-head">
       <span class="step-num">1</span>
-      <h2 class="step-title">Five principles, and what each one buys you</h2>
-    </div>
-    <p class="step-note">
-      All five answer the same problem: you are asked to trust an AI system whose
-      values were chosen by someone else, whose reasoning you cannot inspect, and
-      whose behaviour you cannot hold to a standard over time.
-    </p>
-    <div class="principles">
-      <div class="prow">
-        <span class="prow-head"></span>
-        <span class="prow-head">Principle</span>
-        <span class="prow-head">What it gives you</span>
-      </div>
-      <div class="prow">
-        <span class="pnum">1</span>
-        <span class="pname">Value Sovereignty
-          <span>You decide the mission and values your AI enforces, not the model provider.</span></span>
-        <span class="pgain">Your ethics are configuration you own, not a vendor default you inherit.</span>
-      </div>
-      <div class="prow">
-        <span class="pnum">2</span>
-        <span class="pname">Full Traceability
-          <span>Every governed turn is logged, explainable and auditable.</span></span>
-        <span class="pgain">The draft, the value-by-value ledger, the decision and the policy version in force — no black box.</span>
-      </div>
-      <div class="prow">
-        <span class="pnum">3</span>
-        <span class="pname">Model Independence
-          <span>Your charter, policies and audit trail live in your database.</span></span>
-        <span class="pgain">Switch or upgrade the model and the governance layer moves with you.</span>
-      </div>
-      <div class="prow">
-        <span class="pnum">4</span>
-        <span class="pname">Long-Term Consistency
-          <span>Maintain an agent's identity over time.</span></span>
-        <span class="pgain">Drift is measured against a fixed standard rather than guessed at.</span>
-      </div>
-      <div class="prow">
-        <span class="pnum">5</span>
-        <span class="pname">Governed Action
-          <span>Agents act, not just answer.</span></span>
-        <span class="pgain">Every tool call is checked before it runs, reads and writes are held to different standards, and the action is recorded beside the decision.</span>
-      </div>
-    </div>
-  </section>
-
-  <span class="link" aria-hidden="true"></span>
-
-  <!-- ── 2. How a turn runs ─────────────────────────────────────────────── -->
-  <section class="step">
-    <div class="step-head">
-      <span class="step-num">2</span>
       <h2 class="step-title">What happens on a single turn</h2>
     </div>
 
@@ -329,10 +243,10 @@ h2 {
 
   <span class="link" aria-hidden="true"></span>
 
-  <!-- ── 3. The idea that makes it work ─────────────────────────────────── -->
+  <!-- ── 2. The idea that makes it work ─────────────────────────────────── -->
   <section class="step">
     <div class="step-head">
-      <span class="step-num">3</span>
+      <span class="step-num">2</span>
       <h2 class="step-title">Why the record can be trusted</h2>
     </div>
     <p class="step-note">
