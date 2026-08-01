@@ -228,16 +228,20 @@ html.native body { font-size: 14px; }
    answer arrives, so there is no morph between states and no size jitter. */
 .ai-avatar.is-thinking {
   padding: 5.5px;
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.34);
-  /* "Working" is not a verdict: the sweep keeps its own green even if an
-     outcome class is present, so a prior turn's amber never bleeds into the
-     in-flight indicator. */
-  background: linear-gradient(135deg, #22c55e, #86efac);
+  /* "Working" is not a verdict — and green IS the verdict for "Aligned" here
+     (it is also --accent). A green in-flight ring therefore asserted alignment
+     on every turn, before anything had been judged, which is the same mistake
+     `.ring-pending` two rules down exists to prevent. The base is now the
+     pending neutral, and the sweep above carries all three possible outcomes.
+     A prior turn's colour still cannot bleed in: the state rules are scoped
+     :not(.is-thinking). */
+  box-shadow: 0 0 12px rgba(163, 163, 163, 0.34);
+  background: linear-gradient(135deg, #a3a3a3, #d4d4d4);
 }
 
 .dark .ai-avatar.is-thinking {
-  box-shadow: 0 0 14px rgba(34, 197, 94, 0.42);
-  background: linear-gradient(135deg, #22c55e, #4ade80);
+  box-shadow: 0 0 14px rgba(163, 163, 163, 0.30);
+  background: linear-gradient(135deg, #737373, #a3a3a3);
 }
 
 .ai-avatar.is-thinking::before {
@@ -247,29 +251,46 @@ html.native body { font-size: 14px; }
      flex container is otherwise a flex ITEM — it would be laid out beside the
      image instead of behind it. */
   inset: -30%; /* negative so the rotating box still covers the corners */
-  /* Comet arc over a dim base. The peak is a DEEP green on light surfaces, not
-     white: a white segment in a green annulus reads as a broken ring rather
-     than as rotation. Dark mode inverts the direction (see below). */
+  /* All three outcomes at once, because while the turn is in flight the outcome
+     is genuinely undetermined. The ring settles to ONE of these when the audit
+     lands, so the spin reads as three possibilities collapsing to a verdict
+     rather than as a decorative loader.
+
+     Hues are the chip's exact vocabulary (green #22c55e / amber #eab308 /
+     red #ef4444), not new ones, so the ring and the chip cannot look like
+     different scales.
+
+     Stops are a seamless wheel — green appears at both 0turn and 1turn — or the
+     wrap shows a hard seam once per revolution. They are blended rather than
+     hard thirds so red fades through amber instead of presenting as a solid
+     alarm segment on a turn that may well end green. Alpha lets the neutral
+     base show through, marking the state as provisional; the settled ring is
+     fully opaque, which is what makes the resolution visible.
+
+     Amber appears TWICE, and that is the fix for a real artefact rather than
+     symmetry for its own sake. With three evenly spaced stops the return leg
+     interpolates red straight to green, and sRGB routes that through a muddy
+     olive-brown that looked like a rendering fault. Mirroring amber means every
+     leg runs between adjacent hues. */
   background: conic-gradient(from 0turn,
-      rgba(34, 197, 94, 0.28) 0turn,
-      rgba(34, 197, 94, 0.28) 0.52turn,
-      #22c55e 0.72turn,
-      #15803d 0.80turn,
-      rgba(34, 197, 94, 0.28) 0.90turn,
-      rgba(34, 197, 94, 0.28) 1turn);
+      rgba(34, 197, 94, 0.80)  0turn,
+      rgba(234, 179, 8, 0.80)  0.25turn,
+      rgba(239, 68, 68, 0.80)  0.50turn,
+      rgba(234, 179, 8, 0.80)  0.75turn,
+      rgba(34, 197, 94, 0.80)  1turn);
   animation: safi-ring-sweep 1.15s linear infinite;
 }
 
-/* On a near-black surface the deep-green peak vanishes, so the contrast runs
-   the other way — a bright mint arc over the mid-green ring. */
+/* On a near-black surface the mid hues go muddy, so dark mode uses the same
+   lighter variants its settled rings already use (#4ade80 / #facc15 / #f87171)
+   rather than a second invented palette. */
 .dark .ai-avatar.is-thinking::before {
   background: conic-gradient(from 0turn,
-      rgba(34, 197, 94, 0.30) 0turn,
-      rgba(34, 197, 94, 0.30) 0.52turn,
-      #6ee7a2 0.72turn,
-      #d1fae5 0.80turn,
-      rgba(34, 197, 94, 0.30) 0.90turn,
-      rgba(34, 197, 94, 0.30) 1turn);
+      rgba(74, 222, 128, 0.85)  0turn,
+      rgba(250, 204, 21, 0.85)  0.25turn,
+      rgba(248, 113, 113, 0.85) 0.50turn,
+      rgba(250, 204, 21, 0.85)  0.75turn,
+      rgba(74, 222, 128, 0.85)  1turn);
 }
 
 /* Lifts the mark above the sweep so only the ring animates, and separates the

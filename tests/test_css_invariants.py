@@ -345,6 +345,59 @@ class TestThinkingRingSweep(unittest.TestCase):
         self.assertIn("ai-avatar is-thinking", body,
                       "showLoadingIndicator must put is-thinking on the avatar")
 
+    # -- the in-flight ring must not assert an outcome ------------------------
+    # Green is the "Aligned" colour AND --accent, so a green thinking ring
+    # claimed alignment on every turn before anything had been judged — the
+    # same error `.ring-pending` is scoped to prevent. These three pin the fix.
+
+    OUTCOME_HUES = {
+        "light": {"green": "34, 197, 94", "amber": "234, 179, 8", "red": "239, 68, 68"},
+        "dark":  {"green": "74, 222, 128", "amber": "250, 204, 21", "red": "248, 113, 113"},
+    }
+
+    def test_09_the_sweep_carries_all_three_outcomes(self):
+        """While a turn is in flight the outcome is undetermined, so the ring shows
+        every possibility rather than picking one."""
+        for theme, sel in (("light", ".ai-avatar.is-thinking::before"),
+                           ("dark", ".dark .ai-avatar.is-thinking::before")):
+            bg = _decls(self.css, sel).get("background", "")
+            for name, rgb in self.OUTCOME_HUES[theme].items():
+                with self.subTest(theme=theme, hue=name):
+                    self.assertIn(rgb, bg,
+                                  f"{theme} sweep is missing the {name} outcome "
+                                  f"({rgb}) — an in-flight ring showing fewer than "
+                                  f"three outcomes asserts a verdict it does not have")
+
+    def test_10_the_thinking_base_is_not_green(self):
+        """The pseudo-element composites over `.ai-avatar.is-thinking`, so a green
+        base reintroduces the claim even with a tri-colour sweep on top."""
+        for sel in (".ai-avatar.is-thinking", ".dark .ai-avatar.is-thinking"):
+            bg = _decls(self.css, sel).get("background", "")
+            with self.subTest(sel=sel):
+                for green in ("#22c55e", "#86efac", "#4ade80", "#15803d"):
+                    self.assertNotIn(green, bg,
+                                     "the in-flight base must be neutral — green "
+                                     "here asserts alignment nothing has verified")
+
+    def test_11_the_wheel_is_seamless(self):
+        """A conic gradient whose first and last stop differ shows a hard seam once
+        per revolution, which reads as a glitch rather than rotation."""
+        for theme, sel in (("light", ".ai-avatar.is-thinking::before"),
+                           ("dark", ".dark .ai-avatar.is-thinking::before")):
+            bg = _decls(self.css, sel).get("background", "")
+            stops = re.findall(r"rgba?\(([^)]*)\)\s*([\d.]+)turn", bg)
+            with self.subTest(theme=theme):
+                self.assertGreaterEqual(len(stops), 4,
+                                        "expected at least four stops for a "
+                                        "three-hue wheel plus the wrap")
+                first_rgb = stops[0][0].rsplit(",", 1)[0].strip()
+                last_rgb = stops[-1][0].rsplit(",", 1)[0].strip()
+                self.assertEqual(first_rgb, last_rgb,
+                                 f"{theme} wheel starts on {first_rgb} and ends on "
+                                 f"{last_rgb} — the wrap will show a seam")
+                self.assertEqual(stops[-1][1], "1",
+                                 "the final stop must land exactly on 1turn")
+
 
 class TestOutcomeRing(unittest.TestCase):
     """The avatar ring carries the turn's alignment tier once the audit lands.
