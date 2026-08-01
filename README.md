@@ -19,6 +19,7 @@
 - [Roles & Permissions](#roles--permissions)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
+- [The Framework Behind It](#the-framework-behind-it)
 - [Benchmarks & Validation](#benchmarks--validation)
 - [For Developers](#for-developers)
 - [Contributing](#contributing)
@@ -350,7 +351,7 @@ Every user prompt flows through a strict, synchronous pipeline:
 
 | Phase | Name | What Happens |
 | :--- | :--- | :--- |
-| **Phase 0** | Pre-generation Gate | Before any model runs, the raw prompt is screened by deterministic threat checks, known-injection signatures, per-persona blacklists, and an entropy heuristic. Anything flagged is redirected immediately. |
+| **Phase 0** | Pre-generation Gate | Before any model runs, the raw prompt is screened by deterministic threat checks, known-injection signatures, per-agent blocked-phrase lists, and an entropy heuristic. Anything flagged is redirected immediately. |
 | **Phase 1** | Data Gathering | The Intellect retrieves the context it needs (RAG lookups, memory, and tool/plugin context). This runs as part of the Intellect call rather than as a separate gate. |
 | **Phase 2** | Apprehension | The Intellect drafts a response or proposes a tool call. |
 | **Phase 3** | Structural Will | The Will deterministically checks the draft against structural invariants (required disclaimers, allowed syntax). A failure here is sent straight to a governed redirect, with no rewrite at this pass. |
@@ -359,6 +360,33 @@ Every user prompt flows through a strict, synchronous pipeline:
 | **Phase 6** | Safe Execution | The fully audited response is finalized, logged with its vector coordinates, and delivered to the user. |
 
 For the formal model, see the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
+
+---
+
+## The Framework Behind It
+
+This README covers *how* SAFi works. The reasoning behind the design is written up on the project site — and the framework it implements, **SAF**, predates the software and is not about AI at all.
+
+**Start here**
+
+- **[What is SAF](https://selfalignmentframework.com/what-is-saf/)** — the framework itself: five functions describing how anyone, a person or an institution, moves from what they believe to what they actually do. Deliberately free of AI language.
+- **[Introducing SAFi](https://selfalignmentframework.com/safi/)** — what the implementation does, who it is for, and a governed turn end to end.
+
+**The faculties, one at a time**
+
+- [Values](https://selfalignmentframework.com/safi-values/) — the standard an agent is held to, and how a Charter and a Policy compile into one scored set.
+- [The Intellect](https://selfalignmentframework.com/safi-intellect/) — what drafts the answer, and why it is given no power to act on it.
+- [The Will](https://selfalignmentframework.com/will/) — the gatekeeper with no language model at all, and the five points it is consulted.
+- [The Conscience](https://selfalignmentframework.com/safi-conscience/) — the independent auditor, and why the judge cannot be the defendant.
+- [The Spirit](https://selfalignmentframework.com/safi-explained-the-spirit/) — long-term character, and why drift is measured rather than prevented.
+
+**Going deeper**
+
+- **[SAFi Math Specification](https://selfalignmentframework.com/safi-math-specification/)** — every formula, the two different alignment numbers, and what each faculty is deliberately denied.
+- **[The Separation of Powers in SAF](https://selfalignmentframework.com/the-separation-of-powers-in-saf/)** — why this is a separation of powers rather than a division of labour, and what each faculty is refused in order to make it one.
+- **[Building a Mission-Aligned Agent](https://selfalignmentframework.com/building-a-mission-aligned-persona-with-safi/)** — a worked example: a real organization's values, the answer produced, the value-by-value ledger with confidences, and the audit record for that turn.
+- **[The King Solomon Problem](https://selfalignmentframework.com/the-king-solomon-problem-drift/)** — why a drift metric alone cannot catch a slow slide, and what does.
+- **[Why SAF Will Always Be Open](https://selfalignmentframework.com/why-saf-will-always-be-open/)** — why AGPL-3.0 specifically, and what its network provision is there to prevent.
 
 ---
 
@@ -421,7 +449,7 @@ Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)
 
 - **Repo structure & local setup** — how the front-end (`public/`), back-end (`safi_app/`), and mobile (`mobile/`) trees are laid out, the Docker quick start, and the two no-SSO login paths (local admin, demo).
 - **The architecture** — the five-faculty separation of powers (Synderesis, Intellect, Will, Conscience, Spirit), the Air Gap containment principle, and a condensed math primer linking to the full [Mathematical Specification](docs/MATHEMATICAL_SPECIFICATION.md).
-- **Multi-agent design & policy authoring** — how an org runs multiple agents side by side, the persona/policy two-tier binding, how Synderesis compiles a governance profile fresh on every turn, policy versioning, and what the agent- and policy-wizards can (and can't) build.
+- **Multi-agent design & policy authoring** — how an org runs multiple agents side by side, the agent/policy two-tier binding, how Synderesis compiles a governance profile fresh on every turn, policy versioning, and what the agent- and policy-wizards can (and can't) build.
 - **Integration surfaces** — the `/evaluate` gateway for governing an external agent's output, the internal Flask blueprint + two-check RBAC pattern for adding API routes, and SSO (Google Workspace, Microsoft Entra) with the org-join behavior worth knowing before configuring it for a customer.
 - **Compliance internals** — the hash-chained audit trail, encryption at rest and key rotation, and retention purging with legal hold (including its honestly-documented gaps).
 - **RAG & tool integrations** — FAISS-backed retrieval, the plugin-vs-tool distinction, the two-layer tool authorization (advertised schemas + the Will's per-intent allow-list gate), and the recipe for adding a new tool.
