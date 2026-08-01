@@ -35,6 +35,5 @@ I kept the name "Spirit" because it captures the holistic, animating coherence o
 ## Further Reading
 
 - [How SAF Was Born](https://selfalignmentframework.com/the-birth-of-the-self-alignment-framework/) -- how SAFi grew from a personal philosophy into a machine-governance architecture.
-- [How the Code Forced the Philosophy](https://selfalignmentframework.com/how-the-code-forced-the-philosophy/) -- the implementation finding a distinction the philosophy had missed: values.py becoming synderesis.py.
 - [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md) -- formal type system, Spirit EMA formulas, Will gate logic, and Phase Zero entropy heuristics.
 - [SAFi Self-Alignment Framework](https://selfalignmentframework.com) -- the philosophical foundation in full.
