@@ -79,7 +79,7 @@ export function updateUIForAuthState(user) {
              <!-- New Chat Button -->
              <button id="new-chat-button" type="button" class="w-full flex items-center justify-start gap-3 bg-green-600 hover:bg-green-700 text-white shadow-sm px-4 py-2.5 rounded-full transition-colors text-sm font-bold">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                <span>New Chat</span>
+                <span>New Conversation</span>
              </button>
 
              <!-- Saved Content -->
@@ -396,7 +396,7 @@ function createProjectMenu(project, projectHandlers) {
 
   menu.appendChild(menuItem({
     icon: iconPlusSmall,
-    label: 'New chat',
+    label: 'New conversation',
     onClick: () => { ui.closeAllConvoMenus(); projectHandlers.newChatHandler(project.id); },
   }));
   menu.appendChild(menuItem({
@@ -451,7 +451,7 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
 
   const newChatBtn = document.createElement('button');
   newChatBtn.type = 'button';
-  newChatBtn.title = 'New chat in folder';
+  newChatBtn.title = 'New conversation in folder';
   newChatBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
   newChatBtn.innerHTML = iconPlusSmall;
   newChatBtn.addEventListener('click', (e) => {
@@ -489,7 +489,7 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     if (convos.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'px-3 py-1.5 text-xs text-neutral-400 italic';
-      empty.textContent = 'No chats yet';
+      empty.textContent = 'No conversations yet';
       body.appendChild(empty);
     } else {
       convos.forEach(convo => body.appendChild(renderConversationLink(convo, convoHandlers)));

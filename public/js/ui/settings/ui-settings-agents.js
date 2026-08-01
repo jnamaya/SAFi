@@ -35,7 +35,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
     container.innerHTML = `
         <div class="settings-page-header">
             <h1>Agents</h1>
-            <p>Select an agent to start chatting. Switching agents will start a new conversation.</p>
+            <p>Select an agent to start a conversation. Switching agents will start a new one.</p>
         </div>
 
         <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->

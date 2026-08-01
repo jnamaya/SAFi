@@ -40,7 +40,7 @@ export async function renderSettingsComplianceTab() {
 
         <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">AI Provider Allow-List</h4>
-             <p class="text-xs text-gray-500 mb-4">Restrict which LLM providers may receive your organization's content — across chat, audits, and background tasks. Enforcement fails closed: blocked providers are never silently substituted. Changes are recorded in the evidence log above.</p>
+             <p class="text-xs text-gray-500 mb-4">Restrict which LLM providers may receive your organization's content — across conversations, audits, and background tasks. Enforcement fails closed: blocked providers are never silently substituted. Changes are recorded in the evidence log above.</p>
              <div class="space-y-4">
                  <label class="flex items-center gap-2 text-sm">
                      <input type="checkbox" id="chk-provider-restrict" ${org.settings?.provider_allowlist ? 'checked' : ''}>

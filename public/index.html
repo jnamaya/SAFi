@@ -400,7 +400,7 @@
                      text with a "this policy" link that opens the policy details modal; the static
                      sentence below is the fallback for standalone agents / pre-auth. -->
                 <p id="ai-disclosure" class="text-xs text-center text-neutral-400 dark:text-neutral-500 pt-2 px-2">
-                  You are chatting with an AI agent. Responses are AI-generated and governed by your
+                  You are in a conversation with an AI agent. Responses are AI-generated and governed by your
                   organization's policy.
                 </p>
               </div>
@@ -435,7 +435,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
-                  <span>Back to Chat</span>
+                  <span>Exit Settings</span>
                 </button>
               </div>
 
@@ -582,7 +582,7 @@
                 </svg>
               </button>
               <!-- Small back button for mobile -->
-              <button id="mobile-back-to-chat" class="p-2 text-gray-500">
+              <button id="mobile-back-to-chat" class="p-2 text-gray-500" aria-label="Exit Settings">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
@@ -798,7 +798,7 @@
   <div id="clear-all-convos-modal" role="dialog" aria-modal="true" aria-labelledby="clear-all-convos-modal-title"
     class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
     <h3 id="clear-all-convos-modal-title" class="text-lg font-semibold">Clear History</h3>
-    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Delete all chats in History? This won't affect chats inside folders. This cannot be undone.</p>
+    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Delete all conversations in History? This won't affect conversations inside folders. This cannot be undone.</p>
     <div class="flex justify-end gap-3 mt-6">
       <button id="cancel-clear-all-convos-btn" type="button"
         class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
@@ -825,7 +825,7 @@
   <div id="delete-project-modal" role="dialog" aria-modal="true" aria-labelledby="delete-project-modal-title"
     class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-xl shadow-2xl p-6 z-50 hidden mx-4">
     <h3 id="delete-project-modal-title" class="text-lg font-semibold">Delete Folder</h3>
-    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Delete <span id="delete-project-name" class="font-semibold text-neutral-900 dark:text-white"></span>? Its chats are kept and moved to History.</p>
+    <p class="text-sm text-neutral-600 dark:text-neutral-400 my-4">Delete <span id="delete-project-name" class="font-semibold text-neutral-900 dark:text-white"></span>? Its conversations are kept and moved to History.</p>
     <div class="flex justify-end gap-3 mt-6">
       <button id="cancel-delete-project-btn" type="button"
         class="px-4 py-2 rounded-lg font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700">Cancel</button>
@@ -849,7 +849,7 @@
     <p class="text-base text-neutral-600 dark:text-neutral-300 mb-6 leading-relaxed">
       You've reached the limit of <span class="font-semibold text-black dark:text-white">10 free prompts</span>.
       <br><br>
-      To continue chatting, please sign in. It's free and unlimited!
+      To continue, please sign in. It's free and unlimited!
     </p>
     <div class="flex flex-col sm:flex-row justify-end gap-3 mt-4">
       <button id="close-demo-limit-btn" type="button"

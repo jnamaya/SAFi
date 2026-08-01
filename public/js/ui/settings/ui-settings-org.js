@@ -238,7 +238,7 @@ function renderOrganizationUI(container, org, charter) {
                           <span class="font-bold text-gray-400">Balanced</span>
                           <span>Long Term (Resists Change)</span>
                       </div>
-                      <p class="text-xs text-gray-500 mt-2">Determines the weight of history. High values (0.9) mean the AI prioritizes its long-term training; low values (0.1) mean it is easily influenced by recent chats.</p>
+                      <p class="text-xs text-gray-500 mt-2">Determines the weight of history. High values (0.9) mean the AI prioritizes its long-term training; low values (0.1) mean it is easily influenced by recent conversations.</p>
                  </div>
                  
                  <div class="flex justify-end">

@@ -22,7 +22,7 @@ export function renderSettingsHelpTab() {
                     <a href="#help-who"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">Who is SAFi for?</a>
                     <a href="#help-start"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">Using SAFi</a>
                     <a href="#help-concepts"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Key concepts</a>
-                    <a href="#help-chat"        class="text-green-600 dark:text-green-400 hover:underline py-0.5">Chat</a>
+                    <a href="#help-chat"        class="text-green-600 dark:text-green-400 hover:underline py-0.5">Conversations</a>
                     <a href="#help-agents"      class="text-green-600 dark:text-green-400 hover:underline py-0.5">Agents</a>
                     <a href="#help-policies"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Policies</a>
                     <a href="#help-org"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">Organization</a>
@@ -134,7 +134,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 1 — Pick an agent</p>
-                        <p>From the chat icon in the sidebar or <strong class="text-gray-900 dark:text-white">Settings → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
+                        <p>From the conversations icon in the sidebar or <strong class="text-gray-900 dark:text-white">Settings → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
                     </div>
 
                     <div>
@@ -150,7 +150,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 4 — Try attaching a document</p>
-                        <p>Click the attachment icon in the chat input and upload a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> or <strong class="text-gray-900 dark:text-white">Markdown</strong> file. Ask the agent a question about it. SAFi will extract the content and include it in the agent's context.</p>
+                        <p>Click the attachment icon in the message input and upload a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> or <strong class="text-gray-900 dark:text-white">Markdown</strong> file. Ask the agent a question about it. SAFi will extract the content and include it in the agent's context.</p>
                     </div>
 
                     <div>
@@ -242,7 +242,7 @@ export function renderSettingsHelpTab() {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Using the Chat</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Conversations</h2>
                     </div>
                     <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -251,8 +251,8 @@ export function renderSettingsHelpTab() {
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Chat Interface</p>
-                        <p>The chat interface in SAFi is the native way you communicate with your agent. SAFi's backend engine is API-based, so you can use any other interface — such as <strong class="text-gray-900 dark:text-white">Microsoft Teams</strong>, <strong class="text-gray-900 dark:text-white">Slack</strong>, <strong class="text-gray-900 dark:text-white">Telegram</strong>, <strong class="text-gray-900 dark:text-white">WhatsApp</strong>, or any other chat application that supports custom API calls — to communicate with your agent. SAFi extracts text from <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> and <strong class="text-gray-900 dark:text-white">Markdown</strong> files, and you can listen to generated answers using the built-in audio playback.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Conversation Interface</p>
+                        <p>The conversation view in SAFi is the native way you communicate with your agent. SAFi's backend engine is API-based, so you can use any other interface — such as <strong class="text-gray-900 dark:text-white">Microsoft Teams</strong>, <strong class="text-gray-900 dark:text-white">Slack</strong>, <strong class="text-gray-900 dark:text-white">Telegram</strong>, <strong class="text-gray-900 dark:text-white">WhatsApp</strong>, or any other chat application that supports custom API calls — to communicate with your agent. SAFi extracts text from <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> and <strong class="text-gray-900 dark:text-white">Markdown</strong> files, and you can listen to generated answers using the built-in audio playback.</p>
                     </div>
 
                     <div>
@@ -277,7 +277,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Conversation history</p>
-                        <p>Your past conversations are saved and accessible from the left sidebar in the chat view. Click on any conversation to continue where you left off.</p>
+                        <p>Your past conversations are saved and accessible from the left sidebar in the conversation view. Click on any conversation to continue where you left off.</p>
                     </div>
 
                     <div>
@@ -338,7 +338,7 @@ export function renderSettingsHelpTab() {
                             <li>Open the Settings panel and go to <strong class="text-gray-900 dark:text-white">Agents</strong>.</li>
                             <li>Browse the available agent cards. Each card shows the agent's name, description, and purpose.</li>
                             <li>Click <strong class="text-gray-900 dark:text-white">Select</strong> on the agent you want to use.</li>
-                            <li>Return to the chat — your selected agent will be active immediately.</li>
+                            <li>Return to the conversation — your selected agent will be active immediately.</li>
                         </ol>
                     </div>
 
@@ -463,7 +463,7 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
                     <p>The <strong class="text-gray-900 dark:text-white">AI Models</strong> page is where admins configure which underlying LLM powers the platform's conversational capabilities.</p>
-                    <p>Here, admins select the <strong class="text-gray-900 dark:text-white">Response Generator</strong> — the model that writes the text you see in the chat. The layers that rule on and score each response run independently of it, so changing this model changes who writes the answer, never what the answer is held to.</p>
+                    <p>Here, admins select the <strong class="text-gray-900 dark:text-white">Response Generator</strong> — the model that writes the text you see in the conversation. The layers that rule on and score each response run independently of it, so changing this model changes who writes the answer, never what the answer is held to.</p>
                     <p class="text-gray-400 dark:text-gray-500">Model configuration is for admins only. If you're a regular user, the models are already set up and ready to go.</p>
                 </div>
             </div>
@@ -498,7 +498,7 @@ export function renderSettingsHelpTab() {
                             </thead>
                             <tbody class="divide-y divide-gray-100 dark:divide-neutral-700">
                                 <tr class="bg-white dark:bg-neutral-900">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Use the chat &amp; select agents</td>
+                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Start conversations &amp; select agents</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
                                     <td class="text-center px-3 py-2.5 text-green-600">✓</td>
