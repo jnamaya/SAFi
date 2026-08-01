@@ -26,7 +26,7 @@ export async function renderIdentityStep(container, agentData) {
                 </div>
                 <div id="wiz-gov-warning" class="hidden mt-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 rounded-lg">
                     <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
-                    <p class="text-xs text-amber-800 dark:text-amber-300">This agent would have <strong>no governance</strong>: your organization has no Charter and no policy is attached. Set an Organization Charter (<strong>Settings → Organization</strong>) or choose a policy above before continuing.</p>
+                    <p class="text-xs text-amber-800 dark:text-amber-300">This agent would have <strong>no governance</strong>: your organization has no Charter and no policy is attached. Set an Organization Charter (<strong>Control Panel → Organization</strong>) or choose a policy above before continuing.</p>
                 </div>
             </div>
 
@@ -196,7 +196,7 @@ export function validateIdentityStep(agentData) {
     }
     if (isUngoverned(agentData)) {
         updateGovernanceWarning(agentData);
-        ui.showToast("This agent would have no governance. Set an Organization Charter (Settings → Organization) or attach a Policy to continue.", "error");
+        ui.showToast("This agent would have no governance. Set an Organization Charter (Control Panel → Organization) or attach a Policy to continue.", "error");
         return false;
     }
     return true;

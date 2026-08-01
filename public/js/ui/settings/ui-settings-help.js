@@ -134,7 +134,7 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Step 1 — Pick an agent</p>
-                        <p>From the conversations icon in the sidebar or <strong class="text-gray-900 dark:text-white">Settings → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
+                        <p>From the conversations icon in the sidebar or <strong class="text-gray-900 dark:text-white">Control Panel → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
                     </div>
 
                     <div>
@@ -335,7 +335,7 @@ export function renderSettingsHelpTab() {
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">How to select an agent</p>
                         <ol class="list-decimal list-inside space-y-1">
-                            <li>Open the Settings panel and go to <strong class="text-gray-900 dark:text-white">Agents</strong>.</li>
+                            <li>Open the Control Panel and go to <strong class="text-gray-900 dark:text-white">Agents</strong>.</li>
                             <li>Browse the available agent cards. Each card shows the agent's name, description, and purpose.</li>
                             <li>Click <strong class="text-gray-900 dark:text-white">Select</strong> on the agent you want to use.</li>
                             <li>Return to the conversation — your selected agent will be active immediately.</li>
