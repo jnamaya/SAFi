@@ -3,7 +3,7 @@ title: SAFi Explained: Values
 slug: faculties-values-and-profiles
 tags: ["safi", "faculties", "agents", "values"]
 summary: Foundational values and ethical profiles that condition SAFi's reasoning and agent behavior.
-version: 1.0
+version: 1.1
 ---
 
 # SAFi Explained: Values
@@ -15,7 +15,12 @@ Faculties define the how, the fixed repeatable process of alignment. Values defi
 The responsibility lies with the human or institution implementing the system. SAFi is a tool for alignment. The user provides the core principles that set its direction.
 
 ## The SAFi profile
-SAFi turns abstract principles into a machine readable object called a profile. The profile is the master blueprint for the system’s ethical character and behavior. In practice it is a dictionary found in values.py with several components.
+SAFi turns abstract principles into a machine readable object called a profile. The profile is the master blueprint for the system’s ethical character and behavior. In practice it is a dictionary compiled by `synderesis.py` with several components.
+
+### Values and Synderesis are not the same thing
+In SAF — the framework — the first faculty is **Values**. In SAFi — the implementation — the component occupying that position is **Synderesis**, and the two names are not interchangeable. Values are the *input*: the principles an institution declares in its Charter and its policies. Synderesis is the *machinery*: the compiler that turns those declared principles into the weighted, rubric-bearing value set the Conscience actually scores against.
+
+The file was originally called `values.py`. Renaming it to `synderesis.py` was the moment the distinction became visible in the codebase: the file was never holding the values, it was generating the object the rest of the system evaluates against. When discussing the framework, say Values; when discussing the software, say Synderesis.
 
 ### Profile components
 - Worldview: a short constitution that defines purpose, goals, and principles. It guides the Intellect.
