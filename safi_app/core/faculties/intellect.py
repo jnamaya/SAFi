@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 import json
 import logging
+import re
 # Retriever is imported lazily inside __init__ — see the note there.
 from ...persistence import database as db
 
@@ -24,6 +25,58 @@ from ...persistence import database as db
 #
 # 8000 leaves John 3 and Genesis 1 (~6.3k) untouched and trims only real outliers.
 _MAX_CONTEXT_CHARS = 8000
+
+
+# Follow-up turns carry no retrievable content of their own. "Yes, give me the
+# full text and the historical background" was embedded verbatim, matched the most
+# history-shaped passages in the Bible (a dated siege in Ezekiel, census numbers in
+# Nehemiah), and never retrieved the psalm under discussion — so the model recited
+# it from memory and the Conscience correctly scored it -1 for Textual Fidelity.
+#
+# ORDER IS NOT COSMETIC. all-MiniLM-L6-v2 truncates its input, and measured on this
+# deployment a phrase placed AFTER ~2700 characters of preceding text embeds at
+# cosine 0.012 against itself alone — indistinguishable from noise. The same phrase
+# placed first scores 0.616. History must therefore follow the prompt: if anything
+# is dropped it has to be the history, never the question.
+_RAG_HISTORY_TAIL_CHARS = 400
+_RAG_STANDALONE_CHARS = 80
+_CITATION_LIKE = re.compile(r"\b[A-Za-z]+\s+\d+\b")
+
+# Length alone is NOT a usable signal for "this is a follow-up". Tested against a
+# real case: "What does the Bible teach about covenant loyalty and hesed?" is 73
+# characters — under any threshold generous enough to catch "Yes, give me the full
+# text and the historical background" (55) — and augmenting it let a stale "Psalm
+# 4" in the history capture the citation path and return the wrong chapter
+# outright. A follow-up has to be recognised by SHAPE, not size.
+_CONTINUATION = re.compile(
+    r"^\s*(yes|yeah|yep|ok|okay|sure|please|go ahead|continue|more|and|also)\b"
+    r"|^\s*(tell|show|give|send)\s+me\s+(more|the\s+(full|rest|whole))\b"
+    r"|\b(the full text|go on|carry on|keep going|tell me more)\b",
+    re.I,
+)
+_RAG_TERSE_CHARS = 40
+
+
+def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
+    """Build the retrieval query, folding in recent turns only when the prompt is
+    too thin to retrieve on its own.
+
+    Augmenting unconditionally would be worse than the bug: blending the previous
+    topic into a substantive question drags stale results in, and for the Bible
+    agent a stale CITATION in the history would trigger the keyword path and return
+    the wrong chapter. So a prompt that is long enough, or already names something
+    citation-shaped, is left exactly as it is.
+    """
+    if not isinstance(user_prompt, str) or not recent_turns:
+        return user_prompt
+    prompt = user_prompt.strip()
+    if len(prompt) >= _RAG_STANDALONE_CHARS or _CITATION_LIKE.search(prompt):
+        return user_prompt
+    # Must actually look like a continuation, not merely be short.
+    if not (_CONTINUATION.search(prompt) or len(prompt) < _RAG_TERSE_CHARS):
+        return user_prompt
+    tail = recent_turns.strip()[-_RAG_HISTORY_TAIL_CHARS:]
+    return f"{prompt}\n\n{tail}" if tail else user_prompt
 
 
 def _apply_context_budget(chunks: List[str]) -> str:
@@ -145,7 +198,7 @@ class IntellectEngine:
             # Reuse context from the first Intellect call (retry / tool-agent follow-up).
             retrieved_context_string = precomputed_retrieved_context
         else:
-            query_for_rag = user_prompt
+            query_for_rag = _rag_query(user_prompt, recent_turns)
             if plugin_context and plugin_context.get("rag_query_override"):
                 query_for_rag = plugin_context["rag_query_override"]
 
