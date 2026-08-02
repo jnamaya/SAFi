@@ -80,7 +80,7 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 
 ## Start Here
 
-Three groups get the most out of SAFi, and they want different things first.
+Pick the role that describes you — each path starts somewhere different.
 
 ### If you run the platform
 
