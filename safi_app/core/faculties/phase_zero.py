@@ -9,12 +9,15 @@ never exposed to adversarial content.
 """
 from __future__ import annotations
 import math
+import re
 import collections
 import logging
+from functools import lru_cache
 from typing import List, Tuple, Optional
 
 from ..threat_intel import (
     INJECTION_SIGNATURES,
+    INTERNALS_PROXIMITY_CHARS,
     ENTROPY_THRESHOLD,
     ENTROPY_SAMPLE_LENGTH,
     MIN_LENGTH_FOR_ENTROPY_CHECK,
@@ -22,6 +25,13 @@ from ..threat_intel import (
     SENSITIVE_INTERNALS,
     INTERNALS_DISCLOSURE_CUES,
 )
+
+
+@lru_cache(maxsize=None)
+def _cue_pattern(cue: str) -> "re.Pattern[str]":
+    """Word-bounded matcher for a disclosure cue. Cached: the gate runs on every
+    turn and these patterns never change."""
+    return re.compile(r"\b" + re.escape(cue) + r"\b")
 
 
 class PhaseZeroGate:
@@ -99,7 +109,7 @@ class PhaseZeroGate:
     def _probes_internals(self, prompt_lower: str):
         """
         True when the prompt names the agent's internal governance machinery AND
-        asks for it to be handed over.
+        asks for it to be handed over, CLOSE TOGETHER.
 
         Why co-occurrence rather than a substring list: "governance layer",
         "decision tree" and "internal scoring" were flat signatures, so they
@@ -121,10 +131,27 @@ class PhaseZeroGate:
 
         Returns (noun, cue) on a match so the log names both halves, or None.
         """
+        noun_hits = []
         for noun in SENSITIVE_INTERNALS:
-            if noun in prompt_lower:
-                for cue in INTERNALS_DISCLOSURE_CUES:
-                    if cue in prompt_lower:
+            start = 0
+            while True:
+                i = prompt_lower.find(noun, start)
+                if i < 0:
+                    break
+                noun_hits.append((i, noun))
+                start = i + 1
+        if not noun_hits:
+            return None
+
+        for cue in INTERNALS_DISCLOSURE_CUES:
+            # Word boundaries: matched as a bare substring, "expose" fires inside
+            # "exposes", "dump" inside "dumps", "reveal" inside "revealing". A verb
+            # conjugation is not a request to hand anything over -- this is what
+            # blocked SAFi's own article on the sentence "It exposes PERSONAS...".
+            for m in _cue_pattern(cue).finditer(prompt_lower):
+                ci = m.start()
+                for ni, noun in noun_hits:
+                    if abs(ni - ci) <= INTERNALS_PROXIMITY_CHARS:
                         return noun, cue
         return None
 

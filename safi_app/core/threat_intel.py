@@ -161,7 +161,16 @@ INJECTION_SIGNATURES: dict[str, list[str]] = {
         "unrestricted mode",
         "evil mode",
         "opposite mode",
-        "jailbreak",
+        # NOT the bare word "jailbreak". It is the name of the attack CLASS, so it
+        # appears in any honest security writing -- including SAFi's own README
+        # section reporting a 99.89% defence rate, the math specification naming
+        # this very category, and a marketing agent asked to review either. The
+        # imperative forms below are the attack; the noun alone is discussion.
+        "jailbreak mode",
+        "enable jailbreak",
+        "jailbreak yourself",
+        "you are jailbroken",
+        "act jailbroken",
         "unlock mode",
         "god mode",
         "sudo mode",
@@ -369,6 +378,13 @@ SENSITIVE_INTERNALS: list[str] = [
 # verbs ("explain your", "describe your") are excluded on purpose — asking a
 # governed agent to explain how it is governed is a legitimate question, and
 # Art. 13 explanations are a feature of this product, not an attack.
+# How close a noun and a cue must be to count as one probe. Without a bound, the
+# rule is a document-length lottery: DEVELOPER_GUIDE.md tripped it with "governance
+# layer" at char 8,102 and "verbatim" at 24,505, in unrelated sentences 16,403
+# characters apart. The live red-team prompts all carry both halves in a single
+# sentence, so a sentence-scale window keeps every one of them caught.
+INTERNALS_PROXIMITY_CHARS: int = 200
+
 INTERNALS_DISCLOSURE_CUES: list[str] = [
     "show me",
     "reveal",
