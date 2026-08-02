@@ -57,6 +57,30 @@ _CONTINUATION = re.compile(
 _RAG_TERSE_CHARS = 40
 
 
+# The orchestrator hands the Intellect `prompt_with_date` (orchestrator.py:481),
+# not the raw question:
+#
+#     Current Date: Sunday, August 02, 2026. 01:09:18 Z
+#
+#     USER QUERY: can you give me the full text
+#
+# That header has always gone into the embedding, and it is measurably harmful:
+# every observed bad retrieval on the Bible agent came back date-shaped — a dated
+# siege in Ezekiel, "the fourth year of King Darius" in Zechariah, census numbers
+# in Nehemiah, "the month of Ziv" in 1 Kings. The retriever was faithfully matching
+# the timestamp.
+#
+# It also silently disabled the history augmentation below: the header alone is
+# ~48 characters and contains "August 02", so every prompt looked long enough to
+# stand alone AND citation-shaped. Stripped here rather than in the orchestrator so
+# the model still SEES the date (it needs it) while retrieval does not.
+_DATE_HEADER = re.compile(r"^Current Date:[^\n]*\n+\s*USER QUERY:\s*", re.I)
+
+
+def _strip_date_header(prompt: str) -> str:
+    return _DATE_HEADER.sub("", prompt, count=1).strip()
+
+
 def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
     """Build the retrieval query, folding in recent turns only when the prompt is
     too thin to retrieve on its own.
@@ -67,16 +91,20 @@ def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
     the wrong chapter. So a prompt that is long enough, or already names something
     citation-shaped, is left exactly as it is.
     """
-    if not isinstance(user_prompt, str) or not recent_turns:
+    if not isinstance(user_prompt, str):
         return user_prompt
-    prompt = user_prompt.strip()
+    prompt = _strip_date_header(user_prompt)
+    if not recent_turns:
+        # Still worth returning the stripped prompt: the date header pollutes the
+        # embedding whether or not there is history to add.
+        return prompt or user_prompt
     if len(prompt) >= _RAG_STANDALONE_CHARS or _CITATION_LIKE.search(prompt):
-        return user_prompt
+        return prompt
     # Must actually look like a continuation, not merely be short.
     if not (_CONTINUATION.search(prompt) or len(prompt) < _RAG_TERSE_CHARS):
-        return user_prompt
+        return prompt
     tail = recent_turns.strip()[-_RAG_HISTORY_TAIL_CHARS:]
-    return f"{prompt}\n\n{tail}" if tail else user_prompt
+    return f"{prompt}\n\n{tail}" if tail else prompt
 
 
 def _apply_context_budget(chunks: List[str]) -> str:
