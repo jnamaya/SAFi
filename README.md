@@ -84,7 +84,7 @@ Pick the role that fits — each path starts somewhere different.
 
 ### If you run the platform
 
-> Add a durable governance layer to your agentic systems without tying your policies or audit history to one model provider.
+> Add a deterministic governance layer to your AI agents without tying your policies or audit history to a single model provider.
 
 **You do not have to rebuild your stack.** The [`/evaluate` gateway](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway) governs the output of an agent you have already built — your orchestration, prompts and tool layer stay where they are.
 
