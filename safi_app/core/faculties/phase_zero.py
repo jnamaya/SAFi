@@ -18,7 +18,9 @@ from typing import List, Tuple, Optional
 from ..threat_intel import (
     INJECTION_SIGNATURES,
     INTERNALS_PROXIMITY_CHARS,
-    ENTROPY_THRESHOLD,
+    BLOB_MIN_RUN,
+    BLOB_MARKER_PROXIMITY_CHARS,
+    BLOB_MIN_ENTROPY,
     ENTROPY_SAMPLE_LENGTH,
     MIN_LENGTH_FOR_ENTROPY_CHECK,
     EMBEDDED_INSTRUCTION_MARKERS,
@@ -96,7 +98,7 @@ class PhaseZeroGate:
         if self._has_embedded_instruction(user_prompt):
             self.log.warning(
                 "PhaseZeroGate: Embedded instruction heuristic triggered — "
-                "high-entropy payload with instruction markers detected."
+                "encoded payload adjacent to an instruction marker."
             )
             return False, "injection:embedded_instruction"
 
@@ -165,32 +167,38 @@ class PhaseZeroGate:
 
     def _has_embedded_instruction(self, prompt: str) -> bool:
         """
-        Detects the indirect injection pattern: a high-entropy data blob
-        combined with an instruction block.
+        Detects the indirect injection pattern: an encoded payload carrying an
+        instruction block.
 
         Classic example — the 'ancient text' attack:
-          1. Random-looking character dump (high Shannon entropy)
-          2. Embedded 'NEW TASK: STOP HERE' block inside the data
-          3. Final request to reproduce the text including the embedded instruction
+          1. A character dump the reader cannot parse
+          2. An embedded 'NEW TASK: STOP HERE' inside the data
+          3. A request to reproduce the text, instruction included
 
-        The entropy scan slides over the WHOLE prompt. It previously sampled
-        only the first ENTROPY_SAMPLE_LENGTH characters, so prepending a
-        paragraph of benign prose defeated the check entirely.
+        NOT a raw entropy scan. Entropy does not separate a payload from technical
+        prose — every public doc in this repo exceeds the old threshold, which is
+        why the marker check was silently carrying the whole heuristic. The test is
+        now an actual blob: a long unbroken non-whitespace run whose contents are
+        high-entropy, with an instruction marker ATTACHED to it. See the measurements
+        in threat_intel.py.
         """
         if len(prompt) < MIN_LENGTH_FOR_ENTROPY_CHECK:
             return False
 
-        # Cheap check first: no instruction marker anywhere -> not this pattern.
         prompt_lower = prompt.lower()
-        if not any(marker in prompt_lower for marker in EMBEDDED_INSTRUCTION_MARKERS):
+        markers = [m.start()
+                   for marker in EMBEDDED_INSTRUCTION_MARKERS
+                   for m in re.finditer(re.escape(marker), prompt_lower)]
+        if not markers:
             return False
 
-        # Marker present — look for a high-entropy payload window anywhere.
-        step = max(1, ENTROPY_SAMPLE_LENGTH // 2)
-        for start in range(0, len(prompt), step):
-            sample = prompt[start:start + ENTROPY_SAMPLE_LENGTH]
-            if len(sample) < MIN_LENGTH_FOR_ENTROPY_CHECK:
-                break
-            if self._compute_entropy(sample) >= ENTROPY_THRESHOLD:
+        for run in re.finditer(r"\S{%d,}" % BLOB_MIN_RUN, prompt):
+            blob = run.group(0)
+            # A long run alone is not a payload — it could be a path or a URL.
+            if self._compute_entropy(blob[:ENTROPY_SAMPLE_LENGTH]) < BLOB_MIN_ENTROPY:
+                continue
+            lo = run.start() - BLOB_MARKER_PROXIMITY_CHARS
+            hi = run.end() + BLOB_MARKER_PROXIMITY_CHARS
+            if any(lo <= mi <= hi for mi in markers):
                 return True
         return False

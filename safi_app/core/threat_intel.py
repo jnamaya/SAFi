@@ -317,16 +317,44 @@ INJECTION_SIGNATURES: dict[str, list[str]] = {
 # Heuristic configuration
 # ---------------------------------------------------------------------------
 
-# Shannon entropy threshold (bits/char).
-# Normal English prose: ~3.8–4.2. Random character dumps: ~4.5+.
-# Raise this value if legitimate technical prompts trigger false positives.
+# Shannon entropy threshold (bits/char), now used only by the benchmark's inline
+# fallback gate. The "normal prose is 3.8-4.2" figure holds for long
+# lowercase-only samples; it does NOT hold for a 300-char window of mixed case,
+# punctuation, digits and markdown, where this repo's own docs measure 5.28-5.46.
+# Do not reintroduce it as a standalone test — see BLOB_MIN_RUN.
 ENTROPY_THRESHOLD: float = 4.5
+
+# Entropy floor applied INSIDE a candidate blob, once BLOB_MIN_RUN has already
+# established that the run is unbroken. Measured: degenerate repetition ~0-2,
+# hex dump 3.97, base64 5.88, random printable 6.27. 3.0 admits every real
+# encoding and rejects a long run of one repeated character. The 4.5 window
+# threshold above is the wrong tool for this job — it lets a hex payload past.
+BLOB_MIN_ENTROPY: float = 3.0
 
 # How many characters from the start of the prompt to sample for entropy.
 ENTROPY_SAMPLE_LENGTH: int = 300
 
 # Minimum prompt length before entropy check runs (avoids penalizing short prompts).
 MIN_LENGTH_FOR_ENTROPY_CHECK: int = 150
+
+# Shannon entropy alone does NOT separate an encoded payload from technical prose.
+# Measured over 300-char windows on this repo's own docs: MATHEMATICAL_SPECIFICATION
+# 5.46, DEVELOPER_GUIDE 5.34, README 5.28 - all 13 public docs exceed the 4.5
+# threshold, while a hex dump scores 3.97 and would not be caught. The 3.8-4.2
+# "normal prose" figure quoted above holds for long lowercase-only samples, not for
+# a short window of mixed case, punctuation, digits and markdown.
+#
+# What actually separates them is word structure. An encoded blob has no whitespace:
+# base64 of 400 random bytes is one 536-character run, a hex dump 600. The longest
+# unbroken run in any of this repo's docs is 113 (a URL in README.md). 200 sits in
+# that gap with room either side.
+BLOB_MIN_RUN: int = 200
+
+# The instruction has to be attached to the payload. A marker in paragraph three and
+# a blob in paragraph forty is not this attack - it is a long document. Same lesson
+# as the internals probe, which had no proximity bound and blocked the product's own
+# documentation for it.
+BLOB_MARKER_PROXIMITY_CHARS: int = 600
 
 # Instruction markers used with the embedded-instruction heuristic.
 # If a high-entropy blob is followed by any of these, it's flagged.
