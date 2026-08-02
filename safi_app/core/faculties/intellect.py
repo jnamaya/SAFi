@@ -15,6 +15,48 @@ import logging
 # Retriever is imported lazily inside __init__ — see the note there.
 from ...persistence import database as db
 
+# Ceiling on assembled retrieval context, in characters. This is the single choke
+# point every agent and both retrieval paths pass through, which is why the bound
+# lives here rather than in the retriever: semantic search is naturally capped at
+# k=5, but a Bible citation returns a whole chapter, and "Psalm 119" measured 59
+# chunks / ~20k chars / ~5k tokens — spent TWICE per turn, since the Conscience
+# audits against the same context the Intellect drafted from.
+#
+# 8000 leaves John 3 and Genesis 1 (~6.3k) untouched and trims only real outliers.
+_MAX_CONTEXT_CHARS = 8000
+
+
+def _apply_context_budget(chunks: List[str]) -> str:
+    """Join retrieved chunks up to the budget, and SAY SO when anything is dropped.
+
+    Silence would be the dangerous option: an agent handed two-thirds of Psalm 119
+    with no indication has every reason to present it as the whole psalm. The
+    Textual Fidelity value exists to catch exactly that, so the truncation has to
+    be visible to the model rather than inferred by it.
+
+    Whole chunks are kept or dropped — never cut mid-chunk, which would end a
+    passage mid-sentence and invite the model to complete it from memory.
+    """
+    kept: List[str] = []
+    used = 0
+    for chunk in chunks:
+        cost = len(chunk) + 2  # the "\n\n" join
+        if kept and used + cost > _MAX_CONTEXT_CHARS:
+            break
+        kept.append(chunk)
+        used += cost
+
+    dropped = len(chunks) - len(kept)
+    if not dropped:
+        return "\n\n".join(kept)
+
+    return "\n\n".join(kept) + (
+        f"\n\n[CONTEXT TRUNCATED: {dropped} of {len(chunks)} retrieved passages were "
+        f"omitted to fit the context budget. What you have been given above is "
+        f"INCOMPLETE. Do not present it as the full passage, and do not fill the gap "
+        f"from memory — state plainly that only part of the passage was retrieved.]"
+    )
+
 class IntellectEngine:
     """
     Core cognitive faculty.
@@ -119,7 +161,7 @@ class IntellectEngine:
                         except KeyError:
                             if "text_chunk" in doc:
                                 formatted_chunks.append(doc["text_chunk"])
-                    retrieved_context_string = "\n\n".join(formatted_chunks)
+                    retrieved_context_string = _apply_context_budget(formatted_chunks)
                 else:
                     retrieved_context_string = "[NO DOCUMENTS FOUND]"
 

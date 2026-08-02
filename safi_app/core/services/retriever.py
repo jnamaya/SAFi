@@ -149,8 +149,17 @@ class Retriever:
                     candidate_indices.append(i)
 
             all_indices.update(candidate_indices)
-        
-        return sorted(list(all_indices))
+
+        # Honour k. It was accepted and ignored, so a citation returned the WHOLE
+        # chapter however long: "Psalm 119" came back as 59 chunks / ~20k chars,
+        # and that context is paid for twice per turn (Intellect drafts with it,
+        # then Conscience audits with it). Indices are sorted, so slicing keeps
+        # the opening of the passage rather than an arbitrary subset.
+        #
+        # This is a backstop, not the real bound — the character budget in
+        # intellect.py is what usually trims, and unlike this slice it tells the
+        # model the passage was cut.
+        return sorted(list(all_indices))[:k]
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
