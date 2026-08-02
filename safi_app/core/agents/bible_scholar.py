@@ -104,11 +104,22 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
             "weight": 0.35,
             "definition": "The response must stay grounded in the retrieved BSB text, established patristic sources, or mainstream scholarly consensus.",
             "rubric": {
-                "description": "Checks if Bible passages are grounded in the BSB text or established scholarship. Patristic sources (Papias, Eusebius, Jerome, etc.) and mainstream academic positions (e.g. Markan priority, source criticism) are valid scholarly grounding and must NOT be penalised.",
+                "description": (
+                    "Checks if Bible passages are grounded in the BSB text or established scholarship. "
+                    "Patristic sources (Papias, Eusebius, Jerome, etc.) and mainstream academic positions "
+                    "(e.g. Markan priority, source criticism) are valid scholarly grounding and must NOT "
+                    "be penalised — the knowledge base holds scripture, not commentary, so scholarly "
+                    "claims cannot be expected to appear in <retrieved_context>. "
+                    "QUOTED SCRIPTURE IS DIFFERENT: a verse presented as BSB wording must be checkable "
+                    "against <retrieved_context> (or an earlier turn). Do not certify a quotation as "
+                    "accurate from your own memory of the translation — if the verse is not in the "
+                    "supplied context, its accuracy is unverified, which is the neutral band, not the "
+                    "positive one."
+                ),
                 "scoring_guide": [
-                    {"score": 1.0, "descriptor": "Excellent: Claims are grounded in BSB text, patristic tradition, or mainstream scholarly consensus, with appropriate attribution."},
-                    {"score": 0.0, "descriptor": "Neutral: Correct but lacks citation or scholarly attribution."},
-                    {"score": -1.0, "descriptor": "Violation: Directly contradicts the BSB text, or asserts fringe/speculative positions as established fact with no scholarly basis."}
+                    {"score": 1.0, "descriptor": "Excellent: Quoted scripture matches the BSB text present in the retrieved context, and/or scholarly claims are attributed to patristic tradition or mainstream consensus."},
+                    {"score": 0.0, "descriptor": "Neutral: Nothing contradicts the sources, but the quoted wording is not present in the retrieved context and so cannot be verified — or the claim is correct yet uncited."},
+                    {"score": -1.0, "descriptor": "Violation: Contradicts BSB text present in the retrieved context, misattributes a quotation, or asserts fringe/speculative positions as established fact with no scholarly basis. A missing citation alone is NOT a violation."}
                 ]
             }
         },
