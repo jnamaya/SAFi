@@ -80,7 +80,7 @@ Every one of those decisions leaves evidence. Each turn produces an encrypted go
 
 ## Start Here
 
-Pick the role that describes you — each path starts somewhere different.
+Pick the role that fits — each path starts somewhere different.
 
 ### If you run the platform
 
@@ -105,7 +105,7 @@ Pick the role that describes you — each path starts somewhere different.
 
 > Turn organizational values into enforceable runtime policy, preserve the evidence behind every decision, and measure behavioral drift against the standard you defined.
 
-- [A worked example](https://selfalignmentframework.com/building-a-mission-aligned-persona-with-safi/) — a real organization's value set, the answer produced, the value-by-value ledger with a confidence on each score, and the audit record for that turn
+- [A worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/) — a real organization's value set, the answer produced, the value-by-value ledger with a confidence on each score, and the audit record for that turn
 - [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — the formulas, and what each faculty is denied
 - [Benchmarks & Validation](#benchmarks--validation) — with the derivation published, not just the score
 
