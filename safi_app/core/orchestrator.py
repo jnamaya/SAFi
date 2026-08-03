@@ -23,6 +23,9 @@ from collections import deque
 from .feedback import build_spirit_feedback
 from ..persistence import database as db
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
+# Reused rather than reimplemented: the tool-evidence merge below needs the same
+# whole-chunks-plus-explicit-truncation-note behaviour the RAG path already has.
+from .faculties.intellect import _apply_context_budget
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 from .plugins.fiduciary_data import handle_fiduciary_commands
 
@@ -641,6 +644,16 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         # dispatch, so a turn that calls no tools still has a defined (empty) list.
         tool_audit: list = []
 
+        # Tool OUTPUT, kept separately from tool_audit (which records the verdicts).
+        # Until this existed, tool results reached only the Intellect via
+        # agent_history, so the Conscience audited a tool-grounded answer against an
+        # EMPTY evidence block and correctly scored Evidence First -1 on claims the
+        # agent had in fact retrieved. With Claim Discipline as a hard gate that made
+        # tool use and grounding enforcement mutually exclusive: every searched
+        # answer blocked, permanently. Merged into retrieved_context at the single
+        # point where all tool-loop exits converge, just before _finalize_draft.
+        tool_evidence: List[str] = []
+
         if intent is None:
             msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
             db.update_message_content(message_id, msg, audit_status="complete")
@@ -718,6 +731,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         phase="gather"
                     )
 
+                    # Computed for BOTH branches: the Gemini path does not build a
+                    # SYSTEM OBSERVATION string, but the audit-evidence block below
+                    # still needs the arguments, and referencing a name defined only
+                    # in the else-branch would NameError on the first Gemini turn.
+                    try:
+                        _args_str = json.dumps(current_parameters, ensure_ascii=False, default=str)
+                    except Exception:
+                        _args_str = str(current_parameters)
+
                     raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
                     if raw_turn and _use_gemini_history:
                         from google.genai import types
@@ -726,10 +748,6 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         # Include the arguments — without them the model cannot
                         # tell WHICH call produced the result below (e.g. which
                         # query, which page) and multi-step reasoning degrades.
-                        try:
-                            _args_str = json.dumps(current_parameters, ensure_ascii=False, default=str)
-                        except Exception:
-                            _args_str = str(current_parameters)
                         agent_history.append(
                             f"SYSTEM OBSERVATION: Model requested tool {current_tool_name} "
                             f"with arguments: {_args_str}"
@@ -746,6 +764,15 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                     self.log.info(
                         f"Orchestrator: Tool '{current_tool_name}' executed. "
                         f"Result snippet: {str(tool_result)[:120]}"
+                    )
+
+                    # Evidence for the audit. Labelled with the tool AND its
+                    # arguments, because "which search produced this" is the first
+                    # thing a reviewer asks, and an auditor comparing a claim to a
+                    # result needs to know the result answers the same question.
+                    tool_evidence.append(
+                        f"[TOOL RESULT — {current_tool_name} called with {_args_str}]\n"
+                        f"{tool_result}"
                     )
 
                     if _use_gemini_history:
@@ -869,6 +896,21 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
         if self._is_cancelled(message_id):
             self.log.info(f"[Governance] Message {message_id} cancelled before Conscience.")
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
+
+        # Tool output joins the retrieved context as audit evidence. Done HERE
+        # because every tool-loop exit converges on this line — normal break,
+        # blocked follow-up, and MAX_AGENT_TURNS all reach it — so one merge covers
+        # all of them and none can be forgotten later.
+        #
+        # Budgeted with the Intellect's own helper rather than a second mechanism:
+        # the Conscience audits against the same material the draft was written
+        # from, so this context is paid for twice, and _apply_context_budget already
+        # keeps whole chunks and says so explicitly when it drops any. That note is
+        # what stops truncation from looking like fabrication to the auditor.
+        if tool_evidence:
+            retrieved_context = _apply_context_budget(
+                ([retrieved_context] if retrieved_context else []) + tool_evidence
+            )
 
         # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
         # Every draft producer (initial text, tool-loop synthesis, blocked-tool
