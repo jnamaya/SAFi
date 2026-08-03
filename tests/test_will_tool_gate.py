@@ -7,7 +7,9 @@ Unit tests for WillGate.evaluate_tool_intent (Phase 6):
 - Parameter constraints default-deny: an omitted constrained parameter is a
   violation (a tool's server-side default is unvetted), not a bypass.
 - _stamp_tool_authorization: advertised tools are the baseline, a policy's
-  will_rules.allowed_tools can only narrow, never grant.
+  will_rules.allowed_tools can only narrow, never grant. Both lists are
+  expanded from connector names to function names first, which is why
+  "web_search" produces ["web_search", "web_news"] below.
 
 Run:  venv/bin/python tests/test_will_tool_gate.py
 """
@@ -90,8 +92,11 @@ class TestToolGate(unittest.TestCase):
 class TestToolAuthorizationCompile(unittest.TestCase):
 
     def test_advertised_tools_become_allowed_tools(self):
+        # "web_search" is a CONNECTOR that expands to two functions. The wizard is
+        # connector-level; the Will matches function names exactly; so the compiler
+        # expands. See tool_connectors.py and test_tool_connector_expansion.py.
         p = _stamp_tool_authorization({"tools": ["web_search", "send_email"]})
-        self.assertEqual(p["allowed_tools"], ["web_search", "send_email"])
+        self.assertEqual(p["allowed_tools"], ["web_search", "web_news", "send_email"])
 
     def test_no_tools_stamps_empty_deny_all(self):
         self.assertEqual(_stamp_tool_authorization({})["allowed_tools"], [])
@@ -102,21 +107,32 @@ class TestToolAuthorizationCompile(unittest.TestCase):
             "tools": ["web_search", "send_email"],
             "will_rules": {"allowed_tools": ["web_search"]},
         })
-        self.assertEqual(p["allowed_tools"], ["web_search"])
+        # send_email is dropped; web_search expands on both sides of the intersection.
+        self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
+
+    def test_policy_narrows_to_one_function_within_a_connector(self):
+        # Expansion must not cost the ability to narrow: a policy naming a single
+        # function still wins over a connector-level grant.
+        p = _stamp_tool_authorization({
+            "tools": ["web_search"],
+            "will_rules": {"allowed_tools": ["web_news"]},
+        })
+        self.assertEqual(p["allowed_tools"], ["web_news"])
 
     def test_policy_cannot_grant_unadvertised_tools(self):
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": {"allowed_tools": ["web_search", "delete_files"]},
         })
-        self.assertEqual(p["allowed_tools"], ["web_search"])
+        self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
+        self.assertNotIn("delete_files", p["allowed_tools"])
 
     def test_legacy_list_will_rules_ignored(self):
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": ["some legacy string rule"],
         })
-        self.assertEqual(p["allowed_tools"], ["web_search"])
+        self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
 
     def test_param_constraints_hoisted_from_will_rules(self):
         p = _stamp_tool_authorization({

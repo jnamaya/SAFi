@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 from ..policies.contoso.policy import CONTOSO_GLOBAL_POLICY
 from ...persistence import database as db
 from ...config import Config
+from ..tool_connectors import expand_connectors
 
 # 2. Import Personas
 from ..agents.contoso_admin import THE_CONTOSO_ADMIN_AGENT
@@ -561,12 +562,27 @@ def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     which the Will treats as deny-all: a tool intent from an agent that was
     offered no tools is never legitimate. Also hoists
     will_rules.tool_parameter_constraints to the top-level key the Will reads.
+
+    BOTH lists are expanded from connector names to function names first. The
+    wizard is connector-level ("github"), while the model calls functions
+    ("github_get_repo") and the Will matches exactly — so without expansion here
+    every multi-function connector was authorized for nothing at all. See
+    tool_connectors.py for the measurements and for why the expansion belongs
+    here rather than as prefix matching inside the Will.
+
+    Expansion runs on the policy list too, so a policy may narrow within a
+    connector by naming functions directly; unknown names pass through, so the
+    intersection semantics are unchanged.
     """
-    advertised = [t for t in (profile.get("tools") or []) if isinstance(t, str)]
+    advertised = expand_connectors(
+        [t for t in (profile.get("tools") or []) if isinstance(t, str)]
+    )
     wr = profile.get("will_rules")
     policy_allowed = wr.get("allowed_tools") if isinstance(wr, dict) else None
     if isinstance(policy_allowed, list) and policy_allowed:
-        allowed_set = {t for t in policy_allowed if isinstance(t, str)}
+        allowed_set = set(
+            expand_connectors([t for t in policy_allowed if isinstance(t, str)])
+        )
         profile["allowed_tools"] = [t for t in advertised if t in allowed_set]
     else:
         profile["allowed_tools"] = advertised
