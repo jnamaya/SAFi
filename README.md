@@ -13,7 +13,7 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
-- [The SAFi Solution](#the-safi-solution)
+- [What SAFi does instead](#what-safi-does-instead)
 - [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
 - [Start Here](#start-here)
 - [Live Demo](#live-demo)
@@ -29,30 +29,41 @@
 
 ---
 
-## The Problem
+## The problem
 
-Your organization is deploying AI agents. Your legal and compliance teams are asking hard questions:
+Your organization is deploying AI agents, and legal, compliance, and technology leaders are asking hard questions:
 
-- How do we enforce our AI policy?
-- How do we know our AI agents actually follow it?
-- How do we catch drift and prevent unauthorized actions?
-- How do we prove any of it to an examiner?
+How do we enforce our AI policies at runtime?
+How do we know whether an agent followed them?
+How do we identify drift from the values and policies we approved?
+How do we prevent unauthorized tool calls?
+How do we show an examiner what the agent produced, which policies were applied, and why the action was allowed?
 
-The answers are usually in a policy document — a PDF on an intranet. Nothing in your AI stack reads it, and nothing checks a response against it.
+The answers often live in a policy document, such as a PDF on an intranet. But unless that policy is represented in the runtime, the agent stack cannot evaluate decisions against it. And unless each governed turn is recorded, the organization cannot reconstruct what happened afterward.
 
-The industry's answer to that gap is the filter. Guardrails inspect output — they can tell you a filter fired, not whether your policy was upheld. When the answer to "who approved this response?" is "a content filter," the governance conversation is over.
+Many systems address part of this gap with output filters and other guardrails. These controls can detect prohibited content or block a defined class of response. They do not, by themselves, establish that the organization’s policy was upheld, explain the value-by-value reasoning behind a decision, govern every tool call, or provide a complete audit record.
+
+If the answer to “Who approved this response?” is simply “a content filter fired,” the governance record is incomplete.
+
+SAFi addresses this gap as an open-source runtime governance engine for agentic AI. It enforces policies in real time, governs tool calls, and records every decision for audit.
 
 ---
 
-## The SAFi Solution
+## What SAFi does instead
 
-SAFi governs AI agents with the instruments you already use — a charter, policies, supervision, and a record — so your current policies can actually be enforced at runtime, and evidenced afterward.
+SAFi governs AI agents with instruments your organization already understands: a charter, policies, supervision, and a record.
 
-An agent can be governed by your **Organizational Charter** — your mission statement and core values — by a specific **Policy** (Finance, HR, Legal, GenAI), or by both. Declare a Charter under **Organization** and it applies to every agent in the organization automatically. Its values are not background context: they are compiled into the value set the agent is scored against, taking a fixed share of every evaluation — 40% by default, configurable per organization.
+An agent can operate under your Organizational Charter, a specific business-unit policy, or both. Charter values are not passive background context that a model may consider inconsistently. SAFi compiles them into the value set used to evaluate the agent, with a defined weighting in every evaluation. The default charter weighting is 40%, configurable by organization.
 
-Enforcement is deterministic. Every response is drafted, evaluated value-by-value against the governing policy, then approved, blocked, or redirected by rules — not vibes — before it ships.
+Enforcement happens before delivery. Each response is drafted and evaluated value by value against the governing policy. SAFi then applies defined rules to approve, block, or redirect the response before it reaches the user.
 
-Every one of those decisions leaves evidence. Each turn produces an encrypted governance record — the draft, the evaluation ledger, the enforcement decision, and the exact policy version in force — journaled to a hash-chained audit trail. That record feeds an org-scoped **Audit Hub** for analytics and drill-down, a **supervisory review queue** for human oversight, and custody-logged exports for whoever comes asking.
+Tool calls are governed in the same runtime. An agent can act only through tools permitted by its configured allow-list, and the action is recorded alongside the decision that authorized it.
+
+Every governed turn produces an auditable record containing the draft, the value-by-value evaluation ledger, the enforcement decision, the action record when applicable, and the exact policy version in force. SAFi journals these records to a hash-chained audit trail.
+
+That evidence supports an Audit Hub for analytics and drill-down, a supervisory review queue for human oversight, and custody-logged exports for authorized reviewers.
+
+SAFi is an open-source runtime governance engine for agentic AI. It enforces policies in real time, governs tool calls, and records every decision for audit.
 
 <p align="center">
   <img src="public/assets/demo.gif" alt="A governed turn in SAFi: the enforcement pipeline advancing through its stages, the alignment score it produced, and the values ledger behind that score — then a second turn, adding a point to the alignment trend" width="100%">
