@@ -15,7 +15,7 @@
 - [The Problem](#the-problem)
 - [What SAFi does instead](#what-safi-does-instead)
 - [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
-- [Start Here](#start-here)
+- [Where to start](#where-to-start)
 - [Live Demo](#live-demo)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
@@ -89,36 +89,59 @@ SAFi is an open-source runtime governance engine for agentic AI. It enforces pol
 
 ---
 
-## Start Here
+## Where to start
 
-Pick the role that fits — each path starts somewhere different.
+Choose the path that best matches your role. Each one begins with a different question.
 
-### If you run the platform
+### If you build or run the platform
 
-> Add a deterministic governance layer to your AI agents without tying your policies or audit history to a single model provider.
+The first thing to know is that SAFi does not require you to rebuild your existing agent stack.
 
-**You do not have to rebuild your stack.** The [`/evaluate` gateway](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway) governs the output of an agent you have already built — your orchestration, prompts and tool layer stay where they are.
+**[Evaluate an existing agent](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway)**
+Use the /evaluate gateway to govern the output of an agent you have already built. Your orchestration, prompts, and tool layer can remain where they are.
 
-- [Quick Start](#quick-start) — Docker and a database, nothing else
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) — repo layout, architecture, policy authoring, tool authorization, integration surfaces
-- [Good first issues](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+**[Run the quick start](#quick-start)**
+Clone the repository and run SAFi locally with Docker and a database.
 
-### If you own the technology strategy
+**[Read the developer guide](docs/DEVELOPER_GUIDE.md)**
+Explore the repository layout, architecture, policy authoring, tool authorization, and integration surfaces.
 
-> Keep your organization's values in control of AI behavior, preserve an auditable record of decisions, and hold that governance in place when the underlying models change.
+**[Find a good first issue](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)**
+Review accessible contribution opportunities and open an issue when you find something worth improving.
 
-**Portability is the strategic point.** Your charter, your policies and your audit trail live in *your* database. Switching or upgrading a model changes which model drafts and changes nothing about what it is held to, or what you can prove afterward.
+**Clone the repository, run SAFi, and tell us where it fails.**
 
-- [Regulatory Readiness](#regulatory-readiness) — readiness documents for SEC/FINRA, the EU AI Act, HIPAA and GDPR, each stating what ships today against what is roadmap
-- [Live Demo](https://safi.selfalignmentframework.com) — the fastest way to see what a governed turn produces
+### If you own technology strategy
 
-### If you practice governance
+The strategic question is portability.
 
-> Turn organizational values into enforceable runtime policy, preserve the evidence behind every decision, and measure behavioral drift against the standard you defined.
+Your charter, policies, and audit trail live in your database rather than with a model provider. Changing or upgrading the model that drafts a response does not require you to restart your governance architecture or abandon the evidence it has accumulated.
 
-- [A worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/) — a real organization's value set, the answer produced, the value-by-value ledger with a confidence on each score, and the audit record for that turn
-- [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — the formulas, and what each faculty is denied
-- [Benchmarks & Validation](#benchmarks--validation) — with the derivation published, not just the score
+**[Run the live demo](https://safi.selfalignmentframework.com)**
+See what a governed turn produces before evaluating the architecture.
+
+**[Read the governance documentation](docs/DEVELOPER_GUIDE.md)**
+Review how SAFi represents policies, evaluates responses, governs tool calls, and records decisions.
+
+**[Review the readiness material](#regulatory-readiness)**
+Examine the documentation discussing SEC, FINRA, the EU AI Act, HIPAA, and GDPR. The material distinguishes current functionality from planned work and makes no certification claims.
+
+**Run the demo and inspect the audit trail.**
+
+### If you practice AI governance, ethics, or research
+
+The central question is whether a governance theory can be operationalized and tested through evidence.
+
+**[Read a worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/)**
+Examine an organization's value set, the response produced by its agent, the value-by-value evaluation ledger, and the hash-chained audit entry for that turn.
+
+**[Review the mathematical specification](https://selfalignmentframework.com/safi-math-specification/)**
+See how the evaluation is defined and what each faculty is deliberately permitted or denied to do. The separation of responsibilities is central to the independence of the audit.
+
+**[Review benchmarks and validation](#benchmarks--validation)**
+Examine the methods, results, and supporting evidence behind SAFi's reported performance.
+
+**Inspect a real audit record and open an issue with the part you find least convincing.**
 
 ---
 
