@@ -1,15 +1,15 @@
 ---
-title: SAFi Explained: Agents (Ethical Profiles)
+title: SAFi Explained: Agents
 slug: concepts-agents
 tags: ["safi", "concepts", "agents", "profiles"]
 summary: Operational agents and role-based configurations in SAFi; built-in agents, profile structure, and how agents guide all five faculties.
 version: 2.0
 ---
 
-# SAFi Explained: Agents (Ethical Profiles)
+# SAFi Explained: Agents
 
 ## Core concept
-An agent in SAFi is a complete ethical profile for an AI agent. It defines what the agent is for, what rules it must never break, what values it is judged on, and how it communicates. Every part of the SAFi governance pipeline — Synderesis, Intellect, Will, Conscience, Spirit — is driven by the active agent configuration.
+An agent in SAFi is a complete governed configuration for an AI agent. It defines what the agent is for, what rules it must never break, what values it is judged on, and how it communicates. Every part of the SAFi governance pipeline — Synderesis, Intellect, Will, Conscience, Spirit — is driven by the active agent configuration.
 
 ## Components of an agent profile
 Each profile contains five key components.

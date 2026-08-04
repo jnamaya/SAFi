@@ -2,7 +2,7 @@
 title: SAFi Explained: Values
 slug: faculties-values-and-profiles
 tags: ["safi", "faculties", "agents", "values"]
-summary: Foundational values and ethical profiles that condition SAFi's reasoning and agent behavior.
+summary: Foundational values and policies that condition SAFi's reasoning and agent behavior.
 version: 1.1
 ---
 

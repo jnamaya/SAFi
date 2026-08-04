@@ -9,7 +9,7 @@ version: 2.0
 # SAFi
 
 ## What is SAFi
-SAFi is the first open-source runtime governance engine for AI agents. It is not a language model. It is a governor that enforces, audits, and shapes every decision an AI agent makes before it reaches a user. Think of it as the separation of powers for AI agents.
+SAFi is an open-source runtime governance engine for AI agents. It is not a language model. It is a governor that enforces, audits, and shapes every decision an AI agent makes before it reaches a user. Think of it as the separation of powers for AI agents.
 
 SAFi is built on the Self Alignment Framework, a closed-loop ethical reasoning architecture derived from classical philosophy. SAFi is the software implementation of that framework.
 
