@@ -206,11 +206,23 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     # Tool names this persona may call via the MCP manager.
     # Will gate checks every tool_call intent against this list (Phase 3).
     # Remove a name here to revoke access without touching tool definitions.
+    #
+    # These are CONNECTOR names, not function names. "web_search" expands to
+    # web_search + web_news at compile time (see core/tool_connectors.py); the
+    # four finance entries each expand to themselves.
+    #
+    # web_search is the only entry whose RESULT CONTENT can be chosen by whoever
+    # is asking: the other four take a ticker, so a caller picks which company's
+    # data is fetched, not what the text says. Tool results do not pass the
+    # Phase Zero injection gate — it runs on the user prompt only — so this is
+    # the one tool here that can carry third-party text straight to the Intellect.
+    # Worth remembering before adding another open-query tool.
     "tools": [
         "get_stock_price",
         "get_company_news",
         "get_earnings_history",
-        "get_analyst_recommendations"
+        "get_analyst_recommendations",
+        "web_search"
     ],
 
     # -- UI --------------------------------------------------------------------
