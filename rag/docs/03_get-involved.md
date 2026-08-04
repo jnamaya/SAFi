@@ -14,7 +14,7 @@ Artificial intelligence is advancing rapidly. But the systems organizations have
 
 AI systems, especially large language models, introduce a different challenge. Their behavior is probabilistic. They can produce different outputs from similar inputs, which makes policy enforcement, oversight, and auditability more difficult.
 
-I have been thinking about these challenges for a long time. That work began as a framework for understanding human cognition and eventually became the foundation for SAFi, an open-source governance engine for AI agents.
+I have been thinking about these challenges for a long time. That work began as a framework for understanding human cognition and eventually became the foundation for SAFi, an open-source governance engine for agentic AI.
 
 SAFi is designed to govern probabilistic machines with strict, deterministic boundaries.
 

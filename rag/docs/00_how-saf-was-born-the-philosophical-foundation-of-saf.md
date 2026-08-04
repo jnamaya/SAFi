@@ -96,7 +96,7 @@ SAF is the theory. SAFi is the implementation.
 
 SAF describes a model of aligned action through discernment, decision, judgment, and integration. SAFi, the Self-Alignment Framework Interface, applies that model to agentic AI.
 
-SAFi is an open-source runtime governance engine for AI agents. It turns principles into operational controls by helping systems:
+SAFi is an open-source runtime governance engine for agentic AI. It turns principles into operational controls by helping systems:
 
 This makes SAFi different from a conventional agent framework.
 

@@ -8,7 +8,7 @@ version: 1.0
 
 # Introducing SAFi
 
-### The Runtime Governance Engine for AI Agents
+### The Runtime Governance Engine for Agentic AI
 
 Open source, self-hosted, and independent of your model provider. You declare the values; SAFi enforces them on every turn — before an answer ships and before any tool runs — records every decision, and measures whether your agents hold to those values over time.
 
