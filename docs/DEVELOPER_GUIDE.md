@@ -183,8 +183,8 @@ thing it is.
 
 The architecture is a separation of powers across five faculties,
 modeled on the classical faculties of the soul (see
-[PHILOSOPHY.md](PHILOSOPHY.md) for
-why). If you want the primary source, the relevant background is Aquinas,
+[The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/)
+for why). If you want the primary source, the relevant background is Aquinas,
 *Summa Theologiae*, I-II, Q. 79 (on the faculties of practical reason) —
 not required reading, but useful if the terminology below raises
 questions:

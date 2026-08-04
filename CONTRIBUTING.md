@@ -5,7 +5,7 @@ Thank you for your interest in SAFi. Contributions of all kinds are welcome -- b
 ## Before You Start
 
 - Read the [README](README.md) for an overview of the architecture.
-- Read [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) to understand the design principles behind the five faculties.
+- Read [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/) for why the five faculties are what they are, and the [faculty table in the README](README.md#the-five-faculties) for which module implements each one.
 - Browse [open issues](https://github.com/jnamaya/SAFi/issues) -- issues labeled [`good first issue`](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are the best starting point.
 
 ## Ways to Contribute
