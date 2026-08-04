@@ -290,7 +290,7 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 **On adversarial prompts, SAFi scored 97.5%. The unguarded baseline scored 67.5% -- a 30-point gap that represents the difference between a compliant deployment and a liability.**
 
 **Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.  
-**Method:** 100 prompts per persona across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
+**Method:** 100 prompts per agent across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
 
 **Identical model on both sides.** The baseline runs the *same* Intellect model with the governance layers removed — it is not a weaker model or a different vendor. The only variable is SAFi, so the gap below is attributable to governance rather than to intelligence.
 

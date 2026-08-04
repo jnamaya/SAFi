@@ -85,9 +85,14 @@ class TestUnsupportableClaims(unittest.TestCase):
                          "readiness is not certification:\n" + report(hits))
 
     def test_never_claims_to_prevent_hallucination(self):
-        hits = offenders(r"prevents?\s+hallucinat")
+        # Only a POSITIVE claim is a defect. "SAFi does not prevent hallucination"
+        # is the correct statement and appears in two articles deliberately — the
+        # first version of this rule failed on the very sentence it wanted.
+        hits = [h for h in offenders(r"prevents?\s+hallucinat")
+                if not re.search(r"\b(not|never|cannot|can't|won't|doesn't|does not)\b[^.]{0,30}$",
+                                 h[2][:h[2].lower().find("prevent")], re.I)]
         self.assertEqual(hits, [],
-                         "SAFi does not prevent hallucination; grounding does:\n" + report(hits))
+                         "claims to PREVENT hallucination; grounding does that:\n" + report(hits))
 
 
 class TestFacultyCounts(unittest.TestCase):
@@ -97,7 +102,8 @@ class TestFacultyCounts(unittest.TestCase):
         # because Values is a faculty but not a step. Allow the line if it names
         # the loop; fail it otherwise.
         hits = [h for h in offenders(r"four\s+faculties")
-                if not re.search(r"loop|step|stage|sequen|moving part", h[2], re.I)]
+                if not re.search(r"loop|step|stage|sequen|moving part|values",
+                                 h[2], re.I)]
         self.assertEqual(hits, [],
                          "'four faculties' needs the loop qualifier — there are five:\n"
                          + report(hits))
