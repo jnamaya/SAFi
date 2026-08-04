@@ -33,11 +33,11 @@
 
 Your organization is deploying AI agents, and legal, compliance, and technology leaders are asking hard questions:
 
-How do we enforce our AI policies at runtime?
-How do we know whether an agent followed them?
-How do we identify drift from the values and policies we approved?
-How do we prevent unauthorized tool calls?
-How do we show an examiner what the agent produced, which policies were applied, and why the action was allowed?
+- How do we enforce our AI policies at runtime?
+- How do we know whether an agent followed them?
+- How do we identify drift from the values and policies we approved?
+- How do we prevent unauthorized tool calls?
+- How do we show an examiner what the agent produced, which policies were applied, and why the action was allowed?
 
 The answers often live in a policy document, such as a PDF on an intranet. But unless that policy is represented in the runtime, the agent stack cannot evaluate decisions against it. And unless each governed turn is recorded, the organization cannot reconstruct what happened afterward.
 
