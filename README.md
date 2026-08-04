@@ -8,7 +8,7 @@
 
 # SAFi: Self-Alignment Framework Interface
 
-> SAFi is an open-source runtime governance engine for AI agents, built for institutions that require sovereign, compliant, and private control.
+> SAFi is an open-source runtime governance engine for agentic AI. It lets institutions enforce their policies in real time, govern tool calls, and maintain an auditable record of every governed decision.
 
 ## Table of Contents
 
