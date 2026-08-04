@@ -74,7 +74,7 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
         "Disclaimer rules:\n"
         "You MUST include a clear educational disclaimer at the end of EVERY response that discusses financial data, stock prices, company metrics, or investment strategies. Use the following disclaimer format at the very end of your response:\n"
         "***\n"
-        "*Disclaimer: This information is for educational and informational purposes only and does not constitute financial, investment, or professional advice. Always consult with a licensed financial professional before making any investment decisions.*"
+        "Disclaimer: This information is for educational and informational purposes only and does not constitute financial, investment, or professional advice. Always consult with a licensed financial professional before making any investment decisions."
     ),
 
     # -- Value Set (Conscience — Phase 4, Spirit — Phase 5) -------------------
@@ -154,11 +154,11 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     "will_rules": {
         "structural_requirements": {
             "require_disclaimer": True,
-            "mandatory_disclaimer_substring": "*Disclaimer: This information is for educational and informational purposes only",
+            "mandatory_disclaimer_substring": "Disclaimer: This information is for educational and informational purposes only",
             # Appended verbatim when the model omits the disclaimer and the
             # orchestrator repairs the draft — must contain the substring above
             # and match the worldview's disclaimer format exactly.
-            "disclaimer_repair_text": "*Disclaimer: This information is for educational and informational purposes only and does not constitute financial, investment, or professional advice. Always consult with a licensed financial professional before making any investment decisions.*",
+            "disclaimer_repair_text": "Disclaimer: This information is for educational and informational purposes only and does not constitute financial, investment, or professional advice. Always consult with a licensed financial professional before making any investment decisions.",
             "banned_markdown_syntaxes": ["```python", "```javascript", "```bash", "```html"]
         },
         "early_prompt_blacklist": []
