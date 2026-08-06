@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/cover5.png" alt="SAFi in use: the Fiduciary agent refusing an out-of-scope request at the hard gate, the alignment score and audit trail for that decision, and the Audit Hub showing the agent's consistency trend, intervention rate, and chain-verified per-turn evidence" width="100%">
+  <img src="public/assets/github_image.png" alt="SAFi in use: the Fiduciary agent declining to give personalized investment advice and explaining the tradeoffs from supplied market data instead, with the Audit Hub beside it showing the 9.0 alignment score, the consistency trend, the intervention rate, and the chain-verified record for that turn" width="100%">
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
