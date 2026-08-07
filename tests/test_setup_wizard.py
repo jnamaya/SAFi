@@ -21,6 +21,7 @@ import importlib.util
 import os
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -203,6 +204,111 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         env = {k: v for k, v in env.items() if not k.endswith("_API_KEY")}
         with self.assertRaises(ValueError):
             self._validate(env)
+
+
+class KeyVerification(unittest.TestCase):
+    """
+    Offline tests for the provider check. The regression they exist for: the
+    first version sent urllib's default User-Agent, Cloudflare answered 403
+    ("error code: 1010") before Groq ever looked at the key, and the wizard
+    reported every key — including working ones — as rejected.
+    """
+
+    def _capture(self, raises=None, status=200):
+        """Run verify_key against a stub, returning (result, captured Request)."""
+        import urllib.request
+        captured = {}
+
+        class _Resp:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            captured["req"] = req
+            if raises:
+                raise raises
+            resp = _Resp()
+            resp.status = status
+            return resp
+
+        real = urllib.request.urlopen
+        setup.urllib.request.urlopen = fake_urlopen
+        try:
+            groq = next(p for p in setup.PROVIDERS if p["key"] == "GROQ_API_KEY")
+            return setup.verify_key(groq, "gsk_test_key"), captured.get("req")
+        finally:
+            setup.urllib.request.urlopen = real
+
+    def _http_error(self, code):
+        import urllib.error
+        return urllib.error.HTTPError("https://example", code, "err", {}, None)
+
+    def test_every_request_carries_a_user_agent(self):
+        """The root cause. Without this header the check is worthless."""
+        _, req = self._capture()
+        self.assertIn("User-agent", req.headers,
+                      f"no User-Agent sent; headers were {req.headers}")
+        self.assertTrue(req.headers["User-agent"].startswith("SAFi-setup/"))
+
+    def test_user_agent_does_not_displace_the_auth_header(self):
+        _, req = self._capture()
+        self.assertEqual("Bearer gsk_test_key", req.headers["Authorization"])
+
+    def test_403_is_not_a_rejection(self):
+        """
+        403 is what a WAF returns for bot heuristics, a datacentre IP or a geo
+        rule — none of which say anything about the key. Only 401 does.
+        """
+        (ok, msg), _ = self._capture(raises=self._http_error(403))
+        self.assertTrue(ok, "403 must not be reported as an invalid key")
+        self.assertIn("could not check", msg)
+
+    def test_401_is_a_rejection(self):
+        (ok, msg), _ = self._capture(raises=self._http_error(401))
+        self.assertFalse(ok)
+        self.assertIn("not valid", msg)
+
+    def test_network_failure_is_never_fatal(self):
+        """Offline and behind-a-proxy installs must still complete."""
+        import urllib.error
+        for err in (urllib.error.URLError("no route"), TimeoutError(), OSError()):
+            (ok, _), _ = self._capture(raises=err)
+            self.assertTrue(ok, f"{type(err).__name__} must not reject the key")
+
+    def test_success_is_reported_as_accepted(self):
+        (ok, msg), _ = self._capture(status=200)
+        self.assertTrue(ok)
+        self.assertIn("accepted", msg)
+
+    def test_gemini_sends_the_key_in_the_query_string(self):
+        """Gemini takes ?key=, not a bearer header — a wrong shape reads as 403/401."""
+        import urllib.request
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["req"] = req
+            raise urllib.error.URLError("stop here")
+
+        real = urllib.request.urlopen
+        setup.urllib.request.urlopen = fake_urlopen
+        try:
+            gem = next(p for p in setup.PROVIDERS if p["key"] == "GEMINI_API_KEY")
+            setup.verify_key(gem, "AIza-test")
+        finally:
+            setup.urllib.request.urlopen = real
+        self.assertIn("key=AIza-test", captured["req"].full_url)
+        self.assertNotIn("Authorization", captured["req"].headers)
+
+    def test_provider_without_an_endpoint_is_accepted_unchecked(self):
+        zhipu = next(p for p in setup.PROVIDERS if p["key"] == "ZHIPU_API_KEY")
+        ok, msg = setup.verify_key(zhipu, "anything")
+        self.assertTrue(ok)
+        self.assertIn("not checked", msg)
 
 
 class BackupNaming(unittest.TestCase):

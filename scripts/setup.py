@@ -50,6 +50,12 @@ TARGET = REPO_ROOT / ".env"
 
 VERIFY_TIMEOUT = 8  # seconds — a slow provider must not hang the install
 
+# Providers sit behind WAFs that block urllib's default "Python-urllib/3.x"
+# outright. Groq answers such a request with HTTP 403 and a Cloudflare body
+# ("error code: 1010") whatever key you send, so without this header the check
+# below rejected every key, valid ones included.
+USER_AGENT = "SAFi-setup/1.0 (+https://github.com/jnamaya/SAFi)"
+
 # Providers in the order they are offered. `verify` is (url, headers-builder);
 # None means the provider has no stable, cheap listing endpoint to check against,
 # so the key is accepted without a round trip rather than guessed at.
@@ -272,7 +278,8 @@ def verify_key(provider: dict, key: str) -> Tuple[bool, str]:
     if not provider.get("verify"):
         return True, "not checked (provider has no listing endpoint)"
     url, headers_fn = provider["verify"]
-    headers = headers_fn(key) if headers_fn else {}
+    headers = {"User-Agent": USER_AGENT}
+    headers.update(headers_fn(key) if headers_fn else {})
     if provider["key"] == "GEMINI_API_KEY":
         url = f"{url}?key={urllib.parse.quote(key)}"
     req = urllib.request.Request(url, headers=headers, method="GET")
@@ -282,8 +289,16 @@ def verify_key(provider: dict, key: str) -> Tuple[bool, str]:
                 return True, "key accepted by the provider"
             return True, f"unexpected status {resp.status} — accepting anyway"
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            return False, f"provider rejected the key (HTTP {e.code})"
+        # 401 is the only status that means "this key is wrong". 403 does not:
+        # every provider here sits behind a WAF that returns it for reasons
+        # having nothing to do with the key — bot heuristics, a datacentre IP,
+        # a geo rule. Treating it as a rejection told people their working key
+        # was invalid, which is worse than not checking at all.
+        if e.code == 401:
+            return False, "provider rejected the key (HTTP 401 — key is not valid)"
+        if e.code == 403:
+            return True, ("could not check — the provider blocked the request "
+                          "before looking at the key (HTTP 403)")
         return True, f"could not check (HTTP {e.code}) — accepting"
     except Exception as e:  # DNS, TLS, proxy, timeout, offline
         return True, f"could not reach the provider ({type(e).__name__}) — accepting"
@@ -324,18 +339,23 @@ def collect_interactive() -> Dict[str, str]:
     ], default=0)
     provider = next(p for p in PROVIDERS if p["key"] == chosen)
 
+    api_key = ask(f"Paste your {provider['name']} API key", secret_hint=True)
     while True:
-        api_key = ask(f"Paste your {provider['name']} API key", secret_hint=True)
         print(dim(f"  Checking the key against {provider['name']}…"))
         ok, msg = verify_key(provider, api_key)
         if ok:
             print(green(f"  ✓ {msg}"))
             break
         print(red(f"  ✗ {msg}"))
-        if not ask_yes_no("Try a different key?", default=True):
-            print(yellow("  Continuing with the key as entered — SAFi will fail "
-                         "at the first model call if it is wrong."))
+        # One prompt, not a yes/no followed by a key prompt: after being told a
+        # key was rejected, the obvious thing to type next is another key — so
+        # that is what this accepts.
+        retry = _read("  Paste a different key, or press Enter to keep this one: ")
+        if not retry:
+            print(yellow("  Keeping the key as entered — SAFi will fail at the "
+                         "first model call if it is wrong."))
             break
+        api_key = retry
     values[provider["key"]] = api_key
 
     # ── 3. Where it will be reachable ────────────────────────────────────────
