@@ -1,8 +1,8 @@
 # Embedding a SAFi chatbot in an external site
 
-There is **no WordPress-specific code in SAFi**. The integration is plain HTTP,
-and the two mentions of "WordPress" in the codebase are comments describing who
-happened to call an endpoint first:
+There is **no WordPress-specific code in SAFi**. The integration is a standard
+HTTP API over TLS, and the two mentions of "WordPress" in the codebase are
+comments describing who happened to call an endpoint first:
 
 ```
 safi_app/config.py:312       # Models used exclusively by the public WordPress chatbot endpoint.
@@ -15,6 +15,40 @@ endpoint does not inspect `User-Agent`, `Referer` or `Origin`. The
 `conversation_id` — the server only ever prefixes it (`public_<conversation_id>`).
 Anything that can make an HTTPS POST can drive this: WordPress, Drupal, a static
 site with a serverless function, Zendesk, an internal intranet page.
+
+---
+
+## Serve it over TLS
+
+Every example below uses `https://`. That is a requirement, not a convention.
+
+**SAFi does not terminate TLS itself.** gunicorn listens on port 5000 and the
+Compose file publishes `${APP_PORT}:5000` as plain TCP, so encryption is your
+reverse proxy's job — nginx, Caddy, a load balancer, whatever fronts the host.
+Nothing in SAFi will stop you exposing that port directly, and nothing will warn
+you if you do.
+
+Over cleartext, three things travel in the open:
+
+- **the policy API key** (`/api/bot/process_prompt`) — a bearer credential:
+  whoever holds it can spend your model budget under your policy, and the turns
+  they generate land in your audit trail attributed to you
+- **the `conversation_id`** — [a credential in its own right](#conversation_id-is-a-credential-treat-it-as-one),
+  since it addresses a conversation's history
+- **the visitor's prompt and the governed answer**, which is the content your
+  retention and erasure obligations are written about
+
+The app assumes TLS is in front of it and behaves accordingly:
+
+- it sends `Strict-Transport-Security: max-age=31536000; includeSubDomains` on
+  every response (`safi_app/__init__.py:142`) — which browsers ignore entirely
+  when the response arrives over cleartext, so it protects nobody there
+- its CSP restricts `connect-src` to `'self' https:`
+- `SESSION_COOKIE_SECURE` is `True` **and** `WEB_BASE_URL.startswith("https")`
+  (`safi_app/config.py:151`). Declaring an `http://` base URL silently drops the
+  `Secure` flag from session cookies. That is deliberate — it is what lets a
+  laptop install work at all — and it is also why an `http://` `WEB_BASE_URL`
+  has no place in a deployment anyone else uses.
 
 ---
 
@@ -334,6 +368,10 @@ After the first live turn:
 
 ## Security checklist
 
+- [ ] SAFi reachable over TLS only — the API key and `conversation_id` are
+      credentials, and SAFi does not terminate TLS itself
+- [ ] `WEB_BASE_URL` set to the `https://` address, so session cookies keep
+      their `Secure` flag
 - [ ] `conversation_id` from a CSPRNG, not a timestamp or counter
 - [ ] API key server-side only; never in page source or client JS
 - [ ] Calling from the server, not the browser (so CORS is irrelevant)
