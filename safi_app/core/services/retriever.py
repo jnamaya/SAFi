@@ -7,6 +7,7 @@ hybrid search, automatically using a keyword-based method for citation
 queries (e.g., "John 3:16") and a semantic vector search for all other queries.
 """
 import faiss
+import json
 import pickle
 import os
 import numpy as np
@@ -63,6 +64,87 @@ def embed_texts(model, texts: List[str]) -> np.ndarray:
     return np.array(list(model.embed(texts)), dtype="float32")
 
 
+# --- PATH SAFETY ---------------------------------------------------------
+# A knowledge base name reaches this module from agents.rag_knowledge_base,
+# which since 2026-08-07 can be a user-created KB. The name is interpolated
+# straight into a filename, so without this check a name of "../../etc/passwd"
+# would read outside the vector store. Built-in corpora ("safi",
+# "bible_bsb_v1", "sop_index") are plain identifiers and pass unchanged;
+# user KBs are UUIDs and also pass. Everything else is refused.
+_SAFE_KB_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+class UnsafeKnowledgeBaseName(ValueError):
+    """The KB name could escape VECTOR_STORE_PATH. Refused rather than
+    stripped: a sanitiser silently maps two distinct names onto one file,
+    which is its own class of bug."""
+
+
+def _kb_index_path(knowledge_base_name: str) -> str:
+    """Resolves a KB name to its index path, refusing anything that is not a
+    plain filename component. The realpath check is belt-and-braces against a
+    name that passes the regex but resolves outside the store via a symlink."""
+    if not isinstance(knowledge_base_name, str) or not _SAFE_KB_NAME.match(knowledge_base_name):
+        raise UnsafeKnowledgeBaseName(f"unsafe knowledge base name: {knowledge_base_name!r}")
+    path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}.index")
+    store_root = os.path.realpath(VECTOR_STORE_PATH)
+    if os.path.commonpath([os.path.realpath(os.path.dirname(path)), store_root]) != store_root:
+        raise UnsafeKnowledgeBaseName(f"resolves outside the vector store: {knowledge_base_name!r}")
+    return path
+
+
+# --- RETRIEVER CACHE -----------------------------------------------------
+# Retriever was constructed per turn (orchestrator.py builds a RAGService each
+# time), which meant a FAISS read plus a metadata load on every request. That
+# was tolerable with three built-in indexes and is not once every user can
+# create their own. Cached per KB name, invalidated by index mtime so a
+# rebuild is picked up without a restart, and bounded so a few hundred KBs
+# cannot pin every index in memory in all four gunicorn workers.
+_RETRIEVER_CACHE: "OrderedDict[str, Any]" = None  # type: ignore[assignment]
+_RETRIEVER_CACHE_LOCK = threading.Lock()
+RETRIEVER_CACHE_SIZE = int(os.environ.get("SAFI_RETRIEVER_CACHE_SIZE", "8"))
+
+
+def get_cached_retriever(knowledge_base_name: str):
+    """Returns a shared Retriever, rebuilding it when the index file changed.
+
+    Retriever.search() is read-only over faiss + a list, so sharing one
+    instance across threads is safe; faiss releases the GIL during search.
+    """
+    global _RETRIEVER_CACHE
+    from collections import OrderedDict
+    with _RETRIEVER_CACHE_LOCK:
+        if _RETRIEVER_CACHE is None:
+            _RETRIEVER_CACHE = OrderedDict()
+
+        try:
+            mtime = os.path.getmtime(_kb_index_path(knowledge_base_name))
+        except (OSError, UnsafeKnowledgeBaseName):
+            mtime = None
+
+        cached = _RETRIEVER_CACHE.get(knowledge_base_name)
+        if cached is not None and cached.index_mtime == mtime:
+            _RETRIEVER_CACHE.move_to_end(knowledge_base_name)
+            return cached
+
+        retriever = Retriever(knowledge_base_name=knowledge_base_name)
+        _RETRIEVER_CACHE[knowledge_base_name] = retriever
+        _RETRIEVER_CACHE.move_to_end(knowledge_base_name)
+        while len(_RETRIEVER_CACHE) > RETRIEVER_CACHE_SIZE:
+            _RETRIEVER_CACHE.popitem(last=False)
+        return retriever
+
+
+def invalidate_cached_retriever(knowledge_base_name: str) -> None:
+    """Drops a KB from this process's cache. Only helps the process that
+    rebuilt the index — the indexer runs in its own container — which is why
+    the mtime check above, not this call, is what actually keeps the gunicorn
+    workers current. Kept because tests and any in-process build need it."""
+    with _RETRIEVER_CACHE_LOCK:
+        if _RETRIEVER_CACHE:
+            _RETRIEVER_CACHE.pop(knowledge_base_name, None)
+
+
 class Retriever:
     """
     Manages a FAISS index and metadata for hybrid (keyword + semantic) search.
@@ -83,29 +165,60 @@ class Retriever:
         self.model = None
         self.index = None
         self.metadata = []
+        self.index_mtime = None
         self.log = logging.getLogger(self.__class__.__name__)
-        
+
         try:
-            index_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}.index")
-            metadata_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.pkl")
-            
+            index_path = _kb_index_path(knowledge_base_name)
+            json_meta_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.json")
+            pkl_meta_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.pkl")
+
+            # JSON first: user-created KBs (kb_indexer) write JSON precisely so
+            # that a file whose write path is reachable from an upload endpoint
+            # is never fed to pickle.load. The built-in indexes shipped by
+            # rag/build_index_v2.py are still .pkl, hence the fallback.
+            metadata_path = json_meta_path if os.path.exists(json_meta_path) else pkl_meta_path
+
             if not os.path.exists(index_path) or not os.path.exists(metadata_path):
                 self.log.warning(f"Index files not found for kb '{knowledge_base_name}' at {VECTOR_STORE_PATH}. Retriever will be disabled.")
                 return
-            
+
             self.log.info(f"Loading index for: {knowledge_base_name}")
-            self.index = faiss.read_index(index_path)
-            
-            # SECURITY WARNING: pickle.load is vulnerable to arbitrary code execution if 
-            # the metadata file is compromised. In a high-security environment, 
-            # consider migrating metadata to JSON or SQLite.
-            with open(metadata_path, "rb") as f:
-                self.metadata = pickle.load(f)
-            
+            index = faiss.read_index(index_path)
+
+            if metadata_path.endswith(".json"):
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+            else:
+                # Legacy path, built-in corpora only. pickle.load is unsafe on
+                # attacker-controlled files; these are produced offline by the
+                # CLI builder and shipped with the image.
+                with open(metadata_path, "rb") as f:
+                    metadata = pickle.load(f)
+
+            # The index and its metadata are two files, so a rebuild cannot
+            # swap them in one atomic step. A mismatch means we caught the
+            # rename window — refuse rather than serve chunk texts that belong
+            # to different vectors, which would be silent mis-citation. The
+            # next turn re-reads and finds a consistent pair.
+            if index.ntotal != len(metadata):
+                self.log.warning(
+                    f"Index/metadata mismatch for '{knowledge_base_name}' "
+                    f"({index.ntotal} vectors vs {len(metadata)} records) — "
+                    "likely mid-rebuild; retrieval disabled for this load.")
+                return
+
+            self.index = index
+            self.metadata = metadata
+            try:
+                self.index_mtime = os.path.getmtime(index_path)
+            except OSError:
+                self.index_mtime = None
+
             # OPTIMIZATION: Use the global singleton model
             self.model = get_shared_embedding_model()
             self.log.info(f"Retriever for '{knowledge_base_name}' attached to global model.")
-            
+
         except Exception as e:
             self.log.exception(f"Error loading retriever for '{knowledge_base_name}': {e}")
 

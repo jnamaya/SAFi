@@ -351,6 +351,68 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN track_work_context BOOLEAN DEFAULT TRUE")
 
+        # --- Knowledge Bases (user-created RAG corpora) ---
+        # `id` is a server-generated UUID and is ALSO the on-disk index
+        # filename. That is deliberate and load-bearing: Retriever builds its
+        # path as os.path.join(VECTOR_STORE_PATH, f"{name}.index") with no
+        # sanitising, so a user-supplied name would be a path-traversal read
+        # primitive. The display name lives in `name` and never reaches the
+        # filesystem. Do not "improve" this into a slug.
+        #
+        # No FKs (house style). agents.rag_knowledge_base holds this id.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_bases (
+                id CHAR(36) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                org_id CHAR(36) NULL,
+                created_by VARCHAR(255) NOT NULL,
+                visibility ENUM('private', 'member', 'auditor', 'editor', 'admin')
+                    DEFAULT 'private',
+                status ENUM('empty', 'pending', 'indexing', 'ready', 'failed')
+                    DEFAULT 'empty',
+                status_detail TEXT NULL,
+                chunk_count INT DEFAULT 0,
+                indexed_at TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_kb_org (org_id),
+                INDEX idx_kb_owner (created_by)
+            )
+        ''')
+
+        # --- Knowledge Base Documents ---
+        # Approval columns exist from v1 even though private KBs never use
+        # them (approval attaches to SHARING, not to documents as such — a
+        # private KB has no eligible approver, and self-approval is exactly
+        # what separation of duties forbids). Storing them now means v2 org
+        # sharing is a workflow addition, not a migration of live rows.
+        #
+        # `content_enc` holds the extracted text, Fernet-encrypted, so the
+        # corpus can be re-indexed without keeping the original upload on
+        # disk and so purge/erasure has one authoritative place to delete.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_base_documents (
+                id CHAR(36) PRIMARY KEY,
+                kb_id CHAR(36) NOT NULL,
+                filename VARCHAR(512) NOT NULL,
+                size_bytes BIGINT DEFAULT 0,
+                char_count INT DEFAULT 0,
+                sha256 CHAR(64) NULL,
+                content_enc LONGTEXT NULL,
+                uploaded_by VARCHAR(255) NOT NULL,
+                status ENUM('private', 'pending', 'approved', 'rejected')
+                    DEFAULT 'private',
+                reviewed_by VARCHAR(255) NULL,
+                reviewer_email VARCHAR(255) NULL,
+                reviewed_at TIMESTAMP NULL,
+                reason_enc MEDIUMTEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_kbdoc_kb (kb_id, status),
+                INDEX idx_kbdoc_sha (kb_id, sha256)
+            )
+        ''')
+
         # --- API Keys ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_keys (
@@ -2586,6 +2648,380 @@ def delete_agent(key):
     finally:
         cursor.close()
         conn.close()
+
+# -------------------------------------------------------------------------
+# KNOWLEDGE BASES (user-created RAG corpora)
+# -------------------------------------------------------------------------
+# Two rules hold this together and are enforced HERE rather than in the API,
+# so every future caller — batch, script, admin tooling — inherits them:
+#
+#   1. A document's text is only ever indexed when it is retrievable-eligible
+#      (`_INDEXABLE_DOC_STATUSES`). Approval that only hides a row in the UI
+#      is theatre: once text is embedded it is already answering questions.
+#   2. An uploader can never approve their own document (SelfReviewError),
+#      matching record_review_disposition's separation of duties.
+
+# 'private' = a private KB, which has no approver by design. 'approved' = a
+# shared KB's document that a second person signed off. Both are indexable;
+# 'pending' and 'rejected' are not.
+_INDEXABLE_DOC_STATUSES = ('private', 'approved')
+
+
+def create_knowledge_base(name, created_by, description=None, org_id=None,
+                          visibility='private'):
+    """Creates an empty KB and returns its row. The UUID it generates is also
+    the on-disk index filename — see the schema comment."""
+    kb_id = str(uuid.uuid4())
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO knowledge_bases (id, name, description, org_id, created_by, "
+            "visibility, status) VALUES (%s, %s, %s, %s, %s, %s, 'empty')",
+            (kb_id, name, description, org_id, created_by, visibility),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_knowledge_base(kb_id)
+
+
+def get_knowledge_base(kb_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM knowledge_bases WHERE id=%s", (kb_id,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_knowledge_bases(user_id, org_id=None, user_role='member'):
+    """KBs the caller may see: their own always, plus org-visible ones their
+    role clears. Mirrors list_agents' visibility ladder deliberately — a KB
+    is an org asset of the same kind, and two different rules would be a bug
+    waiting to happen."""
+    role_clears = {
+        'admin':   ('member', 'auditor', 'editor', 'admin'),
+        'editor':  ('member', 'auditor', 'editor'),
+        'auditor': ('member', 'auditor'),
+        'member':  ('member',),
+    }.get(user_role or 'member', ('member',))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # pending_count comes back with the row rather than from a second query
+        # per card. The list view needs it: a shared KB whose documents are all
+        # awaiting review has zero chunks, and a card that renders that as
+        # "Empty" reads as a bug instead of as "someone needs to approve these".
+        sql = """
+            SELECT kb.*,
+                   (SELECT COUNT(*) FROM knowledge_base_documents d
+                     WHERE d.kb_id = kb.id AND d.status = 'pending') AS pending_count
+              FROM knowledge_bases kb
+             WHERE kb.created_by=%s
+        """
+        params = [user_id]
+        if org_id:
+            placeholders = ', '.join(['%s'] * len(role_clears))
+            sql += f" OR (kb.org_id=%s AND kb.visibility IN ({placeholders}))"
+            params.append(org_id)
+            params.extend(role_clears)
+        sql += " ORDER BY kb.created_at DESC"
+        cursor.execute(sql, tuple(params))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_knowledge_base(kb_id, name=None, description=None, visibility=None):
+    sets, params = [], []
+    if name is not None:
+        sets.append("name=%s"); params.append(name)
+    if description is not None:
+        sets.append("description=%s"); params.append(description)
+    if visibility is not None:
+        sets.append("visibility=%s"); params.append(visibility)
+    if not sets:
+        return get_knowledge_base(kb_id)
+    params.append(kb_id)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id=%s",
+                       tuple(params))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_knowledge_base(kb_id)
+
+
+def set_knowledge_base_status(kb_id, status, detail=None, chunk_count=None,
+                              mark_indexed=False):
+    sets = ["status=%s", "status_detail=%s"]
+    params = [status, detail]
+    if chunk_count is not None:
+        sets.append("chunk_count=%s"); params.append(int(chunk_count))
+    if mark_indexed:
+        sets.append("indexed_at=NOW()")
+    params.append(kb_id)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id=%s",
+                       tuple(params))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_knowledge_base(kb_id):
+    """Removes the KB and its documents. The caller is responsible for
+    deleting the index files — see kb_indexer.delete_kb_artifacts. Rows go
+    first so a crash between the two leaves orphaned files (inert) rather
+    than a KB whose documents are gone but whose vectors still answer."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM knowledge_base_documents WHERE kb_id=%s", (kb_id,))
+        cursor.execute("DELETE FROM knowledge_bases WHERE id=%s", (kb_id,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def add_knowledge_base_document(kb_id, filename, text, uploaded_by,
+                                size_bytes=0, status='private'):
+    """Stores one extracted document. `text` is encrypted at rest here rather
+    than left on disk, so re-indexing needs no original upload and erasure has
+    exactly one place to delete from."""
+    doc_id = str(uuid.uuid4())
+    digest = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO knowledge_base_documents (id, kb_id, filename, size_bytes, "
+            "char_count, sha256, content_enc, uploaded_by, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (doc_id, kb_id, filename, int(size_bytes or 0), len(text or ""),
+             digest, crypto.encrypt_value(text or ""), uploaded_by, status),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_knowledge_base_document(doc_id)
+
+
+def get_knowledge_base_document(doc_id, include_text=False):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM knowledge_base_documents WHERE id=%s", (doc_id,))
+        row = cursor.fetchone()
+        if row:
+            row = _shape_kb_document(row, include_text=include_text)
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_knowledge_base_documents(kb_id, include_text=False, statuses=None):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        sql = "SELECT * FROM knowledge_base_documents WHERE kb_id=%s"
+        params = [kb_id]
+        if statuses:
+            sql += f" AND status IN ({', '.join(['%s'] * len(statuses))})"
+            params.extend(statuses)
+        sql += " ORDER BY created_at ASC"
+        cursor.execute(sql, tuple(params))
+        return [_shape_kb_document(r, include_text=include_text)
+                for r in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_indexable_documents(kb_id):
+    """The indexer's input set. Deliberately the ONLY way the indexer selects
+    documents, so 'approved' cannot degrade into a display flag."""
+    return list_knowledge_base_documents(
+        kb_id, include_text=True, statuses=_INDEXABLE_DOC_STATUSES)
+
+
+def _shape_kb_document(row, include_text=False):
+    """Never returns the ciphertext, and only returns plaintext when asked."""
+    enc = row.pop("content_enc", None)
+    reason_enc = row.pop("reason_enc", None)
+    if include_text:
+        row["text"] = crypto.decrypt_value(enc) if enc else ""
+    if reason_enc:
+        row["reason"] = crypto.decrypt_value(reason_enc)
+    return row
+
+
+def delete_knowledge_base_document(doc_id):
+    """Returns the kb_id the document belonged to, so the caller knows which
+    index to rebuild. Deleting a document without rebuilding leaves its text
+    retrievable — the whole point of the approval gate."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT kb_id FROM knowledge_base_documents WHERE id=%s", (doc_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        cursor.execute("DELETE FROM knowledge_base_documents WHERE id=%s", (doc_id,))
+        conn.commit()
+        return row["kb_id"]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_knowledge_base_document_status(doc_id, action, reviewer_id,
+                                       reviewer_email=None, reason=None,
+                                       org_id=None):
+    """Records an approval decision in ONE transaction: locks the row, blocks
+    self-approval, flips status, and appends the evidence to
+    org_compliance_log so the decision cannot be made without the log.
+
+    Separation of duties is enforced here, not in the route, for the same
+    reason record_review_disposition does it: an examiner tests self-approval
+    first, and a rule that lives in one HTTP handler is a rule that the next
+    caller silently skips.
+
+    Raises ValueError on a bad action or a missing rejection reason;
+    SelfReviewError when the uploader is the reviewer. Returns the updated row,
+    or None when the document does not exist."""
+    if action not in ("approve", "reject"):
+        raise ValueError("action must be 'approve' or 'reject'")
+    reason = (reason or "").strip()
+    if action == "reject" and not reason:
+        raise ValueError("a reason is mandatory for a rejection")
+    status = "approved" if action == "approve" else "rejected"
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM knowledge_base_documents WHERE id=%s FOR UPDATE",
+                       (doc_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        if str(row["uploaded_by"]) == str(reviewer_id):
+            conn.rollback()
+            raise SelfReviewError(
+                "separation of duties: you cannot approve a document you "
+                "uploaded — another admin or auditor must review it"
+            )
+        reason_enc = crypto.encrypt_value(reason) if reason else None
+        cursor.execute(
+            "UPDATE knowledge_base_documents SET status=%s, reviewed_by=%s, "
+            "reviewer_email=%s, reviewed_at=NOW(), reason_enc=%s WHERE id=%s",
+            (status, reviewer_id, reviewer_email, reason_enc, doc_id),
+        )
+        append_compliance_log(
+            org_id,
+            "kb_document_approved" if action == "approve" else "kb_document_rejected",
+            f"user:{reviewer_id}",
+            {
+                "kb_id": row["kb_id"],
+                "document_id": doc_id,
+                "filename": row["filename"],
+                "sha256": row["sha256"],
+                "uploaded_by": row["uploaded_by"],
+                "char_count": row["char_count"],
+            },
+            cursor=cursor,
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return get_knowledge_base_document(doc_id)
+
+
+def mark_documents_pending_for_share(kb_id):
+    """Called when a private KB becomes org-visible. Every 'private' document
+    becomes 'pending' — nothing carries its unreviewed status into a shared
+    corpus. Returns how many were re-flagged."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE knowledge_base_documents SET status='pending' "
+            "WHERE kb_id=%s AND status='private'", (kb_id,))
+        count = cursor.rowcount
+        conn.commit()
+        return count
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def mark_documents_private_for_unshare(kb_id):
+    """The inverse: a KB returning to private has no approver, so pending and
+    approved rows both collapse back to 'private'. Rejected rows stay
+    rejected — a considered 'no' is not undone by a visibility change."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE knowledge_base_documents SET status='private' "
+            "WHERE kb_id=%s AND status IN ('pending', 'approved')", (kb_id,))
+        count = cursor.rowcount
+        conn.commit()
+        return count
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def claim_pending_knowledge_base():
+    """Atomically claims one KB queued for indexing, or returns None.
+
+    The conditional UPDATE is the claim: two indexer processes cannot both
+    move the same row out of 'pending', so the worst case of running two is
+    duplicated effort, never two writers racing on one index file."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id FROM knowledge_bases WHERE status='pending' "
+            "ORDER BY updated_at ASC LIMIT 1")
+        row = cursor.fetchone()
+        if not row:
+            return None
+        cursor.execute(
+            "UPDATE knowledge_bases SET status='indexing' "
+            "WHERE id=%s AND status='pending'", (row["id"],))
+        claimed = cursor.rowcount == 1
+        conn.commit()
+        return row["id"] if claimed else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_knowledge_bases_for_agent_picker(user_id, org_id=None, user_role='member'):
+    """Only KBs that can actually ground an answer. A KB with no indexed
+    vectors attached to an agent looks configured and answers nothing."""
+    return [kb for kb in list_knowledge_bases(user_id, org_id, user_role)
+            if kb.get("status") == "ready" and (kb.get("chunk_count") or 0) > 0]
+
 
 # -------------------------------------------------------------------------
 # NEW: ORG & POLICY MANAGEMENT

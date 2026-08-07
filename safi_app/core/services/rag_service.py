@@ -13,7 +13,7 @@ from typing import List, Dict, Any
 
 # Import the Retriever from its sibling directory
 try:
-    from .retriever import Retriever
+    from .retriever import Retriever, get_cached_retriever
 except (ImportError, ValueError) as e:
     logging.critical(f"Failed to import Retriever: {e}. Ensure safi_app/core/services/retriever.py exists.")
     # Define a mock class if import fails so the app can load but RAG is disabled
@@ -22,6 +22,9 @@ except (ImportError, ValueError) as e:
             logging.error("Using Mock Retriever class. Import failed.")
         def search(self, *args, **kwargs) -> List[Dict[str, Any]]:
             return []
+
+    def get_cached_retriever(knowledge_base_name):
+        return Retriever()
 
 
 class RAGService:
@@ -42,8 +45,10 @@ class RAGService:
         self.log = logging.getLogger(self.__class__.__name__)
         if knowledge_base_name:
             try:
-                # Initialize the actual retriever class
-                self.retriever = Retriever(knowledge_base_name=knowledge_base_name)
+                # Shared, mtime-invalidated instance: this constructor runs on
+                # every turn (orchestrator builds a RAGService per request), so
+                # loading FAISS + metadata here would be per-request I/O.
+                self.retriever = get_cached_retriever(knowledge_base_name)
                 self.enabled = True if self.retriever.index else False
                 if not self.enabled:
                     self.log.warning(f"RAGService enabled, but Retriever failed to load index for {knowledge_base_name}.")

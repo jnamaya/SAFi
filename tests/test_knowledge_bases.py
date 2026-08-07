@@ -1,0 +1,392 @@
+"""
+User-created knowledge bases: authorization, approval, and what gets indexed.
+
+The load-bearing tests, and why each one exists:
+
+  * test_traversal_id_never_escapes_the_vector_store — `Retriever` builds its
+    path by f-string. Before user-created KBs the name always came from our own
+    agent files; now it can come from a database row, so a name that walks out
+    of the store is a file-read primitive.
+
+  * test_editor_cannot_approve — the single easiest thing to get wrong here.
+    The role ladder puts editor (3) ABOVE auditor (2), so `require_role`
+    instead of `require_any_role` would let the people who upload documents
+    approve their own.
+
+  * test_uploader_cannot_approve_own_document — separation of duties, enforced
+    in the persistence layer so a future batch path inherits it.
+
+  * test_pending_document_is_not_indexed and
+    test_revoking_approval_removes_the_text — approval has to gate the INDEXER,
+    not the UI. A flag that only hides a row leaves the vectors answering.
+
+  * test_long_document_is_not_truncated_at_the_prompt_limit — extract_text
+    defaults to 50k chars, which is right for one prompt and wrong for a
+    corpus. Truncation here would index chapter one of a long PDF and let the
+    agent answer confidently from it.
+
+Run:  docker compose -f docker-compose.test.yml run --rm tests -k knowledge
+"""
+import os
+import sys
+import unittest
+import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from safi_app import create_app
+from safi_app.persistence import database as db
+from safi_app.persistence.database import SelfReviewError
+from support import login_as, new_user
+
+
+def _exec(sql, params=()):
+    conn = db.get_db_connection()
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+class KnowledgeBaseBase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.org_id = str(uuid.uuid4())
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
+              (cls.org_id, 'KB Test Org'))
+        cls.owner = new_user(org_id=cls.org_id, role="editor")
+        cls.reviewer = new_user(org_id=cls.org_id, role="auditor")
+        cls.editor2 = new_user(org_id=cls.org_id, role="editor")
+        cls.member = new_user(org_id=cls.org_id, role="member")
+        cls.outsider = new_user(org_id=str(uuid.uuid4()), role="editor")
+
+    @classmethod
+    def tearDownClass(cls):
+        for uid in (cls.owner, cls.reviewer, cls.editor2, cls.member, cls.outsider):
+            _exec("DELETE FROM users WHERE id=%s", (uid,))
+        _exec("DELETE FROM organizations WHERE id=%s", (cls.org_id,))
+
+    def setUp(self):
+        self.client = self.app.test_client()
+        self.created = []
+
+    def tearDown(self):
+        for kb_id in self.created:
+            _exec("DELETE FROM knowledge_base_documents WHERE kb_id=%s", (kb_id,))
+            _exec("DELETE FROM knowledge_bases WHERE id=%s", (kb_id,))
+        _exec("DELETE FROM org_compliance_log WHERE org_id=%s", (self.org_id,))
+
+    def make_kb(self, visibility='private', owner=None):
+        kb = db.create_knowledge_base(
+            name="Test Corpus", created_by=owner or self.owner,
+            org_id=self.org_id, visibility=visibility)
+        self.created.append(kb["id"])
+        return kb
+
+
+# --- Path safety ----------------------------------------------------------
+
+class PathSafety(unittest.TestCase):
+
+    def test_traversal_id_never_escapes_the_vector_store(self):
+        from safi_app.core.services.kb_indexer import (InvalidKnowledgeBaseId,
+                                                       kb_paths)
+        for bad in ("../../etc/passwd", "..", "a/b", "safi/../../x", "", None,
+                    "3f2504e0-4f89-11d3-9a0c-0305e82c33"):   # too short
+            with self.assertRaises(InvalidKnowledgeBaseId, msg=repr(bad)):
+                kb_paths(bad)
+
+    def test_valid_uuid_resolves_inside_the_store(self):
+        from safi_app.core.services.kb_indexer import kb_paths
+        from safi_app.core.services.retriever import VECTOR_STORE_PATH
+        kb_id = str(uuid.uuid4())
+        index_path, meta_path = kb_paths(kb_id)
+        store = os.path.realpath(VECTOR_STORE_PATH)
+        for p in (index_path, meta_path):
+            self.assertEqual(store, os.path.dirname(os.path.realpath(p)))
+        # JSON, not pickle — these files have a user-driven lifecycle.
+        self.assertTrue(meta_path.endswith(".json"))
+
+    def test_retriever_refuses_an_unsafe_name(self):
+        from safi_app.core.services.retriever import (UnsafeKnowledgeBaseName,
+                                                      _kb_index_path)
+        for bad in ("../secrets", "/etc/passwd", "a/b", ".hidden"):
+            with self.assertRaises(UnsafeKnowledgeBaseName, msg=bad):
+                _kb_index_path(bad)
+        # Built-in corpora must keep working.
+        for good in ("safi", "bible_bsb_v1", "sop_index"):
+            self.assertTrue(_kb_index_path(good).endswith(f"{good}.index"))
+
+
+# --- Authorization --------------------------------------------------------
+
+class Authorization(KnowledgeBaseBase):
+
+    def test_member_cannot_create(self):
+        login_as(self.client, self.member, "member", org_id=self.org_id)
+        r = self.client.post('/api/knowledge-bases', json={"name": "Nope"})
+        self.assertEqual(403, r.status_code)
+
+    def test_editor_can_create(self):
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        r = self.client.post('/api/knowledge-bases', json={"name": "Mine"})
+        self.assertEqual(201, r.status_code)
+        self.created.append(r.get_json()["id"])
+
+    def test_private_kb_is_invisible_to_others(self):
+        kb = self.make_kb()
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        # 404 not 403 — a KB you cannot see should not be confirmed to exist.
+        self.assertEqual(404, self.client.get(f'/api/knowledge-bases/{kb["id"]}').status_code)
+        listing = self.client.get('/api/knowledge-bases').get_json()
+        self.assertNotIn(kb["id"], [k["id"] for k in listing["knowledge_bases"]])
+
+    def test_shared_kb_is_visible_to_the_org(self):
+        kb = self.make_kb(visibility='member')
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        self.assertEqual(200, self.client.get(f'/api/knowledge-bases/{kb["id"]}').status_code)
+
+    def test_shared_kb_is_invisible_across_orgs(self):
+        kb = self.make_kb(visibility='member')
+        login_as(self.client, self.outsider, "editor", org_id=str(uuid.uuid4()))
+        self.assertEqual(404, self.client.get(f'/api/knowledge-bases/{kb["id"]}').status_code)
+
+    def test_non_owner_cannot_upload_or_delete(self):
+        kb = self.make_kb(visibility='member')
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        self.assertEqual(403, self.client.delete(f'/api/knowledge-bases/{kb["id"]}').status_code)
+
+    def test_agent_cannot_attach_someone_elses_knowledge_base(self):
+        """The retriever refuses unsafe PATHS; a valid id belonging to another
+        user is not unsafe, just unauthorized. That is the API's job."""
+        kb = self.make_kb()          # private, owned by self.owner
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        r = self.client.post('/api/agents', json={
+            "key": f"kbtest_{uuid.uuid4().hex[:8]}", "name": "KB Thief",
+            "policy_id": "standalone", "rag_knowledge_base": kb["id"],
+        })
+        self.assertEqual(403, r.status_code)
+        self.assertIn("access", r.get_json()["error"].lower())
+
+
+# --- Approval -------------------------------------------------------------
+
+class Approval(KnowledgeBaseBase):
+
+    def _doc(self, kb, status='pending', uploader=None, text="Some content."):
+        return db.add_knowledge_base_document(
+            kb_id=kb["id"], filename="policy.md", text=text,
+            uploaded_by=uploader or self.owner, size_bytes=len(text), status=status)
+
+    def test_editor_cannot_approve(self):
+        """THE LADDER TRAP. require_role('auditor') would pass here, because
+        editor (3) outranks auditor (2) — and editors are the ones uploading."""
+        kb = self.make_kb(visibility='member')
+        doc = self._doc(kb)
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        r = self.client.post(
+            f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+            json={"action": "approve"})
+        self.assertEqual(403, r.status_code)
+        self.assertEqual('pending', db.get_knowledge_base_document(doc["id"])["status"])
+
+    def test_auditor_and_admin_can_approve(self):
+        for role, uid in (("auditor", self.reviewer), ("admin", self.editor2)):
+            kb = self.make_kb(visibility='member')
+            doc = self._doc(kb)
+            login_as(self.client, uid, role, org_id=self.org_id)
+            r = self.client.post(
+                f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+                json={"action": "approve"})
+            self.assertEqual(200, r.status_code, f"{role}: {r.get_json()}")
+            self.assertEqual('approved', db.get_knowledge_base_document(doc["id"])["status"])
+
+    def test_uploader_cannot_approve_own_document(self):
+        kb = self.make_kb(visibility='member')
+        doc = self._doc(kb, uploader=self.reviewer)
+        with self.assertRaises(SelfReviewError):
+            db.set_knowledge_base_document_status(
+                doc["id"], "approve", reviewer_id=self.reviewer, org_id=self.org_id)
+        self.assertEqual('pending', db.get_knowledge_base_document(doc["id"])["status"])
+
+    def test_self_approval_is_blocked_at_the_api_too(self):
+        kb = self.make_kb(visibility='member')
+        doc = self._doc(kb, uploader=self.reviewer)
+        login_as(self.client, self.reviewer, "auditor", org_id=self.org_id)
+        r = self.client.post(
+            f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+            json={"action": "approve"})
+        # 403, not 400: the request was well formed, the actor was wrong.
+        self.assertEqual(403, r.status_code)
+
+    def test_rejection_requires_a_reason(self):
+        kb = self.make_kb(visibility='member')
+        doc = self._doc(kb)
+        login_as(self.client, self.reviewer, "auditor", org_id=self.org_id)
+        r = self.client.post(
+            f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+            json={"action": "reject"})
+        self.assertEqual(400, r.status_code)
+
+    def test_approval_writes_evidence(self):
+        kb = self.make_kb(visibility='member')
+        doc = self._doc(kb)
+        db.set_knowledge_base_document_status(
+            doc["id"], "approve", reviewer_id=self.reviewer,
+            reviewer_email="auditor@test", org_id=self.org_id)
+        events = [r["event_type"] for r in db.list_compliance_log(self.org_id, limit=50)]
+        self.assertIn("kb_document_approved", events)
+
+    def test_private_kb_documents_are_not_reviewable(self):
+        """A private KB has no eligible approver — self-approval is exactly what
+        separation of duties forbids, so review there would be a rubber stamp."""
+        kb = self.make_kb(visibility='private')
+        doc = self._doc(kb, status='private')
+        login_as(self.client, self.reviewer, "auditor", org_id=self.org_id)
+        r = self.client.post(
+            f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+            json={"action": "approve"})
+        self.assertEqual(400, r.status_code)
+
+    def test_sharing_sends_everything_back_for_review(self):
+        kb = self.make_kb(visibility='private')
+        self._doc(kb, status='private')
+        self._doc(kb, status='private')
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        r = self.client.put(f'/api/knowledge-bases/{kb["id"]}',
+                            json={"visibility": "member"})
+        self.assertEqual(200, r.status_code)
+        statuses = [d["status"] for d in db.list_knowledge_base_documents(kb["id"])]
+        self.assertEqual(['pending', 'pending'], statuses)
+
+    def test_unsharing_returns_documents_to_private_but_keeps_rejections(self):
+        kb = self.make_kb(visibility='member')
+        approved = self._doc(kb, status='pending')
+        rejected = self._doc(kb, status='pending')
+        db.set_knowledge_base_document_status(
+            approved["id"], "approve", reviewer_id=self.reviewer, org_id=self.org_id)
+        db.set_knowledge_base_document_status(
+            rejected["id"], "reject", reviewer_id=self.reviewer,
+            reason="out of scope", org_id=self.org_id)
+
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        self.client.put(f'/api/knowledge-bases/{kb["id"]}', json={"visibility": "private"})
+
+        self.assertEqual('private', db.get_knowledge_base_document(approved["id"])["status"])
+        # A considered "no" is not undone by a visibility change.
+        self.assertEqual('rejected', db.get_knowledge_base_document(rejected["id"])["status"])
+
+
+# --- What actually gets indexed -------------------------------------------
+
+class Indexing(KnowledgeBaseBase):
+
+    def test_indexable_set_excludes_pending_and_rejected(self):
+        kb = self.make_kb(visibility='member')
+        db.add_knowledge_base_document(kb["id"], "a.md", "alpha content",
+                                       self.owner, status='pending')
+        db.add_knowledge_base_document(kb["id"], "b.md", "bravo content",
+                                       self.owner, status='rejected')
+        ok = db.add_knowledge_base_document(kb["id"], "c.md", "charlie content",
+                                            self.owner, status='pending')
+        db.set_knowledge_base_document_status(
+            ok["id"], "approve", reviewer_id=self.reviewer, org_id=self.org_id)
+
+        indexable = db.list_indexable_documents(kb["id"])
+        self.assertEqual(["c.md"], [d["filename"] for d in indexable])
+        self.assertEqual("charlie content", indexable[0]["text"])
+
+    def test_private_documents_are_indexable(self):
+        kb = self.make_kb(visibility='private')
+        db.add_knowledge_base_document(kb["id"], "own.md", "my notes",
+                                       self.owner, status='private')
+        self.assertEqual(1, len(db.list_indexable_documents(kb["id"])))
+
+    def test_every_mutating_route_enqueues_a_rebuild(self):
+        """Approval that does not reach the indexer is a display flag. Each of
+        these paths changes the approved set, so each must leave the KB queued."""
+        login_as(self.client, self.reviewer, "auditor", org_id=self.org_id)
+        kb = self.make_kb(visibility='member')
+        doc = db.add_knowledge_base_document(kb["id"], "x.md", "text",
+                                             self.owner, status='pending')
+        db.set_knowledge_base_status(kb["id"], 'ready', chunk_count=1)
+        self.client.post(
+            f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+            json={"action": "approve"})
+        self.assertEqual('pending', db.get_knowledge_base(kb["id"])["status"])
+
+        db.set_knowledge_base_status(kb["id"], 'ready', chunk_count=1)
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        self.client.delete(f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}')
+        self.assertEqual('pending', db.get_knowledge_base(kb["id"])["status"])
+
+    def test_claim_is_atomic(self):
+        kb = self.make_kb()
+        db.set_knowledge_base_status(kb["id"], 'pending')
+        first = db.claim_pending_knowledge_base()
+        self.assertEqual(kb["id"], first)
+        # Already claimed — a second indexer must not get the same row.
+        self.assertIsNone(db.claim_pending_knowledge_base())
+
+    def test_picker_only_offers_knowledge_bases_with_vectors(self):
+        empty = self.make_kb()
+        ready = self.make_kb()
+        db.set_knowledge_base_status(ready["id"], 'ready', chunk_count=12)
+        offered = [kb["id"] for kb in
+                   db.list_knowledge_bases_for_agent_picker(self.owner, self.org_id, "editor")]
+        self.assertIn(ready["id"], offered)
+        self.assertNotIn(empty["id"], offered)
+
+
+# --- Chunking / truncation ------------------------------------------------
+
+class Chunking(unittest.TestCase):
+
+    def test_long_document_is_not_truncated_at_the_prompt_limit(self):
+        """Config.MAX_DOCUMENT_CHARS (50k) bounds a single prompt. Applied to
+        indexing it would store chapter one of a long PDF and let the agent
+        answer confidently from a truncated corpus."""
+        from safi_app.config import Config
+        from safi_app.core.services.kb_indexer import MAX_INDEX_CHARS_PER_DOC
+        self.assertGreater(MAX_INDEX_CHARS_PER_DOC, Config.MAX_DOCUMENT_CHARS * 10)
+
+    def test_headingless_text_still_chunks(self):
+        from safi_app.core.services.chunking import chunk_document
+        text = "\n\n".join(f"Paragraph number {i} with some content." for i in range(400))
+        chunks = chunk_document(text, "extracted.pdf")
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(c) <= 2000 for c in chunks))
+        # No content may be dropped on the way through.
+        self.assertIn("Paragraph number 399", "\n".join(chunks))
+
+    def test_one_giant_paragraph_is_hard_split(self):
+        """A flattened PDF table arrives as a single line longer than the
+        chunk limit. Emitting it whole would blow the embedding window."""
+        from safi_app.core.services.chunking import chunk_document
+        chunks = chunk_document("x" * 9000, "table.pdf")
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(c) <= 2000 for c in chunks))
+
+    def test_markdown_still_uses_the_heading_chunker(self):
+        from safi_app.core.services.chunking import chunk_document
+        text = "# Title\n\n## Section\n\nBody text here.\n\n## Other\n\nMore body."
+        chunks = chunk_document(text, "doc.md")
+        # The heading-only "# Title" must not become its own chunk.
+        self.assertTrue(all(c.strip() != "# Title" for c in chunks))
+
+    def test_cli_builder_shares_this_chunker(self):
+        """rag/build_index_v2.py used to carry its own copy. Two chunkers means
+        a corpus chunked one way at build time and another on re-index."""
+        source = (Path(__file__).resolve().parent.parent /
+                  "rag" / "build_index_v2.py").read_text()
+        self.assertIn("from safi_app.core.services.chunking import", source)
+        self.assertNotIn("def _chunk_markdown(", source)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

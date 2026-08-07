@@ -18,6 +18,41 @@ def validate_agent_data(data):
     # need not define its own. Name/key are validated by the caller.
     return (True, "")
 
+
+# Knowledge bases shipped with the image and referenced by the built-in agent
+# files. They are not rows in `knowledge_bases`, so the ownership check below
+# would otherwise reject an admin editing the SAFi Steward.
+_BUILTIN_KNOWLEDGE_BASES = frozenset(
+    p.get("rag_knowledge_base") for p in ALL_PERSONAS.values()
+    if isinstance(p, dict) and p.get("rag_knowledge_base")
+)
+
+
+def _validate_knowledge_base(kb_name, user_id, user):
+    """Returns an error string when the caller may not attach `kb_name`.
+
+    Empty/None means "no knowledge base", which is always allowed.
+    """
+    if not kb_name:
+        return None
+    if kb_name in _BUILTIN_KNOWLEDGE_BASES:
+        return None
+    kb = db.get_knowledge_base(kb_name)
+    if not kb:
+        return "That knowledge base does not exist."
+    if str(kb.get('created_by')) == str(user_id):
+        return None
+    org_id = user.get('org_id')
+    clears = {
+        'admin':   ('member', 'auditor', 'editor', 'admin'),
+        'editor':  ('member', 'auditor', 'editor'),
+        'auditor': ('member', 'auditor'),
+        'member':  ('member',),
+    }.get(user.get('role') or 'member', ('member',))
+    if kb.get('org_id') and str(kb['org_id']) == str(org_id) and kb.get('visibility') in clears:
+        return None
+    return "You do not have access to that knowledge base."
+
 @agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
 def save_agent():
     try:
@@ -61,6 +96,15 @@ def save_agent():
         has_charter = bool(db.get_charter(user.get('org_id'))) if user.get('org_id') else False
         governed = has_policy or has_charter
         UNGOVERNED_MSG = "This agent has no governance. Set an Organization Charter (Settings → Organization) or attach a Policy before saving."
+
+        # A knowledge base must be one the caller can actually read. Without
+        # this, `rag_knowledge_base` is a free-text field that an editor could
+        # point at another user's corpus by id — the retriever refuses unsafe
+        # *paths*, but a valid id belonging to someone else is not unsafe, just
+        # unauthorized. Authorization is the API's job, not the retriever's.
+        kb_error = _validate_knowledge_base(data.get('rag_knowledge_base'), user_id, user)
+        if kb_error:
+            return jsonify({"error": kb_error}), 403
 
         if request.method == 'POST':
             if db.get_agent(key): return jsonify({"error": "Agent exists"}), 409

@@ -544,6 +544,27 @@ def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> 
     all_profiles = builtins + customs
     return sorted(all_profiles, key=lambda x: x["name"])
 
+def _resolve_kb_display_name(kb_name: Optional[str]) -> Optional[str]:
+    """Human label for a knowledge base, for UI display only.
+
+    Built-in corpora are named by slug ("safi", "bible_bsb_v1") and get the
+    old underscore-to-space treatment. User-created ones are UUIDs and are
+    looked up. A missing row returns None rather than the raw id: an agent
+    pointing at a deleted knowledge base should say nothing rather than
+    display a GUID to the end user.
+    """
+    if not kb_name:
+        return None
+    if "-" in kb_name and len(kb_name) == 36:
+        try:
+            kb = db.get_knowledge_base(kb_name)
+        except Exception as e:
+            log.error(f"Could not resolve knowledge base name for {kb_name}: {e}")
+            return None
+        return kb.get("name") if kb else None
+    return kb_name.replace("_", " ").replace("-", " ")
+
+
 def _standalone_base(raw_persona: Dict[str, Any]) -> Dict[str, Any]:
     """Standalone (no policy): normalize the persona's own values to sum to 1.0."""
     normalized = copy.deepcopy(raw_persona)
@@ -716,6 +737,13 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_name"] = policy_name
     final["org_name"] = org_name
     final["has_charter"] = bool(charter)
+    # The new-chat screen names the agent's knowledge base. Since user-created
+    # KBs are identified by UUID (the id is also the index filename — see the
+    # knowledge_bases schema), the raw value would render as a GUID there.
+    # Resolve the display name once, here, rather than teaching the UI to
+    # recognise UUIDs.
+    final["rag_knowledge_base_name"] = _resolve_kb_display_name(
+        final.get("rag_knowledge_base"))
 
     # 6b. Stamp the effective tool authorization so the Will's per-intent gate
     # (evaluate_tool_intent Step 1) actually enforces the advertised tool list

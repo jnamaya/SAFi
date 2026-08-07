@@ -111,6 +111,7 @@ def create_app():
     from .api.organizations import organizations_bp
     from .api.model_api_routes import model_api_bp
     from .api.documents import documents_bp
+    from .api.knowledge_api import knowledge_bp
     from .api.incidents_api import incidents_bp
     from .api.records_api import records_bp
     from .api.evaluate_api import evaluate_bp
@@ -125,6 +126,7 @@ def create_app():
     app.register_blueprint(organizations_bp, url_prefix='/api')
     app.register_blueprint(model_api_bp, url_prefix='/api')
     app.register_blueprint(documents_bp, url_prefix='/api')
+    app.register_blueprint(knowledge_bp, url_prefix='/api')
     app.register_blueprint(incidents_bp, url_prefix='/api')
     app.register_blueprint(records_bp, url_prefix='/api')
     app.register_blueprint(evaluate_bp, url_prefix='/api')

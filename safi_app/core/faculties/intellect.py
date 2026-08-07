@@ -180,8 +180,10 @@ class IntellectEngine:
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
             try:
-                from ..services.retriever import Retriever
-                self.retriever = Retriever(knowledge_base_name=kb_name)
+                from ..services.retriever import get_cached_retriever
+                # Shared instance, invalidated by index mtime — the Intellect
+                # is constructed per turn and must not reload FAISS each time.
+                self.retriever = get_cached_retriever(kb_name)
             except ImportError as e:
                 # A build without the RAG extras should degrade, not crash: the
                 # agent answers without retrieval rather than failing to start.

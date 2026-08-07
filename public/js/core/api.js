@@ -455,6 +455,81 @@ export async function extractDocumentText(file) {
     return data;
 }
 
+// --- KNOWLEDGE BASES (user-created RAG corpora) ---
+
+export async function listKnowledgeBases() {
+    return httpGet(j('/api/knowledge-bases'));
+}
+
+/** Only KBs with a built index — what the agent wizard may offer. */
+export async function listAvailableKnowledgeBases() {
+    return httpGet(j('/api/knowledge-bases/available'));
+}
+
+export async function getKnowledgeBase(kbId) {
+    return httpGet(j(`/api/knowledge-bases/${kbId}`));
+}
+
+export async function createKnowledgeBase(payload) {
+    return httpJSON(j('/api/knowledge-bases'), 'POST', payload);
+}
+
+export async function updateKnowledgeBase(kbId, payload) {
+    return httpJSON(j(`/api/knowledge-bases/${kbId}`), 'PUT', payload);
+}
+
+export async function deleteKnowledgeBase(kbId) {
+    return httpJSON(j(`/api/knowledge-bases/${kbId}`), 'DELETE', {});
+}
+
+export async function reindexKnowledgeBase(kbId) {
+    return httpJSON(j(`/api/knowledge-bases/${kbId}/reindex`), 'POST', {});
+}
+
+export async function deleteKnowledgeBaseDocument(kbId, docId) {
+    return httpJSON(j(`/api/knowledge-bases/${kbId}/documents/${docId}`), 'DELETE', {});
+}
+
+export async function reviewKnowledgeBaseDocument(kbId, docId, action, reason) {
+    return httpJSON(j(`/api/knowledge-bases/${kbId}/documents/${docId}/review`),
+        'POST', { action, reason });
+}
+
+export async function listPendingKnowledgeReviews() {
+    return httpGet(j('/api/knowledge-bases/pending-reviews'));
+}
+
+/**
+ * Uploads one document into a knowledge base.
+ *
+ * Direct fetch rather than the offline queue, same as extractDocumentText:
+ * a multipart body cannot be replayed from the queue, and an upload that
+ * silently succeeded offline and never reached the indexer would show a
+ * document in the list that answers nothing.
+ */
+export async function uploadKnowledgeBaseDocument(kbId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const auth = await getAuthToken();
+    const headers = new Headers();
+    // No Content-Type — the browser sets the multipart boundary.
+    if (auth) headers.append('Authorization', `Bearer ${auth}`);
+
+    const response = await fetch(j(`/api/knowledge-bases/${kbId}/documents`), {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include'
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Upload failed.');
+    }
+    return data;
+}
+
 // --- SECURITY INCIDENTS API Functions (Reg S-P registry, admin-only) ---
 
 export async function listIncidents(orgId) {

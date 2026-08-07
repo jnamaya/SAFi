@@ -939,9 +939,13 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
         ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 max-w-lg mx-auto mb-2">Scope: ${escapeHtml(activeProfile.scope_statement)} Questions outside this scope will be redirected.</p>`
         : '';
 
-    const kbName = activeProfile.rag_knowledge_base;
+    // Resolved server-side (synderesis._resolve_kb_display_name): user-created
+    // knowledge bases are identified by UUID, so the raw field would render as
+    // a GUID here. Null when the agent points at a knowledge base that no
+    // longer exists — say nothing rather than name a dead one.
+    const kbName = activeProfile.rag_knowledge_base_name;
     const kbHtml = kbName
-        ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">Has access to the &ldquo;${escapeHtml(String(kbName).replace(/[_-]+/g, ' '))}&rdquo; knowledge base.</p>`
+        ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">Has access to the &ldquo;${escapeHtml(String(kbName))}&rdquo; knowledge base.</p>`
         : '';
 
     const promptsSectionHtml = promptsHtml

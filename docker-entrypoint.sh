@@ -58,6 +58,15 @@ if [ "${SERVICE}" = "purge" ]; then
         python scripts/retention_purge.py || echo "retention purge failed; retrying in 24h"
         sleep 86400
     done
+elif [ "${SERVICE}" = "indexer" ]; then
+    # Knowledge-base indexer. Builds user-created RAG corpora out of the
+    # request path — embedding a large PDF takes tens of seconds and gunicorn
+    # runs --timeout 120, so doing this in-request would hang the browser
+    # behind a lock (the failure mode item 14 fixed for the embedding model).
+    export SAFI_VECTOR_STORE_PATH=/app/vector_store SAFI_MODEL_CACHE_DIR=/app/cache
+    echo "KB indexer: waiting 60s for first-boot schema migrations..."
+    sleep 60
+    exec python scripts/kb_indexer_service.py
 else
     # First-boot RAG bootstrap for the SAFi Steward's knowledge base.
     #

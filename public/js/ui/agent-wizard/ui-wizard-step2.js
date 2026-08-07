@@ -1,9 +1,10 @@
 import * as api from '../../core/api.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
+import { escapeHtml } from '../../core/utils.js';
 
 export async function renderToolsStep(container, agentData) {
     container.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools</h2>
+        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools &amp; Knowledge</h2>
         <p class="text-gray-500 mb-6">Select the tools and data sources this agent can access.</p>
 
         <div id="wiz-policy-note" class="hidden mb-6 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -17,6 +18,19 @@ export async function renderToolsStep(container, agentData) {
 
         <div id="wiz-tools-container" class="grid grid-cols-1 gap-6 hidden">
             <!-- Tools injected here -->
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-gray-200 dark:border-neutral-700">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">Knowledge Base</h3>
+            <p class="text-xs text-gray-400 mb-3">
+                Ground this agent in a document repository. It retrieves from the
+                knowledge base on every turn and cites the documents it used.
+            </p>
+            <div id="wiz-kb-container">
+                <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <span class="thinking-spinner w-4 h-4"></span> Loading knowledge bases…
+                </div>
+            </div>
         </div>
     `;
 
@@ -75,6 +89,63 @@ export async function renderToolsStep(container, agentData) {
         console.error("Tools Fetch Error", e);
         loader.innerText = "Error loading tools.";
     }
+
+    await renderKnowledgeBasePicker(agentData);
+}
+
+/**
+ * Offers only knowledge bases that have a built index.
+ *
+ * A KB with no vectors would look configured on the agent and answer nothing —
+ * the "allowed is not the same as useful" failure the connector settings tab
+ * already had to fix. /knowledge-bases/available applies that filter server
+ * side, so the picker cannot drift from what the retriever can actually load.
+ *
+ * A built-in agent's knowledge base (the Steward's `safi`, the Bible Scholar's
+ * `bible_bsb_v1`) is not a row in that table, so it is preserved as an
+ * explicit option rather than silently cleared when such an agent is edited.
+ */
+async function renderKnowledgeBasePicker(agentData) {
+    const el = document.getElementById('wiz-kb-container');
+    if (!el) return;
+
+    let bases = [];
+    try {
+        const res = await api.listAvailableKnowledgeBases();
+        bases = (res && res.knowledge_bases) || [];
+    } catch (e) {
+        console.error("Knowledge base fetch error", e);
+        el.innerHTML = `<p class="text-sm text-red-600 dark:text-red-400">Could not load knowledge bases.</p>`;
+        return;
+    }
+
+    const current = agentData.rag_knowledge_base || '';
+    const isBuiltIn = current && !bases.some(kb => kb.id === current);
+
+    if (!bases.length && !isBuiltIn) {
+        el.innerHTML = `
+            <div class="p-4 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm text-gray-500 dark:text-gray-400">
+                No knowledge bases are ready yet. Create one under
+                <strong class="text-gray-700 dark:text-gray-300">Knowledge</strong>,
+                upload documents, and it will appear here once it has finished indexing.
+            </div>`;
+        return;
+    }
+
+    el.innerHTML = `
+        <select id="wiz-kb-select"
+            class="w-full px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-gray-900 dark:text-white">
+            <option value="">None — this agent answers without retrieval</option>
+            ${isBuiltIn ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (built-in)</option>` : ''}
+            ${bases.map(kb => `
+                <option value="${escapeHtml(kb.id)}" ${kb.id === current ? 'selected' : ''}>
+                    ${escapeHtml(kb.name)} — ${kb.chunk_count} chunk${kb.chunk_count === 1 ? '' : 's'}
+                </option>`).join('')}
+        </select>`;
+
+    document.getElementById('wiz-kb-select').addEventListener('change', (e) => {
+        agentData.rag_knowledge_base = e.target.value;
+    });
 }
 
 // Resolve the governing policy's allowed-tools list for the agent being edited.

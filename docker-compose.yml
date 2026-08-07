@@ -72,6 +72,36 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
+  # ── Knowledge-base indexer ───────────────────────────────────────────────────
+  # Builds user-created RAG corpora out of the request path. Same image tag as
+  # `app` and `purge` for the same reason: one build, one image.
+  #
+  # MUST mount the same `vector_store` volume as `app` — this service writes
+  # the indexes the app reads. Without it the build succeeds into the
+  # container's own layer and every agent keeps answering ungrounded, which
+  # looks like an indexing bug rather than a missing mount.
+  #
+  # ./cache is shared too so the indexer reuses the embedding model the app
+  # already downloaded instead of pulling its own copy.
+  indexer:
+    build: .
+    pull_policy: build
+    image: safi:latest
+    env_file: .env
+    environment:
+      DB_HOST: db
+      SERVICE: indexer
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - vector_store:/app/vector_store
+    restart: unless-stopped
+
 volumes:
   db_data:
   vector_store:

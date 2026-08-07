@@ -1,4 +1,5 @@
 import os
+import sys
 import faiss
 import numpy as np
 import pickle
@@ -11,6 +12,10 @@ from collections import defaultdict
 # Paths derive from the repo layout (this file lives in <repo>/rag/) and can be
 # overridden via env, so the script works on any checkout — bare metal or Docker.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Run as a script, sys.path[0] is rag/, not the repo root — so the shared
+# chunker below is unimportable without this line.
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_REPO_ROOT, "cache"))
 os.environ["NLTK_DATA"] = CACHE_DIR
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
@@ -24,71 +29,11 @@ from fastembed import TextEmbedding
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_REPO_ROOT, "vector_store"))
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 
-# Chunking limits for the built-in markdown/text chunker.
-_MD_MAX_CHUNK_CHARS = 2000
+# The heading-aware chunker now lives in safi_app/core/services/chunking.py so
+# this CLI and the live KB indexer cannot drift apart. Imported under the old
+# private name to keep the call site below unchanged.
+from safi_app.core.services.chunking import chunk_markdown as _chunk_markdown
 
-
-def _chunk_markdown(text: str) -> List[str]:
-    """Heading-aware chunker for .md/.txt sources — no third-party deps.
-    Splits on markdown headings, then packs sections into chunks of at most
-    _MD_MAX_CHUNK_CHARS, splitting oversized sections on blank lines.
-
-    Two things this must NOT do, both of which it used to:
-
-    1. Emit a chunk that is only a heading. Splitting at every heading means an
-       `# H1` immediately followed by an `## H2` — the shape of every doc in
-       rag/docs — produced a chunk containing nothing but the title. Those were
-       11% of the index, and because a bare title is a pure topic statement it
-       embeds as an near-perfect match for topic questions, so they outranked
-       the prose and burned retrieval slots. A live turn retrieved five chunks,
-       four of which were titles; the Conscience then correctly scored the
-       answer -1 for being ungrounded, because the grounding never arrived.
-       Heading-only sections are now carried forward onto the next section,
-       which also gives that chunk its parent heading as context.
-
-    2. Index the YAML frontmatter. It was another 28 chunks of title/slug/tags,
-       duplicating the H1 and carrying no prose.
-    """
-    import re
-    m = re.match(r"^---\n.*?\n---\n", text, re.S)   # drop YAML frontmatter
-    if m:
-        text = text[m.end():]
-    sections = re.split(r"(?m)^(?=#{1,6}\s)", text)
-
-    # Carry heading-only sections onto the following one.
-    merged: List[str] = []
-    carry = ""
-    for section in sections:
-        section = section.strip()
-        if not section:
-            continue
-        body = re.sub(r"^#{1,6}\s.*$", "", section, flags=re.M).strip()
-        if not body:
-            carry = f"{carry}\n\n{section}" if carry else section
-            continue
-        merged.append(f"{carry}\n\n{section}" if carry else section)
-        carry = ""
-    if carry:                     # trailing heading with nothing under it
-        merged.append(carry)
-
-    chunks: List[str] = []
-    for section in merged:
-        section = section.strip()
-        if not section:
-            continue
-        if len(section) <= _MD_MAX_CHUNK_CHARS:
-            chunks.append(section)
-            continue
-        current = ""
-        for para in re.split(r"\n\s*\n", section):
-            if current and len(current) + len(para) + 2 > _MD_MAX_CHUNK_CHARS:
-                chunks.append(current.strip())
-                current = para
-            else:
-                current = f"{current}\n\n{para}" if current else para
-        if current.strip():
-            chunks.append(current.strip())
-    return chunks
 
 def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
     """Processes all files in a directory, chunks them, and returns metadata."""

@@ -8,6 +8,8 @@ import { renderSettingsAppTab } from './ui-settings-app.js';
 import { renderSettingsHelpTab } from './ui-settings-help.js';
 import { renderSettingsComplianceTab } from './ui-settings-compliance.js';
 import { renderSettingsReviewTab, setReviewCurrentUser } from './ui-settings-review.js';
+import { renderSettingsKnowledgeTab, setKnowledgeCurrentUser,
+         stopPolling as stopKnowledgePolling } from './ui-settings-knowledge.js';
 
 let currentUser = null;
 
@@ -29,6 +31,8 @@ export function updateCurrentUser(u) {
     setOrgCurrentUser(u);
     // Review module needs the role: config editing is admin-only
     setReviewCurrentUser(u);
+    // Knowledge needs the role too: create is editor+, approve is admin|auditor
+    setKnowledgeCurrentUser(u);
 }
 
 /**
@@ -140,9 +144,16 @@ export function setupControlPanelTabs() {
                     settingsState.onThemeChange,
                     settingsState.onDeleteAccount
                 );
+            } else if (tabId === 'knowledge') {
+                renderSettingsKnowledgeTab();
             } else if (tabId === 'help') {
                 renderSettingsHelpTab();
             }
+
+            // The Knowledge tab polls while an index builds. Leaving the tab
+            // must stop that, or a backgrounded Control Panel keeps hitting
+            // the API every three seconds for the rest of the session.
+            if (tabId !== 'knowledge') stopKnowledgePolling();
         });
     });
 }
