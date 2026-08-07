@@ -45,10 +45,17 @@ export async function renderSettingsComplianceTab() {
                  <label class="flex items-center gap-2 text-sm">
                      <input type="checkbox" id="chk-provider-restrict" ${org.settings?.provider_allowlist ? 'checked' : ''}>
                      <span class="font-bold text-gray-700 dark:text-gray-300">Restrict providers</span>
-                     <span class="text-xs text-gray-400">(unchecked = all providers allowed)</span>
+                     <span class="text-xs text-gray-400">(leave this off to allow every provider)</span>
                  </label>
-                 <div id="provider-checklist" class="grid md:grid-cols-2 gap-2 ${org.settings?.provider_allowlist ? '' : 'hidden'}">
-                     <div class="text-sm text-gray-400">Loading providers…</div>
+                 <!-- The tick-means-allowed line is inside the toggled panel, not
+                      beside the master checkbox: "unchecked" means the opposite
+                      thing in each, and a hint sitting above the list reads as
+                      describing the list. -->
+                 <div id="provider-restrict-panel" class="space-y-2 ${org.settings?.provider_allowlist ? '' : 'hidden'}">
+                     <p class="text-xs text-gray-500">Ticked providers may receive your content. Unticked are blocked.</p>
+                     <div id="provider-checklist" class="grid md:grid-cols-2 gap-2">
+                         <div class="text-sm text-gray-400">Loading providers…</div>
+                     </div>
                  </div>
                  <p class="text-xs text-gray-400">BAA = provider offers a HIPAA Business Associate Agreement on an enterprise tier. EU = an EU/EEA-resident hosting option exists. ZDR = prompts are not retained by default; ZDR* = zero data retention is available on an enterprise/request basis (hover a badge for the provider's exact posture, verified July 2026). Voice synthesis via edge-tts is governed separately.</p>
                  <div class="flex justify-end">
@@ -64,12 +71,15 @@ export async function renderSettingsComplianceTab() {
                  <label class="flex items-center gap-2 text-sm">
                      <input type="checkbox" id="chk-connector-restrict" ${org.settings?.connector_allowlist ? 'checked' : ''}>
                      <span class="font-bold text-gray-700 dark:text-gray-300">Restrict data sources</span>
-                     <span class="text-xs text-gray-400">(unchecked = members may link any of these)</span>
+                     <span class="text-xs text-gray-400">(leave this off to allow every source)</span>
                  </label>
-                 <div id="connector-checklist" class="grid md:grid-cols-2 gap-2 ${org.settings?.connector_allowlist ? '' : 'hidden'}">
-                     <div class="text-sm text-gray-400">Loading data sources…</div>
+                 <div id="connector-restrict-panel" class="space-y-2 ${org.settings?.connector_allowlist ? '' : 'hidden'}">
+                     <p class="text-xs text-gray-500">Ticked sources may be linked. Unticked are blocked.</p>
+                     <div id="connector-checklist" class="grid md:grid-cols-2 gap-2">
+                         <div class="text-sm text-gray-400">Loading data sources…</div>
+                     </div>
                  </div>
-                 <p class="text-xs text-gray-400">Unchecking a source does not revoke tokens members have already linked — it stops new links, and those members keep a Disconnect button. Review what is currently linked below.</p>
+                 <p class="text-xs text-gray-400">Unticking a source does not revoke tokens members have already linked — it stops new links, and those members keep a Disconnect button. Review what is currently linked below.</p>
                  <div class="flex justify-end">
                      <button id="btn-save-connectors" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Data Source Settings</button>
                  </div>
@@ -136,7 +146,8 @@ export async function renderSettingsComplianceTab() {
     // --- Provider allow-list wiring ---
     const chkRestrict = cards.querySelector('#chk-provider-restrict');
     const checklist = cards.querySelector('#provider-checklist');
-    chkRestrict.addEventListener('change', () => checklist.classList.toggle('hidden', !chkRestrict.checked));
+    const providerPanel = cards.querySelector('#provider-restrict-panel');
+    chkRestrict.addEventListener('change', () => providerPanel.classList.toggle('hidden', !chkRestrict.checked));
     loadProviderChecklist(org.id);
     cards.querySelector('#btn-save-providers').addEventListener('click', async () => {
         let allowlist = null;
@@ -159,7 +170,8 @@ export async function renderSettingsComplianceTab() {
     // --- Data-source connector wiring ---
     const chkConnRestrict = cards.querySelector('#chk-connector-restrict');
     const connChecklist = cards.querySelector('#connector-checklist');
-    chkConnRestrict.addEventListener('change', () => connChecklist.classList.toggle('hidden', !chkConnRestrict.checked));
+    const connPanel = cards.querySelector('#connector-restrict-panel');
+    chkConnRestrict.addEventListener('change', () => connPanel.classList.toggle('hidden', !chkConnRestrict.checked));
     loadConnectorChecklist(org.id);
     loadConnections(org.id);
     cards.querySelector('#btn-save-connectors').addEventListener('click', async () => {
