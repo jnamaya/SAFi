@@ -113,8 +113,21 @@ def _shape_doc(doc):
         "reviewer_email": doc.get("reviewer_email"),
         "reviewed_at": doc.get("reviewed_at").isoformat() if doc.get("reviewed_at") else None,
         "reason": doc.get("reason"),
+        "self_approved": bool(doc.get("self_approved")),
         "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
     }
+
+
+def _sole_reviewer(user_id, org_id):
+    """True when the caller is the org's only admin/auditor.
+
+    Drives the UI only — the authoritative check runs inside
+    set_knowledge_base_document_status, in the same transaction as the write,
+    so a stale UI can never turn into an unauthorized approval.
+    """
+    if not org_id:
+        return False
+    return db.count_other_eligible_reviewers(org_id, user_id) == 0
 
 
 # --- Knowledge bases ------------------------------------------------------
@@ -179,7 +192,12 @@ def get_knowledge_base(kb_id):
         # 404 not 403: a KB the caller cannot see should not be confirmed to exist.
         return jsonify({"error": "Not found."}), 404
     documents = db.list_knowledge_base_documents(kb_id)
-    return jsonify(_shape(kb, documents))
+    body = _shape(kb, documents)
+    # Lets the detail view offer approval on the caller's own uploads, and say
+    # plainly that the sign-off will be recorded as non-independent.
+    body["sole_reviewer"] = (get_current_role() in REVIEWER_ROLES
+                             and _sole_reviewer(user_id, get_current_org_id()))
+    return jsonify(body)
 
 
 @knowledge_bp.route('/knowledge-bases/<kb_id>', methods=['PUT'])
@@ -429,6 +447,7 @@ def list_pending_reviews():
     if not org_id:
         return jsonify({"pending": []})
 
+    sole = _sole_reviewer(user_id, org_id)
     pending = []
     for kb in db.list_knowledge_bases(user_id, org_id, get_current_role()):
         if kb.get('visibility') not in SHARED_VISIBILITIES:
@@ -439,4 +458,4 @@ def list_pending_reviews():
             item['kb_name'] = kb['name']
             item['self_uploaded'] = str(doc.get('uploaded_by')) == str(user_id)
             pending.append(item)
-    return jsonify({"pending": pending})
+    return jsonify({"pending": pending, "sole_reviewer": sole})

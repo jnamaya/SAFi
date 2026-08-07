@@ -270,7 +270,7 @@ async function renderDetail() {
                 : `Nothing here is approved yet, so agents using this knowledge
                    base are currently answering <strong>without any grounding
                    from it</strong>.`}
-            ${allPendingAreMine(kb, docs) ? `
+            ${allPendingAreMine(kb, docs) && !kb.sole_reviewer ? `
             <p class="mt-2">
                 You uploaded all of these, and no one can approve their own
                 documents. Either ask another Admin or Auditor in your
@@ -278,6 +278,15 @@ async function renderDetail() {
                 to <strong>private</strong> above — private knowledge needs no
                 review and will be re-indexed immediately.
             </p>` : ''}
+        </div>` : ''}
+
+        ${kb.is_shared && pending > 0 && kb.sole_reviewer ? `
+        <div class="mb-4 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 text-sm text-blue-900 dark:text-blue-200">
+            <strong>Sole administrator.</strong> You are the only Admin or
+            Auditor in this organization, so you may approve your own uploads.
+            Each such sign-off is recorded as <strong>not independent</strong>
+            on the document and in the evidence log. This stops applying
+            automatically as soon as another Admin or Auditor joins.
         </div>` : ''}
 
         ${mine ? sharingCard(kb) : ''}
@@ -453,6 +462,8 @@ function docRow(doc, kb, mine) {
     const [label, cls] = badges[doc.status] || badges.private;
     const selfUploaded = currentUser && String(doc.uploaded_by) === String(currentUser.id);
     const showReview = kb_shared && doc.status === 'pending' && isReviewer();
+    // Own uploads are reviewable only under the sole-administrator exception.
+    const mayReview = showReview && (!selfUploaded || kb.sole_reviewer);
 
     return `
         <div class="p-3 flex items-start justify-between gap-3">
@@ -462,13 +473,17 @@ function docRow(doc, kb, mine) {
                     ${label}${doc.reviewer_email ? ` by ${escapeHtml(doc.reviewer_email)}` : ''}
                     <span class="text-gray-400">&middot; ${doc.char_count.toLocaleString()} characters</span>
                 </p>
+                ${doc.self_approved ? `
+                <p class="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                    Not independent — approved by the sole administrator
+                </p>` : ''}
                 ${doc.reason ? `<p class="text-xs text-gray-500 mt-1 italic">${escapeHtml(doc.reason)}</p>` : ''}
             </div>
             <div class="flex items-center gap-2 shrink-0">
-                ${showReview && selfUploaded ? `
+                ${showReview && selfUploaded && !kb.sole_reviewer ? `
                     <span class="text-xs text-gray-400 italic">You uploaded this — another reviewer must approve</span>` : ''}
-                ${showReview && !selfUploaded ? `
-                    <button data-kb-approve="${escapeHtml(doc.id)}" class="px-2 py-1 text-xs rounded-md bg-green-600 hover:bg-green-700 text-white">Approve</button>
+                ${mayReview ? `
+                    <button data-kb-approve="${escapeHtml(doc.id)}" class="px-2 py-1 text-xs rounded-md bg-green-600 hover:bg-green-700 text-white">Approve${selfUploaded ? ' (sole admin)' : ''}</button>
                     <button data-kb-reject="${escapeHtml(doc.id)}" class="px-2 py-1 text-xs rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">Reject</button>` : ''}
                 ${mine ? `
                     <button data-kb-rmdoc="${escapeHtml(doc.id)}" title="Remove" class="p-1 text-gray-400 hover:text-red-600">

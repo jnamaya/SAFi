@@ -407,11 +407,22 @@ def init_db():
                 reviewer_email VARCHAR(255) NULL,
                 reviewed_at TIMESTAMP NULL,
                 reason_enc MEDIUMTEXT NULL,
+                self_approved BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_kbdoc_kb (kb_id, status),
                 INDEX idx_kbdoc_sha (kb_id, sha256)
             )
         ''')
+
+        # self_approved marks a sign-off taken under the sole-administrator
+        # exception. It lives on the RECORD, not only in org_compliance_log,
+        # because an examiner reading the document's own history must be able
+        # to see that the review was not independent without cross-referencing
+        # a separate table.
+        cursor.execute("SHOW COLUMNS FROM knowledge_base_documents LIKE 'self_approved'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE knowledge_base_documents "
+                           "ADD COLUMN self_approved BOOLEAN DEFAULT FALSE")
 
         # --- API Keys ---
         cursor.execute('''
@@ -2890,11 +2901,38 @@ def delete_knowledge_base_document(doc_id):
         conn.close()
 
 
+def count_other_eligible_reviewers(org_id, exclude_user_id, cursor=None):
+    """How many OTHER people in the org could sign off on a document.
+
+    Eligibility is the reviewer set — admin or auditor — matching
+    knowledge_api's require_any_role. Not the role ladder: editor outranks
+    auditor but must not review, so a `role >= auditor` query here would
+    silently re-open the hole the API is careful to avoid.
+    """
+    if not org_id:
+        return 0
+    own_conn = None
+    if cursor is None:
+        own_conn = get_db_connection()
+        cursor = own_conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT COUNT(*) FROM users WHERE org_id=%s AND role IN ('admin','auditor') "
+            "AND id <> %s", (org_id, exclude_user_id))
+        row = cursor.fetchone()
+        # dictionary=True cursors return a mapping, plain ones a tuple.
+        return int(list(row.values())[0] if isinstance(row, dict) else row[0])
+    finally:
+        if own_conn:
+            cursor.close()
+            own_conn.close()
+
+
 def set_knowledge_base_document_status(doc_id, action, reviewer_id,
                                        reviewer_email=None, reason=None,
                                        org_id=None):
-    """Records an approval decision in ONE transaction: locks the row, blocks
-    self-approval, flips status, and appends the evidence to
+    """Records an approval decision in ONE transaction: locks the row, applies
+    separation of duties, flips status, and appends the evidence to
     org_compliance_log so the decision cannot be made without the log.
 
     Separation of duties is enforced here, not in the route, for the same
@@ -2902,9 +2940,28 @@ def set_knowledge_base_document_status(doc_id, action, reviewer_id,
     first, and a rule that lives in one HTTP handler is a rule that the next
     caller silently skips.
 
+    THE SOLE-ADMINISTRATOR EXCEPTION
+    --------------------------------
+    Self-approval is refused whenever anyone else in the org could review the
+    document. When the reviewer is the ONLY admin/auditor, it is permitted —
+    and recorded as a different thing: `self_approved` on the row and
+    `kb_document_self_approved` in the evidence log, so the audit trail
+    distinguishes a non-independent sign-off from an independent one.
+
+    This mirrors FINRA 3110's limited-size-and-resources exception, and the
+    reasoning is that an unreviewable queue in a one-person org is not a
+    control, it is a dead end that gets worked around outside the product.
+    What makes it defensible is that the exception is NAMED, not silent.
+
+    Note it evaluates per decision, against the org's CURRENT membership: add
+    a second admin and the exception stops applying immediately, with no
+    setting to remember to turn back on. Do not replace this with a stored
+    flag — a stored flag is exactly the thing that gets left on.
+
     Raises ValueError on a bad action or a missing rejection reason;
-    SelfReviewError when the uploader is the reviewer. Returns the updated row,
-    or None when the document does not exist."""
+    SelfReviewError when the uploader is the reviewer AND someone else could
+    have reviewed instead. Returns the updated row, or None when the document
+    does not exist."""
     if action not in ("approve", "reject"):
         raise ValueError("action must be 'approve' or 'reject'")
     reason = (reason or "").strip()
@@ -2921,32 +2978,48 @@ def set_knowledge_base_document_status(doc_id, action, reviewer_id,
         if not row:
             conn.rollback()
             return None
-        if str(row["uploaded_by"]) == str(reviewer_id):
-            conn.rollback()
-            raise SelfReviewError(
-                "separation of duties: you cannot approve a document you "
-                "uploaded — another admin or auditor must review it"
-            )
+
+        is_self = str(row["uploaded_by"]) == str(reviewer_id)
+        sole_admin = False
+        if is_self:
+            if count_other_eligible_reviewers(org_id, reviewer_id, cursor=cursor) > 0:
+                conn.rollback()
+                raise SelfReviewError(
+                    "separation of duties: you cannot approve a document you "
+                    "uploaded — another admin or auditor must review it"
+                )
+            sole_admin = True
+
         reason_enc = crypto.encrypt_value(reason) if reason else None
         cursor.execute(
             "UPDATE knowledge_base_documents SET status=%s, reviewed_by=%s, "
-            "reviewer_email=%s, reviewed_at=NOW(), reason_enc=%s WHERE id=%s",
-            (status, reviewer_id, reviewer_email, reason_enc, doc_id),
+            "reviewer_email=%s, reviewed_at=NOW(), reason_enc=%s, self_approved=%s "
+            "WHERE id=%s",
+            (status, reviewer_id, reviewer_email, reason_enc, sole_admin, doc_id),
         )
-        append_compliance_log(
-            org_id,
-            "kb_document_approved" if action == "approve" else "kb_document_rejected",
-            f"user:{reviewer_id}",
-            {
-                "kb_id": row["kb_id"],
-                "document_id": doc_id,
-                "filename": row["filename"],
-                "sha256": row["sha256"],
-                "uploaded_by": row["uploaded_by"],
-                "char_count": row["char_count"],
-            },
-            cursor=cursor,
-        )
+
+        if action == "approve":
+            event = "kb_document_self_approved" if sole_admin else "kb_document_approved"
+        else:
+            event = "kb_document_rejected"
+        detail = {
+            "kb_id": row["kb_id"],
+            "document_id": doc_id,
+            "filename": row["filename"],
+            "sha256": row["sha256"],
+            "uploaded_by": row["uploaded_by"],
+            "char_count": row["char_count"],
+        }
+        if sole_admin:
+            # Spelled out in the evidence itself. A reader of this row should
+            # not have to infer non-independence from the event name alone.
+            detail["independent_review"] = False
+            detail["exception"] = "sole_administrator"
+            detail["attestation"] = (
+                "Approved by the only admin/auditor in the organization; no "
+                "independent reviewer was available at the time of sign-off."
+            )
+        append_compliance_log(org_id, event, f"user:{reviewer_id}", detail, cursor=cursor)
         conn.commit()
     finally:
         cursor.close()

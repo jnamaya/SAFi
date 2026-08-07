@@ -209,6 +209,9 @@ class Approval(KnowledgeBaseBase):
     def test_uploader_cannot_approve_own_document(self):
         kb = self.make_kb(visibility='member')
         doc = self._doc(kb, uploader=self.reviewer)
+        # This org has several admins/auditors, so the sole-admin exception
+        # must NOT apply and separation of duties stands.
+        _exec("UPDATE users SET role='admin' WHERE id=%s", (self.editor2,))
         with self.assertRaises(SelfReviewError):
             db.set_knowledge_base_document_status(
                 doc["id"], "approve", reviewer_id=self.reviewer, org_id=self.org_id)
@@ -217,6 +220,11 @@ class Approval(KnowledgeBaseBase):
     def test_self_approval_is_blocked_at_the_api_too(self):
         kb = self.make_kb(visibility='member')
         doc = self._doc(kb, uploader=self.reviewer)
+        # A second eligible reviewer must exist, or the sole-administrator
+        # exception applies and self-approval is legitimately allowed. Set it
+        # explicitly rather than relying on what an earlier test left behind —
+        # login_as mutates roles, so this fixture is order-dependent.
+        _exec("UPDATE users SET role='admin' WHERE id=%s", (self.editor2,))
         login_as(self.client, self.reviewer, "auditor", org_id=self.org_id)
         r = self.client.post(
             f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
@@ -280,6 +288,148 @@ class Approval(KnowledgeBaseBase):
         self.assertEqual('private', db.get_knowledge_base_document(approved["id"])["status"])
         # A considered "no" is not undone by a visibility change.
         self.assertEqual('rejected', db.get_knowledge_base_document(rejected["id"])["status"])
+
+
+# --- The sole-administrator exception -------------------------------------
+
+class SoleAdministratorException(unittest.TestCase):
+    """FINRA 3110's limited-size-and-resources exception, applied to knowledge.
+
+    A one-person org cannot produce an independent reviewer, and an
+    unreviewable queue there is not a control — it is a dead end that gets
+    worked around outside the product. So self-approval is permitted when
+    nobody else could review, and recorded as a DIFFERENT thing:
+    `self_approved` on the row, `kb_document_self_approved` in the log.
+
+    The two tests that matter are the boundary ones: it must apply with one
+    reviewer and stop applying the moment a second exists, with no setting to
+    remember.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+
+    def setUp(self):
+        # A fresh org per test — this suite counts org membership, so it
+        # cannot share a fixture whose roles other tests mutate.
+        self.client = self.app.test_client()
+        self.org_id = str(uuid.uuid4())
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
+              (self.org_id, 'Sole Admin Org'))
+        self.admin = new_user(org_id=self.org_id, role="admin")
+        self.kb = db.create_knowledge_base("Solo Corpus", self.admin,
+                                           org_id=self.org_id, visibility='member')
+        self.doc = db.add_knowledge_base_document(
+            self.kb["id"], "sop.md", "# SOP\n\nDo the thing.",
+            self.admin, status='pending')
+
+    def tearDown(self):
+        _exec("DELETE FROM knowledge_base_documents WHERE kb_id=%s", (self.kb["id"],))
+        _exec("DELETE FROM knowledge_bases WHERE id=%s", (self.kb["id"],))
+        _exec("DELETE FROM org_compliance_log WHERE org_id=%s", (self.org_id,))
+        _exec("DELETE FROM users WHERE org_id=%s", (self.org_id,))
+        _exec("DELETE FROM organizations WHERE id=%s", (self.org_id,))
+
+    def test_sole_admin_may_approve_their_own_upload(self):
+        updated = db.set_knowledge_base_document_status(
+            self.doc["id"], "approve", reviewer_id=self.admin,
+            reviewer_email="solo@test", org_id=self.org_id)
+        self.assertEqual('approved', updated["status"])
+        self.assertTrue(updated["self_approved"])
+
+    def test_the_exception_is_logged_as_a_distinct_event(self):
+        """An examiner must be able to tell a non-independent sign-off from an
+        independent one without inferring it."""
+        db.set_knowledge_base_document_status(
+            self.doc["id"], "approve", reviewer_id=self.admin, org_id=self.org_id)
+        rows = db.list_compliance_log(self.org_id, limit=20)
+        events = [r["event_type"] for r in rows]
+        self.assertIn("kb_document_self_approved", events)
+        self.assertNotIn("kb_document_approved", events)
+        detail = next(r["detail"] for r in rows
+                      if r["event_type"] == "kb_document_self_approved")
+        self.assertFalse(detail["independent_review"])
+        self.assertEqual("sole_administrator", detail["exception"])
+        self.assertIn("no independent reviewer", detail["attestation"])
+
+    def test_exception_closes_when_a_second_reviewer_joins(self):
+        """The whole reason this is computed per decision rather than stored:
+        a stored flag is the thing that gets left on."""
+        second = new_user(org_id=self.org_id, role="auditor")
+        with self.assertRaises(SelfReviewError):
+            db.set_knowledge_base_document_status(
+                self.doc["id"], "approve", reviewer_id=self.admin, org_id=self.org_id)
+        self.assertEqual('pending', db.get_knowledge_base_document(self.doc["id"])["status"])
+
+    def test_an_editor_does_not_count_as_an_eligible_reviewer(self):
+        """Editor outranks auditor on the ladder but may not review, so adding
+        one must NOT close the exception. A `role >= auditor` count here would
+        silently re-open the hole the API is careful to avoid."""
+        new_user(org_id=self.org_id, role="editor")
+        updated = db.set_knowledge_base_document_status(
+            self.doc["id"], "approve", reviewer_id=self.admin, org_id=self.org_id)
+        self.assertEqual('approved', updated["status"])
+        self.assertTrue(updated["self_approved"])
+
+    def test_a_reviewer_in_another_org_does_not_count(self):
+        other_org = str(uuid.uuid4())
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, %s)", (other_org, 'Elsewhere'))
+        outsider = new_user(org_id=other_org, role="admin")
+        try:
+            updated = db.set_knowledge_base_document_status(
+                self.doc["id"], "approve", reviewer_id=self.admin, org_id=self.org_id)
+            self.assertTrue(updated["self_approved"])
+        finally:
+            _exec("DELETE FROM users WHERE id=%s", (outsider,))
+            _exec("DELETE FROM organizations WHERE id=%s", (other_org,))
+
+    def test_independent_approval_is_not_flagged_as_self_approved(self):
+        reviewer = new_user(org_id=self.org_id, role="auditor")
+        updated = db.set_knowledge_base_document_status(
+            self.doc["id"], "approve", reviewer_id=reviewer, org_id=self.org_id)
+        self.assertEqual('approved', updated["status"])
+        self.assertFalse(updated["self_approved"])
+        self.assertIn("kb_document_approved",
+                      [r["event_type"] for r in db.list_compliance_log(self.org_id, limit=20)])
+
+    def test_the_exception_does_not_bypass_the_role_gate(self):
+        """Sole *administrator*. A lone editor is not a reviewer and the API
+        must still refuse — the exception removes the self-review block, not
+        the require_any_role gate."""
+        lone_editor = new_user(org_id=self.org_id, role="editor")
+        kb = db.create_knowledge_base("Editor Corpus", lone_editor,
+                                      org_id=self.org_id, visibility='member')
+        doc = db.add_knowledge_base_document(kb["id"], "x.md", "text",
+                                             lone_editor, status='pending')
+        try:
+            login_as(self.client, lone_editor, "editor", org_id=self.org_id)
+            r = self.client.post(
+                f'/api/knowledge-bases/{kb["id"]}/documents/{doc["id"]}/review',
+                json={"action": "approve"})
+            self.assertEqual(403, r.status_code)
+        finally:
+            _exec("DELETE FROM knowledge_base_documents WHERE kb_id=%s", (kb["id"],))
+            _exec("DELETE FROM knowledge_bases WHERE id=%s", (kb["id"],))
+
+    def test_api_reports_sole_reviewer_to_the_ui(self):
+        login_as(self.client, self.admin, "admin", org_id=self.org_id)
+        body = self.client.get(f'/api/knowledge-bases/{self.kb["id"]}').get_json()
+        self.assertTrue(body["sole_reviewer"])
+        new_user(org_id=self.org_id, role="auditor")
+        body = self.client.get(f'/api/knowledge-bases/{self.kb["id"]}').get_json()
+        self.assertFalse(body["sole_reviewer"])
+
+    def test_sole_admin_approval_through_the_api(self):
+        login_as(self.client, self.admin, "admin", org_id=self.org_id)
+        r = self.client.post(
+            f'/api/knowledge-bases/{self.kb["id"]}/documents/{self.doc["id"]}/review',
+            json={"action": "approve"})
+        self.assertEqual(200, r.status_code, r.get_json())
+        self.assertTrue(r.get_json()["document"]["self_approved"])
+        # And the approved document is now indexable.
+        self.assertEqual(1, len(db.list_indexable_documents(self.kb["id"])))
 
 
 # --- What actually gets indexed -------------------------------------------
