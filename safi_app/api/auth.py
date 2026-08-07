@@ -724,23 +724,31 @@ def callback_microsoft():
 def auth_status():
     """What this member has linked, and what their org permits them to link.
 
-    `connectors` drives the Settings tab, which renders only the allowed ones.
-    That is presentation — the enforcement is _connector_guard on the login and
-    callback routes. `connected` can legitimately include a connector that is no
-    longer allowed (an admin blocked it after the fact); the UI shows those so
-    the member can still disconnect.
+    Each connector carries two independent flags:
+
+      allowed  the org's policy permits linking it (enforced by
+               _connector_guard on the login and callback routes; the UI
+               filtering is presentation, the routes are the control)
+      usable   at least one agent this member can reach is authorized to call
+               a tool from it. Offering a source no agent uses buys the member
+               a live OAuth grant that nothing reads.
+
+    `connected` can legitimately include a connector that is now neither — an
+    admin blocked it, or removed the tool from the policy, after the fact. The
+    UI keeps showing those so the member can still disconnect; hiding a live
+    token is the one thing worse than showing it.
     """
-    from ..core.rbac import get_current_org_id
-    from ..core.services.connector_governance import list_connectors_for_org
+    from ..core.rbac import get_current_org_id, get_current_role
+    from ..core.services.connector_governance import connectors_for_member
 
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({"connected": [], "connectors": []})
 
-    connected = db.get_connected_providers(user_id)
+    org_id = get_current_org_id()
     return jsonify({
-        "connected": connected,
-        "connectors": list_connectors_for_org(get_current_org_id()),
+        "connected": db.get_connected_providers(user_id),
+        "connectors": connectors_for_member(user_id, org_id, get_current_role()),
     })
 
 @auth_bp.route('/auth/<provider>/disconnect', methods=['POST'])

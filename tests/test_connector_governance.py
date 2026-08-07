@@ -238,6 +238,93 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
             self.assertNotIn(forbidden, rows[0], f"{forbidden} must not be selected")
 
 
+class Usability(ConnectorGovernanceBase):
+    """
+    Org-allowed is not enough to be worth offering. If no agent this member can
+    reach is authorized to call a tool from a source, connecting it grants a
+    live OAuth token that nothing ever reads.
+
+    The intersection must be the SAME one WillGate enforces — that is why
+    usable_connector_keys calls synderesis.authorized_tools rather than
+    reimplementing it. A second copy would drift and the tab would offer a
+    source the Will then refuses to use.
+    """
+
+    def _agent(self, tools, policy_id=None, visibility='member'):
+        aid = f"agent_{uuid.uuid4().hex[:8]}"
+        import json
+        # PK is agent_key, not id — see the CREATE at database.py:297.
+        _exec("""INSERT INTO agents (agent_key, name, created_by, org_id, tools_json,
+                                     policy_id, visibility, worldview)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'x')""",
+              (aid, aid, self.uid, self.org_id, json.dumps(tools),
+               policy_id or 'standalone', visibility))
+        self.addCleanup(_exec, "DELETE FROM agents WHERE agent_key=%s", (aid,))
+        return aid
+
+    def test_no_agent_uses_a_source_so_it_is_not_usable(self):
+        """The default state for most orgs: built-ins use no data sources."""
+        usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
+        self.assertNotIn('google', usable)
+        self.assertNotIn('github', usable)
+
+    def test_an_agent_with_the_tool_makes_it_usable(self):
+        self._agent(['google_drive'])
+        usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
+        self.assertIn('google', usable)
+        self.assertNotIn('github', usable)
+
+    def test_connector_name_and_function_name_both_count(self):
+        """The wizard grants 'github'; a policy may narrow to
+        'github_get_repo'. Either must mark the source usable."""
+        self._agent(['github_get_repo'])
+        self.assertIn('github', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
+
+    def test_policy_narrowing_can_make_it_unusable(self):
+        """An agent advertising google_drive whose policy allows only
+        web_search is not authorized for Drive — so Drive is not offered."""
+        pid = f"pol_{uuid.uuid4().hex[:8]}"
+        _exec("""INSERT INTO policies (id, name, org_id, worldview, will_rules, values_weights, version)
+                 VALUES (%s, 'narrow', %s, '', %s, '[]', 1)""",
+              (pid, self.org_id, '{"allowed_tools": ["web_search"]}'))
+        self.addCleanup(_exec, "DELETE FROM policies WHERE id=%s", (pid,))
+        self._agent(['google_drive'], policy_id=pid)
+        self.assertNotIn('google', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
+
+    def test_matches_what_the_will_would_authorize(self):
+        """Pin the two to each other. If authorized_tools ever changes shape,
+        this fails rather than the UI quietly disagreeing with the runtime."""
+        from safi_app.core.faculties.synderesis import authorized_tools
+        from safi_app.core.tool_connectors import expand_connectors
+        granted = set(authorized_tools(['google_drive'], ['google_drive']))
+        drive_fns = set(expand_connectors(list(cg.CONNECTOR_METADATA['google']['tools'])))
+        self.assertTrue(granted & drive_fns)
+
+    def test_status_reports_usable_alongside_allowed(self):
+        client = self.app.test_client()
+        login_as(client, self.uid, "admin", org_id=self.org_id)
+        self._agent(['google_drive'])
+        body = client.get('/api/auth/status').get_json()
+        by_key = {c["key"]: c for c in body["connectors"]}
+        self.assertTrue(by_key['google']['allowed'])
+        self.assertTrue(by_key['google']['usable'])
+        self.assertTrue(by_key['github']['allowed'])
+        self.assertFalse(by_key['github']['usable'],
+                         "no agent uses GitHub, so it must not be offered")
+
+    def test_allowed_and_usable_are_independent(self):
+        """Blocking the source must not make it 'usable: false' by accident,
+        and vice versa — the UI needs both flags to explain itself."""
+        client = self.app.test_client()
+        login_as(client, self.uid, "admin", org_id=self.org_id)
+        self._agent(['google_drive'])
+        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
+        cg.invalidate_org(self.org_id)
+        by_key = {c["key"]: c for c in client.get('/api/auth/status').get_json()["connectors"]}
+        self.assertFalse(by_key['google']['allowed'])
+        self.assertTrue(by_key['google']['usable'])
+
+
 class AdminApi(ConnectorGovernanceBase):
 
     def setUp(self):

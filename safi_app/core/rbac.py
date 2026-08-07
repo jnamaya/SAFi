@@ -94,3 +94,14 @@ def get_current_org_id():
     if user:
         return user.get('org_id')
     return None
+
+
+def get_current_role():
+    """The session user's role, defaulting to the least privileged.
+
+    Callers that pass this to a visibility-filtered query (db.list_agents)
+    must get 'member' rather than None when there is no session, so an
+    unauthenticated path can never widen what is returned.
+    """
+    user = session.get('user') or {}
+    return user.get('role') or 'member'

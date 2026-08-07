@@ -223,17 +223,21 @@ async function _renderConnectedAccounts(container) {
     const list = container.querySelector('#connected-list');
     if (!list) return;
 
-    // One call gives both what this member has linked and what their org
-    // permits. The rows are not rendered until it returns, because rendering
-    // the full catalogue first and removing the blocked ones afterwards
-    // flashes Connect buttons the org has forbidden.
+    // One call gives what this member has linked, what their org permits, and
+    // whether any agent they can reach would actually use it. Nothing renders
+    // until it returns: drawing the full catalogue first and removing rows
+    // afterwards flashes Connect buttons for sources they cannot use.
     let connected = [];
-    let allowed = null;   // null = unrestricted (no org policy)
+    let offerable = null;   // null = server said nothing; fall back to the catalogue
     try {
         const res = await api.getAuthStatus();
         connected = (res && res.connected) ? res.connected : [];
         if (res && Array.isArray(res.connectors)) {
-            allowed = new Set(res.connectors.filter(c => c.allowed).map(c => c.key));
+            // Both flags must hold. `allowed` is the org's policy; `usable`
+            // means some agent is authorized to call a tool from this source.
+            // Offering an allowed-but-unusable source buys the member an OAuth
+            // grant that nothing reads.
+            offerable = new Set(res.connectors.filter(c => c.allowed && c.usable).map(c => c.key));
         }
     } catch (e) {
         // Server unreachable: fall through and render the catalogue on
@@ -242,15 +246,19 @@ async function _renderConnectedAccounts(container) {
         console.warn('Failed to load connection status', e);
     }
 
-    // A connector can be linked but no longer allowed (an admin blocked it
-    // afterwards). Keep those visible so the member can still disconnect —
-    // hiding a live token is the one thing worse than showing it.
+    // A source can be linked but no longer offerable — an admin blocked it, or
+    // the tool came out of the policy, after the fact. Keep those visible so
+    // the member can still disconnect: hiding a live token is the one thing
+    // worse than showing it.
     const isConnected = (id) => connected.includes(id) || connected.some(c => c.provider === id);
-    const visible = PROVIDERS.filter(p => allowed === null || allowed.has(p.id) || isConnected(p.id));
+    const visible = PROVIDERS.filter(p => offerable === null || offerable.has(p.id) || isConnected(p.id));
 
     if (!visible.length) {
-        list.innerHTML = `<p class="text-sm text-gray-500">
-            Your organization has not enabled any data sources.</p>`;
+        // Hiding the whole card rather than explaining an empty one: for most
+        // orgs no agent uses a data source at all, and three greyed-out rows
+        // with a disclaimer is noise on a tab everyone opens for the theme.
+        const card = container.querySelector('#app-connected-card');
+        if (card) card.classList.add('hidden');
         return;
     }
 
@@ -263,7 +271,11 @@ async function _renderConnectedAccounts(container) {
             <div class="status-action shrink-0">
                 ${isConnected(p.id) ? _connectedBtn() : _connectBtn(p.id)}
             </div>
-        </div>`).join('');
+        </div>
+        ${offerable && !offerable.has(p.id) ? `
+            <p class="-mt-2 mb-1 px-3 text-xs text-gray-500">
+                No agent you can use reads from this any more. Disconnecting is safe.
+            </p>` : ''}`).join('');
 
     // Delegated rather than per-button: the row contents are replaced after a
     // disconnect, and a listener bound to the button would go with them.
@@ -279,10 +291,15 @@ async function _renderConnectedAccounts(container) {
         btn.disabled = true;
         try {
             await api.disconnectProvider(id);
-            if (allowed !== null && !allowed.has(id)) {
+            if (offerable !== null && !offerable.has(id)) {
                 // Only visible because it was still linked. Now that it is not,
-                // offering Connect would be offering something the route blocks.
+                // offering Connect would point at something the route blocks or
+                // no agent would use.
+                row.nextElementSibling?.matches('p') && row.nextElementSibling.remove();
                 row.remove();
+                if (!list.querySelector('[data-provider]')) {
+                    container.querySelector('#app-connected-card')?.classList.add('hidden');
+                }
             } else {
                 row.querySelector('.status-action').innerHTML = _connectBtn(id);
             }

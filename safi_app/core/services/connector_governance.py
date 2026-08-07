@@ -138,3 +138,79 @@ def list_connectors_for_org(org_id) -> List[dict]:
         {"key": k, **meta, "allowed": (allow is None or k in allow)}
         for k, meta in CONNECTOR_METADATA.items()
     ]
+
+
+def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet[str]:
+    """Connectors that at least one agent this member can reach is actually
+    authorized to call.
+
+    Being org-allowed is not enough to be worth offering. Without this check a
+    member could grant SAFi read access to their whole Drive and get nothing:
+    the token would sit encrypted in oauth_tokens while
+    WillGate.evaluate_tool_intent refused every google_drive call, because
+    allowed_tools is agent-tools ∩ policy-tools and google_drive was in neither.
+    A live credential nothing consumes is blast radius with no benefit, and an
+    awkward question from anyone reviewing why those tokens exist.
+
+    Reuses synderesis.authorized_tools so this answers with the same
+    intersection the Will enforces. Deliberately does NOT call get_profile:
+    that is the full governance compiler (charter, values, worldview layering)
+    and this runs on every /api/auth/status. Only the tool authorization is
+    needed, and it comes from the same function either way.
+    """
+    from ...persistence import database as db
+    from ..faculties.synderesis import PERSONAS, authorized_tools
+    from ..tool_connectors import expand_connectors
+
+    # connector key -> the function names it would put on the table
+    wanted = {k: set(expand_connectors(list(meta["tools"])))
+              for k, meta in CONNECTOR_METADATA.items()}
+
+    policy_cache: dict = {}
+
+    def _policy_tools(policy_id):
+        """will_rules.allowed_tools for a policy, fetched once per call. Agents
+        in an org usually share a handful of policies."""
+        if policy_id in (None, "", "standalone"):
+            return None
+        if policy_id not in policy_cache:
+            allowed = None
+            try:
+                pol = db.get_policy(policy_id)
+                wr = (pol or {}).get("will_rules")
+                if isinstance(wr, dict):
+                    allowed = wr.get("allowed_tools")
+            except Exception:
+                allowed = None  # unreadable policy narrows nothing; the
+                                # advertised list is still the ceiling
+            policy_cache[policy_id] = allowed
+        return policy_cache[policy_id]
+
+    # (advertised tools, policy_id) for every agent this member can reach.
+    candidates = [(p.get("tools"), p.get("policy_id")) for p in PERSONAS.values()]
+    try:
+        import json as _json
+        for a in db.list_agents(user_id, org_id, user_role):
+            raw = a.get("tools_json")
+            tools = raw if isinstance(raw, list) else (_json.loads(raw or "[]") or [])
+            candidates.append((tools, a.get("policy_id")))
+    except Exception:
+        pass  # a DB hiccup must not strip a member's existing connectors from
+              # the tab; the built-ins above still answer
+
+    usable = set()
+    for advertised, policy_id in candidates:
+        if len(usable) == len(wanted):
+            break
+        granted = set(authorized_tools(advertised, _policy_tools(policy_id)))
+        for key, fns in wanted.items():
+            if key not in usable and granted & fns:
+                usable.add(key)
+    return frozenset(usable)
+
+
+def connectors_for_member(user_id, org_id=None, user_role="member") -> List[dict]:
+    """The catalogue as one member sees it: org policy plus whether anything
+    they can actually run would use it."""
+    usable = usable_connector_keys(user_id, org_id, user_role)
+    return [{**c, "usable": c["key"] in usable} for c in list_connectors_for_org(org_id)]

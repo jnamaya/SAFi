@@ -551,6 +551,28 @@ def _standalone_base(raw_persona: Dict[str, Any]) -> Dict[str, Any]:
     return _inject_scope_compliance(normalized)
 
 
+def authorized_tools(advertised: Any, policy_allowed: Any) -> List[str]:
+    """The exact tool set WillGate will accept: advertised ∩ policy, with both
+    sides expanded from connector names to function names first.
+
+    Extracted from _stamp_tool_authorization so callers that need to know what
+    an agent *could* do — without paying for the full get_profile compile —
+    answer the question with the same code the runtime enforces. Duplicating
+    this intersection anywhere would be a drift bug waiting to happen: the
+    connector UI would offer a data source the Will then refuses to use, or
+    hide one it would have allowed.
+
+    An empty/absent policy list means "policy does not narrow", not "deny all"
+    — the policy cannot grant tools the agent was never given, so the advertised
+    list already is the ceiling.
+    """
+    adv = expand_connectors([t for t in (advertised or []) if isinstance(t, str)])
+    if isinstance(policy_allowed, list) and policy_allowed:
+        allow = set(expand_connectors([t for t in policy_allowed if isinstance(t, str)]))
+        return [t for t in adv if t in allow]
+    return adv
+
+
 def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     """
     Layer-2 tool authorization for WillGate.evaluate_tool_intent.
@@ -574,18 +596,9 @@ def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     connector by naming functions directly; unknown names pass through, so the
     intersection semantics are unchanged.
     """
-    advertised = expand_connectors(
-        [t for t in (profile.get("tools") or []) if isinstance(t, str)]
-    )
     wr = profile.get("will_rules")
     policy_allowed = wr.get("allowed_tools") if isinstance(wr, dict) else None
-    if isinstance(policy_allowed, list) and policy_allowed:
-        allowed_set = set(
-            expand_connectors([t for t in policy_allowed if isinstance(t, str)])
-        )
-        profile["allowed_tools"] = [t for t in advertised if t in allowed_set]
-    else:
-        profile["allowed_tools"] = advertised
+    profile["allowed_tools"] = authorized_tools(profile.get("tools"), policy_allowed)
     constraints = wr.get("tool_parameter_constraints") if isinstance(wr, dict) else None
     if isinstance(constraints, dict) and "tool_parameter_constraints" not in profile:
         profile["tool_parameter_constraints"] = constraints
