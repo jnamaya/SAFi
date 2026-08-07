@@ -575,6 +575,71 @@ class PolicyAuthorization(unittest.TestCase):
                         "display name is resolved")
 
 
+# --- Chunk rendering ------------------------------------------------------
+
+class ChunkRendering(unittest.TestCase):
+    """The bug that made the whole feature look broken.
+
+    The agent wizard stores `rag_format_string: ""`, so
+    `profile.get("rag_format_string", "{text_chunk}")` returned "" — the key
+    EXISTS, so the default never applied — and `"".format(**doc)` rendered
+    every retrieved chunk as an empty string. Retrieval worked perfectly: five
+    chunks found, five empty strings injected, and an agent that answered as
+    though its knowledge base were empty.
+
+    My original end-to-end check missed it because it called RAGService with an
+    explicit format string, exercising the retriever rather than the path a
+    real agent takes.
+    """
+
+    def test_empty_string_is_treated_as_unconfigured(self):
+        from safi_app.core.services.retriever import (DEFAULT_RAG_FORMAT_STRING,
+                                                      resolve_rag_format_string)
+        for unset in ("", "   ", "\n", None, 0, [], {}):
+            self.assertEqual(DEFAULT_RAG_FORMAT_STRING,
+                             resolve_rag_format_string(unset), repr(unset))
+
+    def test_a_configured_template_is_returned_verbatim(self):
+        from safi_app.core.services.retriever import resolve_rag_format_string
+        # Unstripped — a trailing separator is part of the template.
+        self.assertEqual("{text_chunk}\n---",
+                         resolve_rag_format_string("{text_chunk}\n---"))
+
+    def test_the_default_renders_real_retriever_metadata(self):
+        """Guards the coupling between the metadata kb_indexer writes and the
+        default template: a mismatch here silently degrades every custom agent
+        to the bare-text KeyError fallback."""
+        from safi_app.core.services.retriever import (DEFAULT_RAG_FORMAT_STRING,
+                                                      resolve_rag_format_string)
+        doc = {"source": "sop.pdf", "chunk_id": "x-chunk-0",
+               "document_id": "x", "text_chunk": "Order laptops via IT."}
+        rendered = resolve_rag_format_string("").format(**doc)
+        self.assertIn("sop.pdf", rendered)
+        self.assertIn("Order laptops via IT.", rendered)
+
+    def test_the_default_names_the_source(self):
+        """An agent grounded in uploaded documents that cannot say WHICH
+        document it used cannot keep the citation promise the UI makes."""
+        from safi_app.core.services.retriever import DEFAULT_RAG_FORMAT_STRING
+        self.assertIn("{source}", DEFAULT_RAG_FORMAT_STRING)
+        self.assertIn("{text_chunk}", DEFAULT_RAG_FORMAT_STRING)
+
+    def test_intellect_does_not_use_get_with_a_default(self):
+        """The specific mistake, pinned. `profile.get(key, default)` cannot
+        distinguish an empty stored value from an absent one."""
+        source = (Path(__file__).resolve().parent.parent / "safi_app" / "core" /
+                  "faculties" / "intellect.py").read_text()
+        self.assertNotIn('self.profile.get("rag_format_string", ', source)
+        self.assertIn("resolve_rag_format_string", source)
+
+    def test_no_agent_is_saved_with_an_empty_format_string(self):
+        """Fixed at the consumer so existing rows are repaired, and at the
+        writer so nothing meaningless is stored going forward."""
+        source = (Path(__file__).resolve().parent.parent / "safi_app" / "api" /
+                  "agent_api_routes.py").read_text()
+        self.assertNotIn("rag_format_string=data.get('rag_format_string')", source)
+
+
 # --- Chunking / truncation ------------------------------------------------
 
 class Chunking(unittest.TestCase):

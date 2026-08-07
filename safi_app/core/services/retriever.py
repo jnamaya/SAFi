@@ -54,6 +54,37 @@ def get_shared_embedding_model():
     return _SHARED_MODEL
 
 
+# --- DEFAULT CHUNK RENDERING ---------------------------------------------
+# How a retrieved metadata dict becomes prompt text when the agent defines no
+# rag_format_string of its own. Lives here because this module owns the shape
+# of those dicts ("source", "text_chunk", …), so the default rendering of them
+# belongs with the contract that produces them.
+#
+# Every built-in agent sets its own template, so this default is what custom
+# (wizard-built) agents get — and it names the source file, because an agent
+# grounded in uploaded documents that cannot say WHICH document it used is a
+# citation promise the UI makes and the prompt cannot keep. Callers already
+# fall back to bare text_chunk on KeyError, so a corpus without "source"
+# degrades rather than breaking.
+DEFAULT_RAG_FORMAT_STRING = "SOURCE: {source}\nCONTENT:\n{text_chunk}\n---"
+
+
+def resolve_rag_format_string(configured) -> str:
+    """The template to render retrieved chunks with.
+
+    Treats empty and whitespace-only as "not configured", which a plain
+    `profile.get(key, default)` does NOT: the agent wizard stores
+    `rag_format_string: ""` for every custom agent, so the dict HAS the key and
+    the default never applied. The visible symptom was retrieval working
+    perfectly and then formatting every chunk to an empty string — five chunks
+    found, five empty strings injected, and an agent that behaved as though its
+    knowledge base were empty.
+    """
+    if isinstance(configured, str) and configured.strip():
+        return configured          # returned unstripped: trailing "\n---" matters
+    return DEFAULT_RAG_FORMAT_STRING
+
+
 def embed_texts(model, texts: List[str]) -> np.ndarray:
     """fastembed returns a generator of vectors; FAISS needs a float32 matrix.
 

@@ -78,6 +78,13 @@ class RAGService:
         if not self.enabled or not self.retriever:
             return "" # Return empty string if RAG is disabled
 
+        # An empty/whitespace template renders every chunk as "" — retrieval
+        # succeeds and the caller receives nothing. Same trap intellect.py hit
+        # via profile.get("rag_format_string", default) when the stored value
+        # was "" rather than absent.
+        from .retriever import resolve_rag_format_string
+        format_string = resolve_rag_format_string(format_string)
+
         try:
             # --- 1. Perform the search ---
             # Note: The retriever's search method is synchronous.

@@ -236,7 +236,14 @@ class IntellectEngine:
             if self.retriever:
                 retrieved_docs = self.retriever.search(query_for_rag)
                 if retrieved_docs:
-                    format_string = self.profile.get("rag_format_string", "{text_chunk}")
+                    # NOT profile.get(key, default): a wizard-built agent stores
+                    # rag_format_string="" , so the key exists, the default never
+                    # applied, and "".format(**doc) rendered every retrieved
+                    # chunk as an empty string. Retrieval looked fine and the
+                    # agent answered as if its knowledge base were empty.
+                    from ..services.retriever import resolve_rag_format_string
+                    format_string = resolve_rag_format_string(
+                        self.profile.get("rag_format_string"))
                     formatted_chunks = []
                     for doc in retrieved_docs:
                         try:
