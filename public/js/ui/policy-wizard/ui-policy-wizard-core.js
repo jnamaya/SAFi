@@ -148,6 +148,9 @@ function hydratePolicy(existingPolicy) {
     let blacklist  = [];
     let allowed    = [];
     let legacyList = [];
+    // undefined = the policy does not narrow knowledge; an array = exactly
+    // these (possibly none). The distinction is load-bearing — see below.
+    let allowedKnowledge;
 
     if (Array.isArray(wr)) {
         legacyList = wr;
@@ -156,10 +159,18 @@ function hydratePolicy(existingPolicy) {
         blacklist  = wr.early_prompt_blacklist || [];
         allowed    = wr.allowed_tools || [];
         legacyList = wr.rules || [];
+        // Only carried when the stored policy actually has it. Coercing an
+        // absent key to [] here would turn "does not narrow" into "authorize
+        // nothing" the first time anyone opens an older policy.
+        if (Array.isArray(wr.allowed_knowledge_bases)) {
+            allowedKnowledge = wr.allowed_knowledge_bases;
+        }
     }
 
     return {
         ...init,
+        ...(allowedKnowledge !== undefined
+            ? { allowed_knowledge_bases: allowedKnowledge } : {}),
         policy_id:       existingPolicy.id,
         name:            existingPolicy.name,
         business_unit:   cfg.business_unit  || "",
@@ -261,6 +272,13 @@ async function submitPolicy() {
             early_prompt_blacklist: policyData.early_prompt_blacklist || [],
             allowed_tools:          policyData.allowed_tools || [],
             rules:                  policyData.will_rules || [],
+            // Written ONLY when the admin ticked "Restrict" on the Knowledge
+            // card. `|| []` here would be a bug, not a tidy-up: it would make
+            // every save of an unrestricted policy authorize no knowledge and
+            // silently un-ground every agent under it.
+            ...(Array.isArray(policyData.allowed_knowledge_bases)
+                ? { allowed_knowledge_bases: policyData.allowed_knowledge_bases }
+                : {}),
         };
 
         const payload = {

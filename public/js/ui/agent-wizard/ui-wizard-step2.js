@@ -34,10 +34,25 @@ export async function renderToolsStep(container, agentData) {
         </div>
     `;
 
+    if (!agentData.tools) agentData.tools = [];
+
+    // Resolve the governing policy ONCE — both the tool grid and the knowledge
+    // base picker are filtered by it.
+    const governance = await resolvePolicyGovernance(agentData);
+
+    // Two independent awaits, not one block. They used to share a function
+    // whose early returns ("policy authorizes no tools", "failed to load
+    // tools") skipped everything after them — including the knowledge base
+    // picker, which then sat on its loading spinner forever. Any future
+    // section added here gets its own call for the same reason.
+    await renderTools(agentData, governance);
+    await renderKnowledgeBasePicker(agentData, governance);
+}
+
+async function renderTools(agentData, governance) {
     const loader = document.getElementById('wiz-tools-loading');
     const containerEl = document.getElementById('wiz-tools-container');
-
-    if (!agentData.tools) agentData.tools = [];
+    if (!loader || !containerEl) return;
 
     try {
         const categories = await loadToolCategories();
@@ -46,11 +61,11 @@ export async function renderToolsStep(container, agentData) {
             return;
         }
 
-        // Determine the policy's authorized-tool universe.
+        // The policy's authorized-tool universe.
         //   null  -> no governing policy (or legacy policy) -> full catalog
         //   []    -> policy authorizes no tools
         //   [...] -> policy authorizes exactly these tools
-        const allow = await resolvePolicyAllowlist(agentData);
+        const allow = governance.tools;
 
         let filter = null;
         if (allow !== null) {
@@ -89,8 +104,6 @@ export async function renderToolsStep(container, agentData) {
         console.error("Tools Fetch Error", e);
         loader.innerText = "Error loading tools.";
     }
-
-    await renderKnowledgeBasePicker(agentData);
 }
 
 /**
@@ -105,7 +118,7 @@ export async function renderToolsStep(container, agentData) {
  * `bible_bsb_v1`) is not a row in that table, so it is preserved as an
  * explicit option rather than silently cleared when such an agent is edited.
  */
-async function renderKnowledgeBasePicker(agentData) {
+async function renderKnowledgeBasePicker(agentData, governance) {
     const el = document.getElementById('wiz-kb-container');
     if (!el) return;
 
@@ -119,20 +132,56 @@ async function renderKnowledgeBasePicker(agentData) {
         return;
     }
 
+    // Narrow to what the governing policy authorizes — the same contract the
+    // tool grid follows. This filter is presentation; the enforcement is
+    // synderesis._stamp_knowledge_authorization, which strips an unauthorized
+    // knowledge base out of the compiled profile at runtime.
+    const allowed = governance ? governance.knowledgeBases : null;
+    if (Array.isArray(allowed)) {
+        const permitted = new Set(allowed);
+        bases = bases.filter(kb => permitted.has(kb.id));
+        // Drop a previously-chosen knowledge base the policy no longer allows,
+        // so saving the agent does not silently re-assert it.
+        if (agentData.rag_knowledge_base &&
+            !permitted.has(agentData.rag_knowledge_base)) {
+            agentData.rag_knowledge_base = "";
+        }
+    }
+
     const current = agentData.rag_knowledge_base || '';
     const isBuiltIn = current && !bases.some(kb => kb.id === current);
 
-    if (!bases.length && !isBuiltIn) {
+    if (Array.isArray(allowed) && allowed.length === 0) {
         el.innerHTML = `
-            <div class="p-4 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm text-gray-500 dark:text-gray-400">
-                No knowledge bases are ready yet. Create one under
-                <strong class="text-gray-700 dark:text-gray-300">Knowledge</strong>,
-                upload documents, and it will appear here once it has finished indexing.
+            <div class="p-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 text-sm text-blue-800 dark:text-blue-300">
+                This agent's governing policy authorizes <strong>no knowledge
+                bases</strong>. It will answer without retrieval. Edit the
+                policy's Tools &amp; Guardrails step to authorize one.
             </div>`;
         return;
     }
 
+    if (!bases.length && !isBuiltIn) {
+        el.innerHTML = `
+            <div class="p-4 rounded-lg border border-gray-200 dark:border-neutral-700 text-sm text-gray-500 dark:text-gray-400">
+                ${Array.isArray(allowed)
+                    ? `None of the knowledge bases authorized by this agent's
+                       policy are ready yet. They appear here once they have
+                       documents and have finished indexing.`
+                    : `No knowledge bases are ready yet. Create one under
+                       <strong class="text-gray-700 dark:text-gray-300">Knowledge</strong>,
+                       upload documents, and it will appear here once it has
+                       finished indexing.`}
+            </div>`;
+        return;
+    }
+
+    const policyNote = Array.isArray(allowed)
+        ? `<p class="text-xs text-blue-600 dark:text-blue-400 mb-2">Only knowledge bases authorized by this agent's governing policy are shown.</p>`
+        : '';
+
     el.innerHTML = `
+        ${policyNote}
         <select id="wiz-kb-select"
             class="w-full px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-gray-900 dark:text-white">
             <option value="">None — this agent answers without retrieval</option>
@@ -148,10 +197,31 @@ async function renderKnowledgeBasePicker(agentData) {
     });
 }
 
-// Resolve the governing policy's allowed-tools list for the agent being edited.
-// Returns null when there is no governing policy (or the policy predates the
-// structured tool allowlist), meaning the full catalog should be offered.
-async function resolvePolicyAllowlist(agentData) {
+/**
+ * What the governing policy authorizes for the agent being edited.
+ *
+ * Returns { tools, knowledgeBases }, each either null ("this policy does not
+ * narrow — offer everything") or an array ("exactly these, and [] means
+ * none"). One lookup serves both pickers.
+ */
+async function resolvePolicyGovernance(agentData) {
+    const wr = await resolvePolicyWillRules(agentData);
+    if (!wr) return { tools: null, knowledgeBases: null };
+    return {
+        tools: Array.isArray(wr.allowed_tools) ? wr.allowed_tools : [],
+        // Absent is NOT the same as empty here: a policy written before
+        // knowledge authorization existed must keep working (null), while a
+        // policy that explicitly authorizes none must mean none ([]).
+        knowledgeBases: Array.isArray(wr.allowed_knowledge_bases)
+            ? wr.allowed_knowledge_bases : null,
+    };
+}
+
+// Resolve the governing policy's structured will_rules for the agent being
+// edited. Returns null when there is no governing policy, or when the policy
+// predates the structured shape (legacy list-form will_rules never declared
+// tools or knowledge bases, so they should not narrow anything).
+async function resolvePolicyWillRules(agentData) {
     const pid = agentData.policy_id;
     if (!pid || pid === 'standalone') return null;
 

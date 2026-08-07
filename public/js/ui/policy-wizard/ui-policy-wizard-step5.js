@@ -1,5 +1,69 @@
 import * as ui from '../ui.js';
+import * as api from '../../core/api.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
+import { escapeHtml } from '../../core/utils.js';
+
+/**
+ * Renders the knowledge-base checklist inside the Restrict panel.
+ *
+ * Includes built-in corpora (the Steward's `safi`, the Bible Scholar's
+ * `bible_bsb_v1`) alongside user-created ones. Without them a policy that
+ * restricts knowledge would silently un-ground the built-in agents, and an
+ * admin would have no way to authorize a corpus they can plainly see in use.
+ */
+async function loadKnowledgeBaseChecklist(policyData) {
+    const loading = document.getElementById('pw-kb-loading');
+    const list = document.getElementById('pw-kb-list');
+    if (!list) return;   // step navigated away
+
+    let bases = [];
+    try {
+        const res = await api.listAvailableKnowledgeBases({ includeBuiltin: true });
+        bases = (res && res.knowledge_bases) || [];
+    } catch (e) {
+        console.error('policy wizard: failed to load knowledge bases', e);
+        if (loading) loading.innerText = 'Failed to load knowledge bases.';
+        return;
+    }
+
+    if (loading) loading.classList.add('hidden');
+    list.classList.remove('hidden');
+
+    if (!bases.length) {
+        list.innerHTML = `<p class="text-xs text-gray-500">No knowledge bases exist yet. Create one under <strong>Knowledge</strong>; until then this policy authorizes none.</p>`;
+        return;
+    }
+
+    const selected = new Set(policyData.allowed_knowledge_bases || []);
+    list.innerHTML = bases.map(kb => `
+        <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:border-purple-300 dark:hover:border-purple-700 cursor-pointer">
+            <input type="checkbox" data-kb-allow="${escapeHtml(kb.id)}"
+                class="accent-purple-600 w-4 h-4 mt-0.5" ${selected.has(kb.id) ? 'checked' : ''}>
+            <span class="min-w-0">
+                <span class="block text-sm text-gray-900 dark:text-white">${escapeHtml(kb.name)}</span>
+                <span class="block text-xs text-gray-400">
+                    ${kb.builtin ? 'Built-in corpus' : `${kb.chunk_count} chunk${kb.chunk_count === 1 ? '' : 's'}`}
+                </span>
+            </span>
+        </label>`).join('');
+
+    list.querySelectorAll('[data-kb-allow]').forEach(box => {
+        box.addEventListener('change', (e) => {
+            const id = e.target.getAttribute('data-kb-allow');
+            if (!Array.isArray(policyData.allowed_knowledge_bases)) {
+                policyData.allowed_knowledge_bases = [];
+            }
+            if (e.target.checked) {
+                if (!policyData.allowed_knowledge_bases.includes(id)) {
+                    policyData.allowed_knowledge_bases.push(id);
+                }
+            } else {
+                policyData.allowed_knowledge_bases =
+                    policyData.allowed_knowledge_bases.filter(k => k !== id);
+            }
+        });
+    });
+}
 
 export function renderWillStep(container, policyData) {
     // Ensure shape
@@ -42,6 +106,40 @@ export function renderWillStep(container, policyData) {
                     <span class="thinking-spinner w-4 h-4"></span> Loading tools…
                 </div>
                 <div id="pw-tools-grid" class="flex flex-col gap-3 hidden"></div>
+            </div>
+
+            <!-- AUTHORIZED KNOWLEDGE BASES -->
+            <!--
+              Master toggle + list, matching the org connector allow-list card.
+              Unchecked master = the policy does not narrow, which is what every
+              policy written before this existed means. Without the toggle,
+              merely opening and saving an unrelated policy would write an empty
+              list and silently un-ground every agent under it.
+
+              The "tick = authorized" hint lives INSIDE the panel, not above it:
+              a hint placed above a list is read as describing the list whatever
+              it is attached to in the markup (learned the hard way on the
+              connector card, 19982c7).
+            -->
+            <div class="bg-white dark:bg-neutral-900 border border-purple-200 dark:border-purple-900/40 rounded-xl p-5">
+                <div class="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                        <h3 class="font-bold text-purple-700 dark:text-purple-300">Authorized Knowledge</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Which document repositories agents under this policy may be grounded in. Leave unrestricted to allow any knowledge base the agent's builder can access.</p>
+                    </div>
+                    <label class="flex items-center gap-2 cursor-pointer select-none shrink-0">
+                        <input type="checkbox" id="pw-kb-restrict" class="accent-purple-600 w-4 h-4"
+                            ${Array.isArray(policyData.allowed_knowledge_bases) ? 'checked' : ''}>
+                        <span class="text-xs uppercase font-bold text-gray-500">Restrict</span>
+                    </label>
+                </div>
+                <div id="pw-kb-panel" class="${Array.isArray(policyData.allowed_knowledge_bases) ? '' : 'hidden'}">
+                    <p class="text-xs text-gray-500 mb-3">Tick a knowledge base to authorize it. <strong>Ticking none authorizes no knowledge at all</strong> — agents under this policy will answer without retrieval.</p>
+                    <div id="pw-kb-loading" class="flex items-center gap-2 text-sm text-gray-500">
+                        <span class="thinking-spinner w-4 h-4"></span> Loading knowledge bases…
+                    </div>
+                    <div id="pw-kb-list" class="flex flex-col gap-2 hidden"></div>
+                </div>
             </div>
 
             <!-- DISCLAIMER -->
@@ -132,6 +230,31 @@ export function renderWillStep(container, policyData) {
             },
         });
     });
+
+    // --- AUTHORIZED KNOWLEDGE BASES ---
+    // `allowed_knowledge_bases` stays UNDEFINED until the admin ticks Restrict.
+    // Absent means "this policy does not narrow"; an empty array means "none".
+    // The two must not collapse, or saving an untouched legacy policy would
+    // revoke retrieval from every agent under it.
+    const kbRestrict = document.getElementById('pw-kb-restrict');
+    const kbPanel = document.getElementById('pw-kb-panel');
+
+    kbRestrict.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            if (!Array.isArray(policyData.allowed_knowledge_bases)) {
+                policyData.allowed_knowledge_bases = [];
+            }
+            kbPanel.classList.remove('hidden');
+            loadKnowledgeBaseChecklist(policyData);
+        } else {
+            delete policyData.allowed_knowledge_bases;
+            kbPanel.classList.add('hidden');
+        }
+    });
+
+    if (Array.isArray(policyData.allowed_knowledge_bases)) {
+        loadKnowledgeBaseChecklist(policyData);
+    }
 
     // --- DISCLAIMER ---
     const reqEl = document.getElementById('pw-require-disclaimer');

@@ -461,9 +461,16 @@ export async function listKnowledgeBases() {
     return httpGet(j('/api/knowledge-bases'));
 }
 
-/** Only KBs with a built index — what the agent wizard may offer. */
-export async function listAvailableKnowledgeBases() {
-    return httpGet(j('/api/knowledge-bases/available'));
+/**
+ * Only KBs with a built index — what the agent wizard may offer.
+ *
+ * `includeBuiltin` adds the corpora shipped with the image. The policy wizard
+ * needs them (a policy must be able to authorize the Steward's own knowledge);
+ * the agent wizard does not ask for them.
+ */
+export async function listAvailableKnowledgeBases({ includeBuiltin = false } = {}) {
+    const qs = includeBuiltin ? '?include_builtin=1' : '';
+    return httpGet(j(`/api/knowledge-bases/available${qs}`));
 }
 
 export async function getKnowledgeBase(kbId) {

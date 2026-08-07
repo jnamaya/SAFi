@@ -594,6 +594,65 @@ def authorized_tools(advertised: Any, policy_allowed: Any) -> List[str]:
     return adv
 
 
+def authorized_knowledge_base(requested: Optional[str],
+                              policy_allowed: Optional[Any]) -> Optional[str]:
+    """The knowledge base an agent may actually retrieve from.
+
+    Semantics, and note the deliberate difference from `authorized_tools`:
+
+      None / not a list  -> the policy does not narrow. Required for backward
+                            compatibility: every policy written before
+                            knowledge authorization existed lacks the key, and
+                            treating that as deny-all would silently un-ground
+                            the SAFi Steward and every other RAG agent.
+      []                 -> the policy authorizes NO knowledge base. This is a
+                            real deny-all, not "no opinion".
+      [...]              -> exactly these.
+
+    `authorized_tools` treats an empty list as "does not narrow" because the
+    agent's own advertised tool list is a second ceiling — an agent offered no
+    tools already has none. A knowledge base has no such second ceiling: the
+    agent names one directly, so an empty policy list has to mean deny here or
+    it would mean nothing at all. Do not "fix" these two into consistency.
+    """
+    if not requested:
+        return requested
+    if not isinstance(policy_allowed, list):
+        return requested
+    return requested if requested in policy_allowed else None
+
+
+def _stamp_knowledge_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Applies the policy's knowledge-base allow-list to the compiled profile.
+
+    THIS is the control. The agent wizard filters the picker to the same list,
+    but a filtered dropdown is presentation: `agents.rag_knowledge_base` is a
+    stored column, an agent can predate the policy that now governs it, and a
+    policy can be narrowed after the agent was built. Stripping the value here
+    — inside the sole governance compiler, on the path every turn takes — is
+    what makes the authorization real.
+
+    Clearing the key rather than flagging it is deliberate: the Intellect and
+    RAGService both branch on its presence, so an unauthorized agent simply
+    has no retriever, and there is no second place that has to remember to
+    check a flag.
+    """
+    wr = profile.get("will_rules")
+    policy_allowed = wr.get("allowed_knowledge_bases") if isinstance(wr, dict) else None
+    requested = profile.get("rag_knowledge_base")
+    permitted = authorized_knowledge_base(requested, policy_allowed)
+    if requested and not permitted:
+        log.warning(
+            "Knowledge base '%s' is not authorized by policy '%s' — agent '%s' "
+            "will answer without retrieval.",
+            requested, profile.get("policy_id"), profile.get("name"))
+        profile["rag_knowledge_base"] = None
+        # Kept so the UI and the governance record can say WHY there is no
+        # grounding, rather than looking like the agent never had a corpus.
+        profile["rag_blocked_by_policy"] = requested
+    return profile
+
+
 def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     """
     Layer-2 tool authorization for WillGate.evaluate_tool_intent.
@@ -737,18 +796,27 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_name"] = policy_name
     final["org_name"] = org_name
     final["has_charter"] = bool(charter)
-    # The new-chat screen names the agent's knowledge base. Since user-created
-    # KBs are identified by UUID (the id is also the index filename — see the
-    # knowledge_bases schema), the raw value would render as a GUID there.
-    # Resolve the display name once, here, rather than teaching the UI to
-    # recognise UUIDs.
-    final["rag_knowledge_base_name"] = _resolve_kb_display_name(
-        final.get("rag_knowledge_base"))
 
     # 6b. Stamp the effective tool authorization so the Will's per-intent gate
     # (evaluate_tool_intent Step 1) actually enforces the advertised tool list
     # rather than trusting schema advertisement alone.
     final = _stamp_tool_authorization(final)
+
+    # 6c. Same contract for retrieval: the policy's allowed_knowledge_bases
+    # narrows what the agent may actually be grounded in.
+    final = _stamp_knowledge_authorization(final)
+
+    # 6d. The new-chat screen names the agent's knowledge base. Since
+    # user-created KBs are identified by UUID (the id is also the index
+    # filename — see the knowledge_bases schema), the raw value would render as
+    # a GUID there. Resolve the display name once, here, rather than teaching
+    # the UI to recognise UUIDs.
+    #
+    # AFTER 6c on purpose: a knowledge base the policy blocked has already been
+    # cleared, so the chat header cannot advertise grounding the agent will not
+    # actually have.
+    final["rag_knowledge_base_name"] = _resolve_kb_display_name(
+        final.get("rag_knowledge_base"))
 
     # 7. Backfill rephrase directives so every agent (notably custom/DB agents,
     #    which define none) has a corrective ethical_violation directive. Any

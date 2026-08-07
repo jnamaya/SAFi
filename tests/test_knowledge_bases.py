@@ -493,6 +493,88 @@ class Indexing(KnowledgeBaseBase):
         self.assertNotIn(empty["id"], offered)
 
 
+# --- Policy-level authorization -------------------------------------------
+
+class PolicyAuthorization(unittest.TestCase):
+    """A policy's will_rules.allowed_knowledge_bases narrows what agents under
+    it may be grounded in — the same contract allowed_tools has.
+
+    The filter in the agent wizard is presentation. THIS is the control:
+    `agents.rag_knowledge_base` is a stored column, an agent can predate the
+    policy now governing it, and a policy can be narrowed after the fact.
+    """
+
+    def test_absent_key_does_not_narrow(self):
+        """Every policy written before this feature lacks the key. Treating
+        that as deny-all would un-ground the Steward on upgrade."""
+        from safi_app.core.faculties.synderesis import authorized_knowledge_base
+        self.assertEqual("safi", authorized_knowledge_base("safi", None))
+        self.assertEqual("safi", authorized_knowledge_base("safi", "not-a-list"))
+
+    def test_empty_list_denies(self):
+        """Deliberately UNLIKE authorized_tools, where [] means 'no opinion'.
+        Tools have the agent's own list as a second ceiling; a knowledge base
+        has none, so [] must mean deny or it would mean nothing."""
+        from safi_app.core.faculties.synderesis import authorized_knowledge_base
+        self.assertIsNone(authorized_knowledge_base("safi", []))
+
+    def test_list_intersects(self):
+        from safi_app.core.faculties.synderesis import authorized_knowledge_base
+        self.assertEqual("safi", authorized_knowledge_base("safi", ["safi", "x"]))
+        self.assertIsNone(authorized_knowledge_base("other", ["safi", "x"]))
+
+    def test_no_knowledge_base_stays_none(self):
+        from safi_app.core.faculties.synderesis import authorized_knowledge_base
+        self.assertIsNone(authorized_knowledge_base(None, ["safi"]))
+        self.assertEqual("", authorized_knowledge_base("", ["safi"]))
+
+    def test_stamping_strips_an_unauthorized_knowledge_base(self):
+        from safi_app.core.faculties.synderesis import _stamp_knowledge_authorization
+        profile = {
+            "name": "Test", "policy_id": "p1",
+            "rag_knowledge_base": "forbidden-kb",
+            "will_rules": {"allowed_knowledge_bases": ["allowed-kb"]},
+        }
+        out = _stamp_knowledge_authorization(profile)
+        # Cleared, not flagged: Intellect and RAGService both branch on
+        # presence, so there is no second place that must remember to check.
+        self.assertIsNone(out["rag_knowledge_base"])
+        # But the reason is preserved so the UI can explain the absence.
+        self.assertEqual("forbidden-kb", out["rag_blocked_by_policy"])
+
+    def test_stamping_leaves_an_authorized_knowledge_base_alone(self):
+        from safi_app.core.faculties.synderesis import _stamp_knowledge_authorization
+        profile = {
+            "name": "Test", "policy_id": "p1",
+            "rag_knowledge_base": "allowed-kb",
+            "will_rules": {"allowed_knowledge_bases": ["allowed-kb"]},
+        }
+        out = _stamp_knowledge_authorization(profile)
+        self.assertEqual("allowed-kb", out["rag_knowledge_base"])
+        self.assertNotIn("rag_blocked_by_policy", out)
+
+    def test_legacy_list_will_rules_do_not_narrow(self):
+        """will_rules may still be a legacy list of strings. It never declared
+        knowledge bases, so it must not be read as authorizing none."""
+        from safi_app.core.faculties.synderesis import _stamp_knowledge_authorization
+        profile = {"name": "T", "rag_knowledge_base": "safi",
+                   "will_rules": ["do not swear"]}
+        self.assertEqual("safi",
+                         _stamp_knowledge_authorization(profile)["rag_knowledge_base"])
+
+    def test_a_blocked_knowledge_base_is_not_announced_to_the_user(self):
+        """get_profile resolves a display name for the new-chat header. If that
+        ran before the policy check, the UI would promise grounding the agent
+        does not have."""
+        source = (Path(__file__).resolve().parent.parent / "safi_app" / "core" /
+                  "faculties" / "synderesis.py").read_text()
+        stamp_at = source.index("_stamp_knowledge_authorization(final)")
+        name_at = source.index('final["rag_knowledge_base_name"]')
+        self.assertLess(stamp_at, name_at,
+                        "knowledge authorization must be stamped before the "
+                        "display name is resolved")
+
+
 # --- Chunking / truncation ------------------------------------------------
 
 class Chunking(unittest.TestCase):

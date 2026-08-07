@@ -147,15 +147,35 @@ def list_available_knowledge_bases():
 
     A KB with no indexed vectors would look configured on the agent and answer
     nothing — the same 'allowed is not the same as useful' failure the
-    connector tab already fixed."""
+    connector tab already fixed.
+
+    `?include_builtin=1` also returns the corpora shipped with the image
+    (`safi`, `bible_bsb_v1`, …). The POLICY wizard needs those: a policy that
+    restricts knowledge but cannot list the built-ins would silently un-ground
+    the Steward with no way for an admin to authorize it back. The AGENT wizard
+    does not pass the flag — it preserves a built-in on the agent it is
+    editing, but should not offer `bible_bsb_v1` to an arbitrary new agent.
+    """
     user_id, _ = _actor()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     rows = db.list_knowledge_bases_for_agent_picker(
         user_id, get_current_org_id(), get_current_role())
-    return jsonify({"knowledge_bases": [
-        {"id": kb["id"], "name": kb["name"], "chunk_count": kb.get("chunk_count") or 0}
-        for kb in rows]})
+    out = [{"id": kb["id"], "name": kb["name"],
+            "chunk_count": kb.get("chunk_count") or 0, "builtin": False}
+           for kb in rows]
+
+    if request.args.get('include_builtin') in ('1', 'true', 'yes'):
+        from ..core.faculties.synderesis import ALL_PERSONAS
+        seen = set()
+        for persona in ALL_PERSONAS.values():
+            name = isinstance(persona, dict) and persona.get("rag_knowledge_base")
+            if name and name not in seen:
+                seen.add(name)
+                out.append({"id": name, "name": name.replace("_", " "),
+                            "chunk_count": 0, "builtin": True})
+
+    return jsonify({"knowledge_bases": out})
 
 
 @knowledge_bp.route('/knowledge-bases', methods=['POST'], strict_slashes=False)
