@@ -80,7 +80,13 @@ services:
       SAFI_SKIP_INDEX_BOOTSTRAP: "true"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
-      # tests/ is the ONLY mount — see the note at the top of this file.
+      # tests/ is the ONLY directory mount — see the note at the top of this file.
       - ./tests:/app/tests:ro
+      # .env.example is not in the image (the Dockerfile copies safi_app/,
+      # public/, scripts/ and rag/ only), but test_setup_wizard.py checks the
+      # wizard against it. Mounting the single file is safe where mounting the
+      # repo root is not: load_dotenv looks for `.env`, and this can never
+      # become that. CI needs no equivalent — it runs from a full checkout.
+      - ./.env.example:/app/.env.example:ro
     working_dir: /app
     entrypoint: ["python", "scripts/ci_run_tests.py"]

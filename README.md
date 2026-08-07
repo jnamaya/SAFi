@@ -163,16 +163,24 @@ git clone https://github.com/jnamaya/SAFi.git
 cd SAFi
 
 # 2. Configure your environment
-cp .env.example .env
-# Open .env and set:
-#   DB_PASSWORD + MYSQL_ROOT_PASSWORD  (choose anything)
-#   At least one LLM API key (GROQ_API_KEY is free and fast to get)
+python3 scripts/setup.py
 
 # 3. Start everything
 docker compose up
-
-# Open http://localhost:5000
 ```
+
+The setup wizard asks four things — what the instance is for, which AI provider
+you want to use, what port and URL to serve on, and an admin email — then writes
+a complete `.env`. It generates the session key, the encryption key, and both
+database passwords itself, so there are no placeholder secrets to remember to
+change. It needs nothing installed beyond Python 3, prints the admin password
+once at the end, and refuses to overwrite an existing `.env` unless you pass
+`--force`.
+
+The only thing to have ready is an **API key from one AI provider**.
+[Groq](https://console.groq.com) has a free tier and is the fastest to obtain;
+[Google AI Studio](https://aistudio.google.com) also has one. The wizard checks
+the key against the provider before writing it.
 
 > **Requirements:** Docker, and roughly **8 GB of free disk** — about 3 GB for
 > the images (SAFi ~1.3 GB, MySQL ~1.1 GB) and the rest as headroom for the
@@ -180,11 +188,33 @@ docker compose up
 > `df -h` first: Ubuntu Server's installer often allocates only part of the
 > disk to the root volume, and `sudo vgs` will show whether there is
 > unallocated space you can claim with `lvextend`.
->
-> **Reaching it from another machine?** Set `WEB_BASE_URL` in `.env` to the
-> address you'll actually browse to — for example
-> `WEB_BASE_URL=http://192.168.1.50:5000`. It defaults to a localhost URL, and
-> leaving it wrong breaks OAuth callbacks and cross-origin requests.
+
+<details>
+<summary><strong>Prefer to configure it by hand?</strong></summary>
+
+`.env.example` is the same file the wizard writes, fully commented. Copy it and
+edit three things:
+
+```bash
+cp .env.example .env
+# DB_PASSWORD + MYSQL_ROOT_PASSWORD   choose anything
+# One LLM API key                     e.g. GROQ_API_KEY
+```
+
+Two settings are worth knowing about before you go further:
+
+- **`FLASK_ENV`** controls startup strictness, and **defaults to `production`**
+  if unset — which then requires a login method, an encryption key and a strong
+  session key. `.env.example` ships it as `development` for this reason.
+- **`WEB_BASE_URL`** must match the address you actually browse to — for example
+  `http://192.168.1.50:5000` if you reach the machine over your network. It
+  defaults to localhost, and leaving it wrong breaks OAuth callbacks and
+  cross-origin requests with no obvious symptom.
+
+`scripts/setup.py --defaults` does the same thing non-interactively, taking the
+provider key from the environment — useful for scripted or CI installs.
+
+</details>
 
 #### Prefer a prebuilt image?
 
