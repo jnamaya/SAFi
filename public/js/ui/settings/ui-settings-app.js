@@ -223,19 +223,50 @@ async function _renderConnectedAccounts(container) {
     const list = container.querySelector('#connected-list');
     if (!list) return;
 
-    list.innerHTML = PROVIDERS.map(p => `
+    // One call gives both what this member has linked and what their org
+    // permits. The rows are not rendered until it returns, because rendering
+    // the full catalogue first and removing the blocked ones afterwards
+    // flashes Connect buttons the org has forbidden.
+    let connected = [];
+    let allowed = null;   // null = unrestricted (no org policy)
+    try {
+        const res = await api.getAuthStatus();
+        connected = (res && res.connected) ? res.connected : [];
+        if (res && Array.isArray(res.connectors)) {
+            allowed = new Set(res.connectors.filter(c => c.allowed).map(c => c.key));
+        }
+    } catch (e) {
+        // Server unreachable: fall through and render the catalogue on
+        // "Connect". The route guard is the actual control, so a stale list
+        // here cannot create a connection the org has blocked.
+        console.warn('Failed to load connection status', e);
+    }
+
+    // A connector can be linked but no longer allowed (an admin blocked it
+    // afterwards). Keep those visible so the member can still disconnect —
+    // hiding a live token is the one thing worse than showing it.
+    const isConnected = (id) => connected.includes(id) || connected.some(c => c.provider === id);
+    const visible = PROVIDERS.filter(p => allowed === null || allowed.has(p.id) || isConnected(p.id));
+
+    if (!visible.length) {
+        list.innerHTML = `<p class="text-sm text-gray-500">
+            Your organization has not enabled any data sources.</p>`;
+        return;
+    }
+
+    list.innerHTML = visible.map(p => `
         <div class="flex items-center justify-between p-3 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-800" data-provider="${p.id}">
             <div class="flex items-center gap-3 min-w-0">
                 <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">${p.icon}</svg>
                 <span class="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">${p.name}</span>
             </div>
-            <div class="status-action shrink-0">${_connectBtn(p.id)}</div>
+            <div class="status-action shrink-0">
+                ${isConnected(p.id) ? _connectedBtn() : _connectBtn(p.id)}
+            </div>
         </div>`).join('');
 
-    // Delegated, and attached before the fetch. The previous version defined the
-    // handler as window.disconnectAccount *inside* the try block and referenced
-    // it from an inline onclick, so a failed getAuthStatus left Disconnect
-    // buttons wired to a function that did not exist.
+    // Delegated rather than per-button: the row contents are replaced after a
+    // disconnect, and a listener bound to the button would go with them.
     list.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-disconnect]');
         if (!btn) return;
@@ -248,7 +279,13 @@ async function _renderConnectedAccounts(container) {
         btn.disabled = true;
         try {
             await api.disconnectProvider(id);
-            row.querySelector('.status-action').innerHTML = _connectBtn(id);
+            if (allowed !== null && !allowed.has(id)) {
+                // Only visible because it was still linked. Now that it is not,
+                // offering Connect would be offering something the route blocks.
+                row.remove();
+            } else {
+                row.querySelector('.status-action').innerHTML = _connectBtn(id);
+            }
         } catch (err) {
             console.error('Disconnect failed', err);
             alert('Failed to disconnect. Please try again.');
@@ -256,18 +293,4 @@ async function _renderConnectedAccounts(container) {
             btn.disabled = false;
         }
     });
-
-    try {
-        const res = await api.getAuthStatus();
-        const connected = (res && res.connected) ? res.connected : [];
-        PROVIDERS.forEach(p => {
-            const isConnected = connected.includes(p.id) || connected.some(c => c.provider === p.id);
-            const slot = list.querySelector(`div[data-provider="${p.id}"] .status-action`);
-            if (slot) slot.innerHTML = isConnected ? _connectedBtn() : _connectBtn(p.id);
-        });
-    } catch (e) {
-        // Server unreachable: the rows stay on "Connect", which is the safe
-        // reading — it fails to an action rather than to a false "Connected".
-        console.warn('Failed to load connection status', e);
-    }
 }

@@ -3581,6 +3581,114 @@ def set_org_provider_allowlist(org_id, allowlist, actor):
     provider_governance.invalidate_org(org_id)
     return get_org_provider_config(org_id)
 
+
+# --- Data-source connector allow-list ---------------------------------------
+# Which external accounts (Google Drive / SharePoint / GitHub) members of this
+# org may link. Same storage, validation and evidence contract as the LLM
+# provider allow-list above — see core/services/connector_governance.py for why
+# the credential itself stays per-user rather than becoming a service principal.
+
+def get_org_connector_config(org_id):
+    """Reads the data-source connector allow-list from organizations.settings.
+    {'allowlist': [...]} or {'allowlist': None} — None means unrestricted."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,))
+        row = cursor.fetchone()
+        settings = {}
+        if row and row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+        raw = settings.get("connector_allowlist")
+        return {"allowlist": raw if isinstance(raw, list) else None}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_org_connector_allowlist(org_id, allowlist, actor):
+    """Sets (or clears, with None) the org's connector allow-list AND appends
+    the compliance-log evidence row in the same transaction, so the change can
+    never dodge the evidence log — same contract as set_org_provider_allowlist.
+
+    allowlist: None = unrestricted, or a list of keys from
+    connector_governance.CONNECTOR_METADATA. Unlike the provider list, an EMPTY
+    list is accepted and means "no data sources may be linked": that is a
+    coherent and probably common policy, whereas an empty provider list would
+    brick every LLM call in the org."""
+    from ..core.services.connector_governance import CONNECTOR_METADATA
+    if allowlist is not None:
+        if not isinstance(allowlist, list):
+            raise ValueError("allowlist must be null (unrestricted) or a list of connector keys")
+        unknown = sorted({str(c) for c in allowlist} - set(CONNECTOR_METADATA))
+        if unknown:
+            raise ValueError(f"unknown data sources: {', '.join(unknown)}")
+        allowlist = sorted({str(c) for c in allowlist})
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("organization not found")
+        settings = {}
+        if row[0]:
+            try:
+                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (ValueError, TypeError):
+                settings = {}
+
+        old = settings.get("connector_allowlist")
+        old = sorted(old) if isinstance(old, list) else None
+        if old != allowlist:
+            if allowlist is None:
+                settings.pop("connector_allowlist", None)
+            else:
+                settings["connector_allowlist"] = allowlist
+            append_compliance_log(org_id, "connector_allowlist_changed", actor,
+                                  {"changed": {"connector_allowlist": {"old": old, "new": allowlist}}},
+                                  cursor=cursor)
+            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
+                           (json.dumps(settings), org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    from ..core.services import connector_governance
+    connector_governance.invalidate_org(org_id)
+    return get_org_connector_config(org_id)
+
+
+def list_org_connections(org_id):
+    """Who in this org has linked which data source. Admin visibility — the
+    question 'what corporate data can our agents currently reach' had no answer
+    before this.
+
+    Joined on users.org_id rather than filtering in Python so a user in another
+    org can never appear, and no token material is selected: the columns are
+    deliberately limited to who/what/when."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT u.id AS user_id, u.name, u.email, t.provider,
+                      t.scope, t.created_at, t.updated_at
+                 FROM oauth_tokens t
+                 JOIN users u ON u.id = t.user_id
+                WHERE u.org_id = %s
+             ORDER BY u.name, t.provider""",
+            (org_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # --- Incident notification regimes (Phase D) --------------------------------
 # The org's default regime set for NEW incidents, stored in
 # organizations.settings.incident_regimes. Per-incident tags live on the
@@ -5409,7 +5517,16 @@ def delete_policy_keys(pid):
 # Token values are Fernet-encrypted here so every caller (auth callbacks,
 # MCP connectors) reads and writes plaintext transparently.
 
-def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expires_at=None, scope=None):
+def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expires_at=None, scope=None,
+                       org_id=None):
+    """Store a member's delegated token for a data source.
+
+    Pass org_id to record the link in org_compliance_log **in the same
+    transaction**. Linking a corporate data source to a governed agent is a
+    governance act and belongs next to provider-policy and retention changes;
+    writing it in the same transaction is what stops a connection existing with
+    no evidence that it was made. org_id=None (single-user install with no org)
+    simply skips the evidence row — there is no org log to write to."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -5424,6 +5541,10 @@ def upsert_oauth_token(user_id, provider, access_token, refresh_token=None, expi
         """
         cursor.execute(sql, (user_id, provider, crypto.encrypt_value(access_token),
                              crypto.encrypt_value(refresh_token), expires_at, scope))
+        if org_id:
+            append_compliance_log(org_id, "connector_connected", f"user:{user_id}",
+                                  {"provider": provider, "scope": scope or ""},
+                                  cursor=cursor)
         conn.commit()
     finally:
         cursor.close()
@@ -5439,11 +5560,20 @@ def get_oauth_token(user_id, provider):
         cursor.close()
         conn.close()
 
-def delete_oauth_token(user_id, provider):
+def delete_oauth_token(user_id, provider, org_id=None):
+    """Remove a member's delegated token. Pass org_id to evidence-log the
+    disconnect in the same transaction — see upsert_oauth_token.
+
+    The evidence row is written only when a token actually existed, so a repeat
+    disconnect (or a probe for a provider that was never linked) does not
+    manufacture history that did not happen."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM oauth_tokens WHERE user_id=%s AND provider=%s", (user_id, provider))
+        if org_id and cursor.rowcount:
+            append_compliance_log(org_id, "connector_disconnected", f"user:{user_id}",
+                                  {"provider": provider}, cursor=cursor)
         conn.commit()
     finally:
         cursor.close()

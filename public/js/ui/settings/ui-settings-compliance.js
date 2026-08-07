@@ -58,6 +58,29 @@ export async function renderSettingsComplianceTab() {
         </div>
 
         <div class="settings-card">
+             <h4 class="text-lg font-semibold mb-1">Data Source Connections</h4>
+             <p class="text-xs text-gray-500 mb-4">Which external accounts members may link to their SAFi identity. Access stays delegated — an agent reads only what that member can already open in the source system, and the source system's own audit log still attributes the read to them. Enforcement fails closed at the connect route, not just in the UI. Connects, disconnects and changes here are recorded in the evidence log above.</p>
+             <div class="space-y-4">
+                 <label class="flex items-center gap-2 text-sm">
+                     <input type="checkbox" id="chk-connector-restrict" ${org.settings?.connector_allowlist ? 'checked' : ''}>
+                     <span class="font-bold text-gray-700 dark:text-gray-300">Restrict data sources</span>
+                     <span class="text-xs text-gray-400">(unchecked = members may link any of these)</span>
+                 </label>
+                 <div id="connector-checklist" class="grid md:grid-cols-2 gap-2 ${org.settings?.connector_allowlist ? '' : 'hidden'}">
+                     <div class="text-sm text-gray-400">Loading data sources…</div>
+                 </div>
+                 <p class="text-xs text-gray-400">Unchecking a source does not revoke tokens members have already linked — it stops new links, and those members keep a Disconnect button. Review what is currently linked below.</p>
+                 <div class="flex justify-end">
+                     <button id="btn-save-connectors" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Data Source Settings</button>
+                 </div>
+                 <div>
+                     <h5 class="text-sm font-semibold mt-2 mb-1">Currently linked</h5>
+                     <div id="connections-list" class="text-sm text-gray-500">Loading…</div>
+                 </div>
+             </div>
+        </div>
+
+        <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">Data Retention &amp; Legal Hold</h4>
              <p class="text-xs text-gray-500 mb-4">Records older than the retention period are destroyed by the daily purge and evidenced above (SEC 17a-4 / Reg S-P). A legal hold suspends all destruction.</p>
              <div class="space-y-4">
@@ -127,6 +150,27 @@ export async function renderSettingsComplianceTab() {
         try {
             await api.updateOrgProviders(org.id, allowlist);
             ui.showToast('Provider settings saved', 'success');
+            loadComplianceLog(org.id);
+        } catch (e) {
+            ui.showToast(e.message || 'Save failed', 'error');
+        }
+    });
+
+    // --- Data-source connector wiring ---
+    const chkConnRestrict = cards.querySelector('#chk-connector-restrict');
+    const connChecklist = cards.querySelector('#connector-checklist');
+    chkConnRestrict.addEventListener('change', () => connChecklist.classList.toggle('hidden', !chkConnRestrict.checked));
+    loadConnectorChecklist(org.id);
+    loadConnections(org.id);
+    cards.querySelector('#btn-save-connectors').addEventListener('click', async () => {
+        // Unlike providers, an empty list is a legitimate policy here: "members
+        // may link nothing". An empty provider list would brick every LLM call.
+        const allowlist = chkConnRestrict.checked
+            ? [...connChecklist.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value)
+            : null;
+        try {
+            await api.updateOrgConnectors(org.id, allowlist);
+            ui.showToast('Data source settings saved', 'success');
             loadComplianceLog(org.id);
         } catch (e) {
             ui.showToast(e.message || 'Save failed', 'error');
@@ -256,4 +300,60 @@ async function loadProviderChecklist(orgId) {
     } catch (e) {
         el.innerHTML = `<span class="text-sm text-red-500">Failed to load providers: ${e.message || e}</span>`;
     }
+}
+
+async function loadConnectorChecklist(orgId) {
+    const el = document.getElementById('connector-checklist');
+    if (!el) return;
+    try {
+        const res = await api.getOrgConnectors(orgId);
+        el.innerHTML = (res.connectors || []).map(c => `
+            <label class="flex items-start gap-2 text-sm rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2">
+                <input type="checkbox" value="${c.key}" class="mt-1" ${c.allowed ? 'checked' : ''}>
+                <span class="min-w-0">
+                    <span class="font-medium block">${c.label}</span>
+                    <span class="text-xs text-gray-500 block">${c.grants}</span>
+                    <span class="text-[10px] text-gray-400 block font-mono">${c.scopes}</span>
+                </span>
+            </label>`).join('');
+    } catch (e) {
+        el.innerHTML = `<span class="text-sm text-red-500">Failed to load data sources: ${e.message || e}</span>`;
+    }
+}
+
+async function loadConnections(orgId) {
+    const el = document.getElementById('connections-list');
+    if (!el) return;
+    try {
+        const res = await api.getOrgConnections(orgId);
+        const rows = res.connections || [];
+        if (!rows.length) {
+            el.innerHTML = '<span class="text-gray-400">No member has linked a data source.</span>';
+            return;
+        }
+        el.innerHTML = `
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead class="text-gray-400 text-left">
+                  <tr><th class="py-1 pr-4">Member</th><th class="py-1 pr-4">Data source</th><th class="py-1">Linked</th></tr>
+                </thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr class="border-t border-gray-100 dark:border-neutral-800">
+                      <td class="py-1 pr-4">${_esc(r.name || r.email || r.user_id)}</td>
+                      <td class="py-1 pr-4 font-medium">${_esc(r.provider)}</td>
+                      <td class="py-1 text-gray-500">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`;
+    } catch (e) {
+        el.innerHTML = `<span class="text-red-500">Failed to load connections: ${e.message || e}</span>`;
+    }
+}
+
+// Member names and emails are user-supplied and land in innerHTML above.
+function _esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }

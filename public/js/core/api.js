@@ -525,6 +525,22 @@ export async function updateOrgProviders(orgId, allowlist) {
     return httpJSON(j(`/api/organizations/${orgId}/providers`), 'PUT', { allowlist });
 }
 
+// --- Data-source connector allow-list (which accounts members may link) ---
+
+export async function getOrgConnectors(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/connectors`));
+}
+
+// allowlist: array of connector keys, [] for none, or null for unrestricted
+export async function updateOrgConnectors(orgId, allowlist) {
+    return httpJSON(j(`/api/organizations/${orgId}/connectors`), 'PUT', { allowlist });
+}
+
+// Who in the org has linked what. No token material is returned.
+export async function getOrgConnections(orgId) {
+    return httpGet(j(`/api/organizations/${orgId}/connections`));
+}
+
 // File download — plain URL for window.open/href, not the JSON pipeline.
 export function recordsExportUrl(orgId, from, to, userId) {
     const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';

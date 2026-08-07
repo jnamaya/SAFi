@@ -722,12 +722,26 @@ def callback_microsoft():
 
 @auth_bp.route('/auth/status')
 def auth_status():
+    """What this member has linked, and what their org permits them to link.
+
+    `connectors` drives the Settings tab, which renders only the allowed ones.
+    That is presentation — the enforcement is _connector_guard on the login and
+    callback routes. `connected` can legitimately include a connector that is no
+    longer allowed (an admin blocked it after the fact); the UI shows those so
+    the member can still disconnect.
+    """
+    from ..core.rbac import get_current_org_id
+    from ..core.services.connector_governance import list_connectors_for_org
+
     user_id = session.get('user_id')
     if not user_id:
-        return jsonify({"connected": []})
-    
+        return jsonify({"connected": [], "connectors": []})
+
     connected = db.get_connected_providers(user_id)
-    return jsonify({"connected": connected})
+    return jsonify({
+        "connected": connected,
+        "connectors": list_connectors_for_org(get_current_org_id()),
+    })
 
 @auth_bp.route('/auth/<provider>/disconnect', methods=['POST'])
 def disconnect_provider(provider):
@@ -735,12 +749,54 @@ def disconnect_provider(provider):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
         
-    db.delete_oauth_token(user_id, provider)
+    # No allow-list check: removing access is always permitted, even for a
+    # connector an admin has since blocked — that is the direction the policy
+    # wants to travel in.
+    db.delete_oauth_token(user_id, provider, org_id=_connector_org())
     return jsonify({"status": "disconnected", "provider": provider})
+
+# =================================================================
+# DATA-SOURCE CONNECTORS (Google Drive / SharePoint / GitHub)
+# =================================================================
+# Connections are delegated per-user OAuth, deliberately — not an org-wide
+# service principal. See core/services/connector_governance.py for why.
+#
+# What the org DOES control is which data sources may be linked at all.
+
+def _connector_guard(provider):
+    """Fail closed on a data source this organization has not allowed.
+
+    Called from BOTH the login route and the callback. Guarding only the login
+    route would leave the callback reachable directly, and would also let a code
+    obtained seconds before an admin revoked the connector still redeem into a
+    stored token.
+
+    Returns a redirect Response to bounce the browser, or None when allowed.
+    """
+    from ..core.rbac import get_current_org_id
+    from ..core.services.connector_governance import (
+        assert_connector_allowed, ConnectorNotAllowedError)
+    try:
+        assert_connector_allowed(provider, get_current_org_id())
+    except ConnectorNotAllowedError as e:
+        current_app.logger.warning("Blocked data-source link attempt: %s", e)
+        return redirect(f'/?error=connector_not_allowed&provider={provider}')
+    return None
+
+
+def _connector_org():
+    """The org to attribute a connect/disconnect to, or None on a single-user
+    install with no org (nothing to evidence-log against)."""
+    from ..core.rbac import get_current_org_id
+    return get_current_org_id()
+
 
 # --- GOOGLE DRIVE TOOL ---
 @auth_bp.route('/auth/google/login')
 def google_tool_login():
+    blocked = _connector_guard('google')
+    if blocked:
+        return blocked
     try:
         user_id = session.get('user_id')
         # Allow linking even if not logged in? No, must be logged in.
@@ -789,6 +845,10 @@ def google_tool_callback():
     if not user_id:
         return redirect('/chat?error=auth_session_expired')
 
+    blocked = _connector_guard('google')
+    if blocked:
+        return blocked
+
     state = session.get('google_tool_state')
     
     # Bypass library's strict HTTPS check if behind a proxy terminating SSL
@@ -823,7 +883,8 @@ def google_tool_callback():
             creds.token, 
             creds.refresh_token, 
             creds.expiry, # datetime object
-            " ".join(creds.scopes) if creds.scopes else ""
+            " ".join(creds.scopes) if creds.scopes else "",
+            org_id=_connector_org()
         )
         
         return redirect('/?status=google_connected')
@@ -835,6 +896,9 @@ def google_tool_callback():
 # --- MICROSOFT SHAREPOINT TOOL ---
 @auth_bp.route('/auth/microsoft/login')
 def microsoft_tool_login():
+    blocked = _connector_guard('microsoft')
+    if blocked:
+        return blocked
     try:
         user_id = session.get('user_id')
         if not user_id:
@@ -878,6 +942,10 @@ def microsoft_tool_callback():
     user_id = session.get('user_id')
     if not user_id:
         return redirect('/chat?error=auth_session_expired')
+
+    blocked = _connector_guard('microsoft')
+    if blocked:
+        return blocked
         
     code = request.args.get('code')
     state = request.args.get('state')
@@ -916,7 +984,8 @@ def microsoft_tool_callback():
             access_token,
             refresh_token,
             expires_at,
-            scope
+            scope,
+            org_id=_connector_org()
         )
         return redirect('/?status=microsoft_connected')
     except Exception as e:
@@ -927,6 +996,9 @@ def microsoft_tool_callback():
 # --- GITHUB TOOL ---
 @auth_bp.route('/auth/github/login')
 def github_tool_login():
+    blocked = _connector_guard('github')
+    if blocked:
+        return blocked
     try:
         user_id = session.get('user_id')
         if not user_id: return jsonify({"error": "Not logged in"}), 401
@@ -966,6 +1038,10 @@ def github_tool_login():
 def github_tool_callback():
     user_id = session.get('user_id')
     if not user_id: return redirect('/?error=session_expired')
+
+    blocked = _connector_guard('github')
+    if blocked:
+        return blocked
     
     code = request.args.get('code')
     state = request.args.get('state')
@@ -1005,7 +1081,8 @@ def github_tool_callback():
             access_token,
             None, # GitHub (classic) doesn't use refresh tokens usually
             expires_at,
-            token_data.get('scope', '')
+            token_data.get('scope', ''),
+            org_id=_connector_org()
         )
         return redirect('/?status=github_connected')
         

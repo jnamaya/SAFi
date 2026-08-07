@@ -172,6 +172,56 @@ def update_providers(org_id):
         return jsonify({"error": "Internal Server Error"}), 500
 
 
+@records_bp.route('/organizations/<org_id>/connectors', methods=['GET'])
+@require_role('admin')
+def get_connectors(org_id):
+    """The org's data-source connector allow-list, with what each one grants.
+    allowlist null = unrestricted (the default, and what every pre-existing org
+    has). Blocked connectors are returned too — an admin needs to see them to
+    turn them back on."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..core.services.connector_governance import list_connectors_for_org
+    cfg = db.get_org_connector_config(org_id)
+    return jsonify({"connectors": list_connectors_for_org(org_id),
+                    "allowlist": cfg.get("allowlist")})
+
+
+@records_bp.route('/organizations/<org_id>/connectors', methods=['PUT'])
+@require_role('admin')
+def update_connectors(org_id):
+    """Set (list of connector keys) or clear (null) the org's connector
+    allow-list. An empty list is valid and means no data sources may be linked.
+    Evidence-logged to org_compliance_log in the same transaction."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    if "allowlist" not in data:
+        return jsonify({"error": "pass allowlist: [connector keys] or null for unrestricted"}), 400
+    try:
+        return jsonify(db.set_org_connector_allowlist(org_id, data["allowlist"], _actor()))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error updating connector allow-list: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@records_bp.route('/organizations/<org_id>/connections', methods=['GET'])
+@require_role('admin')
+def list_connections(org_id):
+    """Who in this org has linked which data source — the answer to 'what
+    corporate data can our agents currently reach', which had none before.
+    No token material is returned."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify({"connections": db.list_org_connections(org_id)})
+    except Exception as e:
+        current_app.logger.error(f"Error listing connections: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @records_bp.route('/organizations/<org_id>/compliance-log', methods=['GET'])
 @require_role('admin')
 def compliance_log(org_id):
