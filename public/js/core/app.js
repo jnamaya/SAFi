@@ -516,6 +516,24 @@ function renderControlPanel() {
     else navReview.classList.add('hidden');
   }
 
+  // Knowledge tab. Unlike every other nav item this is NOT a pure role check:
+  // an editor always gets it, and a member gets it only when at least one
+  // knowledge base is actually shared with them. A tab whose sole content is a
+  // notice that you may not use it is the dead end dc203c5 removed for
+  // connector cards — "allowed" is not the same as "useful".
+  //
+  // Hidden by default in index.html and revealed here, so a slow or failed
+  // request leaves it hidden rather than briefly showing a tab that then
+  // returns an empty list.
+  const navKnowledge = document.getElementById('nav-knowledge');
+  if (navKnowledge) {
+    api.knowledgeAccess()
+      .then(access => {
+        if (access && access.visible) navKnowledge.classList.remove('hidden');
+      })
+      .catch(e => console.warn('knowledge access check failed', e));
+  }
+
   // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {

@@ -27,6 +27,7 @@ The load-bearing tests, and why each one exists:
 
 Run:  docker compose -f docker-compose.test.yml run --rm tests -k knowledge
 """
+import json
 import os
 import sys
 import unittest
@@ -160,6 +161,71 @@ class Authorization(KnowledgeBaseBase):
         kb = self.make_kb(visibility='member')
         login_as(self.client, self.editor2, "editor", org_id=self.org_id)
         self.assertEqual(403, self.client.delete(f'/api/knowledge-bases/{kb["id"]}').status_code)
+
+    def test_tab_is_hidden_from_a_member_with_nothing_shared(self):
+        """A tab whose only content is a notice that you may not use it is the
+        dead end dc203c5 removed for connector cards."""
+        self.make_kb(visibility='private')       # owner's, not shared
+        login_as(self.client, self.member, "member", org_id=self.org_id)
+        body = self.client.get('/api/knowledge-bases/access').get_json()
+        self.assertFalse(body["visible"])
+        self.assertFalse(body["can_manage"])
+        self.assertEqual(0, body["readable_count"])
+
+    def test_tab_appears_for_a_member_once_something_is_shared(self):
+        self.make_kb(visibility='member')
+        login_as(self.client, self.member, "member", org_id=self.org_id)
+        body = self.client.get('/api/knowledge-bases/access').get_json()
+        self.assertTrue(body["visible"])
+        self.assertFalse(body["can_manage"])   # visible, but read-only
+
+    def test_tab_always_visible_to_an_editor(self):
+        """Even with no knowledge bases at all — that is where they create one."""
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        body = self.client.get('/api/knowledge-bases/access').get_json()
+        self.assertTrue(body["visible"])
+        self.assertTrue(body["can_manage"])
+
+    def test_a_member_cannot_read_the_review_trail(self):
+        """A rejection reason is review deliberation and routinely contains what
+        the rejection was protecting — "unreleased vendor pricing", "not cleared
+        by legal", a salary band. It is stored in reason_enc BECAUSE it is
+        sensitive; returning the plaintext to every member of the org defeats
+        that. Inventory yes, governance conversation no."""
+        kb = self.make_kb(visibility='member')
+        doc = db.add_knowledge_base_document(
+            kb["id"], "priced.pdf", "text", self.owner, status='pending')
+        db.set_knowledge_base_document_status(
+            doc["id"], "reject", reviewer_id=self.reviewer,
+            reviewer_email="auditor@test",
+            reason="Contains unreleased vendor pricing.", org_id=self.org_id)
+
+        login_as(self.client, self.member, "member", org_id=self.org_id)
+        body = self.client.get(f'/api/knowledge-bases/{kb["id"]}').get_json()
+        seen = body["documents"][0]
+        # Still sees WHICH documents exist and whether they are in use.
+        self.assertEqual("priced.pdf", seen["filename"])
+        self.assertEqual("rejected", seen["status"])
+        # Never the trail.
+        for leaked in ("reason", "reviewer_email", "uploaded_by", "reviewed_at"):
+            self.assertNotIn(leaked, seen, f"{leaked} leaked to a member")
+        self.assertNotIn("unreleased vendor pricing", json.dumps(body))
+        self.assertFalse(body["can_manage"])
+
+    def test_the_owner_and_reviewers_still_see_the_trail(self):
+        kb = self.make_kb(visibility='member')
+        doc = db.add_knowledge_base_document(
+            kb["id"], "x.pdf", "text", self.owner, status='pending')
+        db.set_knowledge_base_document_status(
+            doc["id"], "reject", reviewer_id=self.reviewer,
+            reviewer_email="auditor@test", reason="Out of scope.", org_id=self.org_id)
+
+        for uid, role, why in ((self.owner, "editor", "owner manages the corpus"),
+                               (self.reviewer, "auditor", "reviewer must review")):
+            login_as(self.client, uid, role, org_id=self.org_id)
+            seen = self.client.get(f'/api/knowledge-bases/{kb["id"]}').get_json()["documents"][0]
+            self.assertEqual("Out of scope.", seen.get("reason"), why)
+            self.assertEqual("auditor@test", seen.get("reviewer_email"), why)
 
     def test_agent_cannot_attach_someone_elses_knowledge_base(self):
         """The retriever refuses unsafe PATHS; a valid id belonging to another

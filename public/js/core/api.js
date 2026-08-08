@@ -461,6 +461,11 @@ export async function listKnowledgeBases() {
     return httpGet(j('/api/knowledge-bases'));
 }
 
+/** Whether the Knowledge tab should appear, and in read-only or manage mode. */
+export async function knowledgeAccess() {
+    return httpGet(j('/api/knowledge-bases/access'));
+}
+
 /**
  * Only KBs with a built index — what the agent wizard may offer.
  *

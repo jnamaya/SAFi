@@ -77,7 +77,7 @@ def _can_write(kb, user_id):
     return bool(kb) and str(kb.get('created_by')) == str(user_id)
 
 
-def _shape(kb, documents=None):
+def _shape(kb, documents=None, review_detail=True):
     out = {
         "id": kb["id"],
         "name": kb["name"],
@@ -93,7 +93,11 @@ def _shape(kb, documents=None):
         "is_shared": kb.get("visibility") in SHARED_VISIBILITIES,
     }
     if documents is not None:
-        out["documents"] = [_shape_doc(d) for d in documents]
+        out["documents"] = [_shape_doc(d, include_review_detail=review_detail)
+                            for d in documents]
+        # Kept for everyone: an operator must be able to tell that the agent is
+        # grounded in less than the full list. That is the honest signal; the
+        # reasons behind it are not theirs.
         out["pending_count"] = sum(1 for d in documents if d.get("status") == "pending")
     elif "pending_count" in kb:
         # From list_knowledge_bases, which counts in SQL rather than making the
@@ -102,20 +106,46 @@ def _shape(kb, documents=None):
     return out
 
 
-def _shape_doc(doc):
-    return {
+def _shape_doc(doc, include_review_detail=True):
+    """Shapes one document for the API.
+
+    `include_review_detail=False` strips the REVIEW TRAIL — who uploaded it, who
+    reviewed it, when, why it was rejected — while keeping the inventory
+    (filename, status, size). That split exists because a rejection reason is
+    review deliberation and routinely contains exactly what the rejection was
+    protecting: "contains unreleased vendor pricing", "draft not cleared by
+    legal", "includes a staff member's salary band". `reason_enc` is encrypted
+    at rest for that reason, and handing the plaintext to every member who can
+    read the knowledge base defeats the point.
+
+    Operators still see WHICH documents exist and whether they are in use —
+    that transparency is the product's whole claim about grounding, and the
+    filenames already appear in answer citations. What they do not see is the
+    governance conversation about them.
+    """
+    out = {
         "id": doc["id"],
         "filename": doc["filename"],
         "size_bytes": doc.get("size_bytes") or 0,
         "char_count": doc.get("char_count") or 0,
         "status": doc.get("status"),
-        "uploaded_by": doc.get("uploaded_by"),
-        "reviewer_email": doc.get("reviewer_email"),
-        "reviewed_at": doc.get("reviewed_at").isoformat() if doc.get("reviewed_at") else None,
-        "reason": doc.get("reason"),
-        "self_approved": bool(doc.get("self_approved")),
         "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
     }
+    if include_review_detail:
+        out.update({
+            "uploaded_by": doc.get("uploaded_by"),
+            "reviewer_email": doc.get("reviewer_email"),
+            "reviewed_at": doc.get("reviewed_at").isoformat() if doc.get("reviewed_at") else None,
+            "reason": doc.get("reason"),
+            "self_approved": bool(doc.get("self_approved")),
+        })
+    return out
+
+
+def _sees_review_detail(kb, user_id, role):
+    """The owner (who needs it to manage the corpus) and reviewers (who need it
+    to review). Not every member of the org."""
+    return (str(kb.get('created_by')) == str(user_id)) or (role in REVIEWER_ROLES)
 
 
 def _sole_reviewer(user_id, org_id):
@@ -139,6 +169,33 @@ def list_knowledge_bases():
         return jsonify({"error": "Authentication required."}), 401
     rows = db.list_knowledge_bases(user_id, get_current_org_id(), get_current_role())
     return jsonify({"knowledge_bases": [_shape(kb) for kb in rows]})
+
+
+@knowledge_bp.route('/knowledge-bases/access', methods=['GET'], strict_slashes=False)
+def knowledge_access():
+    """Whether to show the Knowledge tab at all, and in which mode.
+
+    `can_manage` is role-only (editor+, matching agent creation). `visible`
+    additionally allows a member through when there is at least one knowledge
+    base they can read — a tab whose only content is a notice that you may not
+    use it is the dead end `dc203c5` removed for connector cards.
+
+    Deliberately a count, not the list: this is called on every app load,
+    including for members who will never open the tab.
+    """
+    user_id, _ = _actor()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    role = get_current_role()
+    can_manage = check_permission('editor')
+    readable = 0 if can_manage else len(
+        db.list_knowledge_bases(user_id, get_current_org_id(), role))
+    return jsonify({
+        "can_manage": can_manage,
+        "readable_count": readable,
+        "visible": bool(can_manage or readable),
+        "is_reviewer": role in REVIEWER_ROLES,
+    })
 
 
 @knowledge_bp.route('/knowledge-bases/available', methods=['GET'], strict_slashes=False)
@@ -211,12 +268,16 @@ def get_knowledge_base(kb_id):
     if not _can_read(kb, user_id, get_current_org_id(), get_current_role()):
         # 404 not 403: a KB the caller cannot see should not be confirmed to exist.
         return jsonify({"error": "Not found."}), 404
+    role = get_current_role()
     documents = db.list_knowledge_base_documents(kb_id)
-    body = _shape(kb, documents)
+    body = _shape(kb, documents,
+                  review_detail=_sees_review_detail(kb, user_id, role))
     # Lets the detail view offer approval on the caller's own uploads, and say
     # plainly that the sign-off will be recorded as non-independent.
-    body["sole_reviewer"] = (get_current_role() in REVIEWER_ROLES
+    body["sole_reviewer"] = (role in REVIEWER_ROLES
                              and _sole_reviewer(user_id, get_current_org_id()))
+    # Drives the read-only rendering: a member gets an inventory, not a console.
+    body["can_manage"] = _can_write(kb, user_id)
     return jsonify(body)
 
 

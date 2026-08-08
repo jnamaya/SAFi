@@ -86,7 +86,7 @@ async function renderList() {
     root.innerHTML = `
         ${canManage() ? `
         <div class="mb-6">
-            <button id="kb-create-btn" class="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group">
+            <button id="kb-create-btn" data-manage="1" class="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group">
                 <div class="p-2 bg-gray-100 dark:bg-neutral-800 rounded-full group-hover:bg-green-100 dark:group-hover:bg-green-800 transition-colors">
                     <svg class="w-6 h-6 text-gray-500 dark:text-gray-400 group-hover:text-green-600 dark:group-hover:text-green-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -98,10 +98,10 @@ async function renderList() {
                 </div>
             </button>
         </div>` : `
-        <div class="mb-6 p-4 border border-gray-200 dark:border-neutral-700 rounded-lg text-sm text-gray-500 dark:text-gray-400">
-            Knowledge bases are created by Editors and Admins. You can see the
-            ones shared with you below.
-        </div>`}
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            These are the document repositories shared with you. Agents attached
+            to one retrieve from it on every turn and cite the documents they used.
+        </p>`}
 
         ${bases.length === 0 ? `
         <p class="text-sm text-gray-500 dark:text-gray-400">No knowledge bases yet.</p>` : `
@@ -233,7 +233,10 @@ async function renderDetail() {
         return;
     }
 
-    const mine = currentUser && String(kb.created_by) === String(currentUser.id);
+    // From the server, not re-derived here. `_can_write` already owns this rule
+    // (ownership, not rank — mirroring delete_agent), and a second copy in the
+    // browser would drift the moment that rule changes.
+    const mine = !!kb.can_manage;
     const docs = kb.documents || [];
     const pending = kb.pending_count || 0;
 
@@ -459,7 +462,20 @@ function docRow(doc, kb, mine) {
         pending:  ['Awaiting approval', 'text-amber-600 dark:text-amber-400'],
         rejected: ['Rejected', 'text-red-600 dark:text-red-400'],
     };
-    const [label, cls] = badges[doc.status] || badges.private;
+    // A read-only viewer sees whether a document is grounding answers, not the
+    // workflow state that decided it. "Awaiting review" is kept because a
+    // partially-grounded agent is something an operator must be able to see;
+    // "rejected" becomes "not in use" because the fact of a rejection is
+    // governance deliberation and its reason is not sent to them at all.
+    const readOnlyBadges = {
+        private:  ['In use', 'text-green-600 dark:text-green-400'],
+        approved: ['In use', 'text-green-600 dark:text-green-400'],
+        pending:  ['Awaiting review', 'text-amber-600 dark:text-amber-400'],
+        rejected: ['Not in use', 'text-gray-500'],
+    };
+    const [label, cls] = (mine || isReviewer())
+        ? (badges[doc.status] || badges.private)
+        : (readOnlyBadges[doc.status] || readOnlyBadges.private);
     const selfUploaded = currentUser && String(doc.uploaded_by) === String(currentUser.id);
     const showReview = kb_shared && doc.status === 'pending' && isReviewer();
     // Own uploads are reviewable only under the sole-administrator exception.
