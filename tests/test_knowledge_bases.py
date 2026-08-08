@@ -206,29 +206,21 @@ class Authorization(KnowledgeBaseBase):
         db.update_knowledge_base(kb["id"], name="Second Name")
         self.assertEqual("Second Name", _resolve_kb_display_name(kb["id"]))
 
-    def test_tab_is_hidden_from_a_member_with_nothing_shared(self):
-        """A tab whose only content is a notice that you may not use it is the
-        dead end dc203c5 removed for connector cards."""
-        self.make_kb(visibility='private')       # owner's, not shared
-        login_as(self.client, self.member, "member", org_id=self.org_id)
-        body = self.client.get('/api/knowledge-bases/access').get_json()
-        self.assertFalse(body["visible"])
-        self.assertFalse(body["can_manage"])
-        self.assertEqual(0, body["readable_count"])
+    def test_the_knowledge_tab_gate_excludes_only_members(self):
+        """The tab is nav-level and gated in app.js, so this asserts the RULE
+        rather than an endpoint.
 
-    def test_tab_appears_for_a_member_once_something_is_shared(self):
-        self.make_kb(visibility='member')
-        login_as(self.client, self.member, "member", org_id=self.org_id)
-        body = self.client.get('/api/knowledge-bases/access').get_json()
-        self.assertTrue(body["visible"])
-        self.assertFalse(body["can_manage"])   # visible, but read-only
-
-    def test_tab_always_visible_to_an_editor(self):
-        """Even with no knowledge bases at all — that is where they create one."""
-        login_as(self.client, self.owner, "editor", org_id=self.org_id)
-        body = self.client.get('/api/knowledge-bases/access').get_json()
-        self.assertTrue(body["visible"])
-        self.assertTrue(body["can_manage"])
+        `auditor` must stay in the list and it is not about viewing: auditors
+        are half the reviewer set, and the approve/reject controls live in that
+        tab. Gating on editor+ would leave shared documents permanently pending
+        with nobody able to clear them.
+        """
+        source = (Path(__file__).resolve().parent.parent / "public" / "js" /
+                  "core" / "app.js").read_text()
+        line = next(l for l in source.splitlines() if "canSeeKnowledge" in l and "=" in l)
+        for role in ("admin", "editor", "auditor"):
+            self.assertIn(f"'{role}'", line, f"{role} must keep the Knowledge tab")
+        self.assertNotIn("'member'", line, "members must not get the Knowledge tab")
 
     def test_a_member_cannot_read_the_review_trail(self):
         """A rejection reason is review deliberation and routinely contains what

@@ -516,22 +516,24 @@ function renderControlPanel() {
     else navReview.classList.add('hidden');
   }
 
-  // Knowledge tab. Unlike every other nav item this is NOT a pure role check:
-  // an editor always gets it, and a member gets it only when at least one
-  // knowledge base is actually shared with them. A tab whose sole content is a
-  // notice that you may not use it is the dead end dc203c5 removed for
-  // connector cards — "allowed" is not the same as "useful".
+  // Knowledge tab: everyone except a plain member.
   //
-  // Hidden by default in index.html and revealed here, so a slow or failed
-  // request leaves it hidden rather than briefly showing a tab that then
-  // returns an empty list.
+  // AUDITOR IS IN THIS LIST ON PURPOSE, and it is not merely about viewing.
+  // Auditors are half the reviewer set (admin|auditor) — the approve/reject
+  // controls for shared knowledge live in this tab, so gating it on editor+
+  // would leave documents permanently pending with no one able to clear them.
+  //
+  // Members were briefly given a read-only view when a knowledge base was
+  // shared with them; that was removed as clutter. They still learn what an
+  // agent is grounded in where it matters — the chat header names the
+  // knowledge base and answers carry SOURCE citations.
+  const canSeeKnowledge = ['admin', 'editor', 'auditor'].includes(user.role);
+
+  // Hidden in the markup and revealed here, so nothing flashes before this runs.
   const navKnowledge = document.getElementById('nav-knowledge');
   if (navKnowledge) {
-    api.knowledgeAccess()
-      .then(access => {
-        if (access && access.visible) navKnowledge.classList.remove('hidden');
-      })
-      .catch(e => console.warn('knowledge access check failed', e));
+    if (canSeeKnowledge) navKnowledge.classList.remove('hidden');
+    else navKnowledge.classList.add('hidden');
   }
 
   // --- NEW: Hide entire Management Group if no children are visible ---

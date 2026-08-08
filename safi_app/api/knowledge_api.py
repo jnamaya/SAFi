@@ -171,33 +171,6 @@ def list_knowledge_bases():
     return jsonify({"knowledge_bases": [_shape(kb) for kb in rows]})
 
 
-@knowledge_bp.route('/knowledge-bases/access', methods=['GET'], strict_slashes=False)
-def knowledge_access():
-    """Whether to show the Knowledge tab at all, and in which mode.
-
-    `can_manage` is role-only (editor+, matching agent creation). `visible`
-    additionally allows a member through when there is at least one knowledge
-    base they can read — a tab whose only content is a notice that you may not
-    use it is the dead end `dc203c5` removed for connector cards.
-
-    Deliberately a count, not the list: this is called on every app load,
-    including for members who will never open the tab.
-    """
-    user_id, _ = _actor()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
-    role = get_current_role()
-    can_manage = check_permission('editor')
-    readable = 0 if can_manage else len(
-        db.list_knowledge_bases(user_id, get_current_org_id(), role))
-    return jsonify({
-        "can_manage": can_manage,
-        "readable_count": readable,
-        "visible": bool(can_manage or readable),
-        "is_reviewer": role in REVIEWER_ROLES,
-    })
-
-
 @knowledge_bp.route('/knowledge-bases/available', methods=['GET'], strict_slashes=False)
 def list_available_knowledge_bases():
     """The agent wizard's picker. Only KBs that can actually ground an answer.
