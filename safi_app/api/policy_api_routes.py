@@ -17,6 +17,39 @@ from ..core.faculties.synderesis import _has_usable_rubric
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
+
+# --- Integration endpoint, resolved per deployment -------------------------
+# The policy wizard's closing "getting started" panel prints an endpoint URL
+# and pastes it into a copy-pasteable Teams bot. That URL was hardcoded to the
+# public demo host, so every self-hoster — and every localhost developer — was
+# handed a snippet that pointed their bot at somebody else's SAFi, authenticated
+# with a key that instance has never heard of. It would fail as a 401 from a
+# domain the reader never typed.
+#
+# WEB_BASE_URL is the right source: it is what the OAuth callback and CORS
+# origins already derive from, so if it is wrong the deployment is already
+# broken in more visible ways. Resolved server-side rather than from
+# window.location.origin because the mobile shell serves from capacitor://
+# localhost, which is not an address any bot can post to.
+
+def _bot_endpoint_url():
+    from ..config import Config
+    return f"{Config.WEB_BASE_URL.rstrip('/')}/api/bot/process_prompt"
+
+
+def _is_publicly_reachable():
+    """False when the endpoint is a loopback address.
+
+    Teams, Slack and every other webhook caller reach the endpoint from the
+    internet. On a laptop the URL is correct and still unusable, and saying so
+    is the difference between a five-minute fix and an afternoon of debugging
+    Azure. Not a security control — purely a truthful hint in the guide.
+    """
+    from ..config import Config
+    host = Config.WEB_BASE_URL.lower()
+    return not any(h in host for h in ("localhost", "127.0.0.1", "0.0.0.0", "::1"))
+
+
 def validate_policy_data(data):
     errors = []
     if 'name' in data and not isinstance(data['name'], str):
@@ -135,7 +168,9 @@ def create_policy():
             "policy_id": pid,
             "credentials": {
                 "policy_id": pid,
-                "api_key": default_key
+                "api_key": default_key,
+                "endpoint_url": _bot_endpoint_url(),
+                "is_public_url": _is_publicly_reachable(),
             }
         }), 201
     except Exception as e:
@@ -207,7 +242,9 @@ def update_policy(policy_id):
             "ok": True,
             "credentials": {
                 "policy_id": policy_id,
-                "api_key": api_key
+                "api_key": api_key,
+                "endpoint_url": _bot_endpoint_url(),
+                "is_public_url": _is_publicly_reachable(),
             }
         })
     except Exception as e:
@@ -274,7 +311,9 @@ def rotate_key(policy_id):
             "ok": True,
             "credentials": {
                 "policy_id": policy_id,
-                "api_key": new_key
+                "api_key": new_key,
+                "endpoint_url": _bot_endpoint_url(),
+                "is_public_url": _is_publicly_reachable(),
             }
         })
     except Exception as e:

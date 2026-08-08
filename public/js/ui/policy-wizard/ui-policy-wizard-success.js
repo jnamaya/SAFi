@@ -1,5 +1,6 @@
 import * as ui from './../ui.js';
 import * as api from '../../core/api.js';
+import { escapeHtml } from '../../core/utils.js';
 
 export function renderSuccessStep(container, policyData, generatedCredentials) {
     if (!generatedCredentials) {
@@ -8,8 +9,15 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
     }
 
     const { policy_id, api_key } = generatedCredentials;
-    const publicUrl = "https://safi.selfalignmentframework.com";
-    const endpointUrl = `${publicUrl}/api/bot/process_prompt`;
+
+    // Comes from the server (Config.WEB_BASE_URL), never hardcoded and never
+    // window.location.origin: the mobile shell serves from capacitor://localhost,
+    // which is not an address any bot can post to. The fallback is only for a
+    // response predating this field.
+    const endpointUrl = generatedCredentials.endpoint_url
+        || `${window.location.origin}/api/bot/process_prompt`;
+    // Correct-but-unreachable is the confusing case worth naming out loud.
+    const isLocal = generatedCredentials.is_public_url === false;
 
     const isMasked = api_key.includes('*');
 
@@ -27,8 +35,14 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                 <div>
-                    <label class="block text-xs uppercase text-gray-400 font-bold mb-1">Public Endpoint</label>
-                    <code class="block p-3 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-xs truncate text-gray-600 dark:text-gray-300" title="${endpointUrl}">${endpointUrl}</code>
+                    <label class="block text-xs uppercase text-gray-400 font-bold mb-1">Endpoint</label>
+                    <code class="block p-3 bg-white dark:bg-black rounded border border-gray-200 dark:border-neutral-700 font-mono text-xs truncate text-gray-600 dark:text-gray-300" title="${escapeHtml(endpointUrl)}">${escapeHtml(endpointUrl)}</code>
+                    ${isLocal ? `
+                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        This is a local address. It is correct for testing from
+                        this machine, but Teams and Slack call in from the
+                        internet and cannot reach it — see step 3 below.
+                    </p>` : ''}
                 </div>
                 <div>
                     <label class="block text-xs uppercase text-gray-400 font-bold mb-1">API Key</label>
@@ -42,21 +56,93 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
             </div>
             
         <div class="mt-8 space-y-6">
-             <!-- Getting Started -->
+             <!-- STEP 1 — attach an agent. The only required step; everything
+                  below is optional integration. -->
              <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
                  <h4 class="font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                     Next Steps
+                     <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">1</span>
+                     Attach an agent — required
                  </h4>
                  <p class="text-sm text-blue-800 dark:text-blue-200 mt-2">
-                     Your policy is live and ready to use.
+                     A policy governs nothing until an agent uses it. Nothing else
+                     on this page is needed to start.
                  </p>
-                 <ol class="list-decimal list-inside text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
-                     <li>Go to the <strong>Agents</strong> tab.</li>
-                     <li>Create a new agent or edit an existing one.</li>
-                     <li>In the <strong>Identity</strong> step, select this policy from the dropdown.</li>
-                     <li>Every agent using this policy will follow its purpose, standards, and rules.</li>
+                 <ol class="list-decimal list-outside ml-5 text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
+                     <li>Go to <strong>Agents</strong> and create one, or edit an existing one.</li>
+                     <li>In <strong>step 1</strong>, choose this policy: <code class="font-mono text-xs bg-white/60 dark:bg-black/30 px-1 rounded">${escapeHtml(policy_id)}</code></li>
+                     <li>In <strong>step 2</strong>, pick its tools and knowledge base — this policy decides what is on offer there.</li>
+                     <li>Chat with the agent. Every turn is scored against this policy's standards and appears in the <strong>Audit Hub</strong>.</li>
                  </ol>
+                 <p class="text-xs text-blue-700/80 dark:text-blue-300/80 mt-3">
+                     Editing the policy later re-governs every agent using it, on their next turn. No need to touch the agents again.
+                 </p>
+             </div>
+
+             <!-- STEP 2 — the fastest possible proof the key works. This was
+                  missing, and it is the check that isolates "my credentials are
+                  wrong" from "my bot framework is wrong". -->
+             <div class="border border-gray-200 dark:border-neutral-700 rounded-xl p-5">
+                 <h4 class="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                     <span class="w-6 h-6 rounded-full bg-gray-600 text-white text-xs flex items-center justify-center font-bold shrink-0">2</span>
+                     Test the endpoint — 30 seconds
+                 </h4>
+                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                     Run this before wiring up any chat platform. If it returns a
+                     governed answer, your endpoint and key are correct and
+                     anything that fails afterwards is on the platform side.
+                 </p>
+                 <div class="mt-3 rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-700">
+                     <div class="flex justify-end p-2 bg-[#2d2d2d]">
+                         <button id="btn-copy-curl" class="text-xs text-gray-300 hover:text-white px-2 py-1 bg-white/10 rounded">Copy</button>
+                     </div>
+                     <pre id="curl-content" class="p-4 text-xs font-mono text-gray-300 bg-[#1e1e1e] whitespace-pre overflow-x-auto">curl -X POST ${escapeHtml(endpointUrl)} \\
+  -H "X-API-KEY: ${escapeHtml(api_key)}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "What are you allowed to help with?",
+       "user_id": "test-user",
+       "conversation_id": "test-1"}'</pre>
+                 </div>
+                 <ul class="text-xs text-gray-500 dark:text-gray-400 mt-3 space-y-1 list-disc list-outside ml-4">
+                     <li><strong>200</strong> with a <code class="font-mono">finalOutput</code> field — working.</li>
+                     <li><strong>401</strong> — the key is wrong, or was rotated after you copied it.</li>
+                     <li><strong>Connection refused</strong> — SAFi is not reachable at that address from where you ran the command.</li>
+                 </ul>
+                 ${isMasked ? `
+                 <p data-masked-notice class="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                     The key above is masked because it was created earlier and is
+                     only shown once. Click <strong>Rotate</strong> to get a usable one.
+                 </p>` : ''}
+             </div>
+
+             <!-- STEP 3 — platform integration. Prerequisites first: the
+                  original guide handed over a Python file with no mention that
+                  it needs a public HTTPS address and an Azure registration,
+                  which is where people actually got stuck. -->
+             <div class="border border-gray-200 dark:border-neutral-700 rounded-xl p-5">
+                 <h4 class="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                     <span class="w-6 h-6 rounded-full bg-gray-600 text-white text-xs flex items-center justify-center font-bold shrink-0">3</span>
+                     Connect a chat platform — optional
+                 </h4>
+                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                     Any client that can POST JSON works — the bot code below is one
+                     example, not a requirement. Before you start, you need:
+                 </p>
+                 <ul class="text-sm text-gray-600 dark:text-gray-400 mt-2 space-y-1 list-disc list-outside ml-5">
+                     <li>Somewhere to host the bot that Microsoft can reach over <strong>HTTPS</strong> — it is a separate service from SAFi.</li>
+                     <li>An <strong>Azure Bot</strong> registration, for the app ID and password the code expects.</li>
+                     <li>${isLocal
+                        ? `A publicly reachable SAFi. Yours is currently at a local
+                           address, so the bot cannot call it from Azure — put SAFi
+                           behind a domain, or use a tunnel such as
+                           <code class="font-mono text-xs">ngrok</code> while testing.`
+                        : `Your SAFi endpoint, already public: <code class="font-mono text-xs">${escapeHtml(endpointUrl)}</code>`}</li>
+                 </ul>
+                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
+                     Keep the key in an environment variable in real deployments —
+                     it is inlined below only so the snippet runs as-is.
+                     <strong>Set <code class="font-mono">SAFI_PERSONA</code> to your own agent's key</strong>;
+                     the placeholder is a built-in demo agent that may not exist on your install.
+                 </p>
              </div>
 
              <!-- Teams Integration Code -->
@@ -87,9 +173,13 @@ APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
 APP_TENANT_ID = os.environ.get("MicrosoftAppTenantId", None)
 
 # SAFI CONFIGURATION (Auto-Generated)
-SAFI_API_URL = os.environ.get("SAFI_API_URL", "${endpointUrl}")
-SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${api_key}") 
-SAFI_PERSONA = "fiduciary" # Change this as needed
+SAFI_API_URL = os.environ.get("SAFI_API_URL", "${escapeHtml(endpointUrl)}")
+SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${escapeHtml(api_key)}")
+
+# CHANGE THIS to your own agent's key (Agents tab -> the agent -> its key).
+# "fiduciary" is a built-in demo agent and may not be enabled on this install,
+# in which case every message comes back as an unknown-persona error.
+SAFI_PERSONA = os.environ.get("SAFI_PERSONA", "fiduciary")
 
 app = Flask(__name__)
 settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD, channel_auth_tenant=APP_TENANT_ID)
@@ -179,6 +269,14 @@ if __name__ == "__main__":
         });
     }
 
+    const copyCurlBtn = document.getElementById('btn-copy-curl');
+    if (copyCurlBtn) {
+        copyCurlBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(document.getElementById('curl-content').innerText);
+            ui.showToast('Command copied!', 'success');
+        });
+    }
+
     const copyCodeBtn = document.getElementById('btn-copy-code');
     if (copyCodeBtn) {
         copyCodeBtn.addEventListener('click', () => {
@@ -221,6 +319,20 @@ if __name__ == "__main__":
                         // Regex to replace the value in SAFI_BOT_SECRET line
                         codeBlock.innerText = codeBlock.innerText.replace(/SAFI_BOT_SECRET = os\.environ\.get\("SAFI_BOT_SECRET", ".*?"\)/, `SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${newKey}")`);
                     }
+
+                    // 3b. And the curl command. Missing this was the whole point
+                    // of rotating: the reader copies the test command, gets a
+                    // 401 from the key they just replaced, and concludes the
+                    // rotation broke something.
+                    const curlBlock = document.getElementById('curl-content');
+                    if (curlBlock) {
+                        curlBlock.innerText = curlBlock.innerText.replace(
+                            /X-API-KEY: [^"]*/, `X-API-KEY: ${newKey}`);
+                    }
+
+                    // 3c. The masked-key notices are now wrong — a real key exists.
+                    document.querySelectorAll('[data-masked-notice]')
+                        .forEach(el => el.remove());
 
                     ui.showToast('New Key Generated!', 'success');
                 } else {
