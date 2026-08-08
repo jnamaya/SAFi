@@ -1,0 +1,45 @@
+[Unit]
+# Knowledge-base indexer. Builds user-created RAG corpora from the APPROVED
+# document subset, out of the request path.
+#
+# WHY THIS UNIT EXISTS
+# --------------------
+# docker-compose.yml gets an `indexer` service (SERVICE=indexer). Bare-metal
+# installs got nothing when the feature shipped, so a knowledge base created on
+# such a host sat at status='pending' forever and the UI said "Indexing.
+# Documents become retrievable when this finishes" indefinitely — with no error
+# anywhere, because nothing was failing. Nothing was running.
+#
+# NOT a .timer like safi-retention-purge. This is a long-running poll loop, not
+# a periodic job: an approval must reach the index in seconds, not at the next
+# tick. Restart=always because a crash here is silent — the app keeps serving,
+# agents just quietly stop getting fresh grounding.
+Description=SAFi knowledge-base indexer (user-created RAG corpora)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+
+# Must match the paths the app reads from, or the indexer writes indexes the
+# web process never sees — which looks exactly like indexing never finishing.
+Environment=SAFI_VECTOR_STORE_PATH=/var/www/safi/vector_store
+Environment=SAFI_MODEL_CACHE_DIR=/var/www/safi/cache
+
+ExecStart=/var/www/safi/venv/bin/python /var/www/safi/scripts/kb_indexer_service.py
+
+# Embedding is CPU-heavy and bursty. Deprioritised so a large upload cannot
+# starve the web worker on a single-core box.
+Nice=10
+IOSchedulingClass=idle
+
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
