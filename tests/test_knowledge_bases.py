@@ -575,6 +575,106 @@ class PolicyAuthorization(unittest.TestCase):
                         "display name is resolved")
 
 
+# --- Does the evidence reach the prompt? ----------------------------------
+
+class RetrievedContextReachesThePrompt(unittest.TestCase):
+    """The failure that made the agent oblivious to its own knowledge base.
+
+    Retrieved context reached the model ONLY through a `{retrieved_context}`
+    placeholder in the agent's worldview. Every built-in RAG agent has one;
+    no wizard-built agent does. So for custom agents the context was
+    retrieved, formatted, returned to the orchestrator, written to the
+    governance record and handed to the Conscience — and never placed in the
+    prompt.
+
+    Every diagnostic pointed the wrong way, including mine: the governance
+    record showed 7724 characters of correct context, so it looked like the
+    model was ignoring supplied evidence. It had never been supplied.
+
+    These tests assert against the PROMPT, which is the only thing that
+    determines what the model can know.
+    """
+
+    def _intellect(self, worldview):
+        from safi_app.core.faculties.intellect import IntellectEngine
+        engine = IntellectEngine.__new__(IntellectEngine)   # no LLM, no network
+        engine.profile = {"worldview": worldview, "style": ""}
+        engine.prompt_config = {}
+        engine.retriever = None
+        return engine
+
+    def _build_prompt(self, worldview, context):
+        """Reproduces the injection branch under test."""
+        engine = self._intellect(worldview)
+        wv = engine.profile["worldview"]
+        injection = ""
+        if "{retrieved_context}" in wv:
+            wv = wv.format(retrieved_context=context or "[NO DOCUMENTS FOUND]")
+        elif context:
+            template = engine.prompt_config.get(
+                "retrieved_context_template",
+                "RETRIEVED DOCUMENTS — this is the authoritative source for anything you state "
+                "about the organization's own policies, procedures, products or people. Quote and "
+                "cite the SOURCE names given below. If these documents do not cover part of the "
+                "question, say so explicitly instead of supplying the detail from general "
+                "knowledge, and never invent a section number, form name, threshold or approver "
+                "that does not appear here.\n<retrieved_documents>\n{retrieved_context}\n"
+                "</retrieved_documents>")
+            injection = template.format(retrieved_context=context)
+        return "\n\n".join(filter(None, [wv, injection]))
+
+    def test_a_custom_worldview_still_receives_the_context(self):
+        """The regression. A wizard-built worldview has no placeholder."""
+        prompt = self._build_prompt(
+            "You are the Accion IT operations assistant.",
+            "SOURCE: sop.pdf\nCONTENT:\nApproved: Lenovo ThinkPad X1 Carbon.")
+        self.assertIn("ThinkPad", prompt)
+        self.assertIn("sop.pdf", prompt)
+
+    def test_a_placeholder_worldview_is_not_double_injected(self):
+        """Built-ins position the evidence themselves; appending it again would
+        duplicate a multi-kilobyte block in every prompt."""
+        prompt = self._build_prompt(
+            "Answer only from:\n{retrieved_context}\nBe brief.",
+            "SOURCE: sop.pdf\nCONTENT:\nApproved: Lenovo ThinkPad X1 Carbon.")
+        self.assertEqual(1, prompt.count("ThinkPad"))
+        self.assertNotIn("RETRIEVED DOCUMENTS", prompt)
+
+    def test_no_context_adds_no_empty_block(self):
+        prompt = self._build_prompt("You are an assistant.", "")
+        self.assertNotIn("RETRIEVED DOCUMENTS", prompt)
+        self.assertEqual("You are an assistant.", prompt.strip())
+
+    def test_the_default_template_forbids_inventing_specifics(self):
+        """The fabrication seen live was invented section numbers and approvers,
+        so the instruction that ships with the evidence names them."""
+        prompt = self._build_prompt("You are an assistant.", "SOURCE: x\nCONTENT:\ny")
+        for phrase in ("section number", "approver", "say so explicitly"):
+            self.assertIn(phrase, prompt)
+
+    def test_intellect_puts_the_injection_in_the_system_prompt(self):
+        """Source-level guard: computing the injection and forgetting to include
+        it in the assembled prompt is exactly the original bug."""
+        source = (Path(__file__).resolve().parent.parent / "safi_app" / "core" /
+                  "faculties" / "intellect.py").read_text()
+        build = source[source.index("system_prompt = "):]
+        self.assertIn("retrieved_context_injection", build.split("]))")[0])
+
+    def test_every_builtin_rag_agent_still_has_its_placeholder(self):
+        """If one loses it, route 2 now covers it — but silently changing where
+        a built-in positions its evidence should be a deliberate act."""
+        # Direct path, not agents_pkg.__file__ — that directory has no
+        # __init__.py, so it imports as a namespace package whose __file__ is
+        # None.
+        agent_dir = (Path(__file__).resolve().parent.parent /
+                     "safi_app" / "core" / "agents")
+        for f in agent_dir.glob("*.py"):
+            text = f.read_text()
+            if '"rag_knowledge_base"' in text and "None" not in text.split('"rag_knowledge_base"')[1][:20]:
+                self.assertIn("{retrieved_context}", text,
+                              f"{f.name} has a knowledge base but no placeholder")
+
+
 # --- Chunk rendering ------------------------------------------------------
 
 class ChunkRendering(unittest.TestCase):

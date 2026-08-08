@@ -268,10 +268,44 @@ class IntellectEngine:
 
         full_context_injection = "\n\n".join(filter(None, [plugin_context_string, retrieved_context_string]))
 
+        # Retrieved evidence reaches the model by exactly one of two routes.
+        #
+        # 1. The agent's worldview carries a {retrieved_context} placeholder and
+        #    positions the evidence itself. Every built-in RAG agent does this
+        #    (safi_steward, bible_scholar, contoso_admin, fiduciary).
+        #
+        # 2. It does not, and the block below appends the evidence as its own
+        #    labelled section.
+        #
+        # Route 2 did not exist until 2026-08-08, and its absence was a silent,
+        # total failure for every WIZARD-BUILT agent: a custom worldview has no
+        # placeholder, so the context was retrieved, formatted, returned to the
+        # orchestrator (which stored it in the governance record and handed it to
+        # the Conscience) and NEVER PUT IN THE PROMPT. The agent was genuinely
+        # oblivious to its own knowledge base while every diagnostic said the
+        # documents had been retrieved — because they had been.
+        #
+        # `retrieved_context` is deliberately NOT in the system_prompt list
+        # below; keeping the two routes mutually exclusive is what stops the
+        # evidence being injected twice for the built-ins.
+        retrieved_context_injection = ""
         if "{retrieved_context}" in worldview:
             worldview = worldview.format(
                 retrieved_context=full_context_injection if full_context_injection else "[NO DOCUMENTS FOUND]"
             )
+        elif full_context_injection:
+            template = self.prompt_config.get(
+                "retrieved_context_template",
+                "RETRIEVED DOCUMENTS — this is the authoritative source for anything you state "
+                "about the organization's own policies, procedures, products or people. Quote and "
+                "cite the SOURCE names given below. If these documents do not cover part of the "
+                "question, say so explicitly instead of supplying the detail from general "
+                "knowledge, and never invent a section number, form name, threshold or approver "
+                "that does not appear here.\n<retrieved_documents>\n{retrieved_context}\n"
+                "</retrieved_documents>"
+            )
+            retrieved_context_injection = template.format(
+                retrieved_context=full_context_injection)
 
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far.\n<summary>{memory_summary}</summary>"
@@ -323,6 +357,7 @@ class IntellectEngine:
 
         system_prompt = "\n\n".join(filter(None, [
             worldview,
+            retrieved_context_injection,
             user_name_injection,
             user_profile_injection,
             agent_context_injection,
