@@ -162,6 +162,50 @@ class Authorization(KnowledgeBaseBase):
         login_as(self.client, self.editor2, "editor", org_id=self.org_id)
         self.assertEqual(403, self.client.delete(f'/api/knowledge-bases/{kb["id"]}').status_code)
 
+    def test_owner_can_rename_without_disturbing_the_index(self):
+        """A name is display metadata only — the index is named by the KB's
+        UUID, so a rename touches no vectors and needs no rebuild. Agents keep
+        working because they store the id, not the name."""
+        kb = self.make_kb()
+        db.set_knowledge_base_status(kb["id"], 'ready', chunk_count=12,
+                                     mark_indexed=True)
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        r = self.client.put(f'/api/knowledge-bases/{kb["id"]}',
+                            json={"name": "Renamed Corpus",
+                                  "description": "Now with a description."})
+        self.assertEqual(200, r.status_code, r.get_json())
+        after = db.get_knowledge_base(kb["id"])
+        self.assertEqual("Renamed Corpus", after["name"])
+        self.assertEqual("Now with a description.", after["description"])
+        # Untouched: no rebuild queued, vectors intact.
+        self.assertEqual('ready', after["status"])
+        self.assertEqual(12, after["chunk_count"])
+
+    def test_rename_rejects_an_over_long_name(self):
+        """VARCHAR(255). Without the check this is a 500, not a message the
+        author can act on."""
+        kb = self.make_kb()
+        login_as(self.client, self.owner, "editor", org_id=self.org_id)
+        r = self.client.put(f'/api/knowledge-bases/{kb["id"]}',
+                            json={"name": "x" * 256})
+        self.assertEqual(400, r.status_code)
+        self.assertEqual("Test Corpus", db.get_knowledge_base(kb["id"])["name"])
+
+    def test_a_non_owner_cannot_rename(self):
+        kb = self.make_kb(visibility='member')
+        login_as(self.client, self.editor2, "editor", org_id=self.org_id)
+        r = self.client.put(f'/api/knowledge-bases/{kb["id"]}',
+                            json={"name": "Hijacked"})
+        self.assertEqual(403, r.status_code)
+        self.assertEqual("Test Corpus", db.get_knowledge_base(kb["id"])["name"])
+
+    def test_an_agent_keeps_working_across_a_rename(self):
+        """The agent stores the id; the display name is resolved per turn."""
+        from safi_app.core.faculties.synderesis import _resolve_kb_display_name
+        kb = self.make_kb()
+        db.update_knowledge_base(kb["id"], name="Second Name")
+        self.assertEqual("Second Name", _resolve_kb_display_name(kb["id"]))
+
     def test_tab_is_hidden_from_a_member_with_nothing_shared(self):
         """A tab whose only content is a notice that you may not use it is the
         dead end dc203c5 removed for connector cards."""

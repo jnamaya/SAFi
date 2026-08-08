@@ -298,6 +298,13 @@ def update_knowledge_base(kb_id):
         return jsonify({"error": "Forbidden: only the owner can modify this knowledge base."}), 403
 
     data = request.get_json(force=True, silent=True) or {}
+
+    # Same bound the create route applies. Without it a long name reaches a
+    # VARCHAR(255) column and surfaces as a 500 rather than a message the
+    # author can act on.
+    if 'name' in data and len((data.get('name') or '').strip()) > 255:
+        return jsonify({"error": "Name is too long (max 255 characters)."}), 400
+
     visibility = data.get('visibility')
     if visibility is not None and visibility not in ('private',) + SHARED_VISIBILITIES:
         return jsonify({"error": "Invalid visibility."}), 400

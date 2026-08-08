@@ -246,11 +246,20 @@ async function renderDetail() {
             All knowledge bases
         </button>
 
-        <div class="flex items-start justify-between gap-4 mb-1">
-            <h2 class="text-xl font-bold text-gray-900 dark:text-white">${escapeHtml(kb.name)}</h2>
-            ${statusPill(kb)}
+        <div id="kb-header">
+            <div class="flex items-start justify-between gap-4 mb-1">
+                <h2 class="text-xl font-bold text-gray-900 dark:text-white">${escapeHtml(kb.name)}</h2>
+                <div class="flex items-center gap-2 shrink-0">
+                    ${statusPill(kb)}
+                    ${mine ? `
+                    <button id="kb-edit-name" title="Rename"
+                        class="p-1 text-gray-400 hover:text-gray-900 dark:hover:text-white">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>` : ''}
+                </div>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">${escapeHtml(kb.description || '')}</p>
         </div>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">${escapeHtml(kb.description || '')}</p>
 
         ${kb.status === 'failed' ? `
         <div class="mb-4 p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/10 text-sm text-red-800 dark:text-red-300">
@@ -314,6 +323,7 @@ async function renderDetail() {
         renderList();
     });
     if (mine) {
+        wireRename(kb);
         wireSharing(kb);
         wireUpload(kb);
         document.getElementById('kb-reindex')?.addEventListener('click', async (e) => {
@@ -347,6 +357,75 @@ function allPendingAreMine(kb, docs) {
     const pendingDocs = (docs || []).filter(d => d.status === 'pending');
     return pendingDocs.length > 0 &&
         pendingDocs.every(d => String(d.uploaded_by) === String(currentUser.id));
+}
+
+/**
+ * Inline rename + re-describe, owner only.
+ *
+ * The name is display-only metadata: it lives in MySQL and never reaches the
+ * filesystem (the index is named by the KB's UUID), so renaming touches no
+ * vectors and needs no rebuild. That is exactly why it is safe to expose — and
+ * worth stating, because "renaming a corpus" sounds like it should be
+ * expensive.
+ *
+ * Agents keep working across a rename for the same reason: they store the id,
+ * and the chat header resolves the display name per turn.
+ */
+function wireRename(kb) {
+    const btn = document.getElementById('kb-edit-name');
+    if (!btn) return;
+
+    btn.addEventListener('click', () => {
+        const header = document.getElementById('kb-header');
+        if (!header) return;
+        header.innerHTML = `
+            <label class="block text-xs uppercase text-gray-400 font-bold mb-1">Name</label>
+            <input id="kb-rename-input" type="text" maxlength="255" value="${escapeHtml(kb.name)}"
+                class="w-full mb-3 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-gray-900 dark:text-white">
+            <label class="block text-xs uppercase text-gray-400 font-bold mb-1">Description</label>
+            <textarea id="kb-redesc-input" rows="2"
+                class="w-full mb-2 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none resize-y text-gray-900 dark:text-white">${escapeHtml(kb.description || '')}</textarea>
+            <div id="kb-rename-error" class="hidden text-sm text-red-600 dark:text-red-400 mb-2"></div>
+            <div class="flex gap-2 mb-4">
+                <button id="kb-rename-save" class="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white">Save</button>
+                <button id="kb-rename-cancel" class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-neutral-600 text-gray-700 dark:text-gray-300">Cancel</button>
+            </div>`;
+
+        const input = document.getElementById('kb-rename-input');
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+
+        const save = async () => {
+            const name = input.value.trim();
+            const err = document.getElementById('kb-rename-error');
+            if (!name) {
+                err.textContent = 'A name is required.';
+                err.classList.remove('hidden');
+                return;
+            }
+            try {
+                await api.updateKnowledgeBase(kb.id, {
+                    name,
+                    description: document.getElementById('kb-redesc-input').value.trim(),
+                });
+            } catch (e) {
+                err.textContent = e.message || 'Could not save.';
+                err.classList.remove('hidden');
+                return;
+            }
+            renderDetail();
+        };
+
+        document.getElementById('kb-rename-save').addEventListener('click', save);
+        document.getElementById('kb-rename-cancel').addEventListener('click', renderDetail);
+        // Enter saves from the name field; Escape abandons from either.
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+        });
+        document.getElementById('kb-header').addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') renderDetail();
+        });
+    });
 }
 
 function sharingCard(kb) {
