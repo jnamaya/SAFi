@@ -18,109 +18,6 @@ from ..core.faculties.synderesis import _has_usable_rubric
 policy_api_bp = Blueprint('policy_api', __name__)
 
 
-# --- Document classification (item 23) -------------------------------------
-# Pass 1 of turning an organization's existing AI policy into SAFi governance.
-#
-# The hard part is not producing rubrics — it is REFUSING to. Measured against a
-# real 15-page corporate AI Use Policy, roughly 11 pages contain no
-# agent-constraining content at all: committee membership, training obligations,
-# an intake questionnaire, disciplinary process. A model told to "extract values"
-# invents a rubric for every one of them, and those rubrics then score the wrong
-# party while the agent looks misaligned. So this pass classifies first and
-# compiles second, and reporting a clause as unconvertible is a correct answer,
-# not a failure.
-#
-# Three destinations, in the order they should be preferred (see the determinism
-# invariant in CLAUDE.md — prefer the tier that needs no model):
-#   structural / blacklist  -> checked literally by the Will. No model, ever.
-#   value                   -> a rubric the Conscience scores. Needs judgment.
-#   none                    -> an obligation on a person or a process. Dropped.
-_DOC_CLASSIFY_SYSTEM = (
-    "You are an AI governance analyst. You read an organization's existing AI policy and "
-    "identify only what can be enforced against an AI agent's RESPONSES. "
-    "Output a single JSON object and nothing else."
-)
-
-_DOC_CLASSIFY_PROMPT = """\
-Below is an organization's AI policy document. Deployment context: '{context}'.
-
-Identify every clause that can be enforced against what an AI AGENT SAYS, and assign each
-one a destination. Ignore document structure (headings, page numbers, tables of contents).
-
-DESTINATIONS, in order of preference — always choose the earliest one that genuinely fits:
-
-1. "structural" — the clause requires the response to INCLUDE something, or forbids a
-   format. **Any clause requiring the response to include, state, disclose, cite, label
-   or add something is ALWAYS "structural" — never "value".** This is not a preference:
-   a requirement to include something can only be broken by leaving it out, and an
-   omission scored as a standard fires on every answer that never raised the topic,
-   blocking ordinary traffic. Structural checks instead APPEND the missing text.
-   Include:
-     - "disclaimer_text": the exact sentence the response must contain. Always supply it
-       for a clause of this kind — write it yourself, as the agent would say it, in one
-       short sentence. A clause routed here without it cannot be enforced.
-   Examples: "disclose that AI was used" -> structural. "cite your sources" -> structural.
-   "include a statement about human oversight" -> structural.
-2. "blacklist" — a specific literal word or phrase that must never appear. Only for genuine
-   fixed strings, never for topics or concepts.
-3. "value" — the clause FORBIDS AN ACT and judging whether the act occurred needs
-   interpretation (e.g. revealing personal data, fabricating a citation, presenting AI
-   output as original expert work). It must be possible to describe the failure as
-   something the response DID. If the only way to fail is by omitting something, it
-   belongs in "structural", not here.
-4. "none" — the clause governs a PERSON or a PROCESS, not a response. This is the correct
-   answer for most of a typical policy. Examples that are ALWAYS "none":
-     - committee membership, meeting cadence, who approves what
-     - training and awareness obligations
-     - intake forms, questionnaires, approval workflows, review cycles
-     - disciplinary consequences, reporting channels, contact addresses
-     - procurement, licensing, which vendors or accounts staff may use
-     - anything phrased as a duty of staff BEFORE or AFTER using an AI tool,
-       including rules about what may be typed INTO a tool (an agent cannot
-       police its own input)
-
-Do not stretch a clause to reach a destination. If its subject is a person, a team, a
-vendor or a workflow, it is "none" — say so and give the reason plainly.
-
-ALSO EXTRACT:
-- "definitions": any defining passage that ENUMERATES what a governed term covers (e.g. a
-  list of what counts as Personal Information). Return the term and its full enumeration
-  verbatim. These are disproportionately valuable: they turn a vague rubric into a
-  checkable one, and most policies do not provide them.
-- "suggested": starting text for the author's form, drawn from the document — never
-  invented. Leave any field as "" when the document does not support it.
-    - "name": a short name for this policy, from the document's own title or subject.
-    - "purpose": 100-150 words stating what the governed agents exist to do, the
-      principles they operate by, and the limits of their authority. Write it in the
-      second person, addressed to the agent, as an operating frame it reasons from.
-    - "scope": ONE sentence, in the form
-      "<topic area> only — <specific subtopics>. No <excluded areas>."
-- "notes": observations the author must act on. In particular, say so explicitly if the
-  document REFERENCES the organization's mission or core values without stating them —
-  those cannot be derived from this document and must NOT be invented or paraphrased
-  into "purpose". A policy that defers to a separate code of conduct is common.
-
-Return a single JSON object:
-{{
-  "clauses": [
-    {{ "text": "<the clause, verbatim and trimmed>",
-       "destination": "structural" | "blacklist" | "value" | "none",
-       "reason": "<one sentence: why this destination>",
-       "disclaimer_text": "<only when destination is structural and it mandates a disclosure>",
-       "phrase": "<only when destination is blacklist: the literal string>" }}
-  ],
-  "definitions": [ {{ "term": "...", "enumeration": "..." }} ],
-  "suggested": {{ "name": "...", "purpose": "...", "scope": "..." }},
-  "notes": [ "..." ]
-}}
-
-POLICY DOCUMENT:
-<document>
-{document}
-</document>
-"""
-
-
 # --- Integration endpoint, resolved per deployment -------------------------
 # The policy wizard's closing "getting started" panel prints an endpoint URL
 # and pastes it into a copy-pasteable Teams bot. That URL was hardcoded to the
@@ -475,18 +372,13 @@ async def generate_policy_content_endpoint():
         from safi_app.config import Config
         
         # Most wizard tasks are short drafting jobs the light model handles well.
-        # The document tasks are not: classifying a 15-page policy, or writing a
-        # rubric per standard, is the heaviest structured-extraction work in the
-        # product. Measured on a real 15-page AI policy, the light model
-        # (gpt-oss-20b) returned a bare "{}" — two characters — while the
-        # Conscience model returned five correctly classified clauses.
-        #
-        # A degenerate "{}" is the dangerous failure here because it PARSES: it
-        # reaches the author as "nothing in this document constrains an agent's
-        # answers", which is a confident falsehood about their policy. Routing
-        # these to the auditing model is the fix; the guard below catches the
-        # residual case.
-        _DOCUMENT_TASKS = ('classify_document', 'compile_rules', 'ai_standards')
+        # The ones that WRITE GOVERNANCE are not: a rubric per standard is
+        # structured output the light model degenerates on. Measured on a real
+        # policy, gpt-oss-20b returned a bare "{}" — two characters — where the
+        # Conscience model returned a full analysis. A degenerate "{}" is the
+        # dangerous shape because it PARSES, so it reaches the author as an
+        # empty finding rather than a failure.
+        _DOCUMENT_TASKS = ('compile_rules', 'ai_standards')
         model = Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS else Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
@@ -571,35 +463,6 @@ async def generate_policy_content_endpoint():
                  "Return a JSON array of exactly 5 rule strings. Each rule describes grounds for rejection."
              )
         
-        # Pass 1 of the document flow: classify, do not compile. The clauses it
-        # routes to "value" are then handed to compile_rules, which turns them
-        # into rubrics — so the two passes share machinery rather than each
-        # having its own idea of what a governed standard looks like.
-        elif gen_type == 'classify_document':
-             document = (data.get('document_text') or '').strip()
-             if not document:
-                 return jsonify({"error": "No document text provided."}), 400
-             if len(document) > Config.MAX_DOCUMENT_CHARS:
-                 # Truncating silently would drop clauses the author believes were
-                 # considered, which is worse than refusing: the "not converted"
-                 # list is read as a complete inventory of what SAFi does not cover.
-                 return jsonify({
-                     "error": (
-                         f"Document is {len(document):,} characters; the limit is "
-                         f"{Config.MAX_DOCUMENT_CHARS:,}. Split it and classify each part, "
-                         "so nothing is dropped without being listed."
-                     )
-                 }), 400
-             sys_prompt = _DOC_CLASSIFY_SYSTEM
-             prompt = _DOC_CLASSIFY_PROMPT.format(context=context, document=document)
-             # Extraction, not drafting: a clause the author never wrote is worse
-             # than a clause missed, because it arrives looking authoritative.
-             gen_temperature = 0.0
-             # A long policy yields many clauses plus verbatim definitions. Too
-             # small a budget truncates the JSON, and a truncated classification
-             # silently under-reports what was found.
-             gen_max_tokens = 8192
-
         # Compiles plain-language prohibitions into hard-gate values the engine
         # actually enforces. Prose rules reach no enforcement path on their own:
         # WillGate is deterministic and reads only structural_requirements,
@@ -802,90 +665,6 @@ async def generate_policy_content_endpoint():
              except IndexError:
                 # Fallback if markdown format is weird
                 cleaned = cleaned.replace("```json", "").replace("```", "").strip()
-
-        if gen_type == 'classify_document':
-            try:
-                if "{" in cleaned: cleaned = cleaned[cleaned.find("{"):]
-                if "}" in cleaned: cleaned = cleaned[:cleaned.rfind("}")+1]
-                parsed = json.loads(cleaned)
-            except json.JSONDecodeError:
-                return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
-
-            # A degenerate reply — most often a bare "{}" — parses cleanly and
-            # then reads downstream as "this document contains nothing
-            # enforceable". That is a confident falsehood about the author's own
-            # policy, and the most damaging thing this endpoint could say. An
-            # answer with no `clauses` key at all is a failed call, not a finding.
-            if not isinstance(parsed, dict) or "clauses" not in parsed:
-                current_app.logger.warning(
-                    "classify_document: degenerate reply from %s (%d chars): %r",
-                    model, len(cleaned), cleaned[:200],
-                )
-                return jsonify({"ok": False, "error": (
-                    "The model returned an empty result rather than an analysis. This usually "
-                    "means the document is too long for the configured model — try a shorter "
-                    "document, or a stronger Conscience model in Settings."
-                )}), 422
-
-            # Normalize server-side. The destination decides which tier a clause
-            # is enforced in, so an unrecognized value must fall back to the tier
-            # that enforces nothing rather than being guessed into one that does.
-            buckets = {"structural": [], "blacklist": [], "value": [], "none": []}
-            for c in (parsed.get("clauses") or []):
-                if not isinstance(c, dict):
-                    continue
-                text = str(c.get("text") or "").strip()
-                if not text:
-                    continue
-                dest = str(c.get("destination") or "").strip().lower()
-                entry = {"text": text, "reason": str(c.get("reason") or "").strip()}
-                if dest == "structural":
-                    entry["disclaimer_text"] = str(c.get("disclaimer_text") or "").strip()
-                    # A structural clause with nothing literal to check cannot be
-                    # enforced structurally. Demote rather than drop: it is still
-                    # a real obligation, it just needs a rubric.
-                    if not entry["disclaimer_text"]:
-                        entry["reason"] = (
-                            entry["reason"] + " (No exact text to check for, so this needs a "
-                            "scored standard rather than a literal check.)"
-                        ).strip()
-                        buckets["value"].append(entry)
-                        continue
-                elif dest == "blacklist":
-                    entry["phrase"] = str(c.get("phrase") or "").strip()
-                    if not entry["phrase"]:
-                        buckets["value"].append(entry)
-                        continue
-                elif dest not in buckets:
-                    entry["reason"] = (entry["reason"] + " (Unrecognized classification.)").strip()
-                    buckets["none"].append(entry)
-                    continue
-                buckets[dest].append(entry)
-
-            definitions = [
-                {"term": str(d.get("term") or "").strip(),
-                 "enumeration": str(d.get("enumeration") or "").strip()}
-                for d in (parsed.get("definitions") or [])
-                if isinstance(d, dict) and str(d.get("term") or "").strip()
-            ]
-            notes = [str(n).strip() for n in (parsed.get("notes") or []) if str(n).strip()]
-
-            raw_suggested = parsed.get("suggested")
-            raw_suggested = raw_suggested if isinstance(raw_suggested, dict) else {}
-            suggested = {
-                k: str(raw_suggested.get(k) or "").strip()
-                for k in ("name", "purpose", "scope")
-            }
-
-            return jsonify({"ok": True, "content": {
-                "structural": buckets["structural"],
-                "blacklist": buckets["blacklist"],
-                "values": buckets["value"],
-                "unconvertible": buckets["none"],
-                "definitions": definitions,
-                "suggested": suggested,
-                "notes": notes,
-            }})
 
         if gen_type == 'compile_rules':
             try:

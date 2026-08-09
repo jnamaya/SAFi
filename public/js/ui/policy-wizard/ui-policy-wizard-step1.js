@@ -1,5 +1,4 @@
 import * as ui from './../ui.js';
-import { renderImportCard, bindImportCard, applyCommon } from './ui-policy-wizard-import.js';
 
 export function renderDefinitionStep(container, policyData) {
     container.innerHTML = `
@@ -33,12 +32,6 @@ export function renderDefinitionStep(container, policyData) {
             </div>
 
             <div class="space-y-6">
-                ${renderImportCard({
-                    title: "Already have written standards for this team?",
-                    subtitle: "A compliance manual, code of conduct, or written procedures. Upload it and the AI model will try to draft this policy's purpose, scope and standards for you. You can also fill everything in manually &mdash; the upload is a starting point, not a requirement.",
-                    hint: "Your organization-wide AI policy belongs in <strong>Settings &rarr; Organization &rarr; AI Standards</strong> instead, where it binds every agent rather than just this one.",
-                })}
-
                 <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
                     <div class="text-blue-600 dark:text-blue-400">
                         <svg class="w-10 h-10 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
@@ -58,36 +51,6 @@ export function renderDefinitionStep(container, policyData) {
     document.getElementById('pw-name')?.addEventListener('input', (e) => policyData.name = e.target.value);
     document.getElementById('pw-business-unit')?.addEventListener('input', (e) => policyData.business_unit = e.target.value);
     document.getElementById('pw-context')?.addEventListener('input', (e) => policyData.context = e.target.value);
-
-    bindImportCard({
-        context: () => [policyData.name, policyData.business_unit, policyData.context]
-            .filter(Boolean).join(' — '),
-        onApply: (payload) => {
-            const applied = applyCommon(policyData, payload, 'values');
-
-            // Fill the form fields the author would otherwise face empty. An
-            // import that returns only standards reads as broken: the wizard
-            // still asks for a name, a purpose and a scope, and the document
-            // usually supports all three. Never overwrite what they typed.
-            const s = payload.suggested || {};
-            if (s.name && !policyData.name.trim()) {
-                policyData.name = s.name;
-                applied.push('policy name');
-            }
-            if (s.purpose && !policyData.worldview.trim()) {
-                policyData.worldview = s.purpose;
-                applied.push('purpose & mandate');
-            }
-            if (s.scope && !(policyData.scope_statement || '').trim()) {
-                policyData.scope_statement = s.scope;
-                applied.push('scope');
-            }
-            return applied;
-        },
-        // Redraw so a name or description filled from the document appears in
-        // the inputs immediately rather than only after navigating away and back.
-        onApplied: () => renderDefinitionStep(container, policyData),
-    });
 }
 
 export function validateDefinitionStep(policyData) {
