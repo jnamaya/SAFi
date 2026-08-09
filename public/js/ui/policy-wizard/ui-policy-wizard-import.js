@@ -1,0 +1,312 @@
+/**
+ * Import an organization's existing AI policy document.
+ *
+ * Two passes, deliberately separate. The first classifies every clause; the
+ * second compiles only the ones needing judgment into rubrics. Combining them
+ * is what makes a model write a scoring rubric for "the committee meets
+ * monthly" — measured against a real 15-page corporate AI policy, roughly
+ * three-quarters of it governs people and processes, not responses.
+ *
+ * Nothing is applied without the author ticking it. What the classifier
+ * produces is a proposal about how their organization will be governed, and the
+ * choice between a literal check and a model-judged standard has consequences
+ * they should see before it is live.
+ *
+ * The "not converted" list is shown at the same weight as the rest. It is not
+ * an apology — it tells the author exactly which obligations from their policy
+ * SAFi does not cover and still need a human process.
+ */
+import * as ui from '../ui.js';
+import * as api from '../../core/api.js';
+import { escapeHtml } from '../../core/utils.js';
+
+// Matches Config.ALLOWED_UPLOAD_EXTENSIONS. Advisory only — the server
+// re-validates, since a file picker filter is trivially bypassed.
+const ACCEPTED = '.pdf,.docx,.txt,.md,.csv,.xlsx';
+
+let result = null;      // last classification
+let sourceName = '';    // filename, kept for provenance in the review panel
+
+export function renderImportCard(policyData) {
+    return `
+    <div class="bg-white dark:bg-neutral-900 border border-purple-200 dark:border-purple-900/40 rounded-xl p-5">
+        <div class="flex items-start gap-3">
+            <svg class="w-6 h-6 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            <div class="min-w-0">
+                <h4 class="font-bold text-gray-900 dark:text-white">Already have an AI policy?</h4>
+                <p class="text-xs text-gray-500 mt-0.5">Upload it and SAFi will propose the parts it can enforce &mdash; and tell you plainly which parts it can't.</p>
+            </div>
+        </div>
+        <input type="file" id="pw-import-file" accept="${ACCEPTED}" class="hidden">
+        <button id="pw-import-btn" class="mt-4 w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-semibold transition-colors">
+            Choose a document
+        </button>
+        <div id="pw-import-result" class="mt-4 hidden"></div>
+    </div>`;
+}
+
+export function bindImportCard(policyData, onApplied) {
+    const btn = document.getElementById('pw-import-btn');
+    const input = document.getElementById('pw-import-file');
+    if (!btn || !input) return;
+
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        input.value = '';                     // let the same file be retried
+
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        try {
+            btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Reading ${escapeHtml(file.name)}...`;
+            const extracted = await api.extractDocumentText(file);
+            const text = (extracted && extracted.text || '').trim();
+            if (!text) throw new Error('No readable text found in that file.');
+
+            btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Reading the policy...`;
+            const ctx = [policyData.name, policyData.business_unit, policyData.context]
+                .filter(Boolean).join(' — ') || 'General organization';
+            const res = await api.generatePolicyContent('classify_document', ctx, { document_text: text });
+            if (!res.ok) throw new Error(res.error || 'Could not read that policy.');
+
+            result = res.content || {};
+            sourceName = file.name;
+            renderReview(policyData, onApplied);
+        } catch (e) {
+            console.error('policy wizard: document import failed', e);
+            ui.showToast(e.message || 'Could not import that document.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+}
+
+// Full class strings, never interpolated fragments: Tailwind's JIT scans the
+// source for complete class names, so `text-${colour}-800` would compile to
+// nothing and the heading would render unstyled.
+const HEADING_CLASS = {
+    blue:  'text-blue-800 dark:text-blue-200',
+    amber: 'text-amber-800 dark:text-amber-200',
+    gray:  'text-gray-800 dark:text-gray-100',
+};
+
+function section(title, subtitle, colour, bodyHtml, count) {
+    return `
+    <div class="mt-4">
+        <div class="flex items-baseline gap-2">
+            <h5 class="text-sm font-bold ${HEADING_CLASS[colour] || HEADING_CLASS.gray}">${title}</h5>
+            <span class="text-xs text-gray-400">${count}</span>
+        </div>
+        <p class="text-xs text-gray-500 mt-0.5 mb-2">${subtitle}</p>
+        ${bodyHtml}
+    </div>`;
+}
+
+function clauseLine(text) {
+    return `<p class="text-[11px] text-gray-400 italic mt-1 break-words">&ldquo;${escapeHtml(text)}&rdquo;</p>`;
+}
+
+function renderReview(policyData, onApplied) {
+    const panel = document.getElementById('pw-import-result');
+    if (!panel) return;
+
+    const structural = result.structural || [];
+    const blacklist = result.blacklist || [];
+    const values = result.values || [];
+    const unconvertible = result.unconvertible || [];
+    const notes = result.notes || [];
+    const definitions = result.definitions || [];
+
+    if (!structural.length && !blacklist.length && !values.length) {
+        panel.classList.remove('hidden');
+        panel.innerHTML = `
+            <div class="p-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10">
+                <p class="text-sm text-amber-800 dark:text-amber-200 font-semibold">Nothing in this document constrains an agent's answers.</p>
+                <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    ${unconvertible.length} clause${unconvertible.length === 1 ? '' : 's'} were read and all govern people or processes &mdash;
+                    approvals, training, committees. That is normal for an AI use policy: they govern how staff use AI tools,
+                    while SAFi governs what an agent says. You'll need to write the standards yourself in the next steps.
+                </p>
+            </div>`;
+        return;
+    }
+
+    const structuralHtml = structural.map((s, i) => `
+        <label class="flex items-start gap-3 p-3 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10 cursor-pointer">
+            <input type="checkbox" data-imp-struct="${i}" checked class="mt-1 accent-blue-600 w-4 h-4 shrink-0">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Require this on every response</p>
+                <p class="text-sm text-blue-800 dark:text-blue-200 mt-1 font-mono break-words">${escapeHtml(s.disclaimer_text)}</p>
+                ${clauseLine(s.text)}
+            </div>
+        </label>`).join('');
+
+    const blacklistHtml = blacklist.map((b, i) => `
+        <label class="flex items-start gap-3 p-3 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-900/10 cursor-pointer">
+            <input type="checkbox" data-imp-black="${i}" checked class="mt-1 accent-amber-600 w-4 h-4 shrink-0">
+            <div class="min-w-0">
+                <p class="text-sm font-mono text-gray-900 dark:text-white break-words">${escapeHtml(b.phrase)}</p>
+                ${clauseLine(b.text)}
+            </div>
+        </label>`).join('');
+
+    const valuesHtml = values.map((v, i) => `
+        <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 cursor-pointer">
+            <input type="checkbox" data-imp-value="${i}" checked class="mt-1 accent-green-600 w-4 h-4 shrink-0">
+            <div class="min-w-0">
+                <p class="text-sm text-gray-900 dark:text-white break-words">${escapeHtml(v.text)}</p>
+                <p class="text-xs text-gray-500 mt-1">${escapeHtml(v.reason)}</p>
+            </div>
+        </label>`).join('');
+
+    const unconvertibleHtml = unconvertible.length ? `
+        <details class="mt-4 p-4 rounded-xl border border-gray-200 dark:border-neutral-700">
+            <summary class="cursor-pointer text-sm font-bold text-gray-700 dark:text-gray-200">
+                Not converted (${unconvertible.length})
+            </summary>
+            <p class="text-xs text-gray-500 mt-2 mb-3">
+                These govern people or processes rather than what an agent says, so there is nothing in a response to check them against.
+                <strong>They still apply to your organization</strong> &mdash; SAFi just isn't the thing that enforces them.
+            </p>
+            <ul class="space-y-2">
+                ${unconvertible.map(u => `
+                    <li class="text-xs">
+                        <span class="text-gray-700 dark:text-gray-200 break-words">&ldquo;${escapeHtml(u.text)}&rdquo;</span>
+                        <span class="block text-gray-500 mt-0.5">${escapeHtml(u.reason)}</span>
+                    </li>`).join('')}
+            </ul>
+        </details>` : '';
+
+    const notesHtml = notes.length ? `
+        <div class="mt-4 p-4 rounded-xl border border-indigo-200 dark:border-indigo-900/40 bg-indigo-50 dark:bg-indigo-900/10">
+            <h5 class="text-sm font-bold text-indigo-800 dark:text-indigo-200 mb-1">Worth knowing</h5>
+            <ul class="text-xs text-indigo-700 dark:text-indigo-300 space-y-1 list-disc pl-4">
+                ${notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+            </ul>
+        </div>` : '';
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        <div class="border-t border-gray-200 dark:border-neutral-700 pt-4">
+            <p class="text-xs text-gray-500 mb-1">From <strong>${escapeHtml(sourceName)}</strong>${definitions.length ? ` &middot; ${definitions.length} definition${definitions.length === 1 ? '' : 's'} found and used to sharpen the standards` : ''}</p>
+            ${structural.length ? section('Checked literally', 'Enforced by matching the text itself. No AI judgement involved.', 'blue', structuralHtml, structural.length) : ''}
+            ${blacklist.length ? section('Blocked phrases', 'Checked against every message before the agent runs.', 'amber', blacklistHtml, blacklist.length) : ''}
+            ${values.length ? section('Scored standards', 'These need judgement, so the auditor model scores each response against them. Rubrics are written when you apply.', 'gray', valuesHtml, values.length) : ''}
+            ${notesHtml}
+            ${unconvertibleHtml}
+            <button id="pw-import-apply" class="mt-4 w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                Apply selected
+            </button>
+        </div>`;
+
+    document.getElementById('pw-import-apply')?.addEventListener('click', () => applySelected(policyData, onApplied));
+}
+
+async function applySelected(policyData, onApplied) {
+    const panel = document.getElementById('pw-import-result');
+    const btn = document.getElementById('pw-import-apply');
+    if (!panel || !btn) return;
+
+    // Read the index off the attribute directly. Deriving the dataset key from
+    // the attribute name works but breaks silently the moment an attribute is
+    // renamed, and a silent break here applies the wrong clauses.
+    const picked = (attr, arr) => Array.from(panel.querySelectorAll(`input[${attr}]:checked`))
+        .map(cb => arr[Number(cb.getAttribute(attr))])
+        .filter(Boolean);
+
+    const structural = picked('data-imp-struct', result.structural || []);
+    const blacklist = picked('data-imp-black', result.blacklist || []);
+    const values = picked('data-imp-value', result.values || []);
+
+    if (!structural.length && !blacklist.length && !values.length) {
+        ui.showToast('Nothing selected.', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    const applied = [];
+
+    try {
+        // 1. Literal checks — no model needed, apply directly.
+        if (structural.length) {
+            // evaluate_draft_structure checks exactly one substring, so only the
+            // first can be enforced. Say so rather than appearing to apply all.
+            const first = structural[0];
+            policyData.structural_requirements = policyData.structural_requirements || {};
+            policyData.structural_requirements.require_disclaimer = true;
+            policyData.structural_requirements.mandatory_disclaimer_substring = first.disclaimer_text;
+            applied.push('required disclaimer');
+            if (structural.length > 1) {
+                ui.showToast('Only one required disclaimer can be enforced — the first was applied.', 'warning');
+            }
+        }
+
+        if (blacklist.length) {
+            if (!Array.isArray(policyData.early_prompt_blacklist)) policyData.early_prompt_blacklist = [];
+            let added = 0;
+            blacklist.forEach(b => {
+                if (b.phrase && !policyData.early_prompt_blacklist.includes(b.phrase)) {
+                    policyData.early_prompt_blacklist.push(b.phrase);
+                    added++;
+                }
+            });
+            if (added) applied.push(`${added} blocked phrase${added === 1 ? '' : 's'}`);
+        }
+
+        // 2. Judgement clauses — pass 2 turns them into rubrics. Definitions from
+        //    the source document go along: a rubric naming the actual categories
+        //    of personal data is checkable, one saying "Personal Information" is
+        //    an interpretation the auditor has to make on every turn.
+        if (values.length) {
+            btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Writing rubrics...`;
+            const ctx = [policyData.name, policyData.business_unit, policyData.context]
+                .filter(Boolean).join(' — ') || 'General organization';
+            const res = await api.generatePolicyContent('compile_rules', ctx, {
+                rules: values.map(v => v.text),
+                definitions: result.definitions || [],
+            });
+            if (!res.ok) throw new Error(res.error || 'Could not write the rubrics.');
+
+            const gates = (res.content && res.content.gates) || [];
+            if (!Array.isArray(policyData.values)) policyData.values = [];
+            const existing = new Set(policyData.values.map(v => String(v.name || '').trim().toLowerCase()));
+            let added = 0;
+            gates.forEach(g => {
+                const name = String(g.name || '').trim();
+                if (!name || existing.has(name.toLowerCase())) return;
+                existing.add(name.toLowerCase());
+                policyData.values.push({
+                    name,
+                    description: g.description || '',
+                    weight: 0,
+                    hard_gate: true,
+                    rubric: g.rubric || { scoring_guide: [] },
+                });
+                added++;
+            });
+            if (added) applied.push(`${added} scored standard${added === 1 ? '' : 's'}`);
+
+            const rejected = (res.content && res.content.unconvertible) || [];
+            if (rejected.length) {
+                ui.showToast(`${rejected.length} standard${rejected.length === 1 ? '' : 's'} could not be written and were skipped.`, 'warning');
+            }
+        }
+
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        result = null;
+        ui.showToast(
+            applied.length ? `Applied: ${applied.join(', ')}. Review them in the next steps.` : 'Nothing new to apply.',
+            applied.length ? 'success' : 'warning'
+        );
+        if (typeof onApplied === 'function') onApplied();
+    } catch (e) {
+        console.error('policy wizard: applying imported policy failed', e);
+        ui.showToast(e.message || 'Could not apply the selection.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}

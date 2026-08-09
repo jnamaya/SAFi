@@ -1,4 +1,5 @@
 import * as ui from './../ui.js';
+import { renderImportCard, bindImportCard } from './ui-policy-wizard-import.js';
 
 export function renderDefinitionStep(container, policyData) {
     container.innerHTML = `
@@ -31,15 +32,19 @@ export function renderDefinitionStep(container, policyData) {
                 </div>
             </div>
 
-            <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800 flex flex-col justify-center">
-                <div class="text-blue-600 dark:text-blue-400">
-                    <svg class="w-10 h-10 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-                    <h4 class="font-bold text-lg mb-2 text-blue-900 dark:text-blue-100">Tips for great policies</h4>
-                    <ul class="text-sm leading-relaxed text-blue-800 dark:text-blue-200 space-y-3">
-                        <li><strong class="text-blue-900 dark:text-blue-100 block">Name it after its purpose</strong> "HR Assistant Policy" is clearer than "Policy v2."</li>
-                        <li><strong class="text-blue-900 dark:text-blue-100 block">Be specific in the description</strong> The AI uses it to draft your purpose and standards — generic input gives generic results.</li>
-                        <li><strong class="text-blue-900 dark:text-blue-100 block">One policy per use case</strong> Don't try to cover every scenario in one. Smaller, focused policies are easier to maintain.</li>
-                    </ul>
+            <div class="space-y-6">
+                ${renderImportCard(policyData)}
+
+                <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
+                    <div class="text-blue-600 dark:text-blue-400">
+                        <svg class="w-10 h-10 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                        <h4 class="font-bold text-lg mb-2 text-blue-900 dark:text-blue-100">Tips for great policies</h4>
+                        <ul class="text-sm leading-relaxed text-blue-800 dark:text-blue-200 space-y-3">
+                            <li><strong class="text-blue-900 dark:text-blue-100 block">Name it after its purpose</strong> "HR Assistant Policy" is clearer than "Policy v2."</li>
+                            <li><strong class="text-blue-900 dark:text-blue-100 block">Be specific in the description</strong> The AI uses it to draft your purpose and standards — generic input gives generic results.</li>
+                            <li><strong class="text-blue-900 dark:text-blue-100 block">One policy per use case</strong> Don't try to cover every scenario in one. Smaller, focused policies are easier to maintain.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -49,6 +54,10 @@ export function renderDefinitionStep(container, policyData) {
     document.getElementById('pw-name')?.addEventListener('input', (e) => policyData.name = e.target.value);
     document.getElementById('pw-business-unit')?.addEventListener('input', (e) => policyData.business_unit = e.target.value);
     document.getElementById('pw-context')?.addEventListener('input', (e) => policyData.context = e.target.value);
+
+    // Imported settings land in steps 3-5, which are re-rendered on navigation —
+    // so nothing needs redrawing here beyond letting the card reset itself.
+    bindImportCard(policyData, () => {});
 }
 
 export function validateDefinitionStep(policyData) {
