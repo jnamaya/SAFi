@@ -980,17 +980,26 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
         const hasRubric = v.rubric.scoring_guide.length > 0;
         const weightPct = v.weight <= 1.0 ? Math.round(v.weight * 100) : (v.weight || 100);
 
+        // Same editor, two artifacts. A charter value is something the
+        // organization stands for; an AI standard is a rule its agents follow.
+        // Reusing the widget is fine — reusing its wording is not.
+        const copy = mode === 'standard'
+            ? { name: 'Standard name (e.g. Personal Data Protection)',
+                desc: 'What must the agent do, or never do? e.g. "Never reveal a person\u2019s social security, bank account or passport number."' }
+            : { name: 'Value name (e.g. Integrity)',
+                desc: 'Brief description of this value...' };
+
         const card = document.createElement('div');
         card.className = 'bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 shadow-sm';
         card.innerHTML = `
             <div class="flex items-start justify-between gap-4 mb-3">
-                <input type="text" value="${v.name || ''}" placeholder="Value name (e.g. Integrity)"
+                <input type="text" value="${v.name || ''}" placeholder="${copy.name}"
                     class="cv-name flex-1 font-semibold text-base bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none text-gray-900 dark:text-white px-1 py-0.5 transition-all"/>
                 <button class="btn-remove-cv p-1.5 text-gray-400 hover:text-red-500 rounded transition-colors shrink-0">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
-            <textarea placeholder="Brief description of this value..." rows="2"
+            <textarea placeholder="${copy.desc}" rows="2"
                 class="cv-desc w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-lg p-2.5 resize-none outline-none focus:border-green-500 mb-3">${v.description || ''}</textarea>
 
             <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -1021,9 +1030,14 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             <div class="cv-rubric-panel hidden mt-4 pt-4 border-t border-dashed border-gray-200 dark:border-neutral-700 space-y-2">
                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Scoring criteria (traffic light)</p>
                 ${[
-                    { score: 1.0,  icon: '✅', label: 'Positive (+1)', color: 'green',  bg: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900' },
-                    { score: 0.0,  icon: '⚪', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700' },
-                    { score: -1.0, icon: '🚫', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900' }
+                    { score: 1.0,  icon: '✅', label: 'Positive (+1)', color: 'green',  bg: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900',
+                      hint: mode === 'standard' ? 'A response that respects this. Word it so an answer that never touched the topic still counts.' : 'What an excellent response looks like...' },
+                    { score: 0.0,  icon: '⚪', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700',
+                      hint: mode === 'standard' ? 'Optional. Leave blank for a pass/fail standard.' : 'Acceptable, neither good nor bad...' },
+                    { score: -1.0, icon: '🚫', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900',
+                      // The trap that broke a live agent: "does not include X" fires
+                      // on every answer that never raised the topic.
+                      hint: mode === 'standard' ? 'Something the response actually DID — "reveals a bank account number". Never "fails to mention…", which would flag every unrelated answer.' : 'What a violation looks like...' }
                 ].map(def => {
                     const item = v.rubric.scoring_guide.find(g => Math.abs(g.score - def.score) < 0.1);
                     const text = item ? (item.criteria || item.descriptor || '') : '';
@@ -1032,7 +1046,7 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
                             <span class="w-28 shrink-0 text-xs font-bold text-gray-500 pt-2.5 text-right">${def.icon} ${def.label}</span>
                             <textarea data-score="${def.score}" rows="2"
                                 class="cv-rubric-text flex-1 text-sm p-2.5 rounded-lg border resize-none outline-none focus:ring-2 focus:ring-green-500 ${def.bg}"
-                                placeholder="Describe this outcome...">${text}</textarea>
+                                placeholder="${def.hint}">${text}</textarea>
                         </div>`;
                 }).join('')}
             </div>
