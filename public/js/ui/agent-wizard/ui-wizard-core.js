@@ -180,7 +180,7 @@ function ensureWizardInlineExists() {
             <div id="wizard-step-labels" class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto">
                 <span>Identity</span>
                 <span>Tools</span>
-                <span>Personality</span>
+                <span>Role</span>
                 <span>Settings</span>
                 <span>Review</span>
             </div>

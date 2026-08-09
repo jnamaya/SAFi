@@ -54,7 +54,7 @@ export function renderSettingsHelpTab() {
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Think of it like a console</p>
                         <p>The easiest way to understand SAFi is through an analogy. Think of SAFi as a game console or a video player. The console itself doesn't define what you play or watch — that's up to you. The <strong class="text-gray-900 dark:text-white">console is SAFi</strong>, and the <strong class="text-gray-900 dark:text-white">game or movie is the agent</strong>.</p>
-                        <p class="mt-2">Just as one console can run thousands of different games, SAFi runs unlimited agents — each with its own name, purpose, personality, and rules — all powered by the same underlying engine. You swap the agent, not the infrastructure.</p>
+                        <p class="mt-2">Just as one console can run thousands of different games, SAFi runs unlimited agents — each with its own name, purpose, role, and rules — all powered by the same underlying engine. You swap the agent, not the infrastructure.</p>
                     </div>
 
                     <div>
@@ -348,7 +348,7 @@ export function renderSettingsHelpTab() {
                         <ul class="list-disc list-inside mt-1 space-y-0.5">
                             <li><strong class="text-gray-900 dark:text-white">Identity</strong> — Name, description, avatar, visibility, and the governing <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to</li>
                             <li><strong class="text-gray-900 dark:text-white">Tools</strong> — Any tools the agent may use and an optional knowledge base</li>
-                            <li><strong class="text-gray-900 dark:text-white">Personality &amp; Style</strong> — How the agent thinks and speaks: its instructions and communication style</li>
+                            <li><strong class="text-gray-900 dark:text-white">Role &amp; Style</strong> — What the agent is for and how it speaks: its instructions and communication style</li>
                             <li><strong class="text-gray-900 dark:text-white">Operational Settings</strong> — Limits such as how many turns it may take</li>
                             <li><strong class="text-gray-900 dark:text-white">Review</strong> — A final check before the agent goes live</li>
                         </ul>

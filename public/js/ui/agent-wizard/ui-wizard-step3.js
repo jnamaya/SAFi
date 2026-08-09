@@ -5,23 +5,23 @@ import { escapeHtml } from '../../core/utils.js';
 export function renderIntellectStep(container, agentData) {
     container.innerHTML = `
         <div class="mb-4">
-            <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Personality & Style</h2>
-            <p class="text-gray-500 text-sm">How does this agent think and speak?</p>
+            <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Role &amp; Style</h2>
+            <p class="text-gray-500 text-sm">What is this agent for, and how should it speak?</p>
         </div>
         
         <div class="space-y-6">
             <div>
                 <div class="flex justify-between items-end mb-2">
                     <div>
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">System Instructions / Persona</label>
-                        <p class="text-xs text-gray-400">TIPS: Use "You are..." statements. Describe their core philosophy.</p>
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">System Instructions</label>
+                        <p class="text-xs text-gray-400">Write it to the agent: "You are…". Say what it does, who it serves, and where its job ends.</p>
                     </div>
                      <button id="wiz-gen-persona-btn" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are a Stoic philosopher. You view the world through the dichotomy of control...">${escapeHtml(agentData.instructions)}</textarea>
+                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are an HR assistant for Contoso employees. You answer questions about benefits, PTO and onboarding using the company handbook, and you refer anything legal or medical to a person.">${escapeHtml(agentData.instructions)}</textarea>
             </div>
 
             <div>
@@ -64,9 +64,9 @@ function attachAiHandlers(agentData) {
                 const instructions = res.content;
                 document.getElementById('wiz-instructions').value = instructions;
                 agentData.instructions = instructions;
-                ui.showToast("Persona generated!", "success");
+                ui.showToast("Instructions drafted!", "success");
             } else {
-                ui.showToast("Failed to generate persona", "error");
+                ui.showToast("Could not draft the instructions", "error");
             }
         } catch (err) {
             console.error(err);
