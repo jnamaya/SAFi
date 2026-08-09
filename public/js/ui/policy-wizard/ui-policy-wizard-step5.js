@@ -191,10 +191,14 @@ export function renderWillStep(container, policyData) {
                 <ul id="pw-blacklist-list" class="space-y-2"></ul>
             </div>
 
-            <!-- LEGACY FREE-TEXT RULES (optional) -->
+            <!-- WRITTEN RULES → compiled into enforceable standards -->
             <details class="bg-gray-50 dark:bg-neutral-800/30 border border-gray-200 dark:border-neutral-700 rounded-xl p-5">
                 <summary class="cursor-pointer font-semibold text-gray-700 dark:text-gray-300">Additional written rules (optional)</summary>
                 <p class="text-xs text-gray-500 mt-2 mb-3">Plain-language rules for cases the options above don't cover (e.g. "The response must not promise specific outcomes."). Prefer the structured options above when they fit.</p>
+                <div class="flex items-start gap-2 mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40">
+                    <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
+                    <p class="text-xs text-amber-800 dark:text-amber-200">Written rules <strong>do not block responses on their own</strong> &mdash; on their own they only guide the alternative suggestions offered after a block. Use <em>Convert to enforceable standards</em> below to turn them into non-negotiable standards the Will actually enforces.</p>
+                </div>
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="pw-rule-input"
                         class="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm focus:ring-2 focus:ring-gray-400 outline-none"
@@ -202,6 +206,11 @@ export function renderWillStep(container, policyData) {
                     <button id="pw-add-rule-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
                 </div>
                 <ul id="pw-rules-list" class="space-y-2"></ul>
+                <button id="pw-compile-rules-btn" class="mt-3 w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Convert to enforceable standards
+                </button>
+                <div id="pw-compile-result" class="mt-4 hidden"></div>
             </details>
         </div>
     `;
@@ -313,6 +322,164 @@ export function renderWillStep(container, policyData) {
     };
     document.getElementById('pw-add-rule-btn').addEventListener('click', addRule);
     document.getElementById('pw-rule-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addRule(); });
+
+    bindRuleCompiler(policyData);
+}
+
+/**
+ * Compiles the plain-language rules into hard-gate standards.
+ *
+ * Prose rules reach no enforcement path: the Will is deterministic and reads
+ * structural requirements, hard-gate values and tool constraints only. A rule
+ * governs nothing until it becomes a value with a rubric the Conscience can
+ * score, so this is the step that makes a written rule real.
+ *
+ * Nothing is added without the author ticking it: each gate must be scored on
+ * every request or the Will fails closed, so an unreviewed gate is a way to
+ * block traffic by accident.
+ */
+function bindRuleCompiler(policyData) {
+    const btn = document.getElementById('pw-compile-rules-btn');
+    const panel = document.getElementById('pw-compile-result');
+    if (!btn || !panel) return;
+
+    btn.addEventListener('click', async () => {
+        const rules = (policyData.will_rules || []).filter(r => String(r).trim());
+        if (!rules.length) {
+            ui.showToast('Add at least one written rule first.', 'error');
+            return;
+        }
+
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Converting...`;
+        panel.classList.add('hidden');
+
+        try {
+            const ctx = `${policyData.name || 'Policy'} — ${policyData.business_unit || ''}. ${policyData.context || ''}`.trim();
+            const res = await api.generatePolicyContent('compile_rules', ctx, { rules });
+            if (!res.ok) throw new Error(res.error || 'Conversion failed');
+            renderCompileResult(policyData, res.content || {});
+        } catch (e) {
+            console.error('policy wizard: rule compilation failed', e);
+            ui.showToast(e.message || 'Could not convert the rules. Try again.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+}
+
+function renderCompileResult(policyData, content) {
+    const panel = document.getElementById('pw-compile-result');
+    const gates = Array.isArray(content.gates) ? content.gates : [];
+    const unconvertible = Array.isArray(content.unconvertible) ? content.unconvertible : [];
+
+    if (!gates.length && !unconvertible.length) {
+        panel.classList.remove('hidden');
+        panel.innerHTML = `<p class="text-sm text-gray-500 italic">Nothing was produced. Try rewording the rules so each one describes something a response must not do.</p>`;
+        return;
+    }
+
+    const gateCards = gates.map((g, i) => {
+        const guide = (g.rubric && g.rubric.scoring_guide) || [];
+        const pass = guide.find(s => Number(s.score) > 0);
+        const fail = guide.find(s => Number(s.score) < 0);
+        return `
+        <label class="block p-4 rounded-xl border border-blue-200 dark:border-blue-900/40 bg-white dark:bg-neutral-900 cursor-pointer hover:border-blue-400 transition-colors">
+            <div class="flex items-start gap-3">
+                <input type="checkbox" data-gate-idx="${i}" checked class="mt-1 accent-blue-600 w-4 h-4 shrink-0">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-bold text-gray-900 dark:text-white">${escapeHtml(g.name || '')}</span>
+                        <span class="text-[10px] uppercase font-bold tracking-wider bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full">Non-negotiable</span>
+                    </div>
+                    <p class="text-xs text-gray-600 dark:text-gray-300 mt-1">${escapeHtml(g.description || '')}</p>
+                    ${g.source_rule ? `<p class="text-[11px] text-gray-400 mt-1.5 italic">from: &ldquo;${escapeHtml(g.source_rule)}&rdquo;</p>` : ''}
+                    <div class="mt-2.5 space-y-1">
+                        ${pass ? `<p class="text-xs text-green-700 dark:text-green-300"><span class="font-mono font-bold">+1.0</span> ${escapeHtml(pass.criteria || pass.descriptor || '')}</p>` : ''}
+                        ${fail ? `<p class="text-xs text-red-700 dark:text-red-300"><span class="font-mono font-bold">&minus;1.0</span> ${escapeHtml(fail.criteria || fail.descriptor || '')}</p>` : ''}
+                    </div>
+                </div>
+            </div>
+        </label>`;
+    }).join('');
+
+    const skipped = unconvertible.length ? `
+        <div class="mt-4 p-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10">
+            <h4 class="text-sm font-bold text-amber-800 dark:text-amber-200 mb-1">Not converted (${unconvertible.length})</h4>
+            <p class="text-xs text-amber-700 dark:text-amber-300 mb-3">These describe obligations on people or processes rather than on the agent's response, so there is nothing in a response to score them against. They stay in your written rules as a record.</p>
+            <ul class="space-y-2">
+                ${unconvertible.map(u => `
+                    <li class="text-xs">
+                        <span class="text-gray-700 dark:text-gray-200">&ldquo;${escapeHtml(u.rule || '')}&rdquo;</span>
+                        <span class="block text-amber-700 dark:text-amber-400 mt-0.5">${escapeHtml(u.reason || '')}</span>
+                    </li>`).join('')}
+            </ul>
+        </div>` : '';
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        ${gates.length ? `
+        <h4 class="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1">Proposed standards (${gates.length})</h4>
+        <p class="text-xs text-gray-500 mb-3">Each becomes a non-negotiable standard on the Standards step: any response scoring &minus;1.0 is blocked outright. Review the wording &mdash; a standard that is scored on every request will also be <em>checked</em> on every request.</p>
+        <div class="space-y-3">${gateCards}</div>
+        <button id="pw-accept-gates-btn" class="mt-3 w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">Add selected to Standards</button>
+        ` : ''}
+        ${skipped}
+    `;
+
+    const accept = document.getElementById('pw-accept-gates-btn');
+    if (!accept) return;
+    accept.addEventListener('click', () => {
+        const chosen = Array.from(panel.querySelectorAll('input[data-gate-idx]:checked'))
+            .map(cb => gates[Number(cb.dataset.gateIdx)])
+            .filter(Boolean);
+        if (!chosen.length) {
+            ui.showToast('Select at least one standard.', 'error');
+            return;
+        }
+
+        if (!Array.isArray(policyData.values)) policyData.values = [];
+        const existing = new Set(policyData.values.map(v => String(v.name || '').trim().toLowerCase()));
+        let added = 0;
+        chosen.forEach(g => {
+            const name = String(g.name || '').trim();
+            if (!name || existing.has(name.toLowerCase())) return;
+            existing.add(name.toLowerCase());
+            // weight 0 + hard_gate: scored by the Conscience, blocked by the
+            // Will, and excluded from the Spirit average — matching how
+            // Scope Compliance and Grounding Fidelity already behave.
+            policyData.values.push({
+                name,
+                description: g.description || '',
+                weight: 0,
+                hard_gate: true,
+                rubric: g.rubric || { scoring_guide: [] },
+            });
+            added++;
+            // Drop the source rule: it is now enforced as a standard, and
+            // leaving it in the prose list would imply a second, separate
+            // control that does not exist.
+            const src = String(g.source_rule || '').trim();
+            if (src) {
+                const at = (policyData.will_rules || []).findIndex(r => String(r).trim() === src);
+                if (at >= 0) policyData.will_rules.splice(at, 1);
+            }
+        });
+
+        renderList('pw-rules-list', policyData.will_rules, 'gray', (i) => policyData.will_rules.splice(i, 1));
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        ui.showToast(
+            added
+                ? `${added} standard${added > 1 ? 's' : ''} added — review them on the Standards step.`
+                : 'Those standards are already on this policy.',
+            // Not 'info' — showToast suppresses that type entirely, and a
+            // button that reports nothing reads as a broken button.
+            added ? 'success' : 'warning'
+        );
+    });
 }
 
 function renderList(id, arr, color, onRemove) {

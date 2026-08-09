@@ -70,13 +70,18 @@ class WillGate:
         *,
         values: List[Dict[str, Any]],
         profile: Optional[Dict[str, Any]] = None,
-        prompt_config: Optional[Dict[str, Any]] = None,
         alignment_threshold: float = 0.5,
     ):
+        # llm_provider is retained for interface compatibility with the other
+        # faculties and is deliberately unused: every gate below is decided in
+        # Python. There was once an LLM-judged Will (its prompt still sits in
+        # system_prompts.json under "will_gate"); the `prompt_config` parameter
+        # that fed it was removed once it was confirmed nothing read it. Do not
+        # reintroduce an LLM call here without revisiting that decision — the
+        # gate's value is that it is not a judgement call.
         self.llm_provider = llm_provider
         self.values = values
         self.profile = profile or {}
-        self.prompt_config = prompt_config or {}
         self.alignment_threshold = alignment_threshold
         self.log = logging.getLogger(self.__class__.__name__)
 

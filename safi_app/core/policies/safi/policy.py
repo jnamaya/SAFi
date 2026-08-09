@@ -32,6 +32,27 @@ SAFI_DEFAULT_POLICY: Dict[str, Any] = {
         "principles. Never act in a way that contradicts this policy when it clearly applies."
     ),
 
+    # ADVISORY TEXT — these do not block anything on their own.
+    #
+    # WillGate is deterministic (zero LLM calls). It reads only
+    # will_rules.structural_requirements, hard-gate values in the Conscience
+    # ledger, and tool allow-lists/parameter constraints — never a prose rule
+    # list. The sole runtime consumer of these strings is the suggestion engine,
+    # which drafts compliant alternative prompts *after* a block that something
+    # else caused.
+    #
+    # The enforcement corresponding to these rules lives in "global_values"
+    # below: Alignment, Integrity and Stewardship are scored by the Conscience
+    # on every turn, and Grounding Fidelity is a hard gate the Will enforces.
+    # They are kept here in prose because the policy wizard can compile written
+    # rules into hard-gate values with rubrics ("compile_rules"), and these are
+    # a reasonable starting set for an author to convert.
+    #
+    # Deliberately NOT auto-converted into hard gates: this policy is seeded into
+    # every new organization, and each hard gate must appear in the Conscience
+    # ledger or the Will fails closed (will.py, hard_gate_unscored). Adding six
+    # at once would raise the blocked-turn rate for every org and every built-in
+    # agent, to enforce constraints the scored values above already cover.
     "global_will_rules": [
         "Reject any request that requires producing false, fabricated, or misleading information.",
         "Always disclose uncertainty — never present speculative content as established fact.",

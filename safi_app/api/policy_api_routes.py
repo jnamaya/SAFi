@@ -429,9 +429,11 @@ async def generate_policy_content_endpoint():
         elif gen_type == 'rules':
              sys_prompt += " Output JSON List only."
              prompt = (
-                 f"Generate 5 Will Rules for an AI agent. Context: '{context}'.\n\n"
-                 "IMPORTANT: These rules are for a GATEKEEPING MODEL (the 'Will') that EVALUATES responses.\n"
-                 "The Will gate reads the Intellect's draft response and checks if it violates any rules.\n"
+                 f"Generate 5 candidate prohibitions for an AI agent. Context: '{context}'.\n\n"
+                 "IMPORTANT: These are DRAFT TEXT. They do not block anything by themselves — "
+                 "the author compiles them into hard-gate standards with rubrics (the 'compile_rules' "
+                 "step), and it is those compiled standards the Will enforces. Write each one so it "
+                 "can be checked against a draft response, because that is what it becomes.\n"
                  "Rules should describe what makes a response UNACCEPTABLE (grounds for rejection).\n\n"
                  "RULES FORMAT:\n"
                  "- Write rules as evaluation criteria (what to check for)\n"
@@ -449,6 +451,60 @@ async def generate_policy_content_endpoint():
                  "Return a JSON array of exactly 5 rule strings. Each rule describes grounds for rejection."
              )
         
+        # Compiles plain-language prohibitions into hard-gate values the engine
+        # actually enforces. Prose rules reach no enforcement path on their own:
+        # WillGate is deterministic and reads only structural_requirements,
+        # hard-gate values in the Conscience ledger, and tool constraints. A
+        # written rule therefore governs nothing until it becomes a value with a
+        # rubric, which is what this produces.
+        elif gen_type == 'compile_rules':
+             raw_rules = data.get('rules') or []
+             if not isinstance(raw_rules, list):
+                 return jsonify({"error": "rules must be an array"}), 400
+             rules = [str(r).strip() for r in raw_rules if str(r).strip()]
+             if not rules:
+                 return jsonify({"error": "No rules to compile."}), 400
+             if len(rules) > 25:
+                 return jsonify({"error": "Too many rules to compile at once (max 25)."}), 400
+
+             sys_prompt += " Output a single JSON object only."
+             rules_block = "\n".join(f"{i+1}. {r}" for i, r in enumerate(rules))
+             prompt = (
+                 f"Context: '{context}'.\n\n"
+                 "Below are plain-language rules an author wrote for an AI agent. Convert each one "
+                 "into a HARD GATE: a named standard with a rubric that an auditor model can score "
+                 "against the agent's draft response.\n\n"
+                 f"RULES:\n{rules_block}\n\n"
+                 "CRITICAL — the subject must be the AGENT'S RESPONSE.\n"
+                 "A rule whose real subject is a person or a business process cannot be scored "
+                 "against a response, and must NOT be invented into a gate. Put those in "
+                 "'unconvertible' with a short reason instead. Examples that are NOT convertible:\n"
+                 '- "Employees must complete AI training annually" (subject is a person)\n'
+                 '- "All AI output must be reviewed by a manager before publication" (subject is a workflow)\n'
+                 "Converting these produces a gate that scores the wrong party and blocks correct answers.\n\n"
+                 "RUBRIC RULES:\n"
+                 "1. BINARY scale only: 1.0 and -1.0. Do NOT emit 0.0 — a hard gate has no neutral state.\n"
+                 "2. The -1.0 criteria MUST describe an act of COMMISSION — something the response "
+                 "actively DOES (e.g. 'discloses another employee's compensation'), never an omission "
+                 "like 'fails to mention'. A gate is evaluated on every request, including ones where "
+                 "the topic never arises; an omission-based gate would block those.\n"
+                 "3. The 1.0 criteria must be satisfiable by a response that simply never touches the "
+                 "topic, so word it as the absence of the prohibited act.\n\n"
+                 "Return a single JSON object with exactly two keys:\n"
+                 '- "gates": array of objects, each with "name" (short noun phrase, 2-4 words), '
+                 '"description" (one sentence), "source_rule" (the original rule text, verbatim), and '
+                 '"rubric" (object with "description" and "scoring_guide").\n'
+                 '- "unconvertible": array of objects, each with "rule" (verbatim) and "reason".\n\n'
+                 "Example gate:\n"
+                 '{ "name": "Compensation Confidentiality",\n'
+                 '  "description": "The response must never disclose another employee\'s pay.",\n'
+                 '  "source_rule": "Never disclose employee compensation",\n'
+                 '  "rubric": { "description": "Checks whether the response reveals compensation data.",\n'
+                 '    "scoring_guide": [\n'
+                 '      { "score": 1.0, "criteria": "Does not disclose any individual compensation figure." },\n'
+                 '      { "score": -1.0, "criteria": "States or estimates a specific person\'s pay." } ] } }'
+             )
+
         elif gen_type == 'scope':
             sys_prompt = "You are an AI Governance Consultant. Output a single sentence only — no quotes, no formatting."
             prompt = (
@@ -515,6 +571,49 @@ async def generate_policy_content_endpoint():
              except IndexError:
                 # Fallback if markdown format is weird
                 cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
+        if gen_type == 'compile_rules':
+            try:
+                if "{" in cleaned: cleaned = cleaned[cleaned.find("{"):]
+                if "}" in cleaned: cleaned = cleaned[:cleaned.rfind("}")+1]
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
+
+            # hard_gate and weight are set here, never taken from the model: a
+            # gate the Conscience cannot score fails closed on EVERY request
+            # (synderesis._validate_value_rubrics raises, and the agent stops
+            # loading), so a malformed rubric must be dropped rather than saved.
+            gates = []
+            dropped = []
+            for g in (parsed.get("gates") or []):
+                if not isinstance(g, dict):
+                    continue
+                name = str(g.get("name") or "").strip()
+                rubric = g.get("rubric")
+                guide = rubric.get("scoring_guide") if isinstance(rubric, dict) else None
+                if not name or not isinstance(guide, list) or not guide:
+                    dropped.append({
+                        "rule": str(g.get("source_rule") or g.get("name") or "<unnamed>"),
+                        "reason": "The generated standard had no usable rubric and would have blocked every request.",
+                    })
+                    continue
+                gates.append({
+                    "name": name,
+                    "description": str(g.get("description") or "").strip(),
+                    "source_rule": str(g.get("source_rule") or "").strip(),
+                    "hard_gate": True,
+                    "weight": 0.0,
+                    "rubric": {
+                        "description": str(rubric.get("description") or "").strip(),
+                        "scoring_guide": guide,
+                    },
+                })
+
+            unconvertible = [
+                u for u in (parsed.get("unconvertible") or []) if isinstance(u, dict)
+            ] + dropped
+            return jsonify({"ok": True, "content": {"gates": gates, "unconvertible": unconvertible}})
 
         # Specific Handling for JSON types to prevent crashes
         if gen_type in ['values', 'rules']:

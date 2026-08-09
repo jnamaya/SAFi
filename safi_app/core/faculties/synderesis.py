@@ -355,6 +355,13 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     if isinstance(persona_rules, dict) or isinstance(gov_rules, dict):
         p = persona_rules if isinstance(persona_rules, dict) else {}
         g = gov_rules if isinstance(gov_rules, dict) else {}
+        # A legacy prose LIST on either side is not a dict, so it used to vanish
+        # at this point: a persona using the structured shape forced `g = {}`,
+        # silently discarding a policy's written rules (and vice versa). Prose
+        # rules feed the post-block suggestion engine, so the loss was invisible
+        # until a block produced unhelpful suggestions. Capture both sides first.
+        p_prose = persona_rules if isinstance(persona_rules, list) else list(p.get("rules") or [])
+        g_prose = gov_rules if isinstance(gov_rules, list) else list(g.get("rules") or [])
         merged = copy.deepcopy(p)
         # Policy structural_requirements override the agent's defaults where set.
         # Empty/blank policy values ("", None, []) do not clobber agent values.
@@ -368,6 +375,14 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
         for k, val in g.items():
             if k != "structural_requirements" and k not in merged:
                 merged[k] = val
+        # Governance prose first, then persona's — same order as the list branch
+        # below — de-duplicated so a rule defined on both sides appears once.
+        combined_prose = list(g_prose)
+        for r in p_prose:
+            if r not in combined_prose:
+                combined_prose.append(r)
+        if combined_prose:
+            merged["rules"] = combined_prose
         final_profile["will_rules"] = merged
     else:
         final_profile["will_rules"] = (gov_rules or []) + (persona_rules or [])
