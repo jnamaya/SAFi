@@ -3,8 +3,8 @@ Classifying a policy document: the normalization contract of pass 1.
 
 WHY. Turning an organization's AI policy into SAFi governance is mostly an
 exercise in REFUSING to convert things. Measured against a real 15-page
-corporate AI Use Policy (Accion, July 2026), roughly 11 pages carry no
-agent-constraining content at all — committee membership, training obligations,
+corporate AI Use Policy, roughly 11 pages carry no agent-constraining
+content at all — committee membership, training obligations,
 a 49-item intake questionnaire, disciplinary process. A model told to "extract
 values" produces a rubric for each of them, and those rubrics then score the
 wrong party while the agent looks misaligned. That failure has already happened
@@ -76,7 +76,7 @@ def normalize(parsed):
 
 
 # Shaped after the real document, including the clauses that must NOT convert.
-ACCION_SHAPED = {
+REAL_POLICY_SHAPED = {
     "clauses": [
         {"text": "Clearly disclose the use of GenAI in AI created or assisted content.",
          "destination": "structural", "reason": "Mandates a disclosure present in the text.",
@@ -85,11 +85,11 @@ ACCION_SHAPED = {
          "destination": "value", "reason": "Requires judgment about what counts as personal data."},
         {"text": "Verify that any AI-provided citations are real and relevant.",
          "destination": "value", "reason": "Requires judgment about the citation."},
-        {"text": "The SteerCo will meet on a monthly basis, and more frequently as needed.",
+        {"text": "The steering committee will meet monthly, and more often as needed.",
          "destination": "none", "reason": "Governs a committee, not a response."},
-        {"text": "All Covered Persons should complete trainings provided by Accion.",
+        {"text": "All staff should complete the trainings provided by the organization.",
          "destination": "none", "reason": "An obligation on staff."},
-        {"text": "Violations will subject Covered Persons to disciplinary action.",
+        {"text": "Violations will subject staff to disciplinary action.",
          "destination": "none", "reason": "A consequence for a person."},
     ],
     "definitions": [
@@ -98,7 +98,7 @@ ACCION_SHAPED = {
                         "social security number, passport number, bank account number"},
     ],
     "notes": [
-        "This document references Accion's mission and values but does not state them; "
+        "This document references the organization's mission and values but does not state them; "
         "they cannot be derived from it.",
     ],
 }
@@ -107,7 +107,7 @@ ACCION_SHAPED = {
 class NormalizationContract(unittest.TestCase):
 
     def test_01_routes_each_destination(self):
-        b = normalize(ACCION_SHAPED)
+        b = normalize(REAL_POLICY_SHAPED)
         self.assertEqual(len(b["structural"]), 1)
         self.assertEqual(len(b["value"]), 2)
         self.assertEqual(len(b["none"]), 3)
@@ -115,10 +115,10 @@ class NormalizationContract(unittest.TestCase):
 
     def test_02_process_clauses_never_become_enforceable(self):
         """The whole point. A committee cadence must not end up as a rubric."""
-        b = normalize(ACCION_SHAPED)
+        b = normalize(REAL_POLICY_SHAPED)
         enforceable = b["structural"] + b["blacklist"] + b["value"]
         joined = " ".join(e["text"] for e in enforceable).lower()
-        for forbidden in ("steerco", "trainings", "disciplinary"):
+        for forbidden in ("steering committee", "trainings", "disciplinary"):
             self.assertNotIn(forbidden, joined,
                              f"a clause about '{forbidden}' reached an enforcing tier")
 
