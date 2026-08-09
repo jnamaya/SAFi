@@ -600,14 +600,14 @@ def upsert_ai_standards(org_id):
             early_prompt_blacklist=blacklist, allowed_tools=allowed_tools,
             created_by=user.get('id'),
         )
-        # Blocking standards get named individually: each one can stop every
-        # response from every agent, so "which ones were blocking on the day
-        # traffic stopped" has to be answerable from the log alone.
+        # Non-negotiable standards get named individually: each one can stop
+        # every response from every agent, so "which ones were non-negotiable on
+        # the day traffic stopped" has to be answerable from the log alone.
         db.append_compliance_log(org_id, 'ai_standards_saved', f"user:{user.get('id')}", {
             "created": not prev,
             "standards_before": len(prev.get('values') or []),
             "standards_after": len(cleaned),
-            "blocking": sorted(v['name'] for v in cleaned if v.get('hard_gate')),
+            "non_negotiable": sorted(v['name'] for v in cleaned if v.get('hard_gate')),
             "requires_disclaimer": bool(structural.get('require_disclaimer')),
             "blocked_phrases": len(blacklist),
             "tool_cap": None if allowed_tools is None else len(allowed_tools),

@@ -72,11 +72,11 @@ class EveryWritePathLeavesEvidence(unittest.TestCase):
 
 class ThePayloadsAnswerAuditQuestions(unittest.TestCase):
 
-    def test_ai_standards_entry_names_the_blocking_ones(self):
+    def test_ai_standards_entry_names_the_non_negotiable_ones(self):
         """The specific question that could not be answered: which standards
-        were blocking on the day responses started being stopped. A count is not
-        enough — the names are what identify the culprit."""
-        self.assertIn('"blocking": sorted(v[\'name\'] for v in cleaned if v.get(\'hard_gate\'))', ORGS)
+        were non-negotiable on the day responses started being stopped. A count
+        is not enough — the names are what identify the culprit."""
+        self.assertIn('"non_negotiable": sorted(v[\'name\'] for v in cleaned if v.get(\'hard_gate\'))', ORGS)
 
     def test_ai_standards_entry_records_the_deterministic_settings(self):
         for field in ('"requires_disclaimer"', '"blocked_phrases"', '"tool_cap"'):

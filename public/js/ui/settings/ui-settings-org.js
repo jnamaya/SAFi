@@ -238,7 +238,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                             <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
                         </div>
                     </div>
-                    <p class="text-xs text-gray-500 -mt-2 mb-3">Each one is judged by the auditor on <em>every</em> response, so each needs criteria it can actually apply. Tick <strong>Blocking</strong> only for absolutes &mdash; a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Each one is judged by the auditor on <em>every</em> response, so each needs criteria it can actually apply. Tick <strong>Non-negotiable</strong> only for absolutes &mdash; any violation then blocks the response outright, however well it scores elsewhere, and several of them make ordinary answers more likely to be stopped.</p>
                     <div id="ai-standards-list" class="space-y-4"></div>
                 </div>
 
@@ -1026,12 +1026,12 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
                     ${mode === 'standard'
-                        ? `<label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="Scored: counts toward the alignment score, like a value. Blocking: any violation stops the response outright. Use blocking only for absolutes — every blocking standard must be judged on every request, so several of them make ordinary answers more likely to be stopped.">
+                        ? `<label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="Scored: counts toward the alignment score alongside the other standards. Non-negotiable: any violation blocks the response outright, however well it scores elsewhere. Reserve it for absolutes — each one is judged on every request, so several make ordinary answers more likely to be stopped.">
                              <input type="checkbox" class="cv-blocking accent-red-600 w-4 h-4" ${v.hard_gate ? 'checked' : ''}/>
-                             <span class="text-xs uppercase font-bold ${v.hard_gate ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}">Blocking</span>
+                             <span class="text-xs uppercase font-bold ${v.hard_gate ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}">Non-negotiable</span>
                            </label>`
                         : (v.hard_gate
-                            ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-full" title="This core value blocks on violation. Blocking rules belong in AI Standards; this one is kept working, but new ones should be added there.">Legacy gate</span>`
+                            ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-full" title="This core value blocks on violation. Non-negotiable rules belong in AI Standards; this one is kept working, but new ones should be added there.">Legacy gate</span>`
                             : '')}
                     <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
                         <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
@@ -1081,7 +1081,7 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             lbl.textContent = pct + '%';
         });
 
-        // Blocking toggle exists only for AI standards. A charter value is
+        // The non-negotiable toggle exists only for AI standards. A charter value is
         // organizational identity and is always scored; letting one block by
         // hand is what produced a required disclosure that stopped every turn.
         const blockingToggle = card.querySelector('.cv-blocking');
