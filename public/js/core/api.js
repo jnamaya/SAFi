@@ -420,6 +420,22 @@ export async function deleteCharter(orgId) {
     return httpJSON(`/api/organizations/${orgId}/charter`, 'DELETE', {});
 }
 
+// AI Standards are a separate resource from the charter, not another field on
+// it: a charter is who the organization is and every org has one, while AI
+// conduct rules are optional. Adopting or dropping them must not touch the
+// charter, which is only true if they are saved and deleted independently.
+export async function getAiStandards(orgId) {
+    return httpGet(`/api/organizations/${orgId}/ai-standards`);
+}
+
+export async function saveAiStandards(orgId, data) {
+    return httpJSON(`/api/organizations/${orgId}/ai-standards`, 'PUT', data);
+}
+
+export async function deleteAiStandards(orgId) {
+    return httpJSON(`/api/organizations/${orgId}/ai-standards`, 'DELETE', {});
+}
+
 // --- Document Upload ---
 
 /**

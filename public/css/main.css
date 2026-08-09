@@ -4005,6 +4005,10 @@ video {
   background-color: rgb(120 53 15 / 0.2);
 }
 
+.dark\:bg-amber-900\/30:is(.dark *) {
+  background-color: rgb(120 53 15 / 0.3);
+}
+
 .dark\:bg-amber-900\/40:is(.dark *) {
   background-color: rgb(120 53 15 / 0.4);
 }

@@ -54,10 +54,15 @@ export async function renderSettingsOrganizationTab() {
             return;
         }
 
-        const charterRes = await api.getCharter(org.id).catch(() => null);
+        // Two independent artifacts: an org may have either, both or neither.
+        const [charterRes, standardsRes] = await Promise.all([
+            api.getCharter(org.id).catch(() => null),
+            api.getAiStandards(org.id).catch(() => null),
+        ]);
         const charter = charterRes ? charterRes.charter : null;
+        const aiStandards = standardsRes ? standardsRes.ai_standards : null;
 
-        renderOrganizationUI(container, org, charter);
+        renderOrganizationUI(container, org, charter, aiStandards);
 
     } catch (error) {
         container.innerHTML = `<p class="text-red-500">Error loading organization: ${error.message}</p>`;
@@ -65,7 +70,7 @@ export async function renderSettingsOrganizationTab() {
 }
 
 
-function renderOrganizationUI(container, org, charter) {
+function renderOrganizationUI(container, org, charter, aiStandards) {
     const isVerified = org.domain_verified;
     const verificationSection = isVerified
         ? `
@@ -117,12 +122,13 @@ function renderOrganizationUI(container, org, charter) {
         `;
 
     const charterValuesData = charter ? (charter.core_values || []) : [];
-    const structuralData = charter ? { ...(charter.structural_requirements || {}) } : {};
-    const blacklistData = charter ? [...(charter.early_prompt_blacklist || [])] : [];
+    const structuralData = aiStandards ? { ...(aiStandards.structural_requirements || {}) } : {};
+    const blacklistData = aiStandards ? [...(aiStandards.early_prompt_blacklist || [])] : [];
+    const aiStandardsData = aiStandards ? [...(aiStandards.values || [])] : [];
     // null (not []) means "no org-wide tool cap". An empty array would read as
     // one, and authorized_tools treats empty as "does not narrow" anyway.
-    let allowedToolsData = charter && Array.isArray(charter.allowed_tools)
-        ? [...charter.allowed_tools]
+    let allowedToolsData = aiStandards && Array.isArray(aiStandards.allowed_tools)
+        ? [...aiStandards.allowed_tools]
         : null;
 
     container.innerHTML = `
@@ -172,12 +178,6 @@ function renderOrganizationUI(container, org, charter) {
             </div>
 
             <div class="space-y-5">
-                ${renderImportCard({
-                    title: "Have an organization-wide AI policy?",
-                    subtitle: "Upload it once here and it binds every agent in the organization. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
-                    hint: "Documents for a single team &mdash; a compliance manual, a code of conduct &mdash; belong on that team's policy instead.",
-                })}
-
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mission</label>
                     <textarea id="charter-mission" rows="3"
@@ -203,10 +203,41 @@ function renderOrganizationUI(container, org, charter) {
                     <div id="charter-values-list" class="space-y-4"></div>
                 </div>
 
-                <!-- ORG-WIDE ENFORCEMENT (deterministic Will gates) -->
-                <details class="border-t border-gray-200 dark:border-neutral-700 pt-5">
-                    <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">Organization-wide rules</summary>
-                    <p class="text-xs text-gray-500 mt-2 mb-4">These apply to every agent in the organization, whatever policy it runs under. A business-unit policy can add to them but cannot switch them off.</p>
+
+                <div class="flex items-center justify-between pt-2">
+                    ${charter
+                        ? `<button id="btn-delete-charter" class="text-sm text-red-500 hover:text-red-600 hover:underline">Delete charter</button>`
+                        : '<span></span>'
+                    }
+                    <button id="btn-save-charter" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                        Save Charter
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-card">
+            <div class="flex items-start justify-between gap-4 mb-1">
+                <div>
+                    <h4 class="text-lg font-semibold">AI Standards</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">How your AI must behave &mdash; separate from the Charter, and optional. Not every organization has an AI policy; if yours does, this is where it lives. Applies to every agent, whatever policy it runs under.</p>
+                </div>
+                ${aiStandards
+                    ? '<span class="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full mt-1 shrink-0">Active</span>'
+                    : '<span class="px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 text-gray-500 text-xs font-semibold rounded-full mt-1 shrink-0">Not set</span>'
+                }
+            </div>
+
+            <div class="space-y-5 mt-4">
+                ${renderImportCard({
+                    title: "Have an organization-wide AI policy?",
+                    subtitle: "Upload it once and it binds every agent. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
+                    hint: "Documents for a single team &mdash; a compliance manual, a code of conduct &mdash; belong on that team's policy instead.",
+                })}
+
+                <!-- Deterministic Will checks: no model involved in any of these. -->
+                <div class="border-t border-gray-200 dark:border-neutral-700 pt-5">
+                    <p class="text-xs text-gray-500 mb-4">A business-unit policy can add to these but cannot switch them off.</p>
 
                     <div class="space-y-5">
                         <div class="p-4 rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10">
@@ -256,15 +287,24 @@ function renderOrganizationUI(container, org, charter) {
                             </div>
                         </div>
                     </div>
-                </details>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Non-negotiable standards</label>
+                        <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
+                    </div>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Any response that violates one of these is blocked outright, for every agent. They are scored by the auditor model, so each needs criteria it can judge &mdash; and each is checked on <em>every</em> request.</p>
+                    <div id="ai-standards-list" class="space-y-4"></div>
+                </div>
 
                 <div class="flex items-center justify-between pt-2">
-                    ${charter
-                        ? `<button id="btn-delete-charter" class="text-sm text-red-500 hover:text-red-600 hover:underline">Delete charter</button>`
+                    ${aiStandards
+                        ? `<button id="btn-delete-ai-standards" class="text-sm text-red-500 hover:text-red-600 hover:underline">Delete AI standards</button>`
                         : '<span></span>'
                     }
-                    <button id="btn-save-charter" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors">
-                        Save Charter
+                    <button id="btn-save-ai-standards" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                        Save AI Standards
                     </button>
                 </div>
             </div>
@@ -482,24 +522,28 @@ function renderOrganizationUI(container, org, charter) {
     bindImportCard({
         context: () => [org.name, document.getElementById('charter-mission')?.value.trim()]
             .filter(Boolean).join(' — '),
+        // Targets AI Standards, never the charter. A clause from an AI policy is
+        // an AI conduct rule; writing one into core_values would make it a
+        // SCORED organizational value, which is how a required disclosure once
+        // blocked every response every agent gave.
         onApply: (payload) => applyCommon(
             { structural_requirements: structuralData,
               early_prompt_blacklist: blacklistData,
-              core_values: charterValuesData },
-            payload, 'core_values',
+              values: aiStandardsData },
+            payload, 'values',
         ),
         // Mission is deliberately NOT filled from the document. An AI use policy
         // references the organization's mission and defers to a separate code of
         // conduct — deriving one from it would be invention, and the classifier
         // already returns a note saying so.
         onApplied: () => {
-            renderCharterValues(charterValuesData, valuesList);
+            renderAiStandards();
             renderCharterBlacklist();
             const dis = document.getElementById('charter-require-disclaimer');
             const txt = document.getElementById('charter-disclaimer-text');
             if (dis) dis.checked = !!structuralData.require_disclaimer;
             if (txt) txt.value = structuralData.mandatory_disclaimer_substring || '';
-            ui.showToast('Imported. Review the rules below, then press Save Charter.', 'warning', 6000);
+            ui.showToast('Imported. Review below, then press Save AI Standards.', 'warning', 6000);
         },
     });
 
@@ -548,20 +592,34 @@ function renderOrganizationUI(container, org, charter) {
         }
     });
 
-    document.getElementById('btn-save-charter')?.addEventListener('click', async () => {
-        const btn = document.getElementById('btn-save-charter');
-        const mission = document.getElementById('charter-mission')?.value.trim() || '';
+    // --- AI Standards: non-negotiable standards list ---
+    // Reuses the charter value editor: same shape (name, description, rubric),
+    // and it already renders a hard gate with the weight slider disabled.
+    function renderAiStandards() {
+        const list = document.getElementById('ai-standards-list');
+        if (!list) return;
+        aiStandardsData.forEach(v => { v.hard_gate = true; v.weight = 0; });
+        renderCharterValues(aiStandardsData, list, 'standard');
+    }
+    renderAiStandards();
+
+    document.getElementById('btn-add-ai-standard')?.addEventListener('click', () => {
+        aiStandardsData.push({ name: '', description: '', weight: 0, hard_gate: true, rubric: { scoring_guide: [] } });
+        renderAiStandards();
+    });
+
+    document.getElementById('btn-save-ai-standards')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-save-ai-standards');
         const requireDisclaimer = !!document.getElementById('charter-require-disclaimer')?.checked;
         const disclaimerText = document.getElementById('charter-disclaimer-text')?.value.trim() || '';
         const thresholdRaw = document.getElementById('charter-alignment-threshold')?.value.trim() || '';
 
-        // The server rejects this too, but catching it here keeps the typed
+        // The server rejects these too; catching them here keeps the typed
         // values on screen instead of bouncing the whole form.
         if (requireDisclaimer && !disclaimerText) {
             ui.showToast('Enter the disclaimer text to check for, or untick the requirement.', 'error');
             return;
         }
-
         const structural = {};
         if (requireDisclaimer) {
             structural.require_disclaimer = true;
@@ -579,12 +637,49 @@ function renderOrganizationUI(container, org, charter) {
         btn.disabled = true;
         btn.textContent = 'Saving...';
         try {
-            const res = await api.saveCharter(org.id, {
-                mission,
-                core_values: charterValuesData.filter(v => v.name),
+            const res = await api.saveAiStandards(org.id, {
+                values: aiStandardsData.filter(v => v.name && v.name.trim()),
                 structural_requirements: structural,
                 early_prompt_blacklist: blacklistData,
                 allowed_tools: allowedToolsData,
+            });
+            if (res && res.status === 'saved') {
+                ui.showToast('AI standards saved', 'success');
+                renderSettingsOrganizationTab();
+            } else {
+                throw new Error(res.error || 'Save failed');
+            }
+        } catch (e) {
+            ui.showToast(e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Save AI Standards';
+        }
+    });
+
+    document.getElementById('btn-delete-ai-standards')?.addEventListener('click', async () => {
+        // Deleting standards must not touch the charter — that separation is the
+        // whole point of them being different artifacts.
+        if (!confirm('Delete the organization AI standards? Your Charter is not affected.')) return;
+        try {
+            await api.deleteAiStandards(org.id);
+            ui.showToast('AI standards deleted', 'success');
+            renderSettingsOrganizationTab();
+        } catch (e) {
+            ui.showToast(e.message || 'Delete failed', 'error');
+        }
+    });
+
+    document.getElementById('btn-save-charter')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-save-charter');
+        const mission = document.getElementById('charter-mission')?.value.trim() || '';
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        try {
+            // Mission and core values only. AI conduct rules save separately —
+            // see the AI Standards card.
+            const res = await api.saveCharter(org.id, {
+                mission,
+                core_values: charterValuesData.filter(v => v.name),
             });
             if (res && res.status === 'saved') {
                 ui.showToast('Charter saved', 'success');
@@ -861,7 +956,11 @@ async function loadPendingInvites(orgId) {
     }
 }
 
-function renderCharterValues(valuesData, container) {
+function renderCharterValues(valuesData, container, mode = 'charter') {
+    // `mode` decides whether a value may block. Charter values are organizational
+    // identity and are SCORED — letting one be flagged non-negotiable by hand is
+    // exactly how a required disclosure once became a value that blocked every
+    // turn. Gates belong to AI Standards, where every entry is one by definition.
     if (!container) return;
     container.innerHTML = '';
 
@@ -904,10 +1003,11 @@ function renderCharterValues(valuesData, container) {
                     <button class="btn-toggle-rubric text-xs text-blue-600 dark:text-blue-400 hover:underline">View / Edit Rubric</button>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="If checked, any violation of this value blocks the response outright, regardless of other scores.">
-                        <input type="checkbox" class="cv-hardgate accent-red-600 w-4 h-4" ${v.hard_gate ? 'checked' : ''}/>
-                        <span class="text-xs uppercase font-bold text-gray-500">Non-negotiable</span>
-                    </label>
+                    ${mode === 'standard'
+                        ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-1 rounded-full" title="Every AI standard blocks on violation. That is what makes it a standard rather than a preference.">Non-negotiable</span>`
+                        : (v.hard_gate
+                            ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-full" title="This core value blocks on violation. Blocking rules belong in AI Standards; this one is kept working, but new ones should be added there.">Legacy gate</span>`
+                            : '')}
                     <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
                         <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
                         <input type="range" min="1" max="100" value="${weightPct}" class="cv-weight-slider w-20 h-1.5 accent-green-600 cursor-pointer"/>
@@ -951,11 +1051,9 @@ function renderCharterValues(valuesData, container) {
             lbl.textContent = pct + '%';
         });
 
-        // Non-negotiable (hard gate) toggle
-        const hgToggle = card.querySelector('.cv-hardgate');
-        if (hgToggle) {
-            hgToggle.addEventListener('change', e => { valuesData[idx].hard_gate = !!e.target.checked; });
-        }
+        // No hard-gate toggle: whether a value can block is decided by which
+        // artifact it lives in, not per value. Existing flagged charter values
+        // keep working and are labelled "Legacy gate".
 
         // Rubric toggle
         const rubricPanel = card.querySelector('.cv-rubric-panel');

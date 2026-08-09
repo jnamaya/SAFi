@@ -637,6 +637,14 @@ async def generate_policy_content_endpoint():
                  "against the agent's draft response.\n\n"
                  f"RULES:\n{rules_block}\n"
                  f"{definitions_block}\n"
+                 "CRITICAL — a rule that requires the response to INCLUDE something cannot become a\n"
+                 "standard here. Its only failure mode is an omission, and an omission-based standard\n"
+                 "blocks every response that simply did not raise the topic. Put those in\n"
+                 "'unconvertible' with the reason 'This mandates including something, so it must be\n"
+                 "enforced as a required disclaimer rather than a scored standard.' Examples:\n"
+                 '- "Disclose that AI was used" -> unconvertible (a required disclaimer)\n'
+                 '- "Always cite your sources" -> unconvertible (a required disclaimer)\n'
+                 "Only rules forbidding an ACT can become standards.\n\n"
                  "CRITICAL — the subject must be the AGENT'S RESPONSE.\n"
                  "A rule whose real subject is a person or a business process cannot be scored "
                  "against a response, and must NOT be invented into a gate. Put those in "
@@ -844,6 +852,27 @@ async def generate_policy_content_endpoint():
                     dropped.append({
                         "rule": str(g.get("source_rule") or g.get("name") or "<unnamed>"),
                         "reason": "The generated standard had no usable rubric and would have blocked every request.",
+                    })
+                    continue
+
+                # Refuse omission-based failure criteria, whatever the prompt was
+                # told. A standard whose -1.0 reads "does not include X" fires on
+                # every response that never raised the topic — which is how a
+                # required disclosure blocked every answer an agent gave. The
+                # obligation is real; it belongs to the disclaimer check, which
+                # APPENDS the missing text instead of refusing the turn.
+                fail = next((c for c in guide if isinstance(c, dict) and float(c.get("score", 0)) < 0), None)
+                fail_text = str((fail or {}).get("criteria") or (fail or {}).get("descriptor") or "").lower()
+                if any(p in fail_text for p in (
+                    "does not include", "does not contain", "does not disclose", "does not state",
+                    "fails to include", "fails to mention", "fails to disclose", "fails to state",
+                    "omits", "without disclosing", "lacks a", "no statement",
+                )):
+                    dropped.append({
+                        "rule": str(g.get("source_rule") or name),
+                        "reason": ("This requires the response to include something, so it can only be "
+                                   "broken by omission — as a standard it would block every answer that "
+                                   "never raised the topic. Set it as a required disclaimer instead."),
                     })
                     continue
                 gates.append({

@@ -267,20 +267,51 @@ def init_db():
                 gates = [v for v in values if isinstance(v, dict) and v.get("hard_gate")]
                 identity = [v for v in values if not (isinstance(v, dict) and v.get("hard_gate"))]
 
+                # Merge, never "first write wins". An earlier version used
+                # ON DUPLICATE KEY UPDATE org_id = org_id, which silently
+                # discarded the gates when a standards row already existed — and
+                # then stripped them from core_values anyway, losing them
+                # outright. Read what is there and union it.
+                cursor.execute(
+                    "SELECT values_json, structural_requirements, early_prompt_blacklist, "
+                    "allowed_tools FROM org_ai_standards WHERE org_id = %s", (org_id,))
+                existing = cursor.fetchone()
+                if existing:
+                    ex_vals = _load(existing[0], []) or []
+                    seen = {str((v or {}).get("name") or "").strip().lower() for v in ex_vals}
+                    merged_gates = ex_vals + [
+                        g for g in gates
+                        if str(g.get("name") or g.get("value") or "").strip().lower() not in seen
+                    ]
+                    merged_struct = {**(_load(struct, {}) or {}), **(_load(existing[1], {}) or {})}
+                    ex_bl = _load(existing[2], []) or []
+                    merged_bl = ex_bl + [b for b in (_load(blacklist, []) or []) if b not in ex_bl]
+                    merged_tools = existing[3] if existing[3] is not None else tools
+                else:
+                    merged_gates = gates
+                    merged_struct = _load(struct, {}) or {}
+                    merged_bl = _load(blacklist, []) or []
+                    merged_tools = tools
+
                 cursor.execute(
                     """
                     INSERT INTO org_ai_standards
                         (org_id, values_json, structural_requirements,
                          early_prompt_blacklist, allowed_tools, created_by)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE org_id = org_id
+                    ON DUPLICATE KEY UPDATE
+                        values_json = VALUES(values_json),
+                        structural_requirements = VALUES(structural_requirements),
+                        early_prompt_blacklist = VALUES(early_prompt_blacklist),
+                        allowed_tools = VALUES(allowed_tools)
                     """,
-                    (org_id, json.dumps(gates),
-                     json.dumps(_load(struct, {}) or {}),
-                     json.dumps(_load(blacklist, []) or []),
-                     json.dumps(tools) if tools is not None else None,
+                    (org_id, json.dumps(merged_gates), json.dumps(merged_struct),
+                     json.dumps(merged_bl),
+                     json.dumps(merged_tools) if merged_tools is not None else None,
                      created_by),
                 )
+                # Only strip the gates from the charter once they are safely
+                # stored, so a failure here cannot lose them from both places.
                 if gates:
                     cursor.execute(
                         "UPDATE org_charter SET core_values = %s WHERE org_id = %s",

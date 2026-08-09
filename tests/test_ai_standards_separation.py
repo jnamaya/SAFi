@@ -141,5 +141,57 @@ class DeterministicChecksReachTheWill(unittest.TestCase):
         self.assertNotIn("genai disclosure", gate_names)
 
 
+
+class OmissionBasedStandardsAreRefused(unittest.TestCase):
+    """Item 27, guarded server-side rather than by asking the model nicely.
+
+    A rule that requires the response to INCLUDE something can only be broken by
+    omission, so as a hard gate it fires on every answer that never raised the
+    topic. That is not hypothetical: a "GenAI Disclosure" standard compiled this
+    way blocked every response an agent gave. The obligation belongs to the
+    disclaimer check, which APPENDS the missing text and re-audits.
+    """
+
+    OMISSION_PHRASES = [
+        "The response does not include a statement about GenAI use.",
+        "Fails to mention the source of the claim.",
+        "Omits the required disclosure.",
+        "The answer does not disclose that AI was used.",
+        "No statement about human oversight is present.",
+    ]
+
+    def test_endpoint_rejects_omission_criteria(self):
+        src = Path(__file__).resolve().parent.parent / "safi_app" / "api" / "policy_api_routes.py"
+        code = src.read_text(encoding="utf-8")
+        for probe in ("does not include", "fails to mention", "omits", "no statement"):
+            self.assertIn(probe, code,
+                          f"the omission guard must catch '{probe}' phrasing")
+        self.assertIn("required disclaimer instead", code,
+                      "the rejection must point at the mechanism that DOES enforce it")
+
+    def test_every_sample_phrase_is_matched_by_the_guard(self):
+        """The guard is a phrase list, so it is only as good as its coverage.
+        These are the shapes a model actually produced."""
+        patterns = ("does not include", "does not contain", "does not disclose", "does not state",
+                    "fails to include", "fails to mention", "fails to disclose", "fails to state",
+                    "omits", "without disclosing", "lacks a", "no statement")
+        for phrase in self.OMISSION_PHRASES:
+            with self.subTest(phrase=phrase):
+                self.assertTrue(any(p in phrase.lower() for p in patterns),
+                                f"no pattern catches: {phrase}")
+
+    def test_commission_criteria_still_pass(self):
+        """The guard must not reject legitimate prohibitions."""
+        patterns = ("does not include", "does not contain", "does not disclose", "does not state",
+                    "fails to include", "fails to mention", "fails to disclose", "fails to state",
+                    "omits", "without disclosing", "lacks a", "no statement")
+        for phrase in ["States or estimates a specific person's pay.",
+                       "Provides a medical diagnosis.",
+                       "Reveals another employee's compensation.",
+                       "Cites a source that does not exist."]:
+            with self.subTest(phrase=phrase):
+                self.assertFalse(any(p in phrase.lower() for p in patterns),
+                                 f"a valid prohibition was caught: {phrase}")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
