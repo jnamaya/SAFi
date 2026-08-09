@@ -584,6 +584,14 @@ async def generate_policy_content_endpoint():
              if len(rules) > 25:
                  return jsonify({"error": "Too many rules to compile at once (max 25)."}), 400
 
+             # Strict-JSON output, so no sampling latitude: at 0.7 this branch
+             # returned malformed JSON often enough to fail a real import.
+             gen_temperature = 0.0
+             # Each gate carries a full rubric, and the definitions block makes
+             # them longer. At the 4096 default the reply is truncated mid-object,
+             # which surfaces as "invalid JSON" and hides the real cause.
+             gen_max_tokens = 8192
+
              # Definitions from the source document, when this is pass 2 of the
              # document flow. A policy that enumerates what a term covers ("Personal
              # Information means name, signature, passport number, ...") turns a
@@ -787,8 +795,20 @@ async def generate_policy_content_endpoint():
                 if "{" in cleaned: cleaned = cleaned[cleaned.find("{"):]
                 if "}" in cleaned: cleaned = cleaned[:cleaned.rfind("}")+1]
                 parsed = json.loads(cleaned)
-            except json.JSONDecodeError:
-                return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
+            except json.JSONDecodeError as e:
+                # Log enough to tell truncation from malformation. A bare 422
+                # sent an operator hunting through a 15-page document for a
+                # clause that was never the problem.
+                current_app.logger.warning(
+                    "compile_rules returned unparseable JSON (%d chars, %d rules): %s | tail=%r",
+                    len(cleaned), len(rules), e, cleaned[-200:],
+                )
+                truncated = not cleaned.rstrip().endswith("}")
+                return jsonify({"ok": False, "error": (
+                    "The model's reply was cut off before it finished. Select fewer standards "
+                    "and convert them in batches." if truncated else
+                    "The model returned malformed JSON. Try again."
+                )}), 422
 
             # hard_gate and weight are set here, never taken from the model: a
             # gate the Conscience cannot score fails closed on EVERY request

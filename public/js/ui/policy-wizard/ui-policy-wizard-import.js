@@ -227,86 +227,119 @@ async function applySelected(policyData, onApplied) {
 
     btn.disabled = true;
     const original = btn.innerHTML;
-    const applied = [];
+    showApplyError('');
 
+    // Everything that can fail runs BEFORE anything is written to policyData.
+    // The first version applied the disclaimer, then called the model, and left
+    // the disclaimer applied when that call failed — the author was told it had
+    // failed while a setting had in fact changed underneath them.
+    let gates = [];
+    let rejected = [];
     try {
-        // 1. Literal checks — no model needed, apply directly.
-        if (structural.length) {
-            // evaluate_draft_structure checks exactly one substring, so only the
-            // first can be enforced. Say so rather than appearing to apply all.
-            const first = structural[0];
-            policyData.structural_requirements = policyData.structural_requirements || {};
-            policyData.structural_requirements.require_disclaimer = true;
-            policyData.structural_requirements.mandatory_disclaimer_substring = first.disclaimer_text;
-            applied.push('required disclaimer');
-            if (structural.length > 1) {
-                ui.showToast('Only one required disclaimer can be enforced — the first was applied.', 'warning');
-            }
-        }
-
-        if (blacklist.length) {
-            if (!Array.isArray(policyData.early_prompt_blacklist)) policyData.early_prompt_blacklist = [];
-            let added = 0;
-            blacklist.forEach(b => {
-                if (b.phrase && !policyData.early_prompt_blacklist.includes(b.phrase)) {
-                    policyData.early_prompt_blacklist.push(b.phrase);
-                    added++;
-                }
-            });
-            if (added) applied.push(`${added} blocked phrase${added === 1 ? '' : 's'}`);
-        }
-
-        // 2. Judgement clauses — pass 2 turns them into rubrics. Definitions from
-        //    the source document go along: a rubric naming the actual categories
-        //    of personal data is checkable, one saying "Personal Information" is
-        //    an interpretation the auditor has to make on every turn.
         if (values.length) {
-            btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Writing rubrics...`;
+            btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Writing rubrics for ${values.length} standard${values.length === 1 ? '' : 's'}...`;
             const ctx = [policyData.name, policyData.business_unit, policyData.context]
                 .filter(Boolean).join(' — ') || 'General organization';
+            // Definitions from the source document ride along: a rubric naming
+            // the actual categories of personal data is a check, while one
+            // saying "Personal Information" is an interpretation the auditor has
+            // to make afresh on every turn.
             const res = await api.generatePolicyContent('compile_rules', ctx, {
                 rules: values.map(v => v.text),
                 definitions: result.definitions || [],
             });
             if (!res.ok) throw new Error(res.error || 'Could not write the rubrics.');
-
-            const gates = (res.content && res.content.gates) || [];
-            if (!Array.isArray(policyData.values)) policyData.values = [];
-            const existing = new Set(policyData.values.map(v => String(v.name || '').trim().toLowerCase()));
-            let added = 0;
-            gates.forEach(g => {
-                const name = String(g.name || '').trim();
-                if (!name || existing.has(name.toLowerCase())) return;
-                existing.add(name.toLowerCase());
-                policyData.values.push({
-                    name,
-                    description: g.description || '',
-                    weight: 0,
-                    hard_gate: true,
-                    rubric: g.rubric || { scoring_guide: [] },
-                });
-                added++;
-            });
-            if (added) applied.push(`${added} scored standard${added === 1 ? '' : 's'}`);
-
-            const rejected = (res.content && res.content.unconvertible) || [];
-            if (rejected.length) {
-                ui.showToast(`${rejected.length} standard${rejected.length === 1 ? '' : 's'} could not be written and were skipped.`, 'warning');
-            }
+            gates = (res.content && res.content.gates) || [];
+            rejected = (res.content && res.content.unconvertible) || [];
         }
-
-        panel.classList.add('hidden');
-        panel.innerHTML = '';
-        result = null;
-        ui.showToast(
-            applied.length ? `Applied: ${applied.join(', ')}. Review them in the next steps.` : 'Nothing new to apply.',
-            applied.length ? 'success' : 'warning'
-        );
-        if (typeof onApplied === 'function') onApplied();
     } catch (e) {
-        console.error('policy wizard: applying imported policy failed', e);
-        ui.showToast(e.message || 'Could not apply the selection.', 'error');
+        console.error('policy wizard: rubric compilation failed', e);
+        // Inline, not a toast: this step can take the better part of a minute,
+        // and a 3-second toast fired at the end of that is one the author has
+        // usually looked away from. Nothing was applied, so say so plainly.
+        showApplyError(`${e.message || 'Could not write the rubrics.'} Nothing was applied.`);
         btn.disabled = false;
         btn.innerHTML = original;
+        return;
     }
+
+    // Past this point nothing can fail: plain assignment into policyData.
+    const applied = [];
+
+    if (structural.length) {
+        // evaluate_draft_structure checks exactly one substring, so only the
+        // first can be enforced. Said in the summary rather than as a toast that
+        // competes with the result.
+        const first = structural[0];
+        policyData.structural_requirements = policyData.structural_requirements || {};
+        policyData.structural_requirements.require_disclaimer = true;
+        policyData.structural_requirements.mandatory_disclaimer_substring = first.disclaimer_text;
+        applied.push(structural.length > 1
+            ? 'the first required disclaimer (only one can be enforced)'
+            : 'required disclaimer');
+    }
+
+    if (blacklist.length) {
+        if (!Array.isArray(policyData.early_prompt_blacklist)) policyData.early_prompt_blacklist = [];
+        let added = 0;
+        blacklist.forEach(b => {
+            if (b.phrase && !policyData.early_prompt_blacklist.includes(b.phrase)) {
+                policyData.early_prompt_blacklist.push(b.phrase);
+                added++;
+            }
+        });
+        if (added) applied.push(`${added} blocked phrase${added === 1 ? '' : 's'}`);
+    }
+
+    if (gates.length) {
+        if (!Array.isArray(policyData.values)) policyData.values = [];
+        const existing = new Set(policyData.values.map(v => String(v.name || '').trim().toLowerCase()));
+        let added = 0;
+        gates.forEach(g => {
+            const name = String(g.name || '').trim();
+            if (!name || existing.has(name.toLowerCase())) return;
+            existing.add(name.toLowerCase());
+            policyData.values.push({
+                name,
+                description: g.description || '',
+                weight: 0,
+                hard_gate: true,
+                rubric: g.rubric || { scoring_guide: [] },
+            });
+            added++;
+        });
+        if (added) applied.push(`${added} scored standard${added === 1 ? '' : 's'}`);
+    }
+
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    result = null;
+
+    let msg = applied.length
+        ? `Applied: ${applied.join(', ')}. Review them in the next steps.`
+        : 'Nothing new to apply — these were already on the policy.';
+    if (rejected.length) {
+        msg += ` ${rejected.length} could not be written as a standard and were skipped.`;
+    }
+    ui.showToast(msg, applied.length ? 'success' : 'warning', 6000);
+    if (typeof onApplied === 'function') onApplied();
+}
+
+/** Persistent in-panel error. Empty string clears it. */
+function showApplyError(message) {
+    const panel = document.getElementById('pw-import-result');
+    if (!panel) return;
+    let box = document.getElementById('pw-import-error');
+    if (!message) {
+        box?.remove();
+        return;
+    }
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'pw-import-error';
+        box.className = 'mt-3 p-3 rounded-lg border border-red-300 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 text-sm text-red-800 dark:text-red-200';
+        const applyBtn = document.getElementById('pw-import-apply');
+        applyBtn ? applyBtn.insertAdjacentElement('beforebegin', box) : panel.appendChild(box);
+    }
+    box.textContent = message;
 }

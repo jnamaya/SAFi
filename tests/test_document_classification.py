@@ -201,6 +201,33 @@ class ClassifierPromptGuards(unittest.TestCase):
         self.assertIn("definitions", p)
         self.assertIn("mission", p.lower())
 
+    def test_json_branches_sample_at_zero_with_a_real_budget(self):
+        """The bug this catches actually happened, on the first real import.
+
+        `compile_rules` inherited the endpoint's drafting defaults — temperature
+        0.7 and 4096 tokens — while being asked for strict JSON containing a full
+        rubric per standard. It returned unparseable output and the import died
+        with a bare 422. Both document branches must set their own sampling:
+        latitude produces malformed JSON, and too small a budget truncates it
+        mid-object, which looks identical to the caller.
+        """
+        src = Path(pr.__file__).read_text(encoding="utf-8")
+        # Two branches (classify_document, compile_rules) plus the default.
+        self.assertEqual(src.count("gen_temperature = 0.0"), 2,
+                         "both classify_document and compile_rules must pin temperature 0")
+        self.assertEqual(src.count("gen_max_tokens = 8192"), 2,
+                         "both must raise the token budget above the 4096 drafting default")
+
+    def test_truncation_is_reported_distinctly_from_malformation(self):
+        """A truncated reply and a malformed one need different advice — convert
+        fewer at once, versus just retry. A single generic message sent an
+        operator hunting through a 15-page document for a clause that was never
+        the problem."""
+        src = Path(pr.__file__).read_text(encoding="utf-8")
+        self.assertIn("cut off before it finished", src)
+        self.assertIn("in batches", src)
+        self.assertIn('truncated = not cleaned.rstrip().endswith("}")', src)
+
     def test_normalization_mirror_matches_the_endpoint(self):
         """This file reimplements the endpoint's normalization. If the endpoint's
         branch keys change, the mirror is stale and these tests prove nothing."""
