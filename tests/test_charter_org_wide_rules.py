@@ -1,5 +1,13 @@
 """
-The Charter's deterministic Will settings must reach every agent in the org.
+The org's deterministic Will settings must reach every agent.
+
+NOTE 2026-08-09: these settings moved OFF the charter and onto a separate
+`org_ai_standards` artifact. A charter is mission and core values — who the
+organization is — and its values are SCORED; AI conduct rules are optional and
+contribute gates and literal checks only. Filing one as the other is what let a
+required disclosure become a scored value that blocked every turn. The merge
+semantics pinned below are unchanged; only the source moved, so the fixtures now
+pass `ai_standards=` and the assertions stand as written.
 
 WHY. Scored values and hard gates already bind org-wide through the charter's
 core_values, but the mechanisms the Will enforces *structurally* — the disclaimer
@@ -39,7 +47,10 @@ def base_profile(will_rules=None):
 
 
 def charter_with(**kw):
-    return {"mission": "", "core_values": [], **kw}
+    """Builds the AI-STANDARDS side of the merge. Named for the tier these
+    settings used to live on, kept so the diff against the original stays
+    readable; `standards_with` would be the better name today."""
+    return dict(kw)
 
 
 class TestBackwardCompatibility(unittest.TestCase):
@@ -47,26 +58,26 @@ class TestBackwardCompatibility(unittest.TestCase):
 
     def test_no_charter_is_a_no_op(self):
         wr = {"structural_requirements": {"require_disclaimer": True}}
-        out = apply_charter(base_profile(wr), None)
+        out = apply_charter(base_profile(wr), None, ai_standards=None)
         self.assertEqual(out["will_rules"], wr)
 
     def test_charter_without_the_new_fields_is_a_no_op(self):
         # Rows predating the columns come back with nothing set.
         wr = {"structural_requirements": {"banned_markdown_syntaxes": ["```html"]}}
-        out = apply_charter(base_profile(wr), charter_with())
+        out = apply_charter(base_profile(wr), None, ai_standards=charter_with())
         self.assertEqual(out["will_rules"], wr)
 
     def test_empty_charter_tool_list_does_not_deny_all(self):
         # [] means "does not narrow" — the same convention as authorized_tools.
         # Reading it as deny-all would disarm every agent in the org.
-        out = apply_charter(base_profile({"allowed_tools": ["github"]}), charter_with(allowed_tools=[]))
+        out = apply_charter(base_profile({"allowed_tools": ["github"]}), None, ai_standards=charter_with(allowed_tools=[]))
         self.assertEqual(out["will_rules"]["allowed_tools"], ["github"])
 
 
 class TestDisclaimerPrecedence(unittest.TestCase):
 
     def test_charter_turns_the_requirement_on(self):
-        out = apply_charter(base_profile(), charter_with(structural_requirements={
+        out = apply_charter(base_profile(), None, ai_standards=charter_with(structural_requirements={
             "require_disclaimer": True, "mandatory_disclaimer_substring": "AI-generated.",
         }))
         struct = out["will_rules"]["structural_requirements"]
@@ -75,7 +86,7 @@ class TestDisclaimerPrecedence(unittest.TestCase):
 
     def test_policy_cannot_switch_the_requirement_off(self):
         policy = {"structural_requirements": {"require_disclaimer": False}}
-        out = apply_charter(base_profile(policy), charter_with(structural_requirements={
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(structural_requirements={
             "require_disclaimer": True, "mandatory_disclaimer_substring": "AI-generated.",
         }))
         self.assertTrue(out["will_rules"]["structural_requirements"]["require_disclaimer"])
@@ -86,7 +97,7 @@ class TestDisclaimerPrecedence(unittest.TestCase):
         policy = {"structural_requirements": {
             "require_disclaimer": True, "mandatory_disclaimer_substring": "Unit disclaimer.",
         }}
-        out = apply_charter(base_profile(policy), charter_with(structural_requirements={
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(structural_requirements={
             "require_disclaimer": True, "mandatory_disclaimer_substring": "Org disclaimer.",
         }))
         self.assertEqual(
@@ -98,14 +109,14 @@ class TestDisclaimerPrecedence(unittest.TestCase):
         policy = {"structural_requirements": {
             "require_disclaimer": True, "mandatory_disclaimer_substring": "Unit disclaimer.",
         }}
-        out = apply_charter(base_profile(policy), charter_with(early_prompt_blacklist=["x"]))
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(early_prompt_blacklist=["x"]))
         self.assertEqual(
             out["will_rules"]["structural_requirements"]["mandatory_disclaimer_substring"],
             "Unit disclaimer.",
         )
 
     def test_the_merged_disclaimer_actually_blocks(self):
-        out = apply_charter(base_profile(), charter_with(structural_requirements={
+        out = apply_charter(base_profile(), None, ai_standards=charter_with(structural_requirements={
             "require_disclaimer": True, "mandatory_disclaimer_substring": "AI-generated.",
         }))
         will = WillGate(None, values=[], profile=out)
@@ -120,7 +131,7 @@ class TestUnionAndThreshold(unittest.TestCase):
 
     def test_banned_markdown_is_unioned(self):
         policy = {"structural_requirements": {"banned_markdown_syntaxes": ["```js"]}}
-        out = apply_charter(base_profile(policy), charter_with(
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(
             structural_requirements={"banned_markdown_syntaxes": ["```html"]}))
         banned = out["will_rules"]["structural_requirements"]["banned_markdown_syntaxes"]
         self.assertIn("```js", banned)
@@ -128,7 +139,7 @@ class TestUnionAndThreshold(unittest.TestCase):
 
     def test_blacklist_is_unioned_without_duplicates(self):
         policy = {"early_prompt_blacklist": ["shared phrase", "unit phrase"]}
-        out = apply_charter(base_profile(policy), charter_with(
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(
             early_prompt_blacklist=["shared phrase", "org phrase"]))
         bl = out["will_rules"]["early_prompt_blacklist"]
         self.assertEqual(sorted(bl), ["org phrase", "shared phrase", "unit phrase"])
@@ -136,18 +147,18 @@ class TestUnionAndThreshold(unittest.TestCase):
 
     def test_threshold_takes_the_stricter_value(self):
         policy = {"structural_requirements": {"alignment_score_threshold": 0.8}}
-        out = apply_charter(base_profile(policy), charter_with(
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(
             structural_requirements={"alignment_score_threshold": 0.5}))
         self.assertEqual(out["will_rules"]["structural_requirements"]["alignment_score_threshold"], 0.8)
 
     def test_charter_raises_a_lower_policy_threshold(self):
         policy = {"structural_requirements": {"alignment_score_threshold": 0.3}}
-        out = apply_charter(base_profile(policy), charter_with(
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(
             structural_requirements={"alignment_score_threshold": 0.7}))
         self.assertEqual(out["will_rules"]["structural_requirements"]["alignment_score_threshold"], 0.7)
 
     def test_non_numeric_threshold_is_ignored_not_fatal(self):
-        out = apply_charter(base_profile(), charter_with(
+        out = apply_charter(base_profile(), None, ai_standards=charter_with(
             structural_requirements={"alignment_score_threshold": "high"}))
         self.assertNotIn("alignment_score_threshold",
                          out["will_rules"].get("structural_requirements", {}))
@@ -156,7 +167,7 @@ class TestUnionAndThreshold(unittest.TestCase):
 class TestToolCap(unittest.TestCase):
 
     def test_charter_caps_when_policy_sets_none(self):
-        out = apply_charter(base_profile({}), charter_with(allowed_tools=["web_search"]))
+        out = apply_charter(base_profile({}), None, ai_standards=charter_with(allowed_tools=["web_search"]))
         self.assertEqual(out["will_rules"]["allowed_tools"], ["web_search"])
 
     def test_charter_and_policy_intersect(self):
@@ -164,19 +175,19 @@ class TestToolCap(unittest.TestCase):
         # intersecting, so authorizing the "web_search" connector authorizes
         # every function under it — the same expansion authorized_tools does.
         policy = {"allowed_tools": ["web_search", "calculator"]}
-        out = apply_charter(base_profile(policy), charter_with(allowed_tools=["web_search"]))
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(allowed_tools=["web_search"]))
         allowed = out["will_rules"]["allowed_tools"]
         self.assertEqual(set(allowed), set(expand_connectors(["web_search"])))
         self.assertNotIn("calculator", allowed)
 
     def test_policy_cannot_add_a_tool_the_charter_withheld(self):
         policy = {"allowed_tools": ["calculator"]}
-        out = apply_charter(base_profile(policy), charter_with(allowed_tools=["web_search"]))
+        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(allowed_tools=["web_search"]))
         self.assertEqual(out["will_rules"]["allowed_tools"], [])
 
     def test_cap_still_cannot_grant_beyond_what_the_agent_advertises(self):
         # The charter narrows; it never widens. authorized_tools runs after this.
-        out = apply_charter(base_profile({}), charter_with(allowed_tools=["web_search", "calculator"]))
+        out = apply_charter(base_profile({}), None, ai_standards=charter_with(allowed_tools=["web_search", "calculator"]))
         effective = authorized_tools(["calculator"], out["will_rules"]["allowed_tools"])
         self.assertEqual(effective, ["calculator"])
 
@@ -186,7 +197,7 @@ class TestShapePromotion(unittest.TestCase):
     def test_legacy_prose_list_is_promoted_not_discarded(self):
         # Structured keys cannot attach to a list, but dropping the prose was a
         # real bug once already.
-        out = apply_charter(base_profile(["A written rule."]), charter_with(
+        out = apply_charter(base_profile(["A written rule."]), None, ai_standards=charter_with(
             early_prompt_blacklist=["blocked"]))
         wr = out["will_rules"]
         self.assertIsInstance(wr, dict)
@@ -195,12 +206,11 @@ class TestShapePromotion(unittest.TestCase):
 
     def test_charter_settings_do_not_disturb_the_value_split(self):
         prof = {"name": "A", "values": [], "will_rules": {}}
-        charter = charter_with(
-            core_values=[{"name": "Care", "weight": 1.0,
-                          "rubric": {"scoring_guide": [{"score": 1.0, "descriptor": "ok"}]}}],
-            early_prompt_blacklist=["blocked"],
-        )
-        out = apply_charter(prof, charter, policy_values=[], charter_weight=0.40)
+        charter = {"mission": "", "core_values": [
+            {"name": "Care", "weight": 1.0,
+             "rubric": {"scoring_guide": [{"score": 1.0, "descriptor": "ok"}]}}]}
+        standards = charter_with(early_prompt_blacklist=["blocked"])
+        out = apply_charter(prof, charter, policy_values=[], charter_weight=0.40, ai_standards=standards)
         self.assertEqual([v["value"] for v in out["values"]], ["Care"])
         self.assertEqual(out["will_rules"]["early_prompt_blacklist"], ["blocked"])
 

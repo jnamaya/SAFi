@@ -409,27 +409,32 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     return final_profile
 
 
-def _apply_charter_will_rules(profile: Dict[str, Any], charter: Dict[str, Any]) -> Dict[str, Any]:
-    """Folds the Charter's deterministic Will settings into `will_rules`.
+def _apply_ai_standards(profile: Dict[str, Any], standards: Dict[str, Any]) -> Dict[str, Any]:
+    """Folds the organization's AI Standards into `will_rules`.
 
-    These are the org-wide half of what the Will actually enforces. Scored
-    values and hard gates already reach every agent through the charter's
-    core_values; structural requirements, the prompt blacklist and the tool cap
-    previously existed only on a business-unit Policy, so an org-wide
-    prohibition had to be duplicated into every policy with nothing keeping the
-    copies in step.
+    Distinct from the Charter on purpose. A charter is mission and core values —
+    who the organization is — and contributes SCORED values. AI Standards say
+    how its AI must behave, are optional, and contribute only gates and
+    deterministic checks. Filing one as the other is not cosmetic: a rule stored
+    as a charter value gets scored on every turn, which is how a required
+    disclosure once blocked every response an agent gave.
+
+    These are the org-wide half of what the Will enforces deterministically.
+    Structural requirements, the prompt blacklist and the tool cap previously
+    existed only on a business-unit Policy, so an org-wide prohibition had to be
+    duplicated into every policy with nothing keeping the copies in step.
 
     Precedence follows one rule — a business-unit Policy may ADD to what the org
     requires, never quietly drop it — but that resolves differently per key
     because the keys differ in type:
 
-      require_disclaimer            OR      charter on -> a policy cannot turn it off
-      mandatory_disclaimer_substring        charter wins when set (see below)
-      disclaimer_repair_text                charter wins when set
+      require_disclaimer            OR      org on -> a policy cannot turn it off
+      mandatory_disclaimer_substring        org wins when set (see below)
+      disclaimer_repair_text                org wins when set
       banned_markdown_syntaxes      union   both prohibitions apply
-      alignment_score_threshold     max     strictest wins; charter sets a floor
+      alignment_score_threshold     max     strictest wins; org sets a floor
       early_prompt_blacklist        union   both phrase sets apply
-      allowed_tools                 ∩       charter ∩ policy ∩ advertised
+      allowed_tools                 ∩       org ∩ policy ∩ advertised
 
     The disclaimer substring cannot be unioned: WillGate.evaluate_draft_structure
     checks exactly one substring, so two mandates cannot both be enforced. The
@@ -441,12 +446,13 @@ def _apply_charter_will_rules(profile: Dict[str, Any], charter: Dict[str, Any]) 
     two whitelists can produce [], which would disable the check rather than
     tighten it.
 
-    Absent/empty charter settings are no-ops, so an org with no charter — or one
-    written before these fields existed — compiles exactly as before.
+    Absent/empty settings are no-ops, so an organization with no AI Standards —
+    the common case, since they are optional — compiles exactly as before.
     """
-    struct_in = charter.get("structural_requirements") or {}
-    blacklist_in = [p for p in (charter.get("early_prompt_blacklist") or []) if str(p).strip()]
-    tools_in = charter.get("allowed_tools")
+    standards = standards or {}
+    struct_in = standards.get("structural_requirements") or {}
+    blacklist_in = [p for p in (standards.get("early_prompt_blacklist") or []) if str(p).strip()]
+    tools_in = standards.get("allowed_tools")
     if not struct_in and not blacklist_in and not isinstance(tools_in, list):
         return profile
 
@@ -514,7 +520,7 @@ def _apply_charter_will_rules(profile: Dict[str, Any], charter: Dict[str, Any]) 
     return profile
 
 
-def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], policy_values: Optional[List[Dict[str, Any]]] = None, charter_weight: float = 0.40) -> Dict[str, Any]:
+def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], policy_values: Optional[List[Dict[str, Any]]] = None, charter_weight: float = 0.40, ai_standards: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Finalizes an agent's governed profile under the two-tier value model.
 
@@ -525,6 +531,11 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     `profile` are discarded and rebuilt from the authoritative charter/policy
     sources. Hard gates (e.g. Scope Compliance, weight 0) are always preserved.
 
+    `ai_standards` is the organization's optional AI conduct rules, and is a
+    SEPARATE artifact from the charter — see _apply_ai_standards. It contributes
+    hard gates and deterministic checks, never scored values, so the two-way
+    weight split above is unaffected by whether an organization has adopted any.
+
     Behaviour:
       - Mission + charter value names are prepended to the worldview as a
         constitutional preamble.
@@ -533,15 +544,13 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
       - policy only (no charter) -> policy@1.0
       - neither (built-ins / standalone custom agents) -> keep existing values,
         no preamble. Effectively a no-op.
-      - The charter's deterministic Will settings (structural requirements,
-        prompt blacklist, tool cap) are folded into will_rules. See
-        _apply_charter_will_rules for the per-key precedence.
     """
     profile = copy.deepcopy(profile)
     charter = charter or {}
     policy_values = policy_values or []
+    ai_standards = ai_standards or {}
 
-    profile = _apply_charter_will_rules(profile, charter)
+    profile = _apply_ai_standards(profile, ai_standards)
 
     mission = (charter.get("mission") or "").strip()
     charter_values_raw = charter.get("core_values") or []
@@ -572,9 +581,22 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     charter_vals = _mapname(charter_values_raw)
     policy_vals = _mapname(policy_values)
 
+    # The organization's AI Standards contribute hard gates ONLY. Anything
+    # scored there would need a third share of the weight split, changing the
+    # alignment aggregate for every existing org; a gate sits outside the split
+    # at weight 0, so adopting AI standards cannot move anyone's scores.
+    ai_gates = _mapname([
+        v for v in (ai_standards.get("values") or []) if isinstance(v, dict)
+    ])
+    for v in ai_gates:
+        v["hard_gate"] = True
+        v["weight"] = 0.0
+
     # Preserve all hard gates at weight 0 (Scope Compliance + any gate-flagged
     # charter/policy values). Only scored values get the weight split.
     existing_gates = [v for v in profile.get("values", []) if v.get("hard_gate")]
+    # Charter values flagged as gates are legacy: gates belong to AI Standards
+    # now. Still honoured so an existing charter does not lose enforcement.
     c_gates = [v for v in charter_vals if v.get("hard_gate")]
     c_scored = [v for v in charter_vals if not v.get("hard_gate")]
     p_gates = [v for v in policy_vals if v.get("hard_gate")]
@@ -587,7 +609,7 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     # value set twice and is scored twice in every audit ledger.
     hard_gates = []
     _seen_gates = set()
-    for v in existing_gates + c_gates + p_gates:
+    for v in ai_gates + existing_gates + c_gates + p_gates:
         name = v.get("value") or v.get("name")
         if name in _seen_gates:
             continue
@@ -873,8 +895,12 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     else:
         base = _standalone_base(raw_persona)
 
-    # 4. Resolve org governance context once (Charter + weight + β).
+    # 4. Resolve org governance context once (Charter + AI Standards + weight + β).
     charter = None
+    # Must be initialized here, not only inside the `if org_id` branch below:
+    # a standalone agent has no org, and the loader can also raise partway
+    # through. Both paths still reach apply_charter.
+    ai_standards = None
     charter_weight = 0.40
     spirit_beta = 0.90
     if org_id:
@@ -889,6 +915,9 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
                 charter_weight = float(settings.get("governance_split", 0.40))
                 spirit_beta = float(settings.get("spirit_beta", 0.90))
             charter = db.get_charter(org_id)
+            # Optional and separate from the charter: an organization may
+            # have one, both, or neither.
+            ai_standards = db.get_ai_standards(org_id)
         except Exception as e:
             log.error(f"Error resolving org governance for {org_id}: {e}")
     # Policy-level β override (wizard "Ethical Memory" / Consistency slider).
@@ -899,8 +928,10 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
 
-    # 5. Charter layer (two-tier value rebuild + descriptive preamble).
-    final = apply_charter(base, charter, policy_values=policy_values, charter_weight=charter_weight)
+    # 5. Org layer: charter values rebuilt against the policy's, plus the
+    #    organization's AI Standards (gates + deterministic checks).
+    final = apply_charter(base, charter, policy_values=policy_values,
+                          charter_weight=charter_weight, ai_standards=ai_standards)
 
     # 5b. If the effective policy mandates a disclaimer, instruct the Intellect to
     # emit it verbatim. The Will only checks for it; this makes the model write it.

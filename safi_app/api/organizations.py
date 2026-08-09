@@ -3,6 +3,9 @@ import uuid
 import dns.resolver
 from ..persistence import database as db
 from ..core.rbac import require_role, check_permission, get_current_org_id
+# Same check the governance compiler uses, applied at save time: what would
+# raise at chat time is rejected while the admin is still looking at the form.
+from ..core.faculties.synderesis import _has_usable_rubric
 
 organizations_bp = Blueprint('organizations', __name__)
 
@@ -423,41 +426,9 @@ def upsert_charter(org_id):
     if not isinstance(core_values, list):
         return jsonify({"error": "core_values must be an array"}), 400
 
-    structural = data.get('structural_requirements', {}) or {}
-    blacklist = data.get('early_prompt_blacklist', []) or []
-    allowed_tools = data.get('allowed_tools', None)
-
-    if not isinstance(structural, dict):
-        return jsonify({"error": "structural_requirements must be an object"}), 400
-    if not isinstance(blacklist, list):
-        return jsonify({"error": "early_prompt_blacklist must be an array"}), 400
-    if allowed_tools is not None and not isinstance(allowed_tools, list):
-        return jsonify({"error": "allowed_tools must be an array or null"}), 400
-
-    # A disclaimer that is required but has no substring to look for is a
-    # config error the Will can only log and skip, so it would read as enforced
-    # while enforcing nothing — reject it here instead.
-    if structural.get('require_disclaimer') and not str(structural.get('mandatory_disclaimer_substring') or '').strip():
-        return jsonify({"error": "A required disclaimer needs the exact text to check for."}), 400
-
-    threshold = structural.get('alignment_score_threshold')
-    if threshold is not None:
-        try:
-            threshold = float(threshold)
-        except (TypeError, ValueError):
-            return jsonify({"error": "alignment_score_threshold must be a number"}), 400
-        if not 0.0 <= threshold <= 1.0:
-            return jsonify({"error": "alignment_score_threshold must be between 0 and 1"}), 400
-        structural['alignment_score_threshold'] = threshold
-
     try:
         user = session.get('user', {})
-        db.upsert_charter(
-            org_id, mission, core_values, created_by=user.get('id'),
-            structural_requirements=structural,
-            early_prompt_blacklist=blacklist,
-            allowed_tools=allowed_tools,
-        )
+        db.upsert_charter(org_id, mission, core_values, created_by=user.get('id'))
         return jsonify({"status": "saved", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error saving charter: {e}")
@@ -478,4 +449,104 @@ def delete_charter(org_id):
         return jsonify({"status": "deleted", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error deleting charter: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+# --- Org AI Standards -------------------------------------------------------
+# A separate resource from the charter, because they are separate artifacts: a
+# charter is who the organization is and every organization has one; AI
+# standards say how its AI must behave and are optional. Adopting or dropping
+# them must not touch the charter, which is why this is not another field on it.
+
+@organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['GET'])
+def get_ai_standards(org_id):
+    """[GET] Returns the org's AI standards, or null if none are set."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify({"ai_standards": db.get_ai_standards(org_id)})
+    except Exception as e:
+        current_app.logger.error(f"Error fetching AI standards: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['PUT'])
+@require_role('admin')
+def upsert_ai_standards(org_id):
+    """[PUT] Creates or updates the org's AI standards (Admin only)."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.json or {}
+    values = data.get('values', []) or []
+    structural = data.get('structural_requirements', {}) or {}
+    blacklist = data.get('early_prompt_blacklist', []) or []
+    allowed_tools = data.get('allowed_tools', None)
+
+    if not isinstance(values, list):
+        return jsonify({"error": "values must be an array"}), 400
+    if not isinstance(structural, dict):
+        return jsonify({"error": "structural_requirements must be an object"}), 400
+    if not isinstance(blacklist, list):
+        return jsonify({"error": "early_prompt_blacklist must be an array"}), 400
+    if allowed_tools is not None and not isinstance(allowed_tools, list):
+        return jsonify({"error": "allowed_tools must be an array or null"}), 400
+
+    # A disclaimer that is required but has no substring to look for is a config
+    # error the Will can only log and skip, so it would read as enforced while
+    # enforcing nothing — reject it here instead.
+    if structural.get('require_disclaimer') and not str(structural.get('mandatory_disclaimer_substring') or '').strip():
+        return jsonify({"error": "A required disclaimer needs the exact text to check for."}), 400
+
+    threshold = structural.get('alignment_score_threshold')
+    if threshold is not None:
+        try:
+            threshold = float(threshold)
+        except (TypeError, ValueError):
+            return jsonify({"error": "alignment_score_threshold must be a number"}), 400
+        if not 0.0 <= threshold <= 1.0:
+            return jsonify({"error": "alignment_score_threshold must be between 0 and 1"}), 400
+        structural['alignment_score_threshold'] = threshold
+
+    # Every standard here is a hard gate, and a hard gate the Conscience cannot
+    # score fails closed on EVERY request across the whole organization. Reject
+    # a rubric-less one at save time rather than letting it take the org down.
+    cleaned = []
+    for v in values:
+        if not isinstance(v, dict):
+            continue
+        name = str(v.get('name') or v.get('value') or '').strip()
+        if not name:
+            continue
+        if not _has_usable_rubric(v):
+            return jsonify({"error": (
+                f"'{name}' has no scoring criteria. A non-negotiable standard the auditor "
+                "cannot score would block every response from every agent."
+            )}), 400
+        cleaned.append({**v, "name": name, "hard_gate": True, "weight": 0.0})
+
+    try:
+        user = session.get('user', {})
+        db.upsert_ai_standards(
+            org_id, values=cleaned, structural_requirements=structural,
+            early_prompt_blacklist=blacklist, allowed_tools=allowed_tools,
+            created_by=user.get('id'),
+        )
+        return jsonify({"status": "saved", "org_id": org_id})
+    except Exception as e:
+        current_app.logger.error(f"Error saving AI standards: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['DELETE'])
+@require_role('admin')
+def delete_ai_standards(org_id):
+    """[DELETE] Removes the org's AI standards, leaving the charter untouched."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        db.delete_ai_standards(org_id)
+        return jsonify({"status": "deleted", "org_id": org_id})
+    except Exception as e:
+        current_app.logger.error(f"Error deleting AI standards: {e}")
         return jsonify({"error": "An internal error occurred."}), 500

@@ -207,15 +207,34 @@ def init_db():
             cursor.execute("ALTER TABLE organizations ADD CONSTRAINT fk_org_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL")
 
         # --- Org Charter ---
-        # The three JSON columns after core_values are the org-wide half of the
-        # Will's deterministic gates. Without them a corporate AI policy's
-        # prohibitions had to be copy-pasted into every business-unit policy,
-        # unsynchronized — the exact drift such a policy exists to prevent.
+        # Mission and core values only: organizational identity. How the org's
+        # AI must behave is a different artifact — see org_ai_standards below.
+        # Keeping them apart matters because a charter is something every
+        # organization has, while AI standards are optional and AI-specific, and
+        # because a rule filed as a "core value" gets SCORED. That is how a
+        # required disclosure once became a value that blocked every turn.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS org_charter (
                 org_id CHAR(36) PRIMARY KEY,
                 mission TEXT,
                 core_values JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_by VARCHAR(255),
+                FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+            )
+        ''')
+
+        # --- Org AI Standards ---
+        # The org-wide half of what the Will enforces deterministically, plus
+        # non-negotiable standards. Deliberately NO scored values: an org-wide
+        # rule is either binding or it belongs to a business unit, and adding a
+        # third scored tier would change the alignment aggregate for every
+        # existing organization.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS org_ai_standards (
+                org_id CHAR(36) PRIMARY KEY,
+                values_json JSON,
                 structural_requirements JSON,
                 early_prompt_blacklist JSON,
                 allowed_tools JSON,
@@ -226,13 +245,50 @@ def init_db():
             )
         ''')
 
-        # CREATE TABLE IF NOT EXISTS does nothing to a table that already
-        # exists, so installs predating these columns need the ALTER.
+        # Migration: AI standards briefly lived ON the charter — as three
+        # columns, and as hard-gate entries inside core_values. Move both out,
+        # then drop the columns. Guarded on the column still existing, so this
+        # runs once and is a no-op afterwards.
         cursor.execute("SHOW COLUMNS FROM org_charter LIKE 'structural_requirements'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE org_charter ADD COLUMN structural_requirements JSON")
-            cursor.execute("ALTER TABLE org_charter ADD COLUMN early_prompt_blacklist JSON")
-            cursor.execute("ALTER TABLE org_charter ADD COLUMN allowed_tools JSON")
+        if cursor.fetchone():
+            cursor.execute(
+                "SELECT org_id, core_values, structural_requirements, "
+                "early_prompt_blacklist, allowed_tools, created_by FROM org_charter"
+            )
+            for org_id, core_values, struct, blacklist, tools, created_by in cursor.fetchall():
+                def _load(raw, empty):
+                    if raw is None:
+                        return empty
+                    return json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+
+                values = _load(core_values, []) or []
+                # A charter value flagged hard_gate is an AI rule, not an
+                # identity value — that is the conflation being undone.
+                gates = [v for v in values if isinstance(v, dict) and v.get("hard_gate")]
+                identity = [v for v in values if not (isinstance(v, dict) and v.get("hard_gate"))]
+
+                cursor.execute(
+                    """
+                    INSERT INTO org_ai_standards
+                        (org_id, values_json, structural_requirements,
+                         early_prompt_blacklist, allowed_tools, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE org_id = org_id
+                    """,
+                    (org_id, json.dumps(gates),
+                     json.dumps(_load(struct, {}) or {}),
+                     json.dumps(_load(blacklist, []) or []),
+                     json.dumps(tools) if tools is not None else None,
+                     created_by),
+                )
+                if gates:
+                    cursor.execute(
+                        "UPDATE org_charter SET core_values = %s WHERE org_id = %s",
+                        (json.dumps(identity), org_id),
+                    )
+
+            for col in ("structural_requirements", "early_prompt_blacklist", "allowed_tools"):
+                cursor.execute(f"ALTER TABLE org_charter DROP COLUMN {col}")
 
         # --- Policies ---
         cursor.execute('''
@@ -3474,34 +3530,19 @@ def update_organization_settings(oid, settings):
 # ORG CHARTER
 # -------------------------------------------------------------------------
 
-def upsert_charter(org_id, mission, core_values, created_by=None,
-                   structural_requirements=None, early_prompt_blacklist=None,
-                   allowed_tools=None):
+def upsert_charter(org_id, mission, core_values, created_by=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         sql = """
-            INSERT INTO org_charter
-                (org_id, mission, core_values, created_by,
-                 structural_requirements, early_prompt_blacklist, allowed_tools)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO org_charter (org_id, mission, core_values, created_by)
+            VALUES (%s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 mission = VALUES(mission),
                 core_values = VALUES(core_values),
-                structural_requirements = VALUES(structural_requirements),
-                early_prompt_blacklist = VALUES(early_prompt_blacklist),
-                allowed_tools = VALUES(allowed_tools),
                 updated_at = CURRENT_TIMESTAMP
         """
-        cursor.execute(sql, (
-            org_id, mission, json.dumps(core_values), created_by,
-            json.dumps(structural_requirements or {}),
-            json.dumps(early_prompt_blacklist or []),
-            # NULL, not [], when the org sets no tool cap: an empty list means
-            # "does not narrow" to authorized_tools, but storing NULL keeps the
-            # distinction legible to anyone reading the row directly.
-            json.dumps(allowed_tools) if isinstance(allowed_tools, list) else None,
-        ))
+        cursor.execute(sql, (org_id, mission, json.dumps(core_values), created_by))
         conn.commit()
     finally:
         cursor.close()
@@ -3515,22 +3556,85 @@ def get_charter(org_id):
         row = cursor.fetchone()
         if row:
             row['core_values'] = json.loads(row['core_values']) if isinstance(row['core_values'], str) else row['core_values'] or []
-            # Rows written before these columns existed come back as None. The
-            # charter compiler treats {} / [] as "the org sets nothing here",
-            # so normalizing at the reader keeps every consumer from repeating
-            # the None check — and keeps a NULL from reaching the browser as a
-            # value the settings UI would then try to iterate.
-            for key, empty in (
-                ('structural_requirements', {}),
-                ('early_prompt_blacklist', []),
-            ):
-                val = row.get(key)
-                row[key] = json.loads(val) if isinstance(val, str) else (val if val is not None else empty)
-            at = row.get('allowed_tools')
-            # Kept nullable on purpose: None = no org-wide tool cap, whereas []
-            # would read as one. See authorized_tools for the same convention.
-            row['allowed_tools'] = json.loads(at) if isinstance(at, str) else at
         return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# --- Org AI Standards -------------------------------------------------------
+# Separate from the charter on purpose. A charter is mission and core values:
+# who the organization is, and something every organization has. AI standards
+# say how its AI must behave — AI-specific, optional, and revised on a different
+# cycle. Filing one as the other is not merely untidy: charter values are
+# SCORED, so a rule stored there is judged on every turn.
+
+def upsert_ai_standards(org_id, values=None, structural_requirements=None,
+                        early_prompt_blacklist=None, allowed_tools=None,
+                        created_by=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            INSERT INTO org_ai_standards
+                (org_id, values_json, structural_requirements,
+                 early_prompt_blacklist, allowed_tools, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                values_json = VALUES(values_json),
+                structural_requirements = VALUES(structural_requirements),
+                early_prompt_blacklist = VALUES(early_prompt_blacklist),
+                allowed_tools = VALUES(allowed_tools),
+                updated_at = CURRENT_TIMESTAMP
+        """
+        cursor.execute(sql, (
+            org_id,
+            json.dumps(values or []),
+            json.dumps(structural_requirements or {}),
+            json.dumps(early_prompt_blacklist or []),
+            # NULL, not [], when the org sets no tool cap: an empty list means
+            # "does not narrow" to authorized_tools, and storing NULL keeps the
+            # distinction legible to anyone reading the row directly.
+            json.dumps(allowed_tools) if isinstance(allowed_tools, list) else None,
+            created_by,
+        ))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_ai_standards(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM org_ai_standards WHERE org_id = %s", (org_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        # Normalize at the reader so no consumer repeats the None check, and so
+        # a NULL never reaches the browser as something the settings UI iterates.
+        for key, empty in (('values_json', []),
+                           ('structural_requirements', {}),
+                           ('early_prompt_blacklist', [])):
+            val = row.get(key)
+            row[key] = json.loads(val) if isinstance(val, str) else (val if val is not None else empty)
+        at = row.get('allowed_tools')
+        # Kept nullable: None = no org-wide tool cap, [] would read as one.
+        row['allowed_tools'] = json.loads(at) if isinstance(at, str) else at
+        row['values'] = row.pop('values_json')
+        return row
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_ai_standards(org_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM org_ai_standards WHERE org_id = %s", (org_id,))
+        conn.commit()
     finally:
         cursor.close()
         conn.close()
