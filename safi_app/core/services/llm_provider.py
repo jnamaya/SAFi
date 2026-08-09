@@ -24,6 +24,24 @@ from .parsing_utils import (
     parse_conscience_response
 )
 
+# The Conscience is the only intelligent component whose output feeds an
+# enforcement decision: its per-value scores drive the hard gates and the
+# alignment threshold. Sampling it is therefore not a quality knob but a
+# governance one — a non-zero temperature means the same draft can be blocked on
+# one turn and shipped on the next, and no audit record can explain the
+# difference. Kept at 0 so the ledger is as reproducible as the provider allows.
+#
+# NOT a guarantee of reproducibility, and must not be described as one:
+#   - Some models reject an explicit temperature (see the gpt-5 / o1 branches in
+#     _chat_completion, which strip it). On those routes the provider default
+#     applies and this value has no effect.
+#   - Even at 0, batching and hardware differences move logits at the provider.
+# The defensible claim is "as reproducible as the provider allows", never
+# "deterministic". The deterministic part of SAFi is the rule applied to the
+# ledger, not the ledger itself.
+CONSCIENCE_TEMPERATURE = 0.0
+
+
 class LLMProvider:
     """
     A unified service to handle all LLM calls.
@@ -523,67 +541,53 @@ class LLMProvider:
             return "violation", f"System Error: {e}"
 
     async def run_conscience(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
-        """Runs the configured Conscience model and parses the result."""
+        """Runs the configured Conscience model and parses the result.
+
+        Model-agnostic by design. The Conscience route is whatever the operator
+        configured, and this method must not know or care which model that is:
+        per-model tuning here silently changes how strictly every agent in the
+        deployment is audited, based on a substring match nobody reviewed. If a
+        model needs a different request *shape* to be callable at all, that
+        belongs in _chat_completion with the other provider adapters — it is an
+        API constraint, not an audit policy.
+        """
         try:
-            # Detect Qwen3 model to apply Groq thinking-mode best practices.
-            # reasoning_format="hidden" strips the chain-of-thought entirely;
-            # only the final JSON answer is returned, which is all we need.
-            conscience_model = self.config.get("routes", {}).get("conscience", {}).get("model", "")
-            if "qwen3" in conscience_model.lower():
-                temperature = 0.6
-                top_p = 0.95
-                extra_body = {
-                    "reasoning_effort": "default",
-                    "reasoning_format": "hidden",
-                }
-            else:
-                temperature = 0.1
-                top_p = None
-                extra_body = None
-
-            # Gemma (observed on Cerebras gemma-4-31b) degenerates under
-            # response_format=json_object with a long audit system prompt: it
-            # returns a literal empty "{}" with HTTP 200. Skip json_mode up
-            # front — unconstrained Gemma produces a parseable ledger.
-            use_json_mode = "gemma" not in conscience_model.lower()
-
             ledger: List[Dict[str, Any]] = []
-            if use_json_mode:
-                try:
-                    # Constrain decoding to valid JSON at the API level: eliminates the
-                    # markdown-fence/prose failure class that otherwise degrades the
-                    # ledger and burns the orchestrator's re-audit retry.
-                    raw_content = await self._chat_completion(
-                        route="conscience",
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        temperature=temperature,
-                        max_tokens=8192,
-                        top_p=top_p,
-                        extra_body=extra_body,
-                        json_mode=True,
-                    )
-                    ledger = parse_conscience_response(raw_content, self.log)
-                    if ledger:
-                        return ledger
-                    # An empty ledger from a successful json_mode call is the
-                    # degenerate-output case (e.g. a bare "{}"), not a real audit
-                    # — fall through to the unconstrained retry.
-                    self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
-                except Exception as e:
-                    # A provider that rejects json_mode would otherwise fail BOTH audit
-                    # attempts and brick the agent into permanent fail-closed. Retry
-                    # once without it; the text parser still handles unconstrained output.
-                    self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
+            try:
+                # Constrain decoding to valid JSON at the API level: eliminates the
+                # markdown-fence/prose failure class that otherwise degrades the
+                # ledger and burns the orchestrator's re-audit retry.
+                raw_content = await self._chat_completion(
+                    route="conscience",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=CONSCIENCE_TEMPERATURE,
+                    max_tokens=8192,
+                    json_mode=True,
+                )
+                ledger = parse_conscience_response(raw_content, self.log)
+                if ledger:
+                    return ledger
+                # An empty ledger from a successful json_mode call is the
+                # degenerate-output case (a bare "{}"), not a real audit — fall
+                # through to the unconstrained retry. This is the generic form of
+                # what used to be a "gemma" name check: the models that degenerate
+                # under json_mode are caught by observing the empty result rather
+                # than by guessing from the model id, at the cost of one wasted
+                # call on those models.
+                self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
+            except Exception as e:
+                # A provider that rejects json_mode would otherwise fail BOTH audit
+                # attempts and brick the agent into permanent fail-closed. Retry
+                # once without it; the text parser still handles unconstrained output.
+                self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
 
             raw_content = await self._chat_completion(
                 route="conscience",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=temperature,
+                temperature=CONSCIENCE_TEMPERATURE,
                 max_tokens=8192,
-                top_p=top_p,
-                extra_body=extra_body,
             )
             return parse_conscience_response(raw_content, self.log)
         except Exception as e:
