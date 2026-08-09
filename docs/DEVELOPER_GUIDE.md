@@ -1,6 +1,6 @@
 # SAFi Developer Guide
 
-**Last updated:** July 2026. This is the orientation document for anyone
+**Last updated:** August 2026. This is the orientation document for anyone
 working on SAFi's code — the front-end, back-end, and mobile layouts, how
 to run it locally, the five-faculty architecture and the math behind it,
 multi-agent design, and how to authenticate against and extend the API.
@@ -176,10 +176,18 @@ Two ways to get past the login page without configuring SSO (§8):
 ## 5. Understanding SAFi
 
 SAFi is a governance layer, not a chatbot framework. It wraps whatever LLM
-you point it at in a deterministic evaluation-and-enforcement pipeline
-that decides what actually reaches the user — and produces a verifiable
-record of that decision. The model is a component it governs, not the
-thing it is.
+you point it at in a deterministic **enforcement** pipeline that decides what
+actually reaches the user — and produces a verifiable record of that decision.
+The model is a component it governs, not the thing it is.
+
+Read "deterministic" precisely, because it is the load-bearing claim. The
+*evaluation* is a model: the Conscience is an LLM scoring the draft against your
+policy's rubrics. The *enforcement* is not. Every block, retry and threshold
+decision is a fixed rule applied to that score — no model in the loop — so
+anyone holding the audit record can recompute the outcome and get the same
+answer. The Conscience is sampled at temperature 0 to make the ledger as
+reproducible as the provider allows, but the guarantee SAFi offers is about the
+rule, not the score.
 
 The architecture is a separation of powers across five faculties,
 modeled on the classical faculties of the soul (see
