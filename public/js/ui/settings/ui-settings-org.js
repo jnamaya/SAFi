@@ -229,8 +229,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
 
             <div class="space-y-5 mt-4">
                 <div>
-                    <div class="flex items-center justify-between mb-3">
-                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Standards</label>
+                    <div class="flex items-center justify-end mb-3">
                         <div class="flex items-center gap-2">
                             <button id="btn-gen-ai-standards" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -239,7 +238,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                             <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
                         </div>
                     </div>
-                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things every agent should or should not do &mdash; reveal someone's personal data, give advice it is not qualified to give. Each is judged by the auditor on every request, so each needs criteria it can apply. Mark one <strong>Blocking</strong> only for absolutes: a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Each one is judged by the auditor on <em>every</em> response, so each needs criteria it can actually apply. Tick <strong>Blocking</strong> only for absolutes &mdash; a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
                     <div id="ai-standards-list" class="space-y-4"></div>
                 </div>
 
@@ -971,10 +970,18 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
     container.innerHTML = '';
 
     if (!valuesData.length) {
+        // Each mode names its own thing and its own button. The charter's
+        // wording used to show here, telling an admin on the AI Standards card
+        // that no "values" were defined and to press a button on another card.
+        const empty = mode === 'standard'
+            ? { what: 'No standards yet.',
+                how: 'Click <strong>Suggest standards</strong> for a starting set, or <strong>Add standard</strong> to write your own.' }
+            : { what: 'No core values defined yet.',
+                how: 'Click <strong>Generate Values</strong> to let AI draft them from your mission.' };
         container.innerHTML = `
             <div class="text-center py-10 bg-gray-50 dark:bg-neutral-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-neutral-800">
-                <p class="text-gray-400 mb-1">No values defined yet.</p>
-                <p class="text-xs text-gray-400">Click <strong>Generate Values</strong> to let AI draft them from your mission.</p>
+                <p class="text-gray-400 mb-1">${empty.what}</p>
+                <p class="text-xs text-gray-400">${empty.how}</p>
             </div>`;
         return;
     }
