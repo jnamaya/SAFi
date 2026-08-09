@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.8  
-> **Last Updated:** 2026-07-24  
+> **Version:** 1.9  
+> **Last Updated:** 2026-08-09  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -109,8 +109,10 @@ a database of known attack patterns grouped by category
 
 $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lower}(x_t)$$
 
-**2. Persona blacklist scan** — checks per-agent keywords defined in the policy's
-`early_prompt_blacklist`:
+**2. Persona blacklist scan** — checks keywords from the compiled profile's
+`early_prompt_blacklist`, the **union** of the organization Charter's list and the
+business-unit Policy's (a Policy adds to what the org blocks; it cannot remove
+from it):
 
 $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(x_t)$$
 
@@ -228,6 +230,16 @@ The threshold $\theta$ resolves agent-specific override
 (`will_rules.structural_requirements.alignment_score_threshold`) → instance default
 (`SPIRIT_ALIGNMENT_THRESHOLD`, $0.5$).
 
+That override is itself the **stricter** of the two governance tiers, resolved at
+compile time by Synderesis — the Charter sets a floor a Policy may raise but not
+lower:
+
+```math
+\theta_{\text{override}} = \max(\theta_{\text{charter}},\ \theta_{\text{policy}})
+```
+
+with an absent value on either side simply omitted from the max.
+
 **If $D^3_t = \text{violation}$** → run **Stage 2.1 (Reflexion Retry)** once. After the retry,
 the outcome depends on the residual reason:
 - `low_alignment_score` (a soft quality signal) → **commit the best available draft** with
@@ -242,16 +254,29 @@ the outcome depends on the residual reason:
 When the Intellect proposes a tool call instead of a text draft, a fourth
 deterministic Will check runs **before any execution** (`evaluate_tool_intent`).
 Given a proposed tool name $\tau$ with parameters $\pi$ and the compiled profile's
-authorization list $T_{\text{allow}}$ (stamped by Synderesis: the agent's advertised
-tools, optionally narrowed — never widened — by the policy's
-`will_rules.allowed_tools`):
+authorization list $T_{\text{allow}}$ (stamped by Synderesis as the intersection of
+the agent's advertised tools with each governance tier's `allowed_tools` — every
+layer narrows, none widens):
+
+```math
+T_{\text{allow}} = T_{\text{advertised}} \cap T_{\text{charter}} \cap T_{\text{policy}}
+```
+
+An absent or empty list at either governance tier means *that tier does not
+narrow* (it is dropped from the intersection), **not** deny-all — a Charter or
+Policy cannot grant a tool the agent was never given, so the advertised list is
+already the ceiling. Both sides are expanded from connector names to function
+names before intersecting, so authorizing a connector authorizes every function
+under it.
 
 ```math
 W_{\text{tool}}(\tau, \pi) = \begin{cases} \text{violation} & \tau \notin T_{\text{allow}} \\ \text{approve} & \tau \in T_{\text{allow}} \cap T_{\text{read-only}} \\ \text{violation} & \exists\, k : \pi_k \notin \text{constraints}(\tau, k) \ \vee\ \pi_k\ \text{omitted while constrained} \\ \text{approve} & \text{otherwise} \end{cases}
 ```
 
-$T_{\text{allow}} = \varnothing$ is **deny-all**, not skip — an agent offered no
-tools has no legitimate tool intents. Parameter constraints are default-deny: an
+A **resulting** $T_{\text{allow}} = \varnothing$ is **deny-all**, not skip — an
+agent offered no tools has no legitimate tool intents. Note the asymmetry with
+the paragraph above: an empty *governance* list is "no opinion", while an empty
+*result* is a genuine deny-all. Parameter constraints are default-deny: an
 omitted constrained parameter is a violation (the tool's server-side default is
 unvetted). A blocked intent feeds the block reason back to the Intellect for a
 governed text response; it never redirects the whole turn. Conscience and Spirit
