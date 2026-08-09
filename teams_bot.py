@@ -101,7 +101,7 @@ class SafiTeamsBot:
             for member in turn_context.activity.members_added:
                 if member.id != turn_context.activity.recipient.id:
                     await turn_context.send_activity(
-                        "Hello! I am the Accion Compliance Assistant, an AI system. "
+                        "Hello! I am the Contoso Compliance Assistant, an AI system. "
                         "You are interacting with artificial intelligence, not a human. "
                         "Ask me about IT SOPs, Microsoft 365, or Procurement."
                     )

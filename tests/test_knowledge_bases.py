@@ -728,7 +728,7 @@ class RetrievedContextReachesThePrompt(unittest.TestCase):
     def test_a_custom_worldview_still_receives_the_context(self):
         """The regression. A wizard-built worldview has no placeholder."""
         prompt = self._build_prompt(
-            "You are the Accion IT operations assistant.",
+            "You are the Contoso IT operations assistant.",
             "SOURCE: sop.pdf\nCONTENT:\nApproved: Lenovo ThinkPad X1 Carbon.")
         self.assertIn("ThinkPad", prompt)
         self.assertIn("sop.pdf", prompt)
