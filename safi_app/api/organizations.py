@@ -268,7 +268,23 @@ def update_user_role(org_id, user_id):
         return jsonify({"error": "Invalid role"}), 400
         
     try:
+        # Read the prior role first: update_member_role journals it to
+        # auth_events, but that table has no reader — no endpoint, no UI — so
+        # the record exists where nobody can see it. The compliance log is what
+        # records_api surfaces, and a role change is an access-control event an
+        # auditor expects to find beside the config changes it enables.
+        prior = (db.get_user_details(user_id) or {}).get('role')
         db.update_member_role(user_id, org_id, new_role, actor=_actor())
+        db.append_compliance_log(org_id, 'member_role_changed', f"user:{_actor()}", {
+            "member": user_id,
+            "prior_role": prior,
+            "new_role": new_role,
+            # Called out on its own because it is the change that matters most:
+            # admin is the role that can rewrite the Charter, the AI Standards
+            # and every policy.
+            "admin_granted": new_role == 'admin' and prior != 'admin',
+            "admin_revoked": prior == 'admin' and new_role != 'admin',
+        })
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
     except db.LastAdminError as e:
         # 409: valid request, conflicts with current state. The message is
@@ -290,7 +306,10 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
+        prior = (db.get_user_details(user_id) or {}).get('role')
         db.remove_member_from_org(user_id, org_id, actor=_actor())
+        db.append_compliance_log(org_id, 'member_removed', f"user:{_actor()}",
+                                 {"member": user_id, "prior_role": prior})
         return jsonify({"status": "removed", "user_id": user_id})
     except db.LastAdminError as e:
         return jsonify({"error": str(e)}), 409

@@ -41,6 +41,8 @@ EXPECTED = [
     (POLICIES, 'policy_created'),
     (POLICIES, 'policy_updated'),
     (POLICIES, 'policy_deleted'),
+    (ORGS, 'member_role_changed'),
+    (ORGS, 'member_removed'),
 ]
 
 
@@ -94,6 +96,29 @@ class ThePayloadsAnswerAuditQuestions(unittest.TestCase):
         """Policies already have policy_versions and a restore endpoint, so the
         log points at the version instead of duplicating config."""
         self.assertIn('"version": _after.get(\'version\')', POLICIES)
+
+
+class RoleChangesAreVisibleNotJustRecorded(unittest.TestCase):
+    """`update_member_role` already journals to auth_events with prior role, new
+    role and sessions revoked. But auth_events has NO reader — no endpoint, no
+    UI — so that record sits where nobody can look at it. The compliance log is
+    what records_api surfaces, so governance-relevant identity events are
+    mirrored there."""
+
+    def test_role_change_captures_both_sides(self):
+        self.assertIn('"prior_role": prior', ORGS)
+        self.assertIn('"new_role": new_role', ORGS)
+
+    def test_admin_transitions_are_called_out_explicitly(self):
+        """Admin is the role that can rewrite the Charter, the AI Standards and
+        every policy, so granting or revoking it should not have to be inferred
+        by comparing two role strings."""
+        self.assertIn('"admin_granted"', ORGS)
+        self.assertIn('"admin_revoked"', ORGS)
+
+    def test_removal_records_what_they_could_do(self):
+        self.assertIn("'member_removed'", ORGS)
+        self.assertIn('"prior_role": prior', ORGS)
 
 
 class TheLogStaysAppendOnly(unittest.TestCase):
