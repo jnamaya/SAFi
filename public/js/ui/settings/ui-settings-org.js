@@ -220,7 +220,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             <div class="flex items-start justify-between gap-4 mb-1">
                 <div>
                     <h4 class="text-lg font-semibold">AI Standards</h4>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">How your AI must behave &mdash; separate from the Charter, and optional. Not every organization has an AI policy; if yours does, this is where it lives. Applies to every agent, whatever policy it runs under.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Rules you want enforced on <strong>every agent</strong> in your organization &mdash; for example, never revealing personal information such as a social security or bank account number, and never sharing private company data. A business unit can add to these, but cannot switch them off. Optional: set them if your organization has an AI policy.</p>
                 </div>
                 ${aiStandards
                     ? '<span class="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full mt-1 shrink-0">Active</span>'
@@ -230,9 +230,9 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
 
             <div class="space-y-5 mt-4">
                 ${renderImportCard({
-                    title: "Have an organization-wide AI policy?",
-                    subtitle: "Upload it once and it binds every agent. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
-                    hint: "Documents for a single team &mdash; a compliance manual, a code of conduct &mdash; belong on that team's policy instead.",
+                    title: "Already have an organizational AI policy?",
+                    subtitle: "Upload it and the AI model will try to extract the standards for you. You can also set them manually below &mdash; the upload is a starting point, not a requirement.",
+                    hint: "A document for a single team &mdash; a compliance manual, a code of conduct &mdash; belongs on that team's policy instead, not here.",
                 })}
 
                 <!-- Deterministic Will checks: no model involved in any of these. -->
@@ -294,7 +294,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Non-negotiable standards</label>
                         <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
                     </div>
-                    <p class="text-xs text-gray-500 -mt-2 mb-3">Any response that violates one of these is blocked outright, for every agent. They are scored by the auditor model, so each needs criteria it can judge &mdash; and each is checked on <em>every</em> request.</p>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things an agent must never do &mdash; reveal someone's personal data, give advice it is not qualified to give. Any response that breaks one is blocked outright, for every agent. Each is judged by the auditor model on <em>every</em> request, so each needs criteria it can actually apply.</p>
                     <div id="ai-standards-list" class="space-y-4"></div>
                 </div>
 

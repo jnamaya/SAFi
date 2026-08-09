@@ -34,9 +34,9 @@ export function renderDefinitionStep(container, policyData) {
 
             <div class="space-y-6">
                 ${renderImportCard({
-                    title: "Already have standards for this unit?",
-                    subtitle: "A compliance manual, code of conduct, or written procedures for this team. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
-                    hint: "Your organization-wide AI policy belongs in <strong>Settings &rarr; Organization</strong> instead, where it binds every agent rather than just this one.",
+                    title: "Already have written standards for this team?",
+                    subtitle: "A compliance manual, code of conduct, or written procedures. Upload it and the AI model will try to draft this policy's purpose, scope and standards for you. You can also fill everything in manually &mdash; the upload is a starting point, not a requirement.",
+                    hint: "Your organization-wide AI policy belongs in <strong>Settings &rarr; Organization &rarr; AI Standards</strong> instead, where it binds every agent rather than just this one.",
                 })}
 
                 <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
