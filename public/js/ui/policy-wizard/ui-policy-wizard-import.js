@@ -1,5 +1,12 @@
 /**
- * Import an organization's existing AI policy document.
+ * Import an existing governance document.
+ *
+ * Serves both tiers, because they take different documents. An organization has
+ * ONE AI policy, and it belongs on the Charter where it binds every agent;
+ * business units have their own procedures and compliance manuals, and those
+ * belong on a policy. Uploading the org-wide AI policy into a business-unit
+ * policy is the mistake this card exists to make hard — hence the pointer in
+ * each card to where the other kind of document goes.
  *
  * Two passes, deliberately separate. The first classifies every clause; the
  * second compiles only the ones needing judgment into rubrics. Combining them
@@ -15,6 +22,11 @@
  * The "not converted" list is shown at the same weight as the rest. It is not
  * an apology — it tells the author exactly which obligations from their policy
  * SAFi does not cover and still need a human process.
+ *
+ * The caller owns where accepted material lands: this module produces the
+ * selection and the compiled gates, then hands them to `onApply`. Keeping the
+ * target out of here is what lets the Charter and the wizard share one flow
+ * without either inheriting the other's field names.
  */
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
@@ -26,26 +38,49 @@ const ACCEPTED = '.pdf,.docx,.txt,.md,.csv,.xlsx';
 
 let result = null;      // last classification
 let sourceName = '';    // filename, kept for provenance in the review panel
+let config = null;      // { context, onApply, onApplied }
 
-export function renderImportCard(policyData) {
+/**
+ * @param {object} opts
+ * @param {string} opts.title     card heading
+ * @param {string} opts.subtitle  one line under it
+ * @param {string} [opts.hint]    where the OTHER kind of document belongs
+ */
+export function renderImportCard({ title, subtitle, hint }) {
     return `
     <div class="bg-white dark:bg-neutral-900 border border-purple-200 dark:border-purple-900/40 rounded-xl p-5">
         <div class="flex items-start gap-3">
             <svg class="w-6 h-6 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
             <div class="min-w-0">
-                <h4 class="font-bold text-gray-900 dark:text-white">Already have an AI policy?</h4>
-                <p class="text-xs text-gray-500 mt-0.5">Upload it and SAFi will propose the parts it can enforce &mdash; and tell you plainly which parts it can't.</p>
+                <h4 class="font-bold text-gray-900 dark:text-white">${escapeHtml(title)}</h4>
+                <p class="text-xs text-gray-500 mt-0.5">${subtitle}</p>
             </div>
         </div>
         <input type="file" id="pw-import-file" accept="${ACCEPTED}" class="hidden">
         <button id="pw-import-btn" class="mt-4 w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-semibold transition-colors">
             Choose a document
         </button>
+        ${hint ? `<p class="text-xs text-gray-400 mt-2">${hint}</p>` : ''}
         <div id="pw-import-result" class="mt-4 hidden"></div>
     </div>`;
 }
 
-export function bindImportCard(policyData, onApplied) {
+/**
+ * @param {object} opts
+ * @param {() => string} opts.context   description of what is being governed
+ * @param {(payload) => string[]} opts.onApply
+ *        Receives { structural, blacklist, gates, suggested, definitions } and
+ *        writes them wherever they belong. Returns human-readable descriptions
+ *        of what it applied, for the summary. Runs only after every step that
+ *        could fail has already succeeded.
+ * @param {() => void} [opts.onApplied] called after a successful apply
+ */
+export function bindImportCard(opts) {
+    config = opts;
+    bindPicker();
+}
+
+function bindPicker() {
     const btn = document.getElementById('pw-import-btn');
     const input = document.getElementById('pw-import-file');
     if (!btn || !input) return;
@@ -65,14 +100,14 @@ export function bindImportCard(policyData, onApplied) {
             if (!text) throw new Error('No readable text found in that file.');
 
             btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Reading the policy...`;
-            const ctx = [policyData.name, policyData.business_unit, policyData.context]
-                .filter(Boolean).join(' — ') || 'General organization';
-            const res = await api.generatePolicyContent('classify_document', ctx, { document_text: text });
+            const res = await api.generatePolicyContent(
+                'classify_document', config.context() || 'General organization',
+                { document_text: text });
             if (!res.ok) throw new Error(res.error || 'Could not read that policy.');
 
             result = res.content || {};
             sourceName = file.name;
-            renderReview(policyData, onApplied);
+            renderReview();
         } catch (e) {
             console.error('policy wizard: document import failed', e);
             ui.showToast(e.message || 'Could not import that document.', 'error');
@@ -108,7 +143,7 @@ function clauseLine(text) {
     return `<p class="text-[11px] text-gray-400 italic mt-1 break-words">&ldquo;${escapeHtml(text)}&rdquo;</p>`;
 }
 
-function renderReview(policyData, onApplied) {
+function renderReview() {
     const panel = document.getElementById('pw-import-result');
     if (!panel) return;
 
@@ -201,10 +236,10 @@ function renderReview(policyData, onApplied) {
             </button>
         </div>`;
 
-    document.getElementById('pw-import-apply')?.addEventListener('click', () => applySelected(policyData, onApplied));
+    document.getElementById('pw-import-apply')?.addEventListener('click', () => applySelected());
 }
 
-async function applySelected(policyData, onApplied) {
+async function applySelected() {
     const panel = document.getElementById('pw-import-result');
     const btn = document.getElementById('pw-import-apply');
     if (!panel || !btn) return;
@@ -229,7 +264,7 @@ async function applySelected(policyData, onApplied) {
     const original = btn.innerHTML;
     showApplyError('');
 
-    // Everything that can fail runs BEFORE anything is written to policyData.
+    // Everything that can fail runs BEFORE anything is written to the target.
     // The first version applied the disclaimer, then called the model, and left
     // the disclaimer applied when that call failed — the author was told it had
     // failed while a setting had in fact changed underneath them.
@@ -238,13 +273,11 @@ async function applySelected(policyData, onApplied) {
     try {
         if (values.length) {
             btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Writing rubrics for ${values.length} standard${values.length === 1 ? '' : 's'}...`;
-            const ctx = [policyData.name, policyData.business_unit, policyData.context]
-                .filter(Boolean).join(' — ') || 'General organization';
             // Definitions from the source document ride along: a rubric naming
             // the actual categories of personal data is a check, while one
             // saying "Personal Information" is an interpretation the auditor has
             // to make afresh on every turn.
-            const res = await api.generatePolicyContent('compile_rules', ctx, {
+            const res = await api.generatePolicyContent('compile_rules', config.context() || 'General organization', {
                 rules: values.map(v => v.text),
                 definitions: result.definitions || [],
             });
@@ -263,28 +296,57 @@ async function applySelected(policyData, onApplied) {
         return;
     }
 
-    // Past this point nothing can fail: plain assignment into policyData.
+    // Past this point nothing can fail. The caller writes to its own tier's
+    // fields and reports back what it applied.
+    const applied = config.onApply({
+        structural,
+        blacklist,
+        gates,
+        suggested: result.suggested || {},
+        definitions: result.definitions || [],
+    }) || [];
+
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    result = null;
+
+    let msg = applied.length
+        ? `Applied: ${applied.join(', ')}.`
+        : 'Nothing new to apply — these were already set.';
+    if (rejected.length) {
+        msg += ` ${rejected.length} could not be written as a standard and were skipped.`;
+    }
+    ui.showToast(msg, applied.length ? 'success' : 'warning', 6000);
+    if (typeof config.onApplied === 'function') config.onApplied();
+}
+
+/**
+ * Shared writer for the parts both tiers store identically: a mandated
+ * disclaimer, blocked phrases, and compiled hard gates. Only the field names
+ * differ between a policy and a charter, so the caller passes the target object
+ * and the key its value list lives under.
+ */
+export function applyCommon(target, { structural, blacklist, gates }, valuesKey) {
     const applied = [];
 
     if (structural.length) {
         // evaluate_draft_structure checks exactly one substring, so only the
         // first can be enforced. Said in the summary rather than as a toast that
         // competes with the result.
-        const first = structural[0];
-        policyData.structural_requirements = policyData.structural_requirements || {};
-        policyData.structural_requirements.require_disclaimer = true;
-        policyData.structural_requirements.mandatory_disclaimer_substring = first.disclaimer_text;
+        target.structural_requirements = target.structural_requirements || {};
+        target.structural_requirements.require_disclaimer = true;
+        target.structural_requirements.mandatory_disclaimer_substring = structural[0].disclaimer_text;
         applied.push(structural.length > 1
             ? 'the first required disclaimer (only one can be enforced)'
             : 'required disclaimer');
     }
 
     if (blacklist.length) {
-        if (!Array.isArray(policyData.early_prompt_blacklist)) policyData.early_prompt_blacklist = [];
+        if (!Array.isArray(target.early_prompt_blacklist)) target.early_prompt_blacklist = [];
         let added = 0;
         blacklist.forEach(b => {
-            if (b.phrase && !policyData.early_prompt_blacklist.includes(b.phrase)) {
-                policyData.early_prompt_blacklist.push(b.phrase);
+            if (b.phrase && !target.early_prompt_blacklist.includes(b.phrase)) {
+                target.early_prompt_blacklist.push(b.phrase);
                 added++;
             }
         });
@@ -292,14 +354,16 @@ async function applySelected(policyData, onApplied) {
     }
 
     if (gates.length) {
-        if (!Array.isArray(policyData.values)) policyData.values = [];
-        const existing = new Set(policyData.values.map(v => String(v.name || '').trim().toLowerCase()));
+        if (!Array.isArray(target[valuesKey])) target[valuesKey] = [];
+        const existing = new Set(target[valuesKey].map(v => String(v.name || '').trim().toLowerCase()));
         let added = 0;
         gates.forEach(g => {
             const name = String(g.name || '').trim();
             if (!name || existing.has(name.toLowerCase())) return;
             existing.add(name.toLowerCase());
-            policyData.values.push({
+            // weight 0 + hard_gate: blocked by the Will, excluded from the
+            // Spirit average — the same shape Scope Compliance already uses.
+            target[valuesKey].push({
                 name,
                 description: g.description || '',
                 weight: 0,
@@ -308,21 +372,10 @@ async function applySelected(policyData, onApplied) {
             });
             added++;
         });
-        if (added) applied.push(`${added} scored standard${added === 1 ? '' : 's'}`);
+        if (added) applied.push(`${added} non-negotiable standard${added === 1 ? '' : 's'}`);
     }
 
-    panel.classList.add('hidden');
-    panel.innerHTML = '';
-    result = null;
-
-    let msg = applied.length
-        ? `Applied: ${applied.join(', ')}. Review them in the next steps.`
-        : 'Nothing new to apply — these were already on the policy.';
-    if (rejected.length) {
-        msg += ` ${rejected.length} could not be written as a standard and were skipped.`;
-    }
-    ui.showToast(msg, applied.length ? 'success' : 'warning', 6000);
-    if (typeof onApplied === 'function') onApplied();
+    return applied;
 }
 
 /** Persistent in-panel error. Empty string clears it. */

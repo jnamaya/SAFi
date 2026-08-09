@@ -1,5 +1,5 @@
 import * as ui from './../ui.js';
-import { renderImportCard, bindImportCard } from './ui-policy-wizard-import.js';
+import { renderImportCard, bindImportCard, applyCommon } from './ui-policy-wizard-import.js';
 
 export function renderDefinitionStep(container, policyData) {
     container.innerHTML = `
@@ -33,7 +33,11 @@ export function renderDefinitionStep(container, policyData) {
             </div>
 
             <div class="space-y-6">
-                ${renderImportCard(policyData)}
+                ${renderImportCard({
+                    title: "Already have standards for this unit?",
+                    subtitle: "A compliance manual, code of conduct, or written procedures for this team. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
+                    hint: "Your organization-wide AI policy belongs in <strong>Settings &rarr; Organization</strong> instead, where it binds every agent rather than just this one.",
+                })}
 
                 <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
                     <div class="text-blue-600 dark:text-blue-400">
@@ -55,9 +59,35 @@ export function renderDefinitionStep(container, policyData) {
     document.getElementById('pw-business-unit')?.addEventListener('input', (e) => policyData.business_unit = e.target.value);
     document.getElementById('pw-context')?.addEventListener('input', (e) => policyData.context = e.target.value);
 
-    // Imported settings land in steps 3-5, which are re-rendered on navigation —
-    // so nothing needs redrawing here beyond letting the card reset itself.
-    bindImportCard(policyData, () => {});
+    bindImportCard({
+        context: () => [policyData.name, policyData.business_unit, policyData.context]
+            .filter(Boolean).join(' — '),
+        onApply: (payload) => {
+            const applied = applyCommon(policyData, payload, 'values');
+
+            // Fill the form fields the author would otherwise face empty. An
+            // import that returns only standards reads as broken: the wizard
+            // still asks for a name, a purpose and a scope, and the document
+            // usually supports all three. Never overwrite what they typed.
+            const s = payload.suggested || {};
+            if (s.name && !policyData.name.trim()) {
+                policyData.name = s.name;
+                applied.push('policy name');
+            }
+            if (s.purpose && !policyData.worldview.trim()) {
+                policyData.worldview = s.purpose;
+                applied.push('purpose & mandate');
+            }
+            if (s.scope && !(policyData.scope_statement || '').trim()) {
+                policyData.scope_statement = s.scope;
+                applied.push('scope');
+            }
+            return applied;
+        },
+        // Redraw so a name or description filled from the document appears in
+        // the inputs immediately rather than only after navigating away and back.
+        onApplied: () => renderDefinitionStep(container, policyData),
+    });
 }
 
 export function validateDefinitionStep(policyData) {

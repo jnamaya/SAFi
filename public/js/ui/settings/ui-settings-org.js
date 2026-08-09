@@ -2,6 +2,7 @@ import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { escapeHtml } from '../../core/utils.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
+import { renderImportCard, bindImportCard, applyCommon } from '../policy-wizard/ui-policy-wizard-import.js';
 
 let currentUser = null; // We need to set this if we want to check "isSelf"
 // But how? 
@@ -171,6 +172,12 @@ function renderOrganizationUI(container, org, charter) {
             </div>
 
             <div class="space-y-5">
+                ${renderImportCard({
+                    title: "Have an organization-wide AI policy?",
+                    subtitle: "Upload it once here and it binds every agent in the organization. SAFi proposes the parts it can enforce &mdash; and says plainly which parts it can't.",
+                    hint: "Documents for a single team &mdash; a compliance manual, a code of conduct &mdash; belong on that team's policy instead.",
+                })}
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mission</label>
                     <textarea id="charter-mission" rows="3"
@@ -462,6 +469,38 @@ function renderOrganizationUI(container, org, charter) {
     document.getElementById('charter-add-blacklist')?.addEventListener('click', addCharterPhrase);
     document.getElementById('charter-blacklist-input')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); addCharterPhrase(); }
+    });
+
+    // --- Import an organization-wide AI policy ---
+    // The Charter is the only tier whose scope matches "applies to all our AI",
+    // so this is where that document belongs. applyCommon writes into the same
+    // in-memory objects the form edits, so the results appear as ordinary
+    // unsaved edits — the author still has to press Save Charter, and nothing
+    // reaches the database unreviewed.
+    //
+    // Bound after the render helpers above so onApplied can redraw the form.
+    bindImportCard({
+        context: () => [org.name, document.getElementById('charter-mission')?.value.trim()]
+            .filter(Boolean).join(' — '),
+        onApply: (payload) => applyCommon(
+            { structural_requirements: structuralData,
+              early_prompt_blacklist: blacklistData,
+              core_values: charterValuesData },
+            payload, 'core_values',
+        ),
+        // Mission is deliberately NOT filled from the document. An AI use policy
+        // references the organization's mission and defers to a separate code of
+        // conduct — deriving one from it would be invention, and the classifier
+        // already returns a note saying so.
+        onApplied: () => {
+            renderCharterValues(charterValuesData, valuesList);
+            renderCharterBlacklist();
+            const dis = document.getElementById('charter-require-disclaimer');
+            const txt = document.getElementById('charter-disclaimer-text');
+            if (dis) dis.checked = !!structuralData.require_disclaimer;
+            if (txt) txt.value = structuralData.mandatory_disclaimer_substring || '';
+            ui.showToast('Imported. Review the rules below, then press Save Charter.', 'warning', 6000);
+        },
     });
 
     // --- Org-wide rules: tool cap ---

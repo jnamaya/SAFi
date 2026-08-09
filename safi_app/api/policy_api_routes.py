@@ -77,9 +77,18 @@ ALSO EXTRACT:
   list of what counts as Personal Information). Return the term and its full enumeration
   verbatim. These are disproportionately valuable: they turn a vague rubric into a
   checkable one, and most policies do not provide them.
+- "suggested": starting text for the author's form, drawn from the document — never
+  invented. Leave any field as "" when the document does not support it.
+    - "name": a short name for this policy, from the document's own title or subject.
+    - "purpose": 100-150 words stating what the governed agents exist to do, the
+      principles they operate by, and the limits of their authority. Write it in the
+      second person, addressed to the agent, as an operating frame it reasons from.
+    - "scope": ONE sentence, in the form
+      "<topic area> only — <specific subtopics>. No <excluded areas>."
 - "notes": observations the author must act on. In particular, say so explicitly if the
   document REFERENCES the organization's mission or core values without stating them —
-  those cannot be derived from this document and must not be invented.
+  those cannot be derived from this document and must NOT be invented or paraphrased
+  into "purpose". A policy that defers to a separate code of conduct is common.
 
 Return a single JSON object:
 {{
@@ -91,6 +100,7 @@ Return a single JSON object:
        "phrase": "<only when destination is blacklist: the literal string>" }}
   ],
   "definitions": [ {{ "term": "...", "enumeration": "..." }} ],
+  "suggested": {{ "name": "...", "purpose": "...", "scope": "..." }},
   "notes": [ "..." ]
 }}
 
@@ -781,12 +791,20 @@ async def generate_policy_content_endpoint():
             ]
             notes = [str(n).strip() for n in (parsed.get("notes") or []) if str(n).strip()]
 
+            raw_suggested = parsed.get("suggested")
+            raw_suggested = raw_suggested if isinstance(raw_suggested, dict) else {}
+            suggested = {
+                k: str(raw_suggested.get(k) or "").strip()
+                for k in ("name", "purpose", "scope")
+            }
+
             return jsonify({"ok": True, "content": {
                 "structural": buckets["structural"],
                 "blacklist": buckets["blacklist"],
                 "values": buckets["value"],
                 "unconvertible": buckets["none"],
                 "definitions": definitions,
+                "suggested": suggested,
                 "notes": notes,
             }})
 

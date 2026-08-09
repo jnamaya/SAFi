@@ -201,6 +201,39 @@ class ClassifierPromptGuards(unittest.TestCase):
         self.assertIn("definitions", p)
         self.assertIn("mission", p.lower())
 
+    def test_prompt_refuses_to_invent_a_mission(self):
+        """An AI use policy typically REFERENCES the organization's mission and
+        defers to a separate code of conduct. Paraphrasing that reference into a
+        purpose statement would put words the organization never wrote into the
+        frame every agent reasons from."""
+        p = pr._DOC_CLASSIFY_PROMPT
+        self.assertIn("must NOT be invented", p)
+
+    def test_prompt_asks_for_the_form_fields_the_author_must_fill(self):
+        """An import that returns only standards reads as broken: the wizard
+        still asks for a name, a purpose and a scope, and the document usually
+        supports all three."""
+        # Collapse whitespace: the prompt is a wrapped literal, so a phrase can
+        # straddle a line break and a naive substring check fails on wording
+        # that is in fact present.
+        p = pr._DOC_CLASSIFY_PROMPT
+        flat = " ".join(p.split())
+        self.assertIn('"suggested"', p)
+        for field in ('"name"', '"purpose"', '"scope"'):
+            self.assertIn(field, p)
+        self.assertIn("never invented", flat)
+
+
+class SuggestedFieldsNormalization(unittest.TestCase):
+    """`suggested` is written straight into the author's form, so a missing or
+    malformed value must land as an empty string rather than "undefined" or a
+    crash."""
+
+    def test_endpoint_coerces_every_field_to_a_string(self):
+        src = Path(pr.__file__).read_text(encoding="utf-8")
+        self.assertIn('for k in ("name", "purpose", "scope")', src)
+        self.assertIn("raw_suggested if isinstance(raw_suggested, dict) else {}", src)
+
     def test_json_branches_sample_at_zero_with_a_real_budget(self):
         """The bug this catches actually happened, on the first real import.
 
