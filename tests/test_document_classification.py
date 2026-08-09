@@ -223,6 +223,33 @@ class ClassifierPromptGuards(unittest.TestCase):
             self.assertIn(field, p)
         self.assertIn("never invented", flat)
 
+    def test_include_requiring_clauses_route_to_the_literal_tier(self):
+        """The live break: a "disclose that AI was used" clause was classified as
+        a scored standard, compiled into a -1.0 of "does not include a statement
+        about GenAI use", and blocked every response an agent gave.
+
+        A requirement to INCLUDE something can only be broken by omission, so it
+        can never be a standard — it belongs to the disclaimer check, which
+        appends the missing text instead of refusing the turn."""
+        flat = " ".join(pr._DOC_CLASSIFY_PROMPT.split())
+        self.assertIn('is ALWAYS "structural" — never "value"', flat)
+        self.assertIn("Always supply it", flat)
+        self.assertIn("If the only way to fail is by omitting something", flat)
+
+    def test_document_tasks_do_not_use_the_light_model(self):
+        """Measured on a real 15-page policy: the light model returned a bare
+        "{}" while the Conscience model returned five classified clauses. The
+        empty reply PARSES, so it reached the author as "this document contains
+        nothing enforceable" — a confident falsehood about their own policy."""
+        src = Path(pr.__file__).read_text(encoding="utf-8")
+        self.assertIn("_DOCUMENT_TASKS = ('classify_document', 'compile_rules')", src)
+        self.assertIn("Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS", src)
+
+    def test_a_reply_without_clauses_is_a_failure_not_an_empty_finding(self):
+        src = Path(pr.__file__).read_text(encoding="utf-8")
+        self.assertIn('"clauses" not in parsed', src)
+        self.assertIn("returned an empty result rather than an analysis", src)
+
 
 class SuggestedFieldsNormalization(unittest.TestCase):
     """`suggested` is written straight into the author's form, so a missing or

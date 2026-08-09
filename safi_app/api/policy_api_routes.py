@@ -49,15 +49,25 @@ one a destination. Ignore document structure (headings, page numbers, tables of 
 
 DESTINATIONS, in order of preference — always choose the earliest one that genuinely fits:
 
-1. "structural" — the clause requires or forbids something CHECKABLE LITERALLY in the
-   response text, with no interpretation. Almost always a mandated disclosure/disclaimer,
-   or a banned format. Include:
-     - "disclaimer_text": the exact sentence the response must contain, if the clause
-       mandates a disclosure. Write it as the agent would say it, in one short sentence.
+1. "structural" — the clause requires the response to INCLUDE something, or forbids a
+   format. **Any clause requiring the response to include, state, disclose, cite, label
+   or add something is ALWAYS "structural" — never "value".** This is not a preference:
+   a requirement to include something can only be broken by leaving it out, and an
+   omission scored as a standard fires on every answer that never raised the topic,
+   blocking ordinary traffic. Structural checks instead APPEND the missing text.
+   Include:
+     - "disclaimer_text": the exact sentence the response must contain. Always supply it
+       for a clause of this kind — write it yourself, as the agent would say it, in one
+       short sentence. A clause routed here without it cannot be enforced.
+   Examples: "disclose that AI was used" -> structural. "cite your sources" -> structural.
+   "include a statement about human oversight" -> structural.
 2. "blacklist" — a specific literal word or phrase that must never appear. Only for genuine
    fixed strings, never for topics or concepts.
-3. "value" — the clause is about the CONTENT of the response and needs judgment to assess
-   (e.g. disclosing personal data, fabricating a citation, overstating expertise).
+3. "value" — the clause FORBIDS AN ACT and judging whether the act occurred needs
+   interpretation (e.g. revealing personal data, fabricating a citation, presenting AI
+   output as original expert work). It must be possible to describe the failure as
+   something the response DID. If the only way to fail is by omitting something, it
+   belongs in "structural", not here.
 4. "none" — the clause governs a PERSON or a PROCESS, not a response. This is the correct
    answer for most of a typical policy. Examples that are ALWAYS "none":
      - committee membership, meeting cadence, who approves what
@@ -464,8 +474,20 @@ async def generate_policy_content_endpoint():
         from safi_app.core.services.llm_provider import LLMProvider
         from safi_app.config import Config
         
-        # Use the configured backend model for wizard tasks
-        model = Config.BACKEND_MODEL
+        # Most wizard tasks are short drafting jobs the light model handles well.
+        # The document tasks are not: classifying a 15-page policy, or writing a
+        # rubric per standard, is the heaviest structured-extraction work in the
+        # product. Measured on a real 15-page AI policy, the light model
+        # (gpt-oss-20b) returned a bare "{}" — two characters — while the
+        # Conscience model returned five correctly classified clauses.
+        #
+        # A degenerate "{}" is the dangerous failure here because it PARSES: it
+        # reaches the author as "nothing in this document constrains an agent's
+        # answers", which is a confident falsehood about their policy. Routing
+        # these to the auditing model is the fix; the guard below catches the
+        # residual case.
+        _DOCUMENT_TASKS = ('classify_document', 'compile_rules')
+        model = Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS else Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
         llm_config = {
@@ -755,6 +777,22 @@ async def generate_policy_content_endpoint():
                 parsed = json.loads(cleaned)
             except json.JSONDecodeError:
                 return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
+
+            # A degenerate reply — most often a bare "{}" — parses cleanly and
+            # then reads downstream as "this document contains nothing
+            # enforceable". That is a confident falsehood about the author's own
+            # policy, and the most damaging thing this endpoint could say. An
+            # answer with no `clauses` key at all is a failed call, not a finding.
+            if not isinstance(parsed, dict) or "clauses" not in parsed:
+                current_app.logger.warning(
+                    "classify_document: degenerate reply from %s (%d chars): %r",
+                    model, len(cleaned), cleaned[:200],
+                )
+                return jsonify({"ok": False, "error": (
+                    "The model returned an empty result rather than an analysis. This usually "
+                    "means the document is too long for the configured model — try a shorter "
+                    "document, or a stronger Conscience model in Settings."
+                )}), 422
 
             # Normalize server-side. The destination decides which tier a clause
             # is enforced in, so an unrecognized value must fall back to the tier
