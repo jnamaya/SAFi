@@ -219,7 +219,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             <div class="flex items-start justify-between gap-4 mb-1">
                 <div>
                     <h4 class="text-lg font-semibold">AI Standards</h4>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Rules you want enforced on <strong>every agent</strong> in your organization &mdash; for example, never revealing personal information such as a social security or bank account number, and never sharing private company data. A business unit can add to these, but cannot switch them off. Optional: set them if your organization has an AI policy.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Rules you want enforced on <strong>every agent</strong> in your organization &mdash; for example, never revealing personal information such as a social security or bank account number, and never sharing private company data. Optional &mdash; most organizations start with two or three.</p>
                 </div>
                 ${aiStandards
                     ? '<span class="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full mt-1 shrink-0">Active</span>'
