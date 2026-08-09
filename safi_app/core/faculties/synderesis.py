@@ -581,15 +581,22 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     charter_vals = _mapname(charter_values_raw)
     policy_vals = _mapname(policy_values)
 
-    # The organization's AI Standards contribute hard gates ONLY. Anything
-    # scored there would need a third share of the weight split, changing the
-    # alignment aggregate for every existing org; a gate sits outside the split
-    # at weight 0, so adopting AI standards cannot move anyone's scores.
-    ai_gates = _mapname([
+    # An AI Standard is either BLOCKING or SCORED, chosen per standard.
+    #
+    # Blocking ones become hard gates at weight 0, outside the split. Scored
+    # ones join the ORGANIZATION's share alongside the charter's values — not a
+    # third tier, so the two-way split and the alignment aggregate are untouched.
+    # The 40% is "organization" rather than "charter specifically".
+    #
+    # Scored is the default in the UI on purpose: every hard gate must appear in
+    # the Conscience ledger on EVERY turn or the Will fails closed, so a tier
+    # where each addition is a gate gets more fragile the more it is used.
+    ai_vals = _mapname([
         v for v in (ai_standards.get("values") or []) if isinstance(v, dict)
     ])
+    ai_gates = [v for v in ai_vals if v.get("hard_gate")]
+    ai_scored = [v for v in ai_vals if not v.get("hard_gate")]
     for v in ai_gates:
-        v["hard_gate"] = True
         v["weight"] = 0.0
 
     # Preserve all hard gates at weight 0 (Scope Compliance + any gate-flagged
@@ -598,7 +605,9 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     # Charter values flagged as gates are legacy: gates belong to AI Standards
     # now. Still honoured so an existing charter does not lose enforcement.
     c_gates = [v for v in charter_vals if v.get("hard_gate")]
-    c_scored = [v for v in charter_vals if not v.get("hard_gate")]
+    # Scored AI standards share the organization's slice with the charter's
+    # values, which is what keeps this a two-way split.
+    c_scored = [v for v in charter_vals if not v.get("hard_gate")] + ai_scored
     p_gates = [v for v in policy_vals if v.get("hard_gate")]
     p_scored = [v for v in policy_vals if not v.get("hard_gate")]
 

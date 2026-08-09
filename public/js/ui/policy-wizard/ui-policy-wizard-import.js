@@ -326,7 +326,7 @@ async function applySelected() {
  * differ between a policy and a charter, so the caller passes the target object
  * and the key its value list lives under.
  */
-export function applyCommon(target, { structural, blacklist, gates }, valuesKey) {
+export function applyCommon(target, { structural, blacklist, gates }, valuesKey, { blocking = true } = {}) {
     const applied = [];
 
     if (structural.length) {
@@ -361,18 +361,21 @@ export function applyCommon(target, { structural, blacklist, gates }, valuesKey)
             const name = String(g.name || '').trim();
             if (!name || existing.has(name.toLowerCase())) return;
             existing.add(name.toLowerCase());
-            // weight 0 + hard_gate: blocked by the Will, excluded from the
-            // Spirit average — the same shape Scope Compliance already uses.
+            // `blocking` decides the tier. Imported organization standards land
+            // SCORED by default: every blocking one must be judged on every
+            // request or the turn is stopped, so importing a document should not
+            // quietly add several ways for ordinary answers to be refused. The
+            // author promotes the true absolutes afterwards.
             target[valuesKey].push({
                 name,
                 description: g.description || '',
-                weight: 0,
-                hard_gate: true,
+                weight: blocking ? 0 : 1,
+                hard_gate: blocking,
                 rubric: g.rubric || { scoring_guide: [] },
             });
             added++;
         });
-        if (added) applied.push(`${added} non-negotiable standard${added === 1 ? '' : 's'}`);
+        if (added) applied.push(`${added} standard${added === 1 ? '' : 's'}`);
     }
 
     return applied;

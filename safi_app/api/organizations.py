@@ -508,9 +508,11 @@ def upsert_ai_standards(org_id):
             return jsonify({"error": "alignment_score_threshold must be between 0 and 1"}), 400
         structural['alignment_score_threshold'] = threshold
 
-    # Every standard here is a hard gate, and a hard gate the Conscience cannot
-    # score fails closed on EVERY request across the whole organization. Reject
-    # a rubric-less one at save time rather than letting it take the org down.
+    # Each standard is BLOCKING (a hard gate) or SCORED, chosen per standard.
+    # Both are audited, so both need criteria: a blocking one the Conscience
+    # cannot score fails closed on every request across the whole organization,
+    # and a scored one it cannot score is silently stripped by the compiler and
+    # freezes the Spirit average. Reject either at save time.
     cleaned = []
     for v in values:
         if not isinstance(v, dict):
@@ -518,12 +520,27 @@ def upsert_ai_standards(org_id):
         name = str(v.get('name') or v.get('value') or '').strip()
         if not name:
             continue
+        blocking = bool(v.get('hard_gate'))
         if not _has_usable_rubric(v):
             return jsonify({"error": (
-                f"'{name}' has no scoring criteria. A non-negotiable standard the auditor "
-                "cannot score would block every response from every agent."
+                f"'{name}' has no scoring criteria. " + (
+                    "A blocking standard the auditor cannot score would block every response "
+                    "from every agent." if blocking else
+                    "A scored standard without criteria can never be scored, so it would be "
+                    "dropped and would freeze the alignment average."
+                )
             )}), 400
-        cleaned.append({**v, "name": name, "hard_gate": True, "weight": 0.0})
+        try:
+            weight = float(v.get('weight') or 0)
+        except (TypeError, ValueError):
+            weight = 0.0
+        cleaned.append({
+            **v, "name": name, "hard_gate": blocking,
+            # Blocking standards sit outside the weight split at 0. Scored ones
+            # share the organization's slice with the charter's values, so they
+            # need a positive weight to be normalized against.
+            "weight": 0.0 if blocking else (weight if weight > 0 else 1.0),
+        })
 
     try:
         user = session.get('user', {})

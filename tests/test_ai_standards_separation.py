@@ -12,11 +12,15 @@ redirected every turn.
 
 Two properties this pins:
 
-  * AI Standards contribute HARD GATES ONLY. A scored value there would need a
-    third share of the Charter/Policy weight split, changing $A_t$ for every
-    existing organization and requiring a change to the published mathematical
-    specification. Gates sit outside the split at weight 0, so adopting AI
-    standards cannot move anybody's scores.
+  * A standard is BLOCKING or SCORED, chosen per standard. Blocking ones are
+    hard gates at weight 0, outside the split. Scored ones join the
+    ORGANIZATION's share alongside the charter's values — not a third tier, so
+    the two-way split and $A_t$'s definition are untouched.
+
+    Scored is the default, and that is a safety property rather than a taste:
+    every blocking standard must appear in the Conscience ledger on EVERY turn
+    or the Will fails closed, so a tier where each addition is a gate becomes
+    more fragile the more it is used.
   * They are OPTIONAL and independent. An org with a charter and no standards,
     or standards and no charter, must compile cleanly — and dropping one must
     not disturb the other.
@@ -46,7 +50,7 @@ CHARTER = {
 }
 
 STANDARDS = {
-    "values": [{"name": "Compensation Confidentiality", "rubric": RUBRIC}],
+    "values": [{"name": "Compensation Confidentiality", "hard_gate": True, "rubric": RUBRIC}],
     "structural_requirements": {"require_disclaimer": True,
                                 "mandatory_disclaimer_substring": "AI-assisted."},
     "early_prompt_blacklist": ["insider trading tips"],
@@ -59,20 +63,26 @@ def base(will_rules=None):
 
 class StandardsAreGatesOnly(unittest.TestCase):
 
-    def test_standards_values_become_hard_gates_at_weight_zero(self):
+    def test_a_scored_standard_joins_the_organization_share(self):
+        """Not a third tier: a scored standard shares the org's slice with the
+        charter's values, so the split stays two-way and A_t is untouched."""
+        mixed = {"values": [{"name": "Accuracy", "weight": 1.0, "hard_gate": False, "rubric": RUBRIC}]}
+        policy = [{"name": "Helpfulness", "weight": 1.0,
+                   "rubric": {"scoring_guide": [{"score": 1.0, "descriptor": "ok"}]}}]
+        out = apply_charter(base(), CHARTER, policy_values=policy,
+                            charter_weight=0.40, ai_standards=mixed)
+        scored = {v["value"]: v["weight"] for v in out["values"] if not v.get("hard_gate")}
+        self.assertEqual(set(scored), {"Integrity", "Accuracy", "Helpfulness"})
+        # Charter value + scored standard divide the org's 40%; policy keeps 60%.
+        self.assertAlmostEqual(scored["Integrity"] + scored["Accuracy"], 0.40, places=6)
+        self.assertAlmostEqual(scored["Helpfulness"], 0.60, places=6)
+        self.assertAlmostEqual(sum(scored.values()), 1.0, places=6)
+
+    def test_a_blocking_standard_stays_outside_the_split(self):
         out = apply_charter(base(), CHARTER, policy_values=[], ai_standards=STANDARDS)
         gate = next(v for v in out["values"] if v.get("value") == "Compensation Confidentiality")
         self.assertTrue(gate["hard_gate"])
         self.assertEqual(gate["weight"], 0.0)
-
-    def test_a_weighted_standard_is_forced_to_a_gate(self):
-        """Guards the decision itself. If a scored value ever survives from this
-        tier, the two-way weight split silently becomes three-way."""
-        greedy = {"values": [{"name": "X", "weight": 0.5, "hard_gate": False, "rubric": RUBRIC}]}
-        out = apply_charter(base(), CHARTER, policy_values=[], ai_standards=greedy)
-        x = next(v for v in out["values"] if v.get("value") == "X")
-        self.assertTrue(x["hard_gate"])
-        self.assertEqual(x["weight"], 0.0)
 
     def test_scored_values_still_come_only_from_charter_and_policy(self):
         policy = [{"name": "Helpfulness", "weight": 1.0,
@@ -84,9 +94,10 @@ class StandardsAreGatesOnly(unittest.TestCase):
         self.assertAlmostEqual(scored["Integrity"], 0.40, places=6)
         self.assertAlmostEqual(scored["Helpfulness"], 0.60, places=6)
 
-    def test_adopting_standards_does_not_move_the_scored_weights(self):
-        """The whole point of gates-only: turning AI standards on must not
-        change what any existing agent scores."""
+    def test_adopting_BLOCKING_standards_does_not_move_the_scored_weights(self):
+        """A blocking standard sits outside the split, so switching one on must
+        not change what any existing agent scores. (A SCORED standard is meant
+        to change them — that is what choosing 'scored' asks for.)"""
         without = apply_charter(base(), CHARTER, policy_values=[], ai_standards=None)
         with_ = apply_charter(base(), CHARTER, policy_values=[], ai_standards=STANDARDS)
         pick = lambda p: {v["value"]: v["weight"] for v in p["values"] if not v.get("hard_gate")}

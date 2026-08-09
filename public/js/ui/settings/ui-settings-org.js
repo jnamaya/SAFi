@@ -294,7 +294,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Non-negotiable standards</label>
                         <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
                     </div>
-                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things an agent must never do &mdash; reveal someone's personal data, give advice it is not qualified to give. Any response that breaks one is blocked outright, for every agent. Each is judged by the auditor model on <em>every</em> request, so each needs criteria it can actually apply.</p>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things every agent should or should not do &mdash; reveal someone's personal data, give advice it is not qualified to give. Each is judged by the auditor on every request, so each needs criteria it can apply. Mark one <strong>Blocking</strong> only for absolutes: a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
                     <div id="ai-standards-list" class="space-y-4"></div>
                 </div>
 
@@ -530,7 +530,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             { structural_requirements: structuralData,
               early_prompt_blacklist: blacklistData,
               values: aiStandardsData },
-            payload, 'values',
+            payload, 'values', { blocking: false },
         ),
         // Mission is deliberately NOT filled from the document. An AI use policy
         // references the organization's mission and defers to a separate code of
@@ -598,13 +598,12 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
     function renderAiStandards() {
         const list = document.getElementById('ai-standards-list');
         if (!list) return;
-        aiStandardsData.forEach(v => { v.hard_gate = true; v.weight = 0; });
         renderCharterValues(aiStandardsData, list, 'standard');
     }
     renderAiStandards();
 
     document.getElementById('btn-add-ai-standard')?.addEventListener('click', () => {
-        aiStandardsData.push({ name: '', description: '', weight: 0, hard_gate: true, rubric: { scoring_guide: [] } });
+        aiStandardsData.push({ name: '', description: '', weight: 1, hard_gate: false, rubric: { scoring_guide: [] } });
         renderAiStandards();
     });
 
@@ -1004,7 +1003,10 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
                     ${mode === 'standard'
-                        ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-2 py-1 rounded-full" title="Every AI standard blocks on violation. That is what makes it a standard rather than a preference.">Non-negotiable</span>`
+                        ? `<label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="Scored: counts toward the alignment score, like a value. Blocking: any violation stops the response outright. Use blocking only for absolutes — every blocking standard must be judged on every request, so several of them make ordinary answers more likely to be stopped.">
+                             <input type="checkbox" class="cv-blocking accent-red-600 w-4 h-4" ${v.hard_gate ? 'checked' : ''}/>
+                             <span class="text-xs uppercase font-bold ${v.hard_gate ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}">Blocking</span>
+                           </label>`
                         : (v.hard_gate
                             ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-full" title="This core value blocks on violation. Blocking rules belong in AI Standards; this one is kept working, but new ones should be added there.">Legacy gate</span>`
                             : '')}
@@ -1051,9 +1053,20 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             lbl.textContent = pct + '%';
         });
 
-        // No hard-gate toggle: whether a value can block is decided by which
-        // artifact it lives in, not per value. Existing flagged charter values
-        // keep working and are labelled "Legacy gate".
+        // Blocking toggle exists only for AI standards. A charter value is
+        // organizational identity and is always scored; letting one block by
+        // hand is what produced a required disclosure that stopped every turn.
+        const blockingToggle = card.querySelector('.cv-blocking');
+        if (blockingToggle) {
+            blockingToggle.addEventListener('change', e => {
+                const on = !!e.target.checked;
+                valuesData[idx].hard_gate = on;
+                // A blocking standard sits outside the weight split; a scored one
+                // needs a positive weight to be normalized against.
+                valuesData[idx].weight = on ? 0 : (valuesData[idx].weight || 1);
+                renderCharterValues(valuesData, container, mode);
+            });
+        }
 
         // Rubric toggle
         const rubricPanel = card.querySelector('.cv-rubric-panel');
