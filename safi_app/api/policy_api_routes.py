@@ -160,6 +160,16 @@ def create_policy():
             policy_config=policy_config
         )
         
+        # Policies carry their own version history, so the log records the
+        # governance surface — how many standards, how many block — rather than
+        # duplicating content the versions table already holds.
+        _vals = data.get("values") or []
+        db.append_compliance_log(user.get('org_id'), 'policy_created', f"user:{user_id}", {
+            "policy_id": pid, "name": data.get("name"),
+            "standards": len(_vals),
+            "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
+        })
+
         # Auto-generate credentials for immediate use
         default_key = db.create_api_key(pid, "Initial Key")
         
@@ -230,6 +240,16 @@ def update_policy(policy_id):
             policy_config=policy_config
         )
         
+        _vals = data.get('values') or []
+        _after = db.get_policy(policy_id) or {}
+        db.append_compliance_log(get_current_org_id(), 'policy_updated',
+                                 f"user:{session.get('user', {}).get('id')}", {
+            "policy_id": policy_id, "name": data.get('name'),
+            "version": _after.get('version'),
+            "standards": len(_vals),
+            "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
+        })
+
         # Return existing (or new) credentials for UI convenience
         keys = db.get_policy_keys(policy_id)
         # Fix: handle keys that only have hashes (return masked)
@@ -329,6 +349,9 @@ def delete_policy(policy_id):
         # Ownership check removed in favor of strict Admin RBAC
 
         db.delete_policy(policy_id)
+        db.append_compliance_log(get_current_org_id(), 'policy_deleted',
+                                 f"user:{session.get('user', {}).get('id')}",
+                                 {"policy_id": policy_id, "name": policy.get('name')})
         return jsonify({"ok": True})
     except Exception as e:
         current_app.logger.error(f"delete_policy error: {e}")

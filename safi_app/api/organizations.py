@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app, session
 import uuid
+import json
 import dns.resolver
 from ..persistence import database as db
 from ..core.rbac import require_role, check_permission, get_current_org_id
@@ -205,11 +206,27 @@ def update_organization(org_id):
         return jsonify({"error": "No changes provided (name or settings required)"}), 400
         
     try:
+        actor = f"user:{(session.get('user') or {}).get('id')}"
         if name:
             db.update_organization_name(org_id, name)
-        
+            db.append_compliance_log(org_id, 'org_renamed', actor, {"name": name})
+
         if settings:
+            # governance_split and spirit_beta change how every agent in the org
+            # is scored, so the VALUES are the evidence here, not just the fact
+            # that something moved.
+            before = {}
+            try:
+                existing = (db.get_organization(org_id) or {}).get('settings') or {}
+                if isinstance(existing, str):
+                    existing = json.loads(existing)
+                before = {k: existing.get(k) for k in settings.keys()}
+            except Exception:
+                pass
             db.update_organization_settings(org_id, settings)
+            db.append_compliance_log(org_id, 'org_settings_changed', actor,
+                                     {"changed": sorted(settings.keys()),
+                                      "before": before, "after": settings})
 
         return jsonify({"status": "updated", "id": org_id, "name": name})
     except Exception as e:
@@ -428,7 +445,17 @@ def upsert_charter(org_id):
 
     try:
         user = session.get('user', {})
+        # Counts and a diff summary, never the text itself — the convention the
+        # log already follows. Enough to answer "who changed the charter, when,
+        # and did the values change or only the mission".
+        prev = db.get_charter(org_id) or {}
         db.upsert_charter(org_id, mission, core_values, created_by=user.get('id'))
+        db.append_compliance_log(org_id, 'charter_saved', f"user:{user.get('id')}", {
+            "created": not prev,
+            "mission_changed": (prev.get('mission') or '') != (mission or ''),
+            "core_values_before": len(prev.get('core_values') or []),
+            "core_values_after": len(core_values),
+        })
         return jsonify({"status": "saved", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error saving charter: {e}")
@@ -445,7 +472,11 @@ def delete_charter(org_id):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
+        prev = db.get_charter(org_id) or {}
         db.delete_charter(org_id)
+        db.append_compliance_log(
+            org_id, 'charter_deleted', f"user:{(session.get('user') or {}).get('id')}",
+            {"core_values_removed": len(prev.get('core_values') or [])})
         return jsonify({"status": "deleted", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error deleting charter: {e}")
@@ -544,11 +575,24 @@ def upsert_ai_standards(org_id):
 
     try:
         user = session.get('user', {})
+        prev = db.get_ai_standards(org_id) or {}
         db.upsert_ai_standards(
             org_id, values=cleaned, structural_requirements=structural,
             early_prompt_blacklist=blacklist, allowed_tools=allowed_tools,
             created_by=user.get('id'),
         )
+        # Blocking standards get named individually: each one can stop every
+        # response from every agent, so "which ones were blocking on the day
+        # traffic stopped" has to be answerable from the log alone.
+        db.append_compliance_log(org_id, 'ai_standards_saved', f"user:{user.get('id')}", {
+            "created": not prev,
+            "standards_before": len(prev.get('values') or []),
+            "standards_after": len(cleaned),
+            "blocking": sorted(v['name'] for v in cleaned if v.get('hard_gate')),
+            "requires_disclaimer": bool(structural.get('require_disclaimer')),
+            "blocked_phrases": len(blacklist),
+            "tool_cap": None if allowed_tools is None else len(allowed_tools),
+        })
         return jsonify({"status": "saved", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error saving AI standards: {e}")
@@ -562,7 +606,11 @@ def delete_ai_standards(org_id):
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
+        prev = db.get_ai_standards(org_id) or {}
         db.delete_ai_standards(org_id)
+        db.append_compliance_log(
+            org_id, 'ai_standards_deleted', f"user:{(session.get('user') or {}).get('id')}",
+            {"standards_removed": len(prev.get('values') or [])})
         return jsonify({"status": "deleted", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error deleting AI standards: {e}")
