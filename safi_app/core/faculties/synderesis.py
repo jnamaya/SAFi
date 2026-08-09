@@ -409,6 +409,111 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     return final_profile
 
 
+def _apply_charter_will_rules(profile: Dict[str, Any], charter: Dict[str, Any]) -> Dict[str, Any]:
+    """Folds the Charter's deterministic Will settings into `will_rules`.
+
+    These are the org-wide half of what the Will actually enforces. Scored
+    values and hard gates already reach every agent through the charter's
+    core_values; structural requirements, the prompt blacklist and the tool cap
+    previously existed only on a business-unit Policy, so an org-wide
+    prohibition had to be duplicated into every policy with nothing keeping the
+    copies in step.
+
+    Precedence follows one rule — a business-unit Policy may ADD to what the org
+    requires, never quietly drop it — but that resolves differently per key
+    because the keys differ in type:
+
+      require_disclaimer            OR      charter on -> a policy cannot turn it off
+      mandatory_disclaimer_substring        charter wins when set (see below)
+      disclaimer_repair_text                charter wins when set
+      banned_markdown_syntaxes      union   both prohibitions apply
+      alignment_score_threshold     max     strictest wins; charter sets a floor
+      early_prompt_blacklist        union   both phrase sets apply
+      allowed_tools                 ∩       charter ∩ policy ∩ advertised
+
+    The disclaimer substring cannot be unioned: WillGate.evaluate_draft_structure
+    checks exactly one substring, so two mandates cannot both be enforced. The
+    org-wide one is the one that survives, and the settings UI says so plainly —
+    a business unit that set its own would otherwise lose it silently.
+
+    `allowed_markdown_syntaxes` is deliberately absent. It is a whitelist, and
+    the Will treats an empty one as "no restriction configured"; intersecting
+    two whitelists can produce [], which would disable the check rather than
+    tighten it.
+
+    Absent/empty charter settings are no-ops, so an org with no charter — or one
+    written before these fields existed — compiles exactly as before.
+    """
+    struct_in = charter.get("structural_requirements") or {}
+    blacklist_in = [p for p in (charter.get("early_prompt_blacklist") or []) if str(p).strip()]
+    tools_in = charter.get("allowed_tools")
+    if not struct_in and not blacklist_in and not isinstance(tools_in, list):
+        return profile
+
+    wr = profile.get("will_rules")
+    if isinstance(wr, dict):
+        merged = copy.deepcopy(wr)
+    else:
+        # A legacy prose list has to be promoted before structured keys can be
+        # attached. Preserve it under `rules` rather than discarding it — that
+        # silent drop was a real bug in assemble_agent.
+        merged = {"rules": list(wr)} if isinstance(wr, list) and wr else {}
+
+    struct = dict(merged.get("structural_requirements") or {})
+
+    if struct_in.get("require_disclaimer"):
+        struct["require_disclaimer"] = True
+    for key in ("mandatory_disclaimer_substring", "disclaimer_repair_text"):
+        val = str(struct_in.get(key) or "").strip()
+        if val:
+            struct[key] = val
+
+    banned = list(struct.get("banned_markdown_syntaxes") or [])
+    for syn in (struct_in.get("banned_markdown_syntaxes") or []):
+        if syn and syn not in banned:
+            banned.append(syn)
+    if banned:
+        struct["banned_markdown_syntaxes"] = banned
+
+    # Threshold is a floor: a policy may demand a higher alignment score than
+    # the org does, never a lower one.
+    charter_threshold = struct_in.get("alignment_score_threshold")
+    if charter_threshold is not None:
+        try:
+            ct = float(charter_threshold)
+            existing = struct.get("alignment_score_threshold")
+            struct["alignment_score_threshold"] = ct if existing is None else max(float(existing), ct)
+        except (TypeError, ValueError):
+            log.warning("Charter alignment_score_threshold is not a number — ignoring.")
+
+    if struct:
+        merged["structural_requirements"] = struct
+
+    if blacklist_in:
+        bl = list(merged.get("early_prompt_blacklist") or [])
+        for phrase in blacklist_in:
+            if phrase not in bl:
+                bl.append(phrase)
+        merged["early_prompt_blacklist"] = bl
+
+    # Narrowing only, matching authorized_tools: an absent or empty list means
+    # "the org does not narrow", never "deny all". _stamp_tool_authorization
+    # runs after this and intersects the result with what the agent advertises.
+    if isinstance(tools_in, list) and tools_in:
+        policy_tools = merged.get("allowed_tools")
+        if isinstance(policy_tools, list) and policy_tools:
+            charter_set = set(expand_connectors([t for t in tools_in if isinstance(t, str)]))
+            merged["allowed_tools"] = [
+                t for t in expand_connectors([t for t in policy_tools if isinstance(t, str)])
+                if t in charter_set
+            ]
+        else:
+            merged["allowed_tools"] = list(tools_in)
+
+    profile["will_rules"] = merged
+    return profile
+
+
 def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], policy_values: Optional[List[Dict[str, Any]]] = None, charter_weight: float = 0.40) -> Dict[str, Any]:
     """
     Finalizes an agent's governed profile under the two-tier value model.
@@ -428,10 +533,15 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
       - policy only (no charter) -> policy@1.0
       - neither (built-ins / standalone custom agents) -> keep existing values,
         no preamble. Effectively a no-op.
+      - The charter's deterministic Will settings (structural requirements,
+        prompt blacklist, tool cap) are folded into will_rules. See
+        _apply_charter_will_rules for the per-key precedence.
     """
     profile = copy.deepcopy(profile)
     charter = charter or {}
     policy_values = policy_values or []
+
+    profile = _apply_charter_will_rules(profile, charter)
 
     mission = (charter.get("mission") or "").strip()
     charter_values_raw = charter.get("core_values") or []

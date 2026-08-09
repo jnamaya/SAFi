@@ -207,17 +207,32 @@ def init_db():
             cursor.execute("ALTER TABLE organizations ADD CONSTRAINT fk_org_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL")
 
         # --- Org Charter ---
+        # The three JSON columns after core_values are the org-wide half of the
+        # Will's deterministic gates. Without them a corporate AI policy's
+        # prohibitions had to be copy-pasted into every business-unit policy,
+        # unsynchronized — the exact drift such a policy exists to prevent.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS org_charter (
                 org_id CHAR(36) PRIMARY KEY,
                 mission TEXT,
                 core_values JSON,
+                structural_requirements JSON,
+                early_prompt_blacklist JSON,
+                allowed_tools JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 created_by VARCHAR(255),
                 FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
             )
         ''')
+
+        # CREATE TABLE IF NOT EXISTS does nothing to a table that already
+        # exists, so installs predating these columns need the ALTER.
+        cursor.execute("SHOW COLUMNS FROM org_charter LIKE 'structural_requirements'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE org_charter ADD COLUMN structural_requirements JSON")
+            cursor.execute("ALTER TABLE org_charter ADD COLUMN early_prompt_blacklist JSON")
+            cursor.execute("ALTER TABLE org_charter ADD COLUMN allowed_tools JSON")
 
         # --- Policies ---
         cursor.execute('''
@@ -3459,19 +3474,34 @@ def update_organization_settings(oid, settings):
 # ORG CHARTER
 # -------------------------------------------------------------------------
 
-def upsert_charter(org_id, mission, core_values, created_by=None):
+def upsert_charter(org_id, mission, core_values, created_by=None,
+                   structural_requirements=None, early_prompt_blacklist=None,
+                   allowed_tools=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         sql = """
-            INSERT INTO org_charter (org_id, mission, core_values, created_by)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO org_charter
+                (org_id, mission, core_values, created_by,
+                 structural_requirements, early_prompt_blacklist, allowed_tools)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 mission = VALUES(mission),
                 core_values = VALUES(core_values),
+                structural_requirements = VALUES(structural_requirements),
+                early_prompt_blacklist = VALUES(early_prompt_blacklist),
+                allowed_tools = VALUES(allowed_tools),
                 updated_at = CURRENT_TIMESTAMP
         """
-        cursor.execute(sql, (org_id, mission, json.dumps(core_values), created_by))
+        cursor.execute(sql, (
+            org_id, mission, json.dumps(core_values), created_by,
+            json.dumps(structural_requirements or {}),
+            json.dumps(early_prompt_blacklist or []),
+            # NULL, not [], when the org sets no tool cap: an empty list means
+            # "does not narrow" to authorized_tools, but storing NULL keeps the
+            # distinction legible to anyone reading the row directly.
+            json.dumps(allowed_tools) if isinstance(allowed_tools, list) else None,
+        ))
         conn.commit()
     finally:
         cursor.close()
@@ -3485,6 +3515,21 @@ def get_charter(org_id):
         row = cursor.fetchone()
         if row:
             row['core_values'] = json.loads(row['core_values']) if isinstance(row['core_values'], str) else row['core_values'] or []
+            # Rows written before these columns existed come back as None. The
+            # charter compiler treats {} / [] as "the org sets nothing here",
+            # so normalizing at the reader keeps every consumer from repeating
+            # the None check — and keeps a NULL from reaching the browser as a
+            # value the settings UI would then try to iterate.
+            for key, empty in (
+                ('structural_requirements', {}),
+                ('early_prompt_blacklist', []),
+            ):
+                val = row.get(key)
+                row[key] = json.loads(val) if isinstance(val, str) else (val if val is not None else empty)
+            at = row.get('allowed_tools')
+            # Kept nullable on purpose: None = no org-wide tool cap, whereas []
+            # would read as one. See authorized_tools for the same convention.
+            row['allowed_tools'] = json.loads(at) if isinstance(at, str) else at
         return row
     finally:
         cursor.close()

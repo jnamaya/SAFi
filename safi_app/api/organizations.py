@@ -423,9 +423,41 @@ def upsert_charter(org_id):
     if not isinstance(core_values, list):
         return jsonify({"error": "core_values must be an array"}), 400
 
+    structural = data.get('structural_requirements', {}) or {}
+    blacklist = data.get('early_prompt_blacklist', []) or []
+    allowed_tools = data.get('allowed_tools', None)
+
+    if not isinstance(structural, dict):
+        return jsonify({"error": "structural_requirements must be an object"}), 400
+    if not isinstance(blacklist, list):
+        return jsonify({"error": "early_prompt_blacklist must be an array"}), 400
+    if allowed_tools is not None and not isinstance(allowed_tools, list):
+        return jsonify({"error": "allowed_tools must be an array or null"}), 400
+
+    # A disclaimer that is required but has no substring to look for is a
+    # config error the Will can only log and skip, so it would read as enforced
+    # while enforcing nothing — reject it here instead.
+    if structural.get('require_disclaimer') and not str(structural.get('mandatory_disclaimer_substring') or '').strip():
+        return jsonify({"error": "A required disclaimer needs the exact text to check for."}), 400
+
+    threshold = structural.get('alignment_score_threshold')
+    if threshold is not None:
+        try:
+            threshold = float(threshold)
+        except (TypeError, ValueError):
+            return jsonify({"error": "alignment_score_threshold must be a number"}), 400
+        if not 0.0 <= threshold <= 1.0:
+            return jsonify({"error": "alignment_score_threshold must be between 0 and 1"}), 400
+        structural['alignment_score_threshold'] = threshold
+
     try:
         user = session.get('user', {})
-        db.upsert_charter(org_id, mission, core_values, created_by=user.get('id'))
+        db.upsert_charter(
+            org_id, mission, core_values, created_by=user.get('id'),
+            structural_requirements=structural,
+            early_prompt_blacklist=blacklist,
+            allowed_tools=allowed_tools,
+        )
         return jsonify({"status": "saved", "org_id": org_id})
     except Exception as e:
         current_app.logger.error(f"Error saving charter: {e}")
