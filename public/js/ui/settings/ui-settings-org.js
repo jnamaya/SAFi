@@ -2,7 +2,6 @@ import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { escapeHtml } from '../../core/utils.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
-import { renderImportCard, bindImportCard, applyCommon } from '../policy-wizard/ui-policy-wizard-import.js';
 
 let currentUser = null; // We need to set this if we want to check "isSelf"
 // But how? 
@@ -229,11 +228,20 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             </div>
 
             <div class="space-y-5 mt-4">
-                ${renderImportCard({
-                    title: "Already have an organizational AI policy?",
-                    subtitle: "Upload it and the AI model will try to extract the standards for you. You can also set them manually below &mdash; the upload is a starting point, not a requirement.",
-                    hint: "A document for a single team &mdash; a compliance manual, a code of conduct &mdash; belongs on that team's policy instead, not here.",
-                })}
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Standards</label>
+                        <div class="flex items-center gap-2">
+                            <button id="btn-gen-ai-standards" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                Suggest standards
+                            </button>
+                            <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things every agent should or should not do &mdash; reveal someone's personal data, give advice it is not qualified to give. Each is judged by the auditor on every request, so each needs criteria it can apply. Mark one <strong>Blocking</strong> only for absolutes: a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
+                    <div id="ai-standards-list" class="space-y-4"></div>
+                </div>
 
                 <!-- Deterministic Will checks: no model involved in any of these. -->
                 <div class="border-t border-gray-200 dark:border-neutral-700 pt-5">
@@ -289,14 +297,6 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                     </div>
                 </div>
 
-                <div>
-                    <div class="flex items-center justify-between mb-3">
-                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Non-negotiable standards</label>
-                        <button id="btn-add-ai-standard" class="text-xs text-green-600 dark:text-green-400 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 px-3 py-1.5 rounded-full transition-colors">Add standard</button>
-                    </div>
-                    <p class="text-xs text-gray-500 -mt-2 mb-3">Things every agent should or should not do &mdash; reveal someone's personal data, give advice it is not qualified to give. Each is judged by the auditor on every request, so each needs criteria it can apply. Mark one <strong>Blocking</strong> only for absolutes: a blocking standard stops the response outright, and several of them make ordinary answers more likely to be stopped.</p>
-                    <div id="ai-standards-list" class="space-y-4"></div>
-                </div>
 
                 <div class="flex items-center justify-between pt-2">
                     ${aiStandards
@@ -511,42 +511,6 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
         if (e.key === 'Enter') { e.preventDefault(); addCharterPhrase(); }
     });
 
-    // --- Import an organization-wide AI policy ---
-    // The Charter is the only tier whose scope matches "applies to all our AI",
-    // so this is where that document belongs. applyCommon writes into the same
-    // in-memory objects the form edits, so the results appear as ordinary
-    // unsaved edits — the author still has to press Save Charter, and nothing
-    // reaches the database unreviewed.
-    //
-    // Bound after the render helpers above so onApplied can redraw the form.
-    bindImportCard({
-        context: () => [org.name, document.getElementById('charter-mission')?.value.trim()]
-            .filter(Boolean).join(' — '),
-        // Targets AI Standards, never the charter. A clause from an AI policy is
-        // an AI conduct rule; writing one into core_values would make it a
-        // SCORED organizational value, which is how a required disclosure once
-        // blocked every response every agent gave.
-        onApply: (payload) => applyCommon(
-            { structural_requirements: structuralData,
-              early_prompt_blacklist: blacklistData,
-              values: aiStandardsData },
-            payload, 'values', { blocking: false },
-        ),
-        // Mission is deliberately NOT filled from the document. An AI use policy
-        // references the organization's mission and defers to a separate code of
-        // conduct — deriving one from it would be invention, and the classifier
-        // already returns a note saying so.
-        onApplied: () => {
-            renderAiStandards();
-            renderCharterBlacklist();
-            const dis = document.getElementById('charter-require-disclaimer');
-            const txt = document.getElementById('charter-disclaimer-text');
-            if (dis) dis.checked = !!structuralData.require_disclaimer;
-            if (txt) txt.value = structuralData.mandatory_disclaimer_substring || '';
-            ui.showToast('Imported. Review below, then press Save AI Standards.', 'warning', 6000);
-        },
-    });
-
     // --- Org-wide rules: tool cap ---
     const toolsToggle = document.getElementById('charter-restrict-tools');
     const toolsPanel = document.getElementById('charter-tools-panel');
@@ -601,6 +565,49 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
         renderCharterValues(aiStandardsData, list, 'standard');
     }
     renderAiStandards();
+
+    document.getElementById('btn-gen-ai-standards')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block mr-1"></span> Suggesting...`;
+        try {
+            const ctx = [org.name, document.getElementById('charter-mission')?.value.trim()]
+                .filter(Boolean).join(' — ') || 'General organization';
+            const res = await api.generatePolicyContent('ai_standards', ctx);
+            if (!res.ok || !res.content) throw new Error(res.error || 'Could not suggest standards.');
+            let list = typeof res.content === 'string' ? JSON.parse(res.content.trim()) : res.content;
+            if (!Array.isArray(list)) list = [list];
+
+            // Appended, never replacing: these are suggestions on top of whatever
+            // the admin has already written. Scored by default, like a
+            // hand-added one — promoting a standard to blocking is a decision.
+            const existing = new Set(aiStandardsData.map(v => String(v.name || '').trim().toLowerCase()));
+            let added = 0;
+            list.forEach(v => {
+                const name = String(v.name || '').trim();
+                if (!name || existing.has(name.toLowerCase())) return;
+                existing.add(name.toLowerCase());
+                aiStandardsData.push({
+                    name,
+                    description: v.description || '',
+                    weight: 1,
+                    hard_gate: false,
+                    rubric: v.rubric || { scoring_guide: [] },
+                });
+                added++;
+            });
+            renderAiStandards();
+            ui.showToast(
+                added ? `${added} suggested. Edit them, then press Save AI Standards.`
+                      : 'Nothing new suggested — these are already on the list.',
+                added ? 'success' : 'warning', 6000);
+        } catch (err) {
+            ui.showToast(err.message || 'Could not suggest standards.', 'error');
+        }
+        btn.disabled = false;
+        btn.innerHTML = original;
+    });
 
     document.getElementById('btn-add-ai-standard')?.addEventListener('click', () => {
         aiStandardsData.push({ name: '', description: '', weight: 1, hard_gate: false, rubric: { scoring_guide: [] } });

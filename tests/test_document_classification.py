@@ -236,14 +236,21 @@ class ClassifierPromptGuards(unittest.TestCase):
         self.assertIn("Always supply it", flat)
         self.assertIn("If the only way to fail is by omitting something", flat)
 
-    def test_document_tasks_do_not_use_the_light_model(self):
+    def test_governance_tasks_do_not_use_the_light_model(self):
         """Measured on a real 15-page policy: the light model returned a bare
         "{}" while the Conscience model returned five classified clauses. The
         empty reply PARSES, so it reached the author as "this document contains
-        nothing enforceable" — a confident falsehood about their own policy."""
+        nothing enforceable" — a confident falsehood about their own policy.
+
+        Asserted by membership, not by the literal tuple: the set grows as
+        governance-generating tasks are added, and pinning its exact text made
+        adding one fail here for no reason."""
         src = Path(pr.__file__).read_text(encoding="utf-8")
-        self.assertIn("_DOCUMENT_TASKS = ('classify_document', 'compile_rules')", src)
         self.assertIn("Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS", src)
+        line = next(l for l in src.splitlines() if "_DOCUMENT_TASKS = " in l)
+        for task in ("classify_document", "compile_rules", "ai_standards"):
+            self.assertIn(task, line,
+                          f"'{task}' writes governance config and must not run on the light model")
 
     def test_a_reply_without_clauses_is_a_failure_not_an_empty_finding(self):
         src = Path(pr.__file__).read_text(encoding="utf-8")
