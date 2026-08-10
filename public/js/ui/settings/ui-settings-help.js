@@ -272,7 +272,6 @@ export function renderSettingsHelpTab() {
 
                     <div>
                         <p class="font-medium text-gray-900 dark:text-white mb-2">Suggested follow-ups</p>
-                        <p>After each response, the agent may suggest follow-up questions to help guide the conversation. Click any suggestion to send it as your next message.</p>
                     </div>
 
                     <div>

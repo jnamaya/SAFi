@@ -122,17 +122,6 @@ def merge_agent_context(current: dict, delta: dict) -> dict:
 class BackgroundTasksMixin:
     """Mixin for background task management (summarization, profile extraction)."""
 
-    def _run_suggestions_thread(self, message_id: str, user_prompt: str, ai_response: str):
-        """Generate follow-up suggestions off the request path and persist them.
-        Uses the sync Groq client (safe in a thread); the frontend polls the
-        audit endpoint and injects them once written."""
-        try:
-            s_p = self._get_follow_up_suggestions(user_prompt=user_prompt, ai_response=ai_response)
-            if s_p:
-                db.update_suggested_prompts(message_id, s_p)
-        except Exception as e:
-            self.log.warning(f"Background follow-up suggester failed: {e}")
-
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         """Runs the summarization logic in a background thread (provider-routed
         via _backend_completion, so it follows SUMMARIZER_MODEL to any provider)."""

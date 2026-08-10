@@ -681,17 +681,10 @@ function renderHistory(history, user, showModal, activeProfileData) {
         const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
         const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
 
-        // --- THIS IS THE FIX ---
-        // Parse `suggested_prompts` from a string to an array, just like we do for the ledger.
-        let parsedSuggestions = [];
-        if (turn.suggested_prompts) {
-            if (typeof turn.suggested_prompts === 'string') {
-                try { parsedSuggestions = JSON.parse(turn.suggested_prompts); } catch (e) { parsedSuggestions = []; }
-            } else if (Array.isArray(turn.suggested_prompts)) {
-                parsedSuggestions = turn.suggested_prompts;
-            }
-        }
-        // --- END FIX ---
+        // Historical turns may still carry suggested_prompts in the database.
+        // They are deliberately NOT rendered: the feature is gone because it was
+        // an ungoverned model call, and a stored chip is still ungoverned output
+        // offered as a one-click action. The rows stay for the record.
 
         // --- THIS IS THE FIX ---
         // Filter out null/undefined scores *before* passing to the trend line.
@@ -719,8 +712,6 @@ function renderHistory(history, user, showModal, activeProfileData) {
             values: values || [],
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
-            // --- MODIFIED: Use the parsed array ---
-            suggested_prompts: parsedSuggestions,
             message_id: turn.message_id // Ensure message_id is in payload
         };
 
@@ -740,8 +731,6 @@ function renderHistory(history, user, showModal, activeProfileData) {
                 };
             }
         }
-        // --- MODIFIED: Use the parsed array ---
-        options.suggestedPrompts = parsedSuggestions;
 
         // Strip injected document context from user messages before rendering
         const displayContent = turn.role === 'user'
@@ -1071,7 +1060,6 @@ export async function sendMessage(activeProfileData, user) {
         const mainAnswer = initialResponse.finalOutput ?? '[Sorry, the model returned an empty response.]';
         const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
-        const suggestions = initialResponse.suggestedPrompts || [];
         const messageId = initialResponse.messageId || aiMessageId;
         // Resolve human-readable profile name
         let profileName = initialResponse.activeProfile;
@@ -1130,7 +1118,6 @@ export async function sendMessage(activeProfileData, user) {
             policy_version: initialResponse.policyVersion ?? null,
             profile_values: values,
             spirit_score: spiritScore,
-            suggested_prompts: suggestions,
             audit_status: 'complete'
         };
 
@@ -1172,18 +1159,11 @@ export async function sendMessage(activeProfileData, user) {
 
                 ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
             },
-            { suggestedPrompts: suggestions, animate: true }
+            { animate: true }
         );
 
-        // Follow-up suggestions are generated off the request path on the
-        // backend; poll the audit endpoint and inject them once ready.
-        // An incomplete audit is the broader case: applying it brings the score,
-        // the chip, the conflict note AND the suggestions, so it replaces the
-        // suggestions poll rather than running beside it (they share a cache key).
         if (messageId && auditNeedsPolling(initialResponse)) {
             _pollForAudit(messageId);
-        } else if (messageId && (!suggestions || suggestions.length === 0)) {
-            _pollForSuggestions(messageId);
         }
 
         const updateMeta = { last_updated: new Date().toISOString() };
@@ -1255,44 +1235,6 @@ export async function sendMessage(activeProfileData, user) {
     }
 }
 
-// Poll the audit endpoint for backgrounded follow-up suggestions and inject
-// them into the rendered message once they arrive.
-function _pollForSuggestions(messageId, attempts = 0) {
-    const MAX_ATTEMPTS = 6;
-    const DELAY = 1500;
-    if (attempts >= MAX_ATTEMPTS) return;
-
-    setTimeout(async () => {
-        if (!currentConversationId) return;
-        let parsed = [];
-        try {
-            const res = await api.fetchAuditResult(messageId);
-            const raw = res?.suggestedPrompts ?? res?.suggested_prompts;
-            parsed = typeof raw === 'string' ? (JSON.parse(raw) || []) : (raw || []);
-        } catch (e) { /* not ready yet */ }
-
-        if (parsed.length > 0) {
-            // Persist to cache so a re-render keeps them.
-            try {
-                const history = await cache.loadConvoHistory(currentConversationId);
-                const idx = history.findIndex(m => m.message_id === messageId);
-                if (idx > -1) {
-                    history[idx] = { ...history[idx], suggested_prompts: parsed };
-                    await cache.saveConvoHistory(currentConversationId, history);
-                }
-            } catch (e) { /* ignore cache errors */ }
-
-            uiMessages.updateMessageWithAudit(
-                messageId,
-                { suggested_prompts: parsed, message_id: messageId },
-                () => {}
-            );
-            return;
-        }
-        _pollForSuggestions(messageId, attempts + 1);
-    }, DELAY);
-}
-
 // True only when the server says the audit is finished. A null spirit_score
 // with a 'complete' status is legitimate (Spirit can decline to score a turn),
 // so status is the authority here, not the presence of a score.
@@ -1329,10 +1271,7 @@ async function fetchAndApplyAuditResult(messageId) {
         if (!auditIsComplete(auditResult)) return 'unavailable';
 
         const rawLedger = auditResult.conscienceLedger || auditResult.ledger;
-        const rawSuggestions = auditResult.suggestedPrompts || auditResult.suggested_prompts;
-
         const parsedLedger = typeof rawLedger === 'string' ? JSON.parse(rawLedger) : (rawLedger || []);
-        const parsedSuggestions = typeof rawSuggestions === 'string' ? JSON.parse(rawSuggestions) : (rawSuggestions || []);
 
         const history = await cache.loadConvoHistory(currentConversationId);
         const msgIndex = history.findIndex(m => m.message_id === messageId);
@@ -1342,7 +1281,6 @@ async function fetchAndApplyAuditResult(messageId) {
                 ...auditResult,
                 content: history[msgIndex].content,
                 conscience_ledger: parsedLedger,
-                suggested_prompts: parsedSuggestions,
                 audit_status: 'complete'
             };
             await cache.saveConvoHistory(currentConversationId, history);
@@ -1357,7 +1295,6 @@ async function fetchAndApplyAuditResult(messageId) {
         const payload = {
             ...auditResult,
             ledger: parsedLedger,
-            suggested_prompts: parsedSuggestions,
             spirit_scores_history: spiritScoresHistory,
             message_id: messageId
         };
@@ -1385,10 +1322,6 @@ async function fetchAndApplyAuditResult(messageId) {
 // spirit_score null in the cache for the whole session — no score chip, no
 // conflict note, and a spirit_scores_history one entry short, which silently
 // drops the Alignment Trend on every later turn until a reload.
-//
-// Deliberately NOT run alongside _pollForSuggestions: both read-modify-write the
-// same cache key and would clobber each other. fetchAndApplyAuditResult applies
-// suggestions too, so this subsumes it.
 function _pollForAudit(messageId, attempts = 0) {
     const MAX_ATTEMPTS = 10;
     const DELAY = 2000;

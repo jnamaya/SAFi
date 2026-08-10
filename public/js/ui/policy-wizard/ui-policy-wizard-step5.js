@@ -197,7 +197,7 @@ export function renderWillStep(container, policyData) {
                 <p class="text-xs text-gray-500 mt-2 mb-3">Plain-language rules for cases the options above don't cover (e.g. "The response must not promise specific outcomes."). Prefer the structured options above when they fit.</p>
                 <div class="flex items-start gap-2 mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40">
                     <svg class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
-                    <p class="text-xs text-amber-800 dark:text-amber-200">Written rules <strong>do not block responses on their own</strong> &mdash; on their own they only guide the alternative suggestions offered after a block. Use <em>Convert to enforceable standards</em> below to turn them into non-negotiable standards the Will actually enforces.</p>
+                    <p class="text-xs text-amber-800 dark:text-amber-200">Written rules <strong>enforce nothing on their own</strong> &mdash; nothing in the engine reads them. Use <em>Convert to enforceable standards</em> below to turn them into non-negotiable standards the Will actually enforces; until you do, they are only notes.</p>
                 </div>
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="pw-rule-input"

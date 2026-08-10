@@ -546,26 +546,24 @@ class TestOutcomeRing(unittest.TestCase):
                         "the gated repaint must still run before the hasScore "
                         "branch, so a null-score audit leaves pending grey")
 
-    def test_10_a_suggestions_only_payload_cannot_reset_the_ring(self):
-        """Pins the shape that caused the bug: the poller's payload has neither
-        audit key, so it must fail the gate."""
-        suggestions_payload_keys = {"suggested_prompts", "message_id"}
-        gate_keys = {"spirit_score", "ledger"}
-        self.assertFalse(suggestions_payload_keys & gate_keys,
-                         "the suggestions payload must share no key with the "
-                         "audit gate, or it will repaint the ring again")
-        # and the poller's payload really is that shape
-        chat = (CSS.parent.parent / "js" / "core" / "chat.js").read_text(
+    def test_10_a_partial_payload_cannot_reset_the_ring(self):
+        """The caller that caused this bug is gone — the suggestions poller was
+        removed with the feature on 2026-08-10 — but the GATE is what protects
+        the ring, and it must outlive any one caller.
+
+        The failure it prevents: a payload carrying neither `spirit_score` nor
+        `ledger` scores as `pending` and repaints the ring grey moments after
+        the audit had coloured it, and it stays grey until a reload."""
+        # Same path the rest of this file uses: CSS is public/css/styles.css.
+        msgs = (CSS.parent.parent / "js" / "ui" / "ui-messages.js").read_text(
             encoding="utf-8", errors="replace")
-        i = chat.index("function _pollForSuggestions")
-        # Cut at the poller's own setTimeout close, not a fixed character count:
-        # the next function's comment mentions spirit_score and a loose window
-        # picked it up.
-        seg = chat[i:chat.index("}, DELAY);", i)]
-        self.assertIn("suggested_prompts: parsed", seg)
-        self.assertNotIn("spirit_score", seg,
-                         "if the suggestions poller starts sending spirit_score, "
-                         "revisit the gate in updateMessageWithAudit")
+        i = msgs.index("export function updateMessageWithAudit")
+        seg = msgs[i:i + 2500]
+        self.assertTrue(
+            "spirit_score" in seg and "ledger" in seg,
+            "updateMessageWithAudit must still gate its repaint on an audit key; "
+            "without it any partial update resets the outcome ring to grey",
+        )
 
 
 if __name__ == "__main__":

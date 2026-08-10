@@ -453,28 +453,6 @@ export function displaySimpleGreeting(firstName) {
     ui.elements.chatWindow.appendChild(div);
 }
 
-function _attachSuggestionHandlers(container) {
-    if (!container) return;
-    container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => btn.replaceWith(btn.cloneNode(true)));
-    container.querySelectorAll('.ai-prompt-suggestion-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            ui.elements.messageInput.value = btn.textContent.replace(/"/g, '').trim();
-            ui.elements.sendButton.disabled = false;
-            ui.elements.messageInput.style.height = 'auto';
-            ui.elements.messageInput.style.height = `${ui.elements.messageInput.scrollHeight}px`;
-            ui.elements.messageInput.focus();
-            if (ui.elements.sendButton) ui.elements.sendButton.click();
-            btn.closest('.prompt-suggestions-container')?.remove();
-        });
-    });
-}
-
-function _renderSuggestionsHtml(suggestedPrompts, isBlocked) {
-    if (!suggestedPrompts?.length) return '';
-    const list = suggestedPrompts.map(p => `<button class="ai-prompt-suggestion-btn">${p}</button>`).join('');
-    return `<div class="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2 prompt-suggestions-container"><p class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">${isBlocked ? "Try a different prompt:" : "Suggested follow-ups:"}</p>${list}</div>`;
-}
-
 export function displayMessage(sender, text, date = new Date(), messageId = null, payload = null, whyHandler = null, options = {}) {
     ui._ensureElements();
     document.querySelector('.empty-state-container')?.remove();
@@ -642,12 +620,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     // 3. HANDLE CONTENT & ANIMATION (AI Only)
     if (sender === 'ai') {
         const chatBubble = messageDiv.querySelector('.chat-bubble');
-        const contentWrapper = messageDiv.querySelector('.ai-content-wrapper');
-
-        let promptsHtml = '';
-        if (options.suggestedPrompts?.length > 0) {
-            promptsHtml = _renderSuggestionsHtml(options.suggestedPrompts, final_text_raw.includes("🛑 **The answer was blocked**"));
-        }
 
         if (options.animate) {
             // Safe to remove now because it is fully populated
@@ -662,11 +634,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 
             typeWriterEffect(chatBubble, final_html, () => {
                 if (!chatBubble.contains(metaDiv)) chatBubble.appendChild(metaDiv);
-
-                if (promptsHtml && !contentWrapper.querySelector('.prompt-suggestions-container')) {
-                    contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
-                    _attachSuggestionHandlers(contentWrapper);
-                }
                 ui.scrollToBottom();
                 chatBubble.removeEventListener('click', clickHandler);
                 chatBubble.classList.remove('cursor-pointer');
@@ -675,10 +642,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             // Standard instant render
             chatBubble.insertAdjacentHTML('afterbegin', final_html);
             chatBubble.classList.remove('cursor-pointer');
-            if (promptsHtml) {
-                contentWrapper.insertAdjacentHTML('beforeend', promptsHtml);
-                _attachSuggestionHandlers(contentWrapper);
-            }
         }
     }
 
@@ -690,7 +653,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         ui.scrollToBottom();
     }
 
-    _attachSuggestionHandlers(messageContainer);
     return messageContainer;
 }
 
@@ -701,15 +663,11 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
 
     // Repaint the ring only when this payload is actually ABOUT the audit.
     //
-    // This function has two callers and they send different shapes. The audit
-    // poller sends the full result; the SUGGESTIONS poller (chat.js
-    // _pollForSuggestions, started alongside the audit poller and firing on its
-    // own 1.5s timer) sends only `{ suggested_prompts, message_id }`. Repainting
-    // unconditionally meant that partial payload — which has no spirit_score —
-    // scored as `pending` and reset the ring to grey moments after the audit had
-    // just coloured it. The ring then stayed grey until a reload replayed the
-    // history with the score already attached, which is exactly the reported
-    // symptom.
+    // Repainting unconditionally used to reset the ring to grey: a partial
+    // payload with no spirit_score scored as `pending` moments after the audit
+    // had coloured it. The second caller that sent those partial payloads (the
+    // suggestions poller) is gone, but the guard stays — any future partial
+    // update would reintroduce the same symptom.
     //
     // Gate on KEY PRESENCE rather than truthiness: an audit that legitimately
     // completes with spirit_score null still carries the key, so it repaints and
@@ -737,11 +695,6 @@ export function updateMessageWithAudit(messageId, payload, whyHandler) {
         }
     }
 
-    const wrapper = container.querySelector('.ai-content-wrapper');
-    if (wrapper && payload.suggested_prompts?.length > 0 && !container.querySelector('.prompt-suggestions-container')) {
-        wrapper.insertAdjacentHTML('beforeend', _renderSuggestionsHtml(payload.suggested_prompts, false));
-        _attachSuggestionHandlers(wrapper);
-    }
 }
 
 // --- PIPELINE TRACE ---

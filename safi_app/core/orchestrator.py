@@ -31,7 +31,6 @@ from .plugins.fiduciary_data import handle_fiduciary_commands
 
 # --- Import Mixins ---
 from .orchestrator_mixins.tts import TtsMixin
-from .orchestrator_mixins.suggestions import SuggestionsMixin
 from .orchestrator_mixins.tasks import BackgroundTasksMixin
 
 # --- Import Refactored Services ---
@@ -153,7 +152,7 @@ def _tool_status(tool_name: str, turn: int = 0) -> str:
     return "{}{}".format(label, suffix)
 
 
-class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
+class SAFi(TtsMixin, BackgroundTasksMixin):
     """
     Orchestrates Intellect, Will, Conscience, and Spirit faculties.
     """
@@ -1192,10 +1191,10 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                         self.active_profile_name, S_t, drift_val, "approve")
 
         # Follow-up suggestions are a blocking sync LLM call — run them off the
-        # request path so they never delay the answer or block the event loop.
-        # The frontend polls the audit endpoint and injects them when ready.
+        # Suggested prompts were removed: they were an ungoverned model call
+        # whose output was shown to the user as if it came from the agent. The
+        # column stays populated for historical turns.
         S_p: List[str] = []
-        self._submit_bg(self._run_suggestions_thread, message_id, user_prompt, a_t)
 
         self._append_log(governance_record)
 
@@ -1658,9 +1657,7 @@ class SAFi(TtsMixin, SuggestionsMixin, BackgroundTasksMixin):
                                 will_decision="redirected", will_stage=will_stage,
                                 governance_record=governance_record)
 
-        # Suggestions run off the hot path (see process_prompt); frontend polls.
         S_p: List[str] = []
-        self._submit_bg(self._run_suggestions_thread, message_id, original_prompt, safe_output)
 
         self._append_log(governance_record)
 
