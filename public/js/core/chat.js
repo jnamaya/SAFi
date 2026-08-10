@@ -1368,9 +1368,13 @@ export function autoSize() {
     const MAX_LINES = 5;                                  // 120px, under max-h-32
 
     // Collapse before measuring, or scrollHeight can never shrink below the
-    // previous height when lines are deleted. min-height in the markup keeps
-    // the layout from flashing during this synchronous reflow.
-    input.style.height = '0px';
+    // previous height when lines are deleted. 'auto', deliberately not '0px':
+    // auto is not interpolable, so the browser snaps instantly even if some
+    // CSS transition covers height — a '0px' collapse is a length, animates,
+    // and the synchronous scrollHeight read then sees the OLD height, which
+    // is exactly how the box once grew but never shrank back. min-height in
+    // the markup keeps the layout from flashing during this reflow.
+    input.style.height = 'auto';
     const lines = Math.max(1, Math.min(MAX_LINES,
         Math.round((input.scrollHeight - padY) / lineHeight)));
     input.style.height = `${Math.round(lines * lineHeight + padY)}px`;

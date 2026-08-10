@@ -2030,7 +2030,13 @@ html.native body { font-size: 14px; }
 
   /* Behavior */
   outline: none;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* NO transition here, and none may return. `transition: all` includes
+     height, and the height is JS-managed: the resize code collapses the box
+     to measure scrollHeight, and with an engaged transition that synchronous
+     read still sees the OLD height — so the textarea could grow but never
+     shrink back after deleting text or sending. Nothing here visually
+     transitions anyway: the background is always transparent and the focus
+     styling lives on the capsule. */
   resize: none;
   width: 100%;
 
