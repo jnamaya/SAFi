@@ -789,6 +789,10 @@ video {
   grid-column: span 2 / span 2;
 }
 
+.m-auto {
+  margin: auto;
+}
+
 .-mx-6 {
   margin-left: -1.5rem;
   margin-right: -1.5rem;
@@ -3773,7 +3777,19 @@ video {
   color: rgb(64 64 64 / var(--tw-text-opacity, 1));
 }
 
+.group:hover .group-hover\:opacity-0 {
+  opacity: 0;
+}
+
 .group:hover .group-hover\:opacity-100 {
+  opacity: 1;
+}
+
+.group:focus-visible .group-focus-visible\:opacity-0 {
+  opacity: 0;
+}
+
+.group:focus-visible .group-focus-visible\:opacity-100 {
   opacity: 1;
 }
 

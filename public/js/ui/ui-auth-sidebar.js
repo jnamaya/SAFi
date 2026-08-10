@@ -122,16 +122,18 @@ export function updateUIForAuthState(user) {
              exactly one implementation of each action. -->
         <div id="sidebar-rail"
           class="hidden fixed inset-y-0 left-0 w-14 z-40 flex-col items-center py-3 bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-neutral-800">
-          <!-- Brand mark, leading the rail as it leads the expanded header.
-               Same assets and light/dark swap; 36px in a 56px rail matches the
-               rail's control sizing. Not a button — same as expanded. -->
-          <div class="app-logo h-9 w-9 mb-2">
-            <img src="assets/logo-white.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain block dark:hidden" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
-            <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain hidden dark:block" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
-          </div>
+          <!-- Brand mark that IS the expand control: the logo at rest, the
+               expand-panel icon on hover or keyboard focus, one click to
+               expand. Merging them means one control in the top slot instead
+               of a logo shadowed by a separate toggle below it. Same assets
+               and light/dark swap as the expanded header. -->
           <button data-sidebar-toggle type="button" aria-label="Expand sidebar" title="Expand sidebar"
-            class="p-2 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
+            class="group relative h-9 w-9 mb-2 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+            <span class="app-logo h-9 w-9 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+              <img src="assets/logo-white.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain block dark:hidden" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
+              <img src="assets/logo.png" alt="SAFi Logo" class="rounded-lg w-full h-full object-contain hidden dark:block" onerror="this.onerror=null; this.src='https://placehold.co/32x32/22c55e/FFFFFF?text=S'">
+            </span>
+            <svg class="absolute inset-0 m-auto w-5 h-5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
           </button>
           <button id="rail-new-chat" type="button" aria-label="New conversation" title="New conversation"
             class="mt-2 w-9 h-9 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors">
