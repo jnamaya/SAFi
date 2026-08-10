@@ -73,8 +73,25 @@ async function createHeaders() {
     return headers;
 }
 
+// Absolute-ise a same-origin path for the native shell.
+//
+// In the browser a bare "/api/..." is same-origin and correct. Inside the
+// Capacitor WebView the page is served from capacitor://localhost, so the same
+// string resolves against THAT and the request can never reach the server. The
+// `urls` table above wraps its entries in j() for this reason, but seventeen
+// endpoints built their path inline and were never wrapped — the charter, AI
+// standards, members, roles, invitations and identity config among them. Each
+// worked in a mobile browser and failed silently in the app.
+//
+// Normalising here rather than at each call site makes the mistake unavailable:
+// a caller cannot forget something it does not have to remember. Already-absolute
+// URLs (the j()-wrapped ones) start with a scheme and pass through untouched.
+const apiUrl = (u) =>
+    (isNative && typeof u === 'string' && u.startsWith('/')) ? `${HOST}${u}` : u;
+
 // GET requests use offlineManager.fetchWithCache
 async function httpGet(url) {
+    url = apiUrl(url);
     const request = new Request(url, {
         method: 'GET',
         headers: await createHeaders(),
@@ -91,6 +108,7 @@ async function httpGet(url) {
 
 // POST/PUT/DELETE/PATCH requests use offlineManager.postWithQueue
 async function httpJSON(url, method, body, options = {}) {
+    url = apiUrl(url);
     // We construct the body string and headers here
     const headers = await createHeaders();
     const bodyStr = JSON.stringify(body);
