@@ -263,9 +263,10 @@
 
                   <!-- One row: + | textarea | send. The toolbar used to be a second
                        row beneath the textarea, which cost ~40px of height for two
-                       buttons. items-end keeps + and send on the baseline as the
-                       textarea grows. -->
-                  <div class="flex items-end gap-1">
+                       buttons. items-center, not items-end: the composer is a single
+                       line almost all the time, and bottom-aligned buttons read as
+                       sitting low against it. -->
+                  <div class="flex items-center gap-1">
 
                     <div class="relative flex items-center gap-1.5" id="composer-plus-container">
 
@@ -357,7 +358,7 @@
                     </div>
 
                     <!-- Text Area -->
-                    <div class="relative flex-1 min-w-0 py-1.5">
+                    <div class="relative flex-1 min-w-0 py-1">
                       <textarea id="message-input" rows="1" placeholder="Message your agent..."
                         class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 custom-scrollbar input-scrollbar"
                         style="min-height: 24px;"></textarea>
