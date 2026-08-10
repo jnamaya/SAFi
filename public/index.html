@@ -252,7 +252,7 @@
 
                 <!-- Capsule Container -->
                 <div id="composer-capsule"
-                  class="bg-white dark:bg-neutral-800 rounded-[28px] px-2 py-1.5 transition-all duration-200 border border-gray-200 dark:border-transparent focus-within:bg-white dark:focus-within:bg-neutral-900 focus-within:shadow-lg focus-within:border-gray-300 dark:focus-within:border-neutral-700">
+                  class="bg-white dark:bg-neutral-800 rounded-[30px] px-2 py-2 transition-all duration-200 border border-gray-200 dark:border-transparent focus-within:bg-white dark:focus-within:bg-neutral-900 focus-within:shadow-lg focus-within:border-gray-300 dark:focus-within:border-neutral-700">
 
                   <!-- File Chip Area (shown when a file is attached) -->
                   <div id="file-chip-area" class="hidden px-3 pt-1"></div>
@@ -264,6 +264,11 @@
                   <!-- One row: + | textarea | send. The toolbar used to be a second
                        row beneath the textarea, which cost ~40px of height for two
                        buttons.
+
+                       Height comes from the CAPSULE's py, never from the row: the
+                       row must stay exactly button-height or the centring below
+                       drifts. To make the composer taller or shorter, change the
+                       capsule padding and leave min-h-10/md:min-h-9 alone.
 
                        items-end on the row, and the textarea wrapper carries a
                        min-height equal to the button box and centres its own
