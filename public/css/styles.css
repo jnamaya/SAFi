@@ -1982,8 +1982,12 @@ html.native body { font-size: 14px; }
   background: transparent !important;
   border: none !important;
   backdrop-filter: none !important;
-  /* Remove default padding from previous version if any, padding is on wrapper or controlled by flex */
-  padding: 16px;
+  /* Horizontal only. The vertical 16px used to be here too, and it STACKED
+     with the wrapper's pt-4/pb-3 (pt-8/pb-6 from md up) — 40px of dead space
+     under the input on desktop. Mobile had already been patched around it in
+     the max-width block below; this fixes the cause instead, so the wrapper
+     owns vertical spacing at every breakpoint. */
+  padding: 0 16px;
   gap: 0;
 }
 
@@ -2627,9 +2631,8 @@ html.native body { font-size: 14px; }
         border-radius: 20px;
     }
 
-    /* Composer footer — the CSS rule adds padding: 16px on all sides,
-       which stacks with the wrapper's own pt-4/pb-3 and makes the
-       composer area too tall on mobile. */
+    /* Tighter still on small screens: the wrapper's pt-4 is enough above the
+       capsule, and horizontal padding comes from the wrapper's px-2 here. */
     #composer-footer {
         padding: 4px 0 0 0;
     }
