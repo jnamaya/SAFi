@@ -104,16 +104,53 @@ export function updateUIForAuthState(user) {
                     <p class="text-[11px] text-neutral-500 truncate mt-0.5" title="${user.email}">${user.email}</p>
                   </div>
                 </div>
-                <!-- Three Dots Indicator -->
+                <!-- Wrench: this row opens the Control Panel, and three dots said
+                     "more options" rather than "configuration". Same icon as the
+                     collapsed rail's settings button, so the affordance reads the
+                     same in both states. -->
                 <div class="shrink-0 text-neutral-400 group-hover:text-neutral-600 dark:text-neutral-500 dark:group-hover:text-neutral-300 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
                 </div>
               </button>
             </div>
         </aside>
+
+        <!-- Collapsed-state icon rail (desktop only; CSS displays it while
+             html.sidebar-collapsed is set). Buttons delegate to the real
+             sidebar controls, which stay in the DOM while collapsed — the
+             sidebar is translated off-screen, not removed — so there is
+             exactly one implementation of each action. -->
+        <div id="sidebar-rail"
+          class="hidden fixed inset-y-0 left-0 w-14 z-40 flex-col items-center py-3 bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-neutral-800">
+          <button data-sidebar-toggle type="button" aria-label="Expand sidebar" title="Expand sidebar"
+            class="p-2 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
+          </button>
+          <button id="rail-new-chat" type="button" aria-label="New conversation" title="New conversation"
+            class="mt-2 w-9 h-9 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          </button>
+          <div class="flex-1"></div>
+          <button id="rail-account" type="button" aria-label="Open Control Panel" title="${name}"
+            class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors">
+            <img src="${pic}" alt="User Avatar" class="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800">
+          </button>
+          <button id="rail-settings" type="button" aria-label="Open Control Panel" title="Settings"
+            class="mt-1 p-2 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
+          </button>
+        </div>
     `;
+
+    // Rail wiring: forward to the real controls rather than re-implementing
+    // them. If new-chat or the control panel ever changes behaviour, the rail
+    // follows for free.
+    document.getElementById('rail-new-chat')?.addEventListener('click', () =>
+        document.getElementById('new-chat-button')?.click());
+    document.getElementById('rail-account')?.addEventListener('click', () =>
+        document.getElementById('control-panel-btn')?.click());
+    document.getElementById('rail-settings')?.addEventListener('click', () =>
+        document.getElementById('control-panel-btn')?.click());
 
     // --- Search Logic ---
     const searchInput = document.getElementById('convo-search-input');

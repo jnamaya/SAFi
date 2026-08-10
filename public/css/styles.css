@@ -2673,10 +2673,13 @@ html.native body { font-size: 14px; }
 }
 
 /* --- Desktop collapsible sidebar --- */
-/* The floating "show sidebar" button only exists on desktop, and only while collapsed. */
-#desktop-sidebar-show {
-  display: none;
-}
+/* Collapsing no longer removes the sidebar entirely: a 56px icon rail
+   (#sidebar-rail, built next to the sidebar in ui-auth-sidebar.js) stays
+   behind, keeping new-conversation, the account picture and settings one
+   click away. The old floating "show sidebar" button is gone — the rail's
+   top icon is the expand control, via the same [data-sidebar-toggle]
+   delegation. Desktop-only: on mobile the sidebar is an overlay and the
+   rail never displays. */
 
 @media (min-width: 768px) {
   /* Animate the chat area reclaiming space when the sidebar collapses. */
@@ -2688,12 +2691,13 @@ html.native body { font-size: 14px; }
     transform: translateX(-100%);
   }
 
+  /* 3.5rem, not 0: the content clears the rail instead of sliding under it. */
   html.sidebar-collapsed #main-layout-wrapper {
-    margin-left: 0 !important;
+    margin-left: 3.5rem !important;
   }
 
-  html.sidebar-collapsed #desktop-sidebar-show {
-    display: inline-flex;
+  html.sidebar-collapsed #sidebar-rail {
+    display: flex;
   }
 }
 
