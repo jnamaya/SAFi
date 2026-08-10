@@ -252,14 +252,7 @@
 
                 <!-- Capsule Container -->
                 <div id="composer-capsule"
-                  class="bg-white dark:bg-neutral-800 rounded-[32px] p-2 transition-all duration-200 border border-gray-200 dark:border-transparent focus-within:bg-white dark:focus-within:bg-neutral-900 focus-within:shadow-lg focus-within:border-gray-300 dark:focus-within:border-neutral-700">
-
-                  <!-- Text Area Section -->
-                  <div class="relative px-3 pt-2">
-                    <textarea id="message-input" rows="1" placeholder="Message your agent..."
-                      class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 pr-4 custom-scrollbar input-scrollbar"
-                      style="min-height: 28px;"></textarea>
-                  </div>
+                  class="bg-white dark:bg-neutral-800 rounded-[28px] px-2 py-1.5 transition-all duration-200 border border-gray-200 dark:border-transparent focus-within:bg-white dark:focus-within:bg-neutral-900 focus-within:shadow-lg focus-within:border-gray-300 dark:focus-within:border-neutral-700">
 
                   <!-- File Chip Area (shown when a file is attached) -->
                   <div id="file-chip-area" class="hidden px-3 pt-1"></div>
@@ -268,11 +261,12 @@
                   <input type="file" id="file-upload-input" class="hidden"
                     accept=".txt,.md,.pdf,.docx,.xlsx,.csv" multiple />
 
-                  <!-- Toolbar Section -->
-                  <div class="flex items-center justify-between px-2 pt-2">
+                  <!-- One row: + | textarea | send. The toolbar used to be a second
+                       row beneath the textarea, which cost ~40px of height for two
+                       buttons. items-end keeps + and send on the baseline as the
+                       textarea grows. -->
+                  <div class="flex items-end gap-1">
 
-                    <!-- Left: + Button + Model Label -->
-                    <div class="flex items-center gap-1.5">
                     <div class="relative flex items-center gap-1.5" id="composer-plus-container">
 
                       <!-- + Button -->
@@ -325,7 +319,7 @@
                             </svg>
                           </div>
                           <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">Change Model</div>
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Change AI Model</div>
                             <div id="plus-model-current" class="text-xs text-gray-400 truncate">Loading…</div>
                           </div>
                         </button>
@@ -353,17 +347,23 @@
                         class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
                       </div>
 
-                    </div>
-                    </div>
-
-                    <!-- Right: Model Pill + Send Button -->
-                    <div class="relative flex items-center gap-1.5" id="composer-actions-container">
-
-                      <!-- Model selector dropdown (anchored right, opens upward) -->
+                      <!-- Model selector dropdown. Lives in the plus container because that is
+                           where it is opened from; anchoring it to the send button on the
+                           far side left it appearing detached from the menu that launched it. -->
                       <div id="model-selector-dropdown"
-                        class="absolute bottom-full right-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
+                        class="absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
                       </div>
 
+                    </div>
+
+                    <!-- Text Area -->
+                    <div class="relative flex-1 min-w-0 py-1.5">
+                      <textarea id="message-input" rows="1" placeholder="Message your agent..."
+                        class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 custom-scrollbar input-scrollbar"
+                        style="min-height: 24px;"></textarea>
+                    </div>
+
+                    <div class="relative flex items-center" id="composer-actions-container">
                       <!-- Send Button -->
                       <button id="send-button" type="submit" aria-label="Send message"
                         class="w-10 h-10 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800"

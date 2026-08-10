@@ -36,11 +36,13 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
     });
 
     document.addEventListener('click', (e) => {
+        // All three dropdowns (agent, model, data sources) live inside the plus
+        // container now — the model one moved there when the composer became a
+        // single row, since it is opened from that menu. One containment check
+        // covers them; the send button's container holds no dropdown to guard.
         const plusContainer = document.getElementById('composer-plus-container');
-        const modelContainer = document.getElementById('composer-actions-container');
         const inPlus = plusContainer && plusContainer.contains(e.target);
-        const inModel = modelContainer && modelContainer.contains(e.target);
-        if (!inPlus && !inModel) {
+        if (!inPlus) {
             _closeMenu();
             _closeAllDropdowns();
         }
