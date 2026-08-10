@@ -1348,7 +1348,11 @@ export function autoSize() {
     sendButton.disabled = !hasText && pendingFiles.length === 0;
 
     if (!hasText) {
-        input.style.height = '28px'; // Force reset to min-height
+        // Must match the min-height in index.html. These disagreed — 28px here
+        // against 24px there — so an empty textarea was one height on first paint
+        // and another after typing and deleting, and anything measuring against it
+        // was right in only one of those states.
+        input.style.height = '24px';
         return;
     }
 

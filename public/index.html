@@ -265,15 +265,19 @@
                        row beneath the textarea, which cost ~40px of height for two
                        buttons.
 
-                       items-end, with the textarea wrapper padded to EXACTLY the
-                       button height on one line (24px line + py = 40px mobile /
-                       36px desktop, matching w-10 h-10 md:w-9 md:h-9). Two boxes
-                       of equal height sharing a bottom edge also share a top edge,
-                       so a single line reads as centred — and the moment the text
-                       wraps the wrapper grows and the buttons stay at the bottom on
-                       their own. items-center got the single-line case right and
-                       left the buttons floating mid-block on a long prompt; this
-                       gets both without a resize listener or a class toggle. -->
+                       items-end on the row, and the textarea wrapper carries a
+                       min-height equal to the button box and centres its own
+                       content. On one line the wrapper is exactly button-height so
+                       text and buttons read as centred together; once the text
+                       wraps the wrapper grows and end-alignment drops the buttons
+                       to the bottom.
+
+                       Deliberately NOT matched by padding arithmetic, which is
+                       what the previous attempt did: the textarea's height is set
+                       from two places that disagreed (min-height:24px in the markup,
+                       height='28px' in autoSize when empty), so a computed match
+                       held after typing and broke on first paint. A min-height plus
+                       items-center is correct whatever height the textarea reports. -->
                   <div class="flex items-end gap-1">
 
                     <div class="relative flex items-center gap-1.5" id="composer-plus-container">
@@ -366,7 +370,7 @@
                     </div>
 
                     <!-- Text Area -->
-                    <div class="relative flex-1 min-w-0 py-2 md:py-1.5">
+                    <div class="relative flex-1 min-w-0 flex items-center min-h-10 md:min-h-9">
                       <textarea id="message-input" rows="1" placeholder="Message your agent..."
                         class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 custom-scrollbar input-scrollbar"
                         style="min-height: 24px;"></textarea>
