@@ -2699,6 +2699,16 @@ html.native body { font-size: 14px; }
   html.sidebar-collapsed #sidebar-rail {
     display: flex;
   }
+
+  /* The Control Panel replaces the whole chat chrome (its open handlers hide
+     #sidebar too), so the rail goes with it. Keyed on the panel's own
+     visibility rather than patched into the handlers: the panel is opened in
+     three places and closed in four across three files, and an inline-style
+     toggle would only need one of those paths forgotten to strand the rail
+     on screen. */
+  html.sidebar-collapsed:has(#control-panel-view:not(.hidden)) #sidebar-rail {
+    display: none;
+  }
 }
 
 /* --- Scroll-to-bottom button --- */
