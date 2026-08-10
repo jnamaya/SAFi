@@ -443,7 +443,8 @@ export async function deleteAiStandards(orgId) {
  * Uses a direct fetch (not offline manager) since file uploads can't be queued.
  *
  * @param {File} file - The File object from an input element.
- * @returns {Promise<{text: string, filename: string, total_chars: number, was_truncated: boolean}>}
+ * @returns {Promise<{text: string, filename: string, sha256: string, bytes: number,
+ *                     total_chars: number, chars_used: number, was_truncated: boolean}>}
  */
 export async function extractDocumentText(file) {
     const formData = new FormData();

@@ -1001,9 +1001,29 @@ export async function sendMessage(activeProfileData, user) {
         for (const file of filesToProcess) {
             try {
                 const extracted = await api.extractDocumentText(file);
-                documentContext += `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.]\n${extracted.text}\n[END DOCUMENT]`;
+                // The provenance line rides inside the prompt on purpose: the
+                // prompt is encrypted into chat_history AND the audit trail, so
+                // the digest lands wherever the analysed text lands, with no
+                // second store to purge, hold or export. It answers the only
+                // question anyone asks later — "is this the document the agent
+                // read?" — which the extracted text alone cannot.
+                const provenance = [
+                    `sha256 ${extracted.sha256 || 'unavailable'}`,
+                    `${(extracted.total_chars || 0).toLocaleString()} characters`,
+                    extracted.was_truncated
+                        ? `TRUNCATED — only the first ${(extracted.chars_used || 0).toLocaleString()} were read`
+                        : 'read in full',
+                ].join(' | ');
+                documentContext += `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[PROVENANCE: ${provenance}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.${extracted.was_truncated ? ' This document was truncated: say so if the user asks about anything you cannot see.' : ''}]\n${extracted.text}\n[END DOCUMENT]`;
                 if (extracted.was_truncated) {
-                    ui.showToast(`${file.name} truncated to fit context window.`, 'info');
+                    // NOT 'info' — showToast suppresses that type entirely, so
+                    // this warning was never shown. A document was silently cut
+                    // and the agent answered on part of it with nobody told.
+                    const kept = (extracted.chars_used || 0).toLocaleString();
+                    const total = (extracted.total_chars || 0).toLocaleString();
+                    ui.showToast(
+                        `${file.name} is ${total} characters — only the first ${kept} were read. The rest was not seen.`,
+                        'warning', 8000);
                 }
             } catch (error) {
                 ui.showToast(error.message || `Failed to process ${file.name}.`, 'error');

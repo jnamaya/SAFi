@@ -7,6 +7,9 @@ text into the user's prompt as contextual information.
 """
 from flask import Blueprint, session, jsonify, request, current_app
 from ..config import Config
+from ..persistence import database as db
+from ..core.rbac import get_current_org_id
+import hashlib
 
 documents_bp = Blueprint('documents', __name__)
 
@@ -62,6 +65,17 @@ def extract_document_text():
             "error": f"File too large ({size_mb:.1f}MB). Maximum: {Config.MAX_UPLOAD_SIZE_MB}MB"
         }), 400
 
+    # Digest the bytes before extraction consumes the stream. This is the whole
+    # provenance record: the file itself is deliberately NOT stored — the
+    # extracted text already lands encrypted in chat_history and the audit
+    # trail, and keeping the original would add a second copy of the same
+    # sensitive data needing its own purge, legal-hold and export coverage.
+    # A digest answers the question that actually gets asked — "is this the
+    # document the agent read?" — at the cost of 64 characters.
+    file.seek(0)
+    digest = hashlib.sha256(file.read()).hexdigest()
+    file.seek(0)
+
     try:
         text, total_chars = extract_text(
             file,
@@ -69,16 +83,37 @@ def extract_document_text():
             max_chars=Config.MAX_DOCUMENT_CHARS
         )
 
+        truncated = total_chars > Config.MAX_DOCUMENT_CHARS
         current_app.logger.info(
             f"Document extracted: {file.filename} | "
-            f"{total_chars:,} chars | User: {user_id}"
+            f"{total_chars:,} chars | sha256:{digest[:12]} | User: {user_id}"
         )
+
+        # Org-level evidence, matching what a knowledge-base upload records.
+        # Feeding a document into a governed agent is a governance-relevant act,
+        # and this endpoint recorded nothing at all (see backlog 21b).
+        try:
+            org_id = get_current_org_id()
+            if org_id:
+                db.append_compliance_log(org_id, 'chat_document_attached', f"user:{user_id}", {
+                    "filename": file.filename,
+                    "sha256": digest,
+                    "bytes": size_bytes,
+                    "chars": total_chars,
+                    "truncated_to": Config.MAX_DOCUMENT_CHARS if truncated else None,
+                })
+        except Exception as e:
+            # Evidence must not cost the user their upload.
+            current_app.logger.error(f"Could not log document attachment: {e}")
 
         return jsonify({
             "text": text,
             "filename": file.filename,
+            "sha256": digest,
+            "bytes": size_bytes,
             "total_chars": total_chars,
-            "was_truncated": total_chars > Config.MAX_DOCUMENT_CHARS
+            "was_truncated": truncated,
+            "chars_used": min(total_chars, Config.MAX_DOCUMENT_CHARS),
         })
 
     except ValueError as e:
