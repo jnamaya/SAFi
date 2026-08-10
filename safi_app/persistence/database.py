@@ -6280,6 +6280,48 @@ def get_connected_providers(user_id):
         cursor.close()
         conn.close()
 
+def cleanup_orphaned_public_users():
+    """Removes `public_*` user rows that no longer have a conversation.
+
+    The public widget mints one user row per CONVERSATION
+    (`conversations.py`: `public_{conversation_id}`), so a page reload creates
+    another. Nothing ever removed them: `cleanup_old_demo_users` matches
+    `demo_%` only, and the retention purge deletes conversations rather than
+    the user rows that pointed at them. The rows therefore accumulated forever
+    and counted as registered users in every query anyone would naturally run.
+
+    Deliberately narrow: a row is removed ONLY when it has no conversation
+    left. Anything with a conversation, a message or a governance record is
+    evidence of a governed turn, and destroying that belongs to the retention
+    engine — which respects each org's retention period, checks legal holds and
+    writes its own evidence. This function must never become a second, quieter
+    destruction path.
+
+    Returns the number of rows removed.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT u.id FROM users u
+             WHERE u.id LIKE 'public\\_%'
+               AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.user_id = u.id)
+               AND NOT EXISTS (SELECT 1 FROM governance_records g WHERE g.user_id = u.id)
+            """
+        )
+        ids = [r[0] for r in cursor.fetchall()]
+        if not ids:
+            return 0
+        marks = ",".join(["%s"] * len(ids))
+        cursor.execute(f"DELETE FROM users WHERE id IN ({marks})", tuple(ids))
+        conn.commit()
+        return len(ids)
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def cleanup_old_demo_users():
     """
     Deletes demo users AND their private organizations created more than 24 hours ago.

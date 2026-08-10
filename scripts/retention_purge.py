@@ -530,6 +530,33 @@ def purge_unattributed(conn, args, orgs):
     print(f"unattributed: purged {chains} chains ({rows} rows)")
 
 
+def sweep_orphaned_public_users(args):
+    """Removes `public_*` user rows left with no conversation.
+
+    Runs here rather than as its own job because it is the tail of this one:
+    Phase A deletes conversations whose retention has ended, and each of those
+    leaves behind the user row the public widget minted for it. Without this
+    the rows accumulate forever and read as registered users in every count.
+
+    Not a destruction path in its own right — it only removes rows that have no
+    conversation AND no governance record, so it can never destroy evidence.
+    Anything with either is the retention engine's business, on the org's own
+    schedule.
+    """
+    if args.dry_run:
+        print("[dry-run] would sweep orphaned public_* user rows")
+        return
+    try:
+        removed = db.cleanup_orphaned_public_users()
+    except Exception as e:
+        print(f"orphaned public-user sweep failed: {e}")
+        return
+    if removed:
+        print(f"swept {removed} orphaned public_* user row(s)")
+        db.append_compliance_log(None, "public_users_swept", ACTOR,
+                                 {"rows_removed": removed})
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
@@ -565,6 +592,7 @@ def main():
         if not args.org:
             purge_log_files(args, orgs)
             check_review_backlogs(args)
+            sweep_orphaned_public_users(args)
     finally:
         release_lock(conn)
         conn.close()
