@@ -2642,11 +2642,6 @@ html.native body { font-size: 14px; }
         padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
 
-    /* Hide model selector text label — icon alone is enough on small screens */
-    #model-selector-label {
-        display: none;
-    }
-
     /* Slightly tighter message container side padding */
     .message-container {
         padding: 0 12px;

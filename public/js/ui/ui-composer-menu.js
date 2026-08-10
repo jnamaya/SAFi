@@ -29,12 +29,6 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
         onToggleModel();
     });
 
-    document.getElementById('composer-model-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _closeMenu();
-        onToggleModel();
-    });
-
     document.getElementById('plus-data-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
         _closeMenu();
@@ -43,7 +37,7 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
 
     document.addEventListener('click', (e) => {
         const plusContainer = document.getElementById('composer-plus-container');
-        const modelContainer = document.getElementById('composer-model-container');
+        const modelContainer = document.getElementById('composer-actions-container');
         const inPlus = plusContainer && plusContainer.contains(e.target);
         const inModel = modelContainer && modelContainer.contains(e.target);
         if (!inPlus && !inModel) {
@@ -106,10 +100,15 @@ export function updateAgentLabel(name, avatarUrl) {
 }
 
 export function updateModelLabel(name) {
+    // Only the + menu carries the model name now. The composer pill was removed:
+    // it duplicated a control the menu already had, and it showed the INTELLECT
+    // model while the Conscience — whose scores drive every gate — was never on
+    // screen, so a permanent label there implied the wrong thing about what
+    // governs a turn. Per-message attribution belongs in the audit record, which
+    // stores intellect_model per turn and is accurate for older messages in a
+    // conversation where the pill would have been stale.
     const menuEl = document.getElementById('plus-model-current');
     if (menuEl) menuEl.textContent = name || '—';
-    const barEl = document.getElementById('composer-model-label');
-    if (barEl) barEl.textContent = name || '';
 }
 
 // AI disclosure (EU AI Act Art. 50(1)) below the composer. When the active
