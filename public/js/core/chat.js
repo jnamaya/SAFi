@@ -1347,23 +1347,39 @@ export function autoSize() {
     // Enable send if there is text OR at least one pending file attachment
     sendButton.disabled = !hasText && pendingFiles.length === 0;
 
-    if (!hasText) {
-        // Must match the min-height in index.html. These disagreed — 28px here
-        // against 24px there — so an empty textarea was one height on first paint
-        // and another after typing and deleting, and anything measuring against it
-        // was right in only one of those states.
-        input.style.height = '24px';
-        return;
-    }
+    // Snap the height to WHOLE LINES. Setting height = scrollHeight raw was the
+    // wobble: scrollHeight reports 25-26px for a single 24px line depending on
+    // font metrics and zoom, so the box drifted a pixel or two per keystroke and
+    // the centred text visibly shifted. Snapping means the height is always
+    // exactly N lines — it moves in clean 1-line steps or not at all.
+    //
+    // One path for every state: an empty textarea measures as one line, so the
+    // old special case (a hardcoded 24px that disagreed with the markup's
+    // min-height and made first paint differ from typed-then-deleted) is gone
+    // rather than reconciled.
+    const cs = window.getComputedStyle(input);
+    const lineHeight = parseFloat(cs.lineHeight) || 24;   // 24px at text-base
+    const MAX_LINES = 5;                                  // 120px, under max-h-32
 
-    // Reset height to auto to shrink properly
-    input.style.height = 'auto';
+    // Collapse before measuring, or scrollHeight can never shrink below the
+    // previous height when lines are deleted. min-height in the markup keeps
+    // the layout from flashing during this synchronous reflow.
+    input.style.height = '0px';
+    const lines = Math.max(1, Math.min(MAX_LINES,
+        Math.round(input.scrollHeight / lineHeight)));
+    input.style.height = `${Math.round(lines * lineHeight)}px`;
 
-    // Calculate new height, capped by max-height in CSS (if set, or we can enforce here)
-    // The CSS class max-h-32 (approx 128px) handles the scrolling limit.
-    // We just need to set scrollHeight.
-    input.style.height = `${input.scrollHeight}px`;
+    // Scrollbar only once the cap is actually exceeded. Leaving overflow on
+    // auto let the scrollbar flicker in during the measurement pass, and its
+    // appearance changes the wrap width — which changes scrollHeight, which is
+    // its own feedback loop of jiggle.
+    input.style.overflowY =
+        input.scrollHeight > lines * lineHeight + 1 ? 'auto' : 'hidden';
 }
+
+// Rewrap on viewport changes: a resize alters the wrap width, so the snapped
+// line count is stale until the next keystroke. Cheap enough to run raw.
+window.addEventListener('resize', () => autoSize());
 
 // --- CONVERSATION RENAMING/DELETING/PINNING ---
 
