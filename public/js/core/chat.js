@@ -1359,6 +1359,12 @@ export function autoSize() {
     // rather than reconciled.
     const cs = window.getComputedStyle(input);
     const lineHeight = parseFloat(cs.lineHeight) || 24;   // 24px at text-base
+    // scrollHeight includes padding, so dividing it by the line height counts
+    // padding as text. That is precisely how 16px of CSS padding made one line
+    // measure as two: 24+16=40, round(40/24)=2, and the box grew on the first
+    // keystroke and never shrank. Subtract it before dividing, add it back when
+    // setting, and the snap is correct whatever padding the CSS carries.
+    const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     const MAX_LINES = 5;                                  // 120px, under max-h-32
 
     // Collapse before measuring, or scrollHeight can never shrink below the
@@ -1366,15 +1372,15 @@ export function autoSize() {
     // the layout from flashing during this synchronous reflow.
     input.style.height = '0px';
     const lines = Math.max(1, Math.min(MAX_LINES,
-        Math.round(input.scrollHeight / lineHeight)));
-    input.style.height = `${Math.round(lines * lineHeight)}px`;
+        Math.round((input.scrollHeight - padY) / lineHeight)));
+    input.style.height = `${Math.round(lines * lineHeight + padY)}px`;
 
     // Scrollbar only once the cap is actually exceeded. Leaving overflow on
     // auto let the scrollbar flicker in during the measurement pass, and its
     // appearance changes the wrap width — which changes scrollHeight, which is
     // its own feedback loop of jiggle.
     input.style.overflowY =
-        input.scrollHeight > lines * lineHeight + 1 ? 'auto' : 'hidden';
+        input.scrollHeight > lines * lineHeight + padY + 1 ? 'auto' : 'hidden';
 }
 
 // Rewrap on viewport changes: a resize alters the wrap width, so the snapped

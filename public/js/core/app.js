@@ -805,6 +805,11 @@ function attachEventListeners() {
       }
     });
     ui.elements.messageInput.addEventListener('input', chat.autoSize);
+    // Size once at load, through the same path every keystroke uses. Without
+    // this, first paint is the browser's natural rows=1 height and the first
+    // keystroke is the first measurement — any disagreement between the two
+    // shows up as a jump on the first character typed.
+    chat.autoSize();
   }
 
   // --- Sidebar & Navigation ---

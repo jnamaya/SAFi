@@ -2004,8 +2004,18 @@ html.native body { font-size: 14px; }
 
 /* 2. The Input Field Itself */
 #message-input {
-  border-radius: 8px;
-  padding: 8px 16px;
+  /* Horizontal inset only. This ID rule beats the markup's utility classes,
+     and its old `padding: 8px 16px` silently overrode py-0 — 16px of vertical
+     padding the height JS divided into "lines", so one line measured as two.
+     The symptom set was exact: fine on first paint (autoSize had not run),
+     grew on the first keystroke, and never shrank back even when emptied.
+     Vertical centring is the wrapper's job (flex items-center + min-h);
+     vertical padding here must stay 0.
+
+     min-height/max-height also came out: they lost to the inline min-height
+     and beat the markup's max-h-32 respectively — three sources of truth for
+     one box. The markup is the authority now. */
+  padding: 0 16px;
 
   /* Surface styling */
   background-color: transparent;
@@ -2023,8 +2033,6 @@ html.native body { font-size: 14px; }
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   resize: none;
   width: 100%;
-  min-height: 40px;
-  max-height: 150px;
 
   /* Ensure it overrides Tailwind utility classes */
   margin: 0 !important;
