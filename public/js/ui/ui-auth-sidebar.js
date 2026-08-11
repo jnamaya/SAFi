@@ -805,11 +805,22 @@ export function updateActiveProfileChip(profileNameOrObject) {
 export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
+  // Accept the agent's storage KEY as well as its display name. Conversation
+  // rows carry the key (chat_history.profile_name is set from the profile key,
+  // e.g. org_xxxx_policy_officer) while this lookup matched display names only
+  // — so an org's uploaded avatar never showed in the conversation list, and
+  // the fallback monogram was generated from the ugly key instead of the name.
+  const customProfile = _knownProfiles.find(p =>
+    (p.name && p.name.trim().toLowerCase() === cleanName) ||
+    (p.key && String(p.key).trim().toLowerCase() === cleanName));
+
   // 1. An avatar the org supplied for its own agent always wins.
-  const customProfile = _knownProfiles.find(p => p.name && p.name.trim().toLowerCase() === cleanName);
   if (customProfile && customProfile.avatar) {
     return customProfile.avatar;
   }
+
+  // Everything below reasons about the DISPLAY name, whichever form came in.
+  const displayName = (customProfile && customProfile.name) || profileName;
 
   // 2. The two real marks. Neither is a persona portrait, which is why they
   //    survive: contoso.svg is the demo customer's own brand logo, and safi.svg
@@ -819,11 +830,11 @@ export function getAvatarForProfile(profileName) {
   //    why the illustrated faces were removed. Note that unknown agents now get
   //    a monogram rather than falling through to safi.svg: an org's custom agent
   //    should not appear wearing the vendor's logo.
-  const key = normalizeAgentName(profileName);
+  const key = normalizeAgentName(displayName);
   if (key === 'contoso governance officer') return 'assets/contoso.svg';
   if (key === 'safi guide' || !key) return 'assets/safi.svg';
 
-  return agentMark(profileName);
+  return agentMark(displayName);
 }
 
 /**
