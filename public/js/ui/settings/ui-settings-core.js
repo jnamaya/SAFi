@@ -2,7 +2,7 @@ import * as ui from '../ui.js';
 import { renderSettingsDashboardTab } from './ui-settings-dashboard.js';
 import { renderSettingsOrganizationTab, setOrgCurrentUser } from './ui-settings-org.js';
 import { renderSettingsProfileTab } from './ui-settings-agents.js';
-import { renderSettingsMyProfileTab } from './ui-settings-user.js';
+import { renderSettingsMyProfileTab, setProfileIdentity } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
 import { renderSettingsAppTab } from './ui-settings-app.js';
 import { renderSettingsHelpTab } from './ui-settings-help.js';
@@ -33,6 +33,8 @@ export function updateCurrentUser(u) {
     setReviewCurrentUser(u);
     // Knowledge needs the role too: create is editor+, approve is admin|auditor
     setKnowledgeCurrentUser(u);
+    // My Profile shows the signed-in identity, org and role in its header
+    setProfileIdentity(u);
 }
 
 /**

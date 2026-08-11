@@ -1159,13 +1159,23 @@ def get_me():
         for _sensitive in ('password_hash', 'totp_secret', 'totp_enabled_at'):
             user_details.pop(_sensitive, None)
 
-        # --- Self-Correction for Org Owners ---
-        if user_details.get('org_id') and user_details.get('role') != 'admin':
+        # --- Organization identity, and self-correction for org owners ---
+        # One fetch serves both. get_user_details is SELECT * FROM users, so it
+        # carries org_id but never the org's NAME; the profile header needs the
+        # name and whether this member owns the org, and the owner promotion
+        # below needs the same row. Previously fetched only for non-admins,
+        # which is why no caller could ever name the org.
+        user_details['org_name'] = None
+        user_details['is_org_owner'] = False
+        if user_details.get('org_id'):
             org = db.get_organization(user_details['org_id'])
-            if org and org.get('owner_id') == user_id:
-                current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
-                db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
-                user_details['role'] = 'admin' # Update local dict
+            if org:
+                user_details['org_name'] = org.get('name')
+                user_details['is_org_owner'] = (org.get('owner_id') == user_id)
+                if user_details['is_org_owner'] and user_details.get('role') != 'admin':
+                    current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
+                    db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
+                    user_details['role'] = 'admin' # Update local dict
         # -------------------------------------------
 
         return jsonify({"ok": True, "user": user_details})

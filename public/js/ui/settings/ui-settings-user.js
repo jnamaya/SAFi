@@ -1,9 +1,77 @@
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
+import { escapeHtml } from '../../core/utils.js';
 
 // Store the profile data in memory
 let userProfileData = {};
 let isProfileFetched = false;
+
+// The signed-in identity, for the header. Set once at boot rather than passed
+// through both call sites (app.js on open, ui-settings-core.js on tab click),
+// mirroring uiAuthSidebar.setKnownProfiles.
+let _identity = null;
+
+/** Roles are stored as bare keys; only this map is shown to a person. */
+const ROLE_LABELS = {
+    admin: 'Administrator',
+    editor: 'Editor',
+    auditor: 'Auditor',
+    member: 'Member',
+};
+
+export function setProfileIdentity(user) {
+    _identity = user || null;
+}
+
+/**
+ * Who you are signed in as, and — the part available nowhere else in the UI —
+ * which organization and in what role.
+ *
+ * The tabs a member can see are already role-dependent (Knowledge is hidden
+ * from members, renaming a KB is owner-only), but nothing on screen ever said
+ * what your role IS, so a missing tab was indistinguishable from a bug. Role
+ * changes are written to the compliance log; the person they happened to
+ * should be able to see the result.
+ *
+ * Deliberately read-only and visually separate from the editable sections
+ * below: this tab is what SAFi remembers about you, not where you edit your
+ * account, and form-like styling here would promise an edit that does not exist.
+ */
+function _buildIdentityHeader() {
+    if (!_identity) return '';
+
+    const name = escapeHtml(_identity.name || 'Signed in');
+    const email = escapeHtml(_identity.email || '');
+    const pic = _identity.picture || _identity.avatar || '';
+    const initial = (_identity.name || 'U').trim().charAt(0).toUpperCase();
+
+    // Owner outranks the role column: an owner is always an admin, and "Owner"
+    // is the answer to "why can I rename this and my colleague cannot".
+    const roleLabel = _identity.is_org_owner
+        ? 'Owner'
+        : (ROLE_LABELS[_identity.role] || ROLE_LABELS.member);
+
+    const affiliation = _identity.org_name
+        ? `${escapeHtml(_identity.org_name)} <span class="opacity-40">\u00b7</span> ${roleLabel}`
+        : 'Personal account';
+
+    // No remote placeholder service: a monogram renders offline and on mobile,
+    // where an external image request is the one that fails.
+    const avatar = pic
+        ? `<img src="${escapeHtml(pic)}" alt="" class="w-14 h-14 rounded-full object-cover bg-neutral-200 dark:bg-neutral-800 shrink-0">`
+        : `<div class="w-14 h-14 rounded-full bg-neutral-200 dark:bg-neutral-800 shrink-0 flex items-center justify-center text-xl font-semibold text-neutral-600 dark:text-neutral-300">${escapeHtml(initial)}</div>`;
+
+    return `
+        <div class="flex items-center gap-4 p-4 mb-6 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40">
+            ${avatar}
+            <div class="min-w-0">
+                <p class="text-base font-semibold text-neutral-900 dark:text-white truncate" title="${name}">${name}</p>
+                ${email ? `<p class="text-sm text-neutral-500 truncate" title="${email}">${email}</p>` : ''}
+                <p class="text-xs text-neutral-500 mt-1 truncate">${affiliation}</p>
+            </div>
+        </div>
+    `;
+}
 
 // All chip-based sections (order = display order in the 2-col grid)
 const CHIP_SECTIONS = [
@@ -171,6 +239,8 @@ function _buildProfileUI(container) {
             <h1>My Profile</h1>
             <p>Tell SAFi about yourself. Everything here shapes how it responds to you.</p>
         </div>
+
+        ${_buildIdentityHeader()}
 
         ${_buildCompletenessBar()}
 
