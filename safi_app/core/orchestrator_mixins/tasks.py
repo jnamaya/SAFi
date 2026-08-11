@@ -3,6 +3,7 @@ Mixin for background task management (summarization, profile extraction).
 """
 from __future__ import annotations
 import json as _json
+import re as _re
 from ...persistence import database as db
 from ...config import Config
 from ..services.model_routing import detect_provider
@@ -121,6 +122,61 @@ def merge_agent_context(current: dict, delta: dict) -> dict:
 
 class BackgroundTasksMixin:
     """Mixin for background task management (summarization, profile extraction)."""
+
+    # --- Conversation titles -------------------------------------------------
+
+    @staticmethod
+    def _clean_title(raw):
+        """Normalizes a model-produced title, or returns None to keep the
+        truncation fallback. Models wrap titles in quotes, prefix them with
+        "Title:", add trailing periods, and occasionally answer with a
+        paragraph — every one of those must degrade to "no title" rather than
+        reach the sidebar."""
+        if not raw or not str(raw).strip():
+            return None
+        t = str(raw).strip().splitlines()[0].strip()
+        t = _re.sub(r'^\s*title\s*[:\-]\s*', '', t, flags=_re.I)
+        t = t.strip('\'"“”‘’` ').strip()
+        t = _re.sub(r'\s+', ' ', t)
+        t = t.rstrip('.…').strip()
+        if not t:
+            return None
+        # A real title is a few words. Anything longer is the model chatting
+        # (a refusal, an apology, a summary) and the fallback is better.
+        if len(t) > 70:
+            return None
+        return t
+
+    def _run_title_thread(self, conversation_id, user_prompt, ai_response, initial_title):
+        """Replace the first-50-chars truncation with a generated title, the way
+        every mainstream chat product names conversations: one cheap call on the
+        light model, off the request path, fed the first exchange (the reply is
+        what disambiguates a vague opener).
+
+        This is a LABEL derived from the user's own words — metadata, not agent
+        speech — which is why it may run ungoverned like the summarizer on the
+        same route, where the suggested-prompts feature could not. Two hard
+        rules: a user rename is never overwritten (the guard re-reads the title
+        and writes only if it still equals the truncation this turn set), and
+        every failure keeps the truncation, which was yesterday's behaviour."""
+        try:
+            raw = self._backend_completion(
+                "You name conversations. Reply with the title only — no quotes, no explanation.",
+                "Write a concise title (3-6 words) for this conversation, in the same "
+                "language the user wrote in. No quotes, no trailing period.\n\n"
+                f"User: {(user_prompt or '')[:400]}\n"
+                f"Assistant: {(ai_response or '')[:400]}",
+                temperature=0.2, json_mode=False)
+            title = self._clean_title(raw)
+            if not title or title == initial_title:
+                return
+            current = db.get_conversation_title(conversation_id)
+            if current is not None and current != initial_title:
+                # Renamed (by the user, or anything else) since this turn began.
+                return
+            db.rename_conversation(conversation_id, title)
+        except Exception as e:
+            self.log.warning(f"Background title generation failed: {e}")
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
         """Runs the summarization logic in a background thread (provider-routed

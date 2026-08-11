@@ -2420,6 +2420,20 @@ def update_conversation_summary(cid, summary, user_id=None):
         cursor.close()
         conn.close()
 
+def get_conversation_title(cid):
+    """Decrypted title of one conversation, or None. Exists for the background
+    title generator's guard: it must never overwrite a title the user typed,
+    so it re-reads the current value just before writing."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT title FROM conversations WHERE id=%s", (cid,))
+        row = cursor.fetchone()
+        return crypto.decrypt_value(row[0]) if row and row[0] is not None else None
+    finally:
+        cursor.close()
+        conn.close()
+
 def rename_conversation(cid, title, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()

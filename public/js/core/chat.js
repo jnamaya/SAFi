@@ -1194,6 +1194,26 @@ export async function sendMessage(activeProfileData, user) {
         const updateMeta = { last_updated: new Date().toISOString() };
         if (initialResponse.newTitle && isNewConversation) {
             updateMeta.title = initialResponse.newTitle;
+
+            // The truncation shows immediately; a generated title lands in the
+            // database a beat later (background thread on the light model).
+            // Check twice and stop as soon as it differs — if generation failed,
+            // the truncation simply stays, which was the old behaviour.
+            const convoId = currentConversationId;
+            const truncated = initialResponse.newTitle;
+            [2500, 7000].forEach(delay => setTimeout(async () => {
+                try {
+                    if (convoId !== currentConversationId) return; // switched away
+                    const link = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
+                    if (link && link.textContent !== truncated) return; // already updated
+                    const convos = await api.fetchConversations();
+                    const fresh = (Array.isArray(convos) ? convos : []).find(c => c.id === convoId);
+                    if (fresh && fresh.title && fresh.title !== truncated) {
+                        await cache.updateConvoInList(convoId, { title: fresh.title });
+                        if (link) { link.textContent = fresh.title; link.title = fresh.title; }
+                    }
+                } catch (e) { /* keep the truncation */ }
+            }, delay));
         }
 
         if (updateMeta.title || isNewConversation) {

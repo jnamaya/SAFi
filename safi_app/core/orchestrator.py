@@ -1196,6 +1196,12 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # column stays populated for historical turns.
         S_p: List[str] = []
 
+        # First turn of a conversation: replace the truncation title with a
+        # generated one, off the request path. new_title is only ever set on
+        # the first message, so this fires once per conversation.
+        if new_title:
+            self._submit_bg(self._run_title_thread, conversation_id, user_prompt, a_t, new_title)
+
         self._append_log(governance_record)
 
         self.log.info(
@@ -1658,6 +1664,12 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                                 governance_record=governance_record)
 
         S_p: List[str] = []
+
+        # Same once-per-conversation title generation on the redirect path: a
+        # first message that got blocked still deserves a real title, and the
+        # user prompt alone carries the topic (the redirect text does not).
+        if new_title:
+            self._submit_bg(self._run_title_thread, conversation_id, user_prompt, "", new_title)
 
         self._append_log(governance_record)
 
