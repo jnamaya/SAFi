@@ -85,6 +85,20 @@ class TheHeaderShowsRoleAndOrg(unittest.TestCase):
     def test_a_personal_account_is_named_as_such(self):
         self.assertIn("Personal account", HEADER)
 
+    def test_personal_account_is_decided_by_org_id_not_org_name(self):
+        """Regression, 2026-08-11: keyed off org_name, so a member of
+        safinstitute.org whose /me predated the org_name field was shown
+        "Personal account" — a false claim about governance membership. Only
+        org_id decides whether someone belongs to an organization; a missing
+        name degrades to the role alone, which is still true."""
+        cond = HEADER[HEADER.index("const affiliation"):]
+        cond = cond[:cond.index(";")]
+        self.assertIn("_identity.org_id", cond)
+        self.assertLess(cond.index("_identity.org_id"), cond.index("org_name"),
+                        "org_id must be the outer test")
+        self.assertLess(cond.index("org_name"), cond.index("Personal account"),
+                        "'Personal account' must be the no-org_id branch only")
+
 
 class TheHeaderIsReadOnlyAndOffline(unittest.TestCase):
 

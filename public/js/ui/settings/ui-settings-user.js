@@ -51,8 +51,15 @@ function _buildIdentityHeader() {
         ? 'Owner'
         : (ROLE_LABELS[_identity.role] || ROLE_LABELS.member);
 
-    const affiliation = _identity.org_name
-        ? `${escapeHtml(_identity.org_name)} <span class="opacity-40">\u00b7</span> ${roleLabel}`
+    // "Personal account" is a claim about governance membership, so it is keyed
+    // off org_id — the field that actually decides it — not off org_name. A
+    // member whose org name fails to resolve (a stale backend that predates
+    // org_name in /me, a deleted org row, a null name) must not be told they
+    // belong to no organization; they get their role alone, which is true.
+    const affiliation = _identity.org_id
+        ? (_identity.org_name
+            ? `${escapeHtml(_identity.org_name)} <span class="opacity-40">\u00b7</span> ${roleLabel}`
+            : roleLabel)
         : 'Personal account';
 
     // No remote placeholder service: a monogram renders offline and on mobile,
