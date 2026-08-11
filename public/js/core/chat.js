@@ -522,28 +522,53 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     }
 
     if (unpinnedConversations.length > 0) {
-        const headerContainer = document.createElement('div');
-        headerContainer.className = 'px-3 mt-4 mb-2 flex items-center justify-between';
+        // Grouped by recency instead of one undifferentiated "History" stack.
+        // Local midnights, so "Today" means the user's today; last_updated is
+        // patched onto cached rows by the client, created_at covers the rest.
+        const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+        const DAY = 86400000;
+        const groupOf = (convo) => {
+            const d = new Date(convo.last_updated || convo.created_at || 0);
+            if (d >= startOfToday) return 'Today';
+            if (d >= new Date(startOfToday - DAY)) return 'Yesterday';
+            if (d >= new Date(startOfToday - 7 * DAY)) return 'Previous 7 days';
+            return 'Older';
+        };
+        const groups = new Map([['Today', []], ['Yesterday', []], ['Previous 7 days', []], ['Older', []]]);
+        unpinnedConversations.forEach(c => groups.get(groupOf(c)).push(c));
 
-        const allHeader = document.createElement('h3');
-        allHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
-        allHeader.textContent = 'History';
+        let firstHeader = true;
+        for (const [label, convos] of groups) {
+            if (!convos.length) continue;
 
-        const clearBtn = document.createElement('button');
-        clearBtn.id = 'clear-all-convos-button';
-        clearBtn.type = 'button';
-        clearBtn.title = 'Clear History';
-        clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
-        clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+            const headerContainer = document.createElement('div');
+            headerContainer.className = firstHeader
+                ? 'px-3 mt-4 mb-2 flex items-center justify-between'
+                : 'px-3 mt-4 mb-2';
+            const groupHeader = document.createElement('h3');
+            groupHeader.className = 'text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+            groupHeader.textContent = label;
+            headerContainer.appendChild(groupHeader);
 
-        headerContainer.appendChild(allHeader);
-        headerContainer.appendChild(clearBtn);
-        convoList.appendChild(headerContainer);
+            if (firstHeader) {
+                // Clear-history rides on the first group whichever it is —
+                // bound by delegation on its id, so it must exist exactly once.
+                const clearBtn = document.createElement('button');
+                clearBtn.id = 'clear-all-convos-button';
+                clearBtn.type = 'button';
+                clearBtn.title = 'Clear History';
+                clearBtn.className = 'p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 transition-colors';
+                clearBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+                headerContainer.appendChild(clearBtn);
+                firstHeader = false;
+            }
+            convoList.appendChild(headerContainer);
 
-        unpinnedConversations.forEach(convo => {
-            const link = uiAuthSidebar.renderConversationLink(convo, handlers);
+            convos.forEach(convo => {
+                const link = uiAuthSidebar.renderConversationLink(convo, handlers);
             convoList.appendChild(link);
-        });
+            });
+        }
     } else {
         // Fallback: List is empty (or all pinned). Show Header anyway.
         const headerContainer = document.createElement('div');

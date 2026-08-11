@@ -1179,12 +1179,32 @@ def _seed_local_admin():
             )
             logging.info("Local admin account updated.")
         else:
-            # Create a dedicated persistent org for the local admin
-            org_id = str(uuid.uuid4())
+            # Reuse the existing local-admin org if one is already there.
+            #
+            # This branch runs whenever the `local_admin` USER is missing — a
+            # cleanup, a purge, a test run against the wrong database — and it
+            # used to mint a fresh org every time, abandoning the previous one.
+            # Twenty restarts produced twenty empty "Local Admin Organization"
+            # rows on the demo host, each looking like a real organization in
+            # every count.
+            #
+            # Matched on the fixed name because that is the only stable handle
+            # the old rows have; the oldest is kept so repeated recreation
+            # converges on one org rather than drifting between them.
             cursor.execute(
-                "INSERT INTO organizations (id, name) VALUES (%s, %s)",
-                (org_id, "Local Admin Organization")
+                "SELECT id FROM organizations WHERE name = %s ORDER BY created_at LIMIT 1",
+                ("Local Admin Organization",)
             )
+            row = cursor.fetchone()
+            org_id = row["id"] if row else None
+            if org_id:
+                logging.info("Reusing existing local admin organization %s", org_id)
+            else:
+                org_id = str(uuid.uuid4())
+                cursor.execute(
+                    "INSERT INTO organizations (id, name) VALUES (%s, %s)",
+                    (org_id, "Local Admin Organization")
+                )
             cursor.execute(
                 """INSERT INTO users (id, email, name, picture, role, org_id, password_hash, active_profile)
                    VALUES ('local_admin', %s, 'Local Admin', '', 'admin', %s, %s, %s)""",
@@ -1580,7 +1600,18 @@ def fetch_user_conversations(user_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id, title, is_pinned, project_id, created_at FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
+        # profile_name: the agent of the conversation's most recent audited
+        # turn, so the sidebar can show WHICH agent each conversation was with —
+        # the one distinctly multi-agent fact a chat list can carry. A correlated
+        # subquery over chat_history is fine here: the list is per-user (tens of
+        # rows) and conversation_id is indexed by its foreign key.
+        cursor.execute(
+            "SELECT id, title, is_pinned, project_id, created_at, "
+            "  (SELECT ch.profile_name FROM chat_history ch "
+            "    WHERE ch.conversation_id = conversations.id "
+            "      AND ch.profile_name IS NOT NULL "
+            "    ORDER BY ch.id DESC LIMIT 1) AS profile_name "
+            "FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
         rows = cursor.fetchall()
         for r in rows:
             r["title"] = crypto.decrypt_value(r["title"])

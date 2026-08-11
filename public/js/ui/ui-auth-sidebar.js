@@ -567,9 +567,20 @@ export function renderConversationLink(convo, handlers) {
 
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
+  // Which agent this conversation was with — the one fact that makes a
+  // multi-agent product's history different from a chat app's. Reuses the
+  // same avatar chain as the rest of the sidebar (org avatar -> builtin ->
+  // generated monogram), so custom and unknown agents both render something.
+  // Older rows with no audited turn have no profile_name; they get no mark
+  // rather than a misleading placeholder.
+  const markHtml = convo.profile_name
+    ? `<img src="${getAvatarForProfile(convo.profile_name)}" alt="" aria-hidden="true" class="w-4 h-4 rounded-md object-cover shrink-0 mr-2">`
+    : '';
+
   innerContent.innerHTML = `
     <div class="flex items-center min-w-0 flex-1 pr-8">
         ${pinHtml}
+        ${markHtml}
         <div class="flex-1 min-w-0">
             <span class="convo-title truncate block text-sm font-medium" title="${(convo.title || 'Untitled').replace(/"/g, '&quot;')}">${convo.title || 'Untitled'}</span>
             <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
