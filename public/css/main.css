@@ -4870,12 +4870,12 @@ video {
     position: absolute;
   }
 
-  .md\:left-full {
-    left: 100%;
+  .md\:bottom-0 {
+    bottom: 0px;
   }
 
-  .md\:top-0 {
-    top: 0px;
+  .md\:left-full {
+    left: 100%;
   }
 
   .md\:z-50 {

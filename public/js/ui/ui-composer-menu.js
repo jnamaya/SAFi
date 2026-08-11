@@ -6,6 +6,10 @@ let _closeTimer = null;
 // the classic cascading-menu problem. Closing on mouseleave with no grace
 // period makes the submenu impossible to reach.
 const FLYOUT_CLOSE_DELAY = 220;
+// Breathing room against the top of the window, and a floor below which a
+// scrolling list is more annoying than an overflowing one.
+const MIN_VIEWPORT_GAP = 12;
+const FLYOUT_MIN_HEIGHT = 160;
 const DESKTOP = typeof window !== 'undefined'
     ? window.matchMedia('(min-width: 768px)') : { matches: false };
 
@@ -88,15 +92,33 @@ function _setFlyout(wrap) {
 }
 
 /**
- * Flyouts open to the right by default. Near the viewport edge that runs off
- * screen, so flip to the left side instead. Desktop only — below md the panel
- * is an inline accordion with no side to flip to.
+ * Two corrections once a flyout is on screen.
+ *
+ * SIDE: it opens to the right by default; near the viewport edge that runs off
+ * screen, so flip to the left. Desktop only — below md it is an inline
+ * accordion with no side to flip to.
+ *
+ * HEIGHT: the flyout is anchored by its BOTTOM (md:bottom-0), so it grows
+ * upward out of the row. That is the only direction with room: the panel hangs
+ * above the composer, which is already at the bottom of the window, so a
+ * downward flyout was guaranteed to run past the bottom edge and cut the list
+ * off. Growing upward can still overshoot the top on a short window, so cap it
+ * at the space actually above it.
  */
 function _keepOnScreen(panel) {
     panel.classList.remove('flyout-left');
+    panel.style.maxHeight = '';
     if (!DESKTOP.matches) return;
+
     const r = panel.getBoundingClientRect();
     if (r.right > window.innerWidth - 8) panel.classList.add('flyout-left');
+
+    // r.bottom is fixed by the anchor, so everything above it is the room.
+    const room = r.bottom - MIN_VIEWPORT_GAP;
+    if (r.height > room) {
+        panel.style.maxHeight = `${Math.max(FLYOUT_MIN_HEIGHT, room)}px`;
+        panel.style.overflowY = 'auto';
+    }
 }
 
 function _toggleMenu() {

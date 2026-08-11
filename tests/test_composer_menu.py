@@ -85,6 +85,31 @@ class CategoriesOpenFlyouts(unittest.TestCase):
         block = MENU[MENU.index("function _setFlyout"):]
         self.assertIn("querySelectorAll", block[:block.index("\n}")])
 
+    def test_the_flyout_grows_upward(self):
+        """The panel hangs above the composer, which is already at the bottom
+        of the window, so a top-anchored flyout grew DOWN into the screen edge
+        and cut the list off. Anchoring the bottom sends it up, where the room
+        is."""
+        m = re.search(r'class="submenu-panel([^"]+)"', PANEL)
+        self.assertIn("md:bottom-0", m.group(1))
+        self.assertNotIn("md:top-0", m.group(1))
+
+    def test_the_height_is_capped_to_the_room_above(self):
+        """Growing upward can still overshoot the top of a short window."""
+        block = MENU[MENU.index("function _keepOnScreen"):]
+        block = block[:block.index("\nfunction _toggleMenu")]
+        self.assertIn("maxHeight", block)
+        self.assertIn("FLYOUT_MIN_HEIGHT", block)
+        self.assertIn("r.bottom", block, "room is measured from the anchored edge")
+
+    def test_the_cap_is_cleared_before_remeasuring(self):
+        """A stale inline maxHeight from a previous open would be measured as
+        the natural height and never grow back."""
+        block = MENU[MENU.index("function _keepOnScreen"):]
+        block = block[:block.index("\nfunction _toggleMenu")]
+        self.assertLess(block.index("panel.style.maxHeight = ''"),
+                        block.index("getBoundingClientRect"))
+
     def test_a_flyout_near_the_edge_flips_sides(self):
         self.assertIn("_keepOnScreen", MENU)
         self.assertIn("flyout-left", MENU)
