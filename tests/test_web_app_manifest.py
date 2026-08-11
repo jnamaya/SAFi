@@ -93,6 +93,32 @@ class EveryIconItNamesExists(unittest.TestCase):
         """iOS ignores the manifest's icons for Add to Home Screen."""
         self.assertIn('rel="apple-touch-icon"', INDEX)
 
+    def test_the_ios_icon_is_opaque(self):
+        """iOS composites apple-touch-icon onto WHITE and applies its own
+        rounding. The transparent circle would show white corners inside the
+        rounded tile, so iOS gets the full-bleed square."""
+        import re as _re
+        m = _re.search(r'rel="apple-touch-icon"\s+href="([^"]+)"', INDEX)
+        self.assertIsNotNone(m)
+        path = PUBLIC / m.group(1).lstrip("/")
+        self.assertTrue(path.exists(), f"{m.group(1)} is missing")
+        from struct import unpack
+        head = path.read_bytes()[:26]
+        # PNG colour type is byte 25; 6 = RGBA (has alpha), 2 = RGB.
+        self.assertNotEqual(head[25], 6, "apple-touch-icon must not have alpha")
+
+    def test_the_maskable_icon_is_opaque_too(self):
+        """A mask crops to a shape; transparent corners under it defeat the
+        purpose of declaring one."""
+        mask = [i for i in MANIFEST["icons"] if i.get("purpose") == "maskable"][0]
+        head = (PUBLIC / mask["src"].lstrip("/")).read_bytes()[:26]
+        self.assertNotEqual(head[25], 6, "maskable icon must not have alpha")
+
+    def test_the_splash_matches_the_mark(self):
+        """background_color paints the launch screen behind the icon; the
+        mark is dark (#333), so a white splash flashes white first."""
+        self.assertEqual(MANIFEST["background_color"].lower(), "#333333")
+
 
 class NothingIsCached(unittest.TestCase):
 
