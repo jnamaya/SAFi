@@ -377,6 +377,9 @@ async function checkLoginStatus() {
 
       // Set initial labels in + menu
       updateModelLabel(getActiveModelLabel());
+
+      // Last, because it needs the profile list and the composer to exist.
+      await applyDeepLink();
     }
     // Attach all global event listeners
     attachEventListeners();
@@ -726,6 +729,50 @@ async function handleQuickModelSwitch(modelId) {
 }
 
 /** Handles click on an example prompt in the empty chat view */
+/**
+ * Deep links from outside the app: `?q=<text>` prefills the composer, and an
+ * optional `&agent=<key>` switches to that agent first.
+ *
+ * Exists so a scheduled email can hand an action item back to the agent that
+ * raised it. The morning briefing arrives with a prioritized list and, before
+ * this, no way to act on any of it.
+ *
+ * It PREFILLS AND STOPS — it never sends. The text arrives from outside the
+ * app, and a link that auto-sends would put a governed turn on someone's
+ * permanent record before they had seen the prompt.
+ *
+ * Switching agents goes through handleProfileChange, which reloads. The query
+ * string survives a reload, so this runs again with the agent already active
+ * and falls through to the prefill. The params are then cleared, so a refresh
+ * does not re-apply a stale prompt and the text does not sit in the URL bar.
+ */
+async function applyDeepLink() {
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search);
+  } catch (_) {
+    return;
+  }
+  const q = params.get('q');
+  const agentKey = params.get('agent');
+  if (!q && !agentKey) return;
+
+  if (agentKey
+      && agentKey !== activeProfileData.key
+      && availableProfiles.some(p => p.key === agentKey)) {
+    await handleProfileChange(agentKey);
+    return;  // reload is in flight; the prefill happens on the way back
+  }
+
+  if (q) {
+    ui.elements.messageInput.value = q;
+    chat.autoSize();
+    ui.elements.sendButton.disabled = false;
+    ui.elements.messageInput.focus();
+  }
+  window.history.replaceState({}, '', window.location.pathname);
+}
+
 function handleExamplePromptClick(promptText) {
   ui.elements.messageInput.value = promptText;
   chat.autoSize(); // Resize textarea
