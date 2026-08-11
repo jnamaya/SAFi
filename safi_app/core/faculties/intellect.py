@@ -234,7 +234,25 @@ class IntellectEngine:
 
             retrieved_context_string = ""
             if self.retriever:
-                retrieved_docs = self.retriever.search(query_for_rag)
+                # A plugin may override with a LIST of queries when one request
+                # covers several distinct passages — the Bible Scholar asking for
+                # every reading of the day is the case this exists for. One
+                # search per query, concatenated in the order the plugin gave
+                # them, deduplicated because adjacent citations legitimately
+                # retrieve overlapping chunks. A single joined query does not
+                # work here: keyword search over "Amos 7:10-17 Psalm 19 Matthew
+                # 9:1-8" matches none of the three well.
+                if isinstance(query_for_rag, (list, tuple)):
+                    retrieved_docs, seen = [], set()
+                    for one_query in query_for_rag:
+                        for doc in (self.retriever.search(one_query) or []):
+                            key = doc.get("text_chunk") or repr(doc)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            retrieved_docs.append(doc)
+                else:
+                    retrieved_docs = self.retriever.search(query_for_rag)
                 if retrieved_docs:
                     # NOT profile.get(key, default): a wizard-built agent stores
                     # rag_format_string="" , so the key exists, the default never

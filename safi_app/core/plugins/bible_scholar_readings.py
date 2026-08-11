@@ -2,7 +2,7 @@ import logging
 import re
 import ssl
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -62,6 +62,81 @@ _CHAPTER_VERSE_RE = re.compile(r"(\d)\.(\d)")
 def _normalize_citation(citation: str) -> str:
     return _CHAPTER_VERSE_RE.sub(r"\1:\2", citation).strip()
 
+
+# --- Request parsing --------------------------------------------------------
+#
+# Two separate lists, because "does this prompt want readings at all" and "which
+# reading does it want" are different questions and conflating them is what broke
+# four of the phrases below.
+#
+# TRIGGERS are deliberately explicit. A bare "psalm" or "gospel" is ordinary
+# conversation for this agent ("which psalm is about..."), and triggering on it
+# would fetch the day's readings and override the RAG query with today's
+# citation — answering a general question with today's liturgy.
+_READING_TRIGGERS = [
+    "first reading", "second reading", "gospel reading", "responsorial psalm",
+    "today's gospel", "todays gospel", "gospel for today",
+    "today's psalm", "todays psalm", "psalm for today",
+    "today's reading", "todays reading", "today's readings", "todays readings",
+    "daily reading", "daily readings", "mass reading", "mass readings",
+    "reading for today", "readings for today",
+    "all the readings", "all readings", "the readings for",
+]
+
+# SELECTORS run only on a prompt that already triggered, so a bare "psalm" or
+# "gospel" is safe here. Order matters: the specific forms are checked before the
+# looser ones. Selecting nothing is meaningful — it means "all of them".
+_READING_SELECTORS = [
+    ("first reading", "First Reading"),
+    ("reading 1", "First Reading"),
+    ("second reading", "Second Reading"),
+    ("reading 2", "Second Reading"),
+    ("responsorial psalm", "Responsorial Psalm"),
+    ("psalm", "Responsorial Psalm"),
+    ("gospel", "Gospel"),
+]
+
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+
+
+def _requested_reading(prompt_lower: str) -> Optional[str]:
+    """Which single reading the prompt asks for, or None meaning all of them."""
+    for phrase, title in _READING_SELECTORS:
+        if phrase in prompt_lower:
+            return title
+    return None
+
+
+def _requested_date(prompt_lower: str, today=None):
+    """
+    The day the prompt asks about, or None for today.
+
+    Accepts `tomorrow`, `yesterday`, a weekday name (the next occurrence, or
+    today when it is that weekday), and an explicit ISO `YYYY-MM-DD` — which is
+    what a scheduled caller uses, since it needs no interpretation. Returns a
+    `datetime.date`, or None when the prompt says nothing about a day.
+    """
+    today = today or datetime.now(_USCCB_TZ).date()
+
+    iso = _ISO_DATE_RE.search(prompt_lower)
+    if iso:
+        try:
+            return date(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
+        except ValueError:
+            pass  # 2026-13-45 and friends: fall through to the other cues
+
+    if "tomorrow" in prompt_lower:
+        return today + timedelta(days=1)
+    if "yesterday" in prompt_lower:
+        return today - timedelta(days=1)
+
+    for i, name in enumerate(_WEEKDAYS):
+        if name in prompt_lower:
+            ahead = (i - today.weekday()) % 7
+            return today + timedelta(days=ahead)
+    return None
+
 def _parse_usccb_item_description(description_html: str) -> list:
     """
     Extract [{'title', 'citation', 'text'}] from one RSS item's description.
@@ -90,11 +165,17 @@ def _parse_usccb_item_description(description_html: str) -> list:
     return full_passages
 
 
-async def _fetch_usccb_rss(log: logging.Logger) -> Optional[Dict[str, Any]]:
+async def _fetch_usccb_rss(log: logging.Logger, target_date=None) -> Optional[Dict[str, Any]]:
     """
     Primary source: the USCCB daily-readings RSS feed. Picks the item whose
-    link date-code (MMDDYY) is today in US Eastern time, preferring the plain
-    daily entry over -Vigil/-Day variants on solemnities.
+    link date-code (MMDDYY) matches `target_date` (default: today in US Eastern
+    time), preferring the plain daily entry over -Vigil/-Day variants on
+    solemnities.
+
+    `target_date` is a `datetime.date`. The feed carries roughly ten days, so
+    nearby dates resolve and anything outside that window simply finds no item
+    and returns None — which is why a caller that asks for a far date gets the
+    same "no readings" path as a caller whose fetch failed.
 
     Returns the standard readings dict, or None if the fetch/parse yields
     nothing usable (so the caller can fall back).
@@ -109,7 +190,8 @@ async def _fetch_usccb_rss(log: logging.Logger) -> Optional[Dict[str, Any]]:
 
     root = ET.fromstring(resp.text)
     now = datetime.now(_USCCB_TZ)
-    date_code = now.strftime("%m%d%y")
+    day = target_date or now.date()
+    date_code = day.strftime("%m%d%y")
 
     candidates = []
     for item in root.iter("item"):
@@ -117,7 +199,7 @@ async def _fetch_usccb_rss(log: logging.Logger) -> Optional[Dict[str, Any]]:
         if re.search(rf"/{date_code}(?:\.cfm)?(?:-|$)", link):
             candidates.append(item)
     if not candidates:
-        log.warning("USCCB RSS feed had no item for today (%s).", date_code)
+        log.warning("USCCB RSS feed had no item for %s (%s).", day.isoformat(), date_code)
         return None
 
     # Solemnities publish -Vigil/-Day variants alongside the plain entry, and
@@ -135,7 +217,7 @@ async def _fetch_usccb_rss(log: logging.Logger) -> Optional[Dict[str, Any]]:
     for item in sorted(candidates, key=_rank):
         full_passages = _parse_usccb_item_description(item.findtext("description") or "")
         if full_passages:
-            reading_date = f"{now:%A} {now:%B} {now.day}, {now.year}"
+            reading_date = f"{day:%A} {day:%B} {day.day}, {day.year}"
             log.info(f"Successfully fetched {len(full_passages)} passages from USCCB RSS for {reading_date}.")
             return {
                 "date": reading_date,
@@ -147,20 +229,32 @@ async def _fetch_usccb_rss(log: logging.Logger) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def _fetch_readings_from_source(log: logging.Logger) -> Dict[str, Any]:
+async def _fetch_readings_from_source(log: logging.Logger, target_date=None) -> Dict[str, Any]:
     """
-    Fetch today's readings. Tries the USCCB RSS feed (authoritative) first,
+    Fetch a day's readings. Tries the USCCB RSS feed (authoritative) first,
     then falls back to the livingwithchrist.ca scrape if USCCB is unreachable
     or unparseable. Returns a dict with 'date'/'full_passages' or an 'error'.
+
+    `target_date` (a `datetime.date`) is honoured by USCCB only — the fallback
+    scrape publishes one page, always today's. So a dated request that falls
+    through to the fallback is refused rather than answered with the wrong day:
+    silently returning today's readings under tomorrow's heading is worse than
+    saying nothing, since the caller cannot tell the difference.
     """
     try:
-        usccb = await _fetch_usccb_rss(log)
+        usccb = await _fetch_usccb_rss(log, target_date=target_date)
     except Exception as e:
         log.warning(f"USCCB RSS fetch failed ({type(e).__name__}: {e}); falling back to LivingWithChrist.")
         usccb = None
 
     if usccb and usccb.get("full_passages"):
         return usccb
+
+    if target_date is not None and target_date != datetime.now(_USCCB_TZ).date():
+        log.warning("USCCB had no readings for %s and the fallback source only serves today.",
+                    target_date.isoformat())
+        return {"error": f"I could not find the readings for {target_date:%A, %B %d, %Y}. "
+                         "The authoritative source only publishes about ten days at a time."}
 
     log.warning("Falling back to LivingWithChrist readings source.")
     return await _fetch_livingwithchrist(log)
@@ -267,59 +361,68 @@ async def handle_bible_scholar_commands(
     original_user_prompt = user_prompt
     prompt_command = user_prompt.strip().lower()
 
-    individual_reading_commands = [
-        "first reading",
-        "second reading",
-        "gospel reading",
-        "today's gospel",
-        "today's reading",
-        "daily reading",
-        "mass reading",
-        "reading for today",
-        "gospel for today",
-    ]
-    
-    data_payload = None
+    if not any(t in prompt_command for t in _READING_TRIGGERS):
+        # Not a readings request. data_payload stays None.
+        return original_user_prompt, None
 
-    if any(cmd in prompt_command for cmd in individual_reading_commands):
-        log.info(f"Individual reading request detected: '{user_prompt}'")
-        
-        scraped_data = await _fetch_readings_from_source(log)
-        
-        if "error" in scraped_data:
-            data_payload = {"plugin_error": scraped_data["error"]}
-        else:
-            # Find the specific reading the user asked for
-            requested_reading_key = None
-            if "first reading" in prompt_command:
-                requested_reading_key = "First Reading"
-            elif "second reading" in prompt_command:
-                requested_reading_key = "Second Reading"
-            elif "gospel" in prompt_command:
-                requested_reading_key = "Gospel"
+    target_date = _requested_date(prompt_command)
+    requested_reading_key = _requested_reading(prompt_command)
+    log.info("Readings request detected: '%s' (reading=%s, date=%s)",
+             user_prompt, requested_reading_key or "ALL",
+             target_date.isoformat() if target_date else "today")
 
-            found_passage = None
-            if requested_reading_key:
-                for passage in scraped_data.get("full_passages", []):
-                    if passage.get("title") == requested_reading_key:
-                        found_passage = passage
-                        break
-            
-            if found_passage:
-                # *** THIS IS THE KEY CHANGE ***
-                # We build a GENERIC payload. We do NOT pass the
-                # external 'text' field, forcing the RAG to do the work.
-                data_payload = {
-                    # Generic key to override the RAG search query
-                    "rag_query_override": found_passage.get("citation"),
-                    
-                    # Generic key for a string to inject into the prompt
-                    "preformatted_context_string": f"CONTEXT: The user is asking for the '{found_passage.get('title')}' for {scraped_data.get('date', 'today')}, which is {found_passage.get('citation')}. The RAG system has been provided with this text."
-                }
-            else:
-                error_msg = f"I found the readings for today, but couldn't find a specific '{requested_reading_key}'."
-                data_payload = {"plugin_error": error_msg}
+    scraped_data = await _fetch_readings_from_source(log, target_date=target_date)
+    if "error" in scraped_data:
+        return original_user_prompt, {"plugin_error": scraped_data["error"]}
 
-    # If no command matched, data_payload is still None
-    # Return the original prompt and the data payload (or None)
-    return original_user_prompt, data_payload
+    passages = [p for p in scraped_data.get("full_passages", []) if p.get("citation")]
+    day_label = scraped_data.get("date", "today")
+
+    if not passages:
+        return original_user_prompt, {
+            "plugin_error": f"I reached the readings source for {day_label} but it listed no readings."
+        }
+
+    # --- One specific reading -------------------------------------------------
+    if requested_reading_key:
+        found = next((p for p in passages if p.get("title") == requested_reading_key), None)
+        if found is None:
+            # A real liturgical answer, not a lookup failure: weekdays have no
+            # Second Reading. Say which readings the day DOES have so the agent
+            # can offer them instead of reporting a malfunction.
+            available = ", ".join(p["title"] for p in passages)
+            return original_user_prompt, {
+                "plugin_error": (
+                    f"{day_label} has no {requested_reading_key}. The readings for that day are: "
+                    f"{available}. Tell the user which readings the day actually has."
+                )
+            }
+        return original_user_prompt, {
+            "rag_query_override": found["citation"],
+            "preformatted_context_string": (
+                f"CONTEXT: The user is asking for the '{found['title']}' for {day_label}, "
+                f"which is {found['citation']}. The RAG system has been provided with this text."
+            ),
+        }
+
+    # --- Every reading the day actually has -----------------------------------
+    # This is the branch that used to be unreachable: 'today's reading', 'daily
+    # reading', 'mass reading' and 'reading for today' all matched the trigger
+    # list, selected nothing, and produced "couldn't find a specific 'None'".
+    #
+    # Driving the digest off what the source lists — rather than off the weekday —
+    # is also what makes a weekday solemnity correct: the Second Reading appears
+    # because the day has one, not because it is a Sunday.
+    manifest = "; ".join(f"{p['title']} — {p['citation']}" for p in passages)
+    return original_user_prompt, {
+        # A list: the Intellect runs one retrieval per citation and merges the
+        # results, so every reading's verse text reaches the model.
+        "rag_query_override": [p["citation"] for p in passages],
+        "preformatted_context_string": (
+            f"CONTEXT: The user is asking for ALL of the readings for {day_label}. "
+            f"The day has {len(passages)}: {manifest}. The RAG system has been provided with "
+            "the text of each one. Present every reading, in this order, each under its own "
+            "heading with its citation. Do not omit any, and do not add readings the day "
+            "does not have."
+        ),
+    }
