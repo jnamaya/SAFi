@@ -11,22 +11,10 @@
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "/assets/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
       "src": "/assets/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/assets/icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -34,7 +22,12 @@
       "name": "New conversation",
       "short_name": "New chat",
       "url": "/?src=pwa&new=1",
-      "icons": [{ "src": "/assets/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/assets/icon-512.png",
+          "sizes": "512x512"
+        }
+      ]
     }
   ]
 }

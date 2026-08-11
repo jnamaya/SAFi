@@ -25,10 +25,11 @@
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
   <!-- iOS ignores the manifest's icons for Add to Home Screen, and composites
-       whatever it gets onto WHITE before applying its own rounding — so it
-       gets the opaque square, not the transparent circle, which would show
-       white corners inside the rounded tile. -->
-  <link rel="apple-touch-icon" href="assets/icon-apple-180.png">
+       whatever it gets onto WHITE before applying its own rounding, so the
+       icon it is pointed at must be opaque. That is the same padded square
+       the manifest uses, which is why there is one icon file here and not
+       four: it is safe under a mask, opaque for iOS, and legible unmasked. -->
+  <link rel="apple-touch-icon" href="assets/icon-512.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SAFi">
 

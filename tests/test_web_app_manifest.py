@@ -78,16 +78,25 @@ class EveryIconItNamesExists(unittest.TestCase):
                 declared = icon["sizes"].split("x")[0]
                 self.assertEqual((w, h), (int(declared), int(declared)))
 
-    def test_the_two_sizes_browsers_actually_want(self):
-        sizes = {i["sizes"] for i in MANIFEST["icons"]}
-        self.assertIn("192x192", sizes)
-        self.assertIn("512x512", sizes)
+    def test_one_icon_file_serves_every_purpose(self):
+        """Deliberately one file, not four (2026-08-11). It is padded into the
+        inner 80% safe zone, so the same PNG is safe under a launcher mask,
+        opaque enough for iOS, and legible unmasked. Fewer assets to
+        regenerate when the brand changes, which is the whole reason.
 
-    def test_a_maskable_icon_exists(self):
-        """Without one, Android crops a full-bleed square to its inner circle
-        and takes the artwork's edges with it."""
-        purposes = {i.get("purpose") for i in MANIFEST["icons"]}
-        self.assertIn("maskable", purposes)
+        Removing icons ALTOGETHER was considered and rejected: the sidebar
+        logo lives inside the page and can never reach the dock, and there is
+        no favicon to fall back on, so an installed app would show a blank
+        tile — the dock icon is the only visible artefact the manifest
+        produces."""
+        self.assertEqual(len(MANIFEST["icons"]), 1)
+        self.assertEqual(MANIFEST["icons"][0]["sizes"], "512x512")
+
+    def test_the_single_icon_declares_both_purposes(self):
+        """`purpose` is a space-separated list; one file can be both."""
+        purpose = MANIFEST["icons"][0]["purpose"].split()
+        self.assertIn("any", purpose)
+        self.assertIn("maskable", purpose)
 
     def test_ios_gets_its_own_link(self):
         """iOS ignores the manifest's icons for Add to Home Screen."""
@@ -102,17 +111,19 @@ class EveryIconItNamesExists(unittest.TestCase):
         self.assertIsNotNone(m)
         path = PUBLIC / m.group(1).lstrip("/")
         self.assertTrue(path.exists(), f"{m.group(1)} is missing")
+        self.assertEqual(path.name, MANIFEST["icons"][0]["src"].split("/")[-1],
+                         "iOS should reuse the one icon, not a second file")
         from struct import unpack
         head = path.read_bytes()[:26]
         # PNG colour type is byte 25; 6 = RGBA (has alpha), 2 = RGB.
         self.assertNotEqual(head[25], 6, "apple-touch-icon must not have alpha")
 
-    def test_the_maskable_icon_is_opaque_too(self):
-        """A mask crops to a shape; transparent corners under it defeat the
-        purpose of declaring one."""
-        mask = [i for i in MANIFEST["icons"] if i.get("purpose") == "maskable"][0]
-        head = (PUBLIC / mask["src"].lstrip("/")).read_bytes()[:26]
-        self.assertNotEqual(head[25], 6, "maskable icon must not have alpha")
+    def test_the_icon_is_opaque(self):
+        """A mask crops to a shape, and iOS composites onto white; transparent
+        corners lose under both."""
+        icon = MANIFEST["icons"][0]
+        head = (PUBLIC / icon["src"].lstrip("/")).read_bytes()[:26]
+        self.assertNotEqual(head[25], 6, "the icon must not have alpha")
 
     def test_the_splash_matches_the_mark(self):
         """background_color paints the launch screen behind the icon; the
