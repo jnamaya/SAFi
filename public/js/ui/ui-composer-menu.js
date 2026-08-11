@@ -1,4 +1,13 @@
 let _isOpen = false;
+let _openFlyout = null;
+let _closeTimer = null;
+
+// Long enough to cross the gap between a row and its flyout on a diagonal —
+// the classic cascading-menu problem. Closing on mouseleave with no grace
+// period makes the submenu impossible to reach.
+const FLYOUT_CLOSE_DELAY = 220;
+const DESKTOP = typeof window !== 'undefined'
+    ? window.matchMedia('(min-width: 768px)') : { matches: false };
 
 export function initComposerMenu({ onAttachFile }) {
     const plusBtn = document.getElementById('composer-plus-btn');
@@ -15,20 +24,79 @@ export function initComposerMenu({ onAttachFile }) {
         onAttachFile();
     });
 
-    // Escape closes the panel. There is no inner level to unwind any more —
-    // the three lists are sections of this popover, not dropdowns that
-    // replaced it.
+    _initFlyouts();
+
+    // Escape unwinds one level: an open flyout first, then the panel.
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape' || !_isOpen) return;
-        closeComposerMenu();
+        if (_openFlyout) {
+            _setFlyout(null);
+            _openFlyout = null;
+        } else {
+            closeComposerMenu();
+            plusBtn.focus();
+        }
         e.stopPropagation();
-        plusBtn.focus();
     });
 
     document.addEventListener('click', (e) => {
         const plusContainer = document.getElementById('composer-plus-container');
         if (!plusContainer || !plusContainer.contains(e.target)) closeComposerMenu();
     });
+}
+
+/**
+ * Category rows open a flyout: on hover for a mouse, on click for everything
+ * (touch has no hover, and a tap that only "hovers" opens nothing).
+ */
+function _initFlyouts() {
+    document.querySelectorAll('#composer-plus-menu [data-flyout]').forEach(wrap => {
+        const trigger = wrap.querySelector('.submenu-trigger');
+        if (!trigger) return;
+
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _setFlyout(_openFlyout === wrap ? null : wrap);
+        });
+
+        wrap.addEventListener('mouseenter', () => {
+            if (!DESKTOP.matches) return;
+            clearTimeout(_closeTimer);
+            _setFlyout(wrap);
+        });
+
+        wrap.addEventListener('mouseleave', () => {
+            if (!DESKTOP.matches) return;
+            clearTimeout(_closeTimer);
+            _closeTimer = setTimeout(() => _setFlyout(null), FLYOUT_CLOSE_DELAY);
+        });
+    });
+}
+
+/** Opens one flyout and closes the rest. Pass null to close them all. */
+function _setFlyout(wrap) {
+    clearTimeout(_closeTimer);
+    document.querySelectorAll('#composer-plus-menu [data-flyout]').forEach(w => {
+        const panel = w.querySelector('.submenu-panel');
+        const trigger = w.querySelector('.submenu-trigger');
+        const isOpen = w === wrap;
+        panel?.classList.toggle('hidden', !isOpen);
+        trigger?.setAttribute('aria-expanded', String(isOpen));
+        if (isOpen && panel) _keepOnScreen(panel);
+    });
+    _openFlyout = wrap || null;
+}
+
+/**
+ * Flyouts open to the right by default. Near the viewport edge that runs off
+ * screen, so flip to the left side instead. Desktop only — below md the panel
+ * is an inline accordion with no side to flip to.
+ */
+function _keepOnScreen(panel) {
+    panel.classList.remove('flyout-left');
+    if (!DESKTOP.matches) return;
+    const r = panel.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) panel.classList.add('flyout-left');
 }
 
 function _toggleMenu() {
@@ -43,6 +111,7 @@ function _toggleMenu() {
  * They used to hide their own container, which no longer exists as a popover.
  */
 export function closeComposerMenu() {
+    _setFlyout(null);
     _isOpen = false;
     document.getElementById('composer-plus-menu')?.classList.add('hidden');
     _syncExpanded();
@@ -57,19 +126,32 @@ function _syncExpanded() {
 }
 
 /**
- * Kept as no-ops on purpose, with the reason, because both are called from
- * app.js on every profile/model change.
+ * The category rows show the current selection underneath their label.
  *
- * The + menu used to show the current agent and model as subtitle rows under
- * "Switch Agent" / "Change AI Model". Those rows are gone: the lists are now
- * sections in the panel itself and mark their own selection with a check, so
- * a label repeating it was a second copy that could disagree. updateAgentLabel
- * also wrote to a composer pill (#composer-agent-name/#composer-agent-avatar)
- * that no longer exists in the markup at all.
+ * These were no-ops for exactly one commit, when every list was rendered
+ * inline and its own check mark showed the selection — a subtitle then was a
+ * second copy that could disagree. Flyouts changed that: the list is hidden
+ * until you hover it, so the row is now the only way to see what is active
+ * without opening anything.
  */
-export function updateAgentLabel() { /* selection is shown by the list's check */ }
+export function updateAgentLabel(name) {
+    const el = document.getElementById('plus-agent-current');
+    if (el) el.textContent = name || '—';
+}
 
-export function updateModelLabel() { /* selection is shown by the list's check */ }
+export function updateModelLabel(name) {
+    const el = document.getElementById('plus-model-current');
+    if (el) el.textContent = name || '—';
+}
+
+/** Connector count, so the row says something before it is opened. */
+export function updateDataSourcesLabel(connectedCount) {
+    const el = document.getElementById('plus-data-current');
+    if (!el) return;
+    el.textContent = connectedCount > 0
+        ? `${connectedCount} connected`
+        : 'None connected';
+}
 
 // AI disclosure (EU AI Act Art. 50(1)) below the composer. When the active
 // agent is policy-governed, the generic sentence becomes a "this policy" link

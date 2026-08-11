@@ -2722,6 +2722,29 @@ html.native body { font-size: 14px; }
   }
 }
 
+/* --- Composer + menu flyouts --- */
+
+/* Below md the submenu is an inline accordion, so the chevron points down
+   when open. On desktop the flyout genuinely goes right; leave it alone. */
+.submenu-trigger[aria-expanded="true"] .submenu-chevron {
+  transform: rotate(90deg);
+}
+
+@media (min-width: 768px) {
+  .submenu-trigger[aria-expanded="true"] .submenu-chevron {
+    transform: none;
+  }
+
+  /* Set by _keepOnScreen when the default right-hand flyout would run past
+     the viewport edge. */
+  .submenu-panel.flyout-left {
+    left: auto;
+    right: 100%;
+    margin-left: 0;
+    margin-right: 0.25rem;
+  }
+}
+
 /* --- Scroll-to-bottom button --- */
 #scroll-to-bottom-btn {
   left: 50%;

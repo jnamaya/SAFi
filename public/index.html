@@ -312,23 +312,26 @@
                         </svg>
                       </button>
 
-                      <!-- Action menu: ONE popover, sections stacked inside it.
+                      <!-- Action menu: a short panel of categories, each opening a flyout.
 
-                           It used to be a list of four entries that each CLOSED this menu and
-                           opened a sibling dropdown anchored to the same corner — so drilling in
-                           destroyed the thing you were navigating, with no title and no way back.
-                           The three lists now live here as sections and are always rendered; the
-                           panel scrolls if they are long.
+                           Listing every agent, model and connector inline made the panel taller
+                           than the models list alone justified. Categories now open a submenu on
+                           hover (desktop) or tap (everywhere), so the panel stays four rows tall
+                           and only the open list scrolls.
 
-                           Attach File stays a button: it is a one-shot action that opens the OS
-                           file picker, not a list to choose from, which is also why a tab strip
-                           was the wrong shape for this menu.
+                           NOTE the panel must NOT have overflow-y-auto on desktop: it would clip
+                           the absolutely-positioned flyouts it is meant to reveal. Below md the
+                           flyout has nowhere to go sideways, so it becomes an inline accordion
+                           and the panel scrolls again — the same JS drives both.
 
-                           The three section containers keep their original ids, so
-                           ui-auth-sidebar / ui-model-selector / ui-data-sources still render into
-                           exactly what they always did. -->
+                           Attach File stays a plain action: it opens the OS file picker and has
+                           no list to show.
+
+                           The list containers keep their original ids, so ui-auth-sidebar,
+                           ui-model-selector and ui-data-sources render into what they always
+                           did. -->
                       <div id="composer-plus-menu" role="menu" aria-label="Composer actions"
-                        class="hidden absolute bottom-full left-0 mb-2 w-72 max-h-[60vh] overflow-y-auto custom-scrollbar bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5">
+                        class="hidden absolute bottom-full left-0 mb-2 w-72 max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible custom-scrollbar bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5">
 
                         <!-- Attach File -->
                         <button id="plus-attach-btn" type="button" role="menuitem"
@@ -346,18 +349,64 @@
 
                         <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
 
-                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Agents</div>
-                        <div id="agent-selector-dropdown" role="group" aria-label="Agents" class="space-y-0.5"></div>
+                        <div class="relative" data-flyout>
+                          <button type="button" class="submenu-trigger w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left"
+                            aria-haspopup="menu" aria-expanded="false" aria-controls="submenu-agents">
+                            <div class="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
+                              <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-gray-900 dark:text-white">Agents</div>
+                              <div id="plus-agent-current" class="text-xs text-gray-400 truncate"></div>
+                            </div>
+                            <svg class="submenu-chevron w-4 h-4 shrink-0 text-neutral-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                          </button>
+                          <div id="submenu-agents" class="submenu-panel hidden w-full mt-1 pl-11 md:pl-1 md:mt-0 md:absolute md:left-full md:top-0 md:ml-1 md:w-64 md:max-h-72 md:overflow-y-auto md:bg-white md:dark:bg-neutral-900 md:rounded-xl md:shadow-xl md:border md:border-neutral-200 md:dark:border-neutral-700 md:z-50 custom-scrollbar">
+                            <div id="agent-selector-dropdown" role="group" aria-label="Agents" class="space-y-0.5"></div>
+                          </div>
+                        </div>
 
-                        <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
 
-                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">AI Models</div>
-                        <div id="model-selector-dropdown" role="group" aria-label="AI models" class="space-y-0.5"></div>
+                        <div class="relative" data-flyout>
+                          <button type="button" class="submenu-trigger w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left"
+                            aria-haspopup="menu" aria-expanded="false" aria-controls="submenu-models">
+                            <div class="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
+                              <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-gray-900 dark:text-white">AI Models</div>
+                              <div id="plus-model-current" class="text-xs text-gray-400 truncate"></div>
+                            </div>
+                            <svg class="submenu-chevron w-4 h-4 shrink-0 text-neutral-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                          </button>
+                          <div id="submenu-models" class="submenu-panel hidden w-full mt-1 pl-11 md:pl-1 md:mt-0 md:absolute md:left-full md:top-0 md:ml-1 md:w-64 md:max-h-72 md:overflow-y-auto md:bg-white md:dark:bg-neutral-900 md:rounded-xl md:shadow-xl md:border md:border-neutral-200 md:dark:border-neutral-700 md:z-50 custom-scrollbar">
+                            <div id="model-selector-dropdown" role="group" aria-label="AI Models" class="space-y-0.5"></div>
+                          </div>
+                        </div>
 
-                        <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
 
-                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Data Sources</div>
-                        <div id="data-sources-dropdown" role="group" aria-label="Data sources" class="space-y-0.5"></div>
+                        <div class="relative" data-flyout>
+                          <button type="button" class="submenu-trigger w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left"
+                            aria-haspopup="menu" aria-expanded="false" aria-controls="submenu-data">
+                            <div class="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg shrink-0">
+                              <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-gray-900 dark:text-white">Data Sources</div>
+                              <div id="plus-data-current" class="text-xs text-gray-400 truncate"></div>
+                            </div>
+                            <svg class="submenu-chevron w-4 h-4 shrink-0 text-neutral-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                          </button>
+                          <div id="submenu-data" class="submenu-panel hidden w-full mt-1 pl-11 md:pl-1 md:mt-0 md:absolute md:left-full md:top-0 md:ml-1 md:w-64 md:max-h-72 md:overflow-y-auto md:bg-white md:dark:bg-neutral-900 md:rounded-xl md:shadow-xl md:border md:border-neutral-200 md:dark:border-neutral-700 md:z-50 custom-scrollbar">
+                            <div id="data-sources-dropdown" role="group" aria-label="Data Sources" class="space-y-0.5"></div>
+                          </div>
+                        </div>
 
                       </div>
                     </div>

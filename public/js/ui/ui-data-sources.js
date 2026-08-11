@@ -4,6 +4,7 @@
  */
 
 import * as api from '../core/api.js';
+import { updateDataSourcesLabel } from './ui-composer-menu.js';
 
 const DROPDOWN_ID = 'data-sources-dropdown';
 
@@ -23,10 +24,9 @@ export function initDataSources() {
 export async function checkDataSources() {
     try {
         const response = await api.fetchAuthStatus();
-        renderMenu(
-            (response && response.connected) || [],
-            (response && response.connectors) || [],
-        );
+        const connected = (response && response.connected) || [];
+        renderMenu(connected, (response && response.connectors) || []);
+        updateDataSourcesLabel(connected.length);
     } catch (e) {
         console.warn('Failed to fetch data source status', e);
         // Offer nothing rather than the whole catalogue: this menu used to
