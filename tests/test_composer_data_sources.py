@@ -40,8 +40,12 @@ class TheMenuIsDrivenByThePolicy(unittest.TestCase):
         self.assertNotIn("'Google Drive'", body)
         self.assertNotIn("'GitHub'", body)
 
-    def test_it_filters_on_the_allowed_flag(self):
-        self.assertIn("c.allowed !== false", JS)
+    def test_it_filters_on_both_flags(self):
+        """allowed AND usable. The first fix filtered on `allowed` alone, so an
+        unrestricted org still advertised every connector — Nelson's exact
+        report — and the design intent is narrower than org policy: a source
+        is offered only when some agent the member can reach would use it."""
+        self.assertIn("c.allowed !== false && c.usable !== false", JS)
 
     def test_a_connected_but_now_blocked_source_still_shows(self):
         """An admin can revoke after the fact. The member still needs to see a
@@ -52,15 +56,26 @@ class TheMenuIsDrivenByThePolicy(unittest.TestCase):
 
     def test_a_blocked_source_is_not_clickable(self):
         """Offering a link the login route will refuse is worse than not
-        offering it: the member gets an error instead of an explanation."""
-        self.assertIn("(isConnected || blocked) ? '#'", JS)
+        offering it: the member gets an error instead of an explanation.
+        Clickability is the single `connectable` flag now — blocked, unusable
+        and already-connected all fall on the inert side of it."""
+        self.assertIn("item.href = connectable ? `/api/auth/${source.key}/login` : '#'", JS)
 
-    def test_an_unusable_source_says_so_rather_than_inviting_a_grant(self):
+    def test_an_unusable_source_is_hidden_not_offered(self):
         """Org-allowed is not enough. If no agent the member can reach is
         authorized to call its tools, linking it hands SAFi a live OAuth grant
-        nothing will ever read."""
+        nothing will ever read — so it is not shown at all unless already
+        connected, and then only for the disconnect."""
         self.assertIn("source.usable === false", JS)
-        self.assertIn("No agent here uses it", JS)
+        self.assertIn("no agent here uses it", JS)
+
+    def test_only_a_fully_clear_source_carries_a_login_link(self):
+        """The first fix had a click-through: the href guard covered connected
+        and blocked but not unusable, leaving a live login link on sources the
+        filter was supposed to be protecting people from."""
+        self.assertIn("const connectable = !isConnected && !blocked && !unused;", JS)
+        self.assertIn("item.href = connectable ?", JS)
+        self.assertIn("if (!connectable) {", JS)
 
     def test_a_failed_status_call_offers_nothing(self):
         """It used to render the full catalogue regardless of the response."""

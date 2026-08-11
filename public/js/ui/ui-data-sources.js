@@ -56,18 +56,27 @@ function renderMenu(connectedList, connectors) {
     // and clicking it failed, because the login route enforces the allow-list
     // even when the menu does not.
     //
+    // Both flags gate visibility, not just `allowed`. A source is offered only
+    // when the org permits it AND some agent this member can reach is
+    // authorized to call its tools — connecting is the means to an agent's
+    // end, so a source no agent needs is not an option, it is an invitation
+    // to grant a token nothing will ever read. (The first version of this
+    // filter checked `allowed` alone, so an unrestricted org still advertised
+    // every connector — and worse, left the login link live on them.)
+    //
     // A connector the member has ALREADY linked stays on the list even when it
     // is no longer allowed or usable: an admin can revoke after the fact, and
     // the member still needs to see a live token in order to disconnect it.
     // Hiding a granted token is worse than showing a blocked one.
     const visible = (connectors || []).filter(
-        c => c.allowed !== false || connectedList.includes(c.key)
+        c => (c.allowed !== false && c.usable !== false) || connectedList.includes(c.key)
     );
 
     if (!visible.length) {
         dropdown.innerHTML = `
             <p class="px-3 py-2 text-xs text-neutral-500">
-                No data sources are available for your organization.
+                None of your agents use external data sources, so there is
+                nothing to connect here.
             </p>`;
         return;
     }
@@ -76,30 +85,38 @@ function renderMenu(connectedList, connectors) {
         const isConnected = connectedList.includes(source.key);
         const blocked = source.allowed === false;
         const unused = source.usable === false && !blocked;
+        // Only a source that clears BOTH flags and is not yet linked carries a
+        // live login link. Unusable rows only exist here when already
+        // connected (the filter above), and their job is disconnect
+        // visibility, not inviting a grant.
+        const connectable = !isConnected && !blocked && !unused;
 
         const item = document.createElement('a');
-        item.href = (isConnected || blocked) ? '#' : `/api/auth/${source.key}/login`;
+        item.href = connectable ? `/api/auth/${source.key}/login` : '#';
         item.className = `
             flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group
-            ${isConnected || blocked
-                ? 'hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-default'
-                : 'hover:bg-green-50 dark:hover:bg-green-900/20'
+            ${connectable
+                ? 'hover:bg-green-50 dark:hover:bg-green-900/20'
+                : 'hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-default'
             }
         `;
 
         let status, statusClass;
         if (isConnected && blocked) {
-            status = '● Connected — no longer permitted';
+            status = '\u25cf Connected \u2014 no longer permitted';
             statusClass = 'text-amber-600 dark:text-amber-400';
-        } else if (isConnected) {
-            status = '● Connected';
-            statusClass = 'text-green-600 dark:text-green-400';
-        } else if (unused) {
-            // Linking this would hand SAFi a live OAuth grant that no agent
-            // would ever read. Say so rather than inviting it.
-            status = 'No agent here uses it';
+        } else if (isConnected && unused) {
+            // A live token for a source no agent reads \u2014 visible only for
+            // the disconnect, and named so the member knows removing it costs
+            // nothing.
+            status = '\u25cf Connected \u2014 no agent here uses it';
             statusClass = 'text-neutral-400';
+        } else if (isConnected) {
+            status = '\u25cf Connected';
+            statusClass = 'text-green-600 dark:text-green-400';
         } else {
+            // The visibility filter admits no unconnected source that is
+            // blocked or unusable, so the only remaining state is connectable.
             status = 'Click to connect';
             statusClass = 'text-neutral-500 group-hover:text-green-600 dark:group-hover:text-green-400';
         }
@@ -112,7 +129,7 @@ function renderMenu(connectedList, connectors) {
             </div>
         `;
 
-        if (isConnected || blocked) {
+        if (!connectable) {
             item.addEventListener('click', (e) => e.preventDefault());
         }
 
