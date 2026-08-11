@@ -94,6 +94,35 @@ class CategoriesOpenFlyouts(unittest.TestCase):
         self.assertIn("md:bottom-0", m.group(1))
         self.assertNotIn("md:top-0", m.group(1))
 
+    def test_the_flyout_has_padding_of_its_own(self):
+        """A list flush against a rounded border reads as clipped, and the
+        scroll thumb ends up on top of the last row's text."""
+        m = re.search(r'class="submenu-panel([^"]+)"', PANEL)
+        cls = m.group(1)
+        self.assertIn("md:p-2", cls, "desktop flyout rows touched the border")
+        self.assertIn("py-1", cls, "inline accordion had no vertical room")
+
+    def test_the_flyout_is_tall_enough_to_show_a_list(self):
+        """max-h-72 (288px) cut every list of more than ~7 rows even on a tall
+        window, where there was room to spare. The JS still caps it to the
+        space actually above the row; this is the ceiling, not the height."""
+        m = re.search(r'class="submenu-panel([^"]+)"', PANEL)
+        cap = re.search(r"md:max-h-\[(\d+)rem\]", m.group(1))
+        self.assertIsNotNone(cap, "flyout needs an explicit desktop height cap")
+        self.assertGreaterEqual(int(cap.group(1)), 24)
+
+    def test_overflow_scrolls_instead_of_clipping(self):
+        m = re.search(r'class="submenu-panel([^"]+)"', PANEL)
+        self.assertIn("md:overflow-y-auto", m.group(1))
+        self.assertIn("custom-scrollbar", m.group(1))
+
+    def test_the_cap_and_its_overflow_are_both_cleared(self):
+        """maxHeight was reset between opens but overflowY was not, leaving an
+        inline `auto` on a panel that no longer needs one."""
+        block = MENU[MENU.index("function _keepOnScreen"):]
+        block = block[:block.index("\nfunction _toggleMenu")]
+        self.assertIn("panel.style.overflowY = ''", block)
+
     def test_the_height_is_capped_to_the_room_above(self):
         """Growing upward can still overshoot the top of a short window."""
         block = MENU[MENU.index("function _keepOnScreen"):]

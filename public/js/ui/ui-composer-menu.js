@@ -7,9 +7,11 @@ let _closeTimer = null;
 // period makes the submenu impossible to reach.
 const FLYOUT_CLOSE_DELAY = 220;
 // Breathing room against the top of the window, and a floor below which a
-// scrolling list is more annoying than an overflowing one.
+// scrolling list is more annoying than an overflowing one. The floor is worth
+// roughly four rows plus the panel's own padding — less than that and the
+// scroll thumb is taller than the window it scrolls.
 const MIN_VIEWPORT_GAP = 12;
-const FLYOUT_MIN_HEIGHT = 160;
+const FLYOUT_MIN_HEIGHT = 176;
 const DESKTOP = typeof window !== 'undefined'
     ? window.matchMedia('(min-width: 768px)') : { matches: false };
 
@@ -103,11 +105,14 @@ function _setFlyout(wrap) {
  * above the composer, which is already at the bottom of the window, so a
  * downward flyout was guaranteed to run past the bottom edge and cut the list
  * off. Growing upward can still overshoot the top on a short window, so cap it
- * at the space actually above it.
+ * at the space actually above it — the markup's md:max-h is the ceiling a tall
+ * window gets, this is the one a short window gets, and either way the overflow
+ * scrolls rather than being clipped.
  */
 function _keepOnScreen(panel) {
     panel.classList.remove('flyout-left');
     panel.style.maxHeight = '';
+    panel.style.overflowY = '';
     if (!DESKTOP.matches) return;
 
     const r = panel.getBoundingClientRect();
