@@ -1,9 +1,10 @@
 """
 Unit tests for LLMProvider.run_conscience's json_mode fallback ladder.
 
-Regression guard for the 2026-07-11 Gemma incident: gemma-4-31b (Cerebras)
-under response_format=json_object with a long audit system prompt returns a
-literal "{}" with HTTP 200. The old fallback only retried without json_mode
+Regression guard for the 2026-07-11 Gemma incident: gemma-4-31b, on the FREE
+Cerebras tier of the time, returned a literal "{}" with HTTP 200 under
+response_format=json_object with a long audit system prompt — a tier context
+limit, not a property of the model, which audits fine on a paid tier. The old fallback only retried without json_mode
 on an EXCEPTION, so the empty-but-successful response parsed to an unusable
 ledger and the orchestrator failed closed. run_conscience must now:
   1. retry without json_mode when the json_mode call yields an empty ledger,
@@ -82,9 +83,10 @@ class TestConscienceJsonFallback(unittest.TestCase):
 
         The old shortcut saved one call but put a model id inside faculty code,
         where per-model behaviour decides how strictly agents are audited. That
-        trade was reversed deliberately: one wasted call on a model already kept
-        out of the Conscience defaults (`config.py`) is cheaper than a naming
-        convention the auditor's strictness silently depends on.
+        trade was reversed deliberately: one possibly-wasted call is cheaper
+        than a naming convention the auditor's strictness silently depends on —
+        and the "{}" behaviour was a free-tier context limit in any case, so on
+        a paid tier the first call simply succeeds and nothing is wasted.
         """
         p = make_provider(model="gemma-4-31b")
         p._chat_completion = AsyncMock(side_effect=["{}", VALID_LEDGER_JSON])

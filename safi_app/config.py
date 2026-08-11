@@ -21,7 +21,11 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
     "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
     "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
-    # gemma-4-31b is deliberately excluded from Conscience duty: its audits fail closed.
+    # Conscience defaults to gpt-oss-120b rather than gemma-4-31b. The old note
+    # here claimed gemma "must not audit" — that dated from the free Cerebras
+    # tier, whose context limits made long audit prompts fail; it is not a
+    # property of the model, and operators run gemma as Conscience today.
+    # 120b stays the default simply as the stronger auditor of the two.
     "cerebras":  {"intellect": "gpt-oss-120b",              "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
     "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
     "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
@@ -274,8 +278,8 @@ class Config:
 
     # Default Intellect model for fresh demo sandbox accounts. Stored as the
     # user-level selection, so demo guests can still switch models in Settings.
-    # Empty = inherit the global INTELLECT_MODEL default. Conscience is
-    # deliberately not set here (gemma-family models must not audit).
+    # Empty = inherit the global INTELLECT_MODEL default. Only the Intellect is
+    # demo-overridable; the Conscience stays on the instance's global default.
     #
     # Not folded into DEPLOYMENT_MODE: this is a value, not a switch, and it is
     # simply unused when demo login is off. Nothing to derive.

@@ -127,8 +127,9 @@ class ConscienceSamplingContract(unittest.TestCase):
             )
 
     def test_05_json_mode_is_attempted_for_every_model(self):
-        """The old code skipped json_mode for "gemma" by name. The generic
-        fallback below replaces that, so the first attempt is now uniform."""
+        """The old code skipped json_mode for "gemma" by name — a workaround
+        for a free-tier context limit that was mistaken for a model property.
+        The generic fallback replaces it, so the first attempt is uniform."""
         for model in MODELS:
             with self.subTest(model=model):
                 self.assertEqual(
