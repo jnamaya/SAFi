@@ -12,6 +12,23 @@
 
   <title>SAFi — Runtime governance for AI agents</title>
 
+  <!-- Installable web app. The manifest gives a dock icon, a standalone window
+       and a jump list; there is deliberately NO service worker, so nothing is
+       cached and the org's offline_enabled kill switch keeps meaning what it
+       says. Consequence: Safari "Add to Dock" and Android "Add to Home Screen"
+       work, Chrome's install button does not (it requires a fetch handler).
+       Relative href, like every other asset here, so the Capacitor shell
+       resolves it inside its own bundle. -->
+  <link rel="manifest" href="manifest.json">
+  <!-- Two values because the app itself is theme-aware (dark:bg-black); a
+       single light value leaves a white title bar above a black UI. -->
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+  <!-- iOS ignores the manifest's icons for Add to Home Screen. -->
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SAFi">
+
   <script src="js/lib/marked.min.js"></script>
   <script src="js/lib/purify.min.js"></script>
   <link rel="stylesheet" href="css/highlight-theme.css">
