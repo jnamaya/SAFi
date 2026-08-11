@@ -390,46 +390,6 @@ function positionDropdown(menu, button) {
   menu.style.right = `${window.innerWidth - rect.right - (rect.width / 2)}px`;
 }
 
-/**
- * Prepends a new conversation link to the conversation history list.
- */
-export function prependConversationLink(convo, handlers) {
-  ui._ensureElements();
-  const convoList = document.getElementById('convo-list');
-  if (!convoList) return;
-
-  const link = renderConversationLink(convo, handlers);
-
-  // Find the first non-header element or the top of the list
-  let insertionPoint = convoList.querySelector('h3:nth-of-type(2)') || convoList.querySelector('h3:first-of-type');
-
-  if (convo.is_pinned) {
-    // Find the 'Pinned' header or create one
-    let pinnedHeader = convoList.querySelector('h3:first-of-type');
-    if (!pinnedHeader || pinnedHeader.textContent !== 'Pinned Conversations') {
-      // Reloading the entire list is simpler for accurate sorting/headers
-      convoList.prepend(link);
-    } else {
-      // Prepend after the pinned header
-      pinnedHeader.after(link);
-    }
-
-  } else {
-    // Prepend before the first non-pinned item, or after the 'All Conversations' header
-    const allChatsHeader = convoList.querySelector('h3:last-of-type');
-    if (allChatsHeader) {
-      // FIX: If header is inside the new flex container, insert AFTER the container
-      if (allChatsHeader.parentElement && allChatsHeader.parentElement.tagName === 'DIV' && allChatsHeader.parentElement !== convoList) {
-        allChatsHeader.parentElement.after(link);
-      } else {
-        allChatsHeader.after(link);
-      }
-    } else {
-      // If no headers exist, just prepend
-      convoList.prepend(link);
-    }
-  }
-}
 
 /**
  * Icons for project folders.

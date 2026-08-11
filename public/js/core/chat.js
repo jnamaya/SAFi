@@ -882,24 +882,18 @@ export async function sendMessage(activeProfileData, user) {
             };
             await cache.updateConvoInList(newConvo.id, newConvoMeta);
 
+            // One renderer for both paths. Loose chats used to be prepended
+            // with a DOM shortcut that hunted for "the first h3", written
+            // before the Folders header and the date groups existed — so a new
+            // conversation appeared ABOVE the folders, then jumped into Today
+            // on the next full render (a refresh). Where a row lands must be
+            // one function's decision, and renderConvoList is that function:
+            // the fresh last_updated already sorts it to the top of Today.
             if (newConvoMeta.project_id) {
-                // A project chat must land inside its folder, not the loose list —
-                // a full list re-render groups it correctly.
                 setProjectExpanded(newConvoMeta.project_id, true);
-                await refreshConvoListOnly(activeProfileData, user, ui.showModal);
-                uiAuthSidebar.setActiveConvoLink(currentConversationId);
-            } else {
-                const handlers = {
-                    switchHandler: (id) => switchConversation(id, activeProfileData, user, ui.showModal, true),
-                    renameHandler: handleRename,
-                    deleteHandler: handleDelete,
-                    pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user),
-                    moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
-                    projects: projects,
-                };
-                uiAuthSidebar.prependConversationLink(newConvoMeta, handlers);
-                uiAuthSidebar.setActiveConvoLink(currentConversationId);
             }
+            await refreshConvoListOnly(activeProfileData, user, ui.showModal);
+            uiAuthSidebar.setActiveConvoLink(currentConversationId);
 
         } catch (error) {
             console.error('Failed to create new conversation on send:', error);
