@@ -309,12 +309,26 @@
                         </svg>
                       </button>
 
-                      <!-- Action Menu Popover -->
-                      <div id="composer-plus-menu"
-                        class="hidden absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5 space-y-0.5">
+                      <!-- Action menu: ONE popover, sections stacked inside it.
+
+                           It used to be a list of four entries that each CLOSED this menu and
+                           opened a sibling dropdown anchored to the same corner — so drilling in
+                           destroyed the thing you were navigating, with no title and no way back.
+                           The three lists now live here as sections and are always rendered; the
+                           panel scrolls if they are long.
+
+                           Attach File stays a button: it is a one-shot action that opens the OS
+                           file picker, not a list to choose from, which is also why a tab strip
+                           was the wrong shape for this menu.
+
+                           The three section containers keep their original ids, so
+                           ui-auth-sidebar / ui-model-selector / ui-data-sources still render into
+                           exactly what they always did. -->
+                      <div id="composer-plus-menu" role="menu" aria-label="Composer actions"
+                        class="hidden absolute bottom-full left-0 mb-2 w-72 max-h-[60vh] overflow-y-auto custom-scrollbar bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5">
 
                         <!-- Attach File -->
-                        <button id="plus-attach-btn" type="button"
+                        <button id="plus-attach-btn" type="button" role="menuitem"
                           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                           <div class="p-1.5 bg-gray-100 dark:bg-neutral-700 rounded-lg shrink-0">
                             <svg class="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,64 +341,22 @@
                           </div>
                         </button>
 
-                        <!-- Agents -->
-                        <button id="plus-agent-btn" type="button"
-                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                          <div class="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
-                            <svg class="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2"></path>
-                            </svg>
-                          </div>
-                          <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">Agents</div>
-                            <div id="plus-agent-current" class="text-xs text-gray-400 truncate">Loading…</div>
-                          </div>
-                        </button>
+                        <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
 
-                        <!-- AI Models -->
-                        <button id="plus-model-btn" type="button"
-                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                          <div class="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
-                            <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                            </svg>
-                          </div>
-                          <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">AI Models</div>
-                            <div id="plus-model-current" class="text-xs text-gray-400 truncate">Loading…</div>
-                          </div>
-                        </button>
+                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Agents</div>
+                        <div id="agent-selector-dropdown" role="group" aria-label="Agents" class="space-y-0.5"></div>
 
-                        <!-- Data Sources -->
-                        <button id="plus-data-btn" type="button"
-                          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                          <div class="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg shrink-0">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-                            </svg>
-                          </div>
-                          <div>
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">Data Sources</div>
-                            <div class="text-xs text-gray-400">Google Drive, OneDrive…</div>
-                          </div>
-                        </button>
+                        <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
+
+                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">AI Models</div>
+                        <div id="model-selector-dropdown" role="group" aria-label="AI models" class="space-y-0.5"></div>
+
+                        <div class="my-1.5 border-t border-neutral-100 dark:border-neutral-800"></div>
+
+                        <div class="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Data Sources</div>
+                        <div id="data-sources-dropdown" role="group" aria-label="Data sources" class="space-y-0.5"></div>
+
                       </div>
-
-                      <!-- Dropdowns (all anchored to + container) -->
-                      <div id="agent-selector-dropdown" role="menu" aria-label="Agents"
-                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 max-h-64 overflow-y-auto hidden z-50 p-1 custom-scrollbar">
-                      </div>
-                      <div id="data-sources-dropdown" role="menu" aria-label="Data sources"
-                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
-                      </div>
-
-                      <!-- Model selector dropdown. Lives in the plus container because that is
-                           where it is opened from; anchoring it to the send button on the
-                           far side left it appearing detached from the menu that launched it. -->
-                      <div id="model-selector-dropdown" role="menu" aria-label="AI models"
-                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
-                      </div>
-
                     </div>
 
                     <!-- Text Area -->

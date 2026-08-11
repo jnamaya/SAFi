@@ -3,8 +3,8 @@ import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
-import { initDataSources, toggleDataDropdown } from '../ui/ui-data-sources.js';
-import { initModelSelector, toggleModelDropdown, getActiveModelLabel } from '../ui/ui-model-selector.js';
+import { initDataSources } from '../ui/ui-data-sources.js';
+import { initModelSelector, getActiveModelLabel } from '../ui/ui-model-selector.js';
 import { initComposerMenu, updateAgentLabel, updateModelLabel, updateAiDisclosure } from '../ui/ui-composer-menu.js';
 import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
 import * as chat from './chat.js';
@@ -370,12 +370,10 @@ async function checkLoginStatus() {
       chat.initFileUpload();
 
       // Initialize + Composer Menu
-      initComposerMenu({
-        onAttachFile: () => chat.triggerFilePicker(),
-        onToggleAgent: () => uiAuthSidebar.toggleAgentDropdown(),
-        onToggleModel: () => toggleModelDropdown(),
-        onToggleData: () => toggleDataDropdown(),
-      });
+      // Only the attach action is wired now: the agent, model and data-source
+      // lists are sections of the panel, rendered in place by their own
+      // modules, so there is nothing left to toggle open.
+      initComposerMenu({ onAttachFile: () => chat.triggerFilePicker() });
 
       // Set initial labels in + menu
       updateModelLabel(getActiveModelLabel());

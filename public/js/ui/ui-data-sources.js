@@ -1,6 +1,6 @@
 /**
  * js/ui/ui-data-sources.js
- * Manages the Data Sources dropdown menu in the chat composer.
+ * Renders the Data Sources section of the composer's + panel.
  */
 
 import * as api from '../core/api.js';
@@ -15,12 +15,6 @@ const ICONS = {
 
 export function initDataSources() {
     checkDataSources();
-}
-
-export function toggleDataDropdown() {
-    const dropdown = document.getElementById(DROPDOWN_ID);
-    if (!dropdown) return;
-    dropdown.classList.toggle('hidden');
 }
 
 /**

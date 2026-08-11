@@ -1,18 +1,20 @@
 """
-The composer's + menu: two submenus that look like each other.
+The composer's + panel: one popover, sections inside it.
 
-WHY. "Agents" and "AI Models" sit one click apart in the same menu and used to
-disagree on nearly every detail — the agent list had a filled header bar and
-edge-to-edge rows, the model list had no header at all, no two dropdowns shared
-a width, and the active check was green-600 in one and green-500 in the other.
-Two lists doing the same job should not look like two features.
+WHY. The menu was four entries that each CLOSED the menu and opened a sibling
+dropdown anchored to the same corner. Drilling in destroyed the thing you were
+navigating — no title, no back, no indication of where you were. That is what
+made it feel primitive; the styling was a symptom.
 
-Also removed: a paragraph of showcase copy inside the model dropdown
-("SAFi governs whichever model you pick…"). It was demo-only framing in a menu
-whose job is to switch a model.
+Now the three lists are sections of one panel that stays put. Considered and
+rejected: a tab strip. One of the four entries (Attach File) is a one-shot
+action with nothing to display, so it would have been a tab with no panel, and
+tabs want horizontal room a composer popover does not have on mobile. Tabs
+start earning their keep when a single section is too big to show at once.
 
-`test_composer_data_sources.py` covers the third dropdown's policy filtering;
-this file is about the menu's shape and behaviour.
+The section containers deliberately KEEP their original ids, so ui-auth-sidebar,
+ui-model-selector and ui-data-sources render into exactly what they always did.
+That is why this refactor did not touch their row markup.
 
 Run:  venv/bin/python tests/test_composer_menu.py
 """
@@ -28,108 +30,113 @@ UI = ROOT / "public" / "js" / "ui"
 INDEX = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
 MODEL = (UI / "ui-model-selector.js").read_text(encoding="utf-8")
 SIDEBAR = (UI / "ui-auth-sidebar.js").read_text(encoding="utf-8")
+DATA = (UI / "ui-data-sources.js").read_text(encoding="utf-8")
 MENU = (UI / "ui-composer-menu.js").read_text(encoding="utf-8")
+APP = (ROOT / "public" / "js" / "core" / "app.js").read_text(encoding="utf-8")
+
+PANEL = INDEX[INDEX.index('id="composer-plus-menu"'):]
+PANEL = PANEL[:PANEL.index("<!-- Text Area -->")]
 
 AGENT_RENDER = SIDEBAR[SIDEBAR.index("function renderAgentSelectorOptions"):]
-# It is the last function in the file and the file ends without a trailing
-# newline, so slice to end rather than hunting for a following declaration.
 
 
-class TheLabelsSayWhatTheyOpen(unittest.TestCase):
+class OneSurface(unittest.TestCase):
 
-    def test_menu_entries_are_nouns(self):
-        """They open lists, so they are named for the lists."""
-        self.assertIn(">Agents</div>", INDEX)
-        self.assertIn(">AI Models</div>", INDEX)
+    def test_the_three_lists_live_inside_the_panel(self):
+        for el in ("agent-selector-dropdown", "model-selector-dropdown",
+                   "data-sources-dropdown"):
+            with self.subTest(section=el):
+                self.assertIn(f'id="{el}"', PANEL,
+                              f"{el} is outside the + panel again")
 
-    def test_the_old_verb_labels_are_gone(self):
-        self.assertNotIn("Switch Agent", INDEX)
-        self.assertNotIn("Change AI Model", INDEX)
+    def test_the_sections_are_not_popovers_any_more(self):
+        """They were absolutely positioned and self-hiding. In flow now, or
+        the panel is a popover containing three popovers."""
+        for el in ("agent-selector-dropdown", "model-selector-dropdown",
+                   "data-sources-dropdown"):
+            m = re.search(rf'id="{el}"[^>]*?class="([^"]+)"', PANEL, re.S)
+            with self.subTest(section=el):
+                self.assertNotIn("absolute", m.group(1))
+                self.assertNotIn("hidden", m.group(1))
 
-    def test_both_submenus_label_their_list(self):
-        """The agent list had a header and the model list did not."""
-        self.assertIn("Select agent", SIDEBAR)
-        self.assertIn("Select model", MODEL)
+    def test_the_panel_scrolls_rather_than_growing(self):
+        m = re.search(r'id="composer-plus-menu"[^>]*?class="([^"]+)"', INDEX, re.S)
+        self.assertIn("overflow-y-auto", m.group(1))
+        self.assertRegex(m.group(1), r"max-h-\[\d+vh\]")
+
+    def test_the_drill_down_machinery_is_gone(self):
+        """The whole point: nothing opens a sibling dropdown any more."""
+        for gone in ("toggleDropdown", "_closeAllDropdowns", "_openDropdown"):
+            self.assertNotIn(gone, MENU, f"{gone} survived")
+        for gone in ("toggleAgentDropdown", "toggleModelDropdown", "toggleDataDropdown"):
+            self.assertNotIn(gone, SIDEBAR + MODEL + DATA + APP + INDEX,
+                             f"{gone} survived")
 
 
-class TheTwoListsMatch(unittest.TestCase):
+class SectionsAreLabelledOnce(unittest.TestCase):
 
-    def test_same_width(self):
-        widths = re.findall(r'id="(agent-selector-dropdown|model-selector-dropdown|data-sources-dropdown)"[^>]*?class="([^"]+)"',
-                            INDEX, re.S)
-        self.assertEqual(len(widths), 3, "a dropdown is missing")
-        for name, cls in widths:
-            with self.subTest(dropdown=name):
-                self.assertIn("w-64", cls)
+    def test_the_panel_prints_the_section_names(self):
+        for label in (">Agents</div>", ">AI Models</div>", ">Data Sources</div>"):
+            self.assertIn(label, PANEL)
 
-    def test_same_row_padding(self):
-        for src, name in ((MODEL, "model"), (AGENT_RENDER, "agent")):
+    def test_the_lists_do_not_print_their_own(self):
+        """Two labels for one list read as two lists."""
+        self.assertNotIn("Select agent", SIDEBAR)
+        self.assertNotIn("Select model", MODEL)
+
+    def test_attach_is_still_a_button_not_a_section(self):
+        """It opens the OS file picker; there is no list to show."""
+        self.assertIn('id="plus-attach-btn"', PANEL)
+        self.assertIn("Attach File", PANEL)
+
+
+class ChoosingSomethingDismissesThePanel(unittest.TestCase):
+
+    def test_both_lists_close_the_panel(self):
+        """They used to hide their own container, which is no longer a
+        container that hides."""
+        self.assertIn("closeComposerMenu", SIDEBAR)
+        self.assertIn("closeComposerMenu", MODEL)
+
+    def test_the_close_helper_is_exported_once(self):
+        self.assertIn("export function closeComposerMenu", MENU)
+
+    def test_no_list_hides_itself(self):
+        for src, name in ((AGENT_RENDER, "agent"), (MODEL, "model")):
             with self.subTest(list=name):
-                self.assertIn("px-3 py-2 rounded-lg", src)
-
-    def test_same_active_treatment(self):
-        for src, name in ((MODEL, "model"), (AGENT_RENDER, "agent")):
-            with self.subTest(list=name):
-                self.assertIn("text-green-600 dark:text-green-500", src)
-                self.assertIn("text-green-600", src)
-
-    def test_the_agent_list_is_inset_like_the_others(self):
-        """It had no padding, so its rows ran to the border while the model and
-        data lists were inset by p-1."""
-        m = re.search(r'id="agent-selector-dropdown"[^>]*?class="([^"]+)"', INDEX, re.S)
-        self.assertIn("p-1", m.group(1))
-        self.assertNotIn("overflow-hidden", m.group(1),
-                         "overflow-hidden fought the max-h scroll")
+                self.assertNotIn("classList.add('hidden')", src)
 
 
-class TheDemoCopyIsGone(unittest.TestCase):
+class KeyboardAndAria(unittest.TestCase):
 
-    def test_the_paragraph_is_removed(self):
-        self.assertNotIn("SAFi governs whichever model you pick", MODEL)
-        self.assertNotIn("fast, low-cost models", MODEL)
+    def test_escape_closes_the_panel(self):
+        self.assertIn("'Escape'", MENU)
 
-    def test_the_demo_flag_survives_for_its_other_consumer(self):
-        """isPublicDemoUi still stamps the model name onto demo messages
-        (ui-messages.js); only the dropdown copy went."""
-        self.assertIn("export function isPublicDemoUi", MODEL)
-        messages = (UI / "ui-messages.js").read_text(encoding="utf-8")
-        self.assertIn("isPublicDemoUi()", messages)
+    def test_aria_expanded_tracks_the_panel(self):
+        self.assertIn('aria-expanded="false"', INDEX)
+        for fn in ("function _toggleMenu", "export function closeComposerMenu"):
+            block = MENU[MENU.index(fn):]
+            self.assertIn("_syncExpanded()", block[:block.index("\n}")])
+
+    def test_the_panel_and_its_sections_are_labelled(self):
+        self.assertIn('role="menu"', PANEL)
+        self.assertEqual(PANEL.count('role="group"'), 3)
 
 
-class NamesAreEscaped(unittest.TestCase):
+class ThingsThatMustNotRegress(unittest.TestCase):
 
     def test_agent_names_and_avatars_are_escaped(self):
-        """Both are org-authored free text, and both land in markup — the name
-        in an attribute as well as in text."""
         self.assertIn("escapeHtml(profile.name", AGENT_RENDER)
         self.assertIn("escapeHtml(avatarUrl", AGENT_RENDER)
 
-    def test_the_helper_is_imported(self):
-        self.assertIn("escapeHtml", SIDEBAR[:SIDEBAR.index("\n\n")] + SIDEBAR[:400])
+    def test_the_demo_copy_stays_gone(self):
+        self.assertNotIn("SAFi governs whichever model you pick", MODEL)
 
-
-class ItCanBeClosedFromTheKeyboard(unittest.TestCase):
-
-    def test_escape_is_handled(self):
-        self.assertIn("'Escape'", MENU)
-
-    def test_escape_unwinds_one_level_at_a_time(self):
-        """A submenu returns you to the + menu; a second press closes it."""
-        block = MENU[MENU.index("e.key !== 'Escape'"):]
-        block = block[:block.index("document.addEventListener('click'")]
-        self.assertIn("_openDropdown", block)
-        self.assertIn("_toggleMenu(true)", block)
-        self.assertLess(block.index("_openDropdown"), block.index("_isOpen"),
-                        "the submenu must be checked before the menu")
-
-    def test_aria_expanded_tracks_the_menu(self):
-        """It is closed from several places; a stale 'true' tells a screen
-        reader the opposite of what is on screen."""
-        self.assertIn('aria-expanded="false"', INDEX)
-        self.assertIn("_syncExpanded", MENU)
-        for fn in ("function _toggleMenu", "function _closeMenu"):
-            block = MENU[MENU.index(fn):]
-            self.assertIn("_syncExpanded()", block[:block.index("\n}")])
+    def test_the_label_writers_survive_as_no_ops(self):
+        """app.js calls both on every profile/model change; deleting them
+        would ReferenceError at runtime, which `node --check` does not catch."""
+        self.assertIn("export function updateAgentLabel", MENU)
+        self.assertIn("export function updateModelLabel", MENU)
 
 
 if __name__ == "__main__":

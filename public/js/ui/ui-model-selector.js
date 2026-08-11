@@ -1,3 +1,5 @@
+import { closeComposerMenu } from './ui-composer-menu.js';
+
 let _models = [];
 let _activeModelId = null;
 let _onModelChange = null;
@@ -20,10 +22,6 @@ export function isPublicDemoUi() {
     return _publicDemoUi;
 }
 
-export function toggleModelDropdown() {
-    document.getElementById('model-selector-dropdown')?.classList.toggle('hidden');
-}
-
 export function getActiveModelLabel() {
     const active = _models.find(m => m.id === _activeModelId);
     return active ? _label(active) : null;
@@ -41,13 +39,9 @@ function _label(model) {
 function _renderDropdown() {
     const dropdown = document.getElementById('model-selector-dropdown');
     if (!dropdown) return;
-    // Same shape as the agent list: a quiet section label, then inset rows.
-    // The two menus sit one click apart in the + menu and used to disagree on
-    // every detail — header, row padding, width, check colour.
-    dropdown.innerHTML = `
-        <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider
-                    text-neutral-400 dark:text-neutral-500">Select model</div>
-    ` + _models.map(m => {
+    // No header: this list is a section of the + panel, which prints
+    // "AI Models" above it. Same row shape as the agent list beside it.
+    dropdown.innerHTML = _models.map(m => {
         const isActive = m.id === _activeModelId;
         return `<button type="button" role="menuitemradio" aria-checked="${isActive}" data-model-id="${m.id}"
             class="model-option w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors
@@ -73,7 +67,7 @@ function _attachDropdownListener() {
         if (modelId && modelId !== _activeModelId) {
             _activeModelId = modelId;
             _renderDropdown();
-            dropdown.classList.add('hidden');
+            closeComposerMenu();
             if (_onModelChange) _onModelChange(modelId);
         }
     });

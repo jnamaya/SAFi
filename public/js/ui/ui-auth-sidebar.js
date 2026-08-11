@@ -3,7 +3,7 @@
 import * as ui from './ui.js';
 import { formatRelativeTime, escapeHtml } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
-import { updateAgentLabel } from './ui-composer-menu.js';
+import { updateAgentLabel, closeComposerMenu } from './ui-composer-menu.js';
 import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
 
 /**
@@ -818,16 +818,10 @@ export function initAgentSelector(profiles, activeProfileKey, onSelect) {
   updateAgentSelectorButton(activeProfile);
 }
 
-export function toggleAgentDropdown() {
-  ui._ensureElements();
-  const { agentSelectorDropdown } = ui.elements;
-  if (agentSelectorDropdown) agentSelectorDropdown.classList.toggle('hidden');
-}
-
 function hideAgentSelector() {
-  ui._ensureElements();
-  const { agentSelectorDropdown } = ui.elements;
-  if (agentSelectorDropdown) agentSelectorDropdown.classList.add('hidden');
+  // The list no longer hides itself — it is a section of the + panel, so
+  // choosing an agent dismisses the panel around it.
+  closeComposerMenu();
 }
 
 /**
@@ -849,12 +843,8 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
 
   agentSelectorDropdown.innerHTML = '';
 
-  // Quiet section label, matching the model list one click away in the same
-  // menu. The filled bar this replaced read as a toolbar rather than a label.
-  const header = document.createElement('div');
-  header.className = 'px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500';
-  header.textContent = 'Select agent';
-  agentSelectorDropdown.appendChild(header);
+  // No header here any more: this list is a section of the + panel, and the
+  // panel prints "Agents" above it. Two labels for one list read as two lists.
 
   profiles.forEach(profile => {
     const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);

@@ -1,79 +1,48 @@
 let _isOpen = false;
-let _openDropdown = null; // 'agent' | 'model' | 'data' | null
 
-export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, onToggleData }) {
+export function initComposerMenu({ onAttachFile }) {
     const plusBtn = document.getElementById('composer-plus-btn');
     const menu = document.getElementById('composer-plus-menu');
     if (!plusBtn || !menu) return;
 
     plusBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        _closeAllDropdowns();
         _toggleMenu();
     });
 
     document.getElementById('plus-attach-btn')?.addEventListener('click', () => {
-        _closeMenu();
+        closeComposerMenu();
         onAttachFile();
     });
 
-    document.getElementById('plus-agent-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _closeMenu();
-        onToggleAgent();
-    });
-
-    document.getElementById('plus-model-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _closeMenu();
-        onToggleModel();
-    });
-
-    document.getElementById('plus-data-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _closeMenu();
-        onToggleData();
-    });
-
-    // Escape closes whatever is open, innermost first: a submenu returns you to
-    // the + menu, a second press closes that. Previously the only way out was
-    // clicking elsewhere, which on a menu opened by keyboard meant reaching for
-    // the mouse.
+    // Escape closes the panel. There is no inner level to unwind any more —
+    // the three lists are sections of this popover, not dropdowns that
+    // replaced it.
     document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        if (_openDropdown) {
-            _closeAllDropdowns();
-            _toggleMenu(true);          // back to the menu that launched it
-        } else if (_isOpen) {
-            _closeMenu();
-        } else {
-            return;
-        }
+        if (e.key !== 'Escape' || !_isOpen) return;
+        closeComposerMenu();
         e.stopPropagation();
         plusBtn.focus();
     });
 
     document.addEventListener('click', (e) => {
-        // All three dropdowns (agent, model, data sources) live inside the plus
-        // container now — the model one moved there when the composer became a
-        // single row, since it is opened from that menu. One containment check
-        // covers them; the send button's container holds no dropdown to guard.
         const plusContainer = document.getElementById('composer-plus-container');
-        const inPlus = plusContainer && plusContainer.contains(e.target);
-        if (!inPlus) {
-            _closeMenu();
-            _closeAllDropdowns();
-        }
+        if (!plusContainer || !plusContainer.contains(e.target)) closeComposerMenu();
     });
 }
 
-function _toggleMenu(forceOpen) {
-    _isOpen = forceOpen === true ? true : !_isOpen;
+function _toggleMenu() {
+    _isOpen = !_isOpen;
     document.getElementById('composer-plus-menu')?.classList.toggle('hidden', !_isOpen);
     _syncExpanded();
 }
 
-function _closeMenu() {
+/**
+ * Exported because the lists inside this panel are rendered by three other
+ * modules, and choosing an item has to dismiss the panel that contains it.
+ * They used to hide their own container, which no longer exists as a popover.
+ */
+export function closeComposerMenu() {
     _isOpen = false;
     document.getElementById('composer-plus-menu')?.classList.add('hidden');
     _syncExpanded();
@@ -87,59 +56,20 @@ function _syncExpanded() {
         ?.setAttribute('aria-expanded', String(_isOpen));
 }
 
-function _closeAllDropdowns() {
-    ['agent-selector-dropdown', 'model-selector-dropdown', 'data-sources-dropdown'].forEach(id => {
-        document.getElementById(id)?.classList.add('hidden');
-    });
-    _openDropdown = null;
-}
+/**
+ * Kept as no-ops on purpose, with the reason, because both are called from
+ * app.js on every profile/model change.
+ *
+ * The + menu used to show the current agent and model as subtitle rows under
+ * "Switch Agent" / "Change AI Model". Those rows are gone: the lists are now
+ * sections in the panel itself and mark their own selection with a check, so
+ * a label repeating it was a second copy that could disagree. updateAgentLabel
+ * also wrote to a composer pill (#composer-agent-name/#composer-agent-avatar)
+ * that no longer exists in the markup at all.
+ */
+export function updateAgentLabel() { /* selection is shown by the list's check */ }
 
-export function toggleDropdown(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const isHidden = el.classList.contains('hidden');
-
-    _closeAllDropdowns();
-
-    if (isHidden) {
-        el.classList.remove('hidden');
-        _openDropdown = id;
-    }
-}
-
-export function updateAgentLabel(name, avatarUrl) {
-    const menuEl = document.getElementById('plus-agent-current');
-    if (menuEl) menuEl.textContent = name || '—';
-
-    const nameEl = document.getElementById('composer-agent-name');
-    if (nameEl) {
-        nameEl.textContent = name || '';
-        nameEl.title = name || '';
-    }
-
-    const avatarEl = document.getElementById('composer-agent-avatar');
-    if (avatarEl) {
-        if (avatarUrl) {
-            avatarEl.src = avatarUrl;
-            avatarEl.alt = name || '';
-            avatarEl.classList.remove('hidden');
-        } else {
-            avatarEl.classList.add('hidden');
-        }
-    }
-}
-
-export function updateModelLabel(name) {
-    // Only the + menu carries the model name now. The composer pill was removed:
-    // it duplicated a control the menu already had, and it showed the INTELLECT
-    // model while the Conscience — whose scores drive every gate — was never on
-    // screen, so a permanent label there implied the wrong thing about what
-    // governs a turn. Per-message attribution belongs in the audit record, which
-    // stores intellect_model per turn and is accurate for older messages in a
-    // conversation where the pill would have been stale.
-    const menuEl = document.getElementById('plus-model-current');
-    if (menuEl) menuEl.textContent = name || '—';
-}
+export function updateModelLabel() { /* selection is shown by the list's check */ }
 
 // AI disclosure (EU AI Act Art. 50(1)) below the composer. When the active
 // agent is policy-governed, the generic sentence becomes a "this policy" link
