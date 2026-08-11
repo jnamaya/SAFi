@@ -1,7 +1,7 @@
 // ui-auth-sidebar.js
 
 import * as ui from './ui.js';
-import { formatRelativeTime } from '../core/utils.js';
+import { formatRelativeTime, escapeHtml } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
 import { updateAgentLabel } from './ui-composer-menu.js';
 import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
@@ -849,10 +849,11 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
 
   agentSelectorDropdown.innerHTML = '';
 
-  // Header
+  // Quiet section label, matching the model list one click away in the same
+  // menu. The filled bar this replaced read as a toolbar rather than a label.
   const header = document.createElement('div');
-  header.className = 'px-3 py-2 text-xs font-semibold text-neutral-400 uppercase tracking-wider bg-neutral-50 dark:bg-neutral-800/50';
-  header.textContent = 'Select Agent';
+  header.className = 'px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500';
+  header.textContent = 'Select agent';
   agentSelectorDropdown.appendChild(header);
 
   profiles.forEach(profile => {
@@ -860,12 +861,18 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     const isActive = profile.key === activeProfileKey;
 
     const btn = document.createElement('button');
-    btn.className = `w-full text-left px-4 py-2 text-sm flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${isActive ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500' : 'text-neutral-700 dark:text-neutral-300'}`;
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitemradio');
+    btn.setAttribute('aria-checked', String(isActive));
+    btn.className = `w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-3 transition-colors ${isActive ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`;
 
+    // Agent names are org-authored free text and land in an attribute and in
+    // markup; the avatar URL is org-supplied too.
+    const safeName = escapeHtml(profile.name || '');
     btn.innerHTML = `
-      <img src="${avatarUrl}" alt="${profile.name}" class="w-4 h-4 rounded-full object-cover">
-      <span class="truncate">${profile.name}</span>
-      ${isActive ? `<svg class="w-4 h-4 ml-auto text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>` : ''}
+      <img src="${escapeHtml(avatarUrl || '')}" alt="" class="w-5 h-5 rounded-full object-cover shrink-0">
+      <span class="truncate" title="${safeName}">${safeName}</span>
+      ${isActive ? `<svg class="w-4 h-4 ml-auto shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>` : ''}
     `;
 
     btn.onclick = () => {

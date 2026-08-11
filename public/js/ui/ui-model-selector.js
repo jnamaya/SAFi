@@ -1,8 +1,10 @@
 let _models = [];
 let _activeModelId = null;
 let _onModelChange = null;
-// Showcase framing about model choice. Off unless the server says this is the
-// public demo — inside a customer deployment it is noise at best.
+// True only on the public demo. It used to gate a paragraph of showcase copy
+// inside this dropdown (removed 2026-08-11 — the menu explains itself); its
+// remaining consumer is ui-messages.js, which stamps the model name onto demo
+// messages. Inside a customer deployment both are noise.
 let _publicDemoUi = false;
 
 export function initModelSelector(models, activeModelId, onModelChange, publicDemoUi = false) {
@@ -39,31 +41,25 @@ function _label(model) {
 function _renderDropdown() {
     const dropdown = document.getElementById('model-selector-dropdown');
     if (!dropdown) return;
-    dropdown.innerHTML = _models.map(m => {
+    // Same shape as the agent list: a quiet section label, then inset rows.
+    // The two menus sit one click apart in the + menu and used to disagree on
+    // every detail — header, row padding, width, check colour.
+    dropdown.innerHTML = `
+        <div class="px-3 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider
+                    text-neutral-400 dark:text-neutral-500">Select model</div>
+    ` + _models.map(m => {
         const isActive = m.id === _activeModelId;
-        return `<button type="button" data-model-id="${m.id}"
+        return `<button type="button" role="menuitemradio" aria-checked="${isActive}" data-model-id="${m.id}"
             class="model-option w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors
                 ${isActive
-                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-white'}">
+                    ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500'
+                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'}">
             <span class="truncate">${_label(m)}</span>
-            ${isActive ? `<svg class="w-4 h-4 shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+            ${isActive ? `<svg class="w-4 h-4 shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>` : ''}
         </button>`;
     }).join('');
-
-    // On the public demo, opening this menu is the moment someone notices the
-    // models are small and unfamiliar and quietly concludes SAFi is unserious.
-    // Answer it in place. A customer running their own deployment picked their
-    // own models and needs no such explanation.
-    if (!_publicDemoUi) return;
-    dropdown.insertAdjacentHTML('beforeend', `
-        <p class="mt-1 pt-2 px-3 pb-1 border-t border-neutral-200 dark:border-neutral-700
-                  text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">
-            SAFi governs whichever model you pick — enforcement is identical. These are
-            fast, low-cost models chosen to keep responses quick.
-        </p>`);
 }
 
 function _attachDropdownListener() {

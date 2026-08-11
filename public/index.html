@@ -301,7 +301,7 @@
                     <div class="relative flex items-center gap-1.5" id="composer-plus-container">
 
                       <!-- + Button -->
-                      <button type="button" id="composer-plus-btn"
+                      <button type="button" id="composer-plus-btn" aria-haspopup="menu" aria-expanded="false"
                         class="flex items-center justify-center w-10 h-10 md:w-9 md:h-9 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         title="Actions">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -327,7 +327,7 @@
                           </div>
                         </button>
 
-                        <!-- Switch Agent -->
+                        <!-- Agents -->
                         <button id="plus-agent-btn" type="button"
                           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                           <div class="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-lg shrink-0">
@@ -336,12 +336,12 @@
                             </svg>
                           </div>
                           <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">Switch Agent</div>
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">Agents</div>
                             <div id="plus-agent-current" class="text-xs text-gray-400 truncate">Loading…</div>
                           </div>
                         </button>
 
-                        <!-- Change Model -->
+                        <!-- AI Models -->
                         <button id="plus-model-btn" type="button"
                           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                           <div class="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
@@ -350,7 +350,7 @@
                             </svg>
                           </div>
                           <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-900 dark:text-white">Change AI Model</div>
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">AI Models</div>
                             <div id="plus-model-current" class="text-xs text-gray-400 truncate">Loading…</div>
                           </div>
                         </button>
@@ -371,18 +371,18 @@
                       </div>
 
                       <!-- Dropdowns (all anchored to + container) -->
-                      <div id="agent-selector-dropdown"
-                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col max-h-64 overflow-y-auto custom-scrollbar">
+                      <div id="agent-selector-dropdown" role="menu" aria-label="Agents"
+                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 max-h-64 overflow-y-auto hidden z-50 p-1 custom-scrollbar">
                       </div>
-                      <div id="data-sources-dropdown"
+                      <div id="data-sources-dropdown" role="menu" aria-label="Data sources"
                         class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden hidden z-50 flex flex-col p-1">
                       </div>
 
                       <!-- Model selector dropdown. Lives in the plus container because that is
                            where it is opened from; anchoring it to the send button on the
                            far side left it appearing detached from the menu that launched it. -->
-                      <div id="model-selector-dropdown"
-                        class="absolute bottom-full left-0 mb-2 w-60 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
+                      <div id="model-selector-dropdown" role="menu" aria-label="AI models"
+                        class="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-y-auto max-h-64 hidden z-50 p-1 custom-scrollbar">
                       </div>
 
                     </div>

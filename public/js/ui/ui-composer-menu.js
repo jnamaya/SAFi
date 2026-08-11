@@ -35,6 +35,24 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
         onToggleData();
     });
 
+    // Escape closes whatever is open, innermost first: a submenu returns you to
+    // the + menu, a second press closes that. Previously the only way out was
+    // clicking elsewhere, which on a menu opened by keyboard meant reaching for
+    // the mouse.
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (_openDropdown) {
+            _closeAllDropdowns();
+            _toggleMenu(true);          // back to the menu that launched it
+        } else if (_isOpen) {
+            _closeMenu();
+        } else {
+            return;
+        }
+        e.stopPropagation();
+        plusBtn.focus();
+    });
+
     document.addEventListener('click', (e) => {
         // All three dropdowns (agent, model, data sources) live inside the plus
         // container now — the model one moved there when the composer became a
@@ -49,14 +67,24 @@ export function initComposerMenu({ onAttachFile, onToggleAgent, onToggleModel, o
     });
 }
 
-function _toggleMenu() {
-    _isOpen = !_isOpen;
+function _toggleMenu(forceOpen) {
+    _isOpen = forceOpen === true ? true : !_isOpen;
     document.getElementById('composer-plus-menu')?.classList.toggle('hidden', !_isOpen);
+    _syncExpanded();
 }
 
 function _closeMenu() {
     _isOpen = false;
     document.getElementById('composer-plus-menu')?.classList.add('hidden');
+    _syncExpanded();
+}
+
+/** aria-expanded has to track the menu, not the click that opened it — the
+ *  menu is closed from five places and a stale "true" tells a screen reader
+ *  the opposite of what is on screen. */
+function _syncExpanded() {
+    document.getElementById('composer-plus-btn')
+        ?.setAttribute('aria-expanded', String(_isOpen));
 }
 
 function _closeAllDropdowns() {
