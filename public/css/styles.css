@@ -2709,6 +2709,17 @@ html.native body { font-size: 14px; }
   html.sidebar-collapsed:has(#control-panel-view:not(.hidden)) #sidebar-rail {
     display: none;
   }
+
+  /* ...and the gutter that was holding the rail goes with it. Hiding the rail
+     alone left #main-layout-wrapper still indented by 3.5rem, so the panel sat
+     56px right of where it sits when the sidebar is expanded — the panel is a
+     child of that wrapper, so it inherits the offset meant for the chat view.
+     Same :has() condition as above, deliberately: the two declarations are one
+     decision ("the rail is not on screen"), and splitting them across a
+     handler is how they drifted apart in the first place. */
+  html.sidebar-collapsed:has(#control-panel-view:not(.hidden)) #main-layout-wrapper {
+    margin-left: 0 !important;
+  }
 }
 
 /* --- Scroll-to-bottom button --- */
