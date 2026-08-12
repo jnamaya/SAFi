@@ -134,8 +134,9 @@
       <!-- Sidebar dynamically generated -->
     </div>
 
-    <!-- md:ml-64 is added by updateUIForAuthState() once a user is logged in and the sidebar exists;
-         the default (logged-out) state has no sidebar, so the login view centers on the full viewport. -->
+    <!-- md:ml-72 is added by updateUIForAuthState() once a user is logged in and the sidebar exists;
+         the default (logged-out) state has no sidebar, so the login view centers on the full viewport.
+         It tracks #sidebar's own w-72 — see the note at that class. -->
     <div id="main-layout-wrapper" class="flex flex-col h-full w-full overflow-hidden relative">
       <section class="w-full flex flex-col flex-1 min-h-0 px-0 overflow-hidden">
 
@@ -457,7 +458,7 @@
 
           <!-- SIDEBAR (Desktop) -->
           <aside
-            class="hidden md:flex flex-col w-64 bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-gray-800 h-full flex-shrink-0">
+            class="hidden md:flex flex-col w-72 bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-gray-800 h-full flex-shrink-0">
 
             <!-- Header -->
             <div class="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
