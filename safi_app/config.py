@@ -443,7 +443,26 @@ class Config:
     # --- DOCUMENT UPLOAD CONFIGURATION ---
     MAX_UPLOAD_SIZE_MB = int(os.environ.get("SAFI_MAX_UPLOAD_MB", "10"))
     MAX_DOCUMENT_CHARS = int(os.environ.get("SAFI_MAX_DOC_CHARS", "50000"))
-    ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv']
+    ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv',
+                                 '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.bmp']
+
+    # --- CONVERSATION MEMORY ---
+    # How much of the conversation is replayed verbatim to the faculties each
+    # turn, in USER/ASSISTANT PAIRS. 3 was hardcoded in the orchestrator; some
+    # agents need the whole thread, so 0 (or "all") means unlimited turns.
+    #
+    # Unlimited is bounded by characters, not left unbounded, because the window
+    # is sent to the Intellect AND fenced into the Conscience's audit material,
+    # and the Conscience has no context budget of its own. Uncapped, a long
+    # thread carrying one 50k-char attachment re-sends it on every subsequent
+    # turn, twice — cost and context grow with the square of the conversation.
+    #
+    # A per-agent override may be set on the persona as `history_turns` /
+    # `history_max_chars`; both survive the governance compile untouched because
+    # synderesis deep-copies the persona.
+    _raw_history_turns = os.environ.get("SAFI_HISTORY_TURNS", "3").strip().lower()
+    HISTORY_TURNS = 0 if _raw_history_turns in ("all", "unlimited", "-1") else int(_raw_history_turns or 3)
+    HISTORY_MAX_CHARS = int(os.environ.get("SAFI_HISTORY_MAX_CHARS", "40000"))
 
     @classmethod
     def validate(cls) -> None:

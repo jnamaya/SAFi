@@ -61,7 +61,7 @@ if [ "${SERVICE}" = "purge" ]; then
 elif [ "${SERVICE}" = "indexer" ]; then
     # Knowledge-base indexer. Builds user-created RAG corpora out of the
     # request path — embedding a large PDF takes tens of seconds and gunicorn
-    # runs --timeout 120, so doing this in-request would hang the browser
+    # runs a bounded --timeout, so doing this in-request would hang the browser
     # behind a lock (the failure mode item 14 fixed for the embedding model).
     export SAFI_VECTOR_STORE_PATH=/app/vector_store SAFI_MODEL_CACHE_DIR=/app/cache
     echo "KB indexer: waiting 60s for first-boot schema migrations..."
@@ -98,11 +98,24 @@ print(f"Embedding model ready: {EMBEDDING_MODEL}")
 WARM
     fi
 
+    # 300s, not 120. A large attachment (up to 50k chars of document, injected
+    # into the prompt) through a slow model can plausibly exceed two minutes, and
+    # the ceiling is a hard cut with no useful error at the browser.
+    #
+    # 300 is where the reverse proxy becomes the next limit — Apache in front of
+    # the bare-metal deployment is `Timeout 300` — so raising this further means
+    # raising both, or the proxy cuts first and the extra is invisible.
+    #
+    # This bounds a REQUEST, and exceeding it kills the whole worker rather than
+    # just the offending request, taking its in-flight siblings with it (4 workers
+    # here, so a quarter of capacity; the bare-metal unit runs 1). Raising the
+    # ceiling makes that rarer without shrinking the blast radius — streaming the
+    # response is the actual fix for generations that legitimately run minutes.
     exec gunicorn wsgi:app \
         --bind 0.0.0.0:5000 \
         --workers 4 \
         --threads 2 \
-        --timeout 120 \
+        --timeout "${SAFI_GUNICORN_TIMEOUT:-300}" \
         --access-logfile - \
         --error-logfile -
 fi

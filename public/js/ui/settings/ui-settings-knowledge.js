@@ -477,7 +477,7 @@ function uploadCard() {
     return `
         <div id="kb-drop" class="border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl p-6 text-center hover:border-green-500 transition-colors">
             <input type="file" id="kb-file" class="hidden" multiple
-                   accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+                   accept=".txt,.md,.pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.tiff,.tif,.webp,.bmp">
             <p class="text-sm text-gray-600 dark:text-gray-300">
                 <button id="kb-browse" class="font-medium text-green-600 hover:text-green-700">Choose files</button>
                 or drag them here

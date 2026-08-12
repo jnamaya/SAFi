@@ -88,5 +88,20 @@ services:
       # repo root is not: load_dotenv looks for `.env`, and this can never
       # become that. CI needs no equivalent — it runs from a full checkout.
       - ./.env.example:/app/.env.example:ro
+      # Same reasoning as .env.example: single files, neither of which can ever
+      # become `.env`, so load_dotenv cannot find them.
+      #   requirements.txt      — deps stage only, absent from the runtime image;
+      #                           test_image_extraction.py checks pytesseract and
+      #                           Pillow are declared, not just installed.
+      #   docker-entrypoint.sh  — copied to /entrypoint.sh, so it is not readable
+      #                           at its repo path; test_request_timeout.py reads
+      #                           the gunicorn flags out of it.
+      # CI needs no equivalent — it runs from a full checkout.
+      - ./requirements.txt:/app/requirements.txt:ro
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+      #   Dockerfile            — test_image_extraction.py asserts the tesseract
+      #                           BINARY is installed in the runtime stage, which
+      #                           is the half a wheel cannot provide.
+      - ./Dockerfile:/app/Dockerfile:ro
     working_dir: /app
     entrypoint: ["python", "scripts/ci_run_tests.py"]

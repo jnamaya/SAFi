@@ -29,6 +29,62 @@ from .faculties.intellect import _apply_context_budget
 from .plugins.bible_scholar_readings import handle_bible_scholar_commands
 from .plugins.fiduciary_data import handle_fiduciary_commands
 
+# Unlimited-turns mode still bounds the DB read: "every row in the conversation"
+# is the intent, but an unbounded LIMIT on a thread that has run for months is a
+# way to hurt yourself. The character budget below is the real constraint; this
+# only stops the query itself being pathological.
+_HISTORY_FETCH_ALL = 400
+
+
+def _render_history(messages, max_chars: int) -> str:
+    """
+    Render the verbatim window, dropping the OLDEST whole turns when it exceeds
+    the character budget, and saying so.
+
+    Two decisions worth keeping:
+
+    WHOLE MESSAGES, never a mid-message cut. Truncating inside a message ends it
+    mid-sentence, and a model handed a severed turn has every reason to complete
+    the thought itself. Same rule `_apply_context_budget` follows for retrieved
+    passages.
+
+    THE DROP IS ANNOUNCED. Silence is the dangerous option here: an agent whose
+    history was quietly clipped will contradict something it was told earlier
+    with complete confidence, and neither the user nor the audit record can tell
+    that from ordinary forgetting. The note is what makes "the model was not
+    shown that" distinguishable from "the model ignored that".
+    """
+    if not messages:
+        return ""
+
+    lines = [
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'].strip()}"
+        for m in messages
+    ]
+    if max_chars <= 0:
+        return "\n".join(lines)
+
+    kept, used = [], 0
+    # Newest first, so the budget is spent on the most recent exchanges.
+    for line in reversed(lines):
+        cost = len(line) + 1
+        if kept and used + cost > max_chars:
+            break
+        kept.append(line)
+        used += cost
+    kept.reverse()
+
+    dropped = len(lines) - len(kept)
+    if not dropped:
+        return "\n".join(kept)
+    return (
+        f"[EARLIER HISTORY OMITTED: {dropped} of {len(lines)} prior messages in this "
+        f"conversation were left out to fit the context budget. Everything below is "
+        f"verbatim and consecutive, but it is NOT the start of the conversation — say "
+        f"so rather than assuming a topic was never raised.]\n"
+        + "\n".join(kept)
+    )
+
 # --- Import Mixins ---
 from .orchestrator_mixins.tts import TtsMixin
 from .orchestrator_mixins.tasks import BackgroundTasksMixin
@@ -318,6 +374,53 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         ctx = contextvars.copy_context()
         return self.executor.submit(ctx.run, fn, *args)
 
+    def _resolve_history_window(self) -> tuple:
+        """
+        (turns, max_chars) for the verbatim history window.
+
+        `turns` counts USER/ASSISTANT pairs; 0 means every prior turn in the
+        conversation. The agent's own persona wins over the deployment default,
+        which is the point of the setting — "some agents need to preserve full
+        memory" is a property of the agent, not of the install.
+
+        `history_turns: "all"` is accepted alongside 0 because that is what a
+        human writes in a config field.
+
+        A bad value falls back to the deployment default rather than raising: a
+        typo in one agent's persona must not take that agent off the air, and the
+        conservative direction is the smaller window.
+        """
+        cfg_turns = getattr(self.config, "HISTORY_TURNS", 3)
+        cfg_chars = getattr(self.config, "HISTORY_MAX_CHARS", 40000)
+        prof = self.profile or {}
+
+        raw = prof.get("history_turns", None)
+        turns = cfg_turns
+        if raw is not None:
+            if isinstance(raw, str) and raw.strip().lower() in ("all", "unlimited", "-1"):
+                turns = 0
+            else:
+                try:
+                    turns = max(0, int(raw))
+                except (TypeError, ValueError):
+                    self.log.warning(
+                        "[History] Agent '%s' has an unusable history_turns=%r; "
+                        "using the deployment default (%s).",
+                        self.active_profile_name, raw, cfg_turns)
+
+        raw_chars = prof.get("history_max_chars", None)
+        max_chars = cfg_chars
+        if raw_chars is not None:
+            try:
+                max_chars = max(0, int(raw_chars))
+            except (TypeError, ValueError):
+                self.log.warning(
+                    "[History] Agent '%s' has an unusable history_max_chars=%r; "
+                    "using the deployment default (%s).",
+                    self.active_profile_name, raw_chars, cfg_chars)
+
+        return turns, max_chars
+
     def _is_cancelled(self, message_id: str) -> bool:
         try:
             return db.is_message_cancelled(message_id)
@@ -524,17 +627,21 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             if track_work_context else "{}"
         )
 
-        # Recent turns verbatim window (last 3 prior pairs)
-        raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=8)
+        # Recent turns verbatim window. Depth is configurable (SAFI_HISTORY_TURNS,
+        # or `history_turns` on the persona) because some agents need the whole
+        # thread and others must not pay for it — see _resolve_history_window.
+        turns, max_chars = self._resolve_history_window()
+        # +2 covers the current user message, which is dropped below.
+        fetch_limit = _HISTORY_FETCH_ALL if turns == 0 else (turns * 2) + 2
+        raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=fetch_limit)
         prior_turns = [
             m for m in raw_history
             if m.get("content", "").strip() and m.get("message_id") != message_id
         ]
-        recent_window = prior_turns[:-1][-6:]  # drop current user msg, keep last 3 pairs
-        recent_turns_text = "\n".join(
-            f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'].strip()}"
-            for m in recent_window
-        ) if recent_window else ""
+        recent_window = prior_turns[:-1]          # drop the current user message
+        if turns:
+            recent_window = recent_window[-(turns * 2):]
+        recent_turns_text = _render_history(recent_window, max_chars)
         
         # Read-only snapshot for the coaching feedback below. The authoritative
         # EMA commit at the end of the turn re-reads mu under a row lock

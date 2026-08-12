@@ -38,6 +38,15 @@ dnspython>=2.4.0
 
 # ── Document Processing ────────────────────────────────────────────────────────
 PyPDF2>=3.0.1
+# Image attachments and scanned PDFs, OCR'd to text so they travel the same
+# governed path as any other attachment — the image bytes never reach a model.
+# pytesseract only wraps the `tesseract` BINARY, which the Dockerfile installs in
+# the runtime stage; the wheel alone imports fine and then fails at call time.
+# document_processor degrades gracefully when either half is missing.
+pytesseract>=0.3.10
+# Pillow: pytesseract's image input. Already present in the bare-metal venv
+# (the retired marketing publisher imported it) but never declared until now.
+Pillow>=10.0.0
 # pypdf (successor to PyPDF2) is used by the SharePoint MCP server
 pypdf>=6.0.0
 python-docx>=1.1.0

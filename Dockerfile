@@ -22,6 +22,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# OCR for image attachments and scanned PDFs. Must be in the RUNTIME stage, not
+# the deps stage: pytesseract is only a wrapper that shells out to the tesseract
+# binary, so the wheel installs cleanly and then fails at call time if the binary
+# is absent. `--no-install-recommends` keeps this to ~45 MB; without it apt pulls
+# in every language pack.
+#
+# tesseract-ocr-eng is explicit rather than implied — the base package ships no
+# language data, and tesseract exits with "Failed loading language 'eng'" when it
+# is missing, which reads like a code bug rather than a packaging one.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from the deps stage
 COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
