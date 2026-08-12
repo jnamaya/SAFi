@@ -34,18 +34,17 @@ export function updateUIForAuthState(user) {
   const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
   const name = user?.name || 'Guest';
 
-  const layoutWrapper = document.getElementById('main-layout-wrapper');
-
   if (user) {
     ui.elements.loginView.classList.add('hidden');
-    // Must match #sidebar's width below. The sidebar is `fixed`, so it takes no
-    // space in flow and this margin is the only thing keeping the chat out from
-    // under it — a mismatch is either a gap or an overlap, never nothing.
-    if (layoutWrapper) layoutWrapper.classList.add('md:ml-72');
+    // The chat's left offset is CSS's job now (--sidebar-w in styles.css), so
+    // this only has to say "a sidebar exists". It used to add the matching
+    // md:ml-* utility, which put the width in a second place and then a third
+    // and a fourth as handlers copied the line.
+    document.documentElement.classList.add('has-sidebar');
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-72 bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
           
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
@@ -219,7 +218,7 @@ export function updateUIForAuthState(user) {
     ui.elements.sidebarContainer.innerHTML = '';
     // No sidebar when logged out — drop the reserved margin so the login view
     // centers on the actual viewport instead of sitting 128px right of center.
-    if (layoutWrapper) layoutWrapper.classList.remove('md:ml-72');
+    document.documentElement.classList.remove('has-sidebar');
     ui.elements.loginView.classList.remove('hidden');
     ui.elements.chatView.classList.add('hidden');
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');

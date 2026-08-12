@@ -2681,44 +2681,83 @@ html.native body { font-size: 14px; }
    delegation. Desktop-only: on mobile the sidebar is an overlay and the
    rail never displays. */
 
+/* The desktop sidebar's width, in ONE place.
+   The number is needed twice — the sidebar's own width, and the margin that
+   keeps the chat clear of it, because #sidebar is `fixed` and takes no space in
+   flow. It used to be spelled as a Tailwind class at both ends, which meant
+   seven copies of it across four files, four of them the same eight-line block
+   copy-pasted with the comment "Match app.js Control Panel logic". Widening the
+   sidebar to 18rem updated two of the seven and left the Control Panel indented
+   by a sidebar that was no longer there. Change it here and everything follows. */
+:root {
+  --sidebar-w: 18rem;
+}
+
 @media (min-width: 768px) {
+  #sidebar {
+    width: var(--sidebar-w);
+  }
+
+  /* The Control Panel's own nav is the same visual element in another view —
+     same background, same border — so it takes the same width from the same
+     place. It is in flow rather than fixed, so it needs no matching margin. */
+  #control-panel-view > aside {
+    width: var(--sidebar-w);
+  }
+
   /* Animate the chat area reclaiming space when the sidebar collapses. */
   #main-layout-wrapper {
     transition: margin-left 0.3s ease-in-out;
+  }
+
+  /* html.has-sidebar is set by updateUIForAuthState() once a user is logged in.
+     Logged out there is no sidebar at all, so the login view centres on the
+     whole viewport. */
+  html.has-sidebar #main-layout-wrapper {
+    margin-left: var(--sidebar-w);
   }
 
   html.sidebar-collapsed #sidebar {
     transform: translateX(-100%);
   }
 
-  /* 3.5rem, not 0: the content clears the rail instead of sliding under it. */
+  /* 3.5rem, not 0: the content clears the rail instead of sliding under it.
+     Must stay AFTER the has-sidebar rule — equal specificity, so order decides. */
   html.sidebar-collapsed #main-layout-wrapper {
-    margin-left: 3.5rem !important;
+    margin-left: 3.5rem;
   }
 
   html.sidebar-collapsed #sidebar-rail {
     display: flex;
   }
 
-  /* The Control Panel replaces the whole chat chrome (its open handlers hide
-     #sidebar too), so the rail goes with it. Keyed on the panel's own
-     visibility rather than patched into the handlers: the panel is opened in
-     three places and closed in four across three files, and an inline-style
-     toggle would only need one of those paths forgotten to strand the rail
-     on screen. */
-  html.sidebar-collapsed:has(#control-panel-view:not(.hidden)) #sidebar-rail {
+  /* The Control Panel replaces the whole chat chrome, so the chat sidebar, the
+     rail, and the gutter that was holding them all go with it.
+
+     Keyed on the panel's own visibility rather than patched into the handlers:
+     it is opened in four places and closed in six across four files, and every
+     one of those paths had its own copy of "hide the sidebar, drop the margin".
+     One rule replaces all of them, and the paths that never restored the margin
+     on the way out (chat.js:603 and :633 just hide the panel) are correct now
+     without being touched.
+
+     NOT qualified on html.sidebar-collapsed any more. That was the bug: with the
+     sidebar expanded, none of these applied, so the panel kept an 18rem indent
+     and the chat sidebar stayed painted beside it. The condition is "the panel is
+     on screen", which has nothing to do with whether the sidebar was collapsed.
+
+     No !important needed: :has() carries its argument's specificity, so these
+     land at (2,1,1) against (1,1,1) for the rules above. */
+  html:has(#control-panel-view:not(.hidden)) #sidebar {
     display: none;
   }
 
-  /* ...and the gutter that was holding the rail goes with it. Hiding the rail
-     alone left #main-layout-wrapper still indented by 3.5rem, so the panel sat
-     56px right of where it sits when the sidebar is expanded — the panel is a
-     child of that wrapper, so it inherits the offset meant for the chat view.
-     Same :has() condition as above, deliberately: the two declarations are one
-     decision ("the rail is not on screen"), and splitting them across a
-     handler is how they drifted apart in the first place. */
-  html.sidebar-collapsed:has(#control-panel-view:not(.hidden)) #main-layout-wrapper {
-    margin-left: 0 !important;
+  html:has(#control-panel-view:not(.hidden)) #sidebar-rail {
+    display: none;
+  }
+
+  html:has(#control-panel-view:not(.hidden)) #main-layout-wrapper {
+    margin-left: 0;
   }
 }
 

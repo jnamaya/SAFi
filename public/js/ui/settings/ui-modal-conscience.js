@@ -406,15 +406,10 @@ function attachModalEventListeners(container, payload) {
             // 3. Show the control panel
             ui.elements.controlPanelView.classList.remove('hidden');
 
-            // 4. HIDE Sidebar entirely & Fix Layout (Match app.js Control Panel logic)
+            // 4. Mobile overlay only. Hiding the sidebar and zeroing the chat's
+            //    offset is one CSS rule keyed on the panel being visible, so this
+            //    no longer needs its own copy of "match app.js".
             ui.closeSidebar();
-            const sidebar = document.getElementById('sidebar');
-            if (sidebar) {
-                sidebar.classList.add('hidden');
-                sidebar.classList.remove('md:flex');
-            }
-            const wrapper = document.getElementById('main-layout-wrapper');
-            if (wrapper) wrapper.classList.remove('md:ml-64');
 
             // 5. Programmatically click the dashboard tab
             if (ui.elements.cpNavDashboard) {

@@ -958,17 +958,11 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // HIDE Sidebar entirely
-      ui.closeSidebar(); // Close mobile menu if open
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar) {
-        sidebar.classList.add('hidden'); // Ensure hidden class is present
-        sidebar.classList.remove('md:flex'); // Disable desktop flex display
-      }
-
-      // Remove margin from main wrapper to reclaim space
-      const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-64');
+      // Sidebar hiding and the chat's left offset are CSS's job — one
+      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
+      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
+      // a different concern from the desktop layout.
+      ui.closeSidebar();
     });
   }
 
@@ -1020,19 +1014,8 @@ function attachEventListeners() {
       ui.elements.chatView.style.display = '';
       ui.elements.chatView.classList.remove('hidden');
 
-      // SHOW Sidebar Logic (Restore Desktop)
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar) {
-        sidebar.classList.add('md:flex'); // Restore desktop display
-        // Note: We leave 'hidden' class alone as it's the default state for mobile (toggled by ui.js)
-        // But if we forced it added above, we might not need to remove it if md:flex overrides it.
-        // Yet to be safe for mobile consistency:
-        // sidebar.classList.add('hidden'); // Ensure it starts hidden on mobile until toggled
-      }
-
-      // Restore margin to main wrapper
-      const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.add('md:ml-64');
+      // Nothing to restore: hiding #control-panel-view releases the CSS rule
+      // that was hiding the sidebar and zeroing the margin.
     });
   });
 
@@ -1043,17 +1026,11 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // HIDE Sidebar entirely
+      // Sidebar hiding and the chat's left offset are CSS's job — one
+      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
+      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
+      // a different concern from the desktop layout.
       ui.closeSidebar();
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar) {
-        sidebar.classList.add('hidden');
-        sidebar.classList.remove('md:flex');
-      }
-
-      // Remove margin from main wrapper
-      const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-64');
 
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
@@ -1064,17 +1041,11 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // HIDE Sidebar entirely
+      // Sidebar hiding and the chat's left offset are CSS's job — one
+      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
+      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
+      // a different concern from the desktop layout.
       ui.closeSidebar();
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar) {
-        sidebar.classList.add('hidden');
-        sidebar.classList.remove('md:flex');
-      }
-
-      // Remove margin from main wrapper
-      const wrapper = document.getElementById('main-layout-wrapper');
-      if (wrapper) wrapper.classList.remove('md:ml-64');
 
       if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
     });
