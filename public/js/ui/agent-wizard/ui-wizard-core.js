@@ -220,15 +220,15 @@ function updateProgress() {
     // Key presence is not a reliable edit signal: create mode auto-generates
     // a key at the Review step, and duplicates start with no key at all.
     const isEdit = !!agentData.is_update_mode;
-    if (currentStep === TOTAL_STEPS) {
-        nextBtn.innerText = isEdit ? 'Save Changes' : 'Create Agent';
-        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-    } else {
-        nextBtn.innerText = 'Next';
-        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-    }
+    // Label only. This used to swap the button's color per step (blue for
+    // Next, green for the final Create) — with one primary color that swap is
+    // meaningless, and its collapsed remains were an add-then-REMOVE of the
+    // same classes, which stripped the background and left a white-on-white
+    // Next button in the light theme. The markup's own bg-green-600 is the
+    // permanent primary; nothing here may touch the color classes.
+    nextBtn.innerText = currentStep === TOTAL_STEPS
+        ? (isEdit ? 'Save Changes' : 'Create Agent')
+        : 'Next';
 }
 
 async function renderStep(step) {

@@ -139,6 +139,32 @@ class OnePrimaryButtonLanguage(unittest.TestCase):
         self.assertIn("DESTRUCTIVE", CSS)
 
 
+class NoCollapsedColorSwaps(unittest.TestCase):
+    """The failure mode the 2026-08-13 sweep actually caused: code that SWAPPED
+    two colors (blue for Next, green for Create) collapsed into adding and
+    then REMOVING the same green classes — net effect, the primary button lost
+    its background and Next was white-on-white in the light theme. A palette
+    is enforced in class strings; this guards the class *mutations*."""
+
+    PAIR = re.compile(
+        r"classList\.(add|remove)\(([^)]*green[^)]*)\)\s*;?\s*\n\s*"
+        r"[\w.]*classList\.(add|remove)\(([^)]*green[^)]*)\)")
+
+    def test_no_add_then_remove_of_identical_color_classes(self):
+        offenders = []
+        for f in ui_files():
+            if f.suffix != ".js":
+                continue
+            for m in self.PAIR.finditer(f.read_text(encoding="utf-8")):
+                verb1, args1, verb2, args2 = m.groups()
+                if verb1 != verb2 and args1.strip() == args2.strip():
+                    offenders.append(f"{f.relative_to(ROOT)}: "
+                                     f"{verb1}+{verb2} of {args1.strip()[:60]}")
+        self.assertEqual(offenders, [],
+                         "adding then removing the same color classes is a collapsed "
+                         "two-color swap — one of the two states has lost its color")
+
+
 class NewConversationButtonIsTheReference(unittest.TestCase):
 
     def test_the_reference_button_uses_the_brand_green(self):

@@ -389,15 +389,13 @@ function updateProgress() {
     document.getElementById('pw-back-btn').disabled = currentStep === 1 || currentStep > TOTAL_STEPS;
 
     const nextBtn = document.getElementById('pw-next-btn');
-    if (currentStep === TOTAL_STEPS) {
-        nextBtn.innerText = policyData.policy_id ? 'Save Changes' : 'Create Policy';
-        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-    } else {
-        nextBtn.innerText = 'Next';
-        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
-        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-    }
+    // Label only — see the identical note in ui-wizard-core.js: the per-step
+    // color swap died with the second primary color, and its collapsed remains
+    // stripped the green off Next (white-on-white in the light theme). The
+    // markup's bg-green-600 is permanent; nothing here may touch color classes.
+    nextBtn.innerText = currentStep === TOTAL_STEPS
+        ? (policyData.policy_id ? 'Save Changes' : 'Create Policy')
+        : 'Next';
 
     const view = document.getElementById('policy-wizard-view');
     const footer = view.querySelector('.footer-container');
