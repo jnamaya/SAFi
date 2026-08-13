@@ -115,6 +115,30 @@ class TheExemptionIsRealNotForgotten(unittest.TestCase):
                          "the monogram palette must stay three distinct fills")
 
 
+class OnePrimaryButtonLanguage(unittest.TestCase):
+    """Two solid button colors = two meanings. Green is the primary action;
+    black is a surface color, not a button role. Seven Save buttons and Invite
+    wore an inverted bg-gray-900/dark:bg-white primary until 2026-08-13 —
+    which is exactly the 'why are some buttons black and others green?'
+    question this class prevents from coming back."""
+
+    INVERTED = re.compile(
+        r"bg-(?:gray|neutral)-9\d\d dark:bg-white text-white")
+
+    def test_the_inverted_black_primary_is_retired(self):
+        offenders = [f"{f.relative_to(ROOT)}"
+                     for f in ui_files()
+                     if self.INVERTED.search(f.read_text(encoding="utf-8"))]
+        self.assertEqual(offenders, [],
+                         "primary actions are green (see the BUTTON HIERARCHY "
+                         "block in styles.css); these reintroduce the black primary")
+
+    def test_the_hierarchy_is_documented_with_the_palette(self):
+        self.assertIn("BUTTON HIERARCHY", CSS)
+        self.assertIn("PRIMARY", CSS)
+        self.assertIn("DESTRUCTIVE", CSS)
+
+
 class NewConversationButtonIsTheReference(unittest.TestCase):
 
     def test_the_reference_button_uses_the_brand_green(self):

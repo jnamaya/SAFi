@@ -59,7 +59,7 @@ export async function renderSettingsComplianceTab() {
                  </div>
                  <p class="text-xs text-gray-400">BAA = provider offers a HIPAA Business Associate Agreement on an enterprise tier. EU = an EU/EEA-resident hosting option exists. ZDR = prompts are not retained by default; ZDR* = zero data retention is available on an enterprise/request basis (hover a badge for the provider's exact posture, verified July 2026). Voice synthesis via edge-tts is governed separately.</p>
                  <div class="flex justify-end">
-                     <button id="btn-save-providers" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Provider Settings</button>
+                     <button id="btn-save-providers" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Provider Settings</button>
                  </div>
              </div>
         </div>
@@ -81,7 +81,7 @@ export async function renderSettingsComplianceTab() {
                  </div>
                  <p class="text-xs text-gray-400">Unticking a source does not revoke tokens members have already linked — it stops new links, and those members keep a Disconnect button. Review what is currently linked below.</p>
                  <div class="flex justify-end">
-                     <button id="btn-save-connectors" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Data Source Settings</button>
+                     <button id="btn-save-connectors" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Data Source Settings</button>
                  </div>
                  <div>
                      <h5 class="text-sm font-semibold mt-2 mb-1">Currently linked</h5>
@@ -114,7 +114,7 @@ export async function renderSettingsComplianceTab() {
                      </div>
                  </div>
                  <div class="flex justify-end">
-                     <button id="btn-save-retention" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Retention Settings</button>
+                     <button id="btn-save-retention" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Retention Settings</button>
                  </div>
              </div>
         </div>
@@ -127,7 +127,7 @@ export async function renderSettingsComplianceTab() {
                      <input type="checkbox" id="chk-offline-enabled" ${org.settings?.offline_enabled ? 'checked' : ''}>
                      <span class="font-bold text-gray-700 dark:text-gray-300">Allow offline mode on member devices</span>
                  </label>
-                 <button id="btn-save-offline" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all whitespace-nowrap">Save Offline Settings</button>
+                 <button id="btn-save-offline" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all whitespace-nowrap">Save Offline Settings</button>
              </div>
         </div>
 

@@ -144,9 +144,25 @@ html.native body { font-size: 14px; }
        surfaces and engineered NOT to collide with the outcome ring colors.
      - third-party logos (Google / Microsoft / GitHub connector marks).
 
+   BUTTON HIERARCHY — a color is a role, so two buttons with different colors
+   must mean different things:
+
+     PRIMARY      bg-green-600 hover:bg-green-700 text-white
+                  The main action of a view: New Conversation, Save, Invite,
+                  Continue, Confirm. At most one per view. There is no black
+                  primary — the inverted bg-gray-900/dark:bg-white style that
+                  seven Save buttons and Invite wore was a second primary
+                  language, retired 2026-08-13.
+     SECONDARY    neutral outline or ghost: transparent/neutral bg, neutral
+                  border, --fg text. Cancel, Back, Preview — anything that
+                  yields to the primary.
+     DESTRUCTIVE  bg-red-600 white text, or red outline for the confirm step.
+                  Red is a meaning, never a style.
+
    Enforced by tests/test_brand_palette.py: blue, purple, indigo, violet, sky,
    cyan, teal, pink, fuchsia, rose, emerald and orange utilities are banned
-   from the UI. New accent = green, or it fails CI.
+   from the UI, and so is the inverted black/white primary. New accent =
+   green, or it fails CI.
    ═════════════════════════════════════════════════════════════════════════ */
 :root {
   --brand-400: #4ade80; /* green-400 — dark-mode accents on black */

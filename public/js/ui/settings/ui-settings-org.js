@@ -352,7 +352,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                  </div>
                  
                  <div class="flex justify-end">
-                     <button id="btn-save-gov-settings" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">
+                     <button id="btn-save-gov-settings" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">
                         Save Configuration
                      </button>
                  </div>
@@ -406,7 +406,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                  </label>
              </div>
              <div class="flex justify-end mt-4">
-                 <button id="btn-save-identity" class="px-5 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
+                 <button id="btn-save-identity" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
              </div>
         </div>
 
@@ -432,7 +432,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                             <option value="editor">editor</option>
                             <option value="admin">admin</option>
                         </select>
-                        <button id="btn-send-invite" class="px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg text-sm font-bold">Invite</button>
+                        <button id="btn-send-invite" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Invite</button>
                     </div>
                     <p class="text-xs text-gray-400 mt-1">No email is sent — share the app link yourself. The invite is applied automatically when that address signs in (Google or Microsoft), regardless of join policy. Expires after 14 days.</p>
                     <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
