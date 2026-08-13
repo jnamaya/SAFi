@@ -20,7 +20,7 @@ from google import genai
 
 # --- Import App-Specific Core Modules ---
 from collections import deque
-from .feedback import build_spirit_feedback
+from .faculties.spirit import build_spirit_feedback
 from ..persistence import database as db
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
 # Reused rather than reimplemented: the tool-evidence merge below needs the same

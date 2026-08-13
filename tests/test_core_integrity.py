@@ -113,10 +113,10 @@ class TamperDetection(unittest.TestCase):
                             for x in data["structural_findings"]), data["structural_findings"])
 
     def test_a_deleted_core_file_is_reported_missing(self):
-        (self.tmp / "safi_app/core/feedback.py").unlink()
+        (self.tmp / "safi_app/core/faculties/utils.py").unlink()
         code, data = run_json("--root", str(self.tmp))
         self.assertEqual(code, 1)
-        self.assertIn("safi_app/core/feedback.py", data["missing"])
+        self.assertIn("safi_app/core/faculties/utils.py", data["missing"])
 
     def test_exit_code_2_when_the_manifest_is_absent(self):
         """A deployment that lost its manifest must get 'cannot verify', which
@@ -133,7 +133,10 @@ class TheManifestIsWellFormed(unittest.TestCase):
         m = json.loads(MANIFEST.read_text())
         self.assertIn("Governance Agreement", m["comment"])
         self.assertEqual(len(m["root_fingerprint"]), 64)
-        self.assertGreaterEqual(len(m["files"]), 15)
+        # 14 files: orchestrator + 2 mixins + 7 faculty files (the Coach lives
+        # inside spirit.py since the 2026-08-13 merge) + database schema +
+        # threat_intel + system_prompts.
+        self.assertGreaterEqual(len(m["files"]), 14)
 
     def test_every_deterministic_faculty_is_covered_by_a_hash(self):
         """The invariant checks only diagnose; the hash layer is the verdict.
@@ -143,8 +146,7 @@ class TheManifestIsWellFormed(unittest.TestCase):
         for rel in ("safi_app/core/faculties/phase_zero.py",
                     "safi_app/core/faculties/will.py",
                     "safi_app/core/faculties/spirit.py",
-                    "safi_app/core/faculties/synderesis.py",
-                    "safi_app/core/feedback.py"):
+                    "safi_app/core/faculties/synderesis.py"):
             self.assertIn(rel, m)
 
     def test_the_enforcement_content_is_covered_too(self):

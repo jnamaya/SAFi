@@ -51,8 +51,9 @@ MANIFEST_NAME = "core_integrity_manifest.json"
 
 # The Core Loop, as declared in Section II of the agreement, mapped to files.
 # The orchestrator's mixins are included because part of its routing logic
-# lives there; feedback.py is included because the Spirit->Intellect coaching
-# note is part of the closed loop and is required to stay deterministic.
+# lives there. The Spirit->Intellect coaching note (the Coach) lives inside
+# spirit.py — merged from a standalone feedback.py on 2026-08-13 — so covering
+# the faculty covers the whole closed loop.
 CORE_FILES = [
     "safi_app/core/orchestrator.py",
     "safi_app/core/orchestrator_mixins/tasks.py",
@@ -65,7 +66,6 @@ CORE_FILES = [
     "safi_app/core/faculties/conscience.py",
     "safi_app/core/faculties/spirit.py",
     "safi_app/core/faculties/utils.py",
-    "safi_app/core/feedback.py",
     # The Core Database Schema: the hash-chained audit ledgers and temporal
     # logs are created here. Modifying how the system records its actions is a
     # Core Loop change even though the *content* of the database belongs to
@@ -96,7 +96,6 @@ DETERMINISTIC = [
     "safi_app/core/faculties/synderesis.py",
     "safi_app/core/faculties/spirit.py",
     "safi_app/core/faculties/will.py",
-    "safi_app/core/feedback.py",
 ]
 _PROVIDER_IMPORT = re.compile(
     r"^\s*(?:import|from)\s+(?:openai|anthropic|groq|google|mistral|httpx|requests)\b",
