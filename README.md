@@ -25,6 +25,7 @@
 - [For Developers](#for-developers)
 - [Roles & Permissions](#roles--permissions)
 - [Contributing](#contributing)
+- [License & Governance](#license--governance)
 - [About the Author](#about-the-author)
 
 ---
@@ -317,6 +318,7 @@ SAFi implements **SAF** — a philosophical framework that predates the software
 - The faculties in depth — [Values](https://selfalignmentframework.com/safi-values/) · [Intellect](https://selfalignmentframework.com/safi-intellect/) · [Will](https://selfalignmentframework.com/will/) · [Conscience](https://selfalignmentframework.com/safi-conscience/) · [Spirit](https://selfalignmentframework.com/safi-explained-the-spirit/)
 - [The Separation of Powers](https://selfalignmentframework.com/the-separation-of-powers-in-saf/) — why this is a separation of powers rather than a division of labour
 - [Why SAF and SAFi Are Open](https://selfalignmentframework.com/why-saf-will-always-be-open/) — why AGPL-3.0 specifically, and what its network provision prevents
+- [The SAF License](https://selfalignmentframework.com/license/) — SAF itself, the framework, is licensed separately from this software: free to use with attribution
 
 ---
 
@@ -557,6 +559,18 @@ Contributions are welcome -- bug reports, new MCP tools, governance policy examp
 - 🟢 **Good first issues:** [issues labeled `good first issue`](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 - 💬 **Ask questions & propose features:** [GitHub Discussions](https://github.com/jnamaya/SAFi/discussions)
 - **Read the contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
+## License & Governance
+
+SAFi is licensed under [AGPL-3.0](LICENSE), with a Section 7 exception that keeps an organization's own charter, policies, tools, branding, and data fully private — the copyleft applies to the Core Loop, not to what you configure on top of it.
+
+The full terms, the Core Loop boundary, the trademark policy, and the integrity-check process live in one document:
+
+- **[SAFi License & Governance Agreement](docs/SAFi%20License%20%26%20Governance%20Agreement.md)** — what must stay open, what stays yours, and what it takes to call a modified deployment SAFi
+- **Verify a deployment:** `python scripts/verify_integrity.py` — recomputes the Core Loop fingerprint against the release manifest and checks the structural invariants (no model calls in the deterministic faculties, phase order intact)
+- **[The SAF License](https://selfalignmentframework.com/license/)** — the framework itself is licensed separately: free to use with attribution
 
 ---
 
