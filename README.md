@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/github_image.png" alt="SAFi in use: the Fiduciary agent declining to give personalized investment advice and explaining the tradeoffs from supplied market data instead, with the Audit Hub beside it showing the 9.0 alignment score, the consistency trend, the intervention rate, and the chain-verified record for that turn" width="100%">
+  <img src="public/assets/github_image.png" alt="SAFi in use: asked how much house a $75k salary could afford, the Fiduciary agent answers with general budgeting guidelines and illustrative ranges instead of personalized advice, while the Audit Hub beside it shows the turn's 10.0 alignment score, the consistency average, zero interventions, and the chain-verified record with the AI draft open" width="100%">
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
@@ -67,7 +67,7 @@ That evidence supports an Audit Hub for analytics and drill-down, a supervisory 
 SAFi is an open-source runtime governance engine for agentic AI. It enforces policies in real time, governs tool calls, and records every decision for audit.
 
 <p align="center">
-  <img src="public/assets/demo.gif" alt="A governed turn in SAFi: the enforcement pipeline advancing through its stages, the alignment score it produced, and the values ledger behind that score — then a second turn, adding a point to the alignment trend" width="100%">
+  <img src="public/assets/demo.gif" alt="One governed turn in SAFi: a question typed to the Fiduciary agent, the enforcement pipeline advancing through Analyze, Draft, Gather and Audit, and the answer arriving with its 10.0 Aligned audit chip" width="100%">
 </p>
 
 <p align="center">
