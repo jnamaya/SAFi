@@ -699,6 +699,10 @@ function _stripDocumentContext(content) {
 function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
 
+    // The most recent user prompt seen while walking the history, so each AI
+    // turn's redo knows what to re-ask. Stripped form — see where it is set.
+    let _lastReplayedUserPrompt = null;
+
     history.forEach((turn, i) => {
         if (turn.audit_status === 'cancelled') return;
 
@@ -741,26 +745,35 @@ function renderHistory(history, user, showModal, activeProfileData) {
         };
 
         const options = {};
+        // Re-enter the composer with `text` and send it. Shared by the user
+        // bubble's retry and the AI bar's redo — both are "ask this again".
+        const resend = activeProfileData ? (text) => {
+            ui.elements.messageInput.value = text;
+            autoSize();
+            ui.elements.sendButton.disabled = false;
+            ui.elements.messageInput.focus();
+            sendMessage(activeProfileData, user);
+        } : null;
+
         if (turn.role === 'user' && user) {
             options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
-
-            // --- NEW: Retry Handler ---
-            // If activeProfileData is available, allow retry
-            if (activeProfileData) {
-                options.onRetry = (text) => {
-                    ui.elements.messageInput.value = text;
-                    autoSize();
-                    ui.elements.sendButton.disabled = false;
-                    ui.elements.messageInput.focus();
-                    sendMessage(activeProfileData, user);
-                };
-            }
+            if (resend) options.onRetry = resend;
         }
 
         // Strip injected document context from user messages before rendering
         const displayContent = turn.role === 'user'
             ? _stripDocumentContext(turn.content)
             : turn.content;
+
+        // Redo on the answer's action bar re-asks the prompt that PRODUCED it.
+        // Tracked as we walk the history (the stripped form, so a redo never
+        // re-injects a stale document context block into a fresh turn).
+        if (turn.role === 'user') {
+            _lastReplayedUserPrompt = displayContent;
+        } else if (resend && _lastReplayedUserPrompt) {
+            const promptForRedo = _lastReplayedUserPrompt;
+            options.onRedo = () => resend(promptForRedo);
+        }
 
         uiMessages.displayMessage(
             turn.role,
@@ -1178,7 +1191,10 @@ export async function sendMessage(activeProfileData, user) {
 
                 ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
             },
-            { animate: true }
+            // Redo re-asks the prompt that produced this answer — the clean
+            // typed text (userMessage), not the outgoing prompt with document
+            // context appended, so redoing never re-injects a stale attachment.
+            { animate: true, onRedo: () => retryHandler(userMessage) }
         );
 
         if (messageId && auditNeedsPolling(initialResponse)) {

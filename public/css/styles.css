@@ -1639,13 +1639,19 @@ html.native body { font-size: 14px; }
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  /* Flat on the canvas, deliberately. The AI bubble is already transparent
+     (--ai-bg), so the old rgba tint + border made this bar the ONE piece of
+     chrome floating on the reading surface — a pill under every answer.
+     Transparent here IS "the same color as the canvas", and it stays correct
+     if the canvas color ever changes. The buttons keep their own hover
+     states, so affordance survives; only the resting chrome goes. */
+  background: transparent;
+  border: 1px solid transparent;
 }
 
 .dark .msg-actionbar {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: transparent;
+  border-color: transparent;
 }
 
 .score-wrap {
@@ -1854,7 +1860,8 @@ html.native body { font-size: 14px; }
 /* compact the action buttons so they sit neatly inside the bar */
 .msg-actionbar .tts-btn,
 .msg-actionbar .copy-btn,
-.msg-actionbar .save-btn {
+.msg-actionbar .save-btn,
+.msg-actionbar .redo-btn {
   width: 26px;
   height: 26px;
 }
@@ -1903,7 +1910,8 @@ html.native body { font-size: 14px; }
 /* Frosted glass message action controls */
 .tts-btn,
 .copy-btn,
-.save-btn {
+.save-btn,
+.redo-btn {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -1919,7 +1927,8 @@ html.native body { font-size: 14px; }
 
 .tts-btn:hover,
 .copy-btn:hover,
-.save-btn:hover {
+.save-btn:hover,
+.redo-btn:hover {
   color: var(--fg) !important;
   background: rgba(0, 0, 0, 0.04) !important;
   border-color: rgba(0, 0, 0, 0.05) !important;

@@ -476,7 +476,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageDiv.className = `message ${sender}`;
 
     // Define buttons variable here
-    let ttsBtn, copyBtn, retryBtn, saveBtn;
+    let ttsBtn, copyBtn, retryBtn, saveBtn, redoBtn;
 
     // 1. BUILD BASIC STRUCTURE (No text yet for AI)
         if (sender === 'ai') {
@@ -498,6 +498,21 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
                 setTimeout(() => copyBtn.innerHTML = iconCopy, 2000);
             });
         };
+
+        // Redo: re-ask the prompt that produced this answer. Handed in by
+        // chat.js because regenerating means re-entering sendMessage with the
+        // preceding user prompt — knowledge this renderer doesn't have. Note it
+        // asks AGAIN rather than replacing: the governed turn it produces is a
+        // new audit record, and the old one stays on the trail (an "audited
+        // response" that could be silently swapped out would be worth little).
+        if (options.onRedo) {
+            redoBtn = document.createElement('button');
+            redoBtn.className = 'redo-btn shrink-0';
+            redoBtn.innerHTML = iconRetry;
+            redoBtn.title = 'Redo — ask this again';
+            redoBtn.setAttribute('aria-label', 'Redo — ask this prompt again');
+            redoBtn.onclick = () => options.onRedo();
+        }
 
         // Save-to-folder: only offered when the message has a server-side id
         // (the snapshot is taken from chat_history, so an id must exist).
@@ -586,6 +601,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         if (copyBtn) bar.appendChild(copyBtn);
         if (saveBtn) bar.appendChild(saveBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
+        if (redoBtn) bar.appendChild(redoBtn);
 
         const stamp = document.createElement('div');
         stamp.className = 'stamp actionbar-time';
@@ -603,15 +619,35 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         // score is already present and the real outcome shows immediately.
         _applyRingState(messageDiv, payload);
     } else {
-        // User message: optional retry button + timestamp, right-aligned.
+        // User message: copy + optional retry + timestamp, right-aligned.
         const rightMeta = document.createElement('div');
         rightMeta.className = 'flex items-center gap-2 ml-auto';
+
+        // Copy the prompt. Unconditional — unlike retry it needs no send
+        // machinery, and unlike the AI copy it needs no server id. Copies the
+        // RAW prompt text, not the rendered HTML, so what lands on the
+        // clipboard is what was typed. Styled like the retry button: the user
+        // bubble is white-on-green, so the AI bar's grey icons would vanish.
+        const copyPromptBtn = document.createElement('button');
+        copyPromptBtn.className = 'copy-prompt-btn flex items-center justify-center p-1 rounded-full hover:bg-white/20 transition-colors shrink-0 text-white opacity-80 hover:opacity-100';
+        copyPromptBtn.innerHTML = iconCopy;
+        copyPromptBtn.title = 'Copy prompt';
+        copyPromptBtn.setAttribute('aria-label', 'Copy this prompt');
+        copyPromptBtn.onclick = () => {
+            const raw = typeof text === 'string' ? text : final_text_raw;
+            navigator.clipboard.writeText(raw).then(() => {
+                ui.showToast('Prompt copied', 'success');
+                copyPromptBtn.innerHTML = iconCheck;
+                setTimeout(() => copyPromptBtn.innerHTML = iconCopy, 2000);
+            });
+        };
 
         const stamp = document.createElement('div');
         stamp.className = 'stamp text-xs';
         stamp.textContent = formatTime(date);
 
-        if (retryBtn) rightMeta.prepend(retryBtn);
+        rightMeta.appendChild(copyPromptBtn);
+        if (retryBtn) rightMeta.appendChild(retryBtn);
         rightMeta.appendChild(stamp);
         metaDiv.appendChild(rightMeta);
     }
