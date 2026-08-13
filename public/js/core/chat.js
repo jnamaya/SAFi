@@ -65,13 +65,13 @@ function _getFileTypeConfig(filename) {
     const ext = (filename.split('.').pop() || '').toLowerCase();
     const configs = {
         pdf:  { label: 'PDF', bg: 'bg-red-50 dark:bg-red-900/20',       border: 'border-red-200 dark:border-red-800',       text: 'text-red-500' },
-        docx: { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
-        doc:  { label: 'DOC', bg: 'bg-blue-50 dark:bg-blue-900/20',      border: 'border-blue-200 dark:border-blue-800',      text: 'text-blue-500' },
+        docx: { label: 'DOC', bg: 'bg-green-50 dark:bg-green-900/20',      border: 'border-green-200 dark:border-green-800',      text: 'text-green-500' },
+        doc:  { label: 'DOC', bg: 'bg-green-50 dark:bg-green-900/20',      border: 'border-green-200 dark:border-green-800',      text: 'text-green-500' },
         xlsx: { label: 'XLS', bg: 'bg-green-50 dark:bg-green-900/20',     border: 'border-green-200 dark:border-green-800',     text: 'text-green-600' },
         xls:  { label: 'XLS', bg: 'bg-green-50 dark:bg-green-900/20',     border: 'border-green-200 dark:border-green-800',     text: 'text-green-600' },
-        csv:  { label: 'CSV', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800', text: 'text-emerald-500' },
+        csv:  { label: 'CSV', bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-200 dark:border-green-800', text: 'text-green-500' },
         txt:  { label: 'TXT', bg: 'bg-neutral-100 dark:bg-neutral-700',  border: 'border-neutral-200 dark:border-neutral-600', text: 'text-neutral-500' },
-        md:   { label: 'MD',  bg: 'bg-violet-50 dark:bg-violet-900/20',  border: 'border-violet-200 dark:border-violet-800',  text: 'text-violet-500' },
+        md:   { label: 'MD',  bg: 'bg-green-50 dark:bg-green-900/20',  border: 'border-green-200 dark:border-green-800',  text: 'text-green-500' },
     };
     return configs[ext] || {
         label: ext.toUpperCase() || 'FILE',
@@ -756,7 +756,7 @@ function renderHistory(history, user, showModal, activeProfileData) {
         } : null;
 
         if (turn.role === 'user' && user) {
-            options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
+            options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
             if (resend) options.onRetry = resend;
         }
 
@@ -955,7 +955,7 @@ export async function sendMessage(activeProfileData, user) {
 
     const now = new Date();
     // ADDED NULL CHECK: Safely get user info
-    const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
+    const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
     // generateUUID(), never crypto.randomUUID() directly: the Web Crypto API is
     // only exposed in a secure context, so on a self-hosted instance reached
     // over plain HTTP by IP or hostname (http://192.168.1.218:5000) this throws

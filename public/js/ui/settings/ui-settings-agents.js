@@ -96,7 +96,7 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                         <button type="button" data-key="${profile.key}" class="edit-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
                             Edit
                         </button>
-                        <button type="button" data-key="${profile.key}" class="dup-agent-btn px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors">
+                        <button type="button" data-key="${profile.key}" class="dup-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
                             Duplicate
                         </button>
                         <button type="button" data-key="${profile.key}" class="delete-agent-btn px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">

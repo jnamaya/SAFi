@@ -22,13 +22,13 @@ export async function loadToolCategories() {
 
 function cardClass(checked) {
     return 'relative flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ' + (checked
-        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-500'
-        : 'border-gray-200 dark:border-neutral-700 hover:border-blue-300 dark:hover:border-blue-700');
+        ? 'border-green-500 bg-green-50 dark:bg-green-900/20 ring-1 ring-green-500'
+        : 'border-gray-200 dark:border-neutral-700 hover:border-green-300 dark:hover:border-green-700');
 }
 
 function boxClass(checked) {
     return 'tp-box w-5 h-5 rounded border flex items-center justify-center transition-colors ' + (checked
-        ? 'bg-blue-600 border-blue-600'
+        ? 'bg-green-600 border-green-600'
         : 'border-gray-400 bg-white dark:bg-neutral-800');
 }
 
@@ -156,7 +156,7 @@ function renderCollapsibleCategory(container, cat, tools, { isSelected, onToggle
         const total = tools.length;
         const active = n > 0;
         badge.className = 'tp-badge shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ' + (active
-            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
             : 'bg-gray-100 text-gray-500 dark:bg-neutral-700 dark:text-gray-400');
         badge.innerHTML = `${n} / ${total}${active ? '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>' : ''}`;
     };

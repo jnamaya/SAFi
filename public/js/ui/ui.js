@@ -268,7 +268,7 @@ export async function showToast(message, type = 'info', duration = 3000) {
 
   if (activeToast) activeToast.remove();
   const toast = document.createElement('div');
-  const colors = { info: 'bg-blue-500', success: 'bg-green-600', error: 'bg-red-600', warning: 'bg-amber-500' };
+  const colors = { info: 'bg-green-500', success: 'bg-green-600', error: 'bg-red-600', warning: 'bg-amber-500' };
   toast.className = `toast text-white px-4 py-2 rounded-lg shadow-lg ${colors[type]} cursor-default`;
   toast.textContent = message;
   elements.toastContainer.appendChild(toast);

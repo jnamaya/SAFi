@@ -9,19 +9,19 @@ export async function renderIdentityStep(container, agentData) {
         
         <div class="grid grid-cols-1 gap-6">
             <!-- Policy Section -->
-            <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
+            <div class="bg-green-50 dark:bg-green-900/10 p-5 rounded-xl border border-green-200 dark:border-green-800">
                 <div class="flex items-center gap-2 mb-2">
-                    <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                    <label class="block text-sm font-bold text-blue-900 dark:text-blue-100">Governing Policy</label>
+                    <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                    <label class="block text-sm font-bold text-green-900 dark:text-green-100">Governing Policy</label>
                 </div>
                 
-                <select id="wiz-policy" class="w-full p-2 rounded border border-blue-300 dark:border-blue-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                <select id="wiz-policy" class="w-full p-2 rounded border border-green-300 dark:border-green-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500">
                     <option value="standalone">Loading Policies...</option>
                 </select>
-                <p class="text-xs text-blue-600 dark:text-blue-300 mt-2">
+                <p class="text-xs text-green-600 dark:text-green-300 mt-2">
                     A policy gives this agent its business-unit standards and rules. With no policy, the agent is governed by your Organization's Charter alone — so you need <strong>at least a Charter or a Policy</strong> for the agent to be governed.
                 </p>
-                <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-blue-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
+                <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-green-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
                     <!-- Preview populated by JS -->
                 </div>
                 <div id="wiz-gov-warning" class="hidden mt-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 rounded-lg">
@@ -34,16 +34,16 @@ export async function renderIdentityStep(container, agentData) {
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Agent Name <span class="text-red-500">*</span></label>
-                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. The Stoic Coach" value="${escapeHtml(agentData.name)}">
+                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. The Stoic Coach" value="${escapeHtml(agentData.name)}">
                     ${agentData.is_update_mode && agentData.key ? `<p class="text-xs text-gray-400 mt-1">Key: ${escapeHtml(agentData.key)} (Cannot be changed)</p>` : ''}
                 </div>
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Short Description</label>
-                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="e.g. A wise mentor based on Marcus Aurelius" value="${escapeHtml(agentData.description)}">
+                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. A wise mentor based on Marcus Aurelius" value="${escapeHtml(agentData.description)}">
                 </div>
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Avatar URL (Optional)</label>
-                    <input type="text" id="wiz-avatar" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" placeholder="https://example.com/image.png" value="${escapeHtml(agentData.avatar)}">
+                    <input type="text" id="wiz-avatar" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="https://example.com/image.png" value="${escapeHtml(agentData.avatar)}">
                 </div>
             </div>
 
@@ -51,7 +51,7 @@ export async function renderIdentityStep(container, agentData) {
             <div>
                 <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
                 <div class="relative">
-                    <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 appearance-none">
+                    <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
                         <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing only)</option>
                         <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
                         <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
@@ -163,7 +163,7 @@ async function loadPolicies(agentData) {
                         ? `<li class="text-gray-400">+${policyValues.length - 3} more</li>` : '';
 
                     preview.innerHTML = `
-                        <strong class="block mb-2 text-blue-800 dark:text-blue-200">${escapeHtml(policy.name)}</strong>
+                        <strong class="block mb-2 text-green-800 dark:text-green-200">${escapeHtml(policy.name)}</strong>
                         <div class="space-y-2">
                             <div>
                                 <span class="uppercase text-[10px] font-bold text-gray-400 block mb-1">Purpose</span>

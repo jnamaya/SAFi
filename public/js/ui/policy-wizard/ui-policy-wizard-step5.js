@@ -36,9 +36,9 @@ async function loadKnowledgeBaseChecklist(policyData) {
 
     const selected = new Set(policyData.allowed_knowledge_bases || []);
     list.innerHTML = bases.map(kb => `
-        <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:border-purple-300 dark:hover:border-purple-700 cursor-pointer">
+        <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 hover:border-green-300 dark:hover:border-green-700 cursor-pointer">
             <input type="checkbox" data-kb-allow="${escapeHtml(kb.id)}"
-                class="accent-purple-600 w-4 h-4 mt-0.5" ${selected.has(kb.id) ? 'checked' : ''}>
+                class="accent-green-600 w-4 h-4 mt-0.5" ${selected.has(kb.id) ? 'checked' : ''}>
             <span class="min-w-0">
                 <span class="block text-sm text-gray-900 dark:text-white">${escapeHtml(kb.name)}</span>
                 <span class="block text-xs text-gray-400">
@@ -121,14 +121,14 @@ export function renderWillStep(container, policyData) {
               it is attached to in the markup (learned the hard way on the
               connector card, 19982c7).
             -->
-            <div class="bg-white dark:bg-neutral-900 border border-purple-200 dark:border-purple-900/40 rounded-xl p-5">
+            <div class="bg-white dark:bg-neutral-900 border border-green-200 dark:border-green-900/40 rounded-xl p-5">
                 <div class="flex items-start justify-between gap-4 mb-3">
                     <div>
-                        <h3 class="font-bold text-purple-700 dark:text-purple-300">Authorized Knowledge</h3>
+                        <h3 class="font-bold text-green-700 dark:text-green-300">Authorized Knowledge</h3>
                         <p class="text-xs text-gray-500 mt-0.5">Which document repositories agents under this policy may be grounded in. Leave unrestricted to allow any knowledge base the agent's builder can access.</p>
                     </div>
                     <label class="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                        <input type="checkbox" id="pw-kb-restrict" class="accent-purple-600 w-4 h-4"
+                        <input type="checkbox" id="pw-kb-restrict" class="accent-green-600 w-4 h-4"
                             ${Array.isArray(policyData.allowed_knowledge_bases) ? 'checked' : ''}>
                         <span class="text-xs uppercase font-bold text-gray-500">Restrict</span>
                     </label>
@@ -143,19 +143,19 @@ export function renderWillStep(container, policyData) {
             </div>
 
             <!-- DISCLAIMER -->
-            <div class="bg-white dark:bg-neutral-900 border border-blue-200 dark:border-blue-900/40 rounded-xl p-5">
+            <div class="bg-white dark:bg-neutral-900 border border-green-200 dark:border-green-900/40 rounded-xl p-5">
                 <div class="flex items-center justify-between mb-3">
                     <div>
-                        <h3 class="font-bold text-blue-700 dark:text-blue-300">Required Disclaimer</h3>
+                        <h3 class="font-bold text-green-700 dark:text-green-300">Required Disclaimer</h3>
                         <p class="text-xs text-gray-500 mt-0.5">If enabled, every response must contain the substring below verbatim.</p>
                     </div>
                     <label class="flex items-center gap-2 cursor-pointer select-none">
-                        <input type="checkbox" id="pw-require-disclaimer" ${sr.require_disclaimer ? 'checked' : ''} class="accent-blue-600 w-4 h-4">
+                        <input type="checkbox" id="pw-require-disclaimer" ${sr.require_disclaimer ? 'checked' : ''} class="accent-green-600 w-4 h-4">
                         <span class="text-xs uppercase font-bold text-gray-500">Enforce</span>
                     </label>
                 </div>
                 <input type="text" id="pw-disclaimer-substring" value="${escapeAttr(sr.mandatory_disclaimer_substring || '')}"
-                    class="w-full p-2.5 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-gray-50 dark:bg-neutral-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${sr.require_disclaimer ? '' : 'opacity-60'}"
+                    class="w-full p-2.5 rounded-lg border border-green-200 dark:border-green-900/50 bg-gray-50 dark:bg-neutral-800 text-sm focus:ring-2 focus:ring-green-500 outline-none ${sr.require_disclaimer ? '' : 'opacity-60'}"
                     ${sr.require_disclaimer ? '' : 'disabled'}
                     placeholder="e.g. Disclaimer: This is for educational purposes only.">
                 <p class="text-xs text-gray-400 mt-2">Match is substring, case-sensitive. Keep it short and stable.</p>
@@ -206,7 +206,7 @@ export function renderWillStep(container, policyData) {
                     <button id="pw-add-rule-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
                 </div>
                 <ul id="pw-rules-list" class="space-y-2"></ul>
-                <button id="pw-compile-rules-btn" class="mt-3 w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+                <button id="pw-compile-rules-btn" class="mt-3 w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                     Convert to enforceable standards
                 </button>
@@ -386,9 +386,9 @@ function renderCompileResult(policyData, content) {
         const pass = guide.find(s => Number(s.score) > 0);
         const fail = guide.find(s => Number(s.score) < 0);
         return `
-        <label class="block p-4 rounded-xl border border-blue-200 dark:border-blue-900/40 bg-white dark:bg-neutral-900 cursor-pointer hover:border-blue-400 transition-colors">
+        <label class="block p-4 rounded-xl border border-green-200 dark:border-green-900/40 bg-white dark:bg-neutral-900 cursor-pointer hover:border-green-400 transition-colors">
             <div class="flex items-start gap-3">
-                <input type="checkbox" data-gate-idx="${i}" checked class="mt-1 accent-blue-600 w-4 h-4 shrink-0">
+                <input type="checkbox" data-gate-idx="${i}" checked class="mt-1 accent-green-600 w-4 h-4 shrink-0">
                 <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-bold text-gray-900 dark:text-white">${escapeHtml(g.name || '')}</span>

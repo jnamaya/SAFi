@@ -16,12 +16,12 @@ export function renderIntellectStep(container, agentData) {
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">System Instructions</label>
                         <p class="text-xs text-gray-400">Write it to the agent: "You are…". Say what it does, who it serves, and where its job ends.</p>
                     </div>
-                     <button id="wiz-gen-persona-btn" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
+                     <button id="wiz-gen-persona-btn" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="You are an HR assistant for Contoso employees. You answer questions about benefits, PTO and onboarding using the company handbook, and you refer anything legal or medical to a person.">${escapeHtml(agentData.instructions)}</textarea>
+                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 resize-y" placeholder="You are an HR assistant for Contoso employees. You answer questions about benefits, PTO and onboarding using the company handbook, and you refer anything legal or medical to a person.">${escapeHtml(agentData.instructions)}</textarea>
             </div>
 
             <div>
@@ -30,12 +30,12 @@ export function renderIntellectStep(container, agentData) {
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Communication Style</label>
                         <p class="text-xs text-gray-400">How should they speak? (e.g., Formal, Socratic, Concise)</p>
                     </div>
-                    <button id="wiz-gen-style-btn" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
+                    <button id="wiz-gen-style-btn" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-style" class="w-full h-40 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 resize-y" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${escapeHtml(agentData.style)}</textarea>
+                <textarea id="wiz-style" class="w-full h-40 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 resize-y" placeholder="Speak in short, punchy sentences. Use metaphors from nature. Never use emojis.">${escapeHtml(agentData.style)}</textarea>
             </div>
         </div>
     `;

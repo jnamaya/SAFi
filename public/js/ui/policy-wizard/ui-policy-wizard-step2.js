@@ -11,13 +11,13 @@ export function renderConstitutionStep(container, policyData) {
                             <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose &amp; Mandate</label>
                             <p class="text-base text-gray-500 mb-4">What every agent under this policy exists to do and the perspective it reasons from — the unit's mission, the objectives it is responsible for, and the orientation it should approach its work with.</p>
                          </div>
-                         <button id="btn-gen-worldview" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
+                         <button id="btn-gen-worldview" class="shrink-0 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                             Draft with AI
                          </button>
                     </div>
                     <div class="relative">
-                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 shadow-sm resize-y" placeholder="Purpose:
+                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500 shadow-sm resize-y" placeholder="Purpose:
 What this unit exists to do — its mission and the outcomes it is responsible for.
 
 Mandate:
@@ -33,7 +33,7 @@ The orientation agents should reason from — e.g. rigorous and evidence-driven;
 
             <div class="bg-gray-50 dark:bg-neutral-800 p-8 rounded-2xl border border-gray-200 dark:border-neutral-700 h-fit">
                 <h4 class="font-bold text-xl text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
-                    <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                    <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                     Expert Tips
                 </h4>
                 <ul class="space-y-6 text-sm text-gray-600 dark:text-gray-400">

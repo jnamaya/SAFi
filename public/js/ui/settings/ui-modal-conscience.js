@@ -136,8 +136,8 @@ function renderScoreAndTrend(payload) {
                 <svg class="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
                     <defs>
                         <linearGradient id="gauge-grad-green" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stop-color="#10b981" />
-                            <stop offset="100%" stop-color="#34d399" />
+                            <stop offset="0%" stop-color="#22c55e" />
+                            <stop offset="100%" stop-color="#4ade80" />
                         </linearGradient>
                         <linearGradient id="gauge-grad-yellow" x1="0%" y1="0%" x2="100%" y2="100%">
                             <stop offset="0%" stop-color="#f59e0b" />
@@ -207,8 +207,8 @@ function renderScoreAndTrend(payload) {
                 <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto">
                     <defs>
                         <linearGradient id="sparkline-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.2" />
-                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0" />
+                            <stop offset="0%" stop-color="#22c55e" stop-opacity="0.2" />
+                            <stop offset="100%" stop-color="#22c55e" stop-opacity="0.0" />
                         </linearGradient>
                     </defs>
                     <!-- Dotted lines at 10, 5, 0 -->
@@ -220,7 +220,7 @@ function renderScoreAndTrend(payload) {
                     <polygon points="${fillPoints}" fill="url(#sparkline-grad)" />
 
                     <!-- Data Line -->
-                    <polyline fill="none" class="stroke-emerald-500 dark:stroke-emerald-400" stroke-width="2" points="${points}" />
+                    <polyline fill="none" class="stroke-green-500 dark:stroke-green-400" stroke-width="2" points="${points}" />
                     
                     <!-- Last point circle -->
                     <circle fill="currentColor" class="${getScoreColor(scores[scores.length - 1])} stroke-white dark:stroke-gray-900" stroke-width="2" r="4" cx="${lastPoint[0]}" cy="${lastPoint[1]}"></circle>
@@ -229,7 +229,7 @@ function renderScoreAndTrend(payload) {
                 
                 ${canSeeDashboard ? `
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center md:text-left">
-                    <a href="#" id="view-full-dashboard-link" class="font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
+                    <a href="#" id="view-full-dashboard-link" class="font-medium text-green-600 dark:text-green-400 hover:underline">
                         View Full Audit Report &rarr;
                     </a>
                 </p>

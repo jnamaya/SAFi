@@ -343,7 +343,7 @@ function ensureWizardInlineExists() {
         </div>
 
         <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
-            <div id="pw-progress" class="bg-blue-600 h-full transition-all duration-300" style="width: ${100 / TOTAL_STEPS}%"></div>
+            <div id="pw-progress" class="bg-green-600 h-full transition-all duration-300" style="width: ${100 / TOTAL_STEPS}%"></div>
         </div>
 
         <div class="flex justify-between px-6 py-2 text-xs text-gray-400 uppercase font-bold tracking-wider border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-x-auto gap-4">
@@ -359,7 +359,7 @@ function ensureWizardInlineExists() {
 
         <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0 footer-container">
             <button id="pw-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
-            <button id="pw-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+            <button id="pw-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
         </div>
     </div>`;
 
@@ -391,11 +391,11 @@ function updateProgress() {
     const nextBtn = document.getElementById('pw-next-btn');
     if (currentStep === TOTAL_STEPS) {
         nextBtn.innerText = policyData.policy_id ? 'Save Changes' : 'Create Policy';
-        nextBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
         nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
     } else {
         nextBtn.innerText = 'Next';
-        nextBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
         nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
     }
 
@@ -410,8 +410,8 @@ function updateProgress() {
     const labels = document.querySelectorAll('#policy-wizard-view [data-step]');
     labels.forEach((el) => {
         const idx = parseInt(el.dataset.step, 10);
-        if (idx <= currentStep) el.classList.add('text-blue-600');
-        else el.classList.remove('text-blue-600');
+        if (idx <= currentStep) el.classList.add('text-green-600');
+        else el.classList.remove('text-green-600');
         // Visited steps are click-to-return targets (see ensureWizardInlineExists)
         const clickable = idx < currentStep && currentStep <= TOTAL_STEPS;
         el.classList.toggle('cursor-pointer', clickable);

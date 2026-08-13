@@ -143,8 +143,8 @@ function kbCard(kb) {
 function statusPill(kb) {
     const map = {
         ready:    ['Ready', 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'],
-        indexing: ['Indexing…', 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'],
-        pending:  ['Queued', 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'],
+        indexing: ['Indexing…', 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'],
+        pending:  ['Queued', 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'],
         empty:    ['Empty', 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-gray-300'],
         failed:   ['Failed', 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'],
     };
@@ -268,7 +268,7 @@ async function renderDetail() {
         </div>` : ''}
 
         ${BUSY_STATUSES.includes(kb.status) ? `
-        <div class="mb-4 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
+        <div class="mb-4 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 text-sm text-green-800 dark:text-green-300 flex items-center gap-2">
             <span class="thinking-spinner w-4 h-4"></span>
             Indexing. Documents become retrievable when this finishes.
         </div>` : ''}
@@ -293,7 +293,7 @@ async function renderDetail() {
         </div>` : ''}
 
         ${kb.is_shared && pending > 0 && kb.sole_reviewer ? `
-        <div class="mb-4 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 text-sm text-blue-900 dark:text-blue-200">
+        <div class="mb-4 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 text-sm text-green-900 dark:text-green-200">
             <strong>Sole administrator.</strong> You are the only Admin or
             Auditor in this organization, so you may approve your own uploads.
             Each such sign-off is recorded as <strong>not independent</strong>
@@ -569,7 +569,7 @@ function docRow(doc, kb, mine) {
                     <span class="text-gray-400">&middot; ${doc.char_count.toLocaleString()} characters</span>
                 </p>
                 ${doc.self_approved ? `
-                <p class="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                <p class="text-xs text-green-600 dark:text-green-400 mt-0.5">
                     Not independent — approved by the sole administrator
                 </p>` : ''}
                 ${doc.reason ? `<p class="text-xs text-gray-500 mt-1 italic">${escapeHtml(doc.reason)}</p>` : ''}

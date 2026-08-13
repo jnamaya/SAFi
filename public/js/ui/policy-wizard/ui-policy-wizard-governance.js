@@ -21,10 +21,10 @@ export function renderGovernanceStep(container, policyData) {
                     <div>
                         <div class="flex justify-between items-end mb-2">
                             <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Minimum approval score</label>
-                            <span id="lbl-pw-thresh" class="text-sm font-mono bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded">${policyData.alignment_threshold.toFixed(2)}</span>
+                            <span id="lbl-pw-thresh" class="text-sm font-mono bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-0.5 rounded">${policyData.alignment_threshold.toFixed(2)}</span>
                         </div>
                         <input type="range" id="sl-pw-thresh" min="0" max="100" value="${threshPct}"
-                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600">
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-green-600">
                         <div class="flex justify-between text-xs text-gray-400 mt-1.5">
                             <span>Permissive (0.0)</span>
                             <span>Strict (1.0)</span>
@@ -35,10 +35,10 @@ export function renderGovernanceStep(container, policyData) {
                     <div>
                         <div class="flex justify-between items-end mb-2">
                             <label class="text-sm font-bold text-gray-700 dark:text-gray-300">Consistency over time</label>
-                            <span id="lbl-pw-mem" class="text-sm font-mono bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded">${policyData.ethical_memory.toFixed(2)}</span>
+                            <span id="lbl-pw-mem" class="text-sm font-mono bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-0.5 rounded">${policyData.ethical_memory.toFixed(2)}</span>
                         </div>
                         <input type="range" id="sl-pw-mem" min="10" max="99" value="${memPct}"
-                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-purple-600">
+                            class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-green-600">
                         <div class="flex justify-between text-xs text-gray-400 mt-1.5">
                             <span>Adapts fast (0.10)</span>
                             <span>Resists change (0.99)</span>
@@ -53,10 +53,10 @@ export function renderGovernanceStep(container, policyData) {
             <div class="space-y-4">
                 <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Policy Summary</h3>
 
-                <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4">
-                    <h4 class="font-bold text-lg text-blue-900 dark:text-blue-100">${escapeHtml(policyData.name || 'Untitled Policy')}</h4>
-                    ${policyData.business_unit ? `<p class="text-xs text-blue-600 dark:text-blue-400 mt-0.5">${escapeHtml(policyData.business_unit)}</p>` : ''}
-                    <p class="text-sm text-blue-700 dark:text-blue-300 opacity-80 mt-1">${escapeHtml(policyData.context || 'No description.')}</p>
+                <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-xl p-4">
+                    <h4 class="font-bold text-lg text-green-900 dark:text-green-100">${escapeHtml(policyData.name || 'Untitled Policy')}</h4>
+                    ${policyData.business_unit ? `<p class="text-xs text-green-600 dark:text-green-400 mt-0.5">${escapeHtml(policyData.business_unit)}</p>` : ''}
+                    <p class="text-sm text-green-700 dark:text-green-300 opacity-80 mt-1">${escapeHtml(policyData.context || 'No description.')}</p>
                 </div>
 
                 <div class="space-y-2 text-sm">

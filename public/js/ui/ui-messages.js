@@ -577,7 +577,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             fileChipHtml = `<div class="flex flex-wrap gap-2 mb-2">${cards.join('')}</div>`;
         }
 
-        const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/7e22ce/FFFFFF?text=U`;
+        const avatarUrl = options.avatarUrl || `https://placehold.co/40x40/16a34a/FFFFFF?text=U`;
         messageDiv.innerHTML = `
         <div class="user-content-wrapper">
            <div class="chat-bubble">${fileChipHtml}${final_html}<div class="meta"></div></div>

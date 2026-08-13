@@ -53,7 +53,7 @@ export async function renderSettingsGovernanceTab() {
                      <div class="min-w-0 sm:flex-1">
                          <div class="flex items-center flex-wrap gap-2">
                             <h4 class="font-bold text-lg text-gray-900 dark:text-white break-words min-w-0">${p.name}</h4>
-                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded-full font-bold shrink-0">EXAMPLE</span>' : ''}
+                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded-full font-bold shrink-0">EXAMPLE</span>' : ''}
                          </div>
                          <p class="text-xs text-gray-500 font-mono mt-1 mb-3 break-all">ID: ${p.id}</p>
                          <div class="flex gap-2">
@@ -69,9 +69,9 @@ export async function renderSettingsGovernanceTab() {
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
                          ${canEditPolicy ? `<button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white dup-policy-btn" data-id="${p.id}">Duplicate</button>` : ''}
-                         ${canGenerateKey ? `<button class="text-sm text-blue-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>` : ''}
+                         ${canGenerateKey ? `<button class="text-sm text-green-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>` : ''}
                          ${!isReadOnly && canEditPolicy ? `
-                         <button class="text-sm text-gray-600 hover:text-blue-600 edit-policy-btn" data-id="${p.id}">
+                         <button class="text-sm text-gray-600 hover:text-green-600 edit-policy-btn" data-id="${p.id}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                          </button>
                          <button class="text-sm text-red-500 hover:text-red-600 delete-policy-btn" data-id="${p.id}">
@@ -241,7 +241,7 @@ async function openPolicyHistory(policyId, policyName, canEdit) {
               </div>
               <div class="flex gap-3 shrink-0">
                 <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white ph-view" data-v="${v.version}">View</button>
-                ${(canEdit && v.version !== latest) ? `<button class="text-sm text-blue-600 hover:underline ph-restore" data-v="${v.version}">Restore</button>` : ''}
+                ${(canEdit && v.version !== latest) ? `<button class="text-sm text-green-600 hover:underline ph-restore" data-v="${v.version}">Restore</button>` : ''}
               </div>
             </div>
             <pre class="ph-detail hidden mt-3 text-xs whitespace-pre-wrap bg-gray-50 dark:bg-neutral-800 rounded-lg p-3 text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto" data-v="${v.version}"></pre>

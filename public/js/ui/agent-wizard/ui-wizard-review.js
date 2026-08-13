@@ -14,14 +14,14 @@ export function renderReviewStep(container, agentData) {
         <div class="space-y-6">
             
              <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg p-4 border border-gray-200 dark:border-neutral-700 flex gap-4">
-                <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                <div class="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center overflow-hidden shrink-0">
                      ${agentData.avatar ? `<img src="${escapeHtml(agentData.avatar)}" class="w-full h-full object-cover">` : `<span class="text-2xl">🤖</span>`}
                 </div>
                 <div>
                      <h3 class="font-bold text-lg dark:text-white">${escapeHtml(agentData.name || 'Unnamed Agent')}</h3>
                      <p class="text-sm text-gray-500">${escapeHtml(agentData.description || 'No description')}</p>
                      <div class="flex gap-2 mt-2 items-center flex-wrap">
-                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-mono">ID: ${escapeHtml(agentData.key)}</span>
+                        <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full font-mono">ID: ${escapeHtml(agentData.key)}</span>
                         <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Visibility: ${escapeHtml(agentData.visibility)}</span>
                         <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Policy: ${escapeHtml(agentData.policy_id)}</span>
                      </div>
@@ -34,7 +34,7 @@ export function renderReviewStep(container, agentData) {
                  <ul class="space-y-2 text-sm">
                     <li class="flex justify-between">
                         <span>Governing Policy</span>
-                        <span class="font-mono font-bold ${hasPolicy ? 'text-blue-600' : 'text-gray-400'}">${policyLabel}</span>
+                        <span class="font-mono font-bold ${hasPolicy ? 'text-green-600' : 'text-gray-400'}">${policyLabel}</span>
                     </li>
                     <li class="flex justify-between">
                         <span>Knowledge Base</span>
@@ -52,9 +52,9 @@ export function renderReviewStep(container, agentData) {
             </div>
             
             <!-- Governance Summary -->
-            <div class="border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 rounded-lg p-4">
-                <h4 class="font-bold text-sm text-blue-800 dark:text-blue-200 uppercase mb-2">Governance</h4>
-                <p class="text-sm text-blue-700 dark:text-blue-300">
+            <div class="border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 rounded-lg p-4">
+                <h4 class="font-bold text-sm text-green-800 dark:text-green-200 uppercase mb-2">Governance</h4>
+                <p class="text-sm text-green-700 dark:text-green-300">
                     ${hasPolicy
                         ? `This agent is governed by the <strong>${policyLabel}</strong> policy plus your Organization's Charter. Its values, standards, scope, required disclaimers, and permitted tools are inherited from them.`
                         : `This agent has no policy attached, so it is governed by your Organization's Charter alone. Attach a policy in Step 1 to give it business-unit standards and rules.`}

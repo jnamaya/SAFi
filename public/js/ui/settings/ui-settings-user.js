@@ -215,7 +215,7 @@ function _buildCompletenessBar() {
     let label = 'Just getting started';
     if (pct >= 80) { colorClass = 'bg-green-500'; label = 'Great profile!'; }
     else if (pct >= 50) { colorClass = 'bg-yellow-400'; label = 'Looking good'; }
-    else if (pct >= 25) { colorClass = 'bg-orange-400'; label = 'Keep going'; }
+    else if (pct >= 25) { colorClass = 'bg-amber-400'; label = 'Keep going'; }
 
     return `
         <div class="mb-6 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">

@@ -7,9 +7,9 @@ export async function renderToolsStep(container, agentData) {
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools &amp; Knowledge</h2>
         <p class="text-gray-500 mb-6">Select the tools and data sources this agent can access.</p>
 
-        <div id="wiz-policy-note" class="hidden mb-6 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <svg class="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-            <p class="text-xs text-blue-800 dark:text-blue-300" id="wiz-policy-note-text"></p>
+        <div id="wiz-policy-note" class="hidden mb-6 flex items-start gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+            <p class="text-xs text-green-800 dark:text-green-300" id="wiz-policy-note-text"></p>
         </div>
 
         <div id="wiz-tools-loading" class="flex items-center gap-2 text-gray-500">
@@ -153,7 +153,7 @@ async function renderKnowledgeBasePicker(agentData, governance) {
 
     if (Array.isArray(allowed) && allowed.length === 0) {
         el.innerHTML = `
-            <div class="p-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 text-sm text-blue-800 dark:text-blue-300">
+            <div class="p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 text-sm text-green-800 dark:text-green-300">
                 This agent's governing policy authorizes <strong>no knowledge
                 bases</strong>. It will answer without retrieval. Edit the
                 policy's Tools &amp; Guardrails step to authorize one.
@@ -177,13 +177,13 @@ async function renderKnowledgeBasePicker(agentData, governance) {
     }
 
     const policyNote = Array.isArray(allowed)
-        ? `<p class="text-xs text-blue-600 dark:text-blue-400 mb-2">Only knowledge bases authorized by this agent's governing policy are shown.</p>`
+        ? `<p class="text-xs text-green-600 dark:text-green-400 mb-2">Only knowledge bases authorized by this agent's governing policy are shown.</p>`
         : '';
 
     el.innerHTML = `
         ${policyNote}
         <select id="wiz-kb-select"
-            class="w-full px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-gray-900 dark:text-white">
+            class="w-full px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-gray-900 dark:text-white">
             <option value="">None — this agent answers without retrieval</option>
             ${isBuiltIn ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (built-in)</option>` : ''}
             ${bases.map(kb => `

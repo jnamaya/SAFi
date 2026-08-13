@@ -67,7 +67,7 @@ function clockBadge(clock) {
         case 'excepted':
             return `<span class="${base} bg-gray-200 text-gray-700 dark:bg-neutral-700 dark:text-gray-300">${prefix}excepted (harm assessment)</span>`;
         case 'notified':
-            return `<span class="${base} bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">${prefix}notified${clock.days_taken !== null ? ` in ${clock.days_taken}d` : ''}</span>`;
+            return `<span class="${base} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">${prefix}notified${clock.days_taken !== null ? ` in ${clock.days_taken}d` : ''}</span>`;
         case 'overdue':
             return `<span class="${base} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">${prefix}OVERDUE ${Math.abs(clock.days_remaining)}d</span>`;
         default: {
@@ -148,7 +148,7 @@ async function renderList(container) {
                 <h2 class="text-xl font-semibold">Security Incidents</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Multi-regime incident registry. Every notification clock for an incident's tagged regimes runs from when the firm became aware.</p>
             </div>
-            <button id="incident-new-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">New Incident</button>
+            <button id="incident-new-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">New Incident</button>
         </div>
         <div id="regime-defaults" class="flex flex-wrap items-center gap-4 mb-4 px-4 py-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800">
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Default regimes for new incidents:</span>
@@ -206,7 +206,7 @@ function renderForm(container, incident) {
         </label>`).join('');
     enterSubview(container, true);
     container.innerHTML = `
-        <button id="incident-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to incidents</button>
+        <button id="incident-back" class="text-sm text-green-600 hover:underline mb-4">&larr; Back to incidents</button>
         <div class="settings-card max-w-2xl">
         <h2 class="text-xl font-semibold mb-4">${incident ? "Edit Incident" : "New Incident"}</h2>
         <form id="incident-form" class="space-y-4">
@@ -264,7 +264,7 @@ function renderForm(container, incident) {
                 </div>
             </div>
             <div class="flex gap-3 pt-2">
-                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">${incident ? 'Save changes' : 'Create incident'}</button>
+                <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">${incident ? 'Save changes' : 'Create incident'}</button>
                 <button type="button" id="incident-cancel" class="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">Cancel</button>
             </div>
         </form>
@@ -366,7 +366,7 @@ async function renderDetail(container, incidentId) {
         </li>`).join('');
 
     container.innerHTML = `
-        <button id="incident-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to incidents</button>
+        <button id="incident-back" class="text-sm text-green-600 hover:underline mb-4">&larr; Back to incidents</button>
         <div class="flex items-start justify-between mb-2">
             <h1 class="text-2xl font-bold">${esc(i.title)}</h1>
             <div class="flex gap-2">
@@ -400,7 +400,7 @@ async function renderDetail(container, incidentId) {
                         <input name="detail" required placeholder="What happened (e.g. notices mailed to 120 customers)" class="${INPUT_CLS} mt-0 flex-1">
                     </div>
                     <p class="text-xs text-gray-400">The "… notified" event types record that the firm sent that notice through its own channels — the first one stamps the date that stops the matching clock.</p>
-                    <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg">Log event</button>
+                    <button type="submit" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg">Log event</button>
                 </form>
             </div>
         </div>`;

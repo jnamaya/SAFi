@@ -58,22 +58,22 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
         <div class="mt-8 space-y-6">
              <!-- STEP 1 — attach an agent. The only required step; everything
                   below is optional integration. -->
-             <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
-                 <h4 class="font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                     <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">1</span>
+             <div class="bg-green-50 dark:bg-green-900/10 p-5 rounded-xl border border-green-200 dark:border-green-800">
+                 <h4 class="font-bold text-green-900 dark:text-green-100 flex items-center gap-2">
+                     <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold shrink-0">1</span>
                      Attach an agent — required
                  </h4>
-                 <p class="text-sm text-blue-800 dark:text-blue-200 mt-2">
+                 <p class="text-sm text-green-800 dark:text-green-200 mt-2">
                      A policy governs nothing until an agent uses it. Nothing else
                      on this page is needed to start.
                  </p>
-                 <ol class="list-decimal list-outside ml-5 text-sm text-blue-700 dark:text-blue-300 mt-2 space-y-1">
+                 <ol class="list-decimal list-outside ml-5 text-sm text-green-700 dark:text-green-300 mt-2 space-y-1">
                      <li>Go to <strong>Agents</strong> and create one, or edit an existing one.</li>
                      <li>In <strong>step 1</strong>, choose this policy: <code class="font-mono text-xs bg-white/60 dark:bg-black/30 px-1 rounded">${escapeHtml(policy_id)}</code></li>
                      <li>In <strong>step 2</strong>, pick its tools and knowledge base — this policy decides what is on offer there.</li>
                      <li>Chat with the agent. Every turn is scored against this policy's standards and appears in the <strong>Audit Hub</strong>.</li>
                  </ol>
-                 <p class="text-xs text-blue-700/80 dark:text-blue-300/80 mt-3">
+                 <p class="text-xs text-green-700/80 dark:text-green-300/80 mt-3">
                      Editing the policy later re-governs every agent using it, on their next turn. No need to touch the agents again.
                  </p>
              </div>
@@ -255,7 +255,7 @@ if __name__ == "__main__":
         </div>
 
         <div class="mt-8 pt-6 border-t border-gray-200 dark:border-neutral-700 text-center mb-10 pb-10">
-             <button onclick="window.location.reload()" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg transition-transform hover:scale-105">Finish Setup</button>
+             <button onclick="window.location.reload()" class="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg transition-transform hover:scale-105">Finish Setup</button>
         </div>
     `;
 

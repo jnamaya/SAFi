@@ -61,7 +61,7 @@ const TRIGGER_META = {
     persona_redirect: { label: 'Persona redirect', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
     low_alignment: { label: 'Low alignment', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
     drift_spike: { label: 'Consistency drop', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
-    random_sample: { label: 'Random sample', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200' },
+    random_sample: { label: 'Random sample', cls: 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200' },
 };
 
 function triggerBadges(triggers) {
@@ -75,7 +75,7 @@ function statusBadge(status) {
     const map = {
         pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200',
         approved: 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200',
-        overridden: 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200',
+        overridden: 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200',
     };
     return `<span class="${BADGE} ${map[status] || map.pending} capitalize">${esc(status)}</span>`;
 }
@@ -370,7 +370,7 @@ async function renderDetail(queueId) {
         </div>`;
 
     el.innerHTML = `
-        <button id="review-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to queue</button>
+        <button id="review-back" class="text-sm text-green-600 hover:underline mb-4">&larr; Back to queue</button>
         <div class="flex flex-wrap items-center gap-2 mb-4">
             ${statusBadge(q.status)} ${triggerBadges(q.triggers)} ${chainBadge(doc.chain)}
         </div>
@@ -445,7 +445,7 @@ function renderActionBar() {
                 class="w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm"></textarea>
             <div class="flex gap-3">
                 <button id="review-approve" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">Approve</button>
-                <button id="review-override" class="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white text-sm font-medium rounded-lg">Override</button>
+                <button id="review-override" class="px-4 py-2 bg-green-700 hover:bg-green-800 text-white text-sm font-medium rounded-lg">Override</button>
             </div>
         </div>`;
 }

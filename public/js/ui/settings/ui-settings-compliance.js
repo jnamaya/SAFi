@@ -34,7 +34,7 @@ export async function renderSettingsComplianceTab() {
              <div id="compliance-log-list" class="text-sm text-gray-500 max-h-80 overflow-y-auto custom-scrollbar">Loading…</div>
              <div id="compliance-log-footer" class="hidden mt-3 flex items-center justify-between">
                  <span id="compliance-log-count" class="text-xs text-gray-400"></span>
-                 <button id="compliance-log-more" class="hidden text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">Show more</button>
+                 <button id="compliance-log-more" class="hidden text-xs font-semibold text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300">Show more</button>
              </div>
         </div>
 

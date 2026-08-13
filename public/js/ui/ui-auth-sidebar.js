@@ -31,7 +31,7 @@ export function setKnownProfiles(profiles) {
 export function updateUIForAuthState(user) {
   ui._ensureElements();
 
-  const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/7e22ce/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
+  const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
   const name = user?.name || 'Guest';
 
   if (user) {

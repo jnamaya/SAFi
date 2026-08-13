@@ -173,7 +173,7 @@ function ensureWizardInlineExists() {
 
             <!-- Progress Bar -->
             <div class="w-full bg-gray-200 dark:bg-neutral-800 h-1 shrink-0 flex">
-                <div id="wizard-progress-track" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+                <div id="wizard-progress-track" class="h-full bg-green-600 transition-all duration-300" style="width: 0%"></div>
             </div>
             
             <!-- Step Labels (highlighted by updateProgress) -->
@@ -191,7 +191,7 @@ function ensureWizardInlineExists() {
             <!-- Footer -->
             <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
                 <button id="wizard-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
-                <button id="wizard-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+                <button id="wizard-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
             </div>
         </div>
     `;
@@ -213,8 +213,8 @@ function updateProgress() {
     backBtn.disabled = currentStep === 1;
 
     labels.forEach((el, idx) => {
-        if (idx + 1 <= currentStep) el.classList.add('text-blue-600', 'dark:text-blue-400');
-        else el.classList.remove('text-blue-600', 'dark:text-blue-400');
+        if (idx + 1 <= currentStep) el.classList.add('text-green-600', 'dark:text-green-400');
+        else el.classList.remove('text-green-600', 'dark:text-green-400');
     });
 
     // Key presence is not a reliable edit signal: create mode auto-generates
@@ -222,11 +222,11 @@ function updateProgress() {
     const isEdit = !!agentData.is_update_mode;
     if (currentStep === TOTAL_STEPS) {
         nextBtn.innerText = isEdit ? 'Save Changes' : 'Create Agent';
-        nextBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
         nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
     } else {
         nextBtn.innerText = 'Next';
-        nextBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        nextBtn.classList.add('bg-green-600', 'hover:bg-green-700');
         nextBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
     }
 }

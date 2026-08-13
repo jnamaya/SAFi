@@ -11,7 +11,7 @@ export function renderValuesStep(container, policyData) {
                             <label class="block text-lg font-bold text-gray-700 dark:text-gray-300">Standards</label>
                             <p class="text-sm text-gray-500">The standards this business unit holds its agents to. Every response from agents using this policy is scored against these.</p>
                          </div>
-                         <button id="btn-gen-values" class="shrink-0 text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
+                         <button id="btn-gen-values" class="shrink-0 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                             Suggest Standards
                          </button>
@@ -21,22 +21,22 @@ export function renderValuesStep(container, policyData) {
                         <!-- Values rendered here -->
                     </div>
                     
-                    <button id="btn-add-value" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl text-base font-medium text-gray-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all">
+                    <button id="btn-add-value" class="w-full py-4 border-2 border-dashed border-gray-300 dark:border-neutral-700 rounded-xl text-base font-medium text-gray-500 hover:border-green-500 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/10 transition-all">
                         + Add Custom Standard
                     </button>
                 </div>
             </div>
 
-            <div class="bg-blue-50 dark:bg-neutral-800 p-8 rounded-2xl border border-blue-100 dark:border-neutral-700 h-fit sticky top-6">
+            <div class="bg-green-50 dark:bg-neutral-800 p-8 rounded-2xl border border-green-100 dark:border-neutral-700 h-fit sticky top-6">
                 <h4 class="font-bold text-xl text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
-                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                    <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                     How Standards Work
                 </h4>
                 <div class="space-y-5 text-sm text-gray-600 dark:text-gray-400">
                     <p class="leading-relaxed">
                         Every response is scored against each standard on a scale from <span class="font-mono">-1.0</span> (violated) to <span class="font-mono">+1.0</span> (upheld). The three states below tell the system how to judge each one.
                     </p>
-                    <div id="pw-charter-note" class="hidden p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800/40 text-xs leading-relaxed"></div>
+                    <div id="pw-charter-note" class="hidden p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800/40 text-xs leading-relaxed"></div>
                     <div class="p-4 bg-white dark:bg-black rounded-lg border border-gray-200 dark:border-neutral-700 shadow-sm">
                         <strong class="block text-green-600 mb-1">Upheld (+1.0)</strong>
                         The response actively demonstrates the standard.
@@ -130,7 +130,7 @@ async function loadCharterNote() {
         const note = document.getElementById('pw-charter-note');
         if (!note) return; // user navigated away
         note.innerHTML = `
-            <strong class="block text-indigo-800 dark:text-indigo-300 mb-1">Your organization has a Charter</strong>
+            <strong class="block text-green-800 dark:text-green-300 mb-1">Your organization has a Charter</strong>
             Its ${scoredCount} core value${scoredCount === 1 ? '' : 's'} automatically take <strong>${charterPct}%</strong> of every score for agents under this policy. The standards you define here share the remaining <strong>${100 - charterPct}%</strong>.`;
         note.classList.remove('hidden');
     } catch (_) { /* note is informational — never block the step on it */ }
@@ -174,14 +174,14 @@ function renderValuesList(policyData) {
             : `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold border border-yellow-200">⚠️ Needs Criteria</span>`;
 
         const card = document.createElement('div');
-        card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-6 shadow-sm hover:border-blue-300 transition-colors group";
+        card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-6 shadow-sm hover:border-green-300 transition-colors group";
 
         const nameId = `pw-val-name-${idx}`;
         const descId = `pw-val-desc-${idx}`;
 
         card.innerHTML = `
             <div class="flex justify-between items-start mb-4 gap-4">
-                <input type="text" id="${nameId}" class="flex-1 font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 px-1 py-1 transition-all" 
+                <input type="text" id="${nameId}" class="flex-1 font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 px-1 py-1 transition-all" 
                     value="${v.name}" placeholder="e.g. Data Privacy, Accuracy, Regulatory Compliance">
                     
                 <button class="text-gray-400 hover:text-red-500 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="window.removePolicyValue(${idx})">
@@ -189,13 +189,13 @@ function renderValuesList(policyData) {
                 </button>
             </div>
             
-            <textarea id="${descId}" class="w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 hover:border-blue-300 focus:border-blue-500 rounded-lg p-3 resize-none h-24 outline-none transition-all mb-4"
+            <textarea id="${descId}" class="w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 hover:border-green-300 focus:border-green-500 rounded-lg p-3 resize-none h-24 outline-none transition-all mb-4"
                 placeholder="Brief description of this standard...">${v.description || ''}</textarea>
             
             <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100 dark:border-neutral-700">
                 <div class="flex items-center gap-3">
                     ${rubricBadge}
-                    <button class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline" onclick="document.getElementById('rubric-container-${idx}').classList.toggle('hidden')">
+                    <button class="text-sm font-semibold text-green-600 dark:text-green-400 hover:underline" onclick="document.getElementById('rubric-container-${idx}').classList.toggle('hidden')">
                         View/Edit Rubric
                     </button>
                 </div>
@@ -210,7 +210,7 @@ function renderValuesList(policyData) {
                         title="${v.hard_gate ? 'Not used: a non-negotiable standard blocks on violation instead of contributing to the score.' : 'How much this standard counts toward the overall score.'}">
                         <label class="text-xs uppercase font-bold text-gray-500">Importance</label>
                         <input type="range" min="0" max="100" value="${weightToPct(v.weight)}" ${v.hard_gate ? 'disabled' : ''}
-                            class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600 disabled:cursor-not-allowed">
+                            class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-green-600 disabled:cursor-not-allowed">
                         <span id="pw-weight-lbl-${idx}" class="text-sm font-mono font-bold ${!v.hard_gate && weightToPct(v.weight) === 0 ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'} w-8 text-right">${weightToPct(v.weight)}%</span>
                     </div>
                 </div>
@@ -286,7 +286,7 @@ function renderValuesList(policyData) {
                     </div>
                     <div class="flex-1 relative">
                         <span class="absolute top-3 left-3 text-sm select-none opacity-50">${def.icon}</span>
-                        <textarea class="w-full text-sm p-3 pl-10 rounded-lg border focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none h-20 transition-all shadow-sm ${bgClass}"
+                        <textarea class="w-full text-sm p-3 pl-10 rounded-lg border focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none resize-none h-20 transition-all shadow-sm ${bgClass}"
                             placeholder="${def.placeholder}">${getCriteria(def.score)}</textarea>
                     </div>
                 `;

@@ -96,7 +96,7 @@ const BADGE = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] fon
 function decisionBadge(decision) {
     const map = {
         approve: ['Approved', 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200'],
-        redirected: ['Redirected', 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200'],
+        redirected: ['Redirected', 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200'],
         violation: ['Violation', 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200'],
     };
     const [label, cls] = map[decision] || [decision || 'Unknown', 'bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300'];
@@ -242,7 +242,7 @@ function gaugeSvg(score) {
         <div class="relative w-32 h-32">
             <svg class="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
                 <defs>
-                    <linearGradient id="ahg-green" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#34d399"/></linearGradient>
+                    <linearGradient id="ahg-green" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#4ade80"/></linearGradient>
                     <linearGradient id="ahg-yellow" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#fbbf24"/></linearGradient>
                     <linearGradient id="ahg-red" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ef4444"/><stop offset="100%" stop-color="#f87171"/></linearGradient>
                 </defs>
@@ -682,7 +682,7 @@ async function renderDetail(messagePk) {
     const ev = doc.event || {};
     const r = doc.record || {};
     const reviewNote = doc.review
-        ? `<span class="${BADGE} bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 capitalize" title="This turn was sampled into the supervisory review queue">In review queue · ${esc(doc.review.status)}</span>`
+        ? `<span class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200 capitalize" title="This turn was sampled into the supervisory review queue">In review queue · ${esc(doc.review.status)}</span>`
         : '';
     // Org governance records deliberately survive member deletion — flag it.
     const deletedNote = !doc.chat
@@ -767,7 +767,7 @@ async function renderDetail(messagePk) {
     };
 
     el.innerHTML = `
-        <button id="ah-back" class="text-sm text-blue-600 hover:underline mb-4">&larr; Back to explorer</button>
+        <button id="ah-back" class="text-sm text-green-600 hover:underline mb-4">&larr; Back to explorer</button>
         <div class="flex flex-wrap items-center gap-2 mb-1">
             ${decisionBadge(ev.will_decision)} ${chainBadge(doc.trail)} ${reviewNote} ${deletedNote}
         </div>
@@ -781,7 +781,7 @@ async function renderDetail(messagePk) {
         <div class="border-b border-gray-200 dark:border-gray-700 mb-4">
             <nav class="flex flex-wrap -mb-px" aria-label="Sections">
                 ${sections.map(([key, label], idx) => `
-                    <button data-ah-section="${key}" class="ah-section-btn px-4 py-2 text-sm font-medium border-b-2 ${idx === 0 ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}">${label}</button>`).join('')}
+                    <button data-ah-section="${key}" class="ah-section-btn px-4 py-2 text-sm font-medium border-b-2 ${idx === 0 ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}">${label}</button>`).join('')}
             </nav>
         </div>
         ${sections.map(([key], idx) => `<div id="ah-panel-${key}" class="${idx === 0 ? '' : 'hidden'}">${sectionHtml[key]}</div>`).join('')}
@@ -794,9 +794,9 @@ async function renderDetail(messagePk) {
     el.querySelectorAll('.ah-section-btn').forEach(btn => btn.addEventListener('click', () => {
         el.querySelectorAll('.ah-section-btn').forEach(b => {
             const active = b === btn;
-            b.classList.toggle('border-emerald-500', active);
-            b.classList.toggle('text-emerald-600', active);
-            b.classList.toggle('dark:text-emerald-400', active);
+            b.classList.toggle('border-green-500', active);
+            b.classList.toggle('text-green-600', active);
+            b.classList.toggle('dark:text-green-400', active);
             b.classList.toggle('border-transparent', !active);
             b.classList.toggle('text-gray-500', !active);
         });
