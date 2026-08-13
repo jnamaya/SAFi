@@ -71,6 +71,21 @@ CORE_FILES = [
     # Core Loop change even though the *content* of the database belongs to
     # the organization (Section III).
     "safi_app/persistence/database.py",
+    # Enforcement CONTENT that feeds the deterministic gates and the model
+    # faculties — added 2026-08-13 (backlog 34b, decided). Without these two, a
+    # fork could gut Phase Zero's injection signatures or rewrite the
+    # Conscience's audit prompt and still verify INTACT:
+    #   threat_intel.py     — the global signature and marker lists Phase Zero
+    #                         scans. Per-agent additions remain a Section III
+    #                         variable (early_prompt_blacklist on the profile);
+    #                         the shipped floor is what this covers.
+    #   system_prompts.json — the faculty prompt templates, including the
+    #                         Conscience's audit instructions and the coaching
+    #                         note wrapper. Org worldviews/policies layer ON
+    #                         TOP of these (Section III); the templates
+    #                         themselves define how every deployment audits.
+    "safi_app/core/threat_intel.py",
+    "safi_app/core/system_prompts.json",
 ]
 
 # Deterministic components: no provider imports, no model calls, ever.

@@ -133,7 +133,7 @@ class TheManifestIsWellFormed(unittest.TestCase):
         m = json.loads(MANIFEST.read_text())
         self.assertIn("Governance Agreement", m["comment"])
         self.assertEqual(len(m["root_fingerprint"]), 64)
-        self.assertGreaterEqual(len(m["files"]), 13)
+        self.assertGreaterEqual(len(m["files"]), 15)
 
     def test_every_deterministic_faculty_is_covered_by_a_hash(self):
         """The invariant checks only diagnose; the hash layer is the verdict.
@@ -146,6 +146,18 @@ class TheManifestIsWellFormed(unittest.TestCase):
                     "safi_app/core/faculties/synderesis.py",
                     "safi_app/core/feedback.py"):
             self.assertIn(rel, m)
+
+    def test_the_enforcement_content_is_covered_too(self):
+        """Decided 2026-08-13 (backlog 34b): the files that FEED the gates are
+        Core Loop, not variables. Phase Zero's authority is its signature
+        list, and the Conscience's strictness is its audit prompt — a fork
+        that guts either must fail verification, not verify INTACT while
+        running materially weakened governance. Org customization stays at
+        the layer above: per-agent blacklists and worldviews are Section III
+        variables; these shipped floors are not."""
+        m = json.loads(MANIFEST.read_text())["files"]
+        self.assertIn("safi_app/core/threat_intel.py", m)
+        self.assertIn("safi_app/core/system_prompts.json", m)
 
 
 if __name__ == "__main__":

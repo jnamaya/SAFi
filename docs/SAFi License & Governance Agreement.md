@@ -31,6 +31,8 @@ The strict copyleft provisions of the AGPL-3.0 apply completely and universally 
 - **Spirit**: The Temporal Habitus and Drift Monitoring faculty.
 - **The Core Database Schema**: The structural blueprints, migration files, and table architectures that define how data is stored, specifically the hash-chained audit ledgers and the temporal logs. Modifying the structure of how the system records its actions compromises the integrity and auditability of the engine.
 
+The Core Loop includes the enforcement content that feeds these components: the shipped threat-signature intelligence that Phase 0 scans against, and the faculty prompt templates that define how the Intellect drafts and the Conscience audits. Organizations customize *on top of* these through Section III variables (per-agent blacklists, worldviews, policies); the shipped floor itself is core.
+
 Modifying these files alters the fundamental philosophical and deterministic mechanics of the engine. If an organization modifies these core files for network deployment, those modifications must be open-sourced.
 
 ---
