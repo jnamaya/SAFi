@@ -26,6 +26,31 @@ import re
 from typing import List, Dict, Any, Optional
 import logging
 
+# The Conscience is the only intelligent component whose output feeds an
+# enforcement decision: its per-value scores drive the hard gates and the
+# alignment threshold. Sampling it is therefore not a quality knob but a
+# governance one — a non-zero temperature means the same draft can be blocked on
+# one turn and shipped on the next, and no audit record can explain the
+# difference. Kept at 0 so the ledger is as reproducible as the provider allows.
+#
+# NOT a guarantee of reproducibility, and must not be described as one:
+#   - Some models reject an explicit temperature (see the gpt-5 / o1 branches in
+#     llm_provider._chat_completion, which strip it). On those routes the
+#     provider default applies and this value has no effect.
+#   - Even at 0, batching and hardware differences move logits at the provider.
+# The defensible claim is "as reproducible as the provider allows", never
+# "deterministic". The deterministic part of SAFi is the rule applied to the
+# ledger, not the ledger itself.
+#
+# DEFINED HERE, CONSUMED IN llm_provider, deliberately. This file is part of the
+# Core Loop integrity manifest (scripts/core_integrity_manifest.json) and
+# llm_provider.py is not: transport code stays open so organizations can add
+# providers freely, but changing how strictly every agent is audited must trip
+# the integrity check and go through Section IV review. Moving this value back
+# into an uncovered file reopens exactly that hole. Deliberately NOT an env var
+# either — see tests/test_conscience_sampling.py for both guards.
+CONSCIENCE_TEMPERATURE = 0.0
+
 # Tags used to fence attacker-influenceable material inside audit prompts.
 # Everything inside a fence is DATA to be scored, never instructions to the
 # judge. _fence() strips these tags from the embedded content itself so a

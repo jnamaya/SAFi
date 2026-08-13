@@ -24,22 +24,13 @@ from .parsing_utils import (
     parse_conscience_response
 )
 
-# The Conscience is the only intelligent component whose output feeds an
-# enforcement decision: its per-value scores drive the hard gates and the
-# alignment threshold. Sampling it is therefore not a quality knob but a
-# governance one — a non-zero temperature means the same draft can be blocked on
-# one turn and shipped on the next, and no audit record can explain the
-# difference. Kept at 0 so the ledger is as reproducible as the provider allows.
-#
-# NOT a guarantee of reproducibility, and must not be described as one:
-#   - Some models reject an explicit temperature (see the gpt-5 / o1 branches in
-#     _chat_completion, which strip it). On those routes the provider default
-#     applies and this value has no effect.
-#   - Even at 0, batching and hardware differences move logits at the provider.
-# The defensible claim is "as reproducible as the provider allows", never
-# "deterministic". The deterministic part of SAFi is the rule applied to the
-# ledger, not the ledger itself.
-CONSCIENCE_TEMPERATURE = 0.0
+# The Conscience's sampling temperature is a governance parameter, not a
+# transport one, so it is DEFINED in the Conscience faculty — a file covered by
+# the Core Loop integrity manifest — and only consumed here. This module stays
+# outside the manifest so organizations can add providers without a Section IV
+# review; that same openness must not extend to quietly changing how strictly
+# every agent in a deployment is audited. Full rationale at the definition.
+from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exported)
 
 
 class LLMProvider:

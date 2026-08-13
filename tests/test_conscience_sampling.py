@@ -191,6 +191,36 @@ class NoModelNamesInFacultyCode(unittest.TestCase):
         self.assertEqual(src.count("CONSCIENCE_TEMPERATURE"), 2,
                          "both the json_mode call and the fallback must use the constant")
 
+    def test_the_value_is_defined_in_the_conscience_faculty(self):
+        """Moved 2026-08-13 (backlog 34b): conscience.py is covered by the Core
+        Loop integrity manifest and llm_provider.py deliberately is not — so a
+        fork changing how strictly agents are audited trips the integrity check
+        instead of verifying INTACT. llm_provider may only IMPORT the value;
+        defining it there again reopens the hole this move closed."""
+        import safi_app.core.faculties.conscience as conscience_module
+        self.assertEqual(conscience_module.CONSCIENCE_TEMPERATURE, 0.0)
+        self.assertRegex(inspect.getsource(conscience_module),
+                         r"(?m)^CONSCIENCE_TEMPERATURE\s*=\s*0\.0\s*$",
+                         "the definition belongs in the covered faculty file")
+        provider_src = inspect.getsource(llm_provider_module)
+        self.assertNotRegex(provider_src, r"(?m)^CONSCIENCE_TEMPERATURE\s*=",
+                            "llm_provider must import the value, never define it")
+        self.assertIn("from ..faculties.conscience import CONSCIENCE_TEMPERATURE",
+                      provider_src)
+
+    def test_the_value_is_not_an_env_var(self):
+        """Asked and answered 2026-08-13: the temperature stays a constant, not
+        configuration. A deployment that could raise it via env would make its
+        own audits noisier with nothing in any governance record showing the
+        knob had been turned — the same hole as 34b, sanctioned. If this is
+        ever revisited, the minimum bar is that the effective temperature is
+        stamped into every governance record it influenced."""
+        import safi_app.core.faculties.conscience as conscience_module
+        src = inspect.getsource(conscience_module)
+        at = src.index("CONSCIENCE_TEMPERATURE")
+        self.assertNotIn("environ", src[at:at + 200],
+                         "the Conscience temperature must not be env-configurable")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
