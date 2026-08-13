@@ -17,13 +17,11 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # 1. Import Governance
-from ..policies.contoso.policy import CONTOSO_GLOBAL_POLICY
 from ...persistence import database as db
 from ...config import Config
 from ..tool_connectors import expand_connectors
 
 # 2. Import Personas
-from ..agents.contoso_admin import THE_CONTOSO_ADMIN_AGENT
 from ..agents.fiduciary import THE_FIDUCIARY_AGENT
 from ..agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
 from ..agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
@@ -34,7 +32,6 @@ from ..agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
 # ALL_PERSONAS is the complete built-in catalog — used for reserved-name checks
 # so a custom agent can never shadow a built-in key, even one currently disabled.
 ALL_PERSONAS: Dict[str, Dict[str, Any]] = {
-    "contoso_admin": THE_CONTOSO_ADMIN_AGENT,
     "fiduciary": THE_FIDUCIARY_AGENT,
     "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
     "bible_scholar": THE_BIBLE_SCHOLAR_AGENT,
@@ -59,10 +56,15 @@ if Config.DEFAULT_PROFILE not in PERSONAS:
     logging.warning(f"SAFI_PROFILE '{Config.DEFAULT_PROFILE}' is not an enabled built-in agent; "
                     f"users without a stored profile will fall back to another agent.")
 
-# 4. Governance Mapping
-GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {
-    "contoso_admin": CONTOSO_GLOBAL_POLICY,
-}
+# 4. Governance Mapping — in-code org policies layered onto built-in personas.
+# Empty since 2026-08-13: its only occupant was the Contoso demo agent, removed
+# because it showcased this legacy mechanism, which DB policies and the policy
+# wizard superseded. The map (and the assemble_agent branch that reads it) stays
+# because it is the documented in-code fallback shape, and because deleting the
+# branch would be a behavioural faculty change rather than a data one. A user
+# whose active_profile still names the removed agent falls back to the default
+# profile at login (auth.py handles the KeyError explicitly).
+GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {}
 
 # 5. Compiler Logic
 

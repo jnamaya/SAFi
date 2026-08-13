@@ -389,8 +389,8 @@ class Config:
     #
     # The default three all run with zero extra setup. Fiduciary and Tutor
     # carry no rag_knowledge_base at all; the Steward has a small one that
-    # auto-builds in Docker. Bible Scholar and Contoso Admin are excluded from
-    # the default precisely because they DO require an index to be built first.
+    # auto-builds in Docker. The Bible Scholar is excluded from the default
+    # precisely because it DOES require an index to be built first.
     BUILTIN_AGENTS = [
         a.strip().lower()
         for a in os.environ.get("SAFI_BUILTIN_AGENTS", "fiduciary,tutor,safi").split(",")

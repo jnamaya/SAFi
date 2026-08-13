@@ -21,7 +21,7 @@ export function renderIntellectStep(container, agentData) {
                         Draft with AI
                     </button>
                 </div>
-                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 resize-y" placeholder="You are an HR assistant for Contoso employees. You answer questions about benefits, PTO and onboarding using the company handbook, and you refer anything legal or medical to a person.">${escapeHtml(agentData.instructions)}</textarea>
+                <textarea id="wiz-instructions" class="w-full h-64 p-4 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 font-mono text-base text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 resize-y" placeholder="You are an HR assistant for your company's employees. You answer questions about benefits, PTO and onboarding using the company handbook, and you refer anything legal or medical to a person.">${escapeHtml(agentData.instructions)}</textarea>
             </div>
 
             <div>

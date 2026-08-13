@@ -100,7 +100,7 @@ def embed_texts(model, texts: List[str]) -> np.ndarray:
 # which since 2026-08-07 can be a user-created KB. The name is interpolated
 # straight into a filename, so without this check a name of "../../etc/passwd"
 # would read outside the vector store. Built-in corpora ("safi",
-# "bible_bsb_v1", "sop_index") are plain identifiers and pass unchanged;
+# "bible_bsb_v1") are plain identifiers and pass unchanged;
 # user KBs are UUIDs and also pass. Everything else is refused.
 _SAFE_KB_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 

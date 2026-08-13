@@ -784,16 +784,15 @@ export function getAvatarForProfile(profileName) {
   // Everything below reasons about the DISPLAY name, whichever form came in.
   const displayName = (customProfile && customProfile.name) || profileName;
 
-  // 2. The two real marks. Neither is a persona portrait, which is why they
-  //    survive: contoso.svg is the demo customer's own brand logo, and safi.svg
-  //    is the product wordmark, which The SAFi Guide is entitled to wear.
+  // 2. The one real mark. It is not a persona portrait, which is why it
+  //    survives: safi.svg is the product wordmark, which The SAFi Guide is
+  //    entitled to wear.
   //
   //    Every other agent gets a generated monogram — see ui-agent-mark.js for
   //    why the illustrated faces were removed. Note that unknown agents now get
   //    a monogram rather than falling through to safi.svg: an org's custom agent
   //    should not appear wearing the vendor's logo.
   const key = normalizeAgentName(displayName);
-  if (key === 'contoso governance officer') return 'assets/contoso.svg';
   if (key === 'safi guide' || !key) return 'assets/safi.svg';
 
   return agentMark(displayName);

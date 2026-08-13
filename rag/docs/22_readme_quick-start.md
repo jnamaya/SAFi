@@ -81,7 +81,7 @@ A fresh install starts with three built-in agents, all of which run with no extr
 - **The Socratic Tutor** — never gives a direct answer, so the policy is visible in every response, not only in violations.
 - **The SAFi Steward** — answers questions about SAFi itself from a small knowledge base that builds automatically on first boot.
 
-Three more demo agents ship in the codebase: **Health Navigator** (no knowledge base — enable and use immediately), plus **Bible Scholar** and **Contoso Admin**, which are the only two that need a RAG index built first (see `rag/build_index_v2.py`). Enable any of them with `SAFI_BUILTIN_AGENTS` in `.env`, or `=all` for the full suite.
+Two more demo agents ship in the codebase: **Health Navigator** (no knowledge base — enable and use immediately) and **Bible Scholar**, the only one that needs a RAG index built first (see `rag/build_index_v2.py`). Enable either with `SAFI_BUILTIN_AGENTS` in `.env`, or `=all` for the full suite.
 
 #### Local Admin Account (No OAuth Required)
 

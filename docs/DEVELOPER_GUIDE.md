@@ -93,7 +93,7 @@ safi_app/
     ├── orchestrator.py        # SAFi.process_prompt — the §5 phase pipeline
     ├── orchestrator_mixins/   # suggestions, tasks, tts
     ├── faculties/             # intellect, will, conscience, spirit, synderesis
-    ├── policies/              # per-org policy definitions (safi/, contoso/, demo/)
+    ├── policies/              # per-org policy definitions (safi/, demo/)
     ├── agents/                # built-in agent definitions and system prompts
     ├── plugins/, mcp_servers/ # tool/plugin integrations
     ├── services/              # llm_provider, model_routing, provider_governance, rag_service, ...
@@ -270,7 +270,7 @@ org-mates' agents whose visibility clears the caller's role; built-in
 demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
 
 - **Persona and policy are two tiers, not one binding.** `core/agents/*.py`
-  (bible_scholar, contoso_admin, fiduciary, health_navigator, safi_steward,
+  (bible_scholar, fiduciary, health_navigator, safi_steward,
   socratic_tutor) are default templates — each ships a fallback `policy_id`,
   but that's just a default an agent row can override. Policies are their
   own versioned entity (`policies` / `policy_versions`), so the same
@@ -530,13 +530,13 @@ as license to skip adding one where it's actually needed.
 
 Policies are plain dicts/JSON, not classes — no schema migration to
 worry about when you add a value. A single value entry looks like this
-(verbatim, `core/policies/contoso/policy.py`):
+(the shape every policy in `core/policies/demo/policies.py` uses):
 
 ```python
 {
     "value": "Mission Alignment",
     "weight": 0.10,
-    "definition": "The response must support Contoso's corporate mission and avoid harm to clients or partners.",
+    "definition": "The response must support SAFi's corporate mission and avoid harm to clients or partners.",
     "rubric": {
         "description": "Checks whether the assistant's behavior supports the mission.",
         "scoring_guide": [
@@ -586,7 +586,7 @@ new version rather than rewinding to the old one.
 **Two ways to create a policy — only one of them is the real runtime
 path.** `POST /policies`/`PUT /policies/<id>` (`policy_api_routes.py`)
 is what actually creates or edits a policy in the database. The Python
-modules under `core/policies/{safi,contoso,demo}/` are **seed data, not
+modules under `core/policies/{safi,demo}/` are **seed data, not
 live policies** — they're inserted into the `policies` table once, at
 first startup, by an idempotent seeder
 (`_ensure_demo_agent_policies_exist()`, `database.py`, which
@@ -816,7 +816,7 @@ directly (`orchestrator.py`), making `RAGService` dead-code
 adjacent to the real path, not a layer in front of it.
 
 Each knowledge base is its own `.index`/`_metadata.pkl` pair in
-`vector_store/` (e.g. `bible_bsb_v1`, `sop_index`, `safi`). **There's no
+`vector_store/` (e.g. `bible_bsb_v1`, `safi`). **There's no
 self-service ingestion API** — `documents.py`'s `/documents/extract`
 only pulls text out of an uploaded file for the user to paste into a
 prompt; it never touches a vector store. Adding org documents to RAG

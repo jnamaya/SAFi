@@ -173,9 +173,9 @@ class IntellectEngine:
         #
         # Imported HERE rather than at module scope: importing the retriever
         # pulls in faiss and the ONNX embedding runtime, and most agents have no
-        # knowledge base at all — of the built-ins, only the Steward, Bible
-        # Scholar and Contoso Admin do. A top-level import made every
-        # deployment pay for a vector-search stack it may never call.
+        # knowledge base at all — of the built-ins, only the Steward and the
+        # Bible Scholar do. A top-level import made every deployment pay for a
+        # vector-search stack it may never call.
         self.retriever = None
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
@@ -290,7 +290,7 @@ class IntellectEngine:
         #
         # 1. The agent's worldview carries a {retrieved_context} placeholder and
         #    positions the evidence itself. Every built-in RAG agent does this
-        #    (safi_steward, bible_scholar, contoso_admin, fiduciary).
+        #    (safi_steward, bible_scholar, fiduciary).
         #
         # 2. It does not, and the block below appends the evidence as its own
         #    labelled section.

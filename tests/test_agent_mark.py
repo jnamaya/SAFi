@@ -59,9 +59,9 @@ REMOVED_FACES = (
     "bible_scholar.svg",
 )
 
-# These two survive because neither is a persona portrait: contoso.svg is the
-# demo customer's own brand logo, safi.svg the product wordmark.
-KEPT_MARKS = ("contoso.svg", "safi.svg")
+# Survives because it is not a persona portrait: safi.svg is the product
+# wordmark, which The SAFi Guide is entitled to wear.
+KEPT_MARKS = ("safi.svg",)
 
 
 def _srgb_to_linear(c):
@@ -204,9 +204,8 @@ class TheFacesAreGone(unittest.TestCase):
                          f"removed deliberately — see backlog item 17.")
 
     def test_10_kept_marks_still_exist(self):
-        """The inverse guard: deleting these would leave the SAFi Guide and the
-        Contoso agent with broken images, since getAvatarForProfile returns
-        their paths directly."""
+        """The inverse guard: deleting this would leave the SAFi Guide with a
+        broken image, since getAvatarForProfile returns its path directly."""
         for f in KEPT_MARKS:
             with self.subTest(asset=f):
                 self.assertTrue((ASSETS / f).exists(),

@@ -1403,7 +1403,7 @@ def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
     `confirm_shared=True` and always reports the scope it found.
 
     Args:
-        agent_id: The profile_name/agent_key to reset (e.g., 'contoso_admin')
+        agent_id: The profile_name/agent_key to reset (e.g., 'fiduciary')
         confirm_shared: Required to reset a shared (non org-prefixed) baseline.
 
     Returns:

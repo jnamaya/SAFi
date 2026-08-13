@@ -120,7 +120,7 @@ class PathSafety(unittest.TestCase):
             with self.assertRaises(UnsafeKnowledgeBaseName, msg=bad):
                 _kb_index_path(bad)
         # Built-in corpora must keep working.
-        for good in ("safi", "bible_bsb_v1", "sop_index"):
+        for good in ("safi", "bible_bsb_v1"):
             self.assertTrue(_kb_index_path(good).endswith(f"{good}.index"))
 
 
@@ -728,7 +728,7 @@ class RetrievedContextReachesThePrompt(unittest.TestCase):
     def test_a_custom_worldview_still_receives_the_context(self):
         """The regression. A wizard-built worldview has no placeholder."""
         prompt = self._build_prompt(
-            "You are the Contoso IT operations assistant.",
+            "You are the SAFi IT operations assistant.",
             "SOURCE: sop.pdf\nCONTENT:\nApproved: Lenovo ThinkPad X1 Carbon.")
         self.assertIn("ThinkPad", prompt)
         self.assertIn("sop.pdf", prompt)

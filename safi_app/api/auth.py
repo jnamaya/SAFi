@@ -570,7 +570,7 @@ def login_demo():
             
             # Create Private Sandbox Organization
             # We use the last 4 chars of ID to make it readable but unique
-            org_name = f"Contoso ({demo_id[-4:]})"
+            org_name = f"SAFi Demo ({demo_id[-4:]})"
             org_id = db.create_organization(org_name)
             
             user_info = {
