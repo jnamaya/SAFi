@@ -82,6 +82,51 @@ def _expand(value: Any) -> Any:
     return value
 
 
+def describe_exception(exc: BaseException) -> str:
+    """Flatten an ExceptionGroup into something a person can act on.
+
+    The SDK's transports run inside anyio task groups, so almost every
+    connection failure arrives as `ExceptionGroup: unhandled errors in a
+    TaskGroup (1 sub-exception)`, sometimes nested two deep. `str(e)` on that
+    tells an admin nothing at all, while the leaf underneath is invariably the
+    actual answer: a 404 on the wrong path, DNS that does not resolve, or an
+    auth challenge.
+
+    Leaves are collected in order and de-duplicated. The auth hint is appended
+    because "Server returned an error response" is what an anonymous connection
+    to a server requiring OAuth looks like, and that is the single most common
+    failure among public registry entries.
+    """
+    leaves: List[str] = []
+
+    def walk(e: BaseException) -> None:
+        subs = getattr(e, "exceptions", None)
+        if subs:
+            for sub in subs:
+                walk(sub)
+        else:
+            leaves.append(f"{type(e).__name__}: {e}".strip())
+
+    walk(exc)
+    seen, ordered = set(), []
+    for leaf in leaves:
+        if leaf not in seen:
+            seen.add(leaf)
+            ordered.append(leaf)
+
+    message = "; ".join(ordered) or f"{type(exc).__name__}: {exc}"
+    lowered = message.lower()
+    if "401" in lowered or "unauthorized" in lowered or "server returned an error response" in lowered:
+        message += (
+            ". This server may require credentials. Servers needing a token must "
+            "be installed in the operator's MCP_SERVERS_JSON file, where the "
+            "secret can be supplied from the environment."
+        )
+    elif "not found" in lowered or "404" in lowered:
+        message += ". The endpoint may be wrong or the server may no longer be hosted."
+    return message
+
+
 def _render_result(result: Any) -> str:
     """Flatten an MCP CallToolResult into the plain string the orchestrator
     feeds back to the Intellect as a tool observation."""
@@ -174,6 +219,48 @@ class _Runtime:
             self._servers.setdefault(name, {"label": name, "tools": []})
             self._servers[name]["error"] = f"timeout after {timeout:.0f}s"
         return self._servers.get(name, {"label": name, "tools": [], "error": "unknown"})
+
+    def probe(self, params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
+        """Connect, list tools, disconnect. Registers nothing.
+
+        Exists so an admin finds out at install time whether a server actually
+        answers, instead of after an approval round-trip. Roughly half of the
+        public registry's hosted entries do not connect anonymously (auth
+        required, moved endpoint, dead host), so discovering that immediately is
+        most of the usability of the feature.
+
+        This contacts an unapproved server, which is deliberate and harmless:
+        approval gates whether agents may USE a server, and a probe sends only
+        an initialize and a tools/list. Nothing of the publisher's runs here.
+        """
+        self._ensure_loop()
+
+        async def _run() -> Dict[str, Any]:
+            transport = (params.get("transport") or "stdio").lower()
+            try:
+                async with self._open_transport(transport, params) as streams:
+                    from mcp import ClientSession
+
+                    async with ClientSession(streams[0], streams[1]) as session:
+                        await session.initialize()
+                        listed = await session.list_tools()
+                        names = [
+                            getattr(t, "name", "") for t in (getattr(listed, "tools", None) or [])
+                        ]
+                        return {"ok": True, "tools": [n for n in names if n], "error": None}
+            except BaseException as e:
+                return {"ok": False, "tools": [], "error": describe_exception(e)}
+
+        future = asyncio.run_coroutine_threadsafe(_run(), self._loop)
+        try:
+            return future.result(timeout=timeout)
+        except Exception:
+            future.cancel()
+            return {
+                "ok": False,
+                "tools": [],
+                "error": f"The server did not answer within {timeout:.0f}s.",
+            }
 
     def add_server(
         self, name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"
@@ -294,9 +381,13 @@ class _Runtime:
                     )
                     ready.set()
                     await stop.wait()
-        except Exception as e:
-            entry["error"] = str(e)
-            log.error("MCP server '%s' failed: %s", name, e)
+        except BaseException as e:
+            # BaseException, not Exception: an ExceptionGroup raised by the
+            # SDK's task groups is not always an Exception subclass, and
+            # catching too narrowly here would let a connection failure escape
+            # into the runtime loop instead of being reported on the server.
+            entry["error"] = describe_exception(e)
+            log.error("MCP server '%s' failed: %s", name, entry["error"])
         finally:
             self._sessions.pop(name, None)
             self._stops.pop(name, None)
@@ -476,8 +567,8 @@ class _Runtime:
         except asyncio.TimeoutError:
             future.cancel()
             return f"ERROR: tool '{tool_name}' timed out after {DEFAULT_CALL_TIMEOUT:.0f}s."
-        except Exception as e:
-            return f"ERROR: tool '{tool_name}' failed: {e}"
+        except BaseException as e:
+            return f"ERROR: tool '{tool_name}' failed: {describe_exception(e)}"
         return _render_result(result)
 
 
@@ -506,6 +597,10 @@ def tools_for_server(server: str) -> List[str]:
 
 def origin_of(server: str) -> str:
     return _runtime.origin_of(server)
+
+
+def probe(params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
+    return _runtime.probe(params, timeout)
 
 
 def add_server(name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"):

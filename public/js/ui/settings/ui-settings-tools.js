@@ -183,15 +183,26 @@ function wire() {
         if (search) return doSearch();
 
         if (install) {
+            const label = install.textContent;
             install.disabled = true;
+            install.textContent = 'Checking…';
             try {
-                await api.installMcpServer(install.dataset.install);
-                ui.showToast('Installed. It needs an admin review before agents can use it.', 'success');
+                // The install call connects to the server first, so a failure
+                // here is a real answer about that server rather than a generic
+                // error: roughly half the registry's hosted entries need
+                // credentials or have moved.
+                const res = await api.installMcpServer(install.dataset.install);
+                if (res && res.ok === false) throw new Error(res.error || 'Install failed.');
+                const found = (res && res.tools_preview) || [];
+                ui.showToast(
+                    `Installed with ${found.length} tool${found.length === 1 ? '' : 's'}. `
+                    + 'An admin has to review it before agents can use it.', 'success');
                 await refresh();
             } catch (err) {
                 ui.showToast(err.message || 'Install failed.', 'error');
             } finally {
                 install.disabled = false;
+                install.textContent = label;
             }
             return;
         }

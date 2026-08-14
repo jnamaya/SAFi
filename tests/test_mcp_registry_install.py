@@ -258,5 +258,40 @@ class DescriptionScanTests(unittest.TestCase):
         self.assertEqual(mcp_install.scan_tool_descriptions(tools, "acme"), [])
 
 
+class ExceptionUnwrappingTests(unittest.TestCase):
+    """The SDK raises ExceptionGroup for every transport failure, so str(e) is
+    "unhandled errors in a TaskGroup (1 sub-exception)" and an admin learns
+    nothing. Three real causes hid behind that message: auth, a moved endpoint,
+    and DNS."""
+
+    def test_nested_group_is_flattened_to_the_leaf(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        inner = ExceptionGroup("unhandled errors in a TaskGroup", [ValueError("Not Found")])
+        outer = ExceptionGroup("unhandled errors in a TaskGroup", [inner])
+        message = describe_exception(outer)
+        self.assertIn("Not Found", message)
+        self.assertNotIn("sub-exception", message)
+
+    def test_a_plain_exception_still_reads_normally(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        self.assertIn("boom", describe_exception(RuntimeError("boom")))
+
+    def test_auth_failures_say_what_to_do_instead(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        group = ExceptionGroup("g", [RuntimeError("Server returned an error response")])
+        message = describe_exception(group)
+        self.assertIn("MCP_SERVERS_JSON", message)
+
+    def test_missing_endpoint_gets_a_hint(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        group = ExceptionGroup("g", [RuntimeError("Not Found")])
+        self.assertIn("no longer be hosted", describe_exception(group))
+
+    def test_duplicate_leaves_are_collapsed(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        group = ExceptionGroup("g", [ValueError("same"), ValueError("same")])
+        self.assertEqual(describe_exception(group).count("same"), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

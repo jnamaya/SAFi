@@ -272,6 +272,21 @@ All fixed rules, applied before anything is stored:
 - **A host that does not resolve is refused**, rather than accepted in the hope
   it works later.
 
+### When a server will not connect
+
+Installing contacts the server first, so you find out immediately rather than
+after an approval. Expect this to happen often: a large share of the public
+registry's hosted entries do not answer an anonymous connection. The three
+common cases, each reported with its actual cause rather than a generic error:
+
+- **The server requires credentials.** SAFi connects anonymously, so a server
+  needing a token has to be installed in the operator's `MCP_SERVERS_JSON` file,
+  where the secret comes from the environment. GUI install has no way to hold a
+  credential, deliberately.
+- **The endpoint has moved or the server is no longer hosted.** Registry entries
+  outlive the services they describe.
+- **The host does not resolve.** Same cause, further along.
+
 ### Approval
 
 An install lands **pending** and reaches no agent until an admin approves it.

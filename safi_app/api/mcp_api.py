@@ -119,6 +119,25 @@ def install_server():
     if not ok:
         return jsonify({"ok": False, "error": reason}), 400
 
+    # Talk to the server before storing anything. Roughly half of the public
+    # registry's hosted entries do not answer an anonymous connection (they
+    # require credentials, or the endpoint has moved), and finding that out
+    # here is the difference between one clear message and an install that
+    # looks fine until someone approves it and it silently has no tools.
+    probe = mcp_runtime.probe(
+        {"transport": remote["transport"], "url": remote["url"], "label": entry["title"]}
+    )
+    if not probe["ok"]:
+        return jsonify({
+            "ok": False,
+            "error": f"That server did not answer: {probe['error']}",
+        }), 400
+    if not probe["tools"]:
+        return jsonify({
+            "ok": False,
+            "error": "That server connected but advertises no tools, so there is nothing to grant.",
+        }), 400
+
     record = mcp_store.install(org_id, user_id, {
         "connector_key": mcp_install.available_key(entry["name"]),
         "registry_name": entry["name"],
@@ -128,7 +147,11 @@ def install_server():
         "transport": remote["transport"],
         "url": remote["url"],
     })
-    return jsonify({"ok": True, "server": record}), 201
+    return jsonify({
+        "ok": True,
+        "server": record,
+        "tools_preview": probe["tools"],
+    }), 201
 
 
 @mcp_bp.route('/servers/<server_id>/review', methods=['POST'])
