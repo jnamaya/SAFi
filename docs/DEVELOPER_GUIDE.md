@@ -833,18 +833,35 @@ doesn't today, since index-building is a local, admin-run script, but
 it's a reason not to make index generation self-service later without
 addressing this first.
 
-**"MCP" doesn't mean the real Model Context Protocol at runtime — this
-is worth being precise about.** `mcp_manager.py` imports the genuine SDK
-(`from mcp import ClientSession, StdioServerParameters`), but the
-connection function ends in a bare `pass` with a comment admitting the
-context manager is never held open, `MCPManager.initialize()` is defined
-but never called anywhere in the app, and the config file
-(`mcp_servers.json`) is empty. What actually runs tools is
-`execute_tool`'s hardcoded if/elif chain, calling plain in-process async
-functions from `core/mcp_servers/*.py` directly — no JSON-RPC, no
-subprocess/SSE transport, none of the actual protocol. Functionally it
-works fine; just don't expect to find real MCP wire semantics if you go
-looking for them.
+**Two kinds of tool run here, and only one of them speaks MCP.**
+
+*Built-in connectors* are the `core/mcp_servers/*.py` modules. Despite
+the folder name they are not MCP servers at all: they are plain
+in-process async functions, with hand-written schemas, dispatched by
+`execute_tool`'s if/elif chain. Several act on a member's behalf using
+delegated per-user OAuth, which is why `execute_tool` takes `user_id`.
+
+*Installed MCP servers* are real. `core/mcp_runtime.py` connects over
+stdio, HTTP or SSE using the genuine SDK, calls `tools/list`, and holds
+the sessions open for the life of the process. Discovery feeds the same
+four consumers the built-ins feed: the picker catalogue, the
+model-facing schemas, dispatch, and the connector expansion table.
+
+**Until 47b none of that existed.** The connect function ended in a bare
+`pass`, `initialize()` was never called, `mcp_servers.json` was empty,
+`MCP_SERVERS_JSON` was read by nothing, and `Config.MCP_CONFIG` did not
+exist, so `MCPManager` received `{}` forever. If you are reading older
+notes claiming SAFi does not implement MCP, that was true and is not
+any more.
+
+**Where the sessions live matters.** They belong to the process, in
+`mcp_runtime`, not to `MCPManager`. A `SAFi` orchestrator is built per
+cached (agent, models, policy) combination and lazily per request, so
+sessions owned by the manager would mean a duplicate set of subprocesses
+per cached agent. `mcp_runtime` runs one daemon thread with one event
+loop for the whole process and bridges to each request's own loop with
+`run_coroutine_threadsafe` plus `wrap_future`, because Flask[async]
+gives every request a fresh loop and an MCP session cannot cross one.
 
 **`plugins/` and `mcp_servers/` are different mechanisms, not two names
 for the same thing.** `core/plugins/*` (e.g. `bible_scholar_readings.py`)
@@ -878,8 +895,17 @@ i.e. not built by the governance compiler. The same compile step hoists
 a policy's `will_rules.tool_parameter_constraints` to the top-level key
 the Will's Step-3 parameter gate reads.
 
-**Adding a new tool integration** (no formal interface exists — this is
-the ad hoc pattern every current integration follows):
+**Adding a tool: install an MCP server, don't write a connector.** For
+anything that is not a member-delegated OAuth integration, the answer is
+now a server in the file `MCP_SERVERS_JSON` names, which needs no code
+and no redeploy. See `docs/MCP_TOOLS.md`, and note the credential rule:
+an MCP server authenticates as the deployment (a service principal), so
+it fits shared and system resources, while a member's own drive or
+mailbox belongs on a delegated-OAuth connector or you lose attribution
+and offboarding.
+
+**Adding a built-in connector** is still the six-step in-code pattern,
+and is only the right choice for delegated per-user OAuth:
 1. Add `core/mcp_servers/your_tool.py` with plain `async def` functions
    (model it on `google_maps.py` or `web_search.py`).
 2. Register its schema in `MCPManager.get_tools_for_agent` and
@@ -896,6 +922,16 @@ the ad hoc pattern every current integration follows):
 5. Add it to `READ_ONLY_TOOLS` (`will.py`) if it's read-only, or it
    gets routed through the deterministic write-tool approval path
    instead.
+6. Add the connector to `CONNECTOR_TOOLS` (`tool_connectors.py`) if it
+   has more than one function. Synderesis expands connector names into
+   function names through that table, and the Will matches exactly, so a
+   multi-function connector missing from it is authorized for nothing.
+   `tests/test_tool_connector_expansion.py` fails if you forget, which
+   is the only reason this step was survivable while undocumented.
+
+Tools discovered from an installed MCP server need none of these: they
+register themselves through the same table at boot, in a separate
+namespace that built-ins take precedence over.
 ## 16. The Audit Hub metrics
 
 The Audit Hub (Control Panel → Audit tab,
@@ -1020,8 +1056,18 @@ enters the Intellect as grounding and is not scanned by Phase Zero, so a
 custom plugin is your deployment's own risk, exactly like a custom tool.
 The Conscience still audits whatever the draft became.
 
-**Tools** are configured, not coded: `MCP_SERVERS_JSON` points at the server
-config, and every tool call still passes the Will's allow-list gate.
+**Tools** are configured, not coded: `MCP_SERVERS_JSON` points at a file of
+MCP server definitions, each server becomes a connector an organization can
+allow and a policy can grant, and every call still passes the Will's
+allow-list gate. Full guide: `docs/MCP_TOOLS.md`.
+
+Two properties to know before installing one. A server is
+**operator-installed only** (the definition is a file on disk that no request
+path can reach), because a stdio server is an arbitrary command this process
+runs, which is the same trust level as the extensions directory above. And a
+server authenticates with the **deployment's** credential rather than a
+member's, so it suits shared and system resources; a member's own drive or
+mailbox belongs on a delegated-OAuth connector instead.
 
 ## 19. The Trusted Computing Base and integrity verification
 

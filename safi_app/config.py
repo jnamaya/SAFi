@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 from dotenv import load_dotenv
@@ -84,6 +85,44 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None or not raw.strip():
         return default
     return raw.strip().lower() in ("1", "true", "yes")
+
+
+def _load_mcp_servers() -> dict:
+    """Read the operator's MCP server definitions. Never raises.
+
+    Every failure here returns an empty mapping, which means "no MCP tools this
+    boot". That is the only safe direction: a half-parsed server file must not
+    leave a deployment believing it has a governed tool it does not have. The
+    Will then blocks anything the model names, because nothing was expanded into
+    any profile's allowed_tools.
+    """
+    path = os.environ.get("MCP_SERVERS_JSON", "").strip()
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = fh.read().strip()
+    except FileNotFoundError:
+        logging.warning("MCP_SERVERS_JSON points at %s, which does not exist.", path)
+        return {}
+    except OSError as e:
+        logging.warning("MCP_SERVERS_JSON at %s could not be read: %s", path, e)
+        return {}
+    if not raw:
+        # The shipped file is empty on purpose, and an install with no MCP
+        # servers is the normal case. Not worth a warning.
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logging.error("MCP_SERVERS_JSON at %s is not valid JSON: %s", path, e)
+        return {}
+    if isinstance(parsed, dict) and isinstance(parsed.get("mcp_servers"), dict):
+        parsed = parsed["mcp_servers"]
+    if not isinstance(parsed, dict):
+        logging.error("MCP_SERVERS_JSON at %s must contain an object of servers.", path)
+        return {}
+    return parsed
 
 
 class Config:
@@ -406,6 +445,27 @@ class Config:
     @classmethod
     def builtin_agent_enabled(cls, key: str) -> bool:
         return "all" in cls.BUILTIN_AGENTS or key in cls.BUILTIN_AGENTS
+
+    # --- MCP SERVERS ---
+    # Operator-installed tool servers, read from the JSON file MCP_SERVERS_JSON
+    # names. The variable and the file have shipped since v1.0 and nothing read
+    # either of them until now (GOVERNANCE_BACKLOG 47b); MCP_CONFIG is what
+    # orchestrator.py has always passed to MCPManager via getattr.
+    #
+    # The file is the ONLY way to install a server, deliberately. A stdio server
+    # is an arbitrary command this process executes, so defining one is
+    # deployment-level trust, the same as SAFI_EXTENSIONS_DIR. No API route, no
+    # admin screen and no organization setting can reach it. What an org admin
+    # controls is the connector allow-list, one rung up.
+    #
+    # Accepts either the bare mapping of servers or a {"mcp_servers": {...}}
+    # wrapper, because both shapes appear in MCP documentation elsewhere and
+    # guessing wrong should not cost anyone an afternoon.
+    MCP_SERVERS_JSON = os.environ.get("MCP_SERVERS_JSON", "").strip()
+
+    # MCPManager reads config["mcp_servers"], and orchestrator.py has always
+    # passed getattr(config, "MCP_CONFIG", {}) into it, so this is the shape.
+    MCP_CONFIG = {"mcp_servers": _load_mcp_servers()}
 
        # --- CONFIGURATION: AUTOMATIC PROFILE EXTRACTION ---
     # Set to False to disable the AI from silently adding facts to the user profile.

@@ -34,6 +34,27 @@ def create_app():
     from .core.integrity import enforce_at_boot
     enforce_at_boot(app.logger)
 
+    # Operator-installed MCP tool servers (backlog 47b). Connect once per
+    # process and register what they expose as connectors, so an organization
+    # can allow them and a policy can grant them. After the integrity check on
+    # purpose: what tools exist is a property of the deployment, and the log
+    # reads in the right order (which kernel, then what was installed on it).
+    #
+    # Each gunicorn worker runs this, so a stdio server means one subprocess per
+    # worker (4 in the container, 1 on the bare-metal unit). Servers that are
+    # expensive to run should be HTTP.
+    from .core.services.mcp_manager import start_servers
+    _mcp = start_servers(Config)
+    if _mcp["servers"]:
+        for _name, _entry in _mcp["servers"].items():
+            if _entry["error"]:
+                app.logger.error("MCP server '%s' unavailable: %s", _name, _entry["error"])
+            else:
+                app.logger.info(
+                    "MCP server '%s' ready: %d tool(s).", _name, len(_entry["tools"])
+                )
+        app.logger.info("MCP: %d tool(s) discovered in total.", _mcp["tool_count"])
+
     # Enterprise identity Phase 1: the cookie holds only a server-side session
     # id. Permanent so the sid survives browser restarts (absolute/idle expiry
     # is enforced server-side); REFRESH_EACH_REQUEST must stay False or the

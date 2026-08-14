@@ -1,65 +1,112 @@
 """
-MCP Manager Service
-Handles connections to local and remote MCP servers.
+MCP Manager: the tool catalogue, the per-agent schemas, and dispatch.
+
+Two kinds of tool arrive here and they are not the same thing:
+
+  * BUILT-IN CONNECTORS (core/mcp_servers/*.py) are curated. Someone wrote the
+    module, hand-wrote the schema, and shipped it in the image, so the tool list
+    is reviewed at build time. Several of them act on a MEMBER's behalf using
+    delegated per-user OAuth, which is why they take user_id.
+
+  * DISCOVERED MCP SERVERS (core/mcp_runtime.py) are installed by the operator
+    in the file MCP_SERVERS_JSON names, and their schemas come from a third
+    party at runtime, reviewed by nobody. They authenticate with the
+    deployment's own credential, which makes each one a service principal.
+
+That difference decides what each is FOR, and it belongs in the docs an
+organization reads: a shared or system resource (a company API, an internal
+pricing service) is right for an MCP server; a member's own mailbox or drive
+belongs on a delegated-OAuth connector, or every read in the source system's
+audit log is attributed to SAFi rather than to a person, and offboarding stops
+cutting access.
+
+What is NOT different is the governance. A discovered server becomes a
+connector like any other (tool_connectors.py), an organization allows it
+(connector_governance.py), a policy grants it, Synderesis expands it into
+allowed_tools, and the Will authorizes every individual call by exact name.
+Discovery adds catalogue entries and changes no rule. See GOVERNANCE_BACKLOG 47b.
+
+Session lifecycle lives in mcp_runtime, not here, and deliberately: a SAFi
+orchestrator (and so an MCPManager) is built per cached agent profile, while MCP
+sessions must be one per process.
 """
 import asyncio
 import logging
 import json
 import os
 from typing import List, Dict, Any, Optional
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+
+from .. import mcp_runtime
+from ..tool_connectors import (
+    CONNECTOR_TOOLS,
+    clear_discovered_connectors,
+    register_discovered_connector,
+)
+
+log = logging.getLogger(__name__)
+
+
+def builtin_tool_names() -> frozenset:
+    """Every function name the built-in connectors own.
+
+    This is the reserved set discovery refuses to let a third-party server
+    claim. Derived from CONNECTOR_TOOLS rather than written out again, because
+    a second hand-maintained copy of these names is exactly the drift that made
+    tool_connectors.py necessary in the first place.
+    """
+    return frozenset(fn for fns in CONNECTOR_TOOLS.values() for fn in fns)
+
+
+def start_servers(config: Any) -> Dict[str, Any]:
+    """Connect the operator's MCP servers and register them as connectors.
+
+    Called once per process from create_app(). Never raises: a deployment with a
+    broken server file must still start, minus those tools. Returns the
+    discovery summary for the boot log.
+    """
+    servers = (getattr(config, "MCP_CONFIG", None) or {}).get("mcp_servers") or {}
+    if not servers:
+        return {"servers": {}, "tool_count": 0}
+
+    try:
+        summary = mcp_runtime.start(servers, reserved_tool_names=builtin_tool_names())
+    except Exception as e:
+        log.error("MCP discovery failed, continuing without MCP tools: %s", e)
+        return {"servers": {}, "tool_count": 0}
+
+    clear_discovered_connectors()
+    for server, functions in mcp_runtime.connectors().items():
+        if not register_discovered_connector(server, functions):
+            # The only way this fails is a server key that shadows a built-in
+            # connector. Loud, because the operator's tools are silently absent
+            # until they rename it, and the Will will block every call.
+            log.error(
+                "MCP server '%s' collides with a built-in connector name and was "
+                "NOT registered. Rename the server key; its tools are unavailable.",
+                server,
+            )
+    return summary
+
 
 class MCPManager:
+    """Per-orchestrator view over the tool catalogue.
+
+    Holds no connections. The live MCP sessions belong to the process, not to
+    this object: SAFi instances are cached per (agent, models, policy) and built
+    lazily per request, so sessions owned here would mean one set of subprocesses
+    per cached agent.
+    """
+
     def __init__(self, config: Dict[str, Any]):
-        self.config = config
+        self.config = config or {}
         self.log = logging.getLogger(self.__class__.__name__)
-        self.active_sessions: Dict[str, ClientSession] = {}
-        self.available_tools: List[Dict[str, Any]] = []
-
-    async def initialize(self):
-        """Starts connections to all configured MCP servers."""
-        server_configs = self.config.get("mcp_servers", {})
-        
-        for name, params in server_configs.items():
-            if params.get("enabled", True):
-                try:
-                    await self._connect_to_server(name, params)
-                except Exception as e:
-                    self.log.error(f"Failed to connect to MCP server '{name}': {e}")
-
-    async def _connect_to_server(self, name: str, params: Dict[str, Any]):
-        """Connects to a single MCP server via Stdio."""
-        command = params.get("command")
-        args = params.get("args", [])
-        env = params.get("env", None)
-
-        if not command:
-            self.log.error(f"MCP Server '{name}' missing 'command'.")
-            return
-
-        server_params = StdioServerParameters(
-            command=command,
-            args=args,
-            env=env
-        )
-
-        # We verify construction but don't hold the context manager here in this simple snippet.
-        # In a real app, we need to manage the lifecycle carefully.
-        # For this PoC, we will create a tailored client wrapper for each request 
-        # OR keep a persistent connection. 
-        
-        # MCP python SDK is context-manager heavy. 
-        # We might need a structural change to hold connections open.
-        # For now, let's assume we reconnect or hold a long-running task.
-        pass
 
     async def get_tools_for_agent(self, agent_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Returns a list of tool schemas allowed for this agent.
         """
         # 1. Check what Tools this agent is allowed to use (from profile)
-        allowed_tools = agent_profile.get("tools", []) 
+        allowed_tools = agent_profile.get("tools", [])
         if not allowed_tools:
             return []
 
@@ -322,6 +369,18 @@ class MCPManager:
                 }
             })
 
+        # --- DISCOVERED MCP SERVERS ---
+        # Same rule as the built-ins above: advertise a tool if the agent was
+        # granted its connector (the server key) or the function by name. The
+        # second form is what lets a policy narrow within a server.
+        for name, spec in mcp_runtime.tools().items():
+            if name in allowed_tools or spec["server"] in allowed_tools:
+                tools.append({
+                    "name": name,
+                    "description": spec["description"],
+                    "input_schema": spec["input_schema"],
+                })
+
         return tools
 
     def list_all_tools(self) -> List[Dict[str, Any]]:
@@ -414,17 +473,49 @@ class MCPManager:
                     }
                 ]
             }
-        ]
+        ] + self._discovered_categories()
+
+    @staticmethod
+    def _discovered_categories() -> List[Dict[str, Any]]:
+        """One picker category per connected MCP server.
+
+        The server is offered as a single connector, the way GitHub and
+        SharePoint are, rather than as one checkbox per discovered function.
+        That keeps the admin's decision at the level they can actually reason
+        about ("may agents under this policy reach the billing API"), and a
+        policy that needs finer control still narrows by naming functions
+        directly, which expand_connectors and the Will already support.
+        """
+        categories: List[Dict[str, Any]] = []
+        for server, entry in mcp_runtime.summary()["servers"].items():
+            if not entry["tools"]:
+                continue
+            label = entry["label"]
+            categories.append({
+                "category": label,
+                "tools": [{
+                    "name": server,
+                    "label": label,
+                    "description": (
+                        f"{len(entry['tools'])} tool(s) from the {label} server: "
+                        + ", ".join(entry["tools"][:6])
+                        + ("…" if len(entry["tools"]) > 6 else "")
+                    ),
+                    "icon": "puzzle",
+                }],
+            })
+        return categories
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], user_id: Optional[str] = None) -> str:
         """
-        Executes a named tool. 
-        For the PoC, we will route directly to the local python implementation 
-        instead of full stdio IPC to save complexity in the first pass, 
-        UNLESS the plan strictly requires stdio. 
-        
-        The plan said "standalone MCP server", so let's try to shell out to it 
-        or import it as a library if possible.
+        Executes a named tool.
+
+        Built-in connectors dispatch to the in-process implementations in
+        core/mcp_servers/ below; anything discovered from an operator-installed
+        MCP server goes over the real protocol at the end (core/mcp_runtime.py).
+
+        Reached only after WillGate.evaluate_tool_intent approved this exact
+        name, so nothing here re-checks authorization.
         """
         self.log.info(f"Executing tool '{tool_name}' with args {arguments}")
         
@@ -498,5 +589,17 @@ class MCPManager:
                 return await github.list_issues(arguments["repo_name"], user_id=user_id)
             if tool_name == "github_read_file":
                 return await github.read_file_content(arguments["repo_name"], arguments["file_path"], user_id=user_id)
+
+        # -- DISCOVERED MCP SERVERS --
+        # Last, so a built-in always wins a name contest. _publish() already
+        # refuses to register a discovered tool that collides with a built-in,
+        # so this ordering is belt and braces rather than the actual guard.
+        #
+        # No user_id is passed. A configured MCP server authenticates with the
+        # deployment's own credential, which makes it a service principal, and
+        # a service principal must not be handed a member identity it cannot
+        # honour. Member-scoped access stays on the delegated-OAuth connectors.
+        if mcp_runtime.owns(tool_name):
+            return await mcp_runtime.call(tool_name, arguments)
 
         return json.dumps({"error": f"Tool '{tool_name}' not found."})

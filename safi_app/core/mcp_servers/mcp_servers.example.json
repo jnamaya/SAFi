@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Example MCP server definitions. Copy the entries you want into the file",
+    "MCP_SERVERS_JSON points at (mcp_servers.json by default) and delete this",
+    "comment key. See docs/MCP_TOOLS.md.",
+    "",
+    "Keys starting with an underscore are ignored by nothing: remove them.",
+    "Every server key becomes a CONNECTOR name, so it must not collide with a",
+    "built-in connector (web_search, github, google_drive, sharepoint, and the",
+    "finance and maps tools). A collision is refused and logged at boot."
+  ],
+
+  "acme_billing": {
+    "label": "Acme Billing API",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@acme/billing-mcp"],
+    "env": {
+      "ACME_TOKEN": "${ACME_TOKEN}"
+    }
+  },
+
+  "internal_pricing": {
+    "label": "Pricing Service",
+    "transport": "http",
+    "url": "https://pricing.internal.example.com/mcp",
+    "connect_timeout": 30
+  },
+
+  "staged_server": {
+    "label": "Not yet in use",
+    "transport": "stdio",
+    "command": "/usr/local/bin/some-mcp-server",
+    "enabled": false
+  }
+}
