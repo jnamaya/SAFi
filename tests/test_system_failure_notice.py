@@ -3,8 +3,8 @@ Unit tests for SAFi._ship_system_failure_notice — the deterministic notice
 shipped when governance itself fails (audit unavailable, structural failure).
 
 Regression guard for the 2026-07-11 incident: an audit_unavailable intercept
-was voiced through trigger_persona_redirect, which generates in a vacuum
-(the user's question is withheld), so the persona's scope rules produced a
+was voiced through trigger_agent_redirect, which generates in a vacuum
+(the user's question is withheld), so the agent's scope rules produced a
 false "outside my area of focus" refusal for an in-scope question. System
 faults must ship an honest, fixed notice with NO LLM calls.
 

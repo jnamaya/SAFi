@@ -58,7 +58,7 @@ def _setup_environment_and_patching():
 
         class MockDbModule(ModuleType):
             """
-            A mock object that impersonates the database module. It intelligently returns
+            A mock object that imagenttes the database module. It intelligently returns
             a mock connection object for any function that sounds like it's asking for one,
             and returns realistic empty data types (str, list) for fetch/load calls.
             """

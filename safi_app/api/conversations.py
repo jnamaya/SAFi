@@ -235,7 +235,7 @@ async def bot_process_prompt_endpoint():
     user_id = data.get('user_id')
     user_prompt = data.get('message') 
     conversation_id = data.get('conversation_id')
-    persona_key = data.get('persona', 'safi') 
+    agent_key = data.get('agent', 'safi') 
 
     if not all([user_id, user_prompt, conversation_id]):
         return jsonify({"error": "Missing required fields"}), 400
@@ -261,7 +261,7 @@ async def bot_process_prompt_endpoint():
                 "email": f"{user_id}@bot.safinstitute.org",
                 "picture": ""
             })
-            db.update_user_profile(user_id, persona_key)
+            db.update_user_profile(user_id, agent_key)
         
         # 3. Ensure Conversation Exists
         if hasattr(db, 'upsert_external_conversation'):
@@ -282,7 +282,7 @@ async def bot_process_prompt_endpoint():
 
         # 4. Get Safi Instance (Cached) with Policy Injection
         saf_system = global_safi_cache.get_or_create(
-            persona_key,
+            agent_key,
             selected_intellect,
             None,
             selected_conscience,
@@ -563,7 +563,7 @@ async def process_prompt_endpoint():
     try:
         agent_profile = get_profile(user_profile_name)
     except KeyError:
-        # The stored agent no longer exists (retired demo persona or deleted
+        # The stored agent no longer exists (retired demo agent or deleted
         # custom agent). Fall back to the platform default and heal the user
         # record so the UI and backend agree on the next load.
         user_profile_name = Config.DEFAULT_PROFILE
@@ -683,7 +683,7 @@ def profiles_list():
             profile_details['created_by'] = p.get('created_by')
             all_profiles.append(profile_details)
         except (KeyError, ValueError):
-            # KeyError: unknown persona. ValueError: agent failed compile-time
+            # KeyError: unknown agent. ValueError: agent failed compile-time
             # governance validation (e.g. rubric-less hard gate) — skip it here;
             # it still appears in the agents management UI where it can be fixed.
             continue 

@@ -74,7 +74,7 @@ class TestReviewApi(unittest.TestCase):
                                 "REVAPI low alignment answer",
                                 score=3, will_decision="approve", will_stage="spirit")
         cls.mid_gate = cls._turn("REVAPI gated prompt",
-                                 "REVAPI persona redirect text",
+                                 "REVAPI agent redirect text",
                                  score=None, drift=None,
                                  will_decision="redirected", will_stage="hard_gate")
         cls.mid_clean = cls._turn("REVAPI clean prompt", "REVAPI clean answer",

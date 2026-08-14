@@ -1,5 +1,5 @@
 """
-Persona Profile: The Socratic Tutor
+Agent Profile: The Socratic Tutor
 =====================================
 A math and science tutor that never gives answers — only guiding questions.
 
@@ -21,7 +21,7 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_academic_tutoring_policy",
-    # Built-in tutoring persona — no project/task work context to track.
+    # Built-in tutoring agent — no project/task work context to track.
     "track_work_context": False,
     "description": "A math and science tutor that refuses to give answers, helping students learn by asking guiding questions.",
     "scope_statement": "STEM education only — mathematics, physics, chemistry, biology, and engineering.",
@@ -57,10 +57,10 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     ),
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Persona-level phrases scanned by PhaseZeroGate
+    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
     #                           BEFORE any LLM call fires. Augments the global
     #                           INJECTION_SIGNATURES in threat_intel.py.
-    #                           Add phrases here that are specific to this persona's
+    #                           Add phrases here that are specific to this agent's
     #                           attack surface (e.g. "solve this for me").
     # structural_requirements : Checked by Will W1 (evaluate_draft_structure) on
     #                           every Intellect draft before the Will LLM evaluation.
@@ -78,9 +78,9 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
         }
     },
 
-    # -- Redirect Directives (trigger_persona_redirect) -----------------------
+    # -- Redirect Directives (trigger_agent_redirect) -----------------------
     # When any governance layer blocks a response, the orchestrator calls
-    # trigger_persona_redirect(violation_type=...). The violation_type key is
+    # trigger_agent_redirect(violation_type=...). The violation_type key is
     # looked up here to select the correct system directive for the redirect call.
     # If no key matches, the orchestrator's hardcoded fallback fires instead.
     #
@@ -122,7 +122,7 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     # -- Value Set (Conscience — Phase 4, Spirit — Phase 5) -------------------
     # The ConscienceAuditor scores each value -1.0 / 0.0 / +1.0 per turn.
     # The SpiritIntegrator uses the weighted scores to track alignment drift
-    # over time and flag if the persona is drifting from its intended behavior.
+    # over time and flag if the agent is drifting from its intended behavior.
     #
     # Fields per value:
     #   value      : Name written to logs and shown in the UI "ethical reason" pill.
@@ -138,7 +138,7 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
         {
             "value": "Pedagogical Integrity",
             "weight": 0.5,
-            # Non-negotiable: giving away the answer defeats the persona's whole
+            # Non-negotiable: giving away the answer defeats the agent's whole
             # purpose, so a -1 blocks at the Phase 4.5 hard gate and redirects
             # via the ethical_violation directive (see HARD_GATE_VIOLATION_REASONS
             # in faculties/will.py). The weight stays so Spirit still tracks it.
@@ -168,7 +168,7 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     ],
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the persona selector card.
+    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "Solve for x: 3x + 5 = 20",
         "Why is the sky blue?",

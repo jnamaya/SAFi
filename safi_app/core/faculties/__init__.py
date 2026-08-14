@@ -11,7 +11,7 @@ from .will import WillGate
 from .conscience import ConscienceAuditor
 from .spirit import SpiritIntegrator
 from .phase_zero import PhaseZeroGate
-from .synderesis import PERSONAS, GOVERNANCE_MAP, get_profile, list_profiles, assemble_agent
+from .synderesis import AGENTS, GOVERNANCE_MAP, get_profile, list_profiles, assemble_agent
 
 __all__ = [
     "IntellectEngine",
@@ -19,7 +19,7 @@ __all__ = [
     "ConscienceAuditor",
     "SpiritIntegrator",
     "PhaseZeroGate",
-    "PERSONAS",
+    "AGENTS",
     "GOVERNANCE_MAP",
     "get_profile",
     "list_profiles",

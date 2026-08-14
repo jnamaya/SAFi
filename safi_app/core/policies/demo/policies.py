@@ -3,7 +3,7 @@ Demo Business-Unit Policies
 ===========================
 One policy per built-in demo agent. Seeded into the `policies` table at
 startup (see database._ensure_demo_agent_policies_exist) with is_demo=TRUE,
-then attached to each persona via its `policy_id` key.
+then attached to each agent via its `policy_id` key.
 
 Why these exist: SAFi's pitch is that agents are governed by an external,
 versioned policy — not by values they author themselves. Before these
@@ -12,16 +12,16 @@ _standalone_base), which modeled the exact pattern the platform argues
 against.
 
 Design notes:
-- Each policy LIFTS its persona's scored values (rubrics included) verbatim.
-  Under the two-tier compiler an attached policy replaces the persona's
+- Each policy LIFTS its agent's scored values (rubrics included) verbatim.
+  Under the two-tier compiler an attached policy replaces the agent's
   scored values entirely, so lifting them preserves audit behavior exactly
   while moving the values to where the architecture says they belong.
 - scope_statement is likewise lifted into policy_config (policy scope
   overrides agent scope in assemble_agent; same text = no behavior change).
-- will_rules stay empty at the policy layer: the persona's own will_rules
+- will_rules stay empty at the policy layer: the agent's own will_rules
   survive the merge untouched, and duplicating them here would double them.
 - The worldview is the POLICY voice (organizational constraints), layered
-  above the persona's role worldview by assemble_agent.
+  above the agent's role worldview by assemble_agent.
 
 Once seeded, the DB row is the source of truth — it is versioned and
 editable in the Governance tab. Edits here only affect fresh databases.
@@ -38,7 +38,7 @@ from ...agents.safi_steward import THE_SAFI_STEWARD_AGENT
 
 def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Lift persona values to the policy layer. Hard gates get weight 0 — at the
+    Lift agent values to the policy layer. Hard gates get weight 0 — at the
     policy tier a gate is a bright line that blocks on -1, never a component
     of the alignment average (weight ≠ non-negotiability). Scored values keep
     their authored ratios; the compiler renormalizes them to sum to 1.0.
@@ -152,8 +152,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# persona key -> governing demo policy id (used to stamp the personas and by
-# the seeder's sanity logging; the personas also carry this in "policy_id").
+# agent key -> governing demo policy id (used to stamp the agents and by
+# the seeder's sanity logging; the agents also carry this in "policy_id").
 DEMO_AGENT_POLICY_MAP: Dict[str, str] = {
     "fiduciary": "demo_financial_advisory_policy",
     "health_navigator": "demo_patient_navigation_policy",

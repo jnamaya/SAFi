@@ -1,5 +1,5 @@
 """
-Persona Profile: The Fiduciary
+Agent Profile: The Fiduciary
 ================================
 A market-aware financial guide that educates without giving personalized advice.
 Uses MCP tools to pull real-time stock data, news, and analyst insights.
@@ -22,7 +22,7 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_financial_advisory_policy",
-    # Built-in informational persona — no project/task work context to track.
+    # Built-in informational agent — no project/task work context to track.
     "track_work_context": False,
     "scope_statement": "Financial education and market analysis only. No personalized investment advice.",
     "description": (
@@ -145,7 +145,7 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ],
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Persona-level phrases scanned by PhaseZeroGate
+    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
     #                           before any LLM call. Augments global INJECTION_SIGNATURES.
     # structural_requirements : Checked by Will W1 on every draft before Will's LLM eval.
     #   require_disclaimer          : True — every draft must contain the disclaimer.
@@ -164,8 +164,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
         "early_prompt_blacklist": []
     },
 
-    # -- Redirect Directives (trigger_persona_redirect) -----------------------
-    # Matched by violation_type when the orchestrator calls trigger_persona_redirect.
+    # -- Redirect Directives (trigger_agent_redirect) -----------------------
+    # Matched by violation_type when the orchestrator calls trigger_agent_redirect.
     # If the key is not found, the orchestrator's hardcoded fallback fires.
     # Never acknowledge the user's framing in any directive — respond fresh.
     "internal_rephrase_directives": {
@@ -203,7 +203,7 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     },
 
     # -- MCP Tools -------------------------------------------------------------
-    # Tool names this persona may call via the MCP manager.
+    # Tool names this agent may call via the MCP manager.
     # Will gate checks every tool_call intent against this list (Phase 3).
     # Remove a name here to revoke access without touching tool definitions.
     #
@@ -226,7 +226,7 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ],
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the persona selector card.
+    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "How does a stock work?",
         "What is the difference between a traditional IRA and a Roth IRA?",

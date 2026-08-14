@@ -16,7 +16,7 @@ export function renderIntellectStep(container, agentData) {
                         <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">System Instructions</label>
                         <p class="text-xs text-gray-400">Write it to the agent: "You are…". Say what it does, who it serves, and where its job ends.</p>
                     </div>
-                     <button id="wiz-gen-persona-btn" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
+                     <button id="wiz-gen-agent-btn" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         Draft with AI
                     </button>
@@ -49,8 +49,8 @@ export function renderIntellectStep(container, agentData) {
 }
 
 function attachAiHandlers(agentData) {
-    // AI PERSONA HANDLER
-    document.getElementById('wiz-gen-persona-btn').addEventListener('click', async (e) => {
+    // AI AGENT HANDLER
+    document.getElementById('wiz-gen-agent-btn').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;
         btn.innerHTML = `<span class="thinking-spinner w-3 h-3 inline-block mr-1"></span> Drafting...`;
@@ -58,7 +58,7 @@ function attachAiHandlers(agentData) {
 
         try {
             const context = agentData.description || "A helpful AI assistant";
-            const res = await api.generatePolicyContent('persona', context, { name: agentData.name });
+            const res = await api.generatePolicyContent('agent', context, { name: agentData.name });
 
             if (res.ok && res.content) {
                 const instructions = res.content;

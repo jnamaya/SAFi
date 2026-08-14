@@ -383,8 +383,8 @@ class Config:
     # who wants the public bot auditable must set it.
     PUBLIC_ORG_ID = (os.environ.get("SAFI_PUBLIC_ORG_ID") or "").strip() or None
 
-    # Which built-in demo agents to register and seed. Comma-separated persona
-    # keys (see core/faculties/synderesis.py PERSONAS), or "all" for the full
+    # Which built-in demo agents to register and seed. Comma-separated agent
+    # keys (see core/faculties/synderesis.py AGENTS), or "all" for the full
     # demo suite.
     #
     # The default three all run with zero extra setup. Fiduciary and Tutor
@@ -457,9 +457,9 @@ class Config:
     # thread carrying one 50k-char attachment re-sends it on every subsequent
     # turn, twice — cost and context grow with the square of the conversation.
     #
-    # A per-agent override may be set on the persona as `history_turns` /
+    # A per-agent override may be set on the agent as `history_turns` /
     # `history_max_chars`; both survive the governance compile untouched because
-    # synderesis deep-copies the persona.
+    # synderesis deep-copies the agent.
     _raw_history_turns = os.environ.get("SAFI_HISTORY_TURNS", "3").strip().lower()
     HISTORY_TURNS = 0 if _raw_history_turns in ("all", "unlimited", "-1") else int(_raw_history_turns or 3)
     HISTORY_MAX_CHARS = int(os.environ.get("SAFI_HISTORY_MAX_CHARS", "40000"))

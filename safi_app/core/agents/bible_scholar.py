@@ -1,5 +1,5 @@
 """
-Persona Profile: The Bible Scholar
+Agent Profile: The Bible Scholar
 =====================================
 A RAG-grounded scholarship agent covering the Bible, Christian theology,
 church history, and all topics related to Christianity. Scripture citations
@@ -24,7 +24,7 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_religious_studies_policy",
-    # Built-in informational persona — no project/task work context to track.
+    # Built-in informational agent — no project/task work context to track.
     "track_work_context": False,
     "scope_statement": "Biblical scholarship, Christian theology, and church history — with all Scripture grounded in the Berean Standard Bible.",
 
@@ -139,7 +139,7 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
     ],
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Persona-level phrases scanned by PhaseZeroGate
+    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
     #                           before any LLM call. Augments global INJECTION_SIGNATURES.
     # structural_requirements : Checked by Will W1 on every draft before Will's LLM eval.
     "will_rules": {
@@ -150,8 +150,8 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
         }
     },
 
-    # -- Redirect Directives (trigger_persona_redirect) -----------------------
-    # Matched by violation_type when the orchestrator calls trigger_persona_redirect.
+    # -- Redirect Directives (trigger_agent_redirect) -----------------------
+    # Matched by violation_type when the orchestrator calls trigger_agent_redirect.
     # If the key is not found, the orchestrator's hardcoded fallback fires.
     # Never acknowledge the user's framing in any directive — respond fresh.
     "internal_rephrase_directives": {
@@ -185,7 +185,7 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
     },
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the persona selector card.
+    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "How did the Council of Nicaea define the doctrine of the Trinity?",
         "What does the BSB say about justification by faith in Romans?",

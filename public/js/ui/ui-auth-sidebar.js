@@ -713,7 +713,7 @@ export function updateChatTitle(title) {
 }
 
 /**
- * Updates the chip displaying the currently active profile/persona.
+ * Updates the chip displaying the currently active profile/agent.
  */
 export function updateActiveProfileChip(profileNameOrObject) {
   ui._ensureElements();
@@ -731,7 +731,7 @@ export function updateActiveProfileChip(profileNameOrObject) {
     avatarUrl = profileNameOrObject.avatar || getAvatarForProfile(profileNameText);
   }
 
-  // --- CHANGED: "Persona:" to "Agent:" ---
+  // --- CHANGED: "Agent:" to "Agent:" ---
   const textLabel = "Agent:";
 
   // Desktop chip
@@ -784,7 +784,7 @@ export function getAvatarForProfile(profileName) {
   // Everything below reasons about the DISPLAY name, whichever form came in.
   const displayName = (customProfile && customProfile.name) || profileName;
 
-  // 2. The one real mark. It is not a persona portrait, which is why it
+  // 2. The one real mark. It is not a agent portrait, which is why it
   //    survives: safi.svg is the product wordmark, which The SAFi Guide is
   //    entitled to wear.
   //

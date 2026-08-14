@@ -2,7 +2,7 @@
 Phase Zero Gate — the pre-generation injection barrier.
 
 Before the Intellect is ever invoked, this gate evaluates the raw user prompt against
-known attack signatures, per-persona blacklists, and an entropy-based embedded-instruction
+known attack signatures, per-agent blacklists, and an entropy-based embedded-instruction
 heuristic. It is entirely deterministic (zero LLM calls): if a threat is detected the
 orchestrator short-circuits immediately to a governed redirect, ensuring the Intellect is
 never exposed to adversarial content.
@@ -42,12 +42,12 @@ class PhaseZeroGate:
 
     Decision flow:
       1. Global signature scan  — known injection patterns from threat_intel.py
-      2. Persona blacklist scan — per-persona blocked phrases (early_prompt_blacklist)
+      2. Agent blacklist scan — per-agent blocked phrases (early_prompt_blacklist)
       3. Internals probe        — a sensitive noun co-occurring with a disclosure cue
       4. Embedded instruction heuristic — high-entropy payload + instruction markers
 
     Returns (is_safe, reason). When is_safe is False the orchestrator
-    short-circuits to trigger_persona_redirect without ever calling Intellect.
+    short-circuits to trigger_agent_redirect without ever calling Intellect.
     """
 
     def __init__(self):
@@ -56,7 +56,7 @@ class PhaseZeroGate:
     def evaluate_prompt(
         self,
         user_prompt: str,
-        persona_blacklist: Optional[List[str]] = None,
+        agent_blacklist: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
         """
         Evaluates the raw user prompt before Intellect runs.
@@ -74,11 +74,11 @@ class PhaseZeroGate:
                     )
                     return False, f"injection:{category}"
 
-        # --- 2. Persona blacklist scan ---
-        for pattern in (persona_blacklist or []):
+        # --- 2. Agent blacklist scan ---
+        for pattern in (agent_blacklist or []):
             if pattern.lower() in prompt_lower:
                 self.log.warning(
-                    f"PhaseZeroGate: Persona blacklist match | pattern='{pattern}'"
+                    f"PhaseZeroGate: Agent blacklist match | pattern='{pattern}'"
                 )
                 return False, "scope_violation"
 
@@ -149,7 +149,7 @@ class PhaseZeroGate:
             # Word boundaries: matched as a bare substring, "expose" fires inside
             # "exposes", "dump" inside "dumps", "reveal" inside "revealing". A verb
             # conjugation is not a request to hand anything over -- this is what
-            # blocked SAFi's own article on the sentence "It exposes PERSONAS...".
+            # blocked SAFi's own article on the sentence "It exposes AGENTS...".
             for m in _cue_pattern(cue).finditer(prompt_lower):
                 ci = m.start()
                 for ni, noun in noun_hits:

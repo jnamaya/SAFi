@@ -453,7 +453,7 @@ async def handle_fiduciary_commands(
 
     log.info("--- FIDUCIARY PLUGIN (RAG-ENABLED): FILE LOADED ---")
 
-    # Only run for The Fiduciary persona
+    # Only run for The Fiduciary agent
     if active_profile_name != "the fiduciary":
         return user_prompt, None
 

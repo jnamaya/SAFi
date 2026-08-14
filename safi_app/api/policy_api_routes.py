@@ -414,7 +414,7 @@ async def generate_policy_content_endpoint():
         
         prompt = ""
         sys_prompt = "You are an AI Governance Consultant."
-        # Drafting types (persona, style, worldview) want some latitude; the
+        # Drafting types (agent, style, worldview) want some latitude; the
         # document types are extraction, where latitude means inventing clauses
         # that are not in the source. Set per branch.
         gen_temperature = 0.7
@@ -643,8 +643,8 @@ async def generate_policy_content_endpoint():
                 "Return a JSON array of guardrail strings."
             )
 
-        # --- IMPROVED CONCISE PERSONA PROMPT ---
-        elif gen_type == 'persona':
+        # --- IMPROVED CONCISE AGENT PROMPT ---
+        elif gen_type == 'agent':
              sys_prompt = "You are a creative writer. Output a single, concise paragraph."
              prompt = (
                  f"Write a short, immersive system prompt for an AI agent named '{agent_name}'. "

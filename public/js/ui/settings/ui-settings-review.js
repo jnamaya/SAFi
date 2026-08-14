@@ -58,7 +58,7 @@ const BADGE = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] fon
 const TRIGGER_META = {
     hard_gate_block: { label: 'Hard-gate block', cls: 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200' },
     gateway_violation: { label: 'Gateway violation', cls: 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200' },
-    persona_redirect: { label: 'Persona redirect', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
+    agent_redirect: { label: 'Agent redirect', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
     low_alignment: { label: 'Low alignment', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
     drift_spike: { label: 'Consistency drop', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' },
     random_sample: { label: 'Random sample', cls: 'bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200' },
@@ -496,7 +496,7 @@ async function renderConfigCard() {
                         <input type="checkbox" id="rvc-gateway" ${t.gateway_violation ? 'checked' : ''} ${dis}> Every gateway violation
                     </label>
                     <label class="flex items-center gap-2 text-sm" title="Turns where the agent redirected instead of answering, other than hard-gate blocks — those have their own checkbox above.">
-                        <input type="checkbox" id="rvc-redirect" ${t.persona_redirect ? 'checked' : ''} ${dis}> Every persona redirect
+                        <input type="checkbox" id="rvc-redirect" ${t.agent_redirect ? 'checked' : ''} ${dis}> Every agent redirect
                     </label>
                     <label class="flex items-center justify-between gap-2 text-sm">
                         <span class="flex items-center gap-2"><input type="checkbox" id="rvc-low-align" ${t.low_alignment ? 'checked' : ''} ${dis}> Alignment below</span>
@@ -544,7 +544,7 @@ async function renderConfigCard() {
             triggers: {
                 hard_gate_block: el.querySelector('#rvc-hard-gate').checked,
                 gateway_violation: el.querySelector('#rvc-gateway').checked,
-                persona_redirect: el.querySelector('#rvc-redirect').checked,
+                agent_redirect: el.querySelector('#rvc-redirect').checked,
                 low_alignment: el.querySelector('#rvc-low-align').checked,
                 alignment_threshold: num('#rvc-align-thr'),
                 drift_spike: el.querySelector('#rvc-drift').checked,

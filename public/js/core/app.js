@@ -551,8 +551,8 @@ function renderControlPanel() {
   // Update UI Modals with current user context
   uiSettingsModals.updateCurrentUser(user);
 
-  // Render Personas Tab
-  // Render Personas Tab
+  // Render Agents Tab
+  // Render Agents Tab
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
     activeProfileData.key,

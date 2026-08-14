@@ -27,7 +27,7 @@ Two failure modes this pins, both silent:
    prompt edit. `system_prompts.json` is one long single-line JSON string, which
    makes accidental damage easy and invisible in review.
 2. **A brace sneaking into the clause.** `formatting_instructions` is passed
-   through `str.format(persona_style_rules=...)` (`intellect.py:186`), so a
+   through `str.format(agent_style_rules=...)` (`intellect.py:186`), so a
    single `{` or `}` raises at request time and takes down every Intellect call.
    A TeX example like `\\frac{a}{b}` in the clause would do exactly that — which
    is why the clause names bare commands and carries no braces.
@@ -75,10 +75,10 @@ class MathFormattingClause(unittest.TestCase):
 
     def test_03_clause_survives_str_format(self):
         """The regression that would break EVERY Intellect call, not just math
-        ones. intellect.py calls .format(persona_style_rules=style) on this
+        ones. intellect.py calls .format(agent_style_rules=style) on this
         string, so one stray brace is a hard failure at request time."""
         try:
-            out = self.fi.format(persona_style_rules="STYLE RULES")
+            out = self.fi.format(agent_style_rules="STYLE RULES")
         except (KeyError, IndexError, ValueError) as exc:
             self.fail(f"formatting_instructions no longer survives .format(): "
                       f"{type(exc).__name__}: {exc}. A single unescaped brace does "

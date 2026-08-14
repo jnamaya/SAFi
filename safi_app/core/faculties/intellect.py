@@ -158,7 +158,7 @@ class IntellectEngine:
         """
         Args:
             llm_provider: The unified LLM service.
-            profile: The persona profile configuration.
+            profile: The agent profile configuration.
             prompt_config: The configuration for system prompts.
             mcp_manager: Manager used only for listing available tools, never for execution.
         """
@@ -366,8 +366,8 @@ class IntellectEngine:
                 pass
 
         formatting_instructions = self.prompt_config.get("formatting_instructions", "")
-        if "{persona_style_rules}" in formatting_instructions:
-            formatting_instructions = formatting_instructions.format(persona_style_rules=style)
+        if "{agent_style_rules}" in formatting_instructions:
+            formatting_instructions = formatting_instructions.format(agent_style_rules=style)
 
         tools_injection = ""
         if tools:

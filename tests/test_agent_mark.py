@@ -59,7 +59,7 @@ REMOVED_FACES = (
     "bible_scholar.svg",
 )
 
-# Survives because it is not a persona portrait: safi.svg is the product
+# Survives because it is not a agent portrait: safi.svg is the product
 # wordmark, which The SAFi Guide is entitled to wear.
 KEPT_MARKS = ("safi.svg",)
 

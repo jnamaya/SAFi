@@ -1123,7 +1123,7 @@ def get_me():
         try:
             user_details['active_profile_details'] = get_profile(active_profile_name)
         except (KeyError, ValueError):
-            # KeyError: persona no longer exists. ValueError: it failed
+            # KeyError: agent no longer exists. ValueError: it failed
             # compile-time governance validation (e.g. rubric-less hard gate).
             # Either way, fall back to the default so login still works.
             db.update_user_profile(user_id, Config.DEFAULT_PROFILE)

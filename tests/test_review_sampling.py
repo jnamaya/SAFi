@@ -109,30 +109,30 @@ class TestTriggerMatrix(unittest.TestCase):
         self.assertEqual(triggers, ["hard_gate_block"])
         self.assertEqual(detail["will_stage"], "hard_gate")
 
-    def test_persona_redirect_off_by_default(self):
-        # Unlike its siblings, persona_redirect defaults off — enabling it is
+    def test_agent_redirect_off_by_default(self):
+        # Unlike its siblings, agent_redirect defaults off — enabling it is
         # an admin's journaled opt-in, never a deploy-time behavior change.
         triggers, _ = self.eval(will_decision="redirected", will_stage="spirit",
                                 score=None, drift=None)
         self.assertEqual(triggers, [])
 
-    def test_persona_redirect_fires_on_non_hard_gate_redirects(self):
-        cfg = cfg_with(random_sample_pct=0, triggers={"persona_redirect": True})
+    def test_agent_redirect_fires_on_non_hard_gate_redirects(self):
+        cfg = cfg_with(random_sample_pct=0, triggers={"agent_redirect": True})
         for stage in ("phase_zero", "values", "spirit"):
             triggers, detail = self.eval(cfg=cfg, will_decision="redirected",
                                          will_stage=stage, score=None, drift=None)
-            self.assertEqual(triggers, ["persona_redirect"])
+            self.assertEqual(triggers, ["agent_redirect"])
             self.assertEqual(detail["will_stage"], stage)
 
-    def test_persona_redirect_excludes_hard_gate_redirects(self):
+    def test_agent_redirect_excludes_hard_gate_redirects(self):
         # Hard-gate blocks ship as redirects but answer to the hard_gate_block
         # checkbox alone — even when that checkbox is off.
-        cfg = cfg_with(random_sample_pct=0, triggers={"persona_redirect": True})
+        cfg = cfg_with(random_sample_pct=0, triggers={"agent_redirect": True})
         triggers, _ = self.eval(cfg=cfg, will_decision="redirected",
                                 will_stage="hard_gate", score=None, drift=None)
         self.assertEqual(triggers, ["hard_gate_block"])
         cfg = cfg_with(random_sample_pct=0,
-                       triggers={"persona_redirect": True, "hard_gate_block": False})
+                       triggers={"agent_redirect": True, "hard_gate_block": False})
         triggers, _ = self.eval(cfg=cfg, will_decision="redirected",
                                 will_stage="hard_gate", score=None, drift=None)
         self.assertEqual(triggers, [])

@@ -26,21 +26,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app.core.agents.fiduciary import THE_FIDUCIARY_AGENT
 from safi_app.core.agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
 
-# Personas that arm the Will's disclaimer gate. If a new one does, add it here —
+# Agents that arm the Will's disclaimer gate. If a new one does, add it here —
 # the point of this file is that arming the gate and scoring it are mutually
 # exclusive.
-DISCLAIMER_PERSONAS = {
+DISCLAIMER_AGENTS = {
     "fiduciary": THE_FIDUCIARY_AGENT,
     "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
 }
 
 
-def _structural(persona):
+def _structural(agent):
     # Key name must match will.py:88 — `structural_requirements`, not
     # `structural`. Getting this wrong makes every assertion below vacuously
     # pass against an empty dict, which is how a test file like this ends up
     # guarding nothing.
-    rules = persona.get("will_rules") or {}
+    rules = agent.get("will_rules") or {}
     return rules.get("structural_requirements") or {}
 
 
@@ -48,9 +48,9 @@ class TestWillOwnsTheDisclaimer(unittest.TestCase):
     """The deterministic half: the gate is armed and its substring is real."""
 
     def test_01_gate_is_armed_with_a_usable_substring(self):
-        for name, persona in DISCLAIMER_PERSONAS.items():
-            with self.subTest(persona=name):
-                st = _structural(persona)
+        for name, agent in DISCLAIMER_AGENTS.items():
+            with self.subTest(agent=name):
+                st = _structural(agent)
                 self.assertTrue(st.get("require_disclaimer"),
                                 f"{name}: require_disclaimer must stay on — it is the ONLY "
                                 f"enforcement now that the rubric no longer scores it")
@@ -63,10 +63,10 @@ class TestWillOwnsTheDisclaimer(unittest.TestCase):
     def test_02_the_substring_appears_in_the_style_instruction(self):
         """The Intellect is told to emit the disclaimer; the Will checks for it.
         If those two texts drift, every draft gets blocked."""
-        for name, persona in DISCLAIMER_PERSONAS.items():
-            with self.subTest(persona=name):
-                sub = _structural(persona)["mandatory_disclaimer_substring"].strip()
-                style = persona.get("style") or ""
+        for name, agent in DISCLAIMER_AGENTS.items():
+            with self.subTest(agent=name):
+                sub = _structural(agent)["mandatory_disclaimer_substring"].strip()
+                style = agent.get("style") or ""
                 self.assertIn(sub, style,
                               f"{name}: the Will's required substring does not appear in the "
                               f"style text, so the model is never told to write what the gate "
@@ -77,9 +77,9 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
     """The half that regressed. A rubric mentioning the disclaimer invites a
     model to judge wording, which is what produced the false -1."""
 
-    def _rubric_prose(self, persona):
+    def _rubric_prose(self, agent):
         chunks = []
-        for v in persona.get("values") or []:
+        for v in agent.get("values") or []:
             r = v.get("rubric") or {}
             chunks.append((v.get("value"), r.get("description") or ""))
             for g in r.get("scoring_guide") or []:
@@ -87,17 +87,17 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
         return chunks
 
     def test_03_no_rubric_mentions_the_disclaimer(self):
-        for name, persona in DISCLAIMER_PERSONAS.items():
-            for value, text in self._rubric_prose(persona):
-                with self.subTest(persona=name, value=value):
+        for name, agent in DISCLAIMER_AGENTS.items():
+            for value, text in self._rubric_prose(agent):
+                with self.subTest(agent=name, value=value):
                     self.assertNotIn("disclaimer", text.lower(),
                                      f"{name}/{value}: rubric text asks the Conscience to judge "
                                      f"the disclaimer, which the Will already checks "
                                      f"deterministically. Presence is not a matter of opinion.")
 
-    def test_04_no_persona_anywhere_scores_the_disclaimer(self):
-        """Widened past the two known agents: any persona arming the gate must
-        not also score it, and any persona scoring it must be caught here."""
+    def test_04_no_agent_anywhere_scores_the_disclaimer(self):
+        """Widened past the two known agents: any agent arming the gate must
+        not also score it, and any agent scoring it must be caught here."""
         import safi_app.core.agents as pkg
         import importlib, pkgutil
         offenders = []
@@ -115,9 +115,9 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
     def test_05_the_values_still_score_something(self):
         """Removing the clause must not hollow out the value. Each affected
         rubric needs a full -1/0/+1 guide describing a real judgement."""
-        for name, persona in DISCLAIMER_PERSONAS.items():
-            for v in persona.get("values") or []:
-                with self.subTest(persona=name, value=v.get("value")):
+        for name, agent in DISCLAIMER_AGENTS.items():
+            for v in agent.get("values") or []:
+                with self.subTest(agent=name, value=v.get("value")):
                     guide = (v.get("rubric") or {}).get("scoring_guide") or []
                     scores = sorted(g.get("score") for g in guide)
                     self.assertEqual(scores, [-1.0, 0.0, 1.0],

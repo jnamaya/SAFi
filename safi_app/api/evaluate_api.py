@@ -43,7 +43,7 @@ async def evaluate_endpoint():
     if not agent_id or not user_prompt or not agent_output:
         return jsonify({"error": "Missing required fields: agent_id, input, output"}), 400
 
-    persona_key = data.get('persona', 'safi')
+    agent_key = data.get('agent', 'safi')
     # One rolling session per external agent unless the caller tracks its own;
     # the gw_ namespace keeps gateway sessions from colliding with native
     # conversation ids (Spirit drift continuity accrues per conversation).
@@ -73,9 +73,9 @@ async def evaluate_endpoint():
         policy = db.get_policy(policy_id) or {}
         org_id = policy.get('org_id') or (user_details or {}).get('org_id')
 
-        # 5. Governed instance (cached), policy injected over the persona
+        # 5. Governed instance (cached), policy injected over the agent
         saf_system = global_safi_cache.get_or_create(
-            persona_key,
+            agent_key,
             Config.INTELLECT_MODEL,
             None,
             Config.CONSCIENCE_MODEL,

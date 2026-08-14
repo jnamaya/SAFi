@@ -9,7 +9,7 @@ only runtime consumer is the post-block suggestion engine.
 Two behaviours protect that, and both are easy to regress:
 
 1. `assemble_agent` must not DROP prose rules when the two sides of the merge use
-   different shapes. A persona with dict-shaped `will_rules` used to force the
+   different shapes. A agent with dict-shaped `will_rules` used to force the
    policy's legacy list to `{}`, discarding it silently — invisible until a block
    produced unhelpful suggestions.
 
@@ -52,9 +52,9 @@ COMPILED_GATE = {
 class TestProseRuleMergePreservesBothShapes(unittest.TestCase):
     """assemble_agent must never silently discard written rules."""
 
-    def test_dict_persona_keeps_policy_prose_list(self):
-        # The regression: persona dict + policy list -> policy list vanished.
-        persona = {
+    def test_dict_agent_keeps_policy_prose_list(self):
+        # The regression: agent dict + policy list -> policy list vanished.
+        agent = {
             "name": "A",
             "values": [],
             "will_rules": {"structural_requirements": {"require_disclaimer": True}},
@@ -63,37 +63,37 @@ class TestProseRuleMergePreservesBothShapes(unittest.TestCase):
             "global_values": [],
             "global_will_rules": ["The response must not promise specific outcomes."],
         }
-        merged = assemble_agent(persona, governance)["will_rules"]
+        merged = assemble_agent(agent, governance)["will_rules"]
         self.assertIsInstance(merged, dict)
         self.assertIn("The response must not promise specific outcomes.", merged.get("rules", []))
         # The structured side must survive the fix untouched.
         self.assertTrue(merged["structural_requirements"]["require_disclaimer"])
 
-    def test_list_persona_keeps_policy_dict_prose(self):
-        persona = {"name": "A", "values": [], "will_rules": ["Persona rule."]}
+    def test_list_agent_keeps_policy_dict_prose(self):
+        agent = {"name": "A", "values": [], "will_rules": ["Agent rule."]}
         governance = {
             "global_values": [],
             "global_will_rules": {"rules": ["Policy rule."], "structural_requirements": {}},
         }
-        merged = assemble_agent(persona, governance)["will_rules"]
-        self.assertEqual(merged.get("rules"), ["Policy rule.", "Persona rule."])
+        merged = assemble_agent(agent, governance)["will_rules"]
+        self.assertEqual(merged.get("rules"), ["Policy rule.", "Agent rule."])
 
-    def test_governance_prose_precedes_persona_prose(self):
+    def test_governance_prose_precedes_agent_prose(self):
         # Same ordering as the pure-list branch: governance first.
-        persona = {"name": "A", "values": [], "will_rules": ["P."]}
+        agent = {"name": "A", "values": [], "will_rules": ["P."]}
         governance = {"global_values": [], "global_will_rules": ["G."]}
-        self.assertEqual(assemble_agent(persona, governance)["will_rules"], ["G.", "P."])
+        self.assertEqual(assemble_agent(agent, governance)["will_rules"], ["G.", "P."])
 
     def test_duplicate_rule_appears_once(self):
-        persona = {"name": "A", "values": [], "will_rules": {"rules": ["Same rule."]}}
+        agent = {"name": "A", "values": [], "will_rules": {"rules": ["Same rule."]}}
         governance = {"global_values": [], "global_will_rules": ["Same rule."]}
-        merged = assemble_agent(persona, governance)["will_rules"]
+        merged = assemble_agent(agent, governance)["will_rules"]
         self.assertEqual(merged.get("rules"), ["Same rule."])
 
     def test_no_prose_anywhere_adds_no_rules_key(self):
-        persona = {"name": "A", "values": [], "will_rules": {"structural_requirements": {}}}
+        agent = {"name": "A", "values": [], "will_rules": {"structural_requirements": {}}}
         governance = {"global_values": [], "global_will_rules": []}
-        self.assertNotIn("rules", assemble_agent(persona, governance)["will_rules"])
+        self.assertNotIn("rules", assemble_agent(agent, governance)["will_rules"])
 
 
 class TestCompiledGateIsEnforceable(unittest.TestCase):

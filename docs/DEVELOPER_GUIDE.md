@@ -269,17 +269,17 @@ auditor / editor / admin) gating who in the org can see it. `list_agents()`
 org-mates' agents whose visibility clears the caller's role; built-in
 demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
 
-- **Persona and policy are two tiers, not one binding.** `core/agents/*.py`
+- **Agent and policy are two tiers, not one binding.** `core/agents/*.py`
   (bible_scholar, fiduciary, health_navigator, safi_steward,
   socratic_tutor) are default templates — each ships a fallback `policy_id`,
   but that's just a default an agent row can override. Policies are their
   own versioned entity (`policies` / `policy_versions`), so the same
-  persona can run under different policies across agents, or be
+  agent can run under different policies across agents, or be
   reattached to a new one without touching its identity. See
   `core/policies/demo/policies.py` for the two-tier model spelled out.
 - **Synderesis compiles fresh every turn, not once at agent creation.**
   `Synderesis.get_profile()` (`faculties/synderesis.py`) — "the
-  sole governance compiler" — resolves persona → policy → org Charter into
+  sole governance compiler" — resolves agent → policy → org Charter into
   the normalized value set, rubric set, and scope hard-gate that feed the
   rest of the pipeline (§5, §6). It runs per message from
   `api/conversations.py`, through a caching wrapper keyed on a governance
@@ -391,13 +391,13 @@ exactly once at creation; only its hash persists after that.
   "agent_id": "fiduciary",
   "input": "What's your recommended asset allocation for a 30-year-old?",
   "output": "Here's what I'd suggest: 80% equities, 20% bonds...",
-  "persona": "safi",
+  "agent": "safi",
   "session_id": "my-app-conversation-42"
 }
 ```
 
 `agent_id`, `input`, and `output` are required — a `400` lists whichever
-are missing. `persona` defaults to `"safi"`; `session_id` defaults to
+are missing. `agent` defaults to `"safi"`; `session_id` defaults to
 `agent_id` and gets a `gw_` prefix if you don't supply one.
 
 **Response** (built in `orchestrator.py`, then two fields
@@ -567,7 +567,7 @@ deduped by name and always kept at weight 0 — you can't dilute a hard
 gate by having it appear in both.
 
 **Scope is enforced as an injected hard gate, not a separate mechanism.**
-A policy's `scope_statement` (or a persona's, if the policy doesn't set
+A policy's `scope_statement` (or a agent's, if the policy doesn't set
 one — policy always wins when both are present) gets turned into a
 `weight=0, hard_gate=true` "Scope Compliance" value by
 `_inject_scope_compliance()` (`synderesis.py`), then evaluated by

@@ -1,7 +1,7 @@
 import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
-from ..core.faculties.synderesis import PERSONAS, ALL_PERSONAS, get_profile
+from ..core.faculties.synderesis import AGENTS, ALL_AGENTS, get_profile
 from ..core.rbac import check_permission
 from ..config import Config
 from .conversations import global_safi_cache  # Import Cache
@@ -23,7 +23,7 @@ def validate_agent_data(data):
 # files. They are not rows in `knowledge_bases`, so the ownership check below
 # would otherwise reject an admin editing the SAFi Steward.
 _BUILTIN_KNOWLEDGE_BASES = frozenset(
-    p.get("rag_knowledge_base") for p in ALL_PERSONAS.values()
+    p.get("rag_knowledge_base") for p in ALL_AGENTS.values()
     if isinstance(p, dict) and p.get("rag_knowledge_base")
 )
 
@@ -82,7 +82,7 @@ def save_agent():
         
         # Check the FULL built-in catalog, not just the enabled subset — a custom
         # agent must never shadow a built-in key that could be enabled later.
-        if key in ALL_PERSONAS: return jsonify({"error": "Reserved name"}), 409
+        if key in ALL_AGENTS: return jsonify({"error": "Reserved name"}), 409
 
         is_valid, err = validate_agent_data(data)
         if not is_valid: return jsonify({"error": err}), 400
@@ -178,7 +178,7 @@ def list_all_agents():
     user_id = user.get("id") or user.get("sub") if user else None
     
     sys_agents = []
-    for k, v in PERSONAS.items():
+    for k, v in AGENTS.items():
         # Compile through get_profile() so built-ins carry the same governed
         # view (scope, hard gates, policy/org names) the UI shows for DB agents.
         try:

@@ -140,7 +140,7 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
                      Keep the key in an environment variable in real deployments —
                      it is inlined below only so the snippet runs as-is.
-                     <strong>Set <code class="font-mono">SAFI_PERSONA</code> to your own agent's key</strong>;
+                     <strong>Set <code class="font-mono">SAFI_AGENT</code> to your own agent's key</strong>;
                      the placeholder is a built-in demo agent that may not exist on your install.
                  </p>
              </div>
@@ -178,8 +178,8 @@ SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${escapeHtml(api_key)}")
 
 # CHANGE THIS to your own agent's key (Agents tab -> the agent -> its key).
 # "fiduciary" is a built-in demo agent and may not be enabled on this install,
-# in which case every message comes back as an unknown-persona error.
-SAFI_PERSONA = os.environ.get("SAFI_PERSONA", "fiduciary")
+# in which case every message comes back as an unknown-agent error.
+SAFI_AGENT = os.environ.get("SAFI_AGENT", "fiduciary")
 
 app = Flask(__name__)
 settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD, channel_auth_tenant=APP_TENANT_ID)
@@ -202,7 +202,7 @@ class SafiTeamsBot:
                 "message": user_text,
                 "user_id": turn_context.activity.from_property.id,
                 "conversation_id": turn_context.activity.conversation.id,
-                "persona": SAFI_PERSONA 
+                "agent": SAFI_AGENT 
             }
             
             headers = { "X-API-KEY": SAFI_BOT_SECRET, "Content-Type": "application/json" }

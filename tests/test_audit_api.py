@@ -97,7 +97,7 @@ class TestAuditApi(unittest.TestCase):
                                   reason="hard_gate_violation")
         cls.mid_viol = cls._turn("AUDITAPI violation prompt", "blocked text",
                                  score=None, drift=None, decision="violation", stage="phase_zero",
-                                 reason="injection:persona_hijack")
+                                 reason="injection:agent_hijack")
         provider_governance.activate_org(None)
 
     @classmethod

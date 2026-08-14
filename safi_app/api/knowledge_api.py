@@ -196,10 +196,10 @@ def list_available_knowledge_bases():
            for kb in rows]
 
     if request.args.get('include_builtin') in ('1', 'true', 'yes'):
-        from ..core.faculties.synderesis import ALL_PERSONAS
+        from ..core.faculties.synderesis import ALL_AGENTS
         seen = set()
-        for persona in ALL_PERSONAS.values():
-            name = isinstance(persona, dict) and persona.get("rag_knowledge_base")
+        for agent in ALL_AGENTS.values():
+            name = isinstance(agent, dict) and agent.get("rag_knowledge_base")
             if name and name not in seen:
                 seen.add(name)
                 out.append({"id": name, "name": name.replace("_", " "),

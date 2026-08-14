@@ -1,6 +1,6 @@
 """
 spirit_memory is keyed on profile_name alone, so a built-in agent's baseline is
-shared by every org using it. That is intentional — with an identical persona and
+shared by every org using it. That is intentional — with an identical agent and
 policy, "how this agent expresses its values" is a property of the agent, and
 pooling gives a better-estimated baseline.
 

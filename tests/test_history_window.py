@@ -125,7 +125,7 @@ class ConfigSurface(unittest.TestCase):
 
 class PerAgentOverride(unittest.TestCase):
 
-    def test_the_resolver_prefers_the_persona_over_the_deployment_default(self):
+    def test_the_resolver_prefers_the_agent_over_the_deployment_default(self):
         """"Some agents need full memory" is a fact about the agent, not the
         install."""
         block = ORCH[ORCH.index("def _resolve_history_window"):]
@@ -135,7 +135,7 @@ class PerAgentOverride(unittest.TestCase):
         self.assertIn("HISTORY_TURNS", block)
 
     def test_a_bad_value_falls_back_instead_of_raising(self):
-        """A typo in one agent's persona must not take that agent off the air."""
+        """A typo in one agent's config must not take that agent off the air."""
         block = ORCH[ORCH.index("def _resolve_history_window"):]
         block = block[:block.index("\n    def _is_cancelled")]
         self.assertIn("except (TypeError, ValueError)", block)

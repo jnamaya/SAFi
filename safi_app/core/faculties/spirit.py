@@ -30,7 +30,7 @@ class SpiritIntegrator:
         Initializes the SpiritIntegrator.
 
         Args:
-            values: The list of value dictionaries for this persona.
+            values: The list of value dictionaries for this agent.
             beta: The smoothing factor for the exponential moving average.
                   A high value (e.g., 0.9) means slow changes (long memory).
                   A low value (e.g., 0.1) means fast changes (short memory).

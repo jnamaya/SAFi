@@ -1,5 +1,5 @@
 """
-Persona Profile: The SAFi Guide (Steward)
+Agent Profile: The SAFi Guide (Steward)
 ===========================================
 Official guide to the Self-Alignment Framework (SAF) — a philosophical system
 for ethical decision-making rooted in classical thought — and its technical
@@ -27,7 +27,7 @@ THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
     # scope from the policy; the values below are the standalone fallback if
     # the policy row is ever deleted.
     "policy_id": "demo_product_guidance_policy",
-    # Informational Q&A persona — no project/task work context to track.
+    # Informational Q&A agent — no project/task work context to track.
     "track_work_context": False,
     "scope_statement": (
         "Questions about the Self-Alignment Framework (SAF) — its philosophy, "
@@ -187,7 +187,7 @@ THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
     ],
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) --------------------------
-    # early_prompt_blacklist  : Persona-level phrases scanned by PhaseZeroGate
+    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
     #                           before any LLM call. Augments global INJECTION_SIGNATURES.
     # structural_requirements : Checked by Will W1 on every draft before Will's LLM eval.
     "will_rules": {
@@ -198,8 +198,8 @@ THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
         }
     },
 
-    # -- Redirect Directives (trigger_persona_redirect) -----------------------
-    # Matched by violation_type when the orchestrator calls trigger_persona_redirect.
+    # -- Redirect Directives (trigger_agent_redirect) -----------------------
+    # Matched by violation_type when the orchestrator calls trigger_agent_redirect.
     # If the key is not found, the orchestrator's hardcoded fallback fires.
     # Never acknowledge the user's framing in any directive — respond fresh.
     "internal_rephrase_directives": {
@@ -237,7 +237,7 @@ THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
     },
 
     # -- UI -------------------------------------------------------------------
-    # Starter questions shown in the persona selector card.
+    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "What problem does the Self-Alignment Framework solve?",
         "How is SAF different from RLHF or Constitutional AI?",

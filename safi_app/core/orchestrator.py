@@ -289,7 +289,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             self.log.error(f"Failed to load system_prompts.json: {e}")
             self.prompts = {}
 
-        # --- 4. Load Persona and Values ---
+        # --- 4. Load Agent and Values ---
         if value_profile_or_list:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
                 self.profile = value_profile_or_list
@@ -379,7 +379,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         (turns, max_chars) for the verbatim history window.
 
         `turns` counts USER/ASSISTANT pairs; 0 means every prior turn in the
-        conversation. The agent's own persona wins over the deployment default,
+        conversation. The agent's own agent wins over the deployment default,
         which is the point of the setting — "some agents need to preserve full
         memory" is a property of the agent, not of the install.
 
@@ -387,7 +387,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         human writes in a config field.
 
         A bad value falls back to the deployment default rather than raising: a
-        typo in one agent's persona must not take that agent off the air, and the
+        typo in one agent's config must not take that agent off the air, and the
         conservative direction is the smaller window.
         """
         cfg_turns = getattr(self.config, "HISTORY_TURNS", 3)
@@ -618,8 +618,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # Memories
         memory_summary = db.fetch_conversation_summary(conversation_id)
         current_profile_json = db.fetch_user_profile_memory(user_id)
-        # Per-persona gate: only task/project-oriented agents accumulate work context.
-        # Built-in informational personas set track_work_context=False; org/custom
+        # Per-agent gate: only task/project-oriented agents accumulate work context.
+        # Built-in informational agents set track_work_context=False; org/custom
         # agents (no flag in DB) default to True. "{}" is the empty sentinel.
         track_work_context = bool((self.profile or {}).get("track_work_context", True))
         current_agent_context_json = (
@@ -628,7 +628,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         )
 
         # Recent turns verbatim window. Depth is configurable (SAFI_HISTORY_TURNS,
-        # or `history_turns` on the persona) because some agents need the whole
+        # or `history_turns` on the agent) because some agents need the whole
         # thread and others must not pay for it — see _resolve_history_window.
         turns, max_chars = self._resolve_history_window()
         # +2 covers the current user message, which is dropped below.
@@ -698,18 +698,18 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         # --- PHASE 0: Pre-generation Injection Gate ---
         # will_rules may be a dict (governed agents) or a legacy list (a
-        # standalone custom agent — load_custom_persona defaults the missing key
+        # standalone custom agent — load_custom_agent defaults the missing key
         # to []). Only a dict carries early_prompt_blacklist; treat a list as
         # "none defined" rather than crashing on list.get().
         _will_rules = (self.profile or {}).get("will_rules", {})
-        persona_blacklist = (
+        agent_blacklist = (
             _will_rules.get("early_prompt_blacklist", [])
             if isinstance(_will_rules, dict) else []
         )
-        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, persona_blacklist)
+        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, agent_blacklist)
         if not is_safe:
             self.log.warning(f"[Governance | Phase 0 | Injection Gate] BLOCKED — {gate_reason}")
-            return await self.trigger_persona_redirect(
+            return await self.trigger_agent_redirect(
                 original_prompt=user_prompt,
                 violation_type=gate_reason,
                 conversation_id=conversation_id,
@@ -1028,7 +1028,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         # Structural and audit-availability failures are system faults, not
         # verdicts on the user's request — ship a deterministic notice instead
-        # of a persona redirect (see _ship_system_failure_notice).
+        # of a agent redirect (see _ship_system_failure_notice).
         if result["verdict"] == "violation" and result["stage"] in ("structure", "audit"):
             return self._ship_system_failure_notice(
                 original_prompt=user_prompt,
@@ -1046,16 +1046,16 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # e.g. the tutor's Pedagogical Integrity) are like spirit-stage dips:
         # the user's request is fine, the DRAFT is the problem. They fall
         # through to the reflexion retry below, which regenerates with the
-        # question and blocked draft visible. The vacuum persona redirect
+        # question and blocked draft visible. The vacuum agent redirect
         # cannot do that (it withholds the question as an anti-injection
         # measure) and produced false "out of scope" refusals here.
         correctable_gate = self._is_correctable_gate(result)
 
         # Remaining hard-gate failures (scope, grounding) ARE verdicts on
-        # engaging the request at all and keep the persona redirect, voiced
+        # engaging the request at all and keep the agent redirect, voiced
         # with the gate's own reason.
         if result["verdict"] == "violation" and result["stage"] != "spirit" and not correctable_gate:
-            return await self.trigger_persona_redirect(
+            return await self.trigger_agent_redirect(
                 original_prompt=user_prompt,
                 violation_type=result["reason"],
                 conversation_id=conversation_id,
@@ -1080,7 +1080,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             # scope/injection are gated at Phase 0 / 4.5. The user's intent is
             # fine; the draft is the problem. Run a reflexion retry that shows
             # the model its blocked draft so it can correct it.
-            # trigger_persona_redirect generates in a vacuum and can't fix
+            # trigger_agent_redirect generates in a vacuum and can't fix
             # content issues; it stays reserved for the failures handled above.
             E_spirit = result["reason"]
             retry_metadata.update({
@@ -1186,7 +1186,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 # Neither draft is fit to ship. Redirect on the ORIGINAL audit's
                 # reason: it is the authoritative read on the user's request (its
                 # hard gates passed); the retry's failures are draft-specific.
-                return await self.trigger_persona_redirect(
+                return await self.trigger_agent_redirect(
                     original_prompt=user_prompt,
                     violation_type=E_spirit,
                     conversation_id=conversation_id,
@@ -1366,7 +1366,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         text. Spirit EMA memory integrates ONLY approved outputs: the gateway
         is a pre-delivery gate, and a blocked output that never ships must not
         shape the agent's longitudinal character memory (the same rule the
-        persona-redirect path applies via compute_redirect).
+        agent-redirect path applies via compute_redirect).
         """
         message_id = str(uuid.uuid4())
 
@@ -1438,11 +1438,11 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         # --- PHASE 0: Injection gate on the INPUT (report-only, no redirect) ---
         _will_rules = (self.profile or {}).get("will_rules", {})
-        persona_blacklist = (
+        agent_blacklist = (
             _will_rules.get("early_prompt_blacklist", [])
             if isinstance(_will_rules, dict) else []
         )
-        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, persona_blacklist)
+        is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, agent_blacklist)
         if not is_safe:
             self.log.warning(f"[Governance | Gateway | Phase 0] BLOCKED — {gate_reason}")
             return _commit_and_report("violation", "phase_zero", gate_reason,
@@ -1482,7 +1482,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         Prefers structural_requirements.disclaimer_repair_text (the full,
         well-formed disclaimer) and falls back to the checked substring —
-        which is a lenient prefix, so persona authors should set the repair
+        which is a lenient prefix, so agent authors should set the repair
         text whenever the substring is not a complete sentence."""
         rules = (self.profile or {}).get("will_rules", {})
         struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
@@ -1522,7 +1522,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         """True for a hard-gate failure whose mapped reason is ethical_violation
         (a content-quality gate, e.g. Pedagogical Integrity). These take the
         reflexion retry — regenerate with the question and blocked draft
-        visible — instead of the vacuum persona redirect, which cannot see the
+        visible — instead of the vacuum agent redirect, which cannot see the
         question and misreports in-scope requests as out of scope."""
         return (
             result.get("verdict") == "violation"
@@ -1548,9 +1548,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         custom `notice`, as the terminal for an exhausted content-gate retry.
 
         These are system faults, not verdicts on the user's request, so
-        trigger_persona_redirect is the wrong tool for them: it generates in a
+        trigger_agent_redirect is the wrong tool for them: it generates in a
         vacuum (generate_forced_response withholds the user's question as an
-        anti-injection measure) and persona worldviews mandate scope refusals
+        anti-injection measure) and agent worldviews mandate scope refusals
         for anything off-topic — which turned in-scope questions into false
         "outside my area of focus" replies. This path makes NO LLM calls, so it
         also still works when the failure is the provider itself (rate limit,
@@ -1631,7 +1631,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
-    async def trigger_persona_redirect(
+    async def trigger_agent_redirect(
         self,
         original_prompt: str,
         violation_type: str,
@@ -1644,7 +1644,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         blocked_draft: str = "",
         will_stage: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Persona Redirect: Re-engages the Intellect to handle boundaries in the persona's own voice."""
+        """Agent Redirect: Re-engages the Intellect to handle boundaries in the agent's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
         db.update_message_reasoning(message_id, "Applying governance policy...")
 
@@ -1652,7 +1652,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         directives = self.profile.get("internal_rephrase_directives", {})
         directive = directives.get(violation_type)
         if not directive:
-            # No persona-specific directive. Pick a fallback by violation class:
+            # No agent-specific directive. Pick a fallback by violation class:
             # genuine scope/injection blocks get an "outside my area of focus"
             # refusal; content/system failures (ethical_violation, low_alignment_score,
             # audit_unavailable, structural) must NOT — the user's request was in
@@ -1711,7 +1711,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 violation_type=violation_type,
             )
         except Exception as e:
-            self.log.exception(f"ConscienceAuditor.evaluate_redirect() failed for persona redirect: {e}")
+            self.log.exception(f"ConscienceAuditor.evaluate_redirect() failed for agent redirect: {e}")
             ledger = []
 
         # Redirect audits use a separate quality score — redirect rubrics don't map to

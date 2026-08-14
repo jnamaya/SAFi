@@ -51,7 +51,7 @@ READ_ONLY_TOOLS: frozenset = frozenset({
 HARD_GATE_VIOLATION_REASONS: Dict[str, str] = {
     "Scope Compliance": "scope_violation",
     "Grounding Fidelity": "grounding_violation",
-    # Content-quality gate, not a scope breach: route to the persona's
+    # Content-quality gate, not a scope breach: route to the agent's
     # ethical_violation directive so the redirect corrects the behavior
     # (e.g. the tutor re-asks Socratically) instead of refusing.
     "Pedagogical Integrity": "ethical_violation",
@@ -203,8 +203,8 @@ class WillGate:
           2. Instance-level: alignment_threshold (set from Config.SPIRIT_ALIGNMENT_THRESHOLD)
         """
         if spirit_assessment.get("critical_violation"):
-            # Use ethical_violation so the persona's own rephrase directive fires
-            # (every persona defines this key). Phase 4.5 hard-gate already handles
+            # Use ethical_violation so the agent's own rephrase directive fires
+            # (every agent defines this key). Phase 4.5 hard-gate already handles
             # true scope breaches — anything reaching here is a content quality issue.
             return ("violation", "ethical_violation")
 

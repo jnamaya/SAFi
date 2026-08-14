@@ -159,7 +159,7 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     needed, and it comes from the same function either way.
     """
     from ...persistence import database as db
-    from ..faculties.synderesis import PERSONAS, authorized_tools
+    from ..faculties.synderesis import AGENTS, authorized_tools
     from ..tool_connectors import expand_connectors
 
     # connector key -> the function names it would put on the table
@@ -187,7 +187,7 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
         return policy_cache[policy_id]
 
     # (advertised tools, policy_id) for every agent this member can reach.
-    candidates = [(p.get("tools"), p.get("policy_id")) for p in PERSONAS.values()]
+    candidates = [(p.get("tools"), p.get("policy_id")) for p in AGENTS.values()]
     try:
         import json as _json
         for a in db.list_agents(user_id, org_id, user_role):
