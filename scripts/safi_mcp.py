@@ -22,7 +22,7 @@ WHERE THIS SITS IN THE PIPELINE
 -------------------------------
     1. install here, on the host
     2. SAFi connects and asks the server what tools it has
-    3. those tools appear in Settings -> Tool Servers, visible and INACTIVE
+    3. those tools appear in Settings -> Tools Catalog, visible and INACTIVE
     4. a policy editor enables specific tools and blocks the rest
     5. an agent is assigned the tools its policy allows
     6. the Will authorizes every call by exact name
@@ -296,10 +296,10 @@ def cmd_add(args) -> int:
     servers[key] = params
     write_servers(servers)
     print(
-        f"\nadded {key!r}. Its tools are now VISIBLE AND INACTIVE in Settings -> "
-        "Tool Servers.\nEnable the ones you want in a policy's Tools & Guardrails "
-        "step, then assign that policy's\nagents. Nothing can call these tools "
-        "until then."
+        f"\nadded {key!r}. Its tools are now visible and INACTIVE in "
+        "Settings -> Tools Catalog.\nEnable the ones you want in a policy, under "
+        "Tools & Guardrails. They then become available\nto every agent that uses "
+        "that policy. Nothing can call them until then."
     )
     return 0
 
