@@ -158,26 +158,38 @@ def _normalize_package(package: Any) -> Optional[Dict[str, Any]]:
 def _normalize_server(entry: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(entry, dict):
         return None
-    name = str(entry.get("name") or "").strip()
+
+    # The list endpoint wraps every entry: {"server": {...}, "_meta": {...}},
+    # with the descriptive fields inside `server` and the registry's own status
+    # in the sibling `_meta`. Accept the unwrapped shape too, because a single
+    # entry read from elsewhere (or a mirror) may not wrap it, and because a
+    # parser that only understands one of the two shapes returns an empty
+    # catalogue rather than an error, which is exactly how this was missed the
+    # first time.
+    inner = entry.get("server") if isinstance(entry.get("server"), dict) else entry
+
+    name = str(inner.get("name") or "").strip()
     if not name:
         return None
 
-    meta = entry.get("_meta")
     official = {}
-    if isinstance(meta, dict):
-        official = meta.get("io.modelcontextprotocol.registry/official") or {}
-        if not isinstance(official, dict):
-            official = {}
+    for source in (entry, inner):
+        meta = source.get("_meta")
+        if isinstance(meta, dict):
+            candidate = meta.get("io.modelcontextprotocol.registry/official")
+            if isinstance(candidate, dict):
+                official = candidate
+                break
 
-    remotes = [r for r in (_normalize_remote(r) for r in (entry.get("remotes") or [])) if r]
-    packages = [p for p in (_normalize_package(p) for p in (entry.get("packages") or [])) if p]
+    remotes = [r for r in (_normalize_remote(r) for r in (inner.get("remotes") or [])) if r]
+    packages = [p for p in (_normalize_package(p) for p in (inner.get("packages") or [])) if p]
 
     return {
         "name": name,
-        "title": str(entry.get("title") or "").strip() or name,
-        "description": str(entry.get("description") or "").strip(),
-        "version": str(entry.get("version") or "").strip(),
-        "website": str(entry.get("websiteUrl") or entry.get("website_url") or "").strip(),
+        "title": str(inner.get("title") or "").strip() or name,
+        "description": str(inner.get("description") or "").strip(),
+        "version": str(inner.get("version") or "").strip(),
+        "website": str(inner.get("websiteUrl") or inner.get("website_url") or "").strip(),
         "remotes": remotes,
         "packages": packages,
         "status": str(official.get("status") or "").strip(),

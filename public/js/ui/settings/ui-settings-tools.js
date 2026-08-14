@@ -14,7 +14,7 @@
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 
-let state = { servers: [], results: [], mode: 'remote', soleReviewer: false, searching: false };
+let state = { servers: [], results: [], mode: 'remote', soleReviewer: false, searching: false, error: '' };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -139,8 +139,12 @@ function paintResults() {
         el.innerHTML = `<p class="text-sm text-gray-500 py-4">Searching…</p>`;
         return;
     }
+    if (state.error) {
+        el.innerHTML = `<p class="text-sm text-red-600 dark:text-red-400 py-4">${esc(state.error)}</p>`;
+        return;
+    }
     if (!state.results.length) {
-        el.innerHTML = `<p class="text-sm text-gray-500 py-4">No results.</p>`;
+        el.innerHTML = `<p class="text-sm text-gray-500 py-4">No servers matched that search.</p>`;
         return;
     }
     el.innerHTML = state.results.map(r => `
@@ -225,13 +229,21 @@ function wire() {
 async function doSearch() {
     const input = document.getElementById('tools-search');
     state.searching = true;
+    state.error = '';
     paintResults();
     try {
         const data = await api.searchMcpRegistry(input?.value || '');
-        state.results = data.servers || [];
+        // A failed call must not render as "no matches". httpGet resolves with
+        // the body on a non-2xx rather than throwing, so an unreachable
+        // registry or a schema change upstream would otherwise look exactly
+        // like a search that found nothing, which is how the nested-payload
+        // parsing bug stayed invisible.
+        if (data && data.ok === false) throw new Error(data.error || 'The registry could not be reached.');
+        state.results = (data && data.servers) || [];
     } catch (err) {
         state.results = [];
-        ui.showToast(err.message || 'The registry could not be reached.', 'error');
+        state.error = err.message || 'The registry could not be reached.';
+        ui.showToast(state.error, 'error');
     } finally {
         state.searching = false;
         paintResults();

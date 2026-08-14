@@ -35,8 +35,30 @@ class FakeConfig:
     MCP_REGISTRY_URL = "https://registry.modelcontextprotocol.io"
 
 
-# A payload shaped like the real registry's, including the field names the
-# official API actually uses (camelCase in the wire format).
+# The real wire shape, captured from GET /v0/servers on 2026-08-14. Every entry
+# is WRAPPED: the descriptive fields live under "server" and the registry's own
+# status under a sibling "_meta".
+#
+# This wrapper is why the first version of the feature returned an empty
+# catalogue with no error: the parser read `name` off the outer object, found
+# nothing, and dropped every entry as malformed. Defensive parsing turned a
+# schema mismatch into silence. The tests below use the wrapped shape for that
+# reason, and one asserts the unwrapped shape still works.
+WRAPPED_REMOTE_ENTRY = {
+    "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "com.example/billing",
+        "title": "Billing API",
+        "description": "Invoices and payments.",
+        "version": "1.2.0",
+        "remotes": [{"type": "streamable-http", "url": "https://mcp.example.com/mcp"}],
+    },
+    "_meta": {"io.modelcontextprotocol.registry/official": {
+        "status": "active", "isLatest": True, "publishedAt": "2026-01-01T00:00:00Z"}},
+}
+
+# The same entry unwrapped, which is what a single-server read or a mirror may
+# hand back.
 REMOTE_ENTRY = {
     "name": "com.example/billing",
     "title": "Billing API",
@@ -60,6 +82,32 @@ PACKAGE_ENTRY = {
         "runtimeHint": "npx",
     }],
 }
+
+
+class WireShapeTests(unittest.TestCase):
+    """The regression that shipped: entries arrive wrapped, and reading the
+    outer object silently produced an empty catalogue."""
+
+    def test_wrapped_entry_is_parsed(self):
+        entry = mcp_registry._normalize_server(WRAPPED_REMOTE_ENTRY)
+        self.assertIsNotNone(entry, "a wrapped entry must not be dropped")
+        self.assertEqual(entry["name"], "com.example/billing")
+        self.assertEqual(entry["title"], "Billing API")
+        self.assertEqual(entry["version"], "1.2.0")
+        self.assertTrue(entry["has_remote"])
+
+    def test_meta_is_read_from_the_outer_object(self):
+        entry = mcp_registry._normalize_server(WRAPPED_REMOTE_ENTRY)
+        self.assertEqual(entry["status"], "active")
+        self.assertEqual(entry["published_at"], "2026-01-01T00:00:00Z")
+
+    def test_unwrapped_entry_still_works(self):
+        entry = mcp_registry._normalize_server(REMOTE_ENTRY)
+        self.assertEqual(entry["name"], "com.example/billing")
+        self.assertTrue(entry["has_remote"])
+
+    def test_a_wrapper_with_no_name_inside_is_dropped(self):
+        self.assertIsNone(mcp_registry._normalize_server({"server": {"title": "x"}}))
 
 
 class NormalizationTests(unittest.TestCase):
