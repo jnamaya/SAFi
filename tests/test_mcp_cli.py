@@ -70,6 +70,15 @@ class RuntimeAvailabilityTests(unittest.TestCase):
             safi_mcp.check_runtime_available(
                 {"transport": "stdio", "command": "definitely-not-installed-xyz"})
 
+    def test_npx_is_available_where_this_runs(self):
+        """The image ships Node so npm tool servers work (most of the MCP
+        ecosystem is npm). This fails if a future image drops it, which would
+        otherwise show up only as every npm server refusing to install."""
+        import shutil
+        if not Path("/app").exists():
+            self.skipTest("not running inside the SAFi image")
+        self.assertTrue(shutil.which("npx"), "npx should be on PATH in the image")
+
     def test_a_present_launcher_passes(self):
         safi_mcp.check_runtime_available({"transport": "stdio", "command": sys.executable})
 

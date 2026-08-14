@@ -42,7 +42,7 @@ Usage:
   scripts/safi_mcp.py search <term>
   scripts/safi_mcp.py add <registry-name> [--key NAME]
   scripts/safi_mcp.py add --url https://example.com/mcp [--transport http|sse]
-  scripts/safi_mcp.py add --command npx --args "-y,@scope/server@1.2.3" [--env K=V]
+  scripts/safi_mcp.py add --command npx --args="-y,@scope/server@1.2.3" [--env K=V]
   scripts/safi_mcp.py check [--key NAME]
   scripts/safi_mcp.py remove <key>
   scripts/safi_mcp.py enable <key> | disable <key>
@@ -150,7 +150,9 @@ def check_runtime_available(params: dict) -> None:
     if not command or shutil.which(command):
         return
     hint = {
-        "npx": "install Node.js in the image or on this host",
+        # The container image ships Node, so npx missing means this is running
+        # somewhere else: a bare-metal host, or a venv outside the container.
+        "npx": "install Node.js on this host (the Docker image already has it)",
         "uvx": "install uv (pip install uv), which provides uvx",
         "docker": "the docker CLI is not available inside this container",
     }.get(command, "install it, or point --command at a binary that exists here")
@@ -366,7 +368,12 @@ def main(argv=None) -> int:
     p_add.add_argument("--url", help="hosted endpoint instead of a registry name")
     p_add.add_argument("--transport", default="http", choices=("http", "sse"))
     p_add.add_argument("--command", help="local command for a stdio server")
-    p_add.add_argument("--args", help="comma-separated arguments for --command")
+    p_add.add_argument(
+        "--args",
+        help="comma-separated arguments for --command. Use the = form when the "
+             "first argument starts with a dash, e.g. --args=\"-y,@scope/pkg\", "
+             "or argparse reads it as an option",
+    )
     p_add.add_argument("--env", action="append", help="KEY=VALUE for the child process")
     p_add.add_argument("--key", help="connector key (defaults to a derived name)")
     p_add.add_argument("--label", help="display name shown in the tool picker")

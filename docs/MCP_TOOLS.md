@@ -269,11 +269,31 @@ every `docker compose up --build`, which silently wipes the operator's installed
 servers and makes the CLI useless across rebuilds. If you move the file, keep it
 outside the copied paths.
 
-### Running package servers needs a runtime you must supply
+### Package servers: what runs them
 
-The container has Python only. To run npm-based servers, add Node to your image;
-for Python ones, `pip install uv` provides `uvx`. Until then, `--url` servers and
-anything you can launch with Python work as they are.
+The container image ships **Node 22**, so `npx` servers work out of the box:
+
+```
+docker compose exec app python scripts/safi_mcp.py \
+    add --command npx --args="-y,@modelcontextprotocol/server-everything"
+```
+
+Note the `--args=` form. A value starting with a dash is read as an option
+otherwise, and `--args "-y,..."` fails with "expected one argument".
+
+Python packages need `uvx`, which is not installed: `pip install uv` in the
+image adds it. Hosted (`--url`) servers need no local runtime at all.
+
+Two consequences of running npm servers worth knowing:
+
+- **The first start downloads the package.** The npm cache is a named volume
+  (`npm_cache`), so that happens once per deployment rather than on every
+  container start. A server whose package cannot be fetched simply fails, and
+  its tools are absent.
+- **An unpinned package is fetched fresh.** `npx -y @scope/server` can run
+  different code tomorrow than today with nothing in your deployment having
+  changed. Pin the version, and prefer `add <registry-name>`, which uses the
+  exact version the publisher released.
 
 ### Pin your packages
 

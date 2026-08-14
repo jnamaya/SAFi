@@ -44,6 +44,12 @@ services:
       # Installed MCP tool servers. Mounted so `safi_mcp.py add` survives a
       # rebuild; see mcp/README.md.
       - ./mcp:/app/mcp
+      # npm's cache, so an `npx` tool server downloads once per deployment
+      # rather than on every container start. It has to be this path: the MCP
+      # SDK passes stdio servers only a safe allow-list of environment
+      # variables, so NPM_CONFIG_CACHE cannot redirect it, while HOME is
+      # inherited and npm defaults to $HOME/.npm.
+      - npm_cache:/root/.npm
       # RAG indexes persist across rebuilds; the entrypoint auto-builds the
       # small `safi` knowledge base here on first boot if it's missing.
       - vector_store:/app/vector_store
@@ -113,3 +119,4 @@ services:
 volumes:
   db_data:
   vector_store:
+  npm_cache:
