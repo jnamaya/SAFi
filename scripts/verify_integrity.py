@@ -92,6 +92,22 @@ CORE_FILES = [
     # or a fork could alter HOW dispatch works and still verify INTACT; what
     # organizations register through it is their own content and is not.
     "safi_app/core/plugins/registry.py",
+    # The human-side Will (added 2026-08-13, backlog 38): the role ladder and
+    # the separation-of-duties rules — editors may not sign off on content
+    # they authored — are enforcement semantics, and role ASSIGNMENT is data
+    # in the database, so no organization ever needs to edit this file. A fork
+    # that does is weakening who may approve what, and must not verify INTACT.
+    #
+    # Ruled OPEN at the same time, deliberately:
+    #   api/auth.py       — integration plumbing (OAuth, MFA, sessions).
+    #                       Agreement §III explicitly grants authentication
+    #                       infrastructure freedom, and custom IdP/SSO wiring
+    #                       is a legitimate code-level need until SAML ships.
+    #                       What a session may DO is enforced by rbac.py.
+    #   api/review_api.py — oversight mechanism, but coverage waits until its
+    #                       sampling knobs are extracted to config; covering
+    #                       it now would lock tuning behind Section IV.
+    "safi_app/core/rbac.py",
 ]
 
 # Deterministic components: no provider imports, no model calls, ever.

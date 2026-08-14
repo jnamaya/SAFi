@@ -161,6 +161,23 @@ class TheManifestIsWellFormed(unittest.TestCase):
         self.assertIn("safi_app/core/threat_intel.py", m)
         self.assertIn("safi_app/core/system_prompts.json", m)
 
+    def test_the_human_side_will_is_covered_and_auth_is_deliberately_not(self):
+        """Ruled 2026-08-13 (backlog 38). rbac.py is enforcement semantics —
+        the role ladder and separation-of-duties — and role assignment is
+        database data, so covering it costs organizations nothing while a fork
+        weakening approval rules must not verify INTACT.
+
+        auth.py is pinned OPEN in the same breath: agreement §III explicitly
+        grants authentication-infrastructure freedom, and custom IdP/SSO wiring
+        is a legitimate code-level need. Covering it would turn every
+        enterprise SSO integration into a Section IV event. If this assertion
+        ever fails because someone added auth.py to the manifest, that is a
+        boundary DECISION being reversed — take it back to the agreement, not
+        just to this test."""
+        m = json.loads(MANIFEST.read_text())["files"]
+        self.assertIn("safi_app/core/rbac.py", m)
+        self.assertNotIn("safi_app/api/auth.py", m)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
