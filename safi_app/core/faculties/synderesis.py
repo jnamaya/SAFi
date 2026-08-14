@@ -10,6 +10,7 @@ produced by this module are what all other faculties rely on to function.
 """
 from typing import Dict, Any, List, Optional
 import copy
+import os
 import json
 import logging
 from pathlib import Path
@@ -39,12 +40,53 @@ ALL_AGENTS: Dict[str, Dict[str, Any]] = {
     "tutor": THE_SOCRATIC_TUTOR_AGENT,
 }
 
+# Code-defined EXTENSION agents, loaded from outside the package so that adding
+# one never touches a Core Loop file (backlog 37; agreement §III). Each *.py in
+# SAFI_EXTENSIONS_DIR must define two module attributes: KEY (the registry key)
+# and AGENT (the agent dict, same shape as the built-ins above). Installing the
+# file IS the enablement — extension keys do not need listing in
+# SAFI_BUILTIN_AGENTS.
+#
+# Three properties, in order of importance:
+#   * The reserved-name guard applies: an extension can never shadow a built-in,
+#     even one currently disabled — same rule the DB agents live under.
+#   * Loading EXECUTES the file. The directory is equivalent in trust to the
+#     package itself; it defaults to unset, so the seam is off until an operator
+#     points at a directory they control.
+#   * A broken extension is skipped with an error, never fatal: one bad file
+#     must not take the deployment down with it.
+# Extensions still compile through get_profile() like everything else — same
+# scope gate, same charter layering, same Will. This loader is Core Loop
+# (manifest-covered); the files it loads are the organization's own.
+_EXTENSION_KEYS: set = set()
+_ext_dir = os.environ.get("SAFI_EXTENSIONS_DIR", "").strip()
+if _ext_dir and Path(_ext_dir).is_dir():
+    import importlib.util as _ilu
+    for _f in sorted(Path(_ext_dir).glob("*.py")):
+        try:
+            _spec = _ilu.spec_from_file_location(f"safi_ext_{_f.stem}", _f)
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            _key = str(_mod.KEY).lower().strip()
+            if not _key or not isinstance(_mod.AGENT, dict):
+                raise ValueError("KEY must be a non-empty string and AGENT a dict")
+            if _key in ALL_AGENTS:
+                logging.error(f"Extension '{_f.name}' shadows built-in agent "
+                              f"'{_key}' — refused.")
+                continue
+            ALL_AGENTS[_key] = _mod.AGENT
+            _EXTENSION_KEYS.add(_key)
+            logging.info(f"Extension agent loaded: '{_key}' from {_f.name}")
+        except Exception as _e:
+            logging.error(f"Extension '{_f.name}' failed to load and was skipped: {_e}")
+
 # AGENTS is the ACTIVE registry: only agents enabled via SAFI_BUILTIN_AGENTS
 # (default "tutor,safi"; "all" enables the full demo suite) register, list, and
 # seed. Everything downstream — list_profiles, get_profile, the agent API,
 # demo-policy seeding — keys off this filtered dict.
 AGENTS: Dict[str, Dict[str, Any]] = {
-    k: v for k, v in ALL_AGENTS.items() if Config.builtin_agent_enabled(k)
+    k: v for k, v in ALL_AGENTS.items()
+    if Config.builtin_agent_enabled(k) or k in _EXTENSION_KEYS
 }
 for _unknown in set(Config.BUILTIN_AGENTS) - set(ALL_AGENTS) - {"all"}:
     logging.warning(f"SAFI_BUILTIN_AGENTS names unknown agent '{_unknown}' — ignored. "

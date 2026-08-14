@@ -26,8 +26,13 @@ from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritInteg
 # Reused rather than reimplemented: the tool-evidence merge below needs the same
 # whole-chunks-plus-explicit-truncation-note behaviour the RAG path already has.
 from .faculties.intellect import _apply_context_budget
-from .plugins.bible_scholar_readings import handle_bible_scholar_commands
-from .plugins.fiduciary_data import handle_fiduciary_commands
+# Plugins arrive through the registry (agreement §III: organizations add
+# plugins without touching this file). Importing .plugins.builtin registers the
+# shipped ones; the orchestrator no longer knows any plugin by name. The dead
+# fiduciary_data import that sat here since v1.3 removed its dispatch is gone —
+# see plugins/builtin.py for why it must not quietly return.
+from .plugins.registry import plugins_for
+from .plugins import builtin as _builtin_plugins  # noqa: F401  (import = registration)
 
 # Unlimited-turns mode still bounds the DB read: "every row in the conversation"
 # is the intent, but an unbounded LIMIT on a thread that has run for months is a
@@ -606,14 +611,18 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             self.log.error(f"Pre-Insert CRASH: {str(e)}\n{traceback.format_exc()}")
             return { "finalOutput": "An internal error occurred. Please try again.", "messageId": message_id }
 
-        # Plugins
+        # Plugins — every handler registered for this agent, gathered
+        # concurrently. Registration order is merge order: a later plugin's
+        # payload keys win, same as the old hardcoded list's dict.update.
         plugin_context_data = {}
         plugin_tasks = [
-            handle_bible_scholar_commands(user_prompt, self.active_profile_name, self.log),
+            handler(user_prompt, self.active_profile_name, self.log)
+            for handler in plugins_for(self.active_profile_name)
         ]
-        plugin_results = await asyncio.gather(*plugin_tasks)
-        for _, data in plugin_results:
-            if data: plugin_context_data.update(data)
+        if plugin_tasks:
+            plugin_results = await asyncio.gather(*plugin_tasks)
+            for _, data in plugin_results:
+                if data: plugin_context_data.update(data)
         
         # Memories
         memory_summary = db.fetch_conversation_summary(conversation_id)

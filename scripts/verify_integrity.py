@@ -86,6 +86,12 @@ CORE_FILES = [
     #                         themselves define how every deployment audits.
     "safi_app/core/threat_intel.py",
     "safi_app/core/system_prompts.json",
+    # The plugin registry is the MECHANISM behind agreement §III's plugin
+    # freedom (added 2026-08-13, backlog 37): organizations register plugins
+    # without touching the orchestrator. The registry itself must be covered
+    # or a fork could alter HOW dispatch works and still verify INTACT; what
+    # organizations register through it is their own content and is not.
+    "safi_app/core/plugins/registry.py",
 ]
 
 # Deterministic components: no provider imports, no model calls, ever.
