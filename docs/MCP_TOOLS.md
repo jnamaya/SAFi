@@ -248,6 +248,15 @@ Three things it does that matter:
 - **No restart.** Every write bumps the same counter the GUI uses, so running
   workers re-read the file on their next request.
 
+### In Docker, the server file must be a mount
+
+`docker-compose.yml` mounts `./mcp` and points `MCP_SERVERS_JSON` at
+`/app/mcp/servers.json`. That is not a convenience: the Dockerfile copies
+`safi_app/` into the image, so a server file living under it is replaced on
+every `docker compose up --build`, which silently wipes the operator's installed
+servers and makes the CLI useless across rebuilds. If you move the file, keep it
+outside the copied paths.
+
 ### Running package servers needs a runtime you must supply
 
 The container has Python only. To run npm-based servers, add Node to your image;

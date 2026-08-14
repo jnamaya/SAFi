@@ -1,5 +1,5 @@
 import * as api from '../../core/api.js';
-import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
+import { loadToolCategories, policyFilterFrom, renderToolGrid } from '../shared/tool-picker.js';
 import { escapeHtml } from '../../core/utils.js';
 
 export async function renderToolsStep(container, agentData) {
@@ -55,7 +55,7 @@ async function renderTools(agentData, governance) {
     if (!loader || !containerEl) return;
 
     try {
-        const categories = await loadToolCategories();
+        const categories = await loadToolCategories(agentData.policy_id);
         if (!categories) {
             loader.innerText = "Failed to load tools.";
             return;
@@ -73,9 +73,18 @@ async function renderTools(agentData, governance) {
         // does not offer what the save would reject.
         const allow = governance.tools;
 
-        let filter = null;
-        if (allow !== null) {
+        // Prefer the backend's per-tool marks. The old path built a Set from the
+        // policy's raw list and matched card names against it, which silently
+        // hid every tool of a server the policy authorized by CONNECTOR name:
+        // the policy said `demo_server`, the cards were `demo_echo` and
+        // `demo_add`, nothing matched, and the agent was offered none of them.
+        // The backend expands exactly as the compiler does, so it is the only
+        // place this question should be answered.
+        let filter = policyFilterFrom(categories);
+        if (filter === null && allow !== null) {
             filter = new Set(allow);
+        }
+        if (filter !== null) {
             // Drop any previously-selected tools the policy no longer authorizes.
             agentData.tools = agentData.tools.filter(t => filter.has(t));
 
@@ -83,7 +92,7 @@ async function renderTools(agentData, governance) {
             const noteText = document.getElementById('wiz-policy-note-text');
             note.classList.remove('hidden');
 
-            if (allow.length === 0) {
+            if (filter.size === 0) {
                 noteText.innerHTML = "This agent's governing policy authorizes <strong>no tools</strong>. It will run without tool access. Edit the policy's Tools &amp; Guardrails step to authorize tools.";
                 loader.classList.add('hidden');
                 return;

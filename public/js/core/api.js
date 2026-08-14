@@ -282,8 +282,13 @@ export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
 
-export async function fetchAvailableTools() {
-    return httpGet(urls.TOOLS);
+export async function fetchAvailableTools(policyId = null) {
+    // With a policy id the backend marks each tool with allowed_by_policy,
+    // expanding connector names to function names the way the compiler does.
+    // Without one it returns the full catalogue and policy_narrows = false.
+    return httpGet(policyId && policyId !== 'standalone'
+        ? `${urls.TOOLS}?policy_id=${encodeURIComponent(policyId)}`
+        : urls.TOOLS);
 }
 
 export async function generateRubric(valueName, context) {

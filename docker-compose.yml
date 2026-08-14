@@ -30,12 +30,20 @@ services:
     environment:
       # Override DB_HOST so the app connects to the compose db service, not localhost
       DB_HOST: db
+      # MCP server definitions live on a MOUNT, never inside the image. The
+      # Dockerfile copies safi_app/, so a file under it is replaced on every
+      # `up --build` — which silently wiped an operator's installed servers and
+      # made scripts/safi_mcp.py useless in Docker.
+      MCP_SERVERS_JSON: /app/mcp/servers.json
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
       - ./cache:/app/cache
+      # Installed MCP tool servers. Mounted so `safi_mcp.py add` survives a
+      # rebuild; see mcp/README.md.
+      - ./mcp:/app/mcp
       # RAG indexes persist across rebuilds; the entrypoint auto-builds the
       # small `safi` knowledge base here on first boot if it's missing.
       - vector_store:/app/vector_store

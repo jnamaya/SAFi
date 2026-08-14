@@ -10,14 +10,36 @@ const CHECK_SVG = '<svg class="w-3 h-3 text-white" fill="none" stroke="currentCo
  * Fetch the backend tool categories. Returns an array of
  * { category, tools: [{ name, label, description, icon }] }, or null on error.
  */
-export async function loadToolCategories() {
+export async function loadToolCategories(policyId = null) {
     try {
-        const res = await api.fetchAvailableTools();
-        if (res.ok && res.tools) return res.tools;
+        const res = await api.fetchAvailableTools(policyId);
+        if (res.ok && res.tools) {
+            // The backend marks each tool with allowed_by_policy when a policy
+            // narrows. Carried through so callers can filter on the SERVER's
+            // answer instead of comparing raw strings, which is what broke:
+            // a policy authorizing the connector `demo_server` never matched
+            // the cards `demo_echo` and `demo_add`, so an agent whose policy
+            // allowed a whole server was offered none of its tools.
+            res.tools._policyNarrows = !!res.policy_narrows;
+            return res.tools;
+        }
     } catch (e) {
         console.error('tool-picker: failed to load tools', e);
     }
     return null;
+}
+
+/**
+ * The set of tool names a policy authorizes, taken from the backend marks.
+ * Returns null when nothing narrows, matching the existing filter contract.
+ */
+export function policyFilterFrom(categories) {
+    if (!categories || !categories._policyNarrows) return null;
+    const allowed = new Set();
+    categories.forEach(cat => (cat.tools || []).forEach(t => {
+        if (t.allowed_by_policy) allowed.add(t.name);
+    }));
+    return allowed;
 }
 
 function cardClass(checked) {

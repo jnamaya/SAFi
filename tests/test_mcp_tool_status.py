@@ -126,6 +126,54 @@ class ToolStatusTests(unittest.TestCase):
             if name not in ("web_search", "web_news"):
                 self.assertFalse(allowed, f"{name} should not be marked authorized")
 
+    def test_a_policy_naming_a_SERVER_authorizes_its_tools(self):
+        """The bug Nelson hit: an agent saw none of a server's tools even though
+        its policy authorized the whole server.
+
+        A policy may store the connector name (`demo_server`) while the picker
+        cards are function names (`demo_echo`). The browser compared those raw
+        strings, matched nothing, and hid every tool. The ceiling has to be
+        expanded exactly as the compiler expands it, which is what this pins.
+        """
+        from safi_app.api.agent_api_routes import policy_tool_ceiling
+        from safi_app.core.tool_connectors import (
+            clear_discovered_connectors, expand_connectors, register_discovered_connector,
+        )
+
+        register_discovered_connector("probe_server", ("probe_echo", "probe_add"))
+        self.addCleanup(clear_discovered_connectors)
+
+        self._policy(["probe_server"])
+        ceiling = policy_tool_ceiling(self._only_policy_id())
+        self.assertEqual(ceiling, {"probe_echo", "probe_add"})
+
+        # Which is what the per-tool cards are checked against.
+        for card in ("probe_echo", "probe_add"):
+            self.assertTrue(set(expand_connectors([card])) <= ceiling,
+                            f"{card} should be authorized by a policy naming its server")
+
+    def test_a_policy_naming_one_tool_does_not_authorize_its_siblings(self):
+        from safi_app.api.agent_api_routes import policy_tool_ceiling
+        from safi_app.core.tool_connectors import (
+            clear_discovered_connectors, register_discovered_connector,
+        )
+        register_discovered_connector("probe_server", ("probe_echo", "probe_add"))
+        self.addCleanup(clear_discovered_connectors)
+
+        self._policy(["probe_echo"])
+        self.assertEqual(policy_tool_ceiling(self._only_policy_id()), {"probe_echo"})
+
+    def test_an_absent_allowed_tools_key_does_not_narrow(self):
+        """Absent is not the same as empty: a policy written before tool
+        authorization existed must keep working."""
+        from safi_app.api.agent_api_routes import policy_tool_ceiling
+        _exec("""INSERT INTO policies
+                 (id, name, org_id, created_by, worldview, will_rules, values_weights, policy_config)
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+              (str(uuid.uuid4()), 'Legacy', self.org, self.admin, 'test',
+               json.dumps({"rules": []}), json.dumps([]), json.dumps({})))
+        self.assertIsNone(policy_tool_ceiling(self._only_policy_id()))
+
     def test_no_policy_means_no_narrowing(self):
         body = self._client().get('/api/agents/tools').get_json()
         self.assertFalse(body["policy_narrows"])
