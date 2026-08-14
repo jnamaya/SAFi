@@ -139,15 +139,18 @@ def save_agent():
         # list, where it would sit looking authorized and fail at the Will.
         requested_tools = [t for t in (data.get('tools') or []) if isinstance(t, str)]
         if requested_tools:
-            from ..core.services.mcp_manager import MCPManager
-            known = MCPManager.known_connectors()
+            from ..core.services.mcp_manager import MCPManager, is_guest
+            known = MCPManager.known_connectors(
+                user.get('org_id'),
+                guest=is_guest(user_id, user.get('email') or ''),
+            )
             unknown = [
                 t for t in requested_tools
                 if t not in known and t not in _known_tool_functions(known)
             ]
             if unknown:
                 return jsonify({
-                    "error": "No such tool on this deployment: " + ", ".join(sorted(unknown))
+                    "error": "Not available to this account: " + ", ".join(sorted(unknown))
                 }), 400
 
             # And it must be one the governing policy authorizes. The wizard
@@ -536,7 +539,12 @@ def list_available_tools():
     try:
         from ..core.services.mcp_manager import MCPManager
         mcp = MCPManager(current_app.config)
-        tools = mcp.list_all_tools()
+        user = session.get('user') or {}
+        from ..core.services.mcp_manager import is_guest
+        tools = mcp.list_all_tools(
+            org_id=user.get('org_id'),
+            guest=is_guest(user.get('id') or '', user.get('email') or ''),
+        )
 
         # Mark what the given policy authorizes, so the picker shows the same
         # answer the save path enforces rather than deriving its own.

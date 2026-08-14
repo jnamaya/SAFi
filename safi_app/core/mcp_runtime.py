@@ -437,7 +437,14 @@ class _Runtime:
         """Own one server for the life of the process: connect, publish, park."""
         stop = asyncio.Event()
         self._stops[name] = stop
-        entry: Dict[str, Any] = {"label": params.get("label") or name, "tools": [], "error": None}
+        entry: Dict[str, Any] = {
+            "label": params.get("label") or name,
+            "tools": [],
+            "error": None,
+            # Optional org restriction from the definition. Kept here so the
+            # dispatch check reads the same source as the catalogue.
+            "orgs": [str(o) for o in (params.get("orgs") or []) if o],
+        }
         self._servers[name] = entry
         try:
             transport = (params.get("transport") or "stdio").lower()
@@ -584,6 +591,10 @@ class _Runtime:
     def tools_for_server(self, server: str) -> List[str]:
         return list((self._servers.get(server) or {}).get("tools") or [])
 
+    def orgs_for(self, server: str) -> List[str]:
+        """Organizations a server is restricted to. Empty means unrestricted."""
+        return list((self._servers.get(server) or {}).get("orgs") or [])
+
     def origin_of(self, server: str) -> str:
         """"file" (the operator's), "db" (installed through the GUI), or ""."""
         return self._origins.get(server, "")
@@ -673,6 +684,15 @@ def tools_for_server(server: str) -> List[str]:
 
 def origin_of(server: str) -> str:
     return _runtime.origin_of(server)
+
+
+def orgs_for(server: str) -> List[str]:
+    return _runtime.orgs_for(server)
+
+
+def server_of(tool_name: str) -> str:
+    """Which server advertises a tool, or "" if none does."""
+    return (_runtime.tools().get(tool_name) or {}).get("server", "")
 
 
 def probe(params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:

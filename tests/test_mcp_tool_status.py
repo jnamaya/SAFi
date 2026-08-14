@@ -211,6 +211,46 @@ class ToolStatusTests(unittest.TestCase):
             cur.close()
             conn.close()
 
+    def test_a_guest_is_offered_no_installed_tools(self):
+        """A demo login is made ADMIN of a throwaway org (api/auth.py), which is
+        fine for exploring and is not a basis for reaching a server the operator
+        installed with one real credential. Regression: for one release the
+        catalogue was deployment-wide, so a guest could enable any installed
+        tool in their sandbox policy and call it."""
+        from safi_app.core.services.mcp_manager import MCPManager, is_guest
+
+        self.assertTrue(is_guest("demo_abc123"))
+        self.assertTrue(is_guest("x", "someone@demo.local"))
+        self.assertFalse(is_guest("real_user", "person@example.test"))
+
+        from safi_app.core.tool_connectors import (
+            clear_discovered_connectors, register_discovered_connector,
+        )
+        register_discovered_connector("probe_server", ("probe_echo",))
+        self.addCleanup(clear_discovered_connectors)
+
+        offered = MCPManager.known_connectors(self.org, guest=True)
+        self.assertNotIn("probe_server", offered)
+        # Built-ins are unaffected: they are per-user OAuth or public services.
+        self.assertIn("web_search", offered)
+
+    def test_a_guest_cannot_save_an_agent_with_an_installed_tool(self):
+        guest = f"demo_{uuid.uuid4()}"
+        _exec("INSERT INTO users (id, email, name, org_id, role) VALUES (%s, %s, %s, %s, 'admin')",
+              (guest, f"{guest}@demo.local", "Guest", self.org))
+        try:
+            client = self.app.test_client()
+            login(client, guest, self.org)
+            resp = client.post('/api/agents', json={
+                "key": f"g_{uuid.uuid4().hex[:6]}",
+                "name": "Guest Agent",
+                "tools": ["probe_tool_that_is_not_builtin"],
+            })
+            self.assertEqual(resp.status_code, 400)
+        finally:
+            _exec("DELETE FROM sessions WHERE user_id=%s", (guest,))
+            _exec("DELETE FROM users WHERE id=%s", (guest,))
+
     def test_members_cannot_read_the_inventory(self):
         member = f"ts_m_{uuid.uuid4().hex[:8]}"
         _exec("INSERT INTO users (id, email, name, org_id, role) VALUES (%s, %s, %s, %s, 'member')",

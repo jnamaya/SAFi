@@ -46,6 +46,58 @@ from ..tool_connectors import (
 log = logging.getLogger(__name__)
 
 
+def is_guest(user_id: str = "", email: str = "") -> bool:
+    """A demo/sandbox account, created by the public demo login.
+
+    Guests are made ADMIN of a throwaway organization (api/auth.py), which is
+    fine for exploring the product and is NOT a basis for reaching a tool server
+    the operator installed. Being an admin of a sandbox is not being an admin of
+    this deployment, and an MCP server holds one real credential.
+    """
+    uid = (user_id or "").lower()
+    mail = (email or "").lower()
+    return uid.startswith("demo_") or mail.endswith("@demo.local")
+
+
+def server_allows_org(server: str, org_id: Optional[str]) -> bool:
+    """Whether an organization may use a given installed server.
+
+    A server definition may carry `"orgs": ["<org-id>", ...]`. Absent means every
+    organization, which is right for the single-tenant installs that are the
+    common case and wrong to assume on a shared one, so the docs tell
+    multi-tenant operators to set it.
+    """
+    allowed = mcp_runtime.orgs_for(server)
+    if not allowed:
+        return True
+    return bool(org_id) and str(org_id) in allowed
+
+
+def _caller_org(user_id: Optional[str]):
+    """(org_id, is_guest) for the user a tool call is being made for.
+
+    org_id is None when there is no identifiable caller, which is a real and
+    legitimate state rather than an error: the public bot and the /evaluate
+    gateway have no user. That is kept DISTINCT from being a guest, because the
+    two deserve different answers. A guest is refused outright; an
+    unattributable call is refused only by a server that restricts itself to
+    named organizations, since membership cannot be shown either way.
+    """
+    if not user_id:
+        return None, False
+    if is_guest(user_id):
+        return None, True
+    try:
+        from ...persistence import database as db
+        row = db.get_user_details(user_id) or {}
+    except Exception as e:
+        log.warning("could not resolve the caller for a tool call: %s", e)
+        return None, False
+    if is_guest(user_id, row.get("email") or ""):
+        return None, True
+    return row.get("org_id"), False
+
+
 def builtin_tool_names() -> frozenset:
     """Every function name the built-in connectors own.
 
@@ -470,7 +522,7 @@ class MCPManager:
 
         return tools
 
-    def list_all_tools(self, org_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_all_tools(self, org_id: Optional[str] = None, guest: bool = False) -> List[Dict[str, Any]]:
         """
         Returns a list of all available tools for selection in the UI.
         Categorized by domain.
@@ -563,21 +615,33 @@ class MCPManager:
                     }
                 ]
             }
-        ] + self._discovered_categories(org_id)
+        ] + self._discovered_categories(org_id, guest)
 
     @staticmethod
-    def known_connectors() -> set:
-        """Every connector name this deployment can offer.
+    def known_connectors(org_id: Optional[str] = None, guest: bool = False) -> set:
+        """Every connector name this caller can be offered.
 
-        Deployment-wide, with no organization scoping. That scoping existed only
-        while an organization could install its own server through the browser
-        (backlog 48d removed it); a server now comes from the operator's file
-        and belongs to the whole deployment, exactly like a built-in.
+        Built-ins are deployment-wide. Installed MCP servers are NOT, and the
+        reasoning that briefly made them so was wrong: a built-in that touches
+        member data is gated by the org connector allow-list AND by that
+        member's own OAuth, while an MCP server has neither and holds one shared
+        credential. On a multi-tenant deployment that meant any organization
+        could reach any installed server, and a guest is an admin of a sandbox
+        organization, so a guest could too.
+
+        Pass org_id=None only where there is no caller to scope to (background
+        jobs, tests); it returns the deployment-wide view.
         """
-        return set(CONNECTOR_TOOLS) | set(mcp_runtime.connectors())
+        connectors = set(CONNECTOR_TOOLS)
+        if guest:
+            return connectors
+        for server in mcp_runtime.connectors():
+            if org_id is None or server_allows_org(server, org_id):
+                connectors.add(server)
+        return connectors
 
     @staticmethod
-    def _discovered_categories(org_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _discovered_categories(org_id: Optional[str] = None, guest: bool = False) -> List[Dict[str, Any]]:
         """One category per connected server, one card per TOOL.
 
         Built-in connectors are offered as a bundle because their contents were
@@ -591,11 +655,13 @@ class MCPManager:
         passes an unknown name through unchanged, and the Will matches exactly,
         so a policy listing three of a server's nine tools authorizes three.
         """
+        if guest:
+            return []
         categories: List[Dict[str, Any]] = []
         discovered = mcp_runtime.tools()
         for server, entry in mcp_runtime.summary()["servers"].items():
             names = entry.get("tools") or []
-            if not names:
+            if not names or (org_id is not None and not server_allows_org(server, org_id)):
                 continue
             categories.append({
                 "category": entry.get("label") or server,
@@ -696,6 +762,28 @@ class MCPManager:
                 return await github.read_file_content(arguments["repo_name"], arguments["file_path"], user_id=user_id)
 
         # -- DISCOVERED MCP SERVERS --
+        #
+        # Dispatch-time authorization, and not a duplicate of the Will's. The
+        # Will asks whether THIS AGENT may call this tool; this asks whether the
+        # caller's ORGANIZATION may reach this server at all. The catalogue and
+        # the save guard both apply the same rule, but a filter on a picker is
+        # not a check, and an agent created before a restriction was added would
+        # otherwise keep working.
+        if mcp_runtime.owns(tool_name):
+            server = mcp_runtime.server_of(tool_name)
+            org_id, guest = _caller_org(user_id)
+            if guest:
+                return json.dumps({
+                    "error": f"Tool '{tool_name}' is not available to demo accounts."
+                })
+            if mcp_runtime.orgs_for(server) and not server_allows_org(server, org_id):
+                return json.dumps({
+                    "error": (
+                        f"Tool '{tool_name}' is restricted to specific organizations"
+                        + (" and this turn has no organization." if org_id is None
+                           else " and this one is not among them.")
+                    )
+                })
         # Last, so a built-in always wins a name contest. _publish() already
         # refuses to register a discovered tool that collides with a built-in,
         # so this ordering is belt and braces rather than the actual guard.

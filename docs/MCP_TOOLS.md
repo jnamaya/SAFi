@@ -73,10 +73,30 @@ server; each server becomes one connector.
 | `url` | http, sse | The server endpoint. |
 | `enabled` | all | Set `false` to keep a definition without connecting it. |
 | `connect_timeout` | all | Seconds to wait at boot. Default 20. |
+| `orgs` | all | Organization ids allowed to use this server. Absent means all of them. |
 
 `${VAR}` anywhere in `env`, `args` or `url` is replaced from the SAFi process
 environment. Put secrets in your `.env` and reference them here, so the server
 file stays safe to copy and commit.
+
+### On a shared deployment, restrict the server
+
+An installed server holds ONE credential and every organization on the
+deployment can otherwise reach it. If more than one organization uses this
+install, name the ones allowed:
+
+```json
+{ "acme_billing": { "...": "...", "orgs": ["6f1c…", "9a20…"] } }
+```
+
+Absent means every organization, which is right for a single-tenant install and
+wrong to assume on a shared one.
+
+**Demo and guest accounts never get installed servers, whatever this says.** The
+public demo login makes a guest an admin of a throwaway organization, and being
+an admin of a sandbox is not a basis for using the operator's Google account.
+The catalogue hides them, the save path refuses them, and a call is refused at
+dispatch.
 
 ### Naming
 
