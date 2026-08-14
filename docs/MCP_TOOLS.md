@@ -248,6 +248,52 @@ Three things it does that matter:
 - **No restart.** Every write bumps the same counter the GUI uses, so running
   workers re-read the file on their next request.
 
+### A worked example: Google Workspace
+
+The Gemini CLI Workspace extension is a real MCP server, and installing it shows
+what a substantial one involves. It is distributed as a git checkout rather than
+a package, so it is cloned, built once, and started directly:
+
+```
+git clone --depth 1 https://github.com/gemini-cli-extensions/workspace.git mcp/workspace
+docker compose exec app sh -c "cd /app/mcp/workspace && npm install"
+docker compose exec app python scripts/safi_mcp.py add \
+    --command node --args="workspace-server/dist/index.js,--use-dot-names" \
+    --cwd /app/mcp/workspace --key workspace --label "Google Workspace"
+```
+
+Then authorize it, interactively, from a terminal with a TTY:
+
+```
+docker compose exec app sh -c "cd /app/mcp/workspace && npm run auth-utils -- login"
+```
+
+It prints a Google URL, you sign in, and you paste the returned JSON back.
+
+**Read this before you enable any of it.** The server advertises 57 tools, and
+they are not all reads: `gmail.send`, `gmail.modify`, `drive.trashFile`,
+`drive.moveFile`, `calendar.deleteEvent` and `chat.sendMessage` all act on the
+world. It authenticates as ONE Google identity, whoever completed that login, so
+every agent granted these tools acts as that person, and that account's audit
+log is where the activity appears. This is the service-principal case from
+section 5, applied to exactly the data section 5 says it is wrong for.
+
+That is not a reason to avoid it, but it is a reason to grant narrowly. Enable a
+read-only subset in a policy first (`drive.search`, `calendar.listEvents`,
+`docs.getText`, `time.getCurrentDate`) and leave anything that sends, moves or
+deletes switched off until you have a reason and a reviewer.
+
+Two operational notes specific to servers of this shape:
+
+- **Credentials live next to the checkout** (`gemini-cli-workspace-token.json`),
+  which is on the mount and therefore survives rebuilds. Their encryption key is
+  salted with the hostname, so `docker-compose.yml` pins `hostname: safi-app`;
+  without that the container id changes on every `up` and the saved token
+  silently stops decrypting.
+- **`--cwd` matters.** A server distributed as a checkout resolves its own files
+  relative to where it started, so it needs a working directory rather than an
+  absolute path alone.
+
 ### Try it: the bundled demo server
 
 `mcp/demo_server.py` is a two-tool server for seeing the pipeline work:

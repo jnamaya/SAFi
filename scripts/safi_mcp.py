@@ -43,6 +43,7 @@ Usage:
   scripts/safi_mcp.py add <registry-name> [--key NAME]
   scripts/safi_mcp.py add --url https://example.com/mcp [--transport http|sse]
   scripts/safi_mcp.py add --command npx --args="-y,@scope/server@1.2.3" [--env K=V]
+  scripts/safi_mcp.py add --command node --args="scripts/start.js" --cwd /app/mcp/thing
   scripts/safi_mcp.py check [--key NAME]
   scripts/safi_mcp.py remove <key>
   scripts/safi_mcp.py enable <key> | disable <key>
@@ -266,6 +267,8 @@ def cmd_add(args) -> int:
     elif args.command:
         cmd_args = [a for a in (args.args or "").split(",") if a]
         params = {"transport": "stdio", "command": args.command, "args": cmd_args}
+        if args.cwd:
+            params["cwd"] = args.cwd
         if args.env:
             params["env"] = dict(
                 pair.split("=", 1) for pair in args.env if "=" in pair
@@ -373,6 +376,12 @@ def main(argv=None) -> int:
         help="comma-separated arguments for --command. Use the = form when the "
              "first argument starts with a dash, e.g. --args=\"-y,@scope/pkg\", "
              "or argparse reads it as an option",
+    )
+    p_add.add_argument(
+        "--cwd",
+        help="working directory for --command. Needed by servers distributed as "
+             "a checkout rather than a package, which resolve their own files "
+             "relative to where they were started",
     )
     p_add.add_argument("--env", action="append", help="KEY=VALUE for the child process")
     p_add.add_argument("--key", help="connector key (defaults to a derived name)")

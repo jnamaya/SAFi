@@ -24,6 +24,12 @@ services:
     # Explicit tag so `purge` can reference it. Without this, compose names the
     # image after the project directory, which differs between checkouts.
     image: safi:latest
+    # Pinned, not left to the container id. An MCP tool server that stores
+    # credentials on the mount may derive its encryption key from the hostname
+    # (the Google Workspace extension salts with os.hostname()), and a hostname
+    # that changes on every `up` silently invalidates saved tokens, sending the
+    # operator back through an OAuth flow after each rebuild.
+    hostname: safi-app
     ports:
       - "${APP_PORT:-5000}:5000"
     env_file: .env
