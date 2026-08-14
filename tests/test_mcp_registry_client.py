@@ -263,6 +263,21 @@ class ExceptionUnwrappingTests(unittest.TestCase):
         group = ExceptionGroup("g", [RuntimeError("Not Found")])
         self.assertIn("no longer be hosted", describe_exception(group))
 
+    def test_a_dead_stdio_command_says_what_actually_happened(self):
+        """"Connection closed" is what a stdio server that died on startup looks
+        like, and it says nothing about why. The common cause is that the file
+        the definition names is gone, which can happen without the definition
+        changing at all."""
+        from safi_app.core.mcp_runtime import describe_exception
+        group = ExceptionGroup("g", [RuntimeError("Connection closed")])
+        message = describe_exception(group, transport="stdio")
+        self.assertIn("exited immediately", message)
+
+    def test_the_stdio_hint_does_not_fire_for_hosted_servers(self):
+        from safi_app.core.mcp_runtime import describe_exception
+        group = ExceptionGroup("g", [RuntimeError("Connection closed")])
+        self.assertNotIn("exited immediately", describe_exception(group, transport="http"))
+
     def test_duplicate_leaves_are_collapsed(self):
         from safi_app.core.mcp_runtime import describe_exception
         group = ExceptionGroup("g", [ValueError("same"), ValueError("same")])

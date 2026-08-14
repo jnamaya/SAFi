@@ -248,6 +248,18 @@ Three things it does that matter:
 - **No restart.** Every write bumps the same counter the GUI uses, so running
   workers re-read the file on their next request.
 
+### Try it: the bundled demo server
+
+`mcp/demo_server.py` is a two-tool server for seeing the pipeline work:
+
+```
+docker compose exec app python scripts/safi_mcp.py add \
+    --command python --args "/app/mcp/demo_server.py" --key demo --label "Demo Server"
+```
+
+Enable `demo_echo` and not `demo_word_count` in a policy, assign that policy to
+an agent, and the agent gets exactly one of the two.
+
 ### In Docker, the server file must be a mount
 
 `docker-compose.yml` mounts `./mcp` and points `MCP_SERVERS_JSON` at

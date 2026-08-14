@@ -82,7 +82,7 @@ def _expand(value: Any) -> Any:
     return value
 
 
-def describe_exception(exc: BaseException) -> str:
+def describe_exception(exc: BaseException, transport: str = "") -> str:
     """Flatten an ExceptionGroup into something a person can act on.
 
     The SDK's transports run inside anyio task groups, so almost every
@@ -92,10 +92,11 @@ def describe_exception(exc: BaseException) -> str:
     actual answer: a 404 on the wrong path, DNS that does not resolve, or an
     auth challenge.
 
-    Leaves are collected in order and de-duplicated. The auth hint is appended
-    because "Server returned an error response" is what an anonymous connection
-    to a server requiring OAuth looks like, and that is the single most common
-    failure among public registry entries.
+    Leaves are collected in order and de-duplicated, then a hint is appended for
+    the three failures that are common and opaque: an auth challenge (what an
+    anonymous connection to a server wanting OAuth looks like), a 404, and a
+    stdio server whose command died on startup. `transport` is optional and only
+    selects the last of those.
     """
     leaves: List[str] = []
 
@@ -124,6 +125,18 @@ def describe_exception(exc: BaseException) -> str:
         )
     elif "not found" in lowered or "404" in lowered:
         message += ". The endpoint may be wrong or the server may no longer be hosted."
+    elif transport == "stdio" and "closed" in lowered:
+        # What a stdio server that died on startup looks like. The SDK reports
+        # the pipe closing and says nothing about why, which is useless to an
+        # operator: the usual cause is that the command is not there at all, or
+        # exited immediately. A file the definition points at can disappear
+        # without the definition changing, which is exactly how this is met.
+        message += (
+            ". The command exited immediately. Check that the file or binary it "
+            "names still exists on this host and runs on its own; a server "
+            "pointing at a path inside a container is lost when the container "
+            "is rebuilt."
+        )
     return message
 
 
@@ -249,7 +262,7 @@ class _Runtime:
                         ]
                         return {"ok": True, "tools": [n for n in names if n], "error": None}
             except BaseException as e:
-                return {"ok": False, "tools": [], "error": describe_exception(e)}
+                return {"ok": False, "tools": [], "error": describe_exception(e, transport)}
 
         future = asyncio.run_coroutine_threadsafe(_run(), self._loop)
         try:
@@ -290,7 +303,7 @@ class _Runtime:
                         ]
                         return {"ok": True, "tools": [n for n in names if n], "error": None}
             except BaseException as e:
-                return {"ok": False, "tools": [], "error": describe_exception(e)}
+                return {"ok": False, "tools": [], "error": describe_exception(e, transport)}
 
         async def _gather() -> Dict[str, Dict[str, Any]]:
             keys = list(specs)
@@ -449,7 +462,7 @@ class _Runtime:
             # SDK's task groups is not always an Exception subclass, and
             # catching too narrowly here would let a connection failure escape
             # into the runtime loop instead of being reported on the server.
-            entry["error"] = describe_exception(e)
+            entry["error"] = describe_exception(e, (params.get("transport") or "stdio").lower())
             log.error("MCP server '%s' failed: %s", name, entry["error"])
         finally:
             self._sessions.pop(name, None)
