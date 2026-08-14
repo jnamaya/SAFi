@@ -25,6 +25,15 @@ def create_app():
     app.config.from_object(Config)
     Config.validate()
 
+    # Measured boot (backlog 39): hash the Core Loop against the release
+    # manifest once, log the fingerprint or the taint loudly, and stamp the
+    # result into every governance record from here on. Default is
+    # warn-and-run — AGPL permits running modified code; only the NAME is
+    # conditional (§IV). SAFI_ENFORCE_INTEGRITY=strict refuses to start on
+    # anything but verified-intact.
+    from .core.integrity import enforce_at_boot
+    enforce_at_boot(app.logger)
+
     # Enterprise identity Phase 1: the cookie holds only a server-side session
     # id. Permanent so the sid survives browser restarts (absolute/idle expiry
     # is enforced server-side); REFRESH_EACH_REQUEST must stay False or the

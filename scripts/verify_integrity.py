@@ -108,6 +108,11 @@ CORE_FILES = [
     #                       sampling knobs are extracted to config; covering
     #                       it now would lock tuning behind Section IV.
     "safi_app/core/rbac.py",
+    # Runtime attestation (added 2026-08-13, backlog 39): computes the boot
+    # verification and stamps the kernel fingerprint into every governance
+    # record. A fork that no-ops the stamp would mint records claiming an
+    # intact kernel — the exact lie the stamp exists to make impossible.
+    "safi_app/core/integrity.py",
 ]
 
 # Deterministic components: no provider imports, no model calls, ever.
