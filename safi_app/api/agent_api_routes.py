@@ -53,6 +53,40 @@ def _validate_knowledge_base(kb_name, user_id, user):
         return None
     return "You do not have access to that knowledge base."
 
+def policy_tool_ceiling(policy_id):
+    """The tools a policy authorizes, expanded to function names.
+
+    Returns None when nothing narrows: no policy, a legacy list-form policy, or
+    a structured policy that never declared `allowed_tools`. None means "this
+    policy does not narrow", which is the same reading Synderesis applies at
+    compile time, and it must not be confused with an explicit empty list, which
+    means "no tools at all".
+
+    This exists because the ceiling used to be applied only in the browser. The
+    agent wizard resolved the policy client-side and filtered the picker, so
+    every way that lookup could fail (a stale policy object, an unparsed
+    will_rules, a legacy shape) ended with the full catalogue on screen and a
+    save that stored tools the policy does not allow.
+    """
+    if not policy_id or policy_id == 'standalone':
+        return None
+    try:
+        policy = db.get_policy(policy_id)
+    except Exception as e:
+        current_app.logger.warning("policy ceiling lookup failed for %s: %s", policy_id, e)
+        return None
+    if not policy:
+        return None
+    rules = policy.get('will_rules')
+    if not isinstance(rules, dict):
+        return None
+    allowed = rules.get('allowed_tools')
+    if not isinstance(allowed, list):
+        return None
+    from ..core.tool_connectors import expand_connectors
+    return set(expand_connectors([t for t in allowed if isinstance(t, str)]))
+
+
 def _known_tool_functions(connectors):
     """The individual function names inside the connectors this deployment has.
 
@@ -115,6 +149,27 @@ def save_agent():
                 return jsonify({
                     "error": "No such tool on this deployment: " + ", ".join(sorted(unknown))
                 }), 400
+
+            # And it must be one the governing policy authorizes. The wizard
+            # already filters the picker, but a filter is a courtesy: without
+            # this, a stale browser or a crafted request stores tools the policy
+            # forbids. They would be stripped at compile time and blocked by the
+            # Will, so nothing unsafe happens, but the agent would sit there
+            # listing tools it can never use, which is exactly the confusion
+            # this check exists to prevent.
+            ceiling = policy_tool_ceiling(data.get('policy_id', 'standalone'))
+            if ceiling is not None:
+                from ..core.tool_connectors import expand_connectors
+                refused = sorted({
+                    t for t in requested_tools
+                    if not set(expand_connectors([t])) <= ceiling
+                })
+                if refused:
+                    return jsonify({
+                        "error": "This agent's policy does not authorize: "
+                                 + ", ".join(refused)
+                                 + ". Enable them in the policy's Tools & Guardrails step first."
+                    }), 400
 
         # Governance requirement (enforced per-branch, AFTER auth/existence checks
         # so 403/404/409 take precedence over business validation): under the
@@ -482,7 +537,22 @@ def list_available_tools():
         from ..core.services.mcp_manager import MCPManager
         mcp = MCPManager(current_app.config)
         tools = mcp.list_all_tools()
-        return jsonify({"ok": True, "tools": tools})
+
+        # Mark what the given policy authorizes, so the picker shows the same
+        # answer the save path enforces rather than deriving its own.
+        ceiling = policy_tool_ceiling(request.args.get('policy_id'))
+        if ceiling is not None:
+            from ..core.tool_connectors import expand_connectors
+            for category in tools:
+                for tool in category.get('tools', []):
+                    tool['allowed_by_policy'] = bool(
+                        set(expand_connectors([tool['name']])) <= ceiling
+                    )
+        return jsonify({
+            "ok": True,
+            "tools": tools,
+            "policy_narrows": ceiling is not None,
+        })
     except Exception as e:
         current_app.logger.error(f"List Tools Error: {e}")
         return jsonify({"ok": False, "error": "An internal error occurred."}), 500

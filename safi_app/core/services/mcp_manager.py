@@ -170,6 +170,18 @@ class MCPManager:
     async def get_tools_for_agent(self, agent_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Returns a list of tool schemas allowed for this agent.
+
+        Two lists matter and they are not the same. `tools` is what the agent
+        was configured with; `allowed_tools` is what Synderesis stamped after
+        intersecting that with the policy's ceiling, and it is what the Will
+        enforces. The schemas built below come from the first, and are then
+        filtered by the second.
+
+        That filter is the point. Without it a policy that narrows an agent's
+        tools still ADVERTISED the wider set, so the model was offered a tool it
+        could never call, proposed it, and collected a violation. Never showing
+        the model a tool the Will would refuse costs nothing and removes a whole
+        class of avoidable blocked turns.
         """
         # 1. Check what Tools this agent is allowed to use (from profile)
         allowed_tools = agent_profile.get("tools", [])
@@ -446,6 +458,15 @@ class MCPManager:
                     "description": spec["description"],
                     "input_schema": spec["input_schema"],
                 })
+
+        # The policy ceiling, applied once at the end so it covers built-in and
+        # discovered tools identically. A profile with no `allowed_tools` key
+        # was not built by the compiler (tests, direct construction), and is
+        # left alone rather than silently emptied.
+        authorized = agent_profile.get("allowed_tools")
+        if isinstance(authorized, list):
+            permitted = set(authorized)
+            tools = [t for t in tools if t["name"] in permitted]
 
         return tools
 

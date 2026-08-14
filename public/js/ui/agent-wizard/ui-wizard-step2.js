@@ -65,6 +65,12 @@ async function renderTools(agentData, governance) {
         //   null  -> no governing policy (or legacy policy) -> full catalog
         //   []    -> policy authorizes no tools
         //   [...] -> policy authorizes exactly these tools
+        //
+        // Resolved here for the note below, but it is no longer the only thing
+        // standing between a policy and an agent: /api/agents/tools marks each
+        // tool with allowed_by_policy, and the save path refuses anything the
+        // policy does not authorize. This filter is a courtesy so the picker
+        // does not offer what the save would reject.
         const allow = governance.tools;
 
         let filter = null;

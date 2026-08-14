@@ -110,6 +110,59 @@ class ToolStatusTests(unittest.TestCase):
                 self.assertIn("policies", tool)
                 self.assertIn("agents", tool)
 
+    def test_the_tools_endpoint_marks_what_a_policy_authorizes(self):
+        """The ceiling used to be applied only in the browser, so every way that
+        client-side lookup could fail put the full catalogue on screen."""
+        self._policy(["web_search"])
+        policy_id = self._only_policy_id()
+        body = self._client().get(f'/api/agents/tools?policy_id={policy_id}').get_json()
+        self.assertTrue(body["policy_narrows"])
+        marks = {
+            tool["name"]: tool.get("allowed_by_policy")
+            for cat in body["tools"] for tool in cat["tools"]
+        }
+        self.assertTrue(marks.get("web_search"))
+        for name, allowed in marks.items():
+            if name not in ("web_search", "web_news"):
+                self.assertFalse(allowed, f"{name} should not be marked authorized")
+
+    def test_no_policy_means_no_narrowing(self):
+        body = self._client().get('/api/agents/tools').get_json()
+        self.assertFalse(body["policy_narrows"])
+
+    def test_saving_a_tool_the_policy_blocks_is_refused(self):
+        self._policy(["web_search"])
+        policy_id = self._only_policy_id()
+        resp = self._client().post('/api/agents', json={
+            "key": f"probe_{uuid.uuid4().hex[:6]}",
+            "name": "Probe",
+            "policy_id": policy_id,
+            "tools": ["find_places"],
+        })
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("does not authorize", resp.get_json()["error"])
+
+    def test_saving_an_authorized_tool_succeeds(self):
+        self._policy(["web_search"])
+        policy_id = self._only_policy_id()
+        resp = self._client().post('/api/agents', json={
+            "key": f"probe_{uuid.uuid4().hex[:6]}",
+            "name": "Probe",
+            "policy_id": policy_id,
+            "tools": ["web_search"],
+        })
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+
+    def _only_policy_id(self):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT id FROM policies WHERE org_id=%s LIMIT 1", (self.org,))
+            return cur.fetchone()[0]
+        finally:
+            cur.close()
+            conn.close()
+
     def test_members_cannot_read_the_inventory(self):
         member = f"ts_m_{uuid.uuid4().hex[:8]}"
         _exec("INSERT INTO users (id, email, name, org_id, role) VALUES (%s, %s, %s, %s, 'member')",
