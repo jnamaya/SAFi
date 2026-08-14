@@ -19,9 +19,10 @@ MCP registry and installs a **hosted** server in one click. A second admin
 approves it and it is live, no restart. This is the easy path and it covers most
 cases. See [section 8](#8-installing-from-the-registry-in-the-gui).
 
-**From the file (`MCP_SERVERS_JSON`).** The operator's path, and the only way to
-install a server that runs **locally** as a package or command. Sections 2
-through 4 cover it.
+**From the CLI (`scripts/safi_mcp.py`).** The operator's path, and the only way
+to install a server that runs **locally** as a package or command. It writes the
+same file, checks the server before saving it, and the running app picks it up
+without a restart. Section 9.
 
 Either way, the rest is the same and is how every tool in SAFi has always
 worked:
@@ -343,7 +344,58 @@ it.
 
 ---
 
-## 9. Writing your own server
+## 9. The operator CLI
+
+`scripts/safi_mcp.py` manages the servers in `MCP_SERVERS_JSON` from a shell. It
+exists because the browser can only install hosted servers, which leaves the npm
+and pypi majority of the ecosystem unreachable there by design. Whoever runs
+this CLI already has shell on the host, so installing a package server adds no
+privilege they did not already hold. That is the whole difference.
+
+```
+scripts/safi_mcp.py list                     # what is configured, and where from
+scripts/safi_mcp.py search filesystem        # the registry, packages included
+scripts/safi_mcp.py add io.github.owner/svc  # from the registry
+scripts/safi_mcp.py add --url https://example.com/mcp
+scripts/safi_mcp.py add --command npx --args "-y,@scope/server@1.2.3"
+scripts/safi_mcp.py check                    # connect to everything, report
+scripts/safi_mcp.py remove <key>
+scripts/safi_mcp.py disable <key>            # keep the definition, stop connecting
+```
+
+Three things it does that matter:
+
+- **It checks before it saves.** A server that does not answer is not written to
+  the file unless you pass `--force`, so a typo does not become a mystery later.
+- **It refuses a launcher that is not installed.** The app image ships Python
+  and no Node, so an `npx` server would never start. The CLI says so and names
+  the missing binary rather than writing a definition that fails silently.
+- **No restart.** Every write bumps the same counter the GUI uses, so running
+  workers re-read the file on their next request.
+
+### Running package servers needs a runtime you must supply
+
+The container has Python only. To run npm-based servers, add Node to your image;
+for Python ones, `pip install uv` provides `uvx`. Until then, `--url` servers and
+anything you can launch with Python work as they are.
+
+### Pin your packages
+
+`npx -y @scope/server` fetches from the network at every boot, so the code
+running on your host can change without anyone touching your deployment. The CLI
+warns when it sees no version pin. Registry installs use the exact version the
+registry published, which is why `add <registry-name>` is preferable to writing
+the command by hand.
+
+### What it does not do
+
+It installs; it grants nothing. A server added here is a connector an
+organization must still allow, a policy must still list, and an agent must still
+enable, and the Will still authorizes call by call.
+
+---
+
+## 10. Writing your own server
 
 Any MCP server works. To expose a private API to a governed agent, the smallest
 version is a stdio server with one tool per operation. Keep the tool surface

@@ -107,13 +107,35 @@ def refresh_discovered_connectors() -> None:
             )
 
 
-def resync_if_stale(generation_getter, desired_getter) -> bool:
-    """Reconnect this worker's db-sourced servers if another worker changed them.
+def file_servers() -> Dict[str, Any]:
+    """Re-read the operator's server file from disk.
 
-    Four gunicorn workers each hold their own sessions, so an install made in
-    one worker's request has to reach the other three. They notice through a
-    counter in the database rather than through any IPC we would have to build
-    and then operate. Returns True when a resync happened.
+    Deliberately not `Config.MCP_CONFIG`, which was evaluated once at import.
+    The CLI edits this file while the app is running, so the whole point of
+    reading it here is to see what it says NOW.
+    """
+    from ...config import _load_mcp_servers
+
+    servers = _load_mcp_servers() or {}
+    return {
+        name: params
+        for name, params in servers.items()
+        if isinstance(params, dict) and params.get("enabled", True)
+    }
+
+
+def resync_if_stale(generation_getter, desired_getter) -> bool:
+    """Reconnect this worker if anything changed anywhere.
+
+    Two sources move independently and both have to reach four gunicorn
+    workers: the GUI writes rows, and the CLI writes the operator's file. Both
+    bump one counter in the database, and each worker notices it on its next
+    request. That is cheaper than any IPC we would have to build and then
+    operate, and it degrades to the current behaviour if the read fails.
+
+    The two origins are synced separately (see mcp_runtime.sync_origin), so a
+    file edit cannot drop a GUI install and a GUI install cannot drop the
+    operator's servers. Returns True when a resync happened.
 
     Never raises: a deployment whose generation check fails should keep serving
     with the tools it already has.
@@ -123,7 +145,9 @@ def resync_if_stale(generation_getter, desired_getter) -> bool:
         current = generation_getter()
         if not current or current == _generation:
             return False
-        mcp_runtime.sync_db_servers(desired_getter(), reserved_tool_names=builtin_tool_names())
+        reserved = builtin_tool_names()
+        mcp_runtime.sync_origin(desired_getter(), reserved_tool_names=reserved, origin="db")
+        mcp_runtime.sync_origin(file_servers(), reserved_tool_names=reserved, origin="file")
         refresh_discovered_connectors()
         _generation = current
         return True

@@ -343,14 +343,22 @@ class _Runtime:
             self._drop(name)
 
     def sync_db_servers(self, desired: Dict[str, Dict[str, Any]], reserved_tool_names=()) -> None:
-        """Make the db-sourced servers match `desired`, leaving file ones alone.
+        self.sync_origin(desired, reserved_tool_names, origin="db")
 
-        File-installed servers are the operator's and are never touched here: a
-        row in a table must not be able to unplug something the operator put in
-        the deployment's own configuration.
+    def sync_origin(
+        self, desired: Dict[str, Dict[str, Any]], reserved_tool_names=(), origin: str = "db"
+    ) -> None:
+        """Make the servers from one origin match `desired`, leaving the other
+        origin alone.
+
+        The two origins are independent on purpose. A row in a table must not be
+        able to unplug something the operator put in the deployment's own file,
+        and re-reading the file must not drop what an organization installed
+        through the GUI. Syncing them separately is what keeps that true without
+        either side needing to know about the other.
         """
         with self._lock:
-            current = {n for n, o in self._origins.items() if o == "db"}
+            current = {n for n, o in self._origins.items() if o == origin}
             for name in current - set(desired):
                 log.info("MCP server '%s' removed; disconnecting.", name)
                 self._drop(name)
@@ -360,7 +368,7 @@ class _Runtime:
                 if name in self._stops:
                     self._drop(name)
                 log.info("MCP server '%s' installed; connecting.", name)
-                self._connect_one(name, params, reserved_tool_names, "db")
+                self._connect_one(name, params, reserved_tool_names, origin)
 
     def start(self, servers: Dict[str, Dict[str, Any]], reserved_tool_names) -> Dict[str, Any]:
         """Connect every enabled server and return a discovery summary.
@@ -672,6 +680,10 @@ def remove_server(name: str) -> None:
 
 def sync_db_servers(desired: Dict[str, Dict[str, Any]], reserved_tool_names=()) -> None:
     _runtime.sync_db_servers(desired, reserved_tool_names)
+
+
+def sync_origin(desired: Dict[str, Dict[str, Any]], reserved_tool_names=(), origin: str = "db") -> None:
+    _runtime.sync_origin(desired, reserved_tool_names, origin)
 
 
 def connectors() -> Dict[str, Tuple[str, ...]]:
