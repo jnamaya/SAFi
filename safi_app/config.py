@@ -283,7 +283,13 @@ class Config:
     #
     # Not folded into DEPLOYMENT_MODE: this is a value, not a switch, and it is
     # simply unused when demo login is off. Nothing to derive.
-    DEMO_INTELLECT_MODEL = os.environ.get("SAFI_DEMO_INTELLECT_MODEL", "gemma-4-31b")
+    #
+    # The default is empty on purpose. It used to be "gemma-4-31b", which
+    # routes to Cerebras, so every install configured with a different
+    # provider gave guests a model it could not serve. A model name set here
+    # is also ignored at guest creation unless its provider has a key (see
+    # auth.py). Showcase hosts that want a specific demo model set it in .env.
+    DEMO_INTELLECT_MODEL = os.environ.get("SAFI_DEMO_INTELLECT_MODEL", "").strip()
 
     # Local admin account for dev/self-hosted instances (no OAuth required).
     # When both vars are set, a persistent admin account is auto-created on startup.

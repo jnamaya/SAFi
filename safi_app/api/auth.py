@@ -591,8 +591,17 @@ def login_demo():
 
             # Public-demo default model (user-level, so guests can still
             # switch in Settings). Conscience stays on the global default.
+            # Only stored when this install can actually serve it: a demo
+            # model from an unconfigured provider would fail every guest
+            # turn, so the guest inherits the global default instead.
             if Config.DEMO_INTELLECT_MODEL:
-                db.update_user_models(demo_id, Config.DEMO_INTELLECT_MODEL, None, None)
+                from ..core.services.model_routing import model_provider_configured
+                if model_provider_configured(Config.DEMO_INTELLECT_MODEL, Config):
+                    db.update_user_models(demo_id, Config.DEMO_INTELLECT_MODEL, None, None)
+                else:
+                    current_app.logger.warning(
+                        f"SAFI_DEMO_INTELLECT_MODEL '{Config.DEMO_INTELLECT_MODEL}' ignored: "
+                        "its provider has no API key on this install.")
             
             # Prepare for session
             user_to_login = user_info

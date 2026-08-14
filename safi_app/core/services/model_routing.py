@@ -137,3 +137,13 @@ def configured_providers(config) -> frozenset:
         for name, p in build_providers_config(config).items()
         if (p.get("api_key") or "").strip()
     )
+
+
+def model_provider_configured(model_name: str, config) -> bool:
+    """True when this install holds an API key for the model's provider.
+
+    Guards places that would STORE a model selection on a user's behalf
+    (demo/guest defaults): a stored model whose provider has no key fails
+    every turn with an unreachable-client error, so refuse the write instead.
+    """
+    return detect_provider(model_name) in configured_providers(config)
