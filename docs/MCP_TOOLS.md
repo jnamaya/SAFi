@@ -326,6 +326,47 @@ docker compose exec app python scripts/safi_mcp.py add \
 Enable `demo_echo` and not `demo_word_count` in a policy, assign that policy to
 an agent, and the agent gets exactly one of the two.
 
+### On bare metal
+
+Everything works the same: the runtime spawns a subprocess or opens an HTTP
+connection, and nothing in it is Docker-specific. Four differences are worth
+setting up deliberately.
+
+**Run the CLI as the service user.** The app runs as `safi`, so that is who has
+to read the server file and start the servers:
+
+```bash
+cd /var/www/safi
+sudo -u safi ./venv/bin/python scripts/safi_mcp.py list
+```
+
+Running it as root writes a file the service may not be able to read, and puts
+any package cache in root's home rather than the service user's.
+
+**Keep the server file OUTSIDE the checkout.** Upgrades are `git pull`, and the
+file shipped inside the package is tracked, so servers written into it either
+block the pull or get replaced by it. Point `MCP_SERVERS_JSON` somewhere the
+service user owns and git does not:
+
+```
+MCP_SERVERS_JSON=/home/safi/mcp-servers.json
+```
+
+The same goes for anything a definition points at: server checkouts, scripts and
+the credential files they write. Put them under the service user's home, not
+under `/var/www/safi`.
+
+**Node is not installed by the bare-metal instructions.** The Docker image ships
+it; a bare-metal host does not, so `npx` servers need Node installed for the
+`safi` user to run (`apt install nodejs npm`, or NodeSource for a current
+version). Hosted (`--url`) servers need nothing.
+
+**Do not add systemd hardening without checking this.** The shipped unit sets
+`User`, `Group` and `WorkingDirectory` and nothing else. Adding `PrivateTmp`,
+`ProtectHome` or `NoNewPrivileges=yes` will stop stdio servers starting or cut
+them off from their credential files, and the failure surfaces as
+`MCPError: Connection closed` rather than as a permissions error.
+
 ### In Docker, the server file must be a mount
 
 `docker-compose.yml` mounts `./mcp` and points `MCP_SERVERS_JSON` at
