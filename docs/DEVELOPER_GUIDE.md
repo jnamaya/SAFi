@@ -26,6 +26,8 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 15. [RAG & tool/"MCP" integrations](#15-rag--toolmcp-integrations)
 16. [The Audit Hub metrics](#16-the-audit-hub-metrics)
 17. [Running the tests](#17-running-the-tests)
+18. [Extending SAFi: agents and plugins without core changes](#18-extending-safi-agents-and-plugins-without-core-changes)
+19. [The Trusted Computing Base and integrity verification](#19-the-trusted-computing-base-and-integrity-verification)
 
 ## 1. Front-end structure
 
@@ -962,3 +964,107 @@ lean on them: `test_encryption_at_rest.py` asserts on raw MySQL bytes
 hold (§14), and `test_will_tool_gate.py` covers the `allowed_tools`
 gate and its compile-time stamping (§15) — it's also the one file in
 `tests/` that runs without a database.
+
+## 18. Extending SAFi: agents and plugins without core changes
+
+Everything in this section is a stable interface. Building on it never
+requires editing a Core Loop file, so a deployment that uses it still
+verifies intact (§19).
+
+**Wizard and database agents** are the normal path and need no code at all:
+values, rubrics, will rules, worldview, knowledge base, tool allow-list,
+model choice, and memory depth are all configuration compiled by
+`get_profile()` at runtime.
+
+**Extension agents** are for the rare case where an agent must be defined in
+code (computed worldviews, shared constants). Set `SAFI_EXTENSIONS_DIR` in
+`.env` to a directory you control. Each `*.py` file in it must define two
+module attributes:
+
+```python
+# /opt/safi-extensions/night_auditor.py
+KEY = "night_auditor"          # registry key; may not shadow a built-in
+AGENT = {
+    "name": "The Night Auditor",
+    "worldview": "...",
+    "scope_statement": "...",
+    "values": [...],           # same shape as the built-ins in core/agents/
+    "will_rules": [],
+}
+```
+
+Installing the file is the enablement. Extension agents compile through
+`get_profile()` like every other agent: same scope gate, same charter
+layering, same Will. Two caveats. A broken file is skipped with an error and
+never takes the app down. Loading executes the file, so the directory is
+equivalent in trust to installing the package itself; the feature is off
+until an operator points it somewhere.
+
+**Plugins** run before the Intellect and can override retrieval or inject
+context. Register one at import time; the orchestrator dispatches by agent
+name and knows no plugin by name:
+
+```python
+from safi_app.core.plugins.registry import register_plugin
+
+async def my_handler(user_prompt, active_profile_name, log):
+    # return (prompt, payload); payload keys the Intellect understands:
+    # rag_query_override, preformatted_context_string, plugin_error
+    return user_prompt, {"preformatted_context_string": "..."}
+
+register_plugin({"my agent", "my_agent"}, my_handler)
+```
+
+Register both the display-derived and sanitized name forms. Plugin output
+enters the Intellect as grounding and is not scanned by Phase Zero, so a
+custom plugin is your deployment's own risk, exactly like a custom tool.
+The Conscience still audits whatever the draft became.
+
+**Tools** are configured, not coded: `MCP_SERVERS_JSON` points at the server
+config, and every tool call still passes the Will's allow-list gate.
+
+## 19. The Trusted Computing Base and integrity verification
+
+The files that governance claims depend on are enumerated in
+`scripts/core_integrity_manifest.json`: the orchestrator, the five
+faculties, the audit schema, the enforcement content (threat signatures,
+faculty prompts), RBAC, the plugin registry, and the attestation module.
+The License & Governance Agreement calls this set the Core Loop; in
+security-engineering terms it is the Trusted Computing Base (TCB). A defect
+inside the set can violate the governance policy. A defect outside it
+cannot.
+
+Verify any tree or deployment:
+
+```bash
+python scripts/verify_integrity.py          # human-readable
+python scripts/verify_integrity.py --json   # machine-readable
+```
+
+The check hashes every TCB file, compares against the manifest, reports a
+single fingerprint, and runs structural checks that explain what a mismatch
+touched (a model call inside a deterministic faculty, a reordered pipeline).
+It ships inside the container image, so customers of a deployment can run it
+without the vendor's help.
+
+Three runtime behaviors build on it:
+
+- **Measured boot**: `create_app()` verifies the TCB once at startup and
+  logs the fingerprint, or every modified file when the tree is tainted.
+- **The stamp**: every governance record carries the boot-time fingerprint
+  and intact/tainted state in its encrypted capture (`tcb` field), so each
+  audit record names the verified code that produced it.
+- **Strict mode**: `SAFI_ENFORCE_INTEGRITY=strict` refuses to start on
+  anything but verified-intact. Off by default: the AGPL permits running
+  modified code; representing the deployment as SAFi is what requires an
+  intact TCB or upstream review (agreement, Section IV).
+
+If you modify a TCB file on purpose, regenerate the manifest in the same
+commit or CI fails on the staleness guard:
+
+```bash
+python scripts/verify_integrity.py --update
+```
+
+Keep the TCB small. Every addition is argued file by file in the comments
+inside `verify_integrity.py`; read those before proposing one.
