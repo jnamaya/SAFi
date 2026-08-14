@@ -16,7 +16,7 @@ One pipeline, five steps, and each one is a different person's decision:
 1. **Install** (operator, on the host). `scripts/safi_mcp.py add ...` writes the
    server into the file `MCP_SERVERS_JSON` names. Section 9.
 2. **Discover** (SAFi). It connects to the server and asks what tools it has.
-3. **Catalogue** (Settings → Tool Servers). The server and its tools appear,
+3. **Catalogue** (Settings → Tools Catalog). The server and its tools appear,
    **visible and completely inactive**. Nothing can call them.
 4. **Policy** (editor). In a policy's Tools & Guardrails step, enable the
    specific tools agents under that policy may use, and leave the rest off.

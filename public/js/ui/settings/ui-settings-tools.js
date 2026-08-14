@@ -1,5 +1,5 @@
 /**
- * Tool Servers: what the operator installed, and what it offers (backlog 48d).
+ * Tools Catalog: what the operator installed, and what it offers (backlog 48d).
  *
  * This screen installs nothing. An earlier version let an admin browse the
  * official registry and install a hosted server here; it was removed, because
@@ -31,21 +31,22 @@ function shell() {
     return `
     <div class="max-w-4xl mx-auto p-6 space-y-8">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tool Servers</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tools Catalog</h1>
         <p class="text-sm text-gray-500 mt-1 max-w-3xl">
-          Tool servers your operator has installed on this deployment, and what each tool is
-          enabled by. A tool does nothing until a policy enables it and an agent is assigned it.
+          These are tools your administrator has installed on this deployment, and what each one
+          is enabled by. A tool does nothing until a policy enables it and an agent is assigned it.
         </p>
       </div>
 
       <div class="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 p-4">
-        <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">How a tool reaches an agent</h2>
-        <ol class="text-sm text-gray-600 dark:text-gray-400 space-y-1 list-decimal list-inside">
-          <li>An operator installs the server on the host.</li>
-          <li>SAFi connects to it and asks what tools it has. That is this page.</li>
-          <li>A policy editor enables specific tools and blocks the rest.</li>
-          <li>An agent is assigned the tools its policy allows.</li>
-          <li>Every call is checked against that list before it runs.</li>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">How tools get into this catalog</h2>
+        <ol class="text-sm text-gray-600 dark:text-gray-400 space-y-1.5 list-decimal list-outside pl-5">
+          <li>An administrator installs the MCP server from the terminal or command prompt.</li>
+          <li>SAFi connects to that server, asks what tools it has, and catalogs them here.</li>
+          <li>An admin or editor enables specific tools in the policy wizard, under
+              <strong>Tools &amp; Guardrails</strong>. Those tools then become available to every
+              agent that uses that policy.</li>
+          <li>Every call an agent makes is checked against that allow list before it runs.</li>
         </ol>
       </div>
 
@@ -56,13 +57,13 @@ function shell() {
 async function refresh() {
     try {
         const data = await api.listMcpServers();
-        if (data && data.ok === false) throw new Error(data.error || 'Could not load tool servers.');
+        if (data && data.ok === false) throw new Error(data.error || 'Could not load the tools catalog.');
         state.servers = (data && data.servers) || [];
         state.toolCount = (data && data.tool_count) || 0;
         state.error = '';
     } catch (err) {
         state.servers = [];
-        state.error = err.message || 'Could not load tool servers.';
+        state.error = err.message || 'Could not load the tools catalog.';
     }
     paint();
 }
@@ -108,9 +109,10 @@ function paint() {
     if (!state.servers.length) {
         el.innerHTML = `
           <div class="rounded-xl border border-dashed border-gray-300 dark:border-neutral-700 p-6 text-center">
-            <p class="text-sm text-gray-500">No tool servers are installed on this deployment.</p>
+            <p class="text-sm text-gray-500">No tools have been installed on this deployment yet.</p>
             <p class="text-xs text-gray-400 mt-2">
-              An operator adds one with <span class="font-mono">scripts/safi_mcp.py add</span> on the host.
+              An administrator adds an MCP server from the host with
+              <span class="font-mono">scripts/safi_mcp.py add</span>.
             </p>
           </div>`;
         return;

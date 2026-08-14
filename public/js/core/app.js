@@ -537,7 +537,7 @@ function renderControlPanel() {
     else navKnowledge.classList.add('hidden');
   }
 
-  // Tool Servers: admin only, and not merely for tidiness. Every route behind
+  // Tools Catalog: admin only, and not merely for tidiness. Every route behind
   // this tab is require_role('admin'), so showing it to an editor would render
   // a screen whose every button 403s. Installing a tool server is also the one
   // action here that reaches outside the deployment.
