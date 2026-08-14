@@ -76,6 +76,56 @@ def registry_search():
     return jsonify({"ok": True, **result})
 
 
+@mcp_bp.route('/registry/check', methods=['POST'])
+@require_role('admin')
+def registry_check():
+    """Probe several registry entries at once and report which actually answer.
+
+    This exists because most hosted entries in the public registry do not
+    connect anonymously: measured on 2026-08-14, five of fourteen answered. A
+    catalogue that looks uniformly installable and then fails two thirds of the
+    time is worse than one that says up front which servers are reachable, so
+    the search results carry the answer before anyone clicks.
+
+    Probing is read-only: an initialize and a tools/list, nothing stored,
+    nothing registered, no third-party code run here.
+    """
+    body = request.get_json(silent=True) or {}
+    names = [n for n in (body.get('names') or []) if isinstance(n, str)][:30]
+    if not names:
+        return jsonify({"ok": True, "results": {}})
+
+    specs, meta = {}, {}
+    for name in names:
+        try:
+            entry = mcp_registry.get_server(name, config=Config)
+        except mcp_registry.RegistryError:
+            continue
+        if entry is None:
+            continue
+        ok, reason, remotes = mcp_install.validate_installable(entry, Config)
+        if not ok or not remotes:
+            meta[name] = {"reachable": False, "reason": reason, "tools": 0}
+            continue
+        # One probe per entry, its first usable endpoint. The install path
+        # walks all of them; the catalogue only needs a usable signal.
+        specs[name] = {
+            "transport": remotes[0]["transport"],
+            "url": remotes[0]["url"],
+        }
+
+    probed = mcp_runtime.probe_many(specs, timeout=10.0)
+    for name, result in probed.items():
+        meta[name] = {
+            "reachable": bool(result["ok"] and result["tools"]),
+            "reason": result["error"] or (
+                "" if result["tools"] else "The server answered but advertises no tools."
+            ),
+            "tools": len(result["tools"]),
+        }
+    return jsonify({"ok": True, "results": meta})
+
+
 @mcp_bp.route('/servers', methods=['GET'])
 @require_role('admin')
 def list_servers():
@@ -115,27 +165,34 @@ def install_server():
     if entry is None:
         return jsonify({"ok": False, "error": "No registry entry with that exact name."}), 404
 
-    ok, reason, remote = mcp_install.validate_installable(entry, Config)
+    ok, reason, remotes = mcp_install.validate_installable(entry, Config)
     if not ok:
         return jsonify({"ok": False, "error": reason}), 400
 
-    # Talk to the server before storing anything. Roughly half of the public
-    # registry's hosted entries do not answer an anonymous connection (they
-    # require credentials, or the endpoint has moved), and finding that out
-    # here is the difference between one clear message and an install that
-    # looks fine until someone approves it and it silently has no tools.
-    probe = mcp_runtime.probe(
-        {"transport": remote["transport"], "url": remote["url"], "label": entry["title"]}
-    )
-    if not probe["ok"]:
+    # Talk to the server before storing anything, trying each endpoint it
+    # declares. Most of the public registry's hosted entries do not answer an
+    # anonymous connection, and an entry can list a dead endpoint ahead of a
+    # live one, so stopping at the first is how a working server ends up
+    # looking broken.
+    probe, remote, failures = None, None, []
+    for candidate in remotes:
+        result = mcp_runtime.probe({
+            "transport": candidate["transport"],
+            "url": candidate["url"],
+            "label": entry["title"],
+        })
+        if result["ok"] and result["tools"]:
+            probe, remote = result, candidate
+            break
+        failures.append(
+            result["error"] or "connected but advertises no tools"
+        )
+
+    if probe is None:
         return jsonify({
             "ok": False,
-            "error": f"That server did not answer: {probe['error']}",
-        }), 400
-    if not probe["tools"]:
-        return jsonify({
-            "ok": False,
-            "error": "That server connected but advertises no tools, so there is nothing to grant.",
+            "error": f"That server did not answer: {failures[0] if failures else 'unknown error'}",
+            "endpoints_tried": [c["url"] for c in remotes],
         }), 400
 
     record = mcp_store.install(org_id, user_id, {

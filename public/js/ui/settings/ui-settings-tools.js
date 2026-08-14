@@ -14,7 +14,7 @@
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 
-let state = { servers: [], results: [], mode: 'remote', soleReviewer: false, searching: false, error: '' };
+let state = { servers: [], results: [], checks: {}, mode: 'remote', soleReviewer: false, searching: false, error: '' };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -158,15 +158,33 @@ function paintResults() {
             <p class="text-xs text-gray-500 mt-1 font-mono">${esc(r.name)}</p>
             <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">${esc(r.description)}</p>
             ${r.installable ? '' : `<p class="text-xs text-amber-700 dark:text-amber-400 mt-2">${esc(r.not_installable_reason)}</p>`}
+            ${reachabilityNote(r)}
           </div>
           <div class="shrink-0">
-            ${r.installable
-              ? `<button data-install="${esc(r.name)}"
-                   class="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium">Install</button>`
-              : `<span class="text-xs text-gray-400">Not installable here</span>`}
+            ${installButton(r)}
           </div>
         </div>
       </div>`).join('');
+}
+
+function reachabilityNote(r) {
+    const check = state.checks[r.name];
+    if (!r.installable) return '';
+    if (!check) return '<p class="text-xs text-gray-400 mt-2">Checking whether it answers…</p>';
+    if (check.reachable) {
+        return `<p class="text-xs text-green-700 dark:text-green-400 mt-2">Answers, ${check.tools} tool${check.tools === 1 ? '' : 's'}.</p>`;
+    }
+    return `<p class="text-xs text-amber-700 dark:text-amber-400 mt-2">${esc(check.reason || 'Did not answer.')}</p>`;
+}
+
+function installButton(r) {
+    if (!r.installable) return '<span class="text-xs text-gray-400">Not installable here</span>';
+    const check = state.checks[r.name];
+    if (check && !check.reachable) {
+        return '<span class="text-xs text-gray-400">Unavailable</span>';
+    }
+    return `<button data-install="${esc(r.name)}"
+              class="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium">Install</button>`;
 }
 
 function wire() {
@@ -251,6 +269,7 @@ async function doSearch() {
         // parsing bug stayed invisible.
         if (data && data.ok === false) throw new Error(data.error || 'The registry could not be reached.');
         state.results = (data && data.servers) || [];
+        state.checks = {};
     } catch (err) {
         state.results = [];
         state.error = err.message || 'The registry could not be reached.';
@@ -258,5 +277,28 @@ async function doSearch() {
     } finally {
         state.searching = false;
         paintResults();
+        checkReachability();
+    }
+}
+
+/**
+ * Ask the server which of these entries actually answer.
+ *
+ * Most hosted entries in the public registry do not connect anonymously: they
+ * want credentials, or the endpoint has moved. Without this the catalogue looks
+ * uniformly installable and most of the buttons fail, which is a worse
+ * experience than saying so up front.
+ */
+async function checkReachability() {
+    const names = state.results.map(r => r.name).filter(Boolean).slice(0, 30);
+    if (!names.length) return;
+    try {
+        const res = await api.checkMcpServers(names);
+        if (res && res.ok === false) return;
+        state.checks = (res && res.results) || {};
+        paintResults();
+    } catch (err) {
+        // A failed reachability check must not blank the catalogue: the entries
+        // are still real and an install still probes properly before storing.
     }
 }

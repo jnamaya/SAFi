@@ -262,6 +262,61 @@ class _Runtime:
                 "error": f"The server did not answer within {timeout:.0f}s.",
             }
 
+    def probe_many(
+        self, specs: Dict[str, Dict[str, Any]], timeout: float = 12.0
+    ) -> Dict[str, Dict[str, Any]]:
+        """Probe many servers at once, concurrently, on the runtime loop.
+
+        Sequential probing is unusable for this: measured against the public
+        registry, most hosted entries do not answer, and each failure costs the
+        full timeout. Thirty servers one after another is minutes; gathered on
+        one loop it is the slowest single probe.
+        """
+        if not specs:
+            return {}
+        self._ensure_loop()
+
+        async def _one(params: Dict[str, Any]) -> Dict[str, Any]:
+            transport = (params.get("transport") or "stdio").lower()
+            try:
+                async with self._open_transport(transport, params) as streams:
+                    from mcp import ClientSession
+
+                    async with ClientSession(streams[0], streams[1]) as session:
+                        await session.initialize()
+                        listed = await session.list_tools()
+                        names = [
+                            getattr(t, "name", "") for t in (getattr(listed, "tools", None) or [])
+                        ]
+                        return {"ok": True, "tools": [n for n in names if n], "error": None}
+            except BaseException as e:
+                return {"ok": False, "tools": [], "error": describe_exception(e)}
+
+        async def _gather() -> Dict[str, Dict[str, Any]]:
+            keys = list(specs)
+            tasks = [
+                asyncio.wait_for(_one(specs[k]), timeout=timeout) for k in keys
+            ]
+            settled = await asyncio.gather(*tasks, return_exceptions=True)
+            out: Dict[str, Dict[str, Any]] = {}
+            for key, result in zip(keys, settled):
+                if isinstance(result, BaseException):
+                    out[key] = {
+                        "ok": False,
+                        "tools": [],
+                        "error": f"The server did not answer within {timeout:.0f}s.",
+                    }
+                else:
+                    out[key] = result
+            return out
+
+        future = asyncio.run_coroutine_threadsafe(_gather(), self._loop)
+        try:
+            return future.result(timeout=timeout + 10)
+        except Exception:
+            future.cancel()
+            return {k: {"ok": False, "tools": [], "error": "Probe timed out."} for k in specs}
+
     def add_server(
         self, name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"
     ) -> Dict[str, Any]:
@@ -601,6 +656,10 @@ def origin_of(server: str) -> str:
 
 def probe(params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
     return _runtime.probe(params, timeout)
+
+
+def probe_many(specs: Dict[str, Dict[str, Any]], timeout: float = 12.0) -> Dict[str, Dict[str, Any]]:
+    return _runtime.probe_many(specs, timeout)
 
 
 def add_server(name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"):

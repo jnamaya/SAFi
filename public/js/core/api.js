@@ -552,6 +552,10 @@ export async function searchMcpRegistry(query) {
     return httpGet(j(`/api/mcp/registry/search?q=${encodeURIComponent(query || '')}`));
 }
 
+export async function checkMcpServers(names) {
+    return httpJSON(j('/api/mcp/registry/check'), 'POST', { names });
+}
+
 export async function listMcpServers() {
     return httpGet(j('/api/mcp/servers'));
 }

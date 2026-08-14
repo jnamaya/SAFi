@@ -183,9 +183,9 @@ class UrlSafetyTests(unittest.TestCase):
 class InstallPolicyTests(unittest.TestCase):
     def test_package_only_entry_is_refused_with_an_actionable_reason(self):
         entry = mcp_registry._normalize_server(PACKAGE_ENTRY)
-        ok, why, remote = mcp_install.validate_installable(entry, FakeConfig)
+        ok, why, remotes = mcp_install.validate_installable(entry, FakeConfig)
         self.assertFalse(ok)
-        self.assertIsNone(remote)
+        self.assertEqual(remotes, [])
         # The refusal has to tell the admin what to do instead, or it just
         # becomes a support ticket.
         self.assertIn("MCP_SERVERS_JSON", why)
@@ -234,6 +234,47 @@ class ConnectorKeyTests(unittest.TestCase):
         self.assertEqual(mcp_install.connector_key_for("vendor/github"), "github")
         # available_key would suffix it; proving that needs the db, and
         # test_mcp_store.py covers it there.
+
+
+class MultipleRemoteTests(unittest.TestCase):
+    """An entry may list several endpoints and the first is not always live.
+    ac.inference.sh publishes a bare host that answers nothing alongside an
+    /mcp endpoint with 25 tools, in that order, so stopping at the first made a
+    working server look broken."""
+
+    # URL safety is exercised for real in UrlSafetyTests. Here the resolver is
+    # stubbed so these assert ORDERING only: with real hostnames the test would
+    # depend on DNS, and the validator fails closed on anything that does not
+    # resolve, so it would fail offline for the wrong reason.
+    def _with_stubbed_validator(self, allow):
+        original = mcp_registry.validate_remote_url
+        mcp_registry.validate_remote_url = lambda url: (allow(url), "stubbed refusal")
+        self.addCleanup(setattr, mcp_registry, "validate_remote_url", original)
+
+    def test_all_usable_remotes_are_returned_in_declared_order(self):
+        self._with_stubbed_validator(lambda url: True)
+        entry = mcp_registry._normalize_server({"server": {
+            "name": "x/y",
+            "remotes": [
+                {"type": "streamable-http", "url": "https://first.example.com"},
+                {"type": "streamable-http", "url": "https://second.example.com/mcp"},
+            ]}})
+        ok, _, remotes = mcp_install.validate_installable(entry, FakeConfig)
+        self.assertTrue(ok)
+        self.assertEqual([r["url"] for r in remotes],
+                         ["https://first.example.com", "https://second.example.com/mcp"])
+
+    def test_unsafe_endpoints_are_filtered_out_but_safe_siblings_survive(self):
+        self._with_stubbed_validator(lambda url: url.startswith("https://good"))
+        entry = mcp_registry._normalize_server({"server": {
+            "name": "x/y",
+            "remotes": [
+                {"type": "streamable-http", "url": "https://bad.example.com"},
+                {"type": "streamable-http", "url": "https://good.example.com/mcp"},
+            ]}})
+        ok, _, remotes = mcp_install.validate_installable(entry, FakeConfig)
+        self.assertTrue(ok)
+        self.assertEqual([r["url"] for r in remotes], ["https://good.example.com/mcp"])
 
 
 class DescriptionScanTests(unittest.TestCase):

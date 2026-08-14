@@ -272,12 +272,20 @@ All fixed rules, applied before anything is stored:
 - **A host that does not resolve is refused**, rather than accepted in the hope
   it works later.
 
-### When a server will not connect
+### Most listed servers will not connect, and the catalogue says so
 
-Installing contacts the server first, so you find out immediately rather than
-after an approval. Expect this to happen often: a large share of the public
-registry's hosted entries do not answer an anonymous connection. The three
-common cases, each reported with its actual cause rather than a generic error:
+Search results are probed as they load and labelled: "Answers, 13 tools", or the
+reason it did not. Entries that do not answer show no Install button.
+
+Expect a lot of them. Measured against the public registry on 2026-08-14, four
+of ten hosted entries answered an anonymous connection. That is the registry's
+nature rather than a fault in SAFi: it lists servers, most of which are
+commercial services that expect you to authenticate.
+
+Installing also contacts the server itself, trying every endpoint the entry
+declares, in order. A published entry can list a dead endpoint ahead of a live
+one, so a single failure is not taken as the answer. The three common causes,
+each reported with its own message:
 
 - **The server requires credentials.** SAFi connects anonymously, so a server
   needing a token has to be installed in the operator's `MCP_SERVERS_JSON` file,

@@ -86,18 +86,21 @@ def available_key(registry_name: str) -> str:
     return candidate
 
 
-def validate_installable(entry: Dict[str, Any], config: Any) -> Tuple[bool, str, Optional[Dict[str, str]]]:
+def validate_installable(entry: Dict[str, Any], config: Any) -> Tuple[bool, str, List[Dict[str, str]]]:
     """Decide whether this registry entry may be installed from a browser.
 
-    Returns (ok, reason, remote). `reason` is written for an admin to read: a
-    refusal that does not say what to do instead just produces a support ticket.
+    Returns (ok, reason, usable_remotes). `reason` is written for an admin to
+    read: a refusal that does not say what to do instead just produces a support
+    ticket. `usable_remotes` is every declared endpoint that passed the URL
+    checks, in the order the publisher listed them, because the first is not
+    always the live one.
     """
     mode = install_mode(config)
     if mode == MODE_OFF:
         return False, (
             "Installing tool servers from the browser is turned off on this deployment. "
             "An operator can add the server to the file MCP_SERVERS_JSON names."
-        ), None
+        ), []
 
     if not entry.get("has_remote"):
         return False, (
@@ -105,20 +108,24 @@ def validate_installable(entry: Dict[str, Any], config: Any) -> Tuple[bool, str,
             "cannot be installed from here: starting it would run its code on the SAFi "
             "host. An operator can install it in the file MCP_SERVERS_JSON names, where "
             "that decision belongs."
-        ), None
+        ), []
 
-    remote = None
+    usable = []
     for candidate in entry.get("remotes") or []:
         ok, _ = mcp_registry.validate_remote_url(candidate.get("url", ""))
         if ok:
-            remote = candidate
-            break
-    if remote is None:
+            usable.append(candidate)
+    if not usable:
         first = (entry.get("remotes") or [{}])[0]
         _, why = mcp_registry.validate_remote_url(first.get("url", ""))
-        return False, f"This server's endpoint was refused: {why}", None
+        return False, f"This server's endpoint was refused: {why}", []
 
-    return True, "", remote
+    # All of them, in declared order. An entry can list several endpoints and
+    # the first is not always the live one: ac.inference.sh publishes a bare
+    # host that answers nothing alongside an /mcp endpoint with 25 tools, in
+    # that order. Picking the first URL-valid one and stopping made that server
+    # look broken, so the caller connects to each until one answers.
+    return True, "", usable
 
 
 def scan_tool_descriptions(tools: Dict[str, Dict[str, Any]], server: str) -> List[str]:

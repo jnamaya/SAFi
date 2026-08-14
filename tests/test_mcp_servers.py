@@ -325,6 +325,39 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual(authorize("fixture_echo", profile, {})[0], "violation")
 
 
+class ConcurrentProbeTests(unittest.TestCase):
+    """Probing has to be concurrent to be usable: most public registry entries
+    do not answer, and each failure costs the full timeout, so a catalogue page
+    probed one server at a time would take minutes."""
+
+    def tearDown(self):
+        mcp_runtime.shutdown()
+
+    def test_probe_reports_tools_without_registering_anything(self):
+        result = mcp_runtime.probe(
+            {"transport": "stdio", "command": sys.executable, "args": [FIXTURE]}, timeout=20)
+        self.assertTrue(result["ok"], result["error"])
+        self.assertIn("fixture_echo", result["tools"])
+        # A probe must leave no trace: nothing connected, nothing registered.
+        self.assertEqual(mcp_runtime.connectors(), {})
+        self.assertEqual(mcp_runtime.tools(), {})
+
+    def test_probe_many_returns_one_result_per_key(self):
+        results = mcp_runtime.probe_many({
+            "good": {"transport": "stdio", "command": sys.executable, "args": [FIXTURE]},
+            "bad": {"transport": "stdio", "command": "/nonexistent/binary"},
+        }, timeout=20)
+        self.assertEqual(set(results), {"good", "bad"})
+        self.assertTrue(results["good"]["ok"])
+        self.assertFalse(results["bad"]["ok"])
+        self.assertTrue(results["bad"]["error"])
+
+    def test_probe_of_a_broken_server_is_not_an_exception(self):
+        result = mcp_runtime.probe({"transport": "stdio", "command": "/nonexistent"}, timeout=10)
+        self.assertFalse(result["ok"])
+        self.assertNotIn("TaskGroup", result["error"])
+
+
 class BrokenServerTests(unittest.TestCase):
     """A server that cannot start must leave the deployment tool-less, running,
     and fail-closed. Never tool-present-and-unguarded."""
