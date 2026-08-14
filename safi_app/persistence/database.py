@@ -4732,15 +4732,15 @@ def _insert_governance_record(cursor, org_id, message_pk, message_id, conversati
     ON DUPLICATE refreshes the capture without minting a second row (a
     terminal commit normally happens exactly once per message — same
     contract as the review-sampling hook)."""
-    # Every record names the kernel that produced it (backlog 39): the boot-time
-    # Core Loop fingerprint and intact/tainted state, the way a kernel oops
-    # report carries taint flags. Stamped HERE, in the one writer every
+    # Every record names the TCB that produced it (backlog 39): the boot-time
+    # Trusted Computing Base fingerprint and intact/tainted state, the way a
+    # kernel oops report carries taint flags. Stamped HERE, in the one writer every
     # governance path funnels through, so no path can mint an unattested
     # record. setdefault, not overwrite: a record that already carries a stamp
-    # (a replayed capture) keeps the kernel it was actually produced under.
-    from ..core.integrity import kernel_stamp
+    # (a replayed capture) keeps the TCB it was actually produced under.
+    from ..core.integrity import tcb_stamp
     record = dict(record)
-    record.setdefault("kernel", kernel_stamp())
+    record.setdefault("tcb", tcb_stamp())
     record_enc = crypto.encrypt_value(json.dumps(record, ensure_ascii=False, default=str))
     cursor.execute(
         "INSERT INTO governance_records (message_pk, message_id, conversation_id, "

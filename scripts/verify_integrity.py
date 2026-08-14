@@ -50,6 +50,11 @@ from pathlib import Path
 MANIFEST_NAME = "core_integrity_manifest.json"
 
 # The Core Loop, as declared in Section II of the agreement, mapped to files.
+# In security-engineering terms this list is SAFi's TRUSTED COMPUTING BASE
+# (TCB): the set of components a governance claim depends on — a defect
+# inside it can violate the policy, a defect outside it cannot. Keeping the
+# list short is TCB minimization, and it is why additions get argued file by
+# file in the comments below.
 # The orchestrator's mixins are included because part of its routing logic
 # lives there. The Spirit->Intellect coaching note (the Coach) lives inside
 # spirit.py — merged from a standalone feedback.py on 2026-08-13 — so covering
@@ -109,9 +114,9 @@ CORE_FILES = [
     #                       it now would lock tuning behind Section IV.
     "safi_app/core/rbac.py",
     # Runtime attestation (added 2026-08-13, backlog 39): computes the boot
-    # verification and stamps the kernel fingerprint into every governance
+    # verification and stamps the TCB fingerprint into every governance
     # record. A fork that no-ops the stamp would mint records claiming an
-    # intact kernel — the exact lie the stamp exists to make impossible.
+    # intact TCB — the exact lie the stamp exists to make impossible.
     "safi_app/core/integrity.py",
 ]
 

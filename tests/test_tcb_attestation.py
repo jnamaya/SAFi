@@ -9,9 +9,9 @@ by-hand question. These three rows make it ambient:
     default: AGPL grants forks the right to RUN modified code; only the NAME is
     conditional (agreement §IV). Taint is representation and evidence, never
     permission.
-  * Every governance record carries the kernel stamp — fingerprint plus
+  * Every governance record carries the TCB stamp — fingerprint plus
     intact/tainted — the way an oops report carries taint flags. An examiner
-    reading a record sees WHICH kernel produced it, not just what it decided.
+    reading a record sees WHICH TCB produced it, not just what it decided.
   * SAFI_ENFORCE_INTEGRITY=strict refuses to start on anything but
     verified-intact, "unverifiable" included: a deployment that cannot attest
     is not intact for a deployment that demanded attestation.
@@ -85,23 +85,23 @@ class BootVerification(unittest.TestCase):
             self.assertIsNone(s["fingerprint"])
 
 
-class TheKernelStamp(unittest.TestCase):
+class TheTcbStamp(unittest.TestCase):
 
     def test_the_stamp_carries_exactly_the_evidence_fields(self):
-        stamp = integrity.kernel_stamp()
+        stamp = integrity.tcb_stamp()
         self.assertEqual(set(stamp), {"fingerprint", "intact", "state"})
         self.assertTrue(stamp["intact"])
 
     def test_every_governance_record_is_stamped_at_the_single_writer(self):
         """Stamped in _insert_governance_record — the one writer every
         governance path funnels through — so no path can mint an unattested
-        record. setdefault, so a replayed capture keeps the kernel it was
+        record. setdefault, so a replayed capture keeps the TCB it was
         actually produced under."""
         at = DB_SRC.index("def _insert_governance_record")
         body = DB_SRC[at:DB_SRC.index("def ", at + 10)]
-        self.assertIn("kernel_stamp", body)
-        self.assertIn('record.setdefault("kernel", kernel_stamp())', body)
-        self.assertLess(body.index("kernel_stamp()"), body.index("encrypt_value"),
+        self.assertIn("tcb_stamp", body)
+        self.assertIn('record.setdefault("tcb", tcb_stamp())', body)
+        self.assertLess(body.index("tcb_stamp()"), body.index("encrypt_value"),
                         "the stamp must be inside the encrypted capture")
 
 
@@ -123,7 +123,7 @@ class StrictMode(unittest.TestCase):
         s = self._boot(self.TAINTED, "")
         self.assertEqual(s["state"], "modified")  # returned, not raised
 
-    def test_strict_refuses_a_tainted_kernel(self):
+    def test_strict_refuses_a_tainted_tcb(self):
         with self.assertRaises(RuntimeError) as cm:
             self._boot(self.TAINTED, "strict")
         self.assertIn("refusing", str(cm.exception))
@@ -134,7 +134,7 @@ class StrictMode(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self._boot(self.UNVERIFIABLE, "strict")
 
-    def test_strict_boots_an_intact_kernel(self):
+    def test_strict_boots_an_intact_tcb(self):
         s = self._boot(self.INTACT, "strict")
         self.assertTrue(s["intact"])
 

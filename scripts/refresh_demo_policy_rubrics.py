@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Re-seed the value rubrics of already-seeded DEMO policies from the persona
+Re-seed the value rubrics of already-seeded DEMO policies from the agent
 definitions in code.
 
 WHY THIS IS NEEDED. `_ensure_demo_agent_policies_exist` (database.py) is
 idempotent on purpose — `if get_policy(pid): continue` — so operator edits made
 through the Governance tab survive restarts. Correct, but it means a code fix to
-a persona's rubric never reaches a policy row that already exists. This script
+a agent's rubric never reaches a policy row that already exists. This script
 closes that gap for demo policies only.
 
 WHAT IT WILL NOT TOUCH. Only rows with `is_demo = TRUE` and an id present in

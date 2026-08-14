@@ -1,5 +1,13 @@
 """
-Runtime kernel attestation — measured boot for SAFi (backlog 39).
+Runtime TCB attestation — measured boot for SAFi (backlog 39).
+
+TCB = Trusted Computing Base, the security-engineering term of art for what
+the integrity manifest covers: the set of components a governance claim
+depends on — a defect inside it can violate the policy, a defect outside it
+cannot (TCSEC, 1983). "Core Loop" is the same set's name in the License &
+Governance Agreement; kernel/userland is the informal teaching analogy and
+carries a footnote this term does not need: TCB claims trust dependency,
+never memory isolation.
 
 Three jobs, all built on the canonical checker in scripts/verify_integrity.py
 (loaded by file path and reused, never reimplemented — two hash implementations
@@ -19,11 +27,11 @@ the app ran at boot):
      Regulated deployments opt in; forks and development trees never trip it
      by default.
 
-  3. THE STAMP. kernel_stamp() is folded into every governance record
+  3. THE STAMP. tcb_stamp() is folded into every governance record
      (database._insert_governance_record), so each audit record names the
-     kernel that produced it — fingerprint and intact/tainted — the way a
-     kernel oops report carries the taint flags. Evidence per record, not per
-     deployment claim.
+     TCB that produced it — fingerprint and intact/tainted — the way a kernel
+     oops report carries taint flags (the analogy, not the term). Evidence
+     per record, not per deployment claim.
 
 The status is computed ONCE and cached: these are the files the running
 process imported at startup, and re-hashing per record would measure the disk,
@@ -31,7 +39,7 @@ not the process. On-disk drift after boot is the next row of the table
 (backlog 39 lists it as deliberately not built).
 
 This module is itself in the Core Loop manifest: a fork that no-ops the stamp
-would mint records claiming an intact kernel, which is precisely the lie the
+would mint records claiming an intact TCB, which is precisely the lie the
 stamp exists to make impossible.
 """
 from __future__ import annotations
@@ -111,7 +119,7 @@ def get_status(root: Optional[Path] = None, refresh: bool = False) -> Dict[str, 
     return _status
 
 
-def kernel_stamp() -> Dict[str, Any]:
+def tcb_stamp() -> Dict[str, Any]:
     """The per-record attestation folded into every governance capture."""
     s = get_status()
     return {
@@ -129,10 +137,10 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
     mode = os.environ.get("SAFI_ENFORCE_INTEGRITY", "").strip().lower()
 
     if s["state"] == "intact":
-        logger.info(f"Core Loop verified INTACT — kernel fingerprint {s['fingerprint']}")
+        logger.info(f"Core Loop verified INTACT — TCB fingerprint {s['fingerprint']}")
     else:
         logger.error(
-            f"Core Loop {s['state'].upper()} — this deployment is running a kernel that "
+            f"Core Loop {s['state'].upper()} — this deployment is running a TCB that "
             f"does not match its release manifest. Every governance record it produces "
             f"will carry state='{s['state']}'."
         )
@@ -144,7 +152,7 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
             logger.error(f"  finding:  {x}")
         logger.error(
             "Running modified Core Loop code is permitted (AGPL); representing the "
-            "deployment as SAFi is what requires an intact kernel or upstream review "
+            "deployment as SAFi is what requires an intact TCB or upstream review "
             "— see Section IV of the License & Governance Agreement."
         )
 
