@@ -9,6 +9,7 @@ import threading
 import contextvars
 import numpy as np
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Any, Union, Optional
 from pathlib import Path
 import logging
@@ -39,6 +40,32 @@ from .plugins import builtin as _builtin_plugins  # noqa: F401  (import = regist
 # way to hurt yourself. The character budget below is the real constraint; this
 # only stops the query itself being pathological.
 _HISTORY_FETCH_ALL = 400
+
+
+def _current_date_line(now_utc: datetime, user_timezone: Optional[str] = None) -> str:
+    """
+    The date line prepended to every user prompt before the Intellect sees it.
+
+    Without a timezone the model lives on the server's UTC clock, which rolls
+    to "tomorrow" mid-evening for anyone west of UTC (a 10pm Thursday question
+    about "tomorrow" got an answer about Saturday). When the client supplies an
+    IANA zone name, the line leads with the user's local calendar and keeps
+    UTC alongside so audit reasoning stays unambiguous. The zone string is
+    untrusted client input: anything ZoneInfo rejects falls back to UTC-only,
+    never an error. Prompt context only — storage, audit records, and every
+    deterministic gate remain UTC and never read this string.
+    """
+    utc_line = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
+    if not user_timezone:
+        return utc_line
+    try:
+        local_now = now_utc.astimezone(ZoneInfo(user_timezone))
+    except Exception:
+        return utc_line
+    return (
+        local_now.strftime(f"Current Date: %A, %B %d, %Y, %H:%M %Z ({user_timezone}). ")
+        + now_utc.strftime("UTC: %A %H:%M:%S Z.")
+    )
 
 
 def _render_history(messages, max_chars: int) -> str:
@@ -572,7 +599,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         conversation_id: str,
         user_name: Optional[str] = None,
         override_message_id: Optional[str] = None,
-        org_id: Optional[str] = None
+        org_id: Optional[str] = None,
+        user_timezone: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         The main entrypoint for processing a user's prompt.
@@ -586,7 +614,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         activate_org(org_id or (self.profile or {}).get("org_id"))
 
         now_utc = datetime.now(timezone.utc)
-        current_date_string = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
+        current_date_string = _current_date_line(now_utc, user_timezone)
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
 
         # --- 0. Pre-insertion for Live Reasoning ---

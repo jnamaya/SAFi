@@ -34,6 +34,7 @@ from ..config import Config
 from ..core.rbac import (check_permission, get_current_org_id, get_current_role,
                          require_any_role)
 from ..persistence import database as db
+from ..timeutil import utc_isoformat
 from ..persistence.database import SelfReviewError
 
 knowledge_bp = Blueprint('knowledge', __name__)
@@ -88,8 +89,8 @@ def _shape(kb, documents=None, review_detail=True):
         "chunk_count": kb.get("chunk_count") or 0,
         "created_by": kb.get("created_by"),
         "org_id": kb.get("org_id"),
-        "indexed_at": kb.get("indexed_at").isoformat() if kb.get("indexed_at") else None,
-        "created_at": kb.get("created_at").isoformat() if kb.get("created_at") else None,
+        "indexed_at": utc_isoformat(kb.get("indexed_at")),
+        "created_at": utc_isoformat(kb.get("created_at")),
         "is_shared": kb.get("visibility") in SHARED_VISIBILITIES,
     }
     if documents is not None:
@@ -129,13 +130,13 @@ def _shape_doc(doc, include_review_detail=True):
         "size_bytes": doc.get("size_bytes") or 0,
         "char_count": doc.get("char_count") or 0,
         "status": doc.get("status"),
-        "created_at": doc.get("created_at").isoformat() if doc.get("created_at") else None,
+        "created_at": utc_isoformat(doc.get("created_at")),
     }
     if include_review_detail:
         out.update({
             "uploaded_by": doc.get("uploaded_by"),
             "reviewer_email": doc.get("reviewer_email"),
-            "reviewed_at": doc.get("reviewed_at").isoformat() if doc.get("reviewed_at") else None,
+            "reviewed_at": utc_isoformat(doc.get("reviewed_at")),
             "reason": doc.get("reason"),
             "self_approved": bool(doc.get("self_approved")),
         })

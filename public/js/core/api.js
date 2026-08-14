@@ -209,7 +209,12 @@ export const deleteSavedContent = (id) => httpJSON(urls.SAVED_ITEM(id), 'DELETE'
 export const fetchHistory = (id, limit = 50, offset = 0) =>
     httpGet(urls.HISTORY(id, limit, offset));
 export const processUserMessage = (message, conversation_id, signal = null, message_id = null) =>
-    httpJSON(urls.PROCESS, 'POST', { message, conversation_id, message_id }, { signal });
+    httpJSON(urls.PROCESS, 'POST', {
+        message, conversation_id, message_id,
+        // IANA zone name so the agent's "Current Date" line uses the user's
+        // calendar instead of the server's UTC one. Validated server-side.
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null
+    }, { signal });
 export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
 export const cancelMessage = (messageId) =>

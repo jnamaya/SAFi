@@ -613,7 +613,8 @@ async def process_prompt_endpoint():
             conversation_id,
             user_name=user_name,
             override_message_id=data.get('message_id'),
-            org_id=org_id
+            org_id=org_id,
+            user_timezone=data.get('timezone')
         )
         result["aiProvenance"] = provenance.ai_marker(model=intellect_model)
         # This is the endpoint the signed-in UI actually calls (api.js -> PROCESS),

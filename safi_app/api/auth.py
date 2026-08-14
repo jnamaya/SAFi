@@ -18,6 +18,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from ..extensions import oauth
+from ..timeutil import utc_isoformat
 from ..persistence import database as db
 from ..config import Config
 from ..core.faculties.synderesis import get_profile, list_profiles
@@ -1223,9 +1224,9 @@ def list_my_sessions():
     current = getattr(g, 'sid', None)
     out = [{
         "id": r["id"],
-        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
-        "last_seen_at": r["last_seen_at"].isoformat() if r.get("last_seen_at") else None,
-        "expires_at": r["expires_at"].isoformat() if r.get("expires_at") else None,
+        "created_at": utc_isoformat(r.get("created_at")),
+        "last_seen_at": utc_isoformat(r.get("last_seen_at")),
+        "expires_at": utc_isoformat(r.get("expires_at")),
         "ip": r.get("ip"),
         "user_agent": r.get("user_agent"),
         "current": r["id"] == current,

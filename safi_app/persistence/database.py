@@ -7,6 +7,7 @@ import re
 import uuid
 import numpy as np
 from datetime import datetime, timezone
+from ..timeutil import utc_isoformat
 from typing import Dict, Any, Optional, List
 import logging
 import hashlib
@@ -5157,7 +5158,7 @@ def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
         # Art. 50(2): every governance record captures an AI-generated turn.
         row["ai_generated"] = True
         if isinstance(row.get("created_at"), datetime):
-            row["created_at"] = row["created_at"].isoformat()
+            row["created_at"] = utc_isoformat(row["created_at"])
         row["integrity"] = dict(chains.get(row["message_pk"], no_chain))
         out.append(row)
     return out

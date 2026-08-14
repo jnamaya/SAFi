@@ -3,6 +3,7 @@ import uuid
 import json
 import dns.resolver
 from ..persistence import database as db
+from ..timeutil import utc_isoformat
 from ..core.rbac import require_role, check_permission, get_current_org_id
 # Same check the governance compiler uses, applied at save time: what would
 # raise at chat time is rejected while the admin is still looking at the form.
@@ -342,8 +343,8 @@ def list_member_sessions(org_id, user_id):
     rows = db.list_user_sessions(user_id)
     return jsonify({"ok": True, "sessions": [{
         "id": r["id"][:8] + "…",  # opaque preview — admins revoke in bulk, never need the full sid
-        "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
-        "last_seen_at": r["last_seen_at"].isoformat() if r.get("last_seen_at") else None,
+        "created_at": utc_isoformat(r.get("created_at")),
+        "last_seen_at": utc_isoformat(r.get("last_seen_at")),
         "ip": r.get("ip"), "user_agent": r.get("user_agent"),
     } for r in rows]})
 
@@ -369,7 +370,7 @@ def list_invitations(org_id):
     for r in rows:
         for k in ('created_at', 'expires_at', 'accepted_at', 'revoked_at'):
             if r.get(k) is not None:
-                r[k] = r[k].isoformat()
+                r[k] = utc_isoformat(r[k])
     return jsonify({"ok": True, "invitations": rows})
 
 
