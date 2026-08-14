@@ -94,10 +94,9 @@ def create_app():
     # Initialize the database connection pool within the app context
     with app.app_context():
         db.init_db()
-        # GUI-installed MCP servers (backlog 48). Its own module and its own
-        # tables, deliberately outside the manifest-covered database.py: which
-        # tool servers an org installed is Section III configuration content,
-        # not a record of what the system decided.
+        # The MCP reload counter (backlog 48b). Its own module, deliberately
+        # outside the manifest-covered database.py: a scheduling signal is not a
+        # record of what the system decided.
         try:
             from .persistence import mcp_store
             mcp_store.init_schema()
@@ -175,14 +174,13 @@ def create_app():
     app.register_blueprint(mcp_bp)
 
     # Server-side session resolution (enterprise identity Phase 1).
-    # Pick up MCP servers another worker installed. One indexed read, and it
-    # only reconnects when the generation actually moved, so the steady state
-    # cost is a single SELECT rather than any reconnection work.
+    # Pick up servers the operator added with scripts/safi_mcp.py. One indexed
+    # read, and it only reconnects when the generation actually moved, so the
+    # steady state cost is a single SELECT rather than any reconnection work.
     def _mcp_resync():
         from .core.services.mcp_manager import resync_if_stale
-        from .core.services.mcp_install import desired_runtime_servers
         from .persistence.mcp_store import current_generation
-        resync_if_stale(current_generation, desired_runtime_servers)
+        resync_if_stale(current_generation)
 
     app.before_request(_mcp_resync)
 

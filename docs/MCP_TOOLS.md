@@ -4,40 +4,31 @@ SAFi agents can call tools. Some ship with the product; others come from MCP
 servers you install. This document covers installing a server, granting it, and
 the rules that decide which of the two kinds of tool a given job needs.
 
-Audience: whoever controls the deployment, and organization admins installing
-hosted servers from the browser. Which of the two paths applies to you depends
-on how the server runs, for reasons in [section 6](#6-trust-who-can-install-what).
+Audience: whoever controls the deployment installs servers (sections 2 and 8);
+policy editors decide which of their tools may be used (section 4).
 
 ---
 
-## 1. The short version
+## 1. How a tool reaches an agent
 
-There are two ways in, and they are for different things.
+One pipeline, five steps, and each one is a different person's decision:
 
-**From the browser (Settings, Tool Servers).** An admin searches the official
-MCP registry and installs a **hosted** server in one click. A second admin
-approves it and it is live, no restart. This is the easy path and it covers most
-cases. See [section 8](#8-installing-from-the-registry-in-the-gui).
+1. **Install** (operator, on the host). `scripts/safi_mcp.py add ...` writes the
+   server into the file `MCP_SERVERS_JSON` names. Section 9.
+2. **Discover** (SAFi). It connects to the server and asks what tools it has.
+3. **Catalogue** (Settings → Tool Servers). The server and its tools appear,
+   **visible and completely inactive**. Nothing can call them.
+4. **Policy** (editor). In a policy's Tools & Guardrails step, enable the
+   specific tools agents under that policy may use, and leave the rest off.
+5. **Assign** (agent). An agent gets the tools its policy allows, and the Will
+   checks every call against that list by exact name before it runs.
 
-**From the CLI (`scripts/safi_mcp.py`).** The operator's path, and the only way
-to install a server that runs **locally** as a package or command. It writes the
-same file, checks the server before saving it, and the running app picks it up
-without a restart. Section 9.
-
-Either way, the rest is the same and is how every tool in SAFi has always
-worked:
-
-1. The server is installed and becomes a connector.
-2. An organization admin allows the connector.
-3. A policy author checks it under Tools & Guardrails.
-4. An agent under that policy enables it.
-5. The Will authorizes every individual call by exact name.
-
-**Installing grants nothing.** That is the sentence to keep hold of. Making
-installation easy is safe because installation is only the first of five steps,
-and the other four already existed.
-
----
+**The browser installs nothing.** An earlier version let an admin browse the
+official registry and install a hosted server from Settings; it was removed.
+Installation belongs on the host, where the person doing it already holds the
+rights that running someone's code implies, and keeping it there removed a
+per-organization install table, an approval workflow and a tenancy problem that
+existed only to make a browser safe for a job that was never the browser's.
 
 ## 2. Installing a server
 
@@ -127,20 +118,22 @@ granted.
 
 Discovery only populates the catalogue. **Discovery never grants anything.** A
 newly installed server, or a new tool inside an already-installed one, is
-unauthorized until a person says otherwise. Four rungs, all of which predate
-MCP support:
+unauthorized until a person says otherwise.
 
-1. **Organization.** An admin allows the connector for the org.
-2. **Policy.** The author checks it under Tools & Guardrails. This is a ceiling:
-   agents under the policy can never use tools it does not list.
-3. **Agent.** The builder enables it on the agent. This is what gets advertised
-   to the model.
-4. **The Will.** Every individual call is checked against the compiled
+**Tool by tool, not server by server.** Each tool from an installed server is
+offered as its own entry in a policy's Tools & Guardrails step, so an editor
+enables `billing_get_invoice` and leaves `billing_issue_refund` off. Built-in
+connectors are still offered as a bundle, because their contents were reviewed
+when they shipped; an installed server's were not.
+
+Three rungs, all of which predate MCP support:
+
+1. **Policy.** The editor enables specific tools under Tools & Guardrails. This
+   is a ceiling: agents under the policy can never use a tool it does not list.
+2. **Agent.** The builder assigns the tools the policy allows. This is what gets
+   advertised to the model.
+3. **The Will.** Every individual call is checked against the compiled
    allow-list by exact name, plus any parameter constraints the policy sets.
-
-A policy can narrow within a server by naming individual tool functions instead
-of the server, so granting `acme_billing` at the agent level and listing only
-`billing_get_invoice` in the policy gives that agent exactly one tool.
 
 ### Read-only and parameter constraints
 
@@ -226,125 +219,7 @@ Two more things worth knowing before you install something you did not write:
 
 ---
 
-## 8. Installing from the registry, in the GUI
-
-**Settings → Tool Servers**, admin only. Search the official MCP registry,
-press Install, have another admin approve it, and the tools are live without a
-restart.
-
-### What the registry does and does not tell you
-
-The official registry verifies **namespace ownership**: publishing under
-`io.github.someone/thing` requires proving you are that GitHub identity, or
-proving the domain by DNS or HTTP. That makes typosquatting hard and gives every
-entry an accountable publisher.
-
-It performs **no code review, no vulnerability scanning, and no security
-assessment**. A listing means "this publisher owns this name", never "this code
-is safe". Install servers from publishers you would trust with the data your
-agents will send them. The screen says the same thing, on purpose.
-
-### What can be installed this way
-
-**Hosted servers only.** A registry entry offers a hosted endpoint, a local
-package, or both. Only the hosted kind is installable from a browser, because
-installing a package means running its code on the SAFi host, and that is a
-decision for whoever controls the deployment rather than for anyone with an
-admin login. An entry that is package-only shows why, and points at the file.
-
-`SAFI_MCP_INSTALL_MODE` controls this:
-
-| Value | Effect |
-|---|---|
-| `remote` | Default. Admins may install hosted servers. |
-| `off` | Nothing installable from the browser; the file is the only way in. |
-| `all` | Reserved for a future release, where admins may also install package servers. Correct only where the admins and the operator are the same people. Currently treated as `remote`. |
-
-### The checks an endpoint has to pass
-
-All fixed rules, applied before anything is stored:
-
-- **https only.** Plain http would send your prompts and arguments in the clear.
-- **No private, loopback or link-local addresses**, checked against what the
-  hostname actually resolves to, not against how it is spelled. An
-  admin-supplied URL that this server then fetches is a way into your own
-  network, and that is the standard shape of the attack.
-- **No credentials embedded in the URL.**
-- **A host that does not resolve is refused**, rather than accepted in the hope
-  it works later.
-
-### Most listed servers will not connect, and the catalogue says so
-
-Search results are probed as they load and labelled: "Answers, 13 tools", or the
-reason it did not. Entries that do not answer show no Install button.
-
-Expect a lot of them. Measured against the public registry on 2026-08-14, four
-of ten hosted entries answered an anonymous connection. That is the registry's
-nature rather than a fault in SAFi: it lists servers, most of which are
-commercial services that expect you to authenticate.
-
-Installing also contacts the server itself, trying every endpoint the entry
-declares, in order. A published entry can list a dead endpoint ahead of a live
-one, so a single failure is not taken as the answer. The three common causes,
-each reported with its own message:
-
-- **The server requires credentials.** SAFi connects anonymously, so a server
-  needing a token has to be installed in the operator's `MCP_SERVERS_JSON` file,
-  where the secret comes from the environment. GUI install has no way to hold a
-  credential, deliberately.
-- **The endpoint has moved or the server is no longer hosted.** Registry entries
-  outlive the services they describe.
-- **The host does not resolve.** Same cause, further along.
-
-### Adding a server that is not in the registry
-
-Directories such as mcpservers.org list far more servers than the official
-registry carries, and most of what they list runs as a local package rather than
-a hosted endpoint. For a hosted one, or for a server your own organization runs,
-use **Add by endpoint** and paste the URL the server publishes.
-
-Paste the endpoint, not the directory. A directory is an ordinary web page; if
-you paste one, SAFi detects that it serves HTML and says so rather than guessing
-at a credentials problem you do not have.
-
-The checks are identical to a registry install: same URL rules, same probe, same
-approval, same evidence. What is missing is provenance. Nobody has verified that
-whoever runs that endpoint owns the name, so the record stores the URL as the
-identity and the entry shows it was added by hand. Verified public endpoints
-that work today without credentials include DeepWiki, Context7, GitMCP and
-Hugging Face.
-
-### Approval
-
-An install lands **pending** and reaches no agent until an admin approves it.
-The person who installed it cannot approve it, unless they are the
-organization's only eligible reviewer, in which case they can, and the sign-off
-is recorded as a **non-independent review** rather than counted as real
-oversight. Same rule, and the same underlying check, as knowledge base
-documents.
-
-Approving connects the server and scans its tool descriptions against the
-prompt-injection signature list. Descriptions are text the publisher wrote that
-becomes instructions in the model's context, so a match is surfaced to the
-approver as a warning. It is a warning rather than a block: the approver is a
-person, and a false positive should not strand a legitimate tool.
-
-### Evidence
-
-Install, approve, reject and remove each write a row to the organization's
-compliance log naming the actor, the endpoint and the version. The version is
-the exact one the registry published; SAFi never auto-updates a server.
-
-### Tenancy
-
-A server installed by one organization belongs to that organization. Another
-organization does not see it in the picker and cannot grant it to an agent, and
-that second check runs on save rather than relying on the picker having hidden
-it.
-
----
-
-## 9. The operator CLI
+## 8. The operator CLI
 
 `scripts/safi_mcp.py` manages the servers in `MCP_SERVERS_JSON` from a shell. It
 exists because the browser can only install hosted servers, which leaves the npm
@@ -395,7 +270,7 @@ enable, and the Will still authorizes call by call.
 
 ---
 
-## 10. Writing your own server
+## 9. Writing your own server
 
 Any MCP server works. To expose a private API to a governed agent, the smallest
 version is a stdio server with one tool per operation. Keep the tool surface

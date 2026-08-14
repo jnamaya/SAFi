@@ -53,15 +53,16 @@ def _validate_knowledge_base(kb_name, user_id, user):
         return None
     return "You do not have access to that knowledge base."
 
-def _known_tool_functions(visible_connectors):
-    """The individual function names inside the connectors an org can reach.
+def _known_tool_functions(connectors):
+    """The individual function names inside the connectors this deployment has.
 
-    A policy may narrow within a connector by naming functions directly, so the
-    save guard has to accept those too. Built from the same expansion the Will
-    ultimately enforces, never from a second hand-written list.
+    A policy or an agent may name functions directly rather than a whole
+    connector, so the save guard has to accept those too. Built from the same
+    expansion the Will ultimately enforces, never from a second hand-written
+    list.
     """
     from ..core.tool_connectors import expand_connectors
-    return set(expand_connectors(sorted(visible_connectors)))
+    return set(expand_connectors(sorted(connectors)))
 
 
 @agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
@@ -98,22 +99,22 @@ def save_agent():
         is_valid, err = validate_agent_data(data)
         if not is_valid: return jsonify({"error": err}), 400
 
-        # A tool must be one this organization can actually reach. The picker
-        # already hides another org's GUI-installed servers, but the picker is
-        # a UI, and hiding is not a check: without this, a crafted request could
-        # grant an agent a connector some other organization installed.
+        # A tool must be one this deployment actually has. The picker only
+        # offers real ones, but the picker is a UI and offering is not checking:
+        # a crafted request could otherwise put any string into an agent's tool
+        # list, where it would sit looking authorized and fail at the Will.
         requested_tools = [t for t in (data.get('tools') or []) if isinstance(t, str)]
         if requested_tools:
             from ..core.services.mcp_manager import MCPManager
-            visible = MCPManager.visible_connectors(user.get('org_id'))
-            unreachable = [
+            known = MCPManager.known_connectors()
+            unknown = [
                 t for t in requested_tools
-                if t not in visible and t not in _known_tool_functions(visible)
+                if t not in known and t not in _known_tool_functions(known)
             ]
-            if unreachable:
+            if unknown:
                 return jsonify({
-                    "error": "Not available to this organization: " + ", ".join(sorted(unreachable))
-                }), 403
+                    "error": "No such tool on this deployment: " + ", ".join(sorted(unknown))
+                }), 400
 
         # Governance requirement (enforced per-branch, AFTER auth/existence checks
         # so 403/404/409 take precedence over business validation): under the
@@ -480,12 +481,7 @@ def list_available_tools():
     try:
         from ..core.services.mcp_manager import MCPManager
         mcp = MCPManager(current_app.config)
-        # Scoped to the caller's org: GUI-installed MCP servers belong to the
-        # organization that installed them, so another org must not even see
-        # them offered. Built-ins and the operator's file servers are
-        # deployment-wide and always included.
-        org_id = (session.get('user') or {}).get('org_id')
-        tools = mcp.list_all_tools(org_id=org_id)
+        tools = mcp.list_all_tools()
         return jsonify({"ok": True, "tools": tools})
     except Exception as e:
         current_app.logger.error(f"List Tools Error: {e}")

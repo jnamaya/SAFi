@@ -546,34 +546,14 @@ export async function listPendingKnowledgeReviews() {
     return httpGet(j('/api/knowledge-bases/pending-reviews'));
 }
 
-// --- MCP tool servers (backlog 48) ---
-
-export async function searchMcpRegistry(query) {
-    return httpGet(j(`/api/mcp/registry/search?q=${encodeURIComponent(query || '')}`));
-}
-
-export async function checkMcpServers(names) {
-    return httpJSON(j('/api/mcp/registry/check'), 'POST', { names });
-}
+// --- MCP tool servers (backlog 48d) ---
+//
+// Read-only. Installation is an operator action on the host (scripts/safi_mcp.py),
+// so there is deliberately no install, review or remove call here: the browser
+// does not install tool servers.
 
 export async function listMcpServers() {
     return httpGet(j('/api/mcp/servers'));
-}
-
-export async function installMcpServer(name) {
-    return httpJSON(j('/api/mcp/servers'), 'POST', { name });
-}
-
-export async function installMcpServerByUrl(payload) {
-    return httpJSON(j('/api/mcp/servers/by-url'), 'POST', payload);
-}
-
-export async function reviewMcpServer(serverId, decision, note = '') {
-    return httpJSON(j(`/api/mcp/servers/${serverId}/review`), 'POST', { decision, note });
-}
-
-export async function removeMcpServer(serverId) {
-    return httpJSON(j(`/api/mcp/servers/${serverId}`), 'DELETE', {});
 }
 
 /**

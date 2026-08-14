@@ -1,24 +1,25 @@
 """
-Registry browsing and GUI installation of MCP servers (GOVERNANCE_BACKLOG 48).
+The registry client, used by the operator CLI (GOVERNANCE_BACKLOG 48d).
 
-The rules under test are the ones that make a one-click install safe, and every
-one of them is deterministic:
+Browser installation was removed: a server now arrives one way, from the
+operator's file, usually written by scripts/safi_mcp.py. The registry client
+survives that change because `safi_mcp.py search` and `add <registry-name>` use
+it to find servers and to pin the exact version the registry published.
 
-  * a package/stdio entry cannot be installed from a browser, because starting
-    it would run third-party code on the SAFi host,
-  * an endpoint must be https and must not resolve into this deployment's own
-    network (an admin-supplied URL is an SSRF primitive by construction),
-  * installing lands as PENDING, and the installer cannot approve their own
-    install unless they are the org's only eligible reviewer,
-  * a connector key never collides with a built-in or with another install,
-  * one organization cannot grant an agent a server another organization
-    installed.
+What is still worth testing here:
 
-No network is touched: the registry client is exercised against captured
-payload shapes, and the resolver checks run against real DNS names that are
-stable (localhost, and an RFC 5737 documentation address).
+  * the wire shape, which is wrapped and cost us an empty catalogue once,
+  * the URL rules, which still guard `add --url`: an endpoint must be https and
+    must not resolve into this deployment's own network,
+  * connector keys, which become strings in agents' tool lists and must never
+    collide with a built-in,
+  * the tool-description scan, which reports third-party text that will end up
+    in a model's context.
 
-Run:  venv/bin/python tests/test_mcp_registry_install.py
+No network is touched: payloads are captured shapes, and the resolver checks use
+DNS names that are stable (localhost, and an unresolvable .invalid name).
+
+Run:  venv/bin/python tests/test_mcp_registry_client.py
 """
 import sys
 import unittest
@@ -31,7 +32,6 @@ from safi_app.core.tool_connectors import CONNECTOR_TOOLS
 
 
 class FakeConfig:
-    MCP_INSTALL_MODE = "remote"
     MCP_REGISTRY_URL = "https://registry.modelcontextprotocol.io"
 
 
@@ -180,101 +180,13 @@ class UrlSafetyTests(unittest.TestCase):
         self.assertFalse(mcp_registry.validate_remote_url("")[0])
 
 
-class InstallPolicyTests(unittest.TestCase):
-    def test_package_only_entry_is_refused_with_an_actionable_reason(self):
-        entry = mcp_registry._normalize_server(PACKAGE_ENTRY)
-        ok, why, remotes = mcp_install.validate_installable(entry, FakeConfig)
-        self.assertFalse(ok)
-        self.assertEqual(remotes, [])
-        # The refusal has to tell the admin what to do instead, or it just
-        # becomes a support ticket.
-        self.assertIn("MCP_SERVERS_JSON", why)
-
-    def test_off_mode_refuses_everything(self):
-        class Off(FakeConfig):
-            MCP_INSTALL_MODE = "off"
-        entry = mcp_registry._normalize_server(REMOTE_ENTRY)
-        ok, why, _ = mcp_install.validate_installable(entry, Off)
-        self.assertFalse(ok)
-        self.assertIn("turned off", why)
-
-    def test_unknown_mode_falls_back_to_remote_not_to_all(self):
-        class Weird(FakeConfig):
-            MCP_INSTALL_MODE = "banana"
-        self.assertEqual(mcp_install.install_mode(Weird), "remote")
-
-    def test_all_mode_is_not_silently_enabled(self):
-        # Stage 2 is not built. `all` must not be reachable by typo or default.
-        self.assertEqual(mcp_install.install_mode(FakeConfig), "remote")
-
-    def test_private_endpoint_is_refused_even_when_the_entry_is_remote(self):
-        entry = mcp_registry._normalize_server({
-            "name": "x/y", "remotes": [{"type": "streamable-http", "url": "https://127.0.0.1/mcp"}]})
-        ok, why, _ = mcp_install.validate_installable(entry, FakeConfig)
-        self.assertFalse(ok)
-        self.assertIn("refused", why.lower())
-
-
 class ConnectorKeyTests(unittest.TestCase):
-    def test_key_is_derived_from_the_last_path_segment(self):
-        self.assertEqual(
-            mcp_install.connector_key_for("io.github.someone/weather-mcp"), "weather_mcp")
-
-    def test_key_is_sanitised(self):
-        self.assertEqual(mcp_install.connector_key_for("x/A B!!c"), "a_b_c")
-
-    def test_empty_name_still_produces_a_usable_key(self):
-        self.assertEqual(mcp_install.connector_key_for(""), "mcp_server")
-
-    def test_a_key_matching_a_builtin_is_never_proposed_as_available(self):
-        # available_key consults the database, so this asserts the built-in half
-        # only: the derived key for a server named "github" must not be handed
-        # out unchanged, because agents already carry that connector name.
+    def test_available_key_never_returns_a_builtin(self):
         self.assertIn("github", CONNECTOR_TOOLS)
-        self.assertEqual(mcp_install.connector_key_for("vendor/github"), "github")
-        # available_key would suffix it; proving that needs the db, and
-        # test_mcp_store.py covers it there.
+        self.assertNotEqual(mcp_install.available_key("github"), "github")
 
-
-class MultipleRemoteTests(unittest.TestCase):
-    """An entry may list several endpoints and the first is not always live.
-    ac.inference.sh publishes a bare host that answers nothing alongside an
-    /mcp endpoint with 25 tools, in that order, so stopping at the first made a
-    working server look broken."""
-
-    # URL safety is exercised for real in UrlSafetyTests. Here the resolver is
-    # stubbed so these assert ORDERING only: with real hostnames the test would
-    # depend on DNS, and the validator fails closed on anything that does not
-    # resolve, so it would fail offline for the wrong reason.
-    def _with_stubbed_validator(self, allow):
-        original = mcp_registry.validate_remote_url
-        mcp_registry.validate_remote_url = lambda url: (allow(url), "stubbed refusal")
-        self.addCleanup(setattr, mcp_registry, "validate_remote_url", original)
-
-    def test_all_usable_remotes_are_returned_in_declared_order(self):
-        self._with_stubbed_validator(lambda url: True)
-        entry = mcp_registry._normalize_server({"server": {
-            "name": "x/y",
-            "remotes": [
-                {"type": "streamable-http", "url": "https://first.example.com"},
-                {"type": "streamable-http", "url": "https://second.example.com/mcp"},
-            ]}})
-        ok, _, remotes = mcp_install.validate_installable(entry, FakeConfig)
-        self.assertTrue(ok)
-        self.assertEqual([r["url"] for r in remotes],
-                         ["https://first.example.com", "https://second.example.com/mcp"])
-
-    def test_unsafe_endpoints_are_filtered_out_but_safe_siblings_survive(self):
-        self._with_stubbed_validator(lambda url: url.startswith("https://good"))
-        entry = mcp_registry._normalize_server({"server": {
-            "name": "x/y",
-            "remotes": [
-                {"type": "streamable-http", "url": "https://bad.example.com"},
-                {"type": "streamable-http", "url": "https://good.example.com/mcp"},
-            ]}})
-        ok, _, remotes = mcp_install.validate_installable(entry, FakeConfig)
-        self.assertTrue(ok)
-        self.assertEqual([r["url"] for r in remotes], ["https://good.example.com/mcp"])
+    def test_available_key_avoids_names_already_taken(self):
+        self.assertNotEqual(mcp_install.available_key("acme", taken={"acme"}), "acme")
 
 
 class UrlKeyDerivationTests(unittest.TestCase):

@@ -279,11 +279,31 @@ class LiveServerTests(unittest.TestCase):
         schemas = asyncio.run(manager.get_tools_for_agent({"tools": ["fixture_echo"]}))
         self.assertEqual({s["name"] for s in schemas}, {"fixture_echo"})
 
-    def test_catalogue_offers_the_server_as_one_connector(self):
+    def test_catalogue_offers_each_tool_separately(self):
+        """One card per TOOL, not per server (backlog 48d).
+
+        A built-in connector is offered as a bundle because its contents were
+        reviewed when they shipped. A server the operator installed is not: the
+        policy step exists so an editor can enable some of its tools and block
+        the rest, and a single checkbox for the whole server would make that
+        decision unavailable.
+        """
         categories = mcp_manager.MCPManager({}).list_all_tools()
         fixture = [c for c in categories if c["category"] == "Fixture Server"]
         self.assertEqual(len(fixture), 1)
-        self.assertEqual([t["name"] for t in fixture[0]["tools"]], ["fixture"])
+        offered = {t["name"] for t in fixture[0]["tools"]}
+        self.assertIn("fixture_echo", offered)
+        self.assertIn("fixture_add", offered)
+        self.assertNotIn("fixture", offered)
+
+    def test_a_policy_can_authorize_one_tool_of_a_server(self):
+        """What the per-tool cards are FOR: naming a function directly
+        authorizes exactly that function, because expand_connectors passes an
+        unknown name through and the Will matches exactly."""
+        profile = _stamp_tool_authorization({"tools": ["fixture_echo"]})
+        self.assertEqual(profile["allowed_tools"], ["fixture_echo"])
+        self.assertEqual(authorize("fixture_echo", profile)[0], "approve")
+        self.assertEqual(authorize("fixture_add", profile)[0], "violation")
 
     # --- the governance assertions ---
 

@@ -91,7 +91,7 @@ def start_servers(config: Any) -> Dict[str, Any]:
 def refresh_discovered_connectors() -> None:
     """Re-register the connector table from whatever is currently connected.
 
-    Called after a GUI install, approval or removal changes the live set. Built
+    Called after the operator's file changes the live set. Built
     from the runtime rather than from the database so the table can never claim
     a connector whose session did not actually come up: an agent authorized for
     tools that do not exist would be blocked at the Will with a confusing
@@ -124,30 +124,25 @@ def file_servers() -> Dict[str, Any]:
     }
 
 
-def resync_if_stale(generation_getter, desired_getter) -> bool:
-    """Reconnect this worker if anything changed anywhere.
+def resync_if_stale(generation_getter) -> bool:
+    """Re-read the operator's file when the CLI says it changed.
 
-    Two sources move independently and both have to reach four gunicorn
-    workers: the GUI writes rows, and the CLI writes the operator's file. Both
-    bump one counter in the database, and each worker notices it on its next
-    request. That is cheaper than any IPC we would have to build and then
-    operate, and it degrades to the current behaviour if the read fails.
+    Four gunicorn workers each hold their own MCP sessions and each read the
+    file once at boot, so a CLI edit on the host has to reach all of them. The
+    CLI bumps one counter; each worker notices on its next request. Cheaper than
+    any IPC we would have to build and then operate.
 
-    The two origins are synced separately (see mcp_runtime.sync_origin), so a
-    file edit cannot drop a GUI install and a GUI install cannot drop the
-    operator's servers. Returns True when a resync happened.
-
-    Never raises: a deployment whose generation check fails should keep serving
-    with the tools it already has.
+    Returns True when a resync happened. Never raises: a deployment whose
+    generation check fails should keep serving with the tools it already has.
     """
     global _generation
     try:
         current = generation_getter()
         if not current or current == _generation:
             return False
-        reserved = builtin_tool_names()
-        mcp_runtime.sync_origin(desired_getter(), reserved_tool_names=reserved, origin="db")
-        mcp_runtime.sync_origin(file_servers(), reserved_tool_names=reserved, origin="file")
+        mcp_runtime.sync_origin(
+            file_servers(), reserved_tool_names=builtin_tool_names(), origin="file"
+        )
         refresh_discovered_connectors()
         _generation = current
         return True
@@ -550,62 +545,48 @@ class MCPManager:
         ] + self._discovered_categories(org_id)
 
     @staticmethod
-    def visible_connectors(org_id: Optional[str] = None) -> set:
-        """Connector keys this organization may use.
+    def known_connectors() -> set:
+        """Every connector name this deployment can offer.
 
-        File-installed servers are the deployment's and are visible to every
-        org, like the built-ins. GUI-installed servers belong to the org that
-        installed them: the runtime holds one session per endpoint regardless,
-        but one organization must not be able to grant an agent a tool another
-        organization installed. Pass org_id=None for the deployment-wide view
-        (background jobs, tests).
+        Deployment-wide, with no organization scoping. That scoping existed only
+        while an organization could install its own server through the browser
+        (backlog 48d removed it); a server now comes from the operator's file
+        and belongs to the whole deployment, exactly like a built-in.
         """
-        keys = set(CONNECTOR_TOOLS)
-        for name, entry in mcp_runtime.summary()["servers"].items():
-            if mcp_runtime.origin_of(name) != "db":
-                keys.add(name)
-        if org_id is None:
-            keys.update(mcp_runtime.connectors())
-            return keys
-        try:
-            from ...persistence import mcp_store
-            for row in mcp_store.list_servers(org_id, statuses=(mcp_store.STATUS_ACTIVE,)):
-                keys.add(row["connector_key"])
-        except Exception as e:
-            # Fail closed: an org sees the built-ins and the operator's servers,
-            # never someone else's install, if the lookup breaks.
-            log.warning("visible_connectors lookup failed for org %s: %s", org_id, e)
-        return keys
+        return set(CONNECTOR_TOOLS) | set(mcp_runtime.connectors())
 
     @staticmethod
     def _discovered_categories(org_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """One picker category per connected MCP server.
+        """One category per connected server, one card per TOOL.
 
-        The server is offered as a single connector, the way GitHub and
-        SharePoint are, rather than as one checkbox per discovered function.
-        That keeps the admin's decision at the level they can actually reason
-        about ("may agents under this policy reach the billing API"), and a
-        policy that needs finer control still narrows by naming functions
-        directly, which expand_connectors and the Will already support.
+        Built-in connectors are offered as a bundle because their contents were
+        reviewed when they shipped. A server the operator installed is different:
+        its tools arrive from a third party at runtime, and the point of the
+        policy step is that an editor decides tool by tool which of them an agent
+        may use. Offering the server as a single checkbox would make that
+        decision unavailable.
+
+        Individual tool names need nothing special downstream: expand_connectors
+        passes an unknown name through unchanged, and the Will matches exactly,
+        so a policy listing three of a server's nine tools authorizes three.
         """
-        visible = MCPManager.visible_connectors(org_id)
         categories: List[Dict[str, Any]] = []
+        discovered = mcp_runtime.tools()
         for server, entry in mcp_runtime.summary()["servers"].items():
-            if not entry["tools"] or server not in visible:
+            names = entry.get("tools") or []
+            if not names:
                 continue
-            label = entry["label"]
             categories.append({
-                "category": label,
-                "tools": [{
-                    "name": server,
-                    "label": label,
-                    "description": (
-                        f"{len(entry['tools'])} tool(s) from the {label} server: "
-                        + ", ".join(entry["tools"][:6])
-                        + ("…" if len(entry["tools"]) > 6 else "")
-                    ),
-                    "icon": "puzzle",
-                }],
+                "category": entry.get("label") or server,
+                "tools": [
+                    {
+                        "name": name,
+                        "label": name,
+                        "description": (discovered.get(name) or {}).get("description", ""),
+                        "icon": "puzzle",
+                    }
+                    for name in names
+                ],
             })
         return categories
 

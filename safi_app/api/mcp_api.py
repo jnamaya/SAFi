@@ -1,351 +1,75 @@
 """
-Registry browsing and GUI installation of MCP tool servers (backlog 48).
+Read-only view of the tool servers this deployment has installed (backlog 48d).
 
-Every route here is admin-only through the existing `require_role` decorator, so
-this feature adds no new permission and does not touch rbac.py.
+THIS BLUEPRINT INSTALLS NOTHING, AND THAT IS THE DESIGN
+------------------------------------------------------
+An earlier version let an admin browse the official registry and install a
+hosted server from the browser. It was removed. Two reasons, one practical and
+one structural:
 
-The shape of the flow, and the reason it is shaped that way:
+  * Practical: the public registry is mostly servers that do not answer an
+    anonymous connection. Measured 2026-08-14, four of ten. A catalogue whose
+    buttons mostly fail is worse than no catalogue.
+  * Structural: installation belongs on the host. An operator running the CLI
+    already has shell there, so installing a server adds no privilege; an admin
+    in a browser is a different person with different rights, and letting them
+    install meant a per-org install table, an approval workflow, and a tenancy
+    problem, all of which existed only to make a browser safe for a job that was
+    never the browser's.
 
-    search  ->  install (pending)  ->  another admin approves  ->  connected
+The pipeline now has one shape:
 
-Installing is deliberately not the same act as approving, and neither is the
-same act as granting. A connected server is still unusable until the
-organization allows the connector and a policy lists it. Making installation
-easy is safe precisely because it is only the first of four steps, and the other
-three predate this feature.
+    CLI installs on the host
+      -> SAFi connects and asks the server what tools it has
+      -> those tools appear here, VISIBLE AND INACTIVE
+      -> a policy enables specific tools and blocks others
+      -> an agent is assigned the approved set
+      -> the Will authorizes every call by exact name
+
+Nothing an admin can do on this screen grants anything to anyone. It is an
+inventory.
 """
 import logging
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify
 
-from ..config import Config
-from ..core.rbac import require_role
-from ..core.services import mcp_install, mcp_manager, mcp_registry
 from ..core import mcp_runtime
-from ..persistence import mcp_store
+from ..core.rbac import require_role
 
 log = logging.getLogger(__name__)
 
 mcp_bp = Blueprint('mcp_api', __name__, url_prefix='/api/mcp')
 
 
-def _actor():
-    user = session.get('user') or {}
-    return user.get('id'), user.get('org_id')
-
-
-def _reload_runtime():
-    """Apply the current approved set to this worker immediately.
-
-    The other workers pick it up from the generation counter (mcp_store), so an
-    install is live everywhere within one request each, without a restart and
-    without inventing any IPC.
-    """
-    try:
-        mcp_runtime.sync_db_servers(
-            mcp_install.desired_runtime_servers(),
-            reserved_tool_names=mcp_manager.builtin_tool_names(),
-        )
-        mcp_manager.refresh_discovered_connectors()
-    except Exception as e:
-        log.error("MCP runtime reload failed: %s", e)
-
-
-@mcp_bp.route('/registry/search', methods=['GET'])
-@require_role('admin')
-def registry_search():
-    """Browse the official registry. Read-only, cached, no install side effects."""
-    if not mcp_install.gui_install_enabled(Config):
-        return jsonify({"ok": False, "error": "Browser installation is disabled on this deployment."}), 403
-    try:
-        result = mcp_registry.search(
-            query=(request.args.get('q') or '').strip(),
-            limit=int(request.args.get('limit') or 30),
-            cursor=(request.args.get('cursor') or '').strip(),
-            config=Config,
-        )
-    except mcp_registry.RegistryError as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
-
-    # Annotate each entry with THIS deployment's answer, so the UI never has to
-    # re-derive the rule and get a different one.
-    for entry in result["servers"]:
-        ok, reason, _ = mcp_install.validate_installable(entry, Config)
-        entry["installable"] = ok
-        entry["not_installable_reason"] = reason
-    return jsonify({"ok": True, **result})
-
-
-@mcp_bp.route('/registry/check', methods=['POST'])
-@require_role('admin')
-def registry_check():
-    """Probe several registry entries at once and report which actually answer.
-
-    This exists because most hosted entries in the public registry do not
-    connect anonymously: measured on 2026-08-14, five of fourteen answered. A
-    catalogue that looks uniformly installable and then fails two thirds of the
-    time is worse than one that says up front which servers are reachable, so
-    the search results carry the answer before anyone clicks.
-
-    Probing is read-only: an initialize and a tools/list, nothing stored,
-    nothing registered, no third-party code run here.
-    """
-    body = request.get_json(silent=True) or {}
-    names = [n for n in (body.get('names') or []) if isinstance(n, str)][:30]
-    if not names:
-        return jsonify({"ok": True, "results": {}})
-
-    specs, meta = {}, {}
-    for name in names:
-        try:
-            entry = mcp_registry.get_server(name, config=Config)
-        except mcp_registry.RegistryError:
-            continue
-        if entry is None:
-            continue
-        ok, reason, remotes = mcp_install.validate_installable(entry, Config)
-        if not ok or not remotes:
-            meta[name] = {"reachable": False, "reason": reason, "tools": 0}
-            continue
-        # One probe per entry, its first usable endpoint. The install path
-        # walks all of them; the catalogue only needs a usable signal.
-        specs[name] = {
-            "transport": remotes[0]["transport"],
-            "url": remotes[0]["url"],
-        }
-
-    probed = mcp_runtime.probe_many(specs, timeout=10.0)
-    for name, result in probed.items():
-        meta[name] = {
-            "reachable": bool(result["ok"] and result["tools"]),
-            "reason": result["error"] or (
-                "" if result["tools"] else "The server answered but advertises no tools."
-            ),
-            "tools": len(result["tools"]),
-        }
-    return jsonify({"ok": True, "results": meta})
-
-
 @mcp_bp.route('/servers', methods=['GET'])
 @require_role('admin')
 def list_servers():
-    user_id, org_id = _actor()
-    servers = mcp_store.list_servers(org_id)
-    for row in servers:
-        live = mcp_runtime.summary()["servers"].get(row["connector_key"])
-        row["connected"] = bool(live and not live.get("error"))
-        row["tools"] = (live or {}).get("tools", [])
-        row["connection_error"] = (live or {}).get("error")
-        row["self_installed"] = str(row.get("installed_by")) == str(user_id)
+    """What is installed, what it is offering, and what is wrong with it.
+
+    Admin-only because it names the deployment's infrastructure and its
+    connection errors, which is operational detail a member has no use for.
+    """
+    summary = mcp_runtime.summary()
+    servers = []
+    for key, entry in summary["servers"].items():
+        tools = entry.get("tools") or []
+        servers.append({
+            "key": key,
+            "label": entry.get("label") or key,
+            "origin": mcp_runtime.origin_of(key) or "file",
+            "connected": not entry.get("error"),
+            "error": entry.get("error"),
+            "tools": [
+                {
+                    "name": name,
+                    "description": (mcp_runtime.tools().get(name) or {}).get("description", ""),
+                }
+                for name in tools
+            ],
+        })
+    servers.sort(key=lambda s: s["label"].lower())
     return jsonify({
         "ok": True,
         "servers": servers,
-        "install_mode": mcp_install.install_mode(Config),
-        "sole_reviewer": mcp_install.can_review_own_install(org_id, user_id),
+        "tool_count": summary["tool_count"],
     })
-
-
-@mcp_bp.route('/servers', methods=['POST'])
-@require_role('admin')
-def install_server():
-    """Install a registry entry. Lands as pending; approval is a separate call."""
-    user_id, org_id = _actor()
-    if not org_id:
-        return jsonify({"ok": False, "error": "No organization context."}), 400
-
-    body = request.get_json(silent=True) or {}
-    name = (body.get('name') or '').strip()
-    if not name:
-        return jsonify({"ok": False, "error": "A server name is required."}), 400
-
-    try:
-        entry = mcp_registry.get_server(name, config=Config)
-    except mcp_registry.RegistryError as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
-    if entry is None:
-        return jsonify({"ok": False, "error": "No registry entry with that exact name."}), 404
-
-    ok, reason, remotes = mcp_install.validate_installable(entry, Config)
-    if not ok:
-        return jsonify({"ok": False, "error": reason}), 400
-
-    # Talk to the server before storing anything, trying each endpoint it
-    # declares. Most of the public registry's hosted entries do not answer an
-    # anonymous connection, and an entry can list a dead endpoint ahead of a
-    # live one, so stopping at the first is how a working server ends up
-    # looking broken.
-    probe, remote, failures = None, None, []
-    for candidate in remotes:
-        result = mcp_runtime.probe({
-            "transport": candidate["transport"],
-            "url": candidate["url"],
-            "label": entry["title"],
-        })
-        if result["ok"] and result["tools"]:
-            probe, remote = result, candidate
-            break
-        failures.append(
-            result["error"] or "connected but advertises no tools"
-        )
-
-    if probe is None:
-        return jsonify({
-            "ok": False,
-            "error": f"That server did not answer: {failures[0] if failures else 'unknown error'}",
-            "endpoints_tried": [c["url"] for c in remotes],
-        }), 400
-
-    record = mcp_store.install(org_id, user_id, {
-        "connector_key": mcp_install.available_key(entry["name"]),
-        "registry_name": entry["name"],
-        "registry_version": entry["version"],
-        "title": entry["title"],
-        "description": entry["description"],
-        "transport": remote["transport"],
-        "url": remote["url"],
-    })
-    return jsonify({
-        "ok": True,
-        "server": record,
-        "tools_preview": probe["tools"],
-    }), 201
-
-
-@mcp_bp.route('/servers/by-url', methods=['POST'])
-@require_role('admin')
-def install_by_url():
-    """Install a hosted server by its endpoint, without a registry entry.
-
-    The official registry is not the only place people find servers, and the
-    large public directories are mostly catalogues of local packages plus a
-    scattering of hosted endpoints that were never published to it. Requiring a
-    registry listing would put those out of reach of everyone except the
-    operator, for no gain in safety: the checks that matter here are the URL
-    rules and the probe, and neither depends on who published the entry.
-
-    What is lost by not going through the registry is provenance: nobody has
-    verified that whoever runs this endpoint owns the name. The record stores
-    the URL as the identity, and the screen says the server was added by hand.
-    """
-    user_id, org_id = _actor()
-    if not org_id:
-        return jsonify({"ok": False, "error": "No organization context."}), 400
-    if not mcp_install.gui_install_enabled(Config):
-        return jsonify({"ok": False, "error": "Browser installation is disabled on this deployment."}), 403
-
-    body = request.get_json(silent=True) or {}
-    url = (body.get('url') or '').strip()
-    transport = (body.get('transport') or 'http').strip().lower()
-    if transport not in ('http', 'sse'):
-        return jsonify({"ok": False, "error": "transport must be 'http' or 'sse'."}), 400
-
-    ok, why = mcp_registry.validate_remote_url(url)
-    if not ok:
-        return jsonify({"ok": False, "error": why}), 400
-
-    probe = mcp_runtime.probe({"transport": transport, "url": url})
-    if not probe["ok"]:
-        return jsonify({
-            "ok": False,
-            "error": mcp_install.explain_probe_failure(url, probe["error"]),
-        }), 400
-    if not probe["tools"]:
-        return jsonify({
-            "ok": False,
-            "error": "That endpoint answered but advertises no tools, so there is nothing to grant.",
-        }), 400
-
-    title = (body.get('title') or '').strip() or url
-    record = mcp_store.install(org_id, user_id, {
-        "connector_key": mcp_install.available_key_for_url(url),
-        # No registry name to record. The URL is the identity, and the absence
-        # of a verified publisher is the thing an approver needs to see.
-        "registry_name": f"(added by URL) {url}",
-        "registry_version": None,
-        "title": title,
-        "description": (body.get('description') or '').strip(),
-        "transport": transport,
-        "url": url,
-    })
-    return jsonify({"ok": True, "server": record, "tools_preview": probe["tools"]}), 201
-
-
-@mcp_bp.route('/servers/<server_id>/review', methods=['POST'])
-@require_role('admin')
-def review_server(server_id):
-    """Approve or reject a pending install.
-
-    Separation of duties, same rule as knowledge base documents: the person who
-    installed it may not approve it, unless they are the org's only eligible
-    reviewer, in which case the sign-off is recorded as non-independent rather
-    than quietly counted as a real second pair of eyes.
-    """
-    user_id, org_id = _actor()
-    body = request.get_json(silent=True) or {}
-    decision = (body.get('decision') or '').strip().lower()
-    if decision not in ('approve', 'reject'):
-        return jsonify({"ok": False, "error": "decision must be 'approve' or 'reject'."}), 400
-
-    row = mcp_store.get_server(server_id)
-    if not row or row['org_id'] != org_id:
-        return jsonify({"ok": False, "error": "Not found."}), 404
-
-    independent = True
-    if str(row.get('installed_by')) == str(user_id):
-        if not mcp_install.can_review_own_install(org_id, user_id):
-            return jsonify({
-                "ok": False,
-                "error": "You installed this server, so another admin has to review it.",
-            }), 403
-        independent = False
-
-    status = mcp_store.STATUS_ACTIVE if decision == 'approve' else mcp_store.STATUS_REJECTED
-    updated = mcp_store.set_status(
-        server_id, status, user_id, org_id,
-        note=(body.get('note') or '').strip(), independent=independent,
-    )
-    if updated is None:
-        return jsonify({"ok": False, "error": "Not found."}), 404
-
-    warnings = []
-    if status == mcp_store.STATUS_ACTIVE:
-        _reload_runtime()
-        live = mcp_runtime.summary()["servers"].get(row['connector_key'])
-        if live and live.get('error'):
-            warnings.append(f"Approved, but the server did not connect: {live['error']}")
-        else:
-            findings = mcp_install.scan_tool_descriptions(
-                mcp_runtime.tools(), row['connector_key']
-            )
-            if findings:
-                # Reported, not auto-blocked: the text is advisory to a human,
-                # and a false positive must not strand a legitimate tool. The
-                # Conscience still audits whatever the draft became.
-                warnings.append(
-                    "This server's tool descriptions matched prompt-injection "
-                    "signatures: " + "; ".join(findings[:5])
-                )
-                log.warning(
-                    "MCP server '%s' tool descriptions matched signatures: %s",
-                    row['connector_key'], findings,
-                )
-
-    return jsonify({
-        "ok": True,
-        "server": updated,
-        "independent_review": independent,
-        "warnings": warnings,
-    })
-
-
-@mcp_bp.route('/servers/<server_id>', methods=['DELETE'])
-@require_role('admin')
-def remove_server(server_id):
-    user_id, org_id = _actor()
-    row = mcp_store.get_server(server_id)
-    if not row or row['org_id'] != org_id:
-        return jsonify({"ok": False, "error": "Not found."}), 404
-    if not mcp_store.delete(server_id, org_id, user_id):
-        return jsonify({"ok": False, "error": "Not found."}), 404
-    _reload_runtime()
-    return jsonify({"ok": True})

@@ -14,19 +14,17 @@ safe". Every string this module hands to the UI has to keep that distinction
 intact, because the whole risk of a one-click install is a person reading a
 catalogue entry as an endorsement.
 
-WHY ONLY `remotes` ARE INSTALLABLE FROM THE GUI
------------------------------------------------
-An entry offers `remotes` (a hosted endpoint), `packages` (something to run
-locally), or both. A remote server runs on someone else's machine, so installing
-one executes no third-party code here. A package server means `npx -y ...` at
-boot: arbitrary code execution on this host plus a supply-chain fetch, which is
-deployment-level trust and belongs in the operator's file, not behind a button
-an organization admin can press. See GOVERNANCE_BACKLOG 48 and the
-SAFI_MCP_INSTALL_MODE switch.
+WHO USES THIS
+-------------
+Only scripts/safi_mcp.py, the operator CLI. Browser installation was removed in
+backlog 48d, so nothing in a request path reaches this module: searching a
+public catalogue and then running someone's server are both operator acts, and
+they now live in the same place.
 
-This module therefore reports what an entry supports and lets the caller decide;
-it never decides installability by itself, so the policy lives in one place
-(mcp_install.py) rather than being smeared across the client.
+An entry offers `remotes` (a hosted endpoint), `packages` (something to run
+locally), or both. The CLI can install either, because whoever runs it already
+has shell on the host. This module reports what an entry supports and lets the
+caller decide.
 
 DEFENSIVE PARSING
 -----------------

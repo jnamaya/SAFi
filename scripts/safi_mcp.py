@@ -18,12 +18,17 @@ Whoever runs this CLI already has shell on the host, so installing a package
 server here adds no privilege that was not already held. That is the whole
 argument: the CLI is not a bypass, it is the place the decision already lives.
 
-WHAT IT DOES NOT DO
--------------------
-It installs. It grants nothing. A server added here becomes a connector that an
-organization must still allow, a policy must still list, an agent must still
-enable, and the Will still authorizes call by call. Nothing here can widen what
-any existing agent may do.
+WHERE THIS SITS IN THE PIPELINE
+-------------------------------
+    1. install here, on the host
+    2. SAFi connects and asks the server what tools it has
+    3. those tools appear in Settings -> Tool Servers, visible and INACTIVE
+    4. a policy editor enables specific tools and blocks the rest
+    5. an agent is assigned the tools its policy allows
+    6. the Will authorizes every call by exact name
+
+This command is step 1 only. It grants nothing, and nothing it does can widen
+what any existing agent may do.
 
 NO RESTART NEEDED
 -----------------
@@ -60,7 +65,7 @@ sys.path.insert(0, os.path.dirname(_HERE))
 
 from safi_app.config import Config, _load_mcp_servers  # noqa: E402
 from safi_app.core import mcp_runtime  # noqa: E402
-from safi_app.core.services import mcp_install, mcp_manager, mcp_registry  # noqa: E402
+from safi_app.core.services import mcp_install, mcp_registry  # noqa: E402
 from safi_app.core.tool_connectors import CONNECTOR_TOOLS  # noqa: E402
 
 KEY_SAFE = re.compile(r"[^a-z0-9_]+")
@@ -105,22 +110,12 @@ def write_servers(servers: dict) -> None:
     tmp.replace(path)
     print(f"wrote {path}")
 
-    try:
-        from safi_app.persistence import database as db, mcp_store
+    from safi_app.persistence import mcp_store
 
-        conn = db.get_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "UPDATE mcp_runtime_state SET generation = generation + 1 WHERE id = 1"
-            )
-            conn.commit()
-        finally:
-            cursor.close()
-            conn.close()
+    if mcp_store.bump_generation():
         print("running workers will pick this up on their next request")
-    except Exception as e:
-        print(f"note: could not signal the running app ({e}). Restart it to apply.")
+    else:
+        print("note: could not signal the running app. Restart it to apply.")
 
 
 def derive_key(text: str) -> str:
@@ -188,16 +183,6 @@ def cmd_list(args) -> int:
         where = params.get("url") or f"{params.get('command','')} {' '.join(params.get('args') or [])}".strip()
         print(f"{key}{state}\n    {params.get('transport', 'stdio')}  {where}")
 
-    try:
-        from safi_app.persistence import mcp_store
-
-        rows = mcp_store.list_active_everywhere()
-        if rows:
-            print("\nInstalled through the GUI (managed there, not here):")
-            for row in rows:
-                print(f"{row['connector_key']}\n    {row['transport']}  {row['url']}")
-    except Exception:
-        pass
     return 0
 
 
@@ -311,8 +296,10 @@ def cmd_add(args) -> int:
     servers[key] = params
     write_servers(servers)
     print(
-        f"\nadded {key!r}. It is not granted to anything yet: allow it for the "
-        "organization, list it in a policy, then enable it on an agent."
+        f"\nadded {key!r}. Its tools are now VISIBLE AND INACTIVE in Settings -> "
+        "Tool Servers.\nEnable the ones you want in a policy's Tools & Guardrails "
+        "step, then assign that policy's\nagents. Nothing can call these tools "
+        "until then."
     )
     return 0
 
