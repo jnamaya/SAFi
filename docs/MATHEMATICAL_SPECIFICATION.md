@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.9  
-> **Last Updated:** 2026-08-09  
+> **Version:** 1.9.1  
+> **Last Updated:** 2026-08-14  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -86,7 +86,7 @@ The other exits differ by failure kind:
 - **Pass 1 (structural)** first attempts deterministic repair (a missing
   mandatory disclaimer is appended and the repaired draft re-audited in full);
   a residual structural failure — like an audit-availability failure — ships a
-  deterministic **system failure notice**, not a persona redirect, because it
+  deterministic **system failure notice**, not an agent redirect, because it
   is a system fault rather than a verdict on the user's request.
 - **Pass 2 (hard-gate)** failures whose mapped reason is a scope or grounding
   breach redirect directly with no retry; failures mapped to
@@ -109,7 +109,7 @@ a database of known attack patterns grouped by category
 
 $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lower}(x_t)$$
 
-**2. Persona blacklist scan** — checks keywords from the compiled profile's
+**2. Agent blacklist scan** — checks keywords from the compiled profile's
 `early_prompt_blacklist`, the **union** of the organization Charter's list and the
 business-unit Policy's (a Policy adds to what the org blocks; it cannot remove
 from it):
@@ -136,7 +136,7 @@ than $\tau_{\text{len}}$ (the tail of the prompt) are not scored.
 > the marker *after* that prefix — prepending a paragraph of benign prose defeated that
 > check entirely, which is why the scan now slides over the whole prompt.
 
-**If any check fails** → `trigger_persona_redirect(violation_type=gate_reason)` and return.  
+**If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.  
 **If all pass** → proceed to Stage 1.
 
 **Code Reference:** [`phase_zero.py`](../safi_app/core/faculties/phase_zero.py),
@@ -183,7 +183,7 @@ Only structurally unrepairable drafts produce $D^1_t = \text{violation}$.
 
 **If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice**
 (`_ship_system_failure_notice`): a structural failure is a fault of the system,
-not a verdict on the user's request, so it is *not* voiced as a persona redirect.
+not a verdict on the user's request, so it is *not* voiced as an agent redirect.
 There is **no reflexion retry at this pass.** The same routing applies to an
 audit-availability failure (Conscience unreachable/garbled — fail-closed).  
 **If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
@@ -204,7 +204,7 @@ from the Spirit EMA.
 
 **If $D^2_t = \text{violation}$**, the exit depends on the mapped reason:
 - Scope/grounding-class reasons (a verdict on engaging the request at all) →
-  call `trigger_persona_redirect()` directly, no retry.
+  call `trigger_agent_redirect()` directly, no retry.
 - `ethical_violation`-class reasons (a *correctable* content-quality gate, e.g.
   Pedagogical Integrity — the request is fine, the draft is the problem) →
   route to **Stage 2.1 (Reflexion Retry)**, which regenerates with the blocked
@@ -245,7 +245,7 @@ the outcome depends on the residual reason:
 - `low_alignment_score` (a soft quality signal) → **commit the best available draft** with
   its honest low score recorded. SAFi does **not** vacuum-redirect on residual low alignment;
   scope/injection are already gated at Phase 0 / Pass 2.
-- `ethical_violation` (critical) → call `trigger_persona_redirect()`.
+- `ethical_violation` (critical) → call `trigger_agent_redirect()`.
 
 **If $D^3_t = \text{approve}$** → return $a_t$ to user.
 
@@ -295,7 +295,7 @@ Triggered by **Will Pass 3** (Spirit alignment violation — `ethical_violation`
 Structural (Pass 1) failures and scope/grounding hard-gate failures do **not** reach
 this stage.
 
-**Step 1:** Construct reflexion prompt embedding the original draft and the persona's
+**Step 1:** Construct reflexion prompt embedding the original draft and the agent's
 rephrase directive for the violation reason
 (`internal_rephrase_directives[E_t]`, falling back to `ethical_violation`):
 $$x'_t = x_t \oplus a_t \oplus \text{directive}(E^3_t)$$
@@ -321,7 +321,7 @@ D'^1_t = W_1(a'_t), \quad L'_t = C(a'_t, x_t, V), \quad D'^2_t = W_2(L'_t, V), \
 - `low_alignment_score` → commit the best available draft ($a_t \leftarrow a'_t$ if produced)
   with its low score recorded. SAFi never returns silence or an empty redirect for a soft
   quality dip.
-- `ethical_violation` → call `trigger_persona_redirect()`.
+- `ethical_violation` → call `trigger_agent_redirect()`.
 
 **Code Reference:** [`orchestrator.py#_finalize_draft`](../safi_app/core/orchestrator.py)
 
@@ -498,7 +498,7 @@ Ollama via configuration; see
 3. **No hard rejections:** SAFi never returns silence or an error to the user.
    Every failure produces a governed response — but through two distinct channels:
    verdicts on the *request* (scope/grounding gates, Phase 0, residual ethical
-   violations) route through `trigger_persona_redirect()`, while faults of the
+   violations) route through `trigger_agent_redirect()`, while faults of the
    *system* (structural failures after repair, audit unavailability) ship a
    deterministic system failure notice that is honest about being an internal
    issue rather than blaming the user's request.
