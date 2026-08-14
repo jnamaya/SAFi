@@ -251,6 +251,29 @@ PRIVATE_URL_REASON = (
 )
 
 
+def looks_like_a_web_page(url: str) -> bool:
+    """True when the URL serves HTML, so it is a site rather than an endpoint.
+
+    Called only after a probe has already failed, to turn a confusing MCP-level
+    error into the actual explanation. Directories of MCP servers are ordinary
+    websites (mcpservers.org and its kind), and pasting one is the obvious
+    mistake to make: the page lists servers, so it looks like the address of
+    one.
+    """
+    try:
+        resp = requests.get(
+            url,
+            timeout=HTTP_TIMEOUT,
+            headers={"Accept": "text/html,application/json", "User-Agent": "SAFi"},
+            stream=True,
+        )
+        content_type = (resp.headers.get("Content-Type") or "").lower()
+        resp.close()
+        return "text/html" in content_type
+    except requests.RequestException:
+        return False
+
+
 def validate_remote_url(url: str) -> Tuple[bool, str]:
     """Gate an admin-supplied endpoint. No model, no judgement, fixed rules.
 

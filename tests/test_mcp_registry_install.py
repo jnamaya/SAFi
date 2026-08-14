@@ -277,6 +277,29 @@ class MultipleRemoteTests(unittest.TestCase):
         self.assertEqual([r["url"] for r in remotes], ["https://good.example.com/mcp"])
 
 
+class UrlKeyDerivationTests(unittest.TestCase):
+    """A connector key becomes a string in agents' tools_json, so it has to
+    mean something to a policy author. `mcp` and `api` do not."""
+
+    def test_generic_labels_are_stripped(self):
+        self.assertEqual(
+            mcp_install.connector_key_for_url("https://mcp.deepwiki.com/mcp"), "deepwiki")
+        self.assertEqual(
+            mcp_install.connector_key_for_url("https://api.stripe.com/mcp"), "stripe")
+
+    def test_plain_host(self):
+        self.assertEqual(
+            mcp_install.connector_key_for_url("https://tandem.ac/mcp"), "tandem")
+
+    def test_an_entirely_generic_host_still_yields_something(self):
+        key = mcp_install.connector_key_for_url("https://mcp.ai/")
+        self.assertTrue(key)
+        self.assertNotIn(".", key)
+
+    def test_garbage_url_does_not_raise(self):
+        self.assertTrue(mcp_install.connector_key_for_url("not a url"))
+
+
 class DescriptionScanTests(unittest.TestCase):
     """Tool descriptions are third-party text that becomes model instructions.
     For a registry install the publisher is not someone the operator chose, so

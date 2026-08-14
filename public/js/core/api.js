@@ -564,6 +564,10 @@ export async function installMcpServer(name) {
     return httpJSON(j('/api/mcp/servers'), 'POST', { name });
 }
 
+export async function installMcpServerByUrl(payload) {
+    return httpJSON(j('/api/mcp/servers/by-url'), 'POST', payload);
+}
+
 export async function reviewMcpServer(serverId, decision, note = '') {
     return httpJSON(j(`/api/mcp/servers/${serverId}/review`), 'POST', { decision, note });
 }

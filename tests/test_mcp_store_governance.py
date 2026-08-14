@@ -239,6 +239,41 @@ class TenancyTests(McpStoreBase):
         self.assertNotIn("billing_test", names)
 
 
+class AddByUrlTests(McpStoreBase):
+    """The registry is not the only place people find servers, so an endpoint
+    can be added by hand. The URL checks and the approval flow are unchanged;
+    what is missing is provenance, and the record says so."""
+
+    def _post(self, payload, user=None):
+        client = self.app.test_client()
+        login(client, user or self.admin, self.org_id)
+        return client.post("/api/mcp/servers/by-url", json=payload)
+
+    def test_plain_http_is_refused(self):
+        resp = self._post({"url": "http://example.com/mcp"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("https", resp.get_json()["error"])
+
+    def test_private_address_is_refused(self):
+        resp = self._post({"url": "https://127.0.0.1/mcp"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_unknown_transport_is_refused(self):
+        resp = self._post({"url": "https://example.com/mcp", "transport": "carrier-pigeon"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_a_member_cannot_add_one(self):
+        member = f"mcp_u_{uuid.uuid4().hex[:8]}"
+        _exec("INSERT INTO users (id, email, name, org_id, role) "
+              "VALUES (%s, %s, %s, %s, 'member')",
+              (member, f"{member}@example.test", "Member", self.org_id))
+        try:
+            self.assertEqual(self._post({"url": "https://example.com/mcp"}, user=member).status_code, 403)
+        finally:
+            _exec("DELETE FROM sessions WHERE user_id=%s", (member,))
+            _exec("DELETE FROM users WHERE id=%s", (member,))
+
+
 class RoleTests(McpStoreBase):
 
     def test_registry_routes_require_admin(self):

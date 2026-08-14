@@ -211,6 +211,65 @@ def install_server():
     }), 201
 
 
+@mcp_bp.route('/servers/by-url', methods=['POST'])
+@require_role('admin')
+def install_by_url():
+    """Install a hosted server by its endpoint, without a registry entry.
+
+    The official registry is not the only place people find servers, and the
+    large public directories are mostly catalogues of local packages plus a
+    scattering of hosted endpoints that were never published to it. Requiring a
+    registry listing would put those out of reach of everyone except the
+    operator, for no gain in safety: the checks that matter here are the URL
+    rules and the probe, and neither depends on who published the entry.
+
+    What is lost by not going through the registry is provenance: nobody has
+    verified that whoever runs this endpoint owns the name. The record stores
+    the URL as the identity, and the screen says the server was added by hand.
+    """
+    user_id, org_id = _actor()
+    if not org_id:
+        return jsonify({"ok": False, "error": "No organization context."}), 400
+    if not mcp_install.gui_install_enabled(Config):
+        return jsonify({"ok": False, "error": "Browser installation is disabled on this deployment."}), 403
+
+    body = request.get_json(silent=True) or {}
+    url = (body.get('url') or '').strip()
+    transport = (body.get('transport') or 'http').strip().lower()
+    if transport not in ('http', 'sse'):
+        return jsonify({"ok": False, "error": "transport must be 'http' or 'sse'."}), 400
+
+    ok, why = mcp_registry.validate_remote_url(url)
+    if not ok:
+        return jsonify({"ok": False, "error": why}), 400
+
+    probe = mcp_runtime.probe({"transport": transport, "url": url})
+    if not probe["ok"]:
+        return jsonify({
+            "ok": False,
+            "error": mcp_install.explain_probe_failure(url, probe["error"]),
+        }), 400
+    if not probe["tools"]:
+        return jsonify({
+            "ok": False,
+            "error": "That endpoint answered but advertises no tools, so there is nothing to grant.",
+        }), 400
+
+    title = (body.get('title') or '').strip() or url
+    record = mcp_store.install(org_id, user_id, {
+        "connector_key": mcp_install.available_key_for_url(url),
+        # No registry name to record. The URL is the identity, and the absence
+        # of a verified publisher is the thing an approver needs to see.
+        "registry_name": f"(added by URL) {url}",
+        "registry_version": None,
+        "title": title,
+        "description": (body.get('description') or '').strip(),
+        "transport": transport,
+        "url": url,
+    })
+    return jsonify({"ok": True, "server": record, "tools_preview": probe["tools"]}), 201
+
+
 @mcp_bp.route('/servers/<server_id>/review', methods=['POST'])
 @require_role('admin')
 def review_server(server_id):

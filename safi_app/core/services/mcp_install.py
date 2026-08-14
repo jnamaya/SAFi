@@ -128,6 +128,60 @@ def validate_installable(entry: Dict[str, Any], config: Any) -> Tuple[bool, str,
     return True, "", usable
 
 
+# Labels that identify no one. Stripped so a policy author is not asked to
+# authorize a connector called "mcp" or "api".
+_HOST_NOISE = ("mcp", "api", "www", "server", "servers", "app", "co")
+
+
+def connector_key_for_url(url: str) -> str:
+    """Derive a connector key from a bare endpoint.
+
+    `https://mcp.deepwiki.com/mcp` becomes `deepwiki`, `https://tandem.ac/mcp`
+    becomes `tandem`. The last label is always a TLD and carries no meaning, so
+    it goes first; generic service prefixes go next; what is left is the name a
+    person would use for the thing.
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(url or "").hostname or "").lower()
+    labels = [p for p in host.split(".") if p]
+    if len(labels) > 1:
+        labels = labels[:-1]
+    meaningful = [p for p in labels if p not in _HOST_NOISE]
+    # Everything was generic (mcp.ai): keep what there is rather than inventing
+    # a name the admin will not recognise on the agent screen later.
+    candidate = (meaningful or labels or [""])[-1]
+    return _KEY_SAFE.sub("_", candidate).strip("_") or "mcp_server"
+
+
+def available_key_for_url(url: str) -> str:
+    base = connector_key_for_url(url)
+    candidate = base
+    suffix = 2
+    while candidate in CONNECTOR_TOOLS or mcp_store.connector_key_taken(candidate):
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def explain_probe_failure(url: str, error: str) -> str:
+    """Turn a failed probe into the most specific true statement available.
+
+    A URL that serves HTML is a website, and the MCP-level error it produces
+    ("Server returned an error response") otherwise gets the credentials hint,
+    which is wrong and sends the admin looking for a token that does not exist.
+    Directories of MCP servers are the common case here: they list servers, so
+    their address looks like the address of one.
+    """
+    if mcp_registry.looks_like_a_web_page(url):
+        return (
+            "That address serves a web page, not an MCP endpoint. Directories that "
+            "list MCP servers are ordinary websites; open the entry for the server "
+            "you want and use the endpoint URL it publishes."
+        )
+    return error
+
+
 def scan_tool_descriptions(tools: Dict[str, Dict[str, Any]], server: str) -> List[str]:
     """Deterministic scan of third-party tool text before it reaches a model.
 

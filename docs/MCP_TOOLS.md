@@ -295,6 +295,24 @@ each reported with its own message:
   outlive the services they describe.
 - **The host does not resolve.** Same cause, further along.
 
+### Adding a server that is not in the registry
+
+Directories such as mcpservers.org list far more servers than the official
+registry carries, and most of what they list runs as a local package rather than
+a hosted endpoint. For a hosted one, or for a server your own organization runs,
+use **Add by endpoint** and paste the URL the server publishes.
+
+Paste the endpoint, not the directory. A directory is an ordinary web page; if
+you paste one, SAFi detects that it serves HTML and says so rather than guessing
+at a credentials problem you do not have.
+
+The checks are identical to a registry install: same URL rules, same probe, same
+approval, same evidence. What is missing is provenance. Nobody has verified that
+whoever runs that endpoint owns the name, so the record stores the URL as the
+identity and the entry shows it was added by hand. Verified public endpoints
+that work today without credentials include DeepWiki, Context7, GitMCP and
+Hugging Face.
+
 ### Approval
 
 An install lands **pending** and reaches no agent until an admin approves it.

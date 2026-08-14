@@ -62,6 +62,26 @@ function shell() {
       </section>
 
       <section class="space-y-3">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Add by endpoint</h2>
+        <p class="text-sm text-gray-500 max-w-3xl">
+          For a hosted server you found elsewhere, or one your organization runs. Paste the
+          endpoint URL the server publishes, not the address of a directory that lists it.
+          Servers that run as a local package cannot be added here; an operator installs those.
+        </p>
+        <div class="flex gap-2">
+          <input id="tools-url" type="url" placeholder="https://example.com/mcp"
+            class="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500">
+          <select id="tools-url-transport"
+            class="px-3 py-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm text-gray-900 dark:text-white">
+            <option value="http">HTTP</option>
+            <option value="sse">SSE</option>
+          </select>
+          <button id="tools-url-btn"
+            class="px-4 py-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 text-sm font-medium">Add</button>
+        </div>
+      </section>
+
+      <section class="space-y-3">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Find a server</h2>
         <div class="flex gap-2">
           <input id="tools-search" type="search" placeholder="Search the MCP registry"
@@ -199,6 +219,34 @@ function wire() {
         const remove = e.target.closest('[data-remove]');
 
         if (search) return doSearch();
+
+        if (e.target.closest('#tools-url-btn')) {
+            const field = document.getElementById('tools-url');
+            const transport = document.getElementById('tools-url-transport');
+            const btn = e.target.closest('#tools-url-btn');
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
+            try {
+                const res = await api.installMcpServerByUrl({
+                    url: (field?.value || '').trim(),
+                    transport: transport?.value || 'http',
+                });
+                if (res && res.ok === false) throw new Error(res.error || 'Could not add that endpoint.');
+                const found = (res && res.tools_preview) || [];
+                if (field) field.value = '';
+                ui.showToast(
+                    `Added with ${found.length} tool${found.length === 1 ? '' : 's'}. `
+                    + 'An admin has to review it before agents can use it.', 'success');
+                await refresh();
+            } catch (err) {
+                ui.showToast(err.message || 'Could not add that endpoint.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = original;
+            }
+            return;
+        }
 
         if (install) {
             const label = install.textContent;
