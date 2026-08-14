@@ -73,7 +73,7 @@ This section is governed by trademark law and the SAFi project's trademark polic
 
 If an organization modifies the Core Loop files (Section II) and wishes to continue using the "SAFi" name or claim they are running an authentic SAFi deployment rather than an independent fork, they must strictly adhere to the following process:
 
-1. The modifying organization must execute the integrity check, `scripts/verify_integrity.py`, which ships with every SAFi release (including inside the container image). It recomputes a SHA-256 hash of every Core Loop file, compares the result against the release manifest (`scripts/core_integrity_manifest.json`), and checks the structural invariants — that no deterministic faculty reaches a model, and that the staged governance sequence is intact. The check reports a single core-loop fingerprint that deployments may cite as evidence of an unmodified core.
+1. The modifying organization must execute the integrity check, `scripts/verify_integrity.py`, which ships with every SAFi release (including inside the container image). It recomputes a SHA-256 hash of every Core Loop file, compares the result against the release manifest (`scripts/core_integrity_manifest.json`), and checks the structural invariants: no deterministic faculty reaches a model, and the staged governance sequence is intact. The check reports a single core-loop fingerprint that deployments may cite as evidence of an unmodified core.
 2. If the integrity check reports modifications, the organization must commit and submit those changes publicly for formal review.
 3. Changes must be formally accepted by the SAFi project maintainers before the organization can legitimately claim they are using SAFi.
 
