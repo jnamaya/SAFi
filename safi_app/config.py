@@ -467,6 +467,23 @@ class Config:
     # passed getattr(config, "MCP_CONFIG", {}) into it, so this is the shape.
     MCP_CONFIG = {"mcp_servers": _load_mcp_servers()}
 
+    # What an admin may install from the browser (backlog 48):
+    #   off     nothing; the file above is the only way in
+    #   remote  hosted endpoints only (DEFAULT). Installing one runs no
+    #           third-party code on this host, so a button press cannot become
+    #           shell access on a machine other organizations share.
+    #   all     also package/stdio servers, i.e. `npx -y ...` at boot. Correct
+    #           ONLY where the admins and the operator are the same people (a
+    #           single-tenant self-hosted install). Not implemented yet; treated
+    #           as `remote` until stage 2 ships.
+    MCP_INSTALL_MODE = (os.environ.get("SAFI_MCP_INSTALL_MODE", "remote") or "remote").strip().lower()
+
+    # Point at a private mirror if you run one. The default is the official
+    # registry, which verifies namespace ownership and reviews no code.
+    MCP_REGISTRY_URL = os.environ.get(
+        "SAFI_MCP_REGISTRY_URL", "https://registry.modelcontextprotocol.io"
+    ).strip()
+
        # --- CONFIGURATION: AUTOMATIC PROFILE EXTRACTION ---
     # Set to False to disable the AI from silently adding facts to the user profile.
     ENABLE_PROFILE_EXTRACTION = False 

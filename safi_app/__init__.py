@@ -94,6 +94,15 @@ def create_app():
     # Initialize the database connection pool within the app context
     with app.app_context():
         db.init_db()
+        # GUI-installed MCP servers (backlog 48). Its own module and its own
+        # tables, deliberately outside the manifest-covered database.py: which
+        # tool servers an org installed is Section III configuration content,
+        # not a record of what the system decided.
+        try:
+            from .persistence import mcp_store
+            mcp_store.init_schema()
+        except Exception as e:
+            app.logger.error("MCP server table init failed, GUI install disabled: %s", e)
 
     # Register the Google OAuth client with Authlib
     oauth.register(
@@ -147,6 +156,7 @@ def create_app():
     from .api.evaluate_api import evaluate_bp
     from .api.review_api import review_bp
     from .api.audit_api import audit_bp
+    from .api.mcp_api import mcp_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -162,8 +172,20 @@ def create_app():
     app.register_blueprint(evaluate_bp, url_prefix='/api')
     app.register_blueprint(review_bp, url_prefix='/api')
     app.register_blueprint(audit_bp, url_prefix='/api')
+    app.register_blueprint(mcp_bp)
 
     # Server-side session resolution (enterprise identity Phase 1).
+    # Pick up MCP servers another worker installed. One indexed read, and it
+    # only reconnects when the generation actually moved, so the steady state
+    # cost is a single SELECT rather than any reconnection work.
+    def _mcp_resync():
+        from .core.services.mcp_manager import resync_if_stale
+        from .core.services.mcp_install import desired_runtime_servers
+        from .persistence.mcp_store import current_generation
+        resync_if_stale(current_generation, desired_runtime_servers)
+
+    app.before_request(_mcp_resync)
+
     from .core.identity import resolve_session, strip_session_shim
     app.before_request(resolve_session)
     app.after_request(strip_session_shim)

@@ -130,6 +130,9 @@ class _Runtime:
         self._tools: Dict[str, Dict[str, Any]] = {}
         # server key -> {"label", "tools": [names], "error": str | None}
         self._servers: Dict[str, Dict[str, Any]] = {}
+        # server key -> "file" | "db". Only db-sourced servers are subject to
+        # sync_db_servers; the operator's file always wins and is never dropped.
+        self._origins: Dict[str, str] = {}
         self._started = False
 
     # ---------- lifecycle ----------
@@ -138,6 +141,84 @@ class _Runtime:
         assert self._loop is not None
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
+
+    def _ensure_loop(self) -> None:
+        """Create the thread and loop if they do not exist yet.
+
+        Separate from start() because servers can now arrive after boot: an
+        install through the GUI must connect on a deployment where the file was
+        empty and no loop was ever needed.
+        """
+        if self._loop is not None:
+            return
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_loop, name="safi-mcp", daemon=True)
+        self._thread.start()
+
+    def _connect_one(
+        self, name: str, params: Dict[str, Any], reserved_tool_names, origin: str
+    ) -> Dict[str, Any]:
+        """Connect a single server and wait for it to publish. Never raises."""
+        self._ensure_loop()
+        ready = threading.Event()
+        timeout = float(params.get("connect_timeout") or DEFAULT_CONNECT_TIMEOUT)
+        self._origins[name] = origin
+        asyncio.run_coroutine_threadsafe(
+            self._supervise(name, params, ready, reserved_tool_names), self._loop
+        )
+        if not ready.wait(timeout):
+            log.error(
+                "MCP server '%s' did not become ready within %.0fs; "
+                "its tools are absent.", name, timeout
+            )
+            self._servers.setdefault(name, {"label": name, "tools": []})
+            self._servers[name]["error"] = f"timeout after {timeout:.0f}s"
+        return self._servers.get(name, {"label": name, "tools": [], "error": "unknown"})
+
+    def add_server(
+        self, name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"
+    ) -> Dict[str, Any]:
+        """Connect a server that arrived after boot. Replaces one of the same name."""
+        with self._lock:
+            if name in self._stops:
+                self._drop(name)
+            return self._connect_one(name, params, reserved_tool_names, origin)
+
+    def _drop(self, name: str) -> None:
+        """Unwind one server and forget its tools. Caller holds the lock."""
+        stop = self._stops.get(name)
+        if stop is not None and self._loop is not None:
+            self._loop.call_soon_threadsafe(stop.set)
+        for tool_name, spec in list(self._tools.items()):
+            if spec["server"] == name:
+                del self._tools[tool_name]
+        self._servers.pop(name, None)
+        self._sessions.pop(name, None)
+        self._origins.pop(name, None)
+
+    def remove_server(self, name: str) -> None:
+        with self._lock:
+            self._drop(name)
+
+    def sync_db_servers(self, desired: Dict[str, Dict[str, Any]], reserved_tool_names=()) -> None:
+        """Make the db-sourced servers match `desired`, leaving file ones alone.
+
+        File-installed servers are the operator's and are never touched here: a
+        row in a table must not be able to unplug something the operator put in
+        the deployment's own configuration.
+        """
+        with self._lock:
+            current = {n for n, o in self._origins.items() if o == "db"}
+            for name in current - set(desired):
+                log.info("MCP server '%s' removed; disconnecting.", name)
+                self._drop(name)
+            for name, params in desired.items():
+                if name in current and self._servers.get(name, {}).get("error") is None:
+                    continue
+                if name in self._stops:
+                    self._drop(name)
+                log.info("MCP server '%s' installed; connecting.", name)
+                self._connect_one(name, params, reserved_tool_names, "db")
 
     def start(self, servers: Dict[str, Dict[str, Any]], reserved_tool_names) -> Dict[str, Any]:
         """Connect every enabled server and return a discovery summary.
@@ -155,11 +236,7 @@ class _Runtime:
             if not servers:
                 return self.summary()
 
-            self._loop = asyncio.new_event_loop()
-            self._thread = threading.Thread(
-                target=self._run_loop, name="safi-mcp", daemon=True
-            )
-            self._thread.start()
+            self._ensure_loop()
 
             waits: List[Tuple[str, threading.Event, float]] = []
             for name, params in servers.items():
@@ -171,6 +248,7 @@ class _Runtime:
                     continue
                 ready = threading.Event()
                 timeout = float(params.get("connect_timeout") or DEFAULT_CONNECT_TIMEOUT)
+                self._origins[name] = "file"
                 asyncio.run_coroutine_threadsafe(
                     self._supervise(name, params, ready, reserved_tool_names), self._loop
                 )
@@ -325,6 +403,7 @@ class _Runtime:
             self._tools.clear()
             self._servers.clear()
             self._stops.clear()
+            self._origins.clear()
             self._started = False
 
     # ---------- read side ----------
@@ -337,6 +416,10 @@ class _Runtime:
 
     def tools_for_server(self, server: str) -> List[str]:
         return list((self._servers.get(server) or {}).get("tools") or [])
+
+    def origin_of(self, server: str) -> str:
+        """"file" (the operator's), "db" (installed through the GUI), or ""."""
+        return self._origins.get(server, "")
 
     def connectors(self) -> Dict[str, Tuple[str, ...]]:
         """server key -> its tool names, the connector-bundle shape."""
@@ -419,6 +502,22 @@ def tools() -> Dict[str, Dict[str, Any]]:
 
 def tools_for_server(server: str) -> List[str]:
     return _runtime.tools_for_server(server)
+
+
+def origin_of(server: str) -> str:
+    return _runtime.origin_of(server)
+
+
+def add_server(name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"):
+    return _runtime.add_server(name, params, reserved_tool_names, origin)
+
+
+def remove_server(name: str) -> None:
+    _runtime.remove_server(name)
+
+
+def sync_db_servers(desired: Dict[str, Dict[str, Any]], reserved_tool_names=()) -> None:
+    _runtime.sync_db_servers(desired, reserved_tool_names)
 
 
 def connectors() -> Dict[str, Tuple[str, ...]]:

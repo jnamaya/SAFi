@@ -4,20 +4,37 @@ SAFi agents can call tools. Some ship with the product; others come from MCP
 servers you install. This document covers installing a server, granting it, and
 the rules that decide which of the two kinds of tool a given job needs.
 
-Audience: whoever controls the deployment. Installing a server is an operator
-action, not an admin one, for reasons in [Trust](#trust-who-can-install-what).
+Audience: whoever controls the deployment, and organization admins installing
+hosted servers from the browser. Which of the two paths applies to you depends
+on how the server runs, for reasons in [section 6](#6-trust-who-can-install-what).
 
 ---
 
 ## 1. The short version
 
-1. Write the server into the file `MCP_SERVERS_JSON` names.
-2. Restart SAFi. Its tools appear in the tool picker.
-3. An organization admin allows the connector for their organization.
-4. A policy author checks it under Tools & Guardrails.
-5. An agent under that policy enables it.
+There are two ways in, and they are for different things.
 
-Only step 1 is new. Steps 2 to 5 are how every tool in SAFi has always worked.
+**From the browser (Settings, Tool Servers).** An admin searches the official
+MCP registry and installs a **hosted** server in one click. A second admin
+approves it and it is live, no restart. This is the easy path and it covers most
+cases. See [section 8](#8-installing-from-the-registry-in-the-gui).
+
+**From the file (`MCP_SERVERS_JSON`).** The operator's path, and the only way to
+install a server that runs **locally** as a package or command. Sections 2
+through 4 cover it.
+
+Either way, the rest is the same and is how every tool in SAFi has always
+worked:
+
+1. The server is installed and becomes a connector.
+2. An organization admin allows the connector.
+3. A policy author checks it under Tools & Guardrails.
+4. An agent under that policy enables it.
+5. The Will authorizes every individual call by exact name.
+
+**Installing grants nothing.** That is the sentence to keep hold of. Making
+installation easy is safe because installation is only the first of five steps,
+and the other four already existed.
 
 ---
 
@@ -164,21 +181,23 @@ not who asked.
 
 ## 6. Trust: who can install what
 
-**Only whoever controls the deployment can install a server.** The definition
-lives in a file on disk. No API route, no admin screen and no organization
-setting can add, edit or reach one, and this is deliberate rather than
-unfinished.
+The line runs between servers that execute code here and servers that do not.
 
-A stdio server is an arbitrary command the SAFi process executes with arbitrary
-arguments. Installing one is the same level of trust as installing SAFi itself,
-the same rule the developer guide states for `SAFI_EXTENSIONS_DIR`. In a
-deployment serving several organizations, an admin who could add one could run
-code on the host.
+**A local (stdio/package) server can only be installed by whoever controls the
+deployment**, through the file on disk. No API route, no admin screen and no
+organization setting can add one, and that is deliberate rather than unfinished.
+Such a server is an arbitrary command the SAFi process executes with arbitrary
+arguments, so installing one is the same level of trust as installing SAFi
+itself, the rule the developer guide already states for `SAFI_EXTENSIONS_DIR`.
+In a deployment serving several organizations, an admin who could add one could
+run code on a host everyone shares.
 
-Remote servers are milder but not free. A server URL is a request your
-infrastructure makes, so an untrusted one is a way into your internal network,
-and every argument a model sends to that server leaves your deployment. Install
-remote servers with the same care as local ones.
+**A hosted (http/sse) server can be installed by an organization admin** from
+Settings, because nothing of the publisher's runs here. It is not free of risk
+and the checks in section 8 exist for that: a URL your infrastructure fetches is
+a way into your own network unless it is validated, and every argument a model
+sends to that server leaves your deployment. An operator who wants none of this
+sets `SAFI_MCP_INSTALL_MODE=off`.
 
 Two more things worth knowing before you install something you did not write:
 
@@ -206,7 +225,84 @@ Two more things worth knowing before you install something you did not write:
 
 ---
 
-## 8. Writing your own server
+## 8. Installing from the registry, in the GUI
+
+**Settings → Tool Servers**, admin only. Search the official MCP registry,
+press Install, have another admin approve it, and the tools are live without a
+restart.
+
+### What the registry does and does not tell you
+
+The official registry verifies **namespace ownership**: publishing under
+`io.github.someone/thing` requires proving you are that GitHub identity, or
+proving the domain by DNS or HTTP. That makes typosquatting hard and gives every
+entry an accountable publisher.
+
+It performs **no code review, no vulnerability scanning, and no security
+assessment**. A listing means "this publisher owns this name", never "this code
+is safe". Install servers from publishers you would trust with the data your
+agents will send them. The screen says the same thing, on purpose.
+
+### What can be installed this way
+
+**Hosted servers only.** A registry entry offers a hosted endpoint, a local
+package, or both. Only the hosted kind is installable from a browser, because
+installing a package means running its code on the SAFi host, and that is a
+decision for whoever controls the deployment rather than for anyone with an
+admin login. An entry that is package-only shows why, and points at the file.
+
+`SAFI_MCP_INSTALL_MODE` controls this:
+
+| Value | Effect |
+|---|---|
+| `remote` | Default. Admins may install hosted servers. |
+| `off` | Nothing installable from the browser; the file is the only way in. |
+| `all` | Reserved for a future release, where admins may also install package servers. Correct only where the admins and the operator are the same people. Currently treated as `remote`. |
+
+### The checks an endpoint has to pass
+
+All fixed rules, applied before anything is stored:
+
+- **https only.** Plain http would send your prompts and arguments in the clear.
+- **No private, loopback or link-local addresses**, checked against what the
+  hostname actually resolves to, not against how it is spelled. An
+  admin-supplied URL that this server then fetches is a way into your own
+  network, and that is the standard shape of the attack.
+- **No credentials embedded in the URL.**
+- **A host that does not resolve is refused**, rather than accepted in the hope
+  it works later.
+
+### Approval
+
+An install lands **pending** and reaches no agent until an admin approves it.
+The person who installed it cannot approve it, unless they are the
+organization's only eligible reviewer, in which case they can, and the sign-off
+is recorded as a **non-independent review** rather than counted as real
+oversight. Same rule, and the same underlying check, as knowledge base
+documents.
+
+Approving connects the server and scans its tool descriptions against the
+prompt-injection signature list. Descriptions are text the publisher wrote that
+becomes instructions in the model's context, so a match is surfaced to the
+approver as a warning. It is a warning rather than a block: the approver is a
+person, and a false positive should not strand a legitimate tool.
+
+### Evidence
+
+Install, approve, reject and remove each write a row to the organization's
+compliance log naming the actor, the endpoint and the version. The version is
+the exact one the registry published; SAFi never auto-updates a server.
+
+### Tenancy
+
+A server installed by one organization belongs to that organization. Another
+organization does not see it in the picker and cannot grant it to an agent, and
+that second check runs on save rather than relying on the picker having hidden
+it.
+
+---
+
+## 9. Writing your own server
 
 Any MCP server works. To expose a private API to a governed agent, the smallest
 version is a stdio server with one tool per operation. Keep the tool surface

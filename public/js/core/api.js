@@ -546,6 +546,28 @@ export async function listPendingKnowledgeReviews() {
     return httpGet(j('/api/knowledge-bases/pending-reviews'));
 }
 
+// --- MCP tool servers (backlog 48) ---
+
+export async function searchMcpRegistry(query) {
+    return httpGet(j(`/api/mcp/registry/search?q=${encodeURIComponent(query || '')}`));
+}
+
+export async function listMcpServers() {
+    return httpGet(j('/api/mcp/servers'));
+}
+
+export async function installMcpServer(name) {
+    return httpJSON(j('/api/mcp/servers'), 'POST', { name });
+}
+
+export async function reviewMcpServer(serverId, decision, note = '') {
+    return httpJSON(j(`/api/mcp/servers/${serverId}/review`), 'POST', { decision, note });
+}
+
+export async function removeMcpServer(serverId) {
+    return httpJSON(j(`/api/mcp/servers/${serverId}`), 'DELETE', {});
+}
+
 /**
  * Uploads one document into a knowledge base.
  *

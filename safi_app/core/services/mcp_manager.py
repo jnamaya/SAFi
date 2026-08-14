@@ -88,6 +88,53 @@ def start_servers(config: Any) -> Dict[str, Any]:
     return summary
 
 
+def refresh_discovered_connectors() -> None:
+    """Re-register the connector table from whatever is currently connected.
+
+    Called after a GUI install, approval or removal changes the live set. Built
+    from the runtime rather than from the database so the table can never claim
+    a connector whose session did not actually come up: an agent authorized for
+    tools that do not exist would be blocked at the Will with a confusing
+    reason, which is worse than the tool simply being absent.
+    """
+    clear_discovered_connectors()
+    for server, functions in mcp_runtime.connectors().items():
+        if not register_discovered_connector(server, functions):
+            log.error(
+                "MCP server '%s' collides with a built-in connector name and was "
+                "NOT registered. Its tools are unavailable until it is renamed.",
+                server,
+            )
+
+
+def resync_if_stale(generation_getter, desired_getter) -> bool:
+    """Reconnect this worker's db-sourced servers if another worker changed them.
+
+    Four gunicorn workers each hold their own sessions, so an install made in
+    one worker's request has to reach the other three. They notice through a
+    counter in the database rather than through any IPC we would have to build
+    and then operate. Returns True when a resync happened.
+
+    Never raises: a deployment whose generation check fails should keep serving
+    with the tools it already has.
+    """
+    global _generation
+    try:
+        current = generation_getter()
+        if not current or current == _generation:
+            return False
+        mcp_runtime.sync_db_servers(desired_getter(), reserved_tool_names=builtin_tool_names())
+        refresh_discovered_connectors()
+        _generation = current
+        return True
+    except Exception as e:
+        log.warning("MCP resync skipped: %s", e)
+        return False
+
+
+_generation = 0
+
+
 class MCPManager:
     """Per-orchestrator view over the tool catalogue.
 
@@ -383,10 +430,13 @@ class MCPManager:
 
         return tools
 
-    def list_all_tools(self) -> List[Dict[str, Any]]:
+    def list_all_tools(self, org_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Returns a list of all available tools for selection in the UI.
         Categorized by domain.
+
+        `org_id` scopes GUI-installed servers to the organization that installed
+        them. Omit it only where there is no organization to scope to.
         """
         return [
             # --- FINANCE (Fiduciary) ---
@@ -473,10 +523,38 @@ class MCPManager:
                     }
                 ]
             }
-        ] + self._discovered_categories()
+        ] + self._discovered_categories(org_id)
 
     @staticmethod
-    def _discovered_categories() -> List[Dict[str, Any]]:
+    def visible_connectors(org_id: Optional[str] = None) -> set:
+        """Connector keys this organization may use.
+
+        File-installed servers are the deployment's and are visible to every
+        org, like the built-ins. GUI-installed servers belong to the org that
+        installed them: the runtime holds one session per endpoint regardless,
+        but one organization must not be able to grant an agent a tool another
+        organization installed. Pass org_id=None for the deployment-wide view
+        (background jobs, tests).
+        """
+        keys = set(CONNECTOR_TOOLS)
+        for name, entry in mcp_runtime.summary()["servers"].items():
+            if mcp_runtime.origin_of(name) != "db":
+                keys.add(name)
+        if org_id is None:
+            keys.update(mcp_runtime.connectors())
+            return keys
+        try:
+            from ...persistence import mcp_store
+            for row in mcp_store.list_servers(org_id, statuses=(mcp_store.STATUS_ACTIVE,)):
+                keys.add(row["connector_key"])
+        except Exception as e:
+            # Fail closed: an org sees the built-ins and the operator's servers,
+            # never someone else's install, if the lookup breaks.
+            log.warning("visible_connectors lookup failed for org %s: %s", org_id, e)
+        return keys
+
+    @staticmethod
+    def _discovered_categories(org_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """One picker category per connected MCP server.
 
         The server is offered as a single connector, the way GitHub and
@@ -486,9 +564,10 @@ class MCPManager:
         policy that needs finer control still narrows by naming functions
         directly, which expand_connectors and the Will already support.
         """
+        visible = MCPManager.visible_connectors(org_id)
         categories: List[Dict[str, Any]] = []
         for server, entry in mcp_runtime.summary()["servers"].items():
-            if not entry["tools"]:
+            if not entry["tools"] or server not in visible:
                 continue
             label = entry["label"]
             categories.append({

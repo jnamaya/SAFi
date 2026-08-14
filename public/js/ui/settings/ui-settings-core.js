@@ -146,6 +146,8 @@ export function setupControlPanelTabs() {
                     settingsState.onThemeChange,
                     settingsState.onDeleteAccount
                 );
+            } else if (tabId === 'tools') {
+                import('./ui-settings-tools.js').then(m => m.renderSettingsToolsTab());
             } else if (tabId === 'knowledge') {
                 renderSettingsKnowledgeTab();
             } else if (tabId === 'help') {

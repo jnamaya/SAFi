@@ -537,6 +537,16 @@ function renderControlPanel() {
     else navKnowledge.classList.add('hidden');
   }
 
+  // Tool Servers: admin only, and not merely for tidiness. Every route behind
+  // this tab is require_role('admin'), so showing it to an editor would render
+  // a screen whose every button 403s. Installing a tool server is also the one
+  // action here that reaches outside the deployment.
+  const navTools = document.getElementById('nav-tools');
+  if (navTools) {
+    if (user.role === 'admin') navTools.classList.remove('hidden');
+    else navTools.classList.add('hidden');
+  }
+
   // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {
