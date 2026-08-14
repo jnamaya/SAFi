@@ -33,8 +33,8 @@ function shell() {
       <div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tool Servers</h1>
         <p class="text-sm text-gray-500 mt-1 max-w-3xl">
-          Tool servers your operator has installed on this deployment, and the tools each one
-          offers. Everything listed here is <strong>inactive</strong> until a policy enables it.
+          Tool servers your operator has installed on this deployment, and what each tool is
+          enabled by. A tool does nothing until a policy enables it and an agent is assigned it.
         </p>
       </div>
 
@@ -65,6 +65,36 @@ async function refresh() {
         state.error = err.message || 'Could not load tool servers.';
     }
     paint();
+}
+
+/**
+ * One tool, with its real status.
+ *
+ * "Enabled" here means a policy lists it, which is the ceiling the Will
+ * enforces; "assigned" means an agent carries it. Both are shown because they
+ * answer different questions, and because a tool enabled by a policy that no
+ * agent uses is a common and perfectly reasonable state that should not read as
+ * either on or off.
+ */
+function toolRow(t) {
+    const enabled = t.policies && t.policies.length;
+    const assigned = t.agents && t.agents.length;
+    return `
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-xs text-gray-700 dark:text-gray-300">${esc(t.name)}</span>
+            ${enabled
+              ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">enabled</span>'
+              : '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-gray-400">inactive</span>'}
+          </div>
+          <p class="text-xs text-gray-500 mt-0.5">${esc(t.description)}</p>
+          ${enabled ? `<p class="text-xs text-gray-500 mt-1">Policy: ${t.policies.map(esc).join(', ')}</p>` : ''}
+          ${assigned
+            ? `<p class="text-xs text-gray-500">Agents: ${t.agents.map(esc).join(', ')}</p>`
+            : (enabled ? '<p class="text-xs text-gray-400">No agent is assigned it yet.</p>' : '')}
+        </div>
+      </div>`;
 }
 
 function paint() {
@@ -103,15 +133,13 @@ function paint() {
         </div>
 
         ${s.tools.length ? `
-          <div class="mt-3 border-t border-gray-100 dark:border-neutral-800 pt-3 space-y-2">
-            ${s.tools.map(t => `
-              <div class="flex items-start gap-2">
-                <span class="font-mono text-xs text-gray-700 dark:text-gray-300 shrink-0">${esc(t.name)}</span>
-                <span class="text-xs text-gray-500">${esc(t.description)}</span>
-              </div>`).join('')}
+          <div class="mt-3 border-t border-gray-100 dark:border-neutral-800 pt-3 space-y-3">
+            ${s.tools.map(toolRow).join('')}
           </div>
-          <p class="text-xs text-gray-400 mt-3">
-            Inactive. Enable the ones you want in a policy's Tools &amp; Guardrails step.
-          </p>` : ''}
+          ${s.enabled_count === 0 ? `
+            <p class="text-xs text-gray-400 mt-3">
+              None of these are enabled yet. Turn on the ones you want in a policy's
+              Tools &amp; Guardrails step.
+            </p>` : ''}` : ''}
       </div>`).join('');
 }
