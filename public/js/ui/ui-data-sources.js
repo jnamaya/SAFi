@@ -1,6 +1,11 @@
 /**
  * js/ui/ui-data-sources.js
- * Renders the Data Sources section of the composer's + panel.
+ * Renders the Tools section of the composer's + panel: the accounts a member
+ * can connect so their agents' tools run as them. Two kinds live here under
+ * one set of rules: delegated OAuth connectors (Google, Microsoft) and
+ * OAuth-protected MCP tool servers. The section was called "Data Sources"
+ * until 2026-08-15; ids and function names keep the old spelling so nothing
+ * cached or externally referenced breaks.
  */
 
 import * as api from '../core/api.js';
@@ -72,8 +77,8 @@ function renderMenu(connectedList, connectors, mcpServers) {
     if (!visible.length) {
         dropdown.innerHTML = `
             <p class="px-3 py-2 text-xs text-neutral-500">
-                None of your agents use external data sources, so there is
-                nothing to connect here.
+                None of your agents use connected tools, so there is
+                nothing to set up here.
             </p>`;
         return;
     }

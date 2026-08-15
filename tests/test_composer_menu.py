@@ -205,7 +205,7 @@ class OneSurface(unittest.TestCase):
 class SectionsAreLabelledOnce(unittest.TestCase):
 
     def test_the_panel_prints_the_category_names(self):
-        for label in (">Agents</div>", ">AI Models</div>", ">Data Sources</div>"):
+        for label in (">Agents</div>", ">AI Models</div>", ">Tools</div>"):
             self.assertIn(label, PANEL)
 
     def test_the_lists_do_not_print_their_own(self):
