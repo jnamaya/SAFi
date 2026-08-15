@@ -286,6 +286,9 @@ def cmd_add(args) -> int:
     else:
         fail("give a registry name, or --url, or --command")
 
+    if args.orgs:
+        params["orgs"] = [o.strip() for o in args.orgs.split(",") if o.strip()]
+
     key = args.key or unique_key(base, servers)
     if key in CONNECTOR_TOOLS:
         fail(f"{key!r} is a built-in connector name; choose another with --key")
@@ -416,6 +419,13 @@ def main(argv=None) -> int:
         help="working directory for --command. Needed by servers distributed as "
              "a checkout rather than a package, which resolve their own files "
              "relative to where they were started",
+    )
+    p_add.add_argument(
+        "--orgs",
+        help="comma-separated organization ids allowed to use this server. "
+             "Absent means every organization, which is right for a "
+             "single-tenant install and wrong to assume on a shared one. "
+             "Guests never get installed servers regardless",
     )
     p_add.add_argument("--env", action="append", help="KEY=VALUE for the child process")
     p_add.add_argument("--key", help="connector key (defaults to a derived name)")
