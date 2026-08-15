@@ -42,6 +42,7 @@ Usage:
   scripts/safi_mcp.py search <term>
   scripts/safi_mcp.py add <registry-name> [--key NAME]
   scripts/safi_mcp.py add --url https://example.com/mcp [--transport http|sse]
+  scripts/safi_mcp.py add --url https://example.com/mcp --auth oauth
   scripts/safi_mcp.py add --command npx --args="-y,@scope/server@1.2.3" [--env K=V]
   scripts/safi_mcp.py add --command node --args="scripts/start.js" --cwd /app/mcp/thing
   scripts/safi_mcp.py check [--key NAME]
@@ -263,6 +264,8 @@ def cmd_add(args) -> int:
         if not ok:
             fail(why)
         params = {"transport": args.transport, "url": args.url}
+        if args.auth:
+            params["auth"] = args.auth
         base = mcp_install.connector_key_for_url(args.url)
     elif args.command:
         cmd_args = [a for a in (args.args or "").split(",") if a]
@@ -294,9 +297,23 @@ def cmd_add(args) -> int:
 
     check_runtime_available(params)
 
-    print(f"checking {key} ...")
-    if not probe_and_report(key, params) and not args.force:
-        fail("not added. Fix the server or pass --force to add it anyway.")
+    if params.get("auth") == "oauth":
+        # An OAuth server refuses anonymous connections by design, so the MCP
+        # probe would only prove what the spec already promises. What CAN be
+        # checked without a token is the discovery chain: the server's
+        # protected-resource metadata and its IdP's endpoints.
+        from safi_app.core.services import mcp_oauth
+        try:
+            discovery = mcp_oauth.discover(params["url"])
+            print(f"  {key}: OAuth-protected, authorization server {discovery['issuer']}")
+        except mcp_oauth.OAuthConfigError as e:
+            if not args.force:
+                fail(str(e))
+            print(f"  warning: {e}")
+    else:
+        print(f"checking {key} ...")
+        if not probe_and_report(key, params) and not args.force:
+            fail("not added. Fix the server or pass --force to add it anyway.")
 
     servers[key] = params
     write_servers(servers)
@@ -319,11 +336,21 @@ def cmd_check(args) -> int:
         print("Nothing to check.")
         return 0
 
-    print(f"checking {len(servers)} server(s) ...")
+    oauth_servers = {k: v for k, v in servers.items()
+                     if v.get("enabled", True) and (v.get("auth") or "").lower() == "oauth"}
+    for key, params in oauth_servers.items():
+        from safi_app.core.services import mcp_oauth
+        try:
+            discovery = mcp_oauth.discover(params["url"])
+            print(f"  {key}: OAuth-protected, IdP {discovery['issuer']} reachable")
+        except mcp_oauth.OAuthConfigError as e:
+            print(f"  {key}: FAILED  {e}")
+
+    probeable = {k: v for k, v in servers.items()
+                 if v.get("enabled", True) and k not in oauth_servers}
+    print(f"checking {len(probeable)} server(s) ...")
     failures = 0
-    results = mcp_runtime.probe_many(
-        {k: v for k, v in servers.items() if v.get("enabled", True)}, timeout=25.0
-    )
+    results = mcp_runtime.probe_many(probeable, timeout=25.0)
     for key, result in results.items():
         if result["ok"] and result["tools"]:
             print(f"  {key}: ok, {len(result['tools'])} tool(s)")
@@ -370,6 +397,13 @@ def main(argv=None) -> int:
     p_add.add_argument("name", nargs="?", help="registry name, e.g. io.github.owner/server")
     p_add.add_argument("--url", help="hosted endpoint instead of a registry name")
     p_add.add_argument("--transport", default="http", choices=("http", "sse"))
+    p_add.add_argument(
+        "--auth", choices=("oauth",),
+        help="'oauth' marks a server that implements the MCP authorization "
+             "specification: each member signs in from the app and every call "
+             "runs with that member's audience-bound token. The catalog is "
+             "discovered at the first sign-in, not at install",
+    )
     p_add.add_argument("--command", help="local command for a stdio server")
     p_add.add_argument(
         "--args",

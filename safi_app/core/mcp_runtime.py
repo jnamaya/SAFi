@@ -233,6 +233,64 @@ class _Runtime:
             self._servers[name]["error"] = f"timeout after {timeout:.0f}s"
         return self._servers.get(name, {"label": name, "tools": [], "error": "unknown"})
 
+    def register_offline(self, name: str, params: Dict[str, Any],
+                         reserved_tool_names=(), origin: str = "file") -> Dict[str, Any]:
+        """Publish a server whose tools are known but whose calls are per-user.
+
+        An OAuth-protected server (MCP authorization spec) cannot have ONE
+        process-wide session, because there is no process-wide identity: every
+        call carries the calling user's token and runs on an ephemeral
+        connection instead. What the runtime holds for such a server is its
+        catalog — the tool list captured when a user last connected, passed in
+        as params["cached_tools"] — so policy authoring and the Will's
+        expansion work identically to a live server.
+        """
+        with self._lock:
+            return self._register_offline_locked(name, params, reserved_tool_names, origin)
+
+    def _register_offline_locked(self, name, params, reserved_tool_names=(), origin="file"):
+        """Body of register_offline. Split out because sync_origin calls this
+        while already holding self._lock, which is not reentrant — taking it
+        again from inside was a deadlock that froze every request on the
+        worker, found by a stack dump rather than by any error."""
+        if True:
+            if name in self._stops or name in self._servers:
+                self._drop(name)
+            entry: Dict[str, Any] = {
+                "label": params.get("label") or name,
+                "tools": [],
+                "error": None,
+                "orgs": [str(o) for o in (params.get("orgs") or []) if o],
+                "auth": "oauth",
+                "url": params.get("url") or "",
+            }
+            self._servers[name] = entry
+            self._origins[name] = origin
+            reserved = set(reserved_tool_names or ())
+            for tool in params.get("cached_tools") or []:
+                tool_name = tool.get("name")
+                if not tool_name:
+                    continue
+                if tool_name in reserved or tool_name in self._tools:
+                    log.error("MCP server '%s': tool '%s' collides and was skipped.",
+                              name, tool_name)
+                    continue
+                self._tools[tool_name] = {
+                    "server": name,
+                    "name": tool_name,
+                    "title": tool_name,
+                    "description": tool.get("description") or "",
+                    "input_schema": tool.get("input_schema") or {"type": "object", "properties": {}},
+                }
+                entry["tools"].append(tool_name)
+            return entry
+
+    def auth_mode_of(self, server: str) -> str:
+        return (self._servers.get(server) or {}).get("auth") or ""
+
+    def url_of(self, server: str) -> str:
+        return (self._servers.get(server) or {}).get("url") or ""
+
     def probe(self, params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
         """Connect, list tools, disconnect. Registers nothing.
 
@@ -376,6 +434,9 @@ class _Runtime:
                 log.info("MCP server '%s' removed; disconnecting.", name)
                 self._drop(name)
             for name, params in desired.items():
+                if (params.get("auth") or "").lower() == "oauth":
+                    self._register_offline_locked(name, params, reserved_tool_names, origin)
+                    continue
                 if name in current and self._servers.get(name, {}).get("error") is None:
                     continue
                 if name in self._stops:
@@ -408,6 +469,9 @@ class _Runtime:
                     continue
                 if not params.get("enabled", True):
                     log.info("MCP server '%s': disabled in config, skipped.", name)
+                    continue
+                if (params.get("auth") or "").lower() == "oauth":
+                    self.register_offline(name, params, reserved_tool_names, "file")
                     continue
                 ready = threading.Event()
                 timeout = float(params.get("connect_timeout") or DEFAULT_CONNECT_TIMEOUT)
@@ -697,6 +761,81 @@ def server_of(tool_name: str) -> str:
 
 def probe(params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
     return _runtime.probe(params, timeout)
+
+
+def register_offline(name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "file"):
+    return _runtime.register_offline(name, params, reserved_tool_names, origin)
+
+
+def auth_mode_of(server: str) -> str:
+    return _runtime.auth_mode_of(server)
+
+
+def url_of(server: str) -> str:
+    return _runtime.url_of(server)
+
+
+async def call_with_token(url: str, tool_name: str, arguments: Dict[str, Any],
+                          token: str, timeout: float = DEFAULT_CALL_TIMEOUT) -> str:
+    """One tool call as one user, on an ephemeral connection.
+
+    OAuth servers get no persistent session because there is no single identity
+    to hold one as: the Bearer token names the person the call runs for, so the
+    connection is opened with that token and closed with the result. Runs on
+    the CALLER's event loop — nothing outlives the request, so the dedicated
+    runtime loop that persistent sessions need is unnecessary here.
+    """
+    from mcp import ClientSession
+    from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+
+    http_client = create_mcp_http_client(headers={"Authorization": f"Bearer {token}"})
+    try:
+        async with streamable_http_client(url, http_client=http_client) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                result = await asyncio.wait_for(
+                    session.call_tool(tool_name, arguments or {}), timeout=timeout
+                )
+                return _render_result(result)
+    except asyncio.TimeoutError:
+        return f"ERROR: tool '{tool_name}' timed out after {timeout:.0f}s."
+    except BaseException as e:
+        message = describe_exception(e, "http")
+        # This call CARRIED a token, so an auth-shaped refusal means the token
+        # is no longer good — the SDK reports a 401 here as its generic
+        # "Server returned an error response", which must not surface as the
+        # "may require credentials" hint meant for anonymous probes.
+        lowered = message.lower()
+        if "401" in lowered or "unauthorized" in lowered or "server returned an error response" in lowered:
+            return (
+                f"ERROR: the server no longer accepts your authorization for "
+                f"'{tool_name}'. Reconnect your account in Settings."
+            )
+        return f"ERROR: tool '{tool_name}' failed: {message}"
+
+
+async def list_tools_with_token(url: str, token: str, timeout: float = 20.0):
+    """tools/list as a specific user. Used once after a sign-in to capture the
+    catalog an OAuth server will not show anonymously."""
+    from mcp import ClientSession
+    from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+
+    http_client = create_mcp_http_client(headers={"Authorization": f"Bearer {token}"})
+    async with streamable_http_client(url, http_client=http_client) as streams:
+        async with ClientSession(streams[0], streams[1]) as session:
+            await asyncio.wait_for(session.initialize(), timeout=timeout)
+            listed = await asyncio.wait_for(session.list_tools(), timeout=timeout)
+            out = []
+            for tool in getattr(listed, "tools", None) or []:
+                schema = getattr(tool, "input_schema", None)
+                if hasattr(schema, "model_dump"):
+                    schema = schema.model_dump(exclude_none=True)
+                out.append({
+                    "name": getattr(tool, "name", ""),
+                    "description": getattr(tool, "description", None) or "",
+                    "input_schema": schema or {"type": "object", "properties": {}},
+                })
+            return [t for t in out if t["name"]]
 
 
 def probe_many(specs: Dict[str, Dict[str, Any]], timeout: float = 12.0) -> Dict[str, Dict[str, Any]]:

@@ -119,6 +119,17 @@ def start_servers(config: Any) -> Dict[str, Any]:
     servers = (getattr(config, "MCP_CONFIG", None) or {}).get("mcp_servers") or {}
     if not servers:
         return {"servers": {}, "tool_count": 0}
+    enriched = {}
+    for name, params in servers.items():
+        if isinstance(params, dict) and (params.get("auth") or "").lower() == "oauth":
+            params = dict(params)
+            try:
+                from ...persistence import mcp_store
+                params["cached_tools"] = mcp_store.list_cached_tools(name)
+            except Exception:
+                params["cached_tools"] = []
+        enriched[name] = params
+    servers = enriched
 
     try:
         summary = mcp_runtime.start(servers, reserved_tool_names=builtin_tool_names())
@@ -169,11 +180,43 @@ def file_servers() -> Dict[str, Any]:
     from ...config import _load_mcp_servers
 
     servers = _load_mcp_servers() or {}
-    return {
-        name: params
-        for name, params in servers.items()
-        if isinstance(params, dict) and params.get("enabled", True)
-    }
+    out = {}
+    for name, params in servers.items():
+        if not isinstance(params, dict) or not params.get("enabled", True):
+            continue
+        if (params.get("auth") or "").lower() == "oauth":
+            # The catalog of an OAuth server cannot be discovered anonymously,
+            # so it is served from the cache captured at the last sign-in.
+            params = dict(params)
+            try:
+                from ...persistence import mcp_store
+                params["cached_tools"] = mcp_store.list_cached_tools(name)
+            except Exception as e:
+                log.warning("cached tools unavailable for %s: %s", name, e)
+                params["cached_tools"] = []
+        out[name] = params
+    return out
+
+
+async def discover_after_connect(server_key: str, token: str) -> list:
+    """Capture an OAuth server's catalog with the token that just arrived.
+
+    Runs once per sign-in, in the callback. The result is cached in the
+    database and the generation counter is bumped, so every worker republishes
+    the tools without anyone else having to authenticate first.
+    """
+    url = mcp_runtime.url_of(server_key) or (file_servers().get(server_key) or {}).get("url", "")
+    if not url:
+        return []
+    tools = await mcp_runtime.list_tools_with_token(url, token)
+    from ...persistence import mcp_store
+    mcp_store.replace_cached_tools(server_key, tools)
+    mcp_store.bump_generation()
+    # This worker republishes immediately rather than on its next request.
+    mcp_runtime.sync_origin(file_servers(), reserved_tool_names=builtin_tool_names(),
+                            origin=mcp_runtime.origin_of(server_key) or "file")
+    refresh_discovered_connectors()
+    return [t["name"] for t in tools]
 
 
 def resync_if_stale(generation_getter) -> bool:
@@ -784,15 +827,34 @@ class MCPManager:
                            else " and this one is not among them.")
                     )
                 })
-        # Last, so a built-in always wins a name contest. _publish() already
-        # refuses to register a discovered tool that collides with a built-in,
-        # so this ordering is belt and braces rather than the actual guard.
-        #
-        # No user_id is passed. A configured MCP server authenticates with the
-        # deployment's own credential, which makes it a service principal, and
-        # a service principal must not be handed a member identity it cannot
-        # honour. Member-scoped access stays on the delegated-OAuth connectors.
+        # Last, so a built-in always wins a name contest. Two credential models
+        # live behind this branch and they are opposites: a static server runs
+        # with the deployment's own credential (a service principal, so no
+        # member identity is passed), while an OAuth server (MCP authorization
+        # spec) runs every call as the requesting user with an audience-bound
+        # token, which is what restores per-person attribution.
         if mcp_runtime.owns(tool_name):
+            server = mcp_runtime.server_of(tool_name)
+            if mcp_runtime.auth_mode_of(server) == "oauth":
+                # Per-user authorization: the call runs as the person who asked.
+                # No user means no identity to run as — the public bot and
+                # /evaluate have no way to hold a token.
+                if not user_id:
+                    return json.dumps({"error": (
+                        f"Tool '{tool_name}' requires a signed-in user's "
+                        "authorization and this turn has none."
+                    )})
+                from . import mcp_oauth
+                definition = file_servers().get(server) or {}
+                token = mcp_oauth.access_token_for(user_id, server, definition)
+                if not token:
+                    return json.dumps({"error": (
+                        f"Tool '{tool_name}' needs your authorization. Connect "
+                        f"your account under Settings, Tools Catalog, then try again."
+                    )})
+                return await mcp_runtime.call_with_token(
+                    mcp_runtime.url_of(server), tool_name, arguments, token
+                )
             return await mcp_runtime.call(tool_name, arguments)
 
         return json.dumps({"error": f"Tool '{tool_name}' not found."})

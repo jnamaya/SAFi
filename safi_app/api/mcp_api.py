@@ -29,9 +29,11 @@ The pipeline now has one shape:
 Nothing an admin can do on this screen grants anything to anyone. It is an
 inventory.
 """
+import asyncio
 import logging
+import secrets
 
-from flask import Blueprint, jsonify, session
+from flask import Blueprint, jsonify, redirect, request, session
 
 from ..core import mcp_runtime
 from ..core.rbac import require_role
@@ -104,18 +106,160 @@ def list_servers():
                 "policies": sorted(set(policy_use.get(name, []))),
                 "agents": sorted(set(agent_use.get(name, []))),
             })
-        servers.append({
+        record = {
             "key": key,
             "label": entry.get("label") or key,
             "origin": mcp_runtime.origin_of(key) or "file",
             "connected": not entry.get("error"),
             "error": entry.get("error"),
+            "auth": entry.get("auth") or "",
             "tools": tools,
             "enabled_count": sum(1 for t in tools if t["policies"]),
-        })
+        }
+        if record["auth"] == "oauth":
+            # Per-user servers: "connected" is a property of the person looking,
+            # not of the process, so report the viewer's own state.
+            from ..core.services import mcp_oauth
+            row = db.get_oauth_token(user.get('id'), mcp_oauth.provider_key(key))
+            record["user_connected"] = bool(row and row.get("access_token"))
+            record["connected"] = record["user_connected"]
+        servers.append(record)
     servers.sort(key=lambda s: s["label"].lower())
     return jsonify({
         "ok": True,
         "servers": servers,
         "tool_count": summary["tool_count"],
     })
+
+
+# ── Per-user authorization for OAuth-protected servers (backlog 48i) ──────────
+#
+# The flow is OAuth 2.1 authorization code with PKCE, and the token asked for is
+# audience-bound to the MCP server (RFC 8707), never to anything upstream of it.
+# SAFi ends up holding a token that opens exactly one tool server on behalf of
+# exactly one member; the server does its own upstream exchange if it needs one.
+#
+# These routes are member-facing, not admin-only: per-user tokens only work if
+# the person using the agent can connect their own account. Guests are refused,
+# and a server restricted to named organizations refuses members of others —
+# both checked in the login AND the callback, because a code obtained seconds
+# before a restriction landed must not redeem into a stored token.
+
+_PENDING_KEY = "mcp_oauth_pending"
+
+
+def _oauth_server_or_error(server_key):
+    """The definition of an OAuth server the caller may use, or (None, reason)."""
+    from ..core.services.mcp_manager import file_servers, is_guest, server_allows_org
+
+    user = session.get('user') or {}
+    if not user.get('id'):
+        return None, ("Sign in first.", 401)
+    if is_guest(user.get('id') or '', user.get('email') or ''):
+        return None, ("Demo accounts cannot connect tool servers.", 403)
+
+    definition = file_servers().get(server_key)
+    if not definition or (definition.get("auth") or "").lower() != "oauth":
+        return None, ("No OAuth-protected server by that name.", 404)
+    orgs = [str(o) for o in (definition.get("orgs") or []) if o]
+    if orgs and str(user.get('org_id')) not in orgs:
+        return None, ("This server is not available to your organization.", 403)
+    return definition, None
+
+
+def _redirect_uri(server_key):
+    from ..config import Config
+    return f"{Config.WEB_BASE_URL.rstrip('/')}/api/mcp/auth/{server_key}/callback"
+
+
+@mcp_bp.route('/auth/<server_key>/login', methods=['GET'])
+def oauth_login(server_key):
+    from ..core.services import mcp_oauth
+
+    definition, err = _oauth_server_or_error(server_key)
+    if err:
+        return jsonify({"ok": False, "error": err[0]}), err[1]
+
+    try:
+        discovery = mcp_oauth.discover(definition["url"])
+        client = mcp_oauth.ensure_client(
+            server_key, definition, discovery, _redirect_uri(server_key))
+    except mcp_oauth.OAuthConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+    verifier, challenge = mcp_oauth.make_pkce()
+    state = secrets.token_urlsafe(32)
+    # Server-side session, keyed by state: the callback proves it is answering
+    # THIS browser's request or it gets nothing.
+    session[_PENDING_KEY] = {"server": server_key, "state": state, "verifier": verifier}
+    url = mcp_oauth.build_authorization_url(
+        discovery, client["client_id"], _redirect_uri(server_key), state, challenge,
+        scopes=definition.get("scopes"),
+    )
+    return redirect(url)
+
+
+@mcp_bp.route('/auth/<server_key>/callback', methods=['GET'])
+def oauth_callback(server_key):
+    from ..core.services import mcp_oauth
+    from ..core.services.mcp_manager import discover_after_connect
+
+    definition, err = _oauth_server_or_error(server_key)
+    if err:
+        return jsonify({"ok": False, "error": err[0]}), err[1]
+
+    pending = session.pop(_PENDING_KEY, None) or {}
+    state = (request.args.get('state') or '').strip()
+    code = (request.args.get('code') or '').strip()
+    if (not code or not state or pending.get("server") != server_key
+            or not secrets.compare_digest(state, pending.get("state") or "")):
+        return jsonify({"ok": False, "error": "Authorization response did not match the request."}), 400
+
+    user = session.get('user') or {}
+    try:
+        discovery = mcp_oauth.discover(definition["url"])
+        client = mcp_oauth.ensure_client_readonly(server_key, definition, discovery)
+        body = mcp_oauth.exchange_code(
+            discovery, client, code, _redirect_uri(server_key), pending["verifier"])
+    except mcp_oauth.OAuthConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+    mcp_oauth.store_tokens(user['id'], server_key, body, org_id=user.get('org_id'))
+
+    # First sign-in doubles as discovery: an OAuth server shows its tools to a
+    # token, not to the boot process, so this token captures the catalog for
+    # everyone. Best effort, and in a bounded thread: a server that answers the
+    # token exchange but then wedges the MCP transport must not be able to hold
+    # this response hostage — the SDK's reconnect loop can outlive any inner
+    # timeout, so the bound is on the thread, not inside it. If discovery never
+    # finishes, the sign-in still succeeded and the next one retries.
+    import threading
+
+    def _discover():
+        try:
+            found = asyncio.run(discover_after_connect(server_key, body["access_token"]))
+            log.info("MCP server '%s': %d tool(s) discovered after sign-in.",
+                     server_key, len(found))
+        except Exception as e:
+            log.warning("post-sign-in discovery failed for %s: %s", server_key, e)
+
+    worker = threading.Thread(target=_discover, daemon=True)
+    worker.start()
+    worker.join(timeout=20)
+    if worker.is_alive():
+        log.warning("post-sign-in discovery for %s is still running; not waiting.", server_key)
+
+    return redirect('/')
+
+
+@mcp_bp.route('/auth/<server_key>/disconnect', methods=['POST'])
+def oauth_disconnect(server_key):
+    from ..core.services import mcp_oauth
+    from ..persistence import database as db
+
+    user = session.get('user') or {}
+    if not user.get('id'):
+        return jsonify({"ok": False, "error": "Sign in first."}), 401
+    db.delete_oauth_token(user['id'], mcp_oauth.provider_key(server_key),
+                          org_id=user.get('org_id'))
+    return jsonify({"ok": True})

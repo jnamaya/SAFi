@@ -561,6 +561,10 @@ export async function listMcpServers() {
     return httpGet(j('/api/mcp/servers'));
 }
 
+export async function disconnectMcpAuth(serverKey) {
+    return httpJSON(j(`/api/mcp/auth/${encodeURIComponent(serverKey)}/disconnect`), 'POST', {});
+}
+
 /**
  * Uploads one document into a knowledge base.
  *

@@ -165,7 +165,46 @@ for a third party to weaken your own policy.
 
 ---
 
-## 5. MCP server or built-in connector?
+## 5. Per-user authorization (OAuth 2.1)
+
+A server that implements the MCP authorization specification does not take a
+static credential at all. Install it with `--auth oauth`:
+
+```
+scripts/safi_mcp.py add --url https://tools.example.com/mcp --auth oauth
+```
+
+Each member then presses **Sign in** on the server's card in Settings → Tools
+Catalog, authenticates at the deployment's IdP (Keycloak, Auth0, or any
+RFC 8414-compliant server), and from then on every call that member's agents
+make to that server runs as that member. This is the fix for the shared-identity
+problem below: attribution comes back, and offboarding a person cuts their
+access.
+
+**What SAFi holds, and pointedly does not.** The token SAFi stores is
+audience-bound to the MCP server (requested via RFC 8707's `resource` parameter
+at both the authorization and the token endpoint). It is not a Google or other
+upstream credential and works nowhere but that one server, which validates it
+against the IdP's JWKS (signature, issuer, expiry, and strictly the audience)
+and performs its own upstream exchange (RFC 8693) if it needs one. A token
+stolen from SAFi opens one tool server, not a mailbox.
+
+Operational notes:
+
+- The flow is authorization code with PKCE (S256), always. Nothing implicit.
+- If the IdP offers dynamic client registration, SAFi registers itself once and
+  reuses it; otherwise set `client_id` (and `client_secret` via `${VAR}`) in the
+  server's definition, with redirect URI
+  `{WEB_BASE_URL}/api/mcp/auth/<key>/callback`.
+- The tool catalog appears after the FIRST sign-in: an OAuth server shows its
+  tools to a token, not to the boot process. Until then the card says so.
+- Tokens live in the same encrypted table as the delegated-OAuth connectors,
+  with the same evidence row written in the same transaction.
+- Guests can never connect, and the `orgs` restriction applies as usual.
+- A reference resource server (Express + TypeScript middleware validating the
+  audience-bound JWT) ships in `mcp/oauth-resource-server/`.
+
+## 6. MCP server or built-in connector?
 
 Both end up as connectors, both are gated identically, and both leave the same
 audit evidence. The difference is the credential, and it decides what each is
@@ -193,7 +232,7 @@ not who asked.
 
 ---
 
-## 6. Trust: who can install what
+## 7. Trust: who can install what
 
 The line runs between servers that execute code here and servers that do not.
 
@@ -225,7 +264,7 @@ Two more things worth knowing before you install something you did not write:
 
 ---
 
-## 7. Operational notes
+## 8. Operational notes
 
 - Servers connect once per worker process at boot. The container runs four
   gunicorn workers, so a stdio server means four subprocesses. Anything
@@ -239,7 +278,7 @@ Two more things worth knowing before you install something you did not write:
 
 ---
 
-## 8. The operator CLI
+## 9. The operator CLI
 
 `scripts/safi_mcp.py` manages the servers in `MCP_SERVERS_JSON` from a shell. It
 exists because the browser can only install hosted servers, which leaves the npm
@@ -418,7 +457,7 @@ enable, and the Will still authorizes call by call.
 
 ---
 
-## 9. Writing your own server
+## 10. Writing your own server
 
 Any MCP server works. To expose a private API to a governed agent, the smallest
 version is a stdio server with one tool per operation. Keep the tool surface

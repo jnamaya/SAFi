@@ -25,6 +25,7 @@ export async function renderSettingsToolsTab() {
     if (!container) return;
     container.innerHTML = shell();
     await refresh();
+    wireAuthControls();
 }
 
 function shell() {
@@ -98,6 +99,50 @@ function toolRow(t) {
       </div>`;
 }
 
+/**
+ * OAuth servers are connected per PERSON, not per process: "connected" on their
+ * card means "you are", and the button connects or disconnects your own
+ * account. The token it stores is audience-bound to this one server — it is
+ * not a Google (or other upstream) credential and works nowhere else.
+ */
+function statusBadge(s) {
+    if (s.auth === 'oauth') {
+        return s.user_connected
+            ? '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">you are connected</span>'
+            : '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">sign-in required</span>';
+    }
+    return s.connected
+        ? '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">connected</span>'
+        : '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">not connected</span>';
+}
+
+function authControls(s) {
+    if (s.auth !== 'oauth') return '';
+    if (s.user_connected) {
+        return `<button data-mcp-disconnect="${esc(s.key)}"
+                  class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-neutral-700 text-xs">Disconnect</button>`;
+    }
+    return `<a href="/api/mcp/auth/${encodeURIComponent(s.key)}/login"
+              class="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium">Sign in</a>`;
+}
+
+function wireAuthControls() {
+    const el = document.getElementById('tools-list');
+    if (!el || el.dataset.authWired) return;
+    el.dataset.authWired = '1';
+    el.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-mcp-disconnect]');
+        if (!btn) return;
+        btn.disabled = true;
+        try {
+            await api.disconnectMcpAuth(btn.dataset.mcpDisconnect);
+            await refresh();
+        } catch (err) {
+            btn.disabled = false;
+        }
+    });
+}
+
 function paint() {
     const el = document.getElementById('tools-list');
     if (!el) return;
@@ -125,13 +170,15 @@ function paint() {
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-semibold text-gray-900 dark:text-white">${esc(s.label)}</span>
               <span class="font-mono text-xs text-gray-500">${esc(s.key)}</span>
-              ${s.connected
-                ? '<span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">connected</span>'
-                : '<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">not connected</span>'}
+              ${statusBadge(s)}
             </div>
             ${s.error ? `<p class="text-xs text-red-600 dark:text-red-400 mt-2">${esc(s.error)}</p>` : ''}
+            ${s.auth === 'oauth' && !s.tools.length ? '<p class="text-xs text-gray-500 mt-2">Tools appear after the first sign-in: this server shows its catalog to a signed-in user, not to the deployment.</p>' : ''}
           </div>
-          <span class="text-xs text-gray-400 shrink-0">${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}</span>
+          <div class="flex items-center gap-3 shrink-0">
+            ${authControls(s)}
+            <span class="text-xs text-gray-400">${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}</span>
+          </div>
         </div>
 
         ${s.tools.length ? `
