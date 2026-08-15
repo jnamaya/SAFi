@@ -471,7 +471,20 @@ class _Runtime:
                     log.info("MCP server '%s': disabled in config, skipped.", name)
                     continue
                 if (params.get("auth") or "").lower() == "oauth":
-                    self.register_offline(name, params, reserved_tool_names, "file")
+                    # _locked, not the public method: start() already holds
+                    # self._lock, which is not reentrant. The same mistake was
+                    # made and fixed in sync_origin first; this was the second
+                    # copy, and it deadlocked every BOOT with an OAuth server
+                    # in the file, while resyncs (the fixed path) worked. A
+                    # worker that happened to boot before the file existed
+                    # served fine until recycled, which is why it passed local
+                    # verification and failed on the demo host.
+                    self._register_offline_locked(name, params, reserved_tool_names, "file")
+                    entry = self._servers.get(name, {})
+                    log.info(
+                        "MCP server '%s' registered (per-user sign-in): %d cached tool(s).",
+                        name, len(entry.get("tools") or []),
+                    )
                     continue
                 ready = threading.Event()
                 timeout = float(params.get("connect_timeout") or DEFAULT_CONNECT_TIMEOUT)
@@ -672,12 +685,18 @@ class _Runtime:
         }
 
     def summary(self) -> Dict[str, Any]:
+        # auth and orgs ride along because the API layer renders from THIS
+        # view. Their absence here is exactly how the Sign in button failed to
+        # appear on a correctly registered OAuth server: the runtime knew, the
+        # summary did not say, and the browser drew a card with no way in.
         return {
             "servers": {
                 name: {
                     "label": entry.get("label") or name,
                     "tools": list(entry.get("tools") or []),
                     "error": entry.get("error"),
+                    "auth": entry.get("auth") or "",
+                    "orgs": list(entry.get("orgs") or []),
                 }
                 for name, entry in self._servers.items()
             },

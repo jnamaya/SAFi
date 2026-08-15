@@ -209,6 +209,44 @@ class DiscoveryAndFlowTests(unittest.TestCase):
         self.assertEqual(client["client_id"], "operator-set")
 
 
+class BootWithOauthServerTests(unittest.TestCase):
+    """start() with an OAuth server in the file must return, not deadlock.
+
+    The regression that reached the demo host: start() held the runtime lock
+    and called the public register_offline, which takes it again. Every boot
+    with an OAuth server configured hung; resyncs worked because that path had
+    already been fixed. The watchdog thread is what makes this test FAIL fast
+    instead of hanging the suite if the deadlock ever returns.
+    """
+
+    def test_boot_registers_an_oauth_server_and_returns(self):
+        from safi_app.core import mcp_runtime
+
+        result = {}
+
+        def boot():
+            result["summary"] = mcp_runtime.start({
+                "authed": {
+                    "transport": "http",
+                    "url": "https://tools.example.com/mcp",
+                    "auth": "oauth",
+                    "cached_tools": [{"name": "cached_tool", "description": "d"}],
+                },
+            }, reserved_tool_names=frozenset())
+
+        worker = threading.Thread(target=boot, daemon=True)
+        worker.start()
+        worker.join(timeout=15)
+        try:
+            self.assertFalse(worker.is_alive(), "start() deadlocked with an OAuth server")
+            entry = result["summary"]["servers"]["authed"]
+            self.assertEqual(entry["auth"], "oauth")
+            self.assertEqual(entry["tools"], ["cached_tool"])
+        finally:
+            if not worker.is_alive():
+                mcp_runtime.shutdown()
+
+
 class RouteTests(unittest.TestCase):
     """The Flask half: redirect out, validate back, store encrypted."""
 
