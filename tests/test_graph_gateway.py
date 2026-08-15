@@ -96,6 +96,17 @@ class _StubMicrosoft(BaseHTTPRequestHandler):
             return
         if self.path.startswith("/me/drive/items/f123"):
             return self._json({"name": "Contract.docx"})
+        if self.path.startswith("/me/drive/items/dir1/children"):
+            return self._json({"value": [
+                {"name": "Q3.xlsx", "id": "f77", "file": {},
+                 "lastModifiedDateTime": "2026-08-12T00:00:00Z"},
+            ]})
+        if self.path.startswith("/me/drive/root/children"):
+            return self._json({"value": [
+                {"name": "Reports", "id": "dir1", "folder": {"childCount": 1}},
+                {"name": "Notes.txt", "id": "f42", "file": {},
+                 "lastModifiedDateTime": "2026-08-11T00:00:00Z"},
+            ]})
         if self.path.startswith("/me/drive/root/search"):
             return self._json({"value": [
                 {"name": "Q3 Plan.docx", "id": "f123",
@@ -287,6 +298,24 @@ class GraphGatewayTests(unittest.TestCase):
             self.resource_uri, "site_files_search",
             {"site_id": "site-1", "query": "policy"}, body["access_token"]))
         self.assertIn("Policy.pdf", site_files)
+
+    def test_files_list_walks_root_and_folders(self):
+        """The enumeration the search tools cannot do: list the root, then
+        descend into a folder by the id the root listing returned."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        body, _, _ = self._token()
+
+        root = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "files_list", {}, body["access_token"]))
+        self.assertIn("[folder] Reports", root)
+        self.assertIn("dir1", root)
+        self.assertIn("Notes.txt", root)
+
+        inside = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "files_list", {"folder_id": "dir1"},
+            body["access_token"]))
+        self.assertIn("Q3.xlsx", inside)
 
     def test_refresh_grant_mints_a_working_token(self):
         import asyncio

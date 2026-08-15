@@ -176,6 +176,31 @@ def build_app(store: Optional[Store] = None):
         return f"Authorized as {tokens['email'] if tokens else 'nobody'}"
 
     @server.tool()
+    def files_list(folder_id: str = "", max_results: int = 25) -> str:
+        """List files and folders in the member's OneDrive. Lists the drive
+        root when folder_id is empty; pass an id from a listing or search
+        result to descend into that folder. Read-only."""
+        target = (f"/me/drive/items/{folder_id}/children" if folder_id
+                  else "/me/drive/root/children")
+        data = _graph_get(store, target, {
+            "$top": min(int(max_results or 25), 100),
+            "$select": "id,name,folder,file,lastModifiedDateTime,size"})
+        if "error" in data:
+            return f"ERROR: {data['error']}"
+        items = []
+        for item in data.get("value", []):
+            if "folder" in item:
+                count = (item.get("folder") or {}).get("childCount")
+                detail = f"{count} items" if count is not None else "folder"
+                items.append(f"- [folder] {item.get('name', '(unnamed)')} "
+                             f"(id {item.get('id', '?')}, {detail})")
+            else:
+                items.append(f"- {item.get('name', '(unnamed)')} "
+                             f"(id {item.get('id', '?')}, modified "
+                             f"{item.get('lastModifiedDateTime', '?')})")
+        return "\n".join(items) or "The folder is empty."
+
+    @server.tool()
     def files_search(query: str, max_results: int = 10) -> str:
         """Search the member's OneDrive by file name or content."""
         data = _graph_get(
