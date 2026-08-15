@@ -221,15 +221,18 @@ scripts/safi_mcp.py add --url https://api.githubcopilot.com/mcp --auth oauth \
     --key github_mcp --label "GitHub (official)" \
     --client-id '${GITHUB_MCP_CLIENT_ID}' \
     --client-secret '${GITHUB_MCP_CLIENT_SECRET}' \
-    --scopes "read:user,read:org"
+    --scopes "repo,read:user,read:org"
 ```
 
-Set `--scopes` deliberately: GitHub's advertised list includes write scopes
-(`repo`, `write:packages`), and whatever is listed here is what every member
-grants at sign-in. Classic GitHub scopes have no read-only form of `repo`, so
-leaving it out limits members' agents to public repositories; including it
-grants read AND write to private ones, which belongs behind a policy that
-enables only read tools.
+Set `--scopes` deliberately, and know one measured fact: GitHub's hosted
+server gates its ENTIRE repos toolset behind the full `repo` scope. Tokens
+carrying only `public_repo` are refused even for reading a public repository
+(verified 2026-08-15 by replay: `get_me` worked while every repos tool failed
+with the same token, first at `read:org`, then again at `public_repo`).
+Classic scopes have no read-only form of `repo`, so the token every member
+grants can technically write to their repositories. That is exactly the gap
+SAFi's own layers absorb: enable only the read tools in the policy and the
+Will refuses everything else per call, whatever the token could do.
 
 One honest caveat: GitHub's tokens are ordinary GitHub OAuth tokens, not
 audience-bound JWTs, so the no-passthrough property is weaker here than with a
