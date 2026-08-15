@@ -503,9 +503,11 @@
                 </ul>
               </div>
 
-              <!-- Group: Management -->
+              <!-- Group: Organization — everything role-gated to
+                   admin/editor/auditor. The div keeps its historical
+                   nav-group-management id; app.js and tests target it. -->
               <div class="mb-6" id="nav-group-management">
-                <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Management</h3>
+                <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Organization</h3>
                     <ul class="space-y-0.5">
                       <li>
                         <!-- Knowledge bases. Hidden by default and revealed by
@@ -549,7 +551,7 @@
                               d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
                             </path>
                           </svg>
-                          Organization
+                          Members
                         </button>
                       </li>
                       <li>
@@ -699,7 +701,7 @@
                 </div>
 
                 <div id="tab-organization" class="tab-content hidden">
-                  <h1 class="text-2xl font-bold mb-4">Organization Settings</h1>
+                  <h1 class="text-2xl font-bold mb-4">Members</h1>
                 </div>
                 <div id="tab-compliance" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Compliance</h1>

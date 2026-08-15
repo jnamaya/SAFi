@@ -25,7 +25,8 @@ export function setOrgCurrentUser(u) {
 }
 
 /**
- * Renders the Organization Settings tab (Admin Only).
+ * Renders the Members tab (labeled "Members" in the Organization group;
+ * historically "Organization Settings"). Admin only.
  * Handles fetching org details and Domain Verification.
  */
 export async function renderSettingsOrganizationTab() {
