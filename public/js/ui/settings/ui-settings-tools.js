@@ -38,21 +38,36 @@ function shell() {
       <div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Tools Catalog</h1>
         <p class="text-sm text-gray-500 mt-1 max-w-3xl">
-          These are tools your administrator has installed on this deployment, and what each one
-          is enabled by. A tool does nothing until a policy enables it and an agent is assigned it.
+          The tools installed on this deployment, and what each one is enabled by.
+          Installing grants nothing: a tool does nothing until a policy enables it
+          and an agent is assigned it.
         </p>
       </div>
 
       <div class="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 p-4">
-        <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">How tools get into this catalog</h2>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">How a tool becomes usable</h2>
         <ol class="text-sm text-gray-600 dark:text-gray-400 space-y-1.5 list-decimal list-outside pl-5">
-          <li>An administrator installs the MCP server from the terminal or command prompt.</li>
-          <li>SAFi connects to that server, asks what tools it has, and catalogs them here.</li>
-          <li>An admin or editor enables specific tools in the policy wizard, under
-              <strong>Tools &amp; Guardrails</strong>. Those tools then become available to every
-              agent that uses that policy.</li>
-          <li>Every call an agent makes is checked against that allow list before it runs.</li>
+          <li><strong>Install.</strong> Whoever operates the deployment adds the MCP server from the
+              host's terminal. There is deliberately no way to install one from the browser:
+              installing can mean running external code, and that decision belongs to the person
+              who already holds that level of access.</li>
+          <li><strong>Discover.</strong> SAFi connects to the server, asks what tools it offers, and
+              catalogs them here, visible and completely inactive.</li>
+          <li><strong>Enable.</strong> An admin or editor enables specific tools in the policy
+              wizard, under <strong>Tools &amp; Guardrails</strong>. This is a ceiling: agents under
+              that policy can never use a tool it does not list.</li>
+          <li><strong>Assign.</strong> The agent is given tools its policy allows. Every call it
+              makes is then checked against that list before it runs, and recorded in the audit
+              trail.</li>
         </ol>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mt-3">
+          <strong>Servers that act as a person</strong> need one more step: each member signs in
+          once, here or from the composer's <strong>+</strong> panel, and every call their agents
+          make then runs as them, with their permissions, under their name in the source system's
+          own logs. The first sign-in is also what reveals such a server's tool list.
+          Disconnecting, or removing the member, revokes their access at the server itself, not
+          just here.
+        </p>
       </div>
 
       <div id="tools-list"></div>
