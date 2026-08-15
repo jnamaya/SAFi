@@ -206,8 +206,20 @@ def ensure_client(server_key: str, definition: Dict[str, Any],
     clients and break token revocation as a management tool.
     """
     if definition.get("client_id"):
+        client_id = _expand_env(str(definition["client_id"]))
+        if not client_id:
+            # Stop here with a reason, not at the IdP with a riddle. An empty
+            # expansion redirected the member to GitHub's authorize page with a
+            # blank client_id, which GitHub renders as a bare 404, and nothing
+            # in that page says whose fault it is.
+            raise OAuthConfigError(
+                f"This server's client_id is configured as "
+                f"{definition['client_id']!r} but that variable is empty in the "
+                "deployment's environment. Set it (and the client secret) in "
+                ".env and restart."
+            )
         return {
-            "client_id": _expand_env(str(definition["client_id"])),
+            "client_id": client_id,
             "client_secret": _expand_env(str(definition.get("client_secret") or "")),
         }
 

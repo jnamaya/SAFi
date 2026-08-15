@@ -222,6 +222,15 @@ class DiscoveryAndFlowTests(unittest.TestCase):
         self.assertEqual(_StubHandler.register_count, 1,
                          "a second login must reuse the stored registration")
 
+    def test_an_empty_env_reference_fails_at_home_not_at_the_idp(self):
+        """An unset ${VAR} must be a clear local error, never a redirect to the
+        IdP with a blank client_id (GitHub renders that as a bare 404)."""
+        d = mcp_oauth.discover(self.resource_url)
+        with self.assertRaises(mcp_oauth.OAuthConfigError) as ctx:
+            mcp_oauth.ensure_client(
+                "x", {"client_id": "${MCP_UNSET_VAR_FOR_TEST}"}, d, "https://x/cb")
+        self.assertIn("empty", str(ctx.exception))
+
     def test_configured_credentials_beat_registration(self):
         d = mcp_oauth.discover(self.resource_url)
         client = mcp_oauth.ensure_client(
