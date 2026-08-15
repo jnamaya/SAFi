@@ -27,7 +27,10 @@ from safi_app.core.faculties.will import WillGate
 RUBRIC = {"description": "r", "scoring_guide": []}
 
 VALUES = [
-    {"value": "Scope Compliance", "weight": 0.0, "hard_gate": True, "rubric": RUBRIC},
+    # gate_reason is what synderesis stamps at compile time; hand-built
+    # profiles must carry it, the Will no longer maps names to reasons.
+    {"value": "Scope Compliance", "weight": 0.0, "hard_gate": True,
+     "gate_reason": "scope_violation", "rubric": RUBRIC},
     {"value": "Honesty", "weight": 0.6, "rubric": RUBRIC},
     {"value": "Care", "weight": 0.4, "rubric": RUBRIC},
 ]

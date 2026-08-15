@@ -139,10 +139,13 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
             "value": "Pedagogical Integrity",
             "weight": 0.5,
             # Non-negotiable: giving away the answer defeats the agent's whole
-            # purpose, so a -1 blocks at the Phase 4.5 hard gate and redirects
-            # via the ethical_violation directive (see HARD_GATE_VIOLATION_REASONS
-            # in faculties/will.py). The weight stays so Spirit still tracks it.
+            # purpose, so a -1 blocks at the Phase 4.5 hard gate. gate_reason
+            # routes the failure to the ethical_violation directive (a
+            # correctable content problem, so the orchestrator retries with
+            # the blocked draft visible rather than issuing a vacuum
+            # redirect). The weight stays so Spirit still tracks it.
             "hard_gate": True,
+            "gate_reason": "ethical_violation",
             "definition": "The response must prioritize the student's long-term understanding over short-term convenience.",
             "rubric": {
                 "description": "Checks if the AI gave away the answer or made the student think.",

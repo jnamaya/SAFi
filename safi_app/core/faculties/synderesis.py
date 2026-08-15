@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 from ...persistence import database as db
 from ...config import Config
 from ..tool_connectors import expand_connectors
+from .utils import _norm_label
+from .will import ALLOWED_GATE_REASONS
 
 # 2. Discover Built-in Agents
 # Built-ins are content, not mechanism. Each module in ..agents declares KEY
@@ -177,6 +179,7 @@ def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
         "value": "Scope Compliance",
         "weight": 0.0,
         "hard_gate": True,
+        "gate_reason": "scope_violation",
         "definition": f"The request must be within the agent's defined scope. Scope: {scope_statement}",
         "rubric": {
             "description": (
@@ -676,14 +679,19 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     # its hard gates — into the profile) and again via policy_values passed here.
     # Without this, a policy-level gate (e.g. Grounding Fidelity) lands in the
     # value set twice and is scored twice in every audit ledger.
-    hard_gates = []
-    _seen_gates = set()
+    _gates_by_name: Dict[str, Dict[str, Any]] = {}
     for v in ai_gates + existing_gates + c_gates + p_gates:
         name = v.get("value") or v.get("name")
-        if name in _seen_gates:
-            continue
-        _seen_gates.add(name)
-        hard_gates.append(v)
+        kept = _gates_by_name.get(name)
+        if kept is None:
+            _gates_by_name[name] = v
+        elif not kept.get("gate_reason") and v.get("gate_reason"):
+            # A dropped duplicate may be the only copy carrying gate_reason,
+            # e.g. the agent's own definition against a policy row stored
+            # before the key existed. Whichever copy survives the dedupe,
+            # the reason must survive with it.
+            kept["gate_reason"] = v["gate_reason"]
+    hard_gates = list(_gates_by_name.values())
 
     cw = max(0.0, min(1.0, float(charter_weight)))
     if c_scored and p_scored:
@@ -869,6 +877,36 @@ def _stamp_knowledge_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     return profile
 
 
+# Pre-gate_reason DB policies are stamped by name at compile time. These two
+# names are governance vocabulary: this file itself injects the first, and the
+# shipped default policy defines the second. Agent-specific gate names must
+# never be added here; they carry gate_reason in their own definitions.
+_LEGACY_GATE_REASONS: Dict[str, str] = {
+    "scope compliance": "scope_violation",
+    "grounding fidelity": "grounding_violation",
+}
+
+
+def _stamp_gate_reasons(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compile-time counterpart of the Will's hard-gate check: every hard gate
+    leaves the compiler carrying an explicit, validated gate_reason, so the
+    Will routes a failure without ever interpreting a value's NAME. An
+    explicit valid reason wins; the legacy name map covers DB policies written
+    before the key existed; everything else gets the generic reason. Same
+    design as allowed_tools: normalization happens here, where it is
+    inspectable in the profile, and the Will consumes it as a pure function.
+    """
+    for v in profile.get("values", []):
+        if not v.get("hard_gate"):
+            continue
+        if v.get("gate_reason") in ALLOWED_GATE_REASONS:
+            continue
+        name = _norm_label(v.get("value") or v.get("name"))
+        v["gate_reason"] = _LEGACY_GATE_REASONS.get(name, "hard_gate_violation")
+    return profile
+
+
 def _stamp_tool_authorization(profile: Dict[str, Any]) -> Dict[str, Any]:
     """
     Layer-2 tool authorization for WillGate.evaluate_tool_intent.
@@ -1026,6 +1064,10 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     # (evaluate_tool_intent Step 1) actually enforces the advertised tool list
     # rather than trusting schema advertisement alone.
     final = _stamp_tool_authorization(final)
+
+    # 6b2. Every hard gate leaves the compiler with an explicit gate_reason,
+    # so the Will routes failures from profile data, never from value names.
+    final = _stamp_gate_reasons(final)
 
     # 6c. Same contract for retrieval: the policy's allowed_knowledge_bases
     # narrows what the agent may actually be grounded in.

@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.9.1  
-> **Last Updated:** 2026-08-14  
+> **Version:** 1.9.2  
+> **Last Updated:** 2026-08-15  
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -197,16 +197,18 @@ $$D^2_t, E^2_t = W_2(L_t, V)$$
 Any value flagged `hard_gate=true` with score $\leq -1$ triggers immediate violation.
 The check is **fail-closed**: if a hard-gate value is missing from the ledger (Conscience
 omitted it or returned a garbled ledger), that too is a violation (`hard_gate_unscored`).
-The violation reason is mapped per value via `HARD_GATE_VIOLATION_REASONS`
-(e.g. `Scope Compliance → scope_violation`, `Grounding Fidelity → grounding_violation`),
-defaulting to `hard_gate_violation`. Hard-gate values carry `weight = 0.0` and are excluded
-from the Spirit EMA.
+The violation reason is per-value data (`gate_reason`), stamped into the compiled
+profile by Synderesis and validated against
+{`scope_violation`, `grounding_violation`, `ethical_violation`},
+defaulting to `hard_gate_violation`. The Will reads the reason from the failing
+value and never derives it from the value's name. Hard-gate values carry
+`weight = 0.0` and are excluded from the Spirit EMA.
 
 **If $D^2_t = \text{violation}$**, the exit depends on the mapped reason:
 - Scope/grounding-class reasons (a verdict on engaging the request at all) →
   call `trigger_agent_redirect()` directly, no retry.
-- `ethical_violation`-class reasons (a *correctable* content-quality gate, e.g.
-  Pedagogical Integrity — the request is fine, the draft is the problem) →
+- `ethical_violation`-class reasons (a *correctable* content-quality gate:
+  the request is fine, the draft is the problem) →
   route to **Stage 2.1 (Reflexion Retry)**, which regenerates with the blocked
   draft visible. A vacuum redirect cannot see the question and misreported
   in-scope requests as out of scope.

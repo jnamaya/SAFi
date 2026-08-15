@@ -142,6 +142,9 @@ SAFI_DEFAULT_POLICY: Dict[str, Any] = {
             "value": "Grounding Fidelity",
             "weight": 0.0,  # hard gate → excluded from the Spirit EMA, enforced by the Will
             "hard_gate": True,
+            # A fabrication is a grounding failure, not a scope breach; the
+            # reason keeps the redirect from misreporting it as off-topic.
+            "gate_reason": "grounding_violation",
             "definition": (
                 "When grounding material (retrieved context, tool results, or supplied documents) "
                 "is available, the response's factual claims must actually derive from it. The agent "

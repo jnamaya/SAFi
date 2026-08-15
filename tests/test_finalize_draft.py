@@ -25,6 +25,9 @@ DISCLAIMER = "Disclaimer: I am a test agent."
 VALUES = [
     {
         "value": "Scope Compliance", "weight": 0.0, "hard_gate": True,
+        # gate_reason is what synderesis stamps at compile time; hand-built
+        # profiles must carry it, the Will no longer maps names to reasons.
+        "gate_reason": "scope_violation",
         "rubric": {"description": "in scope?", "scoring_guide": []},
     },
     {

@@ -43,19 +43,18 @@ READ_ONLY_TOOLS: frozenset = frozenset({
     "lookup_definition",
 })
 
-# Maps a failing hard-gate value to the violation reason used for the redirect.
-# The reason drives both the redirect directive lookup and the orchestrator's
-# scope-vs-content classification, so each gate must name its real failure mode.
-# Only genuine scope/injection gates may use "scope_violation"; a grounding
-# breach (fabrication) is NOT a scope problem and must not be reported as one.
-HARD_GATE_VIOLATION_REASONS: Dict[str, str] = {
-    "Scope Compliance": "scope_violation",
-    "Grounding Fidelity": "grounding_violation",
-    # Content-quality gate, not a scope breach: route to the agent's
-    # ethical_violation directive so the redirect corrects the behavior
-    # (the agent re-asks or reframes) instead of refusing.
-    "Pedagogical Integrity": "ethical_violation",
-}
+# The violation reason a failing hard gate reports is DATA on the value itself
+# (gate_reason, stamped into the compiled profile by synderesis), never derived
+# from the value's name: the Will must not interpret names. The reason drives
+# both the redirect directive lookup and the orchestrator's scope-vs-content
+# classification, so each gate must name its real failure mode. Only genuine
+# scope/injection gates may use "scope_violation"; a grounding breach
+# (fabrication) is NOT a scope problem and must not be reported as one.
+# Anything outside this set collapses to the generic reason, so a malformed
+# policy cannot invent a routing path.
+ALLOWED_GATE_REASONS: frozenset = frozenset(
+    {"scope_violation", "grounding_violation", "ethical_violation"}
+)
 
 
 class WillGate:
@@ -161,11 +160,11 @@ class WillGate:
         # orchestrator's coverage check use — so a case/Unicode variant of a
         # gate name from the auditor doesn't fail closed here while passing
         # everywhere else.
-        gates = {}  # normalized label -> defined gate name
+        gates = {}  # normalized label -> the gate's value dict (carries gate_reason)
         for v in self.values:
             if v.get("hard_gate"):
                 name = v.get("value") or v.get("name")
-                gates[_norm_label(name)] = name
+                gates[_norm_label(name)] = v
         if not gates:
             return ("approve", "no_hard_gates_defined")
 
@@ -177,17 +176,23 @@ class WillGate:
         # Fail-closed: a hard gate that the audit did not score cannot be
         # assumed compliant. A missing entry (Conscience omitted it, returned a
         # garbled/empty ledger, etc.) is treated as a violation, not a pass.
-        for norm, defined_name in gates.items():
+        for norm, gate in gates.items():
             if norm not in ledger_by_norm:
+                defined_name = gate.get("value") or gate.get("name")
                 self.log.warning(f"WillGate: Hard gate '{defined_name}' missing from ledger — failing closed.")
                 return ("violation", "hard_gate_unscored")
 
-        for norm, defined_name in gates.items():
+        for norm, gate in gates.items():
             entry = ledger_by_norm[norm]
             if float(entry.get("score", 0)) <= -1.0:
-                # Report the gate's real failure mode. Unmapped gates default to a
-                # generic content violation rather than masquerading as a scope breach.
-                reason = HARD_GATE_VIOLATION_REASONS.get(defined_name, "hard_gate_violation")
+                # Report the gate's real failure mode, read from the compiled
+                # profile. A gate without a valid gate_reason defaults to a
+                # generic content violation rather than masquerading as a
+                # scope breach.
+                defined_name = gate.get("value") or gate.get("name")
+                reason = gate.get("gate_reason")
+                if reason not in ALLOWED_GATE_REASONS:
+                    reason = "hard_gate_violation"
                 self.log.warning(f"WillGate: Hard gate failure on '{defined_name}' → {reason}.")
                 return ("violation", reason)
 
