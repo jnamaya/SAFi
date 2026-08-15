@@ -50,8 +50,8 @@ class KeyDerivationTests(unittest.TestCase):
         self.assertEqual(safi_mcp.derive_key("@scope/server@1.2.3"), "server_1_2_3")
 
     def test_unique_key_avoids_builtins(self):
-        self.assertIn("github", CONNECTOR_TOOLS)
-        self.assertNotEqual(safi_mcp.unique_key("github", {}), "github")
+        self.assertIn("google_drive", CONNECTOR_TOOLS)
+        self.assertNotEqual(safi_mcp.unique_key("google_drive", {}), "google_drive")
 
     def test_unique_key_avoids_an_existing_entry(self):
         self.assertNotEqual(safi_mcp.unique_key("acme", {"acme": {}}), "acme")

@@ -1,10 +1,10 @@
 """
-Connector-level authorization: the wizard grants "github", the model calls
-"github_get_repo", and the Will matches exactly.
+Connector-level authorization: the wizard grants "sharepoint", the model calls
+"sharepoint_read", and the Will matches exactly.
 
 Before the fix, mcp_manager expanded connector names into per-function schemas
 while WillGate compared the function name against the unexpanded list. An agent
-granted "github" was therefore offered four tools and could use none of them.
+granted "sharepoint" was therefore offered four tools and could use none of them.
 sharepoint (7 functions) and google_drive (3) were dead the same way, and
 web_news was blocked while web_search worked. The connectors that appeared to
 work did so only because their single function shared the connector's name.
@@ -88,10 +88,10 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
                         f"granting '{connector}' must authorize '{fn}'")
 
     def test_the_reported_failure(self):
-        # Nelson's exact case: tools_json ["web_search", "github"], no policy
+        # Nelson's exact case: tools_json ["web_search", "sharepoint"], no policy
         # narrowing, model proposes github_get_repo.
-        profile = compile_profile(["web_search", "github"])
-        self.assertNotEqual(authorize("github_get_repo", profile), "violation")
+        profile = compile_profile(["web_search", "sharepoint"])
+        self.assertNotEqual(authorize("sharepoint_read", profile), "violation")
 
     def test_web_news_no_longer_blocked(self):
         # In READ_ONLY_TOOLS, but the allow-list is checked before the fast pass,
@@ -103,7 +103,7 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
 class TestExpansionDoesNotOverGrant(unittest.TestCase):
 
     def test_ungranted_connector_still_blocked(self):
-        profile = compile_profile(["github"])
+        profile = compile_profile(["web_search"])
         for fn in ("sharepoint_upload", "google_upload_file", "send_email"):
             with self.subTest(tool=fn):
                 self.assertEqual(authorize(fn, profile), "violation")
@@ -111,39 +111,41 @@ class TestExpansionDoesNotOverGrant(unittest.TestCase):
     def test_no_tools_is_deny_all(self):
         profile = compile_profile([])
         self.assertEqual(profile["allowed_tools"], [])
-        self.assertEqual(authorize("github_get_repo", profile), "violation")
+        self.assertEqual(authorize("sharepoint_read", profile), "violation")
 
     def test_hallucinated_tool_name_blocked(self):
-        profile = compile_profile(["github"])
-        self.assertEqual(authorize("github_delete_repo", profile), "violation")
+        profile = compile_profile(["sharepoint"])
+        self.assertEqual(authorize("sharepoint_delete", profile), "violation")
 
     def test_policy_can_narrow_within_a_connector(self):
-        # Agent granted all of GitHub, policy permits only the read.
-        profile = compile_profile(["github"], policy_allowed=["github_read_file"])
-        self.assertEqual(profile["allowed_tools"], ["github_read_file"])
-        self.assertNotEqual(authorize("github_read_file", profile), "violation")
-        self.assertEqual(authorize("github_get_repo", profile), "violation")
+        # Agent granted all of SharePoint, policy permits only the search.
+        profile = compile_profile(["sharepoint"], policy_allowed=["sharepoint_search"])
+        self.assertEqual(profile["allowed_tools"], ["sharepoint_search"])
+        self.assertNotEqual(authorize("sharepoint_search", profile), "violation")
+        self.assertEqual(authorize("sharepoint_read", profile), "violation")
 
     def test_policy_cannot_grant_what_the_agent_lacks(self):
-        profile = compile_profile(["web_search"], policy_allowed=["github", "web_search"])
-        self.assertNotIn("github_get_repo", profile["allowed_tools"])
-        self.assertEqual(authorize("github_get_repo", profile), "violation")
+        profile = compile_profile(["web_search"], policy_allowed=["sharepoint", "web_search"])
+        self.assertNotIn("sharepoint_read", profile["allowed_tools"])
+        self.assertEqual(authorize("sharepoint_read", profile), "violation")
 
 
 class TestExpandConnectors(unittest.TestCase):
 
     def test_order_preserved_and_deduped(self):
         self.assertEqual(
-            expand_connectors(["web_search", "github", "web_search"]),
-            ["web_search", "web_news", "github_search_repos", "github_get_repo",
-             "github_list_issues", "github_read_file"])
+            expand_connectors(["web_search", "sharepoint", "web_search"]),
+            ["web_search", "web_news",
+             "sharepoint_search", "sharepoint_read", "sharepoint_upload",
+             "sharepoint_search_sites", "sharepoint_search_site_files",
+             "sharepoint_list_folders", "sharepoint_get_tree"])
 
     def test_unknown_names_pass_through(self):
         self.assertEqual(expand_connectors(["send_email"]), ["send_email"])
 
     def test_non_strings_ignored(self):
-        self.assertEqual(expand_connectors(["github", None, 7]),
-                         list(CONNECTOR_TOOLS["github"]))
+        self.assertEqual(expand_connectors(["sharepoint", None, 7]),
+                         list(CONNECTOR_TOOLS["sharepoint"]))
 
 
 if __name__ == "__main__":

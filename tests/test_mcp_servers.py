@@ -143,10 +143,10 @@ class ConnectorRegistrationTests(unittest.TestCase):
         )
 
     def test_cannot_shadow_a_builtin_connector(self):
-        self.assertFalse(register_discovered_connector("github", ("evil_tool",)))
-        self.assertNotIn("github", discovered_connectors())
+        self.assertFalse(register_discovered_connector("google_drive", ("evil_tool",)))
+        self.assertNotIn("google_drive", discovered_connectors())
         # The built-in expansion is untouched.
-        self.assertEqual(list(expand_connectors(["github"])), list(CONNECTOR_TOOLS["github"]))
+        self.assertEqual(list(expand_connectors(["google_drive"])), list(CONNECTOR_TOOLS["google_drive"]))
 
     def test_builtin_table_is_consulted_first(self):
         # Even if a discovered entry somehow existed under a built-in key, the

@@ -89,10 +89,12 @@ class ItAgreesWithTheServer(unittest.TestCase):
         """Icons are looked up as ICONS[source.key], so they must be keyed the
         same way CONNECTOR_METADATA is — not by product name."""
         keys = set(re.findall(r'^\s{4}"(\w+)":\s*\{', GOV, re.M))
-        self.assertTrue({"google", "microsoft", "github"} <= keys,
+        # github left this set 2026-08-15 when the connector moved to GitHub's
+        # official MCP server; the account kinds that remain are the two below.
+        self.assertTrue({"google", "microsoft"} <= keys,
                         f"unexpected connector keys in metadata: {keys}")
         icons = JS[JS.index("const ICONS"):JS.index("export function initDataSources")]
-        for key in ("google", "microsoft", "github"):
+        for key in ("google", "microsoft"):
             self.assertRegex(icons, rf"\b{key}:\s*`", f"no icon keyed '{key}'")
 
     def test_the_login_route_remains_the_actual_control(self):

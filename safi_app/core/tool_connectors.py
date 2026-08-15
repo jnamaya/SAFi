@@ -18,7 +18,9 @@ The consequence was not a degraded feature, it was a dead one. An agent granted
 "github_get_repo" is not in ["web_search", "github"]. Same for sharepoint (7 functions)
 and google_drive (3). Every multi-function connector was unusable, deterministically,
 and the only connectors that worked were the ones whose single function happened to be
-named identically to the connector.
+named identically to the connector. (The github connector named in this history was
+retired 2026-08-15 in favour of GitHub's official MCP server; the mechanism it
+motivated governs its successor.)
 
 So synderesis._stamp_tool_authorization() now expands through this table before
 stamping profile["allowed_tools"], and the Will keeps exact matching.
@@ -47,12 +49,6 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
     "get_company_news": ("get_company_news",),
     "get_earnings_history": ("get_earnings_history",),
     "get_stock_price": ("get_stock_price",),
-    "github": (
-        "github_search_repos",
-        "github_get_repo",
-        "github_list_issues",
-        "github_read_file",
-    ),
     "google_drive": (
         "google_list_files",
         "google_read_file",

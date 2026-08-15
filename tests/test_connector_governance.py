@@ -2,7 +2,7 @@
 Data-source connector governance: which external accounts members may link.
 
 Before this, /api/auth/{provider}/login checked only that you were logged in.
-Any member of any org could link Google Drive, SharePoint or GitHub to a
+Any member of any org could link Google Drive or SharePoint to a
 governed agent, with no admin involvement and no record it happened.
 
 The load-bearing tests:
@@ -104,7 +104,7 @@ class AllowListSemantics(ConnectorGovernanceBase):
         db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
         cg.invalidate_org(self.org_id)
         self.assertTrue(cg.connector_allowed("google", self.org_id))
-        self.assertFalse(cg.connector_allowed("github", self.org_id))
+        self.assertFalse(cg.connector_allowed("microsoft", self.org_id))
 
     def test_unknown_key_rejected_on_write(self):
         with self.assertRaises(ValueError):
@@ -122,7 +122,7 @@ class AllowListSemantics(ConnectorGovernanceBase):
         """A single-user install has no admin to set a policy; failing closed
         there would break the Quick Start for no security gain."""
         self.assertIsNone(cg.get_org_allowlist(None))
-        self.assertTrue(cg.connector_allowed("github", None))
+        self.assertTrue(cg.connector_allowed("microsoft", None))
 
     def test_allowlist_change_is_evidence_logged(self):
         db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
@@ -149,13 +149,13 @@ class RouteEnforcement(ConnectorGovernanceBase):
     def test_login_redirects_when_allowed(self):
         """Unrestricted: the route proceeds to the provider (or fails on missing
         OAuth config) — either way it is NOT the connector-policy bounce."""
-        r = self.client.get('/api/auth/github/login')
+        r = self.client.get('/api/auth/microsoft/login')
         self.assertNotIn('connector_not_allowed', r.headers.get('Location', ''))
 
     def test_login_fails_closed_when_blocked(self):
         db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
         cg.invalidate_org(self.org_id)
-        r = self.client.get('/api/auth/github/login')
+        r = self.client.get('/api/auth/microsoft/login')
         self.assertEqual(302, r.status_code)
         self.assertIn('connector_not_allowed', r.headers['Location'])
 
@@ -164,7 +164,7 @@ class RouteEnforcement(ConnectorGovernanceBase):
         lets a code obtained before the revocation still redeem into a token."""
         db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
         cg.invalidate_org(self.org_id)
-        for path in ('/api/auth/github/callback?code=x&state=y',
+        for path in ('/api/auth/microsoft/callback?code=x&state=y',
                      '/api/auth/microsoft/callback?code=x&state=y'):
             r = self.client.get(path)
             self.assertEqual(302, r.status_code, path)
@@ -186,10 +186,10 @@ class RouteEnforcement(ConnectorGovernanceBase):
     def test_disconnect_is_always_permitted(self):
         """Revoking access must work even for a connector since blocked — that
         is the direction the policy wants to travel in."""
-        db.upsert_oauth_token(self.uid, 'github', 'tok', org_id=self.org_id)
+        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
         db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
         cg.invalidate_org(self.org_id)
-        r = self.client.post('/api/auth/github/disconnect')
+        r = self.client.post('/api/auth/microsoft/disconnect')
         self.assertEqual(200, r.status_code)
         self.assertEqual([], db.get_connected_providers(self.uid))
 
@@ -211,7 +211,7 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
         """A repeat disconnect, or a probe for a provider never linked, must not
         manufacture history that did not happen."""
         before = _log_events(self.org_id).count("connector_disconnected")
-        db.delete_oauth_token(self.uid, 'github', org_id=self.org_id)
+        db.delete_oauth_token(self.uid, 'microsoft', org_id=self.org_id)
         after = _log_events(self.org_id).count("connector_disconnected")
         self.assertEqual(before, after)
 
@@ -223,7 +223,7 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
 
     def test_connections_never_cross_orgs(self):
         db.upsert_oauth_token(self.uid, 'google', 'tok', org_id=self.org_id)
-        db.upsert_oauth_token(self.other_uid, 'github', 'tok', org_id=self.other_org)
+        db.upsert_oauth_token(self.other_uid, 'microsoft', 'tok', org_id=self.other_org)
         mine = db.list_org_connections(self.org_id)
         self.assertEqual({self.uid}, {r["user_id"] for r in mine})
         self.assertEqual({'google'}, {r["provider"] for r in mine})
@@ -266,19 +266,20 @@ class Usability(ConnectorGovernanceBase):
         """The default state for most orgs: built-ins use no data sources."""
         usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
         self.assertNotIn('google', usable)
-        self.assertNotIn('github', usable)
+        self.assertNotIn('microsoft', usable)
 
     def test_an_agent_with_the_tool_makes_it_usable(self):
         self._agent(['google_drive'])
         usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
         self.assertIn('google', usable)
-        self.assertNotIn('github', usable)
+        self.assertNotIn('microsoft', usable)
 
     def test_connector_name_and_function_name_both_count(self):
-        """The wizard grants 'github'; a policy may narrow to
-        'github_get_repo'. Either must mark the source usable."""
-        self._agent(['github_get_repo'])
-        self.assertIn('github', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
+        """The wizard grants the connector ('sharepoint'); a policy may narrow
+        to a single function ('sharepoint_read'). Either must mark the
+        microsoft account usable."""
+        self._agent(['sharepoint_read'])
+        self.assertIn('microsoft', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
 
     def test_policy_narrowing_can_make_it_unusable(self):
         """An agent advertising google_drive whose policy allows only
@@ -308,9 +309,9 @@ class Usability(ConnectorGovernanceBase):
         by_key = {c["key"]: c for c in body["connectors"]}
         self.assertTrue(by_key['google']['allowed'])
         self.assertTrue(by_key['google']['usable'])
-        self.assertTrue(by_key['github']['allowed'])
-        self.assertFalse(by_key['github']['usable'],
-                         "no agent uses GitHub, so it must not be offered")
+        self.assertTrue(by_key['microsoft']['allowed'])
+        self.assertFalse(by_key['microsoft']['usable'],
+                         "no agent uses OneDrive/SharePoint, so it must not be offered")
 
     def test_allowed_and_usable_are_independent(self):
         """Blocking the source must not make it 'usable: false' by accident,
@@ -350,7 +351,7 @@ class AdminApi(ConnectorGovernanceBase):
         body = self.client.get(f'/api/organizations/{self.org_id}/connectors').get_json()
         by_key = {c["key"]: c for c in body["connectors"]}
         self.assertTrue(by_key["google"]["allowed"])
-        self.assertFalse(by_key["github"]["allowed"])
+        self.assertFalse(by_key["microsoft"]["allowed"])
 
     def test_non_admin_is_refused(self):
         login_as(self.client, self.uid, "member", org_id=self.org_id)
