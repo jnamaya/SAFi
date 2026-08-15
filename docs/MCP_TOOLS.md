@@ -251,7 +251,8 @@ keyed by the verified subject) and never reach SAFi; SAFi holds only a token
 whose audience is the gateway.
 
 v1 tools, read-only by doctrine: `whoami`, `calendar_list_events`,
-`drive_search`, `gmail_search`. Nothing that sends, moves or deletes.
+`drive_search`, `drive_get_file_contents`, `gmail_search`. Nothing that
+sends, moves or deletes.
 
 Setup:
 
@@ -260,6 +261,33 @@ Setup:
 2. Run the gateway (see `deploy/systemd/safi-workspace-gateway.service` for
    bare metal). Put TLS in front of it; the base URL must be https in
    production.
+3. Install it in SAFi from the host:
+   `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
+4. Members press Sign in on its card in Settings, Tools Catalog.
+
+### The Graph gateway: per-user Microsoft 365, same architecture
+
+`scripts/graph_gateway.py` is the same architecture for Microsoft Graph.
+Microsoft does publish an official MCP server, but it requires an M365
+Copilot license, and SAFi does not require a competing AI product's license
+as a dependency for its own tools. The two gateways share one implementation
+of the OAuth machinery (`scripts/gateway_core.py`); each provider file is
+only the endpoints, scopes, identity mapping and tools.
+
+v1 tools, read-only by doctrine: `whoami`, `files_search`,
+`file_get_contents`, `sites_search`, `site_files_search`. OneDrive and
+SharePoint, nothing writable.
+
+Setup:
+
+1. Create an Entra app registration (Web platform) with
+   `{GATEWAY_BASE_URL}/microsoft/callback` as a redirect URI, a client
+   secret, and the delegated Graph permissions `User.Read`,
+   `Files.Read.All`, `Sites.Read.All`. Set `ENTRA_TENANT` to your tenant id
+   to pin sign-in to one tenant, or leave the default `organizations` to
+   accept any work or school account.
+2. Run the gateway (see `deploy/systemd/safi-graph-gateway.service` for bare
+   metal; default port 8403). TLS in front, https base URL in production.
 3. Install it in SAFi from the host:
    `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
 4. Members press Sign in on its card in Settings, Tools Catalog.

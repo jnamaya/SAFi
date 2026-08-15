@@ -1,0 +1,36 @@
+# The Graph gateway: per-user Microsoft 365 tools over the MCP authorization
+# spec (scripts/graph_gateway.py, GOVERNANCE_BACKLOG 48k).
+#
+# Install: copy to /etc/systemd/system/, create the env file below, then
+#   systemctl daemon-reload && systemctl enable --now safi-graph-gateway
+#
+# The env file (/home/safi/graph-gateway.env, chmod 600, owned by safi):
+#   GATEWAY_BASE_URL=https://graph-gw.example.com
+#   ENTRA_CLIENT_ID=...          # an Entra app registration (Web platform)
+#   ENTRA_CLIENT_SECRET=...
+#   ENTRA_TENANT=organizations   # or a tenant id to pin one tenant
+#   GATEWAY_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   GATEWAY_DB=/home/safi/graph-gateway.db
+#   PORT=8403
+#
+# The app registration must list {GATEWAY_BASE_URL}/microsoft/callback as a
+# Web redirect URI and hold the delegated Graph permissions User.Read,
+# Files.Read.All, Sites.Read.All.
+#
+# ONE process, deliberately: the gateway is its own small authorization server
+# and its state lives in one sqlite file. Do not add workers, and put TLS in
+# front of it (Apache/nginx proxy to :8403); GATEWAY_BASE_URL must be https.
+[Unit]
+Description=SAFi Graph Gateway (MCP OAuth resource server)
+After=network.target
+
+[Service]
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+EnvironmentFile=/home/safi/graph-gateway.env
+ExecStart=/var/www/safi/venv/bin/python scripts/graph_gateway.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
