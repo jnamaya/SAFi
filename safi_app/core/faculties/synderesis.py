@@ -94,9 +94,10 @@ if _ext_dir and Path(_ext_dir).is_dir():
             logging.error(f"Extension '{_f.name}' failed to load and was skipped: {_e}")
 
 # AGENTS is the ACTIVE registry: only agents enabled via SAFI_BUILTIN_AGENTS
-# (default "tutor,safi"; "all" enables the full demo suite) register, list, and
-# seed. Everything downstream — list_profiles, get_profile, the agent API,
-# demo-policy seeding — keys off this filtered dict.
+# ("all" enables every shipped agent; the FALLBACK-flagged modules cover a
+# no-match config) register, list, and seed. Everything downstream —
+# list_profiles, get_profile, the agent API, demo-policy seeding — keys off
+# this filtered dict.
 AGENTS: Dict[str, Dict[str, Any]] = {
     k: v for k, v in ALL_AGENTS.items()
     if Config.builtin_agent_enabled(k) or k in _EXTENSION_KEYS
@@ -114,9 +115,9 @@ if Config.DEFAULT_PROFILE not in AGENTS:
                     f"users without a stored profile will fall back to another agent.")
 
 # 4. Governance Mapping — in-code org policies layered onto built-in agents.
-# Empty since 2026-08-13: its only occupant was the Contoso demo agent, removed
-# because it showcased this legacy mechanism, which DB policies and the policy
-# wizard superseded. The map (and the assemble_agent branch that reads it) stays
+# Empty since 2026-08-13: its only occupant was a demo agent that existed to
+# showcase this legacy mechanism, removed because DB policies and the policy
+# wizard superseded it. The map (and the assemble_agent branch that reads it) stays
 # because it is the documented in-code fallback shape, and because deleting the
 # branch would be a behavioural faculty change rather than a data one. A user
 # whose active_profile still names the removed agent falls back to the default
@@ -762,8 +763,8 @@ def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> 
 def _resolve_kb_display_name(kb_name: Optional[str]) -> Optional[str]:
     """Human label for a knowledge base, for UI display only.
 
-    Built-in corpora are named by slug ("safi", "bible_bsb_v1") and get the
-    old underscore-to-space treatment. User-created ones are UUIDs and are
+    Built-in corpora are named by short slug and get the old
+    underscore-to-space treatment. User-created ones are UUIDs and are
     looked up. A missing row returns None rather than the raw id: an agent
     pointing at a deleted knowledge base should say nothing rather than
     display a GUID to the end user.
@@ -819,7 +820,7 @@ def authorized_knowledge_base(requested: Optional[str],
                             compatibility: every policy written before
                             knowledge authorization existed lacks the key, and
                             treating that as deny-all would silently un-ground
-                            the SAFi Steward and every other RAG agent.
+                            every existing RAG agent.
       []                 -> the policy authorizes NO knowledge base. This is a
                             real deny-all, not "no opinion".
       [...]              -> exactly these.

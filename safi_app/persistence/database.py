@@ -1404,7 +1404,8 @@ def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
     `confirm_shared=True` and always reports the scope it found.
 
     Args:
-        agent_id: The profile_name/agent_key to reset (e.g., 'fiduciary')
+        agent_id: The profile_name/agent_key to reset (a built-in key or an
+            org-prefixed name)
         confirm_shared: Required to reset a shared (non org-prefixed) baseline.
 
     Returns:
@@ -1414,7 +1415,7 @@ def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
     Example usage:
         python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('org_1022_my_agent'))"
         # shared built-in, deliberately:
-        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('the_socratic_tutor', confirm_shared=True))"
+        python -c "from safi_app.persistence.database import reset_spirit_memory; print(reset_spirit_memory('some_builtin_agent', confirm_shared=True))"
     """
     scope = spirit_memory_scope(agent_id)
     if scope["cross_tenant"] and not confirm_shared:
@@ -4926,10 +4927,9 @@ def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=No
     """The same buckets as governance_trend(), split one series per agent.
 
     Why this exists: governance_trend()'s mean is taken over *turns*, so a
-    high-volume agent dominates it. On 2026-07-24 in dev, the_socratic_tutor
-    sat at drift 0.0 over 7 turns and the_safi_guide at 0.6163 over 2, and the
-    pooled line plotted 0.137 — a consistency of 86% that described neither
-    agent. Drift is only ever meaningful per agent (spirit_memory is keyed on
+    high-volume agent dominates it. On 2026-07-24 in dev, one agent sat at
+    drift 0.0 over 7 turns and another at 0.6163 over 2, and the pooled line
+    plotted 0.137 — a consistency of 86% that described neither agent. Drift is only ever meaningful per agent (spirit_memory is keyed on
     profile_name, so every turn's drift is a distance from that agent's own mu),
     which is what makes the split the honest default rather than a nicety.
 

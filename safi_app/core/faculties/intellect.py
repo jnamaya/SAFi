@@ -19,19 +19,21 @@ from ...persistence import database as db
 # Ceiling on assembled retrieval context, in characters. This is the single choke
 # point every agent and both retrieval paths pass through, which is why the bound
 # lives here rather than in the retriever: semantic search is naturally capped at
-# k=5, but a Bible citation returns a whole chapter, and "Psalm 119" measured 59
-# chunks / ~20k chars / ~5k tokens — spent TWICE per turn, since the Conscience
-# audits against the same context the Intellect drafted from.
+# k=5, but a citation lookup on a reference corpus returns a whole section, and
+# the worst observed case measured 59 chunks / ~20k chars / ~5k tokens — spent
+# TWICE per turn, since the Conscience audits against the same context the
+# Intellect drafted from.
 #
-# 8000 leaves John 3 and Genesis 1 (~6.3k) untouched and trims only real outliers.
+# 8000 leaves every commonly requested full section observed (~6.3k) untouched
+# and trims only real outliers.
 _MAX_CONTEXT_CHARS = 8000
 
 
 # Follow-up turns carry no retrievable content of their own. "Yes, give me the
 # full text and the historical background" was embedded verbatim, matched the most
-# history-shaped passages in the Bible (a dated siege in Ezekiel, census numbers in
-# Nehemiah), and never retrieved the psalm under discussion — so the model recited
-# it from memory and the Conscience correctly scored it -1 for Textual Fidelity.
+# history-shaped passages in the corpus, and never retrieved the passage under
+# discussion — so the model recited it from memory and the Conscience correctly
+# scored it -1 on the agent's grounding value.
 #
 # ORDER IS NOT COSMETIC. all-MiniLM-L6-v2 truncates its input, and measured on this
 # deployment a phrase placed AFTER ~2700 characters of preceding text embeds at
@@ -43,11 +45,10 @@ _RAG_STANDALONE_CHARS = 80
 _CITATION_LIKE = re.compile(r"\b[A-Za-z]+\s+\d+\b")
 
 # Length alone is NOT a usable signal for "this is a follow-up". Tested against a
-# real case: "What does the Bible teach about covenant loyalty and hesed?" is 73
-# characters — under any threshold generous enough to catch "Yes, give me the full
-# text and the historical background" (55) — and augmenting it let a stale "Psalm
-# 4" in the history capture the citation path and return the wrong chapter
-# outright. A follow-up has to be recognised by SHAPE, not size.
+# real case: a substantive 73-character question sits under any threshold generous
+# enough to catch a 55-character follow-up, and augmenting it let a stale citation
+# in the history capture the citation path and return the wrong section outright.
+# A follow-up has to be recognised by SHAPE, not size.
 _CONTINUATION = re.compile(
     r"^\s*(yes|yeah|yep|ok|okay|sure|please|go ahead|continue|more|and|also)\b"
     r"|^\s*(tell|show|give|send)\s+me\s+(more|the\s+(full|rest|whole))\b"
@@ -65,10 +66,9 @@ _RAG_TERSE_CHARS = 40
 #     USER QUERY: can you give me the full text
 #
 # That header has always gone into the embedding, and it is measurably harmful:
-# every observed bad retrieval on the Bible agent came back date-shaped — a dated
-# siege in Ezekiel, "the fourth year of King Darius" in Zechariah, census numbers
-# in Nehemiah, "the month of Ziv" in 1 Kings. The retriever was faithfully matching
-# the timestamp.
+# on a corpus full of dated events, regnal years and census numbers, every
+# observed bad retrieval came back date-shaped. The retriever was faithfully
+# matching the timestamp.
 #
 # It also silently disabled the history augmentation below: the header alone is
 # ~48 characters and contains "August 02", so every prompt looked long enough to
@@ -86,10 +86,10 @@ def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
     too thin to retrieve on its own.
 
     Augmenting unconditionally would be worse than the bug: blending the previous
-    topic into a substantive question drags stale results in, and for the Bible
-    agent a stale CITATION in the history would trigger the keyword path and return
-    the wrong chapter. So a prompt that is long enough, or already names something
-    citation-shaped, is left exactly as it is.
+    topic into a substantive question drags stale results in, and on a
+    citation-indexed corpus a stale CITATION in the history would trigger the
+    keyword path and return the wrong section. So a prompt that is long enough, or
+    already names something citation-shaped, is left exactly as it is.
     """
     if not isinstance(user_prompt, str):
         return user_prompt
@@ -110,10 +110,10 @@ def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
 def _apply_context_budget(chunks: List[str]) -> str:
     """Join retrieved chunks up to the budget, and SAY SO when anything is dropped.
 
-    Silence would be the dangerous option: an agent handed two-thirds of Psalm 119
-    with no indication has every reason to present it as the whole psalm. The
-    Textual Fidelity value exists to catch exactly that, so the truncation has to
-    be visible to the model rather than inferred by it.
+    Silence would be the dangerous option: an agent handed two-thirds of a
+    requested passage with no indication has every reason to present it as the
+    whole. A grounding-fidelity value exists to catch exactly that, so the
+    truncation has to be visible to the model rather than inferred by it.
 
     Whole chunks are kept or dropped — never cut mid-chunk, which would end a
     passage mid-sentence and invite the model to complete it from memory.
@@ -173,9 +173,8 @@ class IntellectEngine:
         #
         # Imported HERE rather than at module scope: importing the retriever
         # pulls in faiss and the ONNX embedding runtime, and most agents have no
-        # knowledge base at all — of the built-ins, only the Steward and the
-        # Bible Scholar do. A top-level import made every deployment pay for a
-        # vector-search stack it may never call.
+        # knowledge base at all. A top-level import made every deployment pay
+        # for a vector-search stack it may never call.
         self.retriever = None
         kb_name = self.profile.get("rag_knowledge_base")
         if kb_name:
@@ -235,13 +234,13 @@ class IntellectEngine:
             retrieved_context_string = ""
             if self.retriever:
                 # A plugin may override with a LIST of queries when one request
-                # covers several distinct passages — the Bible Scholar asking for
-                # every reading of the day is the case this exists for. One
-                # search per query, concatenated in the order the plugin gave
-                # them, deduplicated because adjacent citations legitimately
-                # retrieve overlapping chunks. A single joined query does not
-                # work here: keyword search over "Amos 7:10-17 Psalm 19 Matthew
-                # 9:1-8" matches none of the three well.
+                # covers several distinct passages, e.g. a daily digest that
+                # cites several sections of its corpus at once. One search per
+                # query, concatenated in the order the plugin gave them,
+                # deduplicated because adjacent citations legitimately retrieve
+                # overlapping chunks. A single joined query does not work here:
+                # keyword search over three concatenated citations matches none
+                # of them well.
                 if isinstance(query_for_rag, (list, tuple)):
                     retrieved_docs, seen = [], set()
                     for one_query in query_for_rag:
@@ -289,8 +288,7 @@ class IntellectEngine:
         # Retrieved evidence reaches the model by exactly one of two routes.
         #
         # 1. The agent's worldview carries a {retrieved_context} placeholder and
-        #    positions the evidence itself. Every built-in RAG agent does this
-        #    (safi_steward, bible_scholar, fiduciary).
+        #    positions the evidence itself. Every built-in RAG agent does this.
         #
         # 2. It does not, and the block below appends the evidence as its own
         #    labelled section.

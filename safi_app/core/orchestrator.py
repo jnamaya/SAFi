@@ -30,9 +30,9 @@ from .faculties.intellect import _apply_context_budget
 # Plugins arrive through the registry (agreement §III: organizations add
 # plugins without touching this file). The shipped registrations are imported
 # by safi_app/__init__.py, so this manifest-covered file neither knows any
-# plugin's name nor triggers content registration. The dead fiduciary_data
-# import that sat here since v1.3 removed its dispatch is gone; see
-# plugins/builtin.py for why it must not quietly return.
+# plugin's name nor triggers content registration. A dead plugin import that
+# sat here since v1.3 removed its dispatch is gone; see plugins/builtin.py
+# for why it must not quietly return.
 from .plugins.registry import plugins_for
 
 # Unlimited-turns mode still bounds the DB read: "every row in the conversation"
@@ -1078,8 +1078,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 will_stage=result["stage"],
             )
 
-        # Content-correction hard gates (reason mapped to ethical_violation,
-        # e.g. the tutor's Pedagogical Integrity) are like spirit-stage dips:
+        # Content-correction hard gates (reason mapped to ethical_violation
+        # in will.py's gate table) are like spirit-stage dips:
         # the user's request is fine, the DRAFT is the problem. They fall
         # through to the reflexion retry below, which regenerates with the
         # question and blocked draft visible. The vacuum agent redirect
@@ -1556,7 +1556,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
     @staticmethod
     def _is_correctable_gate(result: Dict[str, Any]) -> bool:
         """True for a hard-gate failure whose mapped reason is ethical_violation
-        (a content-quality gate, e.g. Pedagogical Integrity). These take the
+        (a content-quality gate, per will.py's gate table). These take the
         reflexion retry — regenerate with the question and blocked draft
         visible — instead of the vacuum agent redirect, which cannot see the
         question and misreports in-scope requests as out of scope."""
