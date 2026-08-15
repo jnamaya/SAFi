@@ -25,8 +25,11 @@ export async function checkDataSources() {
     try {
         const response = await api.fetchAuthStatus();
         const connected = (response && response.connected) || [];
-        renderMenu(connected, (response && response.connectors) || []);
-        updateDataSourcesLabel(connected.length);
+        renderMenu(connected, (response && response.connectors) || [],
+                   (response && response.mcp_servers) || []);
+        const mcpConnected = ((response && response.mcp_servers) || [])
+            .filter(s => s.connected).length;
+        updateDataSourcesLabel(connected.length + mcpConnected);
     } catch (e) {
         console.warn('Failed to fetch data source status', e);
         // Offer nothing rather than the whole catalogue: this menu used to
@@ -36,7 +39,7 @@ export async function checkDataSources() {
     }
 }
 
-function renderMenu(connectedList, connectors) {
+function renderMenu(connectedList, connectors, mcpServers) {
     const dropdown = document.getElementById(DROPDOWN_ID);
     if (!dropdown) return;
 
@@ -129,5 +132,62 @@ function renderMenu(connectedList, connectors) {
 
         dropdown.appendChild(item);
     });
+
+    // OAuth-protected tool servers, same rules as the connectors above: offered
+    // only when the org admits it AND some agent this member can reach is
+    // granted its tools (the backend computes both; the login route enforces
+    // them again). A connected server stays visible regardless, because a
+    // member must always be able to see and revoke a live grant.
+    const visibleMcp = (mcpServers || []).filter(
+        s => (s.allowed !== false && s.usable !== false) || s.connected
+    );
+    if (visibleMcp.length) {
+        const divider = document.createElement('div');
+        divider.className = 'my-1 border-t border-neutral-200 dark:border-neutral-800';
+        dropdown.appendChild(divider);
+
+        visibleMcp.forEach(server => {
+            const connectable = !server.connected && server.allowed !== false
+                                && server.usable !== false;
+            const item = document.createElement('a');
+            item.href = connectable ? server.login : '#';
+            item.className = `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group ${connectable
+                ? 'hover:bg-green-50 dark:hover:bg-green-900/20'
+                : 'hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-default'}`;
+
+            let status, statusClass;
+            if (server.connected) {
+                status = '● Connected · click to disconnect';
+                statusClass = 'text-green-600 dark:text-green-400';
+            } else {
+                status = 'Click to sign in';
+                statusClass = 'text-neutral-500 group-hover:text-green-600 dark:group-hover:text-green-400';
+            }
+
+            item.innerHTML = `
+                <svg class="w-5 h-5 shrink-0 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                <div class="flex flex-col">
+                    <span class="text-sm font-medium text-neutral-900 dark:text-neutral-100">${server.label || server.key}</span>
+                    <span class="text-xs ${statusClass}">${status}</span>
+                </div>`;
+
+            if (server.connected) {
+                item.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    if (!confirm(`Disconnect ${server.label || server.key}? Your agents lose access to it until you sign in again.`)) return;
+                    try {
+                        await api.disconnectMcpAuth(server.key);
+                        checkDataSources();
+                    } catch (err) { /* leave the row; a failed revoke must stay visible */ }
+                });
+            } else if (!connectable) {
+                item.addEventListener('click', (e) => e.preventDefault());
+            }
+            dropdown.appendChild(item);
+        });
+    }
 }
 

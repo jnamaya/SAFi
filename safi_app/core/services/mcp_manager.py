@@ -98,6 +98,69 @@ def _caller_org(user_id: Optional[str]):
     return row.get("org_id"), False
 
 
+def member_oauth_servers(user_id, org_id, role):
+    """The OAuth tool servers this member may see and connect, with the same
+    two flags the delegated connectors carry:
+
+      allowed  the server's own orgs restriction admits this member's org
+      usable   at least one agent this member can reach is granted the
+               server's tools (by connector key or by function name)
+
+    Connecting is the means to an agent's end, so a member with no agent that
+    could ever call the tools gets no invitation to grant a token nothing will
+    read. Admins are the exception, handled by the CALLER, because someone has
+    to make the first connection that discovers the catalog before any policy
+    can list its tools.
+    """
+    from ..tool_connectors import expand_connectors
+
+    servers = []
+    try:
+        from ...persistence import database as db
+        agents = db.list_agents(user_id, org_id, role or "member") or []
+    except Exception as e:
+        log.warning("member agent lookup failed, offering no oauth servers: %s", e)
+        agents = []
+
+    granted = set()
+    for agent in agents:
+        tools = agent.get("tools") or []
+        names = [t for t in tools if isinstance(t, str)]
+        granted.update(names)
+        granted.update(expand_connectors(names))
+
+    summary = mcp_runtime.summary()["servers"]
+    for key, entry in summary.items():
+        if entry.get("auth") != "oauth":
+            continue
+        allowed = server_allows_org(key, org_id)
+        server_tools = set(entry.get("tools") or ()) | {key}
+        servers.append({
+            "key": key,
+            "label": entry.get("label") or key,
+            "allowed": allowed,
+            "usable": bool(granted & server_tools),
+            "login": f"/api/mcp/auth/{key}/login",
+        })
+    return servers
+
+
+def member_can_connect(user_id, org_id, role, server_key) -> bool:
+    """Whether this member may run the sign-in flow for this server.
+
+    Admins always may: the first connection is what discovers the catalog, and
+    without it no policy can enable a tool for anyone. Everyone else needs an
+    agent that is actually granted the server, which is the same rule the
+    delegated connectors enforce on their login routes.
+    """
+    if (role or "").lower() == "admin":
+        return True
+    for server in member_oauth_servers(user_id, org_id, role):
+        if server["key"] == server_key:
+            return server["allowed"] and server["usable"]
+    return False
+
+
 def builtin_tool_names() -> frozenset:
     """Every function name the built-in connectors own.
 
@@ -848,9 +911,17 @@ class MCPManager:
                 definition = file_servers().get(server) or {}
                 token = mcp_oauth.access_token_for(user_id, server, definition)
                 if not token:
+                    # The link, not directions: the old text sent members to a
+                    # tab only admins can see. The agent relays this message, so
+                    # it carries the absolute sign-in URL, which the chat
+                    # renders as a link the member can actually click.
+                    from ...config import Config
+                    login_url = (f"{Config.WEB_BASE_URL.rstrip('/')}"
+                                 f"/api/mcp/auth/{server}/login")
                     return json.dumps({"error": (
-                        f"Tool '{tool_name}' needs your authorization. Connect "
-                        f"your account under Settings, Tools Catalog, then try again."
+                        f"Tool '{tool_name}' needs the user's authorization. "
+                        f"Tell the user to connect their account by opening this "
+                        f"link, then asking again: {login_url}"
                     )})
                 return await mcp_runtime.call_with_token(
                     mcp_runtime.url_of(server), tool_name, arguments, token

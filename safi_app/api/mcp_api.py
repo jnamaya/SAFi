@@ -164,6 +164,17 @@ def _oauth_server_or_error(server_key):
     orgs = [str(o) for o in (definition.get("orgs") or []) if o]
     if orgs and str(user.get('org_id')) not in orgs:
         return None, ("This server is not available to your organization.", 403)
+
+    # Members may connect only when some agent they can reach is granted the
+    # server's tools: connecting is the means to an agent's end, and a token no
+    # agent will read should never be invited. Admins bypass, because the first
+    # connection is what discovers the catalog in the first place.
+    from ..core.services.mcp_manager import member_can_connect
+    if not member_can_connect(user.get('id'), user.get('org_id'),
+                              user.get('role'), server_key):
+        return None, ("None of your agents use this server's tools yet, so there "
+                      "is nothing to connect. Ask an editor to enable its tools "
+                      "in a policy first.", 403)
     return definition, None
 
 

@@ -272,8 +272,11 @@ class RouteTests(unittest.TestCase):
         cls.user = f"oauth_{uuid.uuid4().hex[:8]}"
         cls._exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
                   (cls.org, "OAuth Test Org"))
+        # Admin, deliberately: the connect gate lets admins through always
+        # (bootstrap: the first sign-in is what discovers the catalog), so the
+        # flow tests run as one. Member-facing gating gets its own users below.
         cls._exec("INSERT INTO users (id, email, name, org_id, role) "
-                  "VALUES (%s, %s, %s, %s, 'member')",
+                  "VALUES (%s, %s, %s, %s, 'admin')",
                   (cls.user, f"{cls.user}@example.test", "OAuth", cls.org))
 
     @classmethod
@@ -342,6 +345,48 @@ class RouteTests(unittest.TestCase):
         from safi_app.persistence import crypto
         if crypto.is_enabled():
             self.assertNotEqual(raw, row["access_token"])
+
+    def _member(self):
+        member = f"oauth_mem_{uuid.uuid4().hex[:8]}"
+        self._exec("INSERT INTO users (id, email, name, org_id, role) "
+                   "VALUES (%s, %s, %s, %s, 'member')",
+                   (member, f"{member}@example.test", "Member", self.org))
+        self.addCleanup(self._exec, "DELETE FROM oauth_tokens WHERE user_id=%s", (member,))
+        self.addCleanup(self._exec, "DELETE FROM sessions WHERE user_id=%s", (member,))
+        self.addCleanup(self._exec, "DELETE FROM users WHERE id=%s", (member,))
+        return member
+
+    def test_a_member_with_no_agent_grant_cannot_connect(self):
+        """Connecting is the means to an agent's end. A member none of whose
+        agents carry the server's tools gets a refusal that says why, not an
+        invitation to grant a token nothing will read."""
+        resp = self._client(self._member()).get("/api/mcp/auth/authsrv/login")
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("policy", resp.get_json()["error"])
+
+    def test_a_member_whose_agent_is_granted_the_server_can_connect(self):
+        import json as _json
+        member = self._member()
+        agent_key = f"oauth_probe_{uuid.uuid4().hex[:6]}"
+        self._exec("""INSERT INTO agents
+                      (agent_key, name, org_id, created_by, visibility, tools_json)
+                      VALUES (%s,%s,%s,%s,'member',%s)""",
+                   (agent_key, "OAuth Probe", self.org, self.user,
+                    _json.dumps(["authsrv"])))
+        self.addCleanup(self._exec, "DELETE FROM agents WHERE agent_key=%s", (agent_key,))
+        from safi_app.core.services import mcp_oauth
+        mcp_oauth.clear_discovery_cache()
+        resp = self._client(member).get("/api/mcp/auth/authsrv/login")
+        self.assertEqual(resp.status_code, 302)
+
+    def test_auth_status_reports_the_server_with_both_flags(self):
+        body = self._client(self._member()).get("/api/auth/status").get_json()
+        servers = {s["key"]: s for s in body.get("mcp_servers", [])}
+        self.assertIn("authsrv", servers)
+        self.assertTrue(servers["authsrv"]["allowed"])
+        self.assertFalse(servers["authsrv"]["usable"],
+                         "no agent grants it, so it must not be offered")
+        self.assertIn("login", servers["authsrv"])
 
     def test_a_guest_is_refused_at_login_and_callback(self):
         guest = f"demo_{uuid.uuid4()}"

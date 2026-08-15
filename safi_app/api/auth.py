@@ -756,9 +756,24 @@ def auth_status():
         return jsonify({"connected": [], "connectors": []})
 
     org_id = get_current_org_id()
+
+    # OAuth-protected MCP tool servers ride along with the same two flags the
+    # connectors carry, so the one menu can offer both kinds of account with
+    # one set of rules. `connected` here is per member per server.
+    from ..core.services.mcp_manager import is_guest, member_oauth_servers
+    from ..core.services import mcp_oauth
+    mcp_servers = []
+    user = session.get('user') or {}
+    if not is_guest(user_id or '', user.get('email') or ''):
+        for server in member_oauth_servers(user_id, org_id, get_current_role()):
+            row = db.get_oauth_token(user_id, mcp_oauth.provider_key(server["key"]))
+            server["connected"] = bool(row and row.get("access_token"))
+            mcp_servers.append(server)
+
     return jsonify({
         "connected": db.get_connected_providers(user_id),
         "connectors": connectors_for_member(user_id, org_id, get_current_role()),
+        "mcp_servers": mcp_servers,
     })
 
 @auth_bp.route('/auth/<provider>/disconnect', methods=['POST'])
