@@ -63,8 +63,12 @@ class _StubHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    jwks = {"keys": []}
+
     def do_GET(self):
         base = f"http://127.0.0.1:{self.server.server_port}"
+        if self.path == "/jwks":
+            return self._json(_StubHandler.jwks)
         if self.path.startswith("/.well-known/oauth-protected-resource"):
             return self._json({
                 "resource": f"{base}/mcp",
@@ -393,6 +397,116 @@ class LiveProtectedServerTests(unittest.TestCase):
         tools = asyncio.run(mcp_runtime.list_tools_with_token(self.url, self.GOOD))
         self.assertEqual([t["name"] for t in tools], ["secure_echo"])
         self.assertEqual(tools[0]["input_schema"]["type"], "object")
+
+
+class ReferenceServerTests(unittest.TestCase):
+    """The Python reference resource server, driven with real signed JWTs.
+
+    This is the confused-deputy test in executable form: a token whose `aud`
+    is some OTHER service is refused even though the signature, issuer and
+    expiry are all valid. The TypeScript version of this reference compiled
+    and was never executed by CI; being Python is what lets the same suite
+    that tests the client also prove the server half.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from authlib.jose import JsonWebKey, jwt as make_jwt
+        import uvicorn
+        import importlib.util
+
+        # A real signing key, its public half served as the stub IdP's JWKS.
+        cls.key = JsonWebKey.generate_key("RSA", 2048, is_private=True)
+        public = cls.key.as_dict(is_private=False)
+        public["kid"] = "test-key"
+        _StubHandler.jwks = {"keys": [public]}
+        cls.idp, cls.idp_base = _start_stub()
+
+        spec = importlib.util.spec_from_file_location(
+            "reference_server",
+            Path(__file__).resolve().parent.parent / "scripts" / "oauth_resource_server.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Bind the app first so RESOURCE_URI can carry the real port.
+        import socket
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+        cls.resource_uri = f"http://127.0.0.1:{port}/mcp"
+        app = module.build_app(cls.resource_uri, cls.idp_base, f"{cls.idp_base}/jwks")
+
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+        cls.uv = uvicorn.Server(config)
+        cls.thread = threading.Thread(target=cls.uv.run, daemon=True)
+        cls.thread.start()
+        for _ in range(100):
+            if cls.uv.started:
+                break
+            time.sleep(0.1)
+
+        def mint(aud, exp_offset=3600, sub="member-42"):
+            return make_jwt.encode(
+                {"alg": "RS256", "kid": "test-key"},
+                {"iss": cls.idp_base, "aud": aud, "sub": sub,
+                 "exp": int(time.time()) + exp_offset, "scope": "tools.read"},
+                cls.key).decode()
+        cls.mint = staticmethod(mint)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.uv.should_exit = True
+        cls.thread.join(timeout=10)
+        cls.idp.shutdown()
+
+    def test_prm_is_served_without_authentication(self):
+        import requests
+        resp = requests.get(
+            self.resource_uri.replace("/mcp", "/.well-known/oauth-protected-resource"),
+            timeout=5)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["authorization_servers"], [self.idp_base])
+
+    def test_no_token_gets_a_401_that_points_at_the_metadata(self):
+        import requests
+        resp = requests.post(self.resource_uri, json={}, timeout=5)
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn("resource_metadata=", resp.headers.get("WWW-Authenticate", ""))
+
+    def test_a_correctly_bound_token_executes_as_its_subject(self):
+        import asyncio
+        from safi_app.core import mcp_runtime
+        token = self.mint(aud=self.resource_uri)
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "whoami", {}, token))
+        self.assertIn("member-42", out)
+
+    def test_the_confused_deputy_is_refused(self):
+        """Valid signature, valid issuer, valid expiry, WRONG audience: a token
+        minted for some other service must not open this one."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        token = self.mint(aud="https://some-other-service.example/api")
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "whoami", {}, token))
+        self.assertTrue(out.startswith("ERROR:"))
+        self.assertIn("Reconnect", out)
+
+    def test_an_expired_token_is_refused(self):
+        import asyncio
+        from safi_app.core import mcp_runtime
+        token = self.mint(aud=self.resource_uri, exp_offset=-60)
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "whoami", {}, token))
+        self.assertTrue(out.startswith("ERROR:"))
+
+    def test_a_garbage_token_is_refused_not_crashed(self):
+        import asyncio
+        from safi_app.core import mcp_runtime
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "whoami", {}, "not-a-jwt-at-all"))
+        self.assertTrue(out.startswith("ERROR:"))
 
 
 if __name__ == "__main__":

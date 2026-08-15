@@ -201,8 +201,9 @@ Operational notes:
 - Tokens live in the same encrypted table as the delegated-OAuth connectors,
   with the same evidence row written in the same transaction.
 - Guests can never connect, and the `orgs` restriction applies as usual.
-- A reference resource server (Express + TypeScript middleware validating the
-  audience-bound JWT) ships in `mcp/oauth-resource-server/`.
+- A reference resource server, pure Python on SAFi's own dependencies and
+  exercised end to end by the test suite, ships as
+  `scripts/oauth_resource_server.py`.
 
 ## 6. MCP server or built-in connector?
 
