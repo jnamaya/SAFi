@@ -102,7 +102,22 @@ def build_app(resource_uri: str, issuer: str, jwks_uri: str):
         """Echo a message back, attributed to the verified caller."""
         return f"{current_subject.get()} said: {message}"
 
-    inner = server.streamable_http_app()
+    # The SDK's DNS-rebinding protection only accepts Host headers it has been
+    # told about, and its default is loopback. Behind a reverse proxy with
+    # ProxyPreserveHost the Host is the public name, and every request dies as
+    # 421 Misdirected Request while every loopback test passes, which is
+    # precisely how this shipped broken: the tests could not see it. The
+    # allowed list is the server's own public identity plus loopback for local
+    # runs and the suite.
+    from urllib.parse import urlparse as _urlparse
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    _public_host = _urlparse(resource_uri).netloc
+    inner = server.streamable_http_app(
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=[_public_host, "127.0.0.1", "localhost"],
+        )
+    )
     jwks = _Jwks(jwks_uri)
     # RS256/ES256 only. Accepting whatever `alg` the token names is the classic
     # JWT downgrade mistake; the allowed list is the server's, never the token's.

@@ -373,7 +373,22 @@ def build_app(store: Optional[Store] = None):
                        f"{headers.get('From','?')} | {headers.get('Date','?')}")
         return "\n".join(out) or "No messages matched."
 
-    inner = server.streamable_http_app()
+    # The SDK's DNS-rebinding protection only accepts Host headers it has been
+    # told about, and its default is loopback. Behind a reverse proxy with
+    # ProxyPreserveHost the Host is the public name, and every request dies as
+    # 421 Misdirected Request while every loopback test passes, which is
+    # precisely how this shipped broken: the tests could not see it. The
+    # allowed list is the server's own public identity plus loopback for local
+    # runs and the suite.
+    from urllib.parse import urlparse as _urlparse
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    _public_host = _urlparse(BASE_URL).netloc
+    inner = server.streamable_http_app(
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=[_public_host, "127.0.0.1", "localhost"],
+        )
+    )
 
     # ---- plumbing ----
     async def _read_body(receive) -> bytes:
