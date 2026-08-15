@@ -43,6 +43,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -58,6 +60,15 @@ log = logging.getLogger(__name__)
 
 HTTP_TIMEOUT = 10.0
 PROVIDER_PREFIX = "mcp:"
+
+_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _expand_env(value: str) -> str:
+    """${VAR} from the process environment, the same convention the server
+    file uses for stdio env blocks. The definition is a file that gets copied;
+    a client secret written into it literally will eventually leak."""
+    return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value or "")
 
 # Discovery results barely change and are re-read on every login redirect, so a
 # short cache keeps the login route from hammering the IdP. Failures are never
@@ -196,8 +207,8 @@ def ensure_client(server_key: str, definition: Dict[str, Any],
     """
     if definition.get("client_id"):
         return {
-            "client_id": str(definition["client_id"]),
-            "client_secret": str(definition.get("client_secret") or ""),
+            "client_id": _expand_env(str(definition["client_id"])),
+            "client_secret": _expand_env(str(definition.get("client_secret") or "")),
         }
 
     stored = mcp_store.get_oauth_client(server_key)
@@ -273,10 +284,13 @@ def _token_request(discovery: Dict[str, Any], client: Dict[str, str],
     # `resource` again at the token endpoint: RFC 8707 wants it at both stops,
     # and some ASes decide the audience only here.
     form["resource"] = discovery["resource"]
-    auth = None
+    # The secret travels in the body, not as Basic auth. RFC 6749 permits both;
+    # GitHub's token endpoint accepts only the body form, and every other AS we
+    # have met (Keycloak, Auth0, our own gateway) accepts it too, so the body is
+    # the one shape that works everywhere.
     if client.get("client_secret"):
-        auth = (client["client_id"], client["client_secret"])
-    resp = requests.post(discovery["token_endpoint"], data=form, auth=auth,
+        form["client_secret"] = client["client_secret"]
+    resp = requests.post(discovery["token_endpoint"], data=form,
                          timeout=HTTP_TIMEOUT,
                          headers={"Accept": "application/json"})
     body = {}
@@ -371,8 +385,8 @@ def ensure_client_readonly(server_key: str, definition: Dict[str, Any],
     """The client identity without ever registering a new one — refresh runs on
     the tool-call path, and a background call must not create IdP clients."""
     if definition.get("client_id"):
-        return {"client_id": str(definition["client_id"]),
-                "client_secret": str(definition.get("client_secret") or "")}
+        return {"client_id": _expand_env(str(definition["client_id"])),
+                "client_secret": _expand_env(str(definition.get("client_secret") or ""))}
     stored = mcp_store.get_oauth_client(server_key)
     if not stored:
         raise OAuthConfigError("No OAuth client is registered for this server.")

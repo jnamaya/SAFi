@@ -205,6 +205,38 @@ Operational notes:
   exercised end to end by the test suite, ships as
   `scripts/oauth_resource_server.py`.
 
+### Worked example: GitHub's official remote server
+
+GitHub's hosted MCP server implements this specification, so it connects with
+no gateway and no local process. It offers no dynamic registration, so the
+deployment brings its own OAuth App (GitHub → Settings → Developer settings →
+OAuth Apps) with the callback URL
+`{WEB_BASE_URL}/api/mcp/auth/github_mcp/callback`, then:
+
+```
+GITHUB_MCP_CLIENT_ID=...       # in .env
+GITHUB_MCP_CLIENT_SECRET=...
+
+scripts/safi_mcp.py add --url https://api.githubcopilot.com/mcp --auth oauth \
+    --key github_mcp --label "GitHub (official)" \
+    --client-id '${GITHUB_MCP_CLIENT_ID}' \
+    --client-secret '${GITHUB_MCP_CLIENT_SECRET}' \
+    --scopes "read:user,read:org"
+```
+
+Set `--scopes` deliberately: GitHub's advertised list includes write scopes
+(`repo`, `write:packages`), and whatever is listed here is what every member
+grants at sign-in. Classic GitHub scopes have no read-only form of `repo`, so
+leaving it out limits members' agents to public repositories; including it
+grants read AND write to private ones, which belongs behind a policy that
+enables only read tools.
+
+One honest caveat: GitHub's tokens are ordinary GitHub OAuth tokens, not
+audience-bound JWTs, so the no-passthrough property is weaker here than with a
+spec-complete IdP: the token SAFi stores would also work against GitHub's API
+directly. That is the same storage posture as the built-in GitHub connector,
+with a far larger tool set and no code for us to maintain.
+
 ### The Workspace gateway: per-user Google, ready to run
 
 `scripts/workspace_gateway.py` is a complete example of this architecture with

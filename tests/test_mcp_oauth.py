@@ -174,6 +174,26 @@ class DiscoveryAndFlowTests(unittest.TestCase):
         self.assertEqual(form["resource"], self.resource_url)
         self.assertEqual(form["grant_type"], "authorization_code")
 
+    def test_a_configured_secret_travels_in_the_body_not_basic_auth(self):
+        """GitHub's token endpoint accepts the secret only as a form field, and
+        RFC 6749 permits it, so the body is the shape that works everywhere."""
+        import os
+        d = mcp_oauth.discover(self.resource_url)
+        os.environ["MCP_TEST_SECRET"] = "s3cr3t-from-env"
+        try:
+            mcp_oauth.exchange_code(
+                d,
+                mcp_oauth.ensure_client_readonly(
+                    "any", {"client_id": "cid-1",
+                            "client_secret": "${MCP_TEST_SECRET}"}, d),
+                "good-code", "https://safi.example/cb", "v")
+        finally:
+            os.environ.pop("MCP_TEST_SECRET", None)
+        path, form = [c for c in _StubHandler.calls if c[0] == "/token"][-1]
+        self.assertEqual(form["client_secret"], "s3cr3t-from-env",
+                         "the ${VAR} reference must resolve from the environment")
+        self.assertEqual(form["client_id"], "cid-1")
+
     def test_a_bad_code_is_a_clean_error(self):
         d = mcp_oauth.discover(self.resource_url)
         with self.assertRaises(mcp_oauth.OAuthConfigError):

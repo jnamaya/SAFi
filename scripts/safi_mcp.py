@@ -266,6 +266,12 @@ def cmd_add(args) -> int:
         params = {"transport": args.transport, "url": args.url}
         if args.auth:
             params["auth"] = args.auth
+            if args.client_id:
+                params["client_id"] = args.client_id
+            if args.client_secret:
+                params["client_secret"] = args.client_secret
+            if args.scopes:
+                params["scopes"] = [s.strip() for s in args.scopes.split(",") if s.strip()]
         base = mcp_install.connector_key_for_url(args.url)
     elif args.command:
         cmd_args = [a for a in (args.args or "").split(",") if a]
@@ -419,6 +425,23 @@ def main(argv=None) -> int:
         help="working directory for --command. Needed by servers distributed as "
              "a checkout rather than a package, which resolve their own files "
              "relative to where they were started",
+    )
+    p_add.add_argument(
+        "--client-id",
+        help="OAuth client id for an --auth oauth server whose IdP does not "
+             "offer dynamic registration (GitHub, for one). ${VAR} is read "
+             "from the environment at use time",
+    )
+    p_add.add_argument(
+        "--client-secret",
+        help="OAuth client secret, same rules. Pass a ${VAR} reference rather "
+             "than the literal secret so the server file stays safe to copy",
+    )
+    p_add.add_argument(
+        "--scopes",
+        help="comma-separated OAuth scopes to request at sign-in. Set this for "
+             "IdPs whose advertised scope list includes writes you do not "
+             "want every member granting",
     )
     p_add.add_argument(
         "--orgs",
