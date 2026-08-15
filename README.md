@@ -23,6 +23,7 @@
 - [Benchmarks & Validation](#benchmarks--validation)
 - [Regulatory Readiness](#regulatory-readiness)
 - [For Developers](#for-developers)
+- [Knowledge Bases & Tools](#knowledge-bases--tools)
 - [Roles & Permissions](#roles--permissions)
 - [Contributing](#contributing)
 - [License & Governance](#license--governance)
@@ -404,6 +405,25 @@ Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)
 - **The Audit Hub metrics & testing** — what Alignment, Consistency, and the Beta retention setting actually measure, why scores stabilize only after a policy is finished being tested, and how to run the test suite.
 
 ---
+
+## Knowledge Bases & Tools
+
+Agents draw on two kinds of outside context, governed on the same principle:
+**Knowledge Bases** are internal repositories the organization uploads,
+reviews, and controls end to end; **Tools** are connections to external
+services (MCP servers) whose use is decided per tool, per policy, per call.
+Installation grants nothing. A policy enables specific tools, an agent is
+assigned what its policy allows, and the Will checks every individual call
+before it runs. Tools that act as a specific person require that person to
+sign in once, from the composer's **+** panel or from a link the agent hands
+them at the moment of need.
+
+- **[Knowledge Bases & Tools, step by step](docs/KNOWLEDGE_AND_TOOLS.md)**:
+  the whole lifecycle, from upload or install to a governed call, including
+  who approves what and who signs in.
+- **[MCP tools, the operator manual](docs/MCP_TOOLS.md)**: installing servers
+  with the CLI, per-user OAuth, credentials and scopes, and worked examples
+  including GitHub's official server.
 
 ## Roles & Permissions
 
