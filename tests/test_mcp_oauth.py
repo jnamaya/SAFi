@@ -501,7 +501,7 @@ class LiveProtectedServerTests(unittest.TestCase):
             self.url, "secure_echo", {"message": "x"}, "stolen-or-expired"))
         self.assertTrue(out.startswith("ERROR:"))
         self.assertNotIn("Traceback", out)
-        self.assertIn("Reconnect", out)
+        self.assertIn("refused", out)
 
     def test_discovery_with_the_token_lists_the_tools(self):
         import asyncio
@@ -603,7 +603,7 @@ class ReferenceServerTests(unittest.TestCase):
         out = asyncio.run(mcp_runtime.call_with_token(
             self.resource_uri, "whoami", {}, token))
         self.assertTrue(out.startswith("ERROR:"))
-        self.assertIn("Reconnect", out)
+        self.assertIn("refused", out)
 
     def test_an_expired_token_is_refused(self):
         import asyncio

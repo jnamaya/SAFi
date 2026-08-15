@@ -820,15 +820,20 @@ async def call_with_token(url: str, tool_name: str, arguments: Dict[str, Any],
         return f"ERROR: tool '{tool_name}' timed out after {timeout:.0f}s."
     except BaseException as e:
         message = describe_exception(e, "http")
-        # This call CARRIED a token, so an auth-shaped refusal means the token
-        # is no longer good — the SDK reports a 401 here as its generic
-        # "Server returned an error response", which must not surface as the
-        # "may require credentials" hint meant for anonymous probes.
+        # The SDK flattens every non-2xx tool response to one string, so a 401
+        # (token dead), a 403 (token fine, scope insufficient) and a 400 (bad
+        # arguments) are indistinguishable here. An earlier version claimed
+        # "reconnect" for all of them, and a member whose sign-in lacked a
+        # scope was sent to re-consent to the same scopes forever. Say what is
+        # actually known and every cause a person can act on.
         lowered = message.lower()
         if "401" in lowered or "unauthorized" in lowered or "server returned an error response" in lowered:
             return (
-                f"ERROR: the server no longer accepts your authorization for "
-                f"'{tool_name}'. Reconnect your account in Settings."
+                f"ERROR: the server refused '{tool_name}'. Either your "
+                "authorization has expired (reconnect the account in Settings), "
+                "or it was granted without a scope this tool needs (an operator "
+                "must widen the server's scopes, then reconnect), or the "
+                "arguments were invalid."
             )
         return f"ERROR: tool '{tool_name}' failed: {message}"
 
