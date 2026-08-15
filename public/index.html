@@ -510,6 +510,17 @@
                 <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Organization</h3>
                     <ul class="space-y-0.5">
                       <li>
+                        <button data-tab="organization" id="nav-organization"
+                          class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                            </path>
+                          </svg>
+                          Org Settings
+                        </button>
+                      </li>
+                      <li>
                         <!-- Knowledge bases. Hidden by default and revealed by
                              role in app.js (admin/editor/auditor); members
                              never see it, which is why it lives in this group.
@@ -541,17 +552,6 @@
                               d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                           </svg>
                           Tools Catalog
-                        </button>
-                      </li>
-                      <li>
-                        <button data-tab="organization" id="nav-organization"
-                          class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
-                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
-                            </path>
-                          </svg>
-                          Members
                         </button>
                       </li>
                       <li>
@@ -701,7 +701,7 @@
                 </div>
 
                 <div id="tab-organization" class="tab-content hidden">
-                  <h1 class="text-2xl font-bold mb-4">Members</h1>
+                  <h1 class="text-2xl font-bold mb-4">Org Settings</h1>
                 </div>
                 <div id="tab-compliance" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Compliance</h1>
