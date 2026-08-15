@@ -14,11 +14,27 @@ import { updateDataSourcesLabel } from './ui-composer-menu.js';
 
 const DROPDOWN_ID = 'data-sources-dropdown';
 
-const ICONS = {
-    google: `<svg class="w-5 h-5 shrink-0" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.9 2.5 3.2 3.3l13.65-23.7c0 0 6.6 13.75 6.6 13.75z" fill="#0066da"/><path d="m43.65 25-13.65-23.7c-2.85 0-5.4 1.5-6.8 4l-13.65 23.65 13.65 23.65z" fill="#00ac47"/><path d="m73.55 76.8c2.85 0 5.4-1.5 6.8-4l3.85-6.65-13.65-23.65-13.65 23.65-6.8-11.8h-27.3z" fill="#ea4335"/><path d="m43.65 25 13.65-23.65c-1.4-2.55-3.95-4.05-6.8-4.05h-27.25z" fill="#00832d"/><path d="m59.8 50.3-13.65-23.65-13.65-23.65-13.75 23.85 13.75 23.65z" fill="#2684fc"/><path d="m73.4 76.8h-27.3l-13.65-23.65h27.3l13.65 23.65c1.4-2.5 1.4-5.5 0-8.05z" fill="#ffba00"/></svg>`,
-    microsoft: `<svg class="w-5 h-5 shrink-0" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><path fill="#036C70" d="M99.8 135c-42.6 0-57.8-21.8-57.8-42.6 0-21.8 17.1-40.2 40.2-40.2 19.3 0 32.2 11.2 36.3 15.6l23.5-23.8C132.8 33.9 113.1 19 82.2 19 36.8 19 0 55.7 0 92.4c0 42.6 29.9 83.2 108.8 83.2 1.4 0 2.9 0 4.3-.1V135h-13.3z"/><path fill="#36C3CD" d="M123.6 135V80.5h13c42.6 0 57.8 21.8 57.8 42.6 0 21.8-17.1 40.2-40.2 40.2-19.3 0-32.2-11.2-36.3-15.6l-23.5 23.8c9.3 10.1 29 25 59.8 25 45.4 0 82.2-36.7 82.2-73.4C236.4 80.5 206.5 40 127.6 40c-1.3 0-2.7 0-4 .1V135h-13.3z"/></svg>`,
-    github: `<svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>`
+// The same brand marks the Tools Catalog uses, so the two surfaces agree on
+// what a service looks like. Recognition is presentation only, matched on the
+// row's key and label; anything unrecognized gets the generic tool icon.
+const BRAND_ICONS = {
+    google: `<svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.4c-.3 1.6-1.2 2.9-2.5 3.8v3h4c2.4-2.2 3.6-5.4 3.6-9z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-4-3c-1.1.7-2.5 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.3v3.1C3.3 21.4 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.4 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4V6.5H1.3C.5 8.2 0 10 0 12s.5 3.8 1.3 5.5l4.1-3.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3.3.6 4.6 1.8L20.1 3C18 1.1 15.2 0 12 0 7.3 0 3.3 2.6 1.3 6.5l4.1 3.1C6.3 6.8 8.9 4.7 12 4.7z"/></svg>`,
+    microsoft: `<svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M13 1h10v10H13z"/><path fill="#05a6f0" d="M1 13h10v10H1z"/><path fill="#ffba08" d="M13 13h10v10H13z"/></svg>`,
+    github: `<svg class="w-5 h-5 shrink-0 text-neutral-900 dark:text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>`
 };
+
+const GENERIC_ICON = `<svg class="w-5 h-5 shrink-0 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+</svg>`;
+
+function iconFor(key, label) {
+    const hay = `${key || ''} ${label || ''}`.toLowerCase();
+    if (hay.includes('github')) return BRAND_ICONS.github;
+    if (hay.includes('google') || hay.includes('workspace')) return BRAND_ICONS.google;
+    if (hay.includes('microsoft') || hay.includes('graph') || hay.includes('365')) return BRAND_ICONS.microsoft;
+    return GENERIC_ICON;
+}
 
 export function initDataSources() {
     checkDataSources();
@@ -132,7 +148,7 @@ function renderMenu(connectedList, connectors, mcpServers) {
         }
 
         item.innerHTML = `
-            ${ICONS[source.key] || ''}
+            ${iconFor(source.key, source.label)}
             <div class="flex flex-col">
                 <span class="text-sm font-medium text-neutral-900 dark:text-neutral-100">${source.label || source.key}</span>
                 <span class="text-xs ${statusClass}">${status}</span>
@@ -177,10 +193,7 @@ function renderMenu(connectedList, connectors, mcpServers) {
             }
 
             item.innerHTML = `
-                <svg class="w-5 h-5 shrink-0 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                </svg>
+                ${iconFor(server.key, server.label)}
                 <div class="flex flex-col">
                     <span class="text-sm font-medium text-neutral-900 dark:text-neutral-100">${server.label || server.key}</span>
                     <span class="text-xs ${statusClass}">${status}</span>
