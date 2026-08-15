@@ -203,3 +203,8 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
         "What questions should I ask at my next appointment?"
     ]
 }
+
+# Discovery contract, same as SAFI_EXTENSIONS_DIR: synderesis finds built-ins
+# by these attributes instead of importing this module by name.
+KEY = "health_navigator"
+AGENT = THE_HEALTH_NAVIGATOR_AGENT

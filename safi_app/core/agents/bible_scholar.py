@@ -192,3 +192,8 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
         "What were the key theological disputes that led to the Great Schism?"
     ]
 }
+
+# Discovery contract, same as SAFI_EXTENSIONS_DIR: synderesis finds built-ins
+# by these attributes instead of importing this module by name.
+KEY = "bible_scholar"
+AGENT = THE_BIBLE_SCHOLAR_AGENT

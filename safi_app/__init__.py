@@ -12,6 +12,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
 from .extensions import oauth, cors  # Import centralized extension instances
+# Shipped plugin registrations (agreement §III). Imported here at package init,
+# which Python runs before any safi_app submodule, so every consumer that can
+# reach the orchestrator gets the shipped plugins without the manifest-covered
+# orchestrator triggering content registration itself.
+from .core.plugins import builtin as _builtin_plugins  # noqa: F401
 
 def create_app():
     """

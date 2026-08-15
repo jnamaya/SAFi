@@ -245,3 +245,9 @@ THE_SAFI_STEWARD_AGENT: Dict[str, Any] = {
         "What is Spirit drift and why does it matter?"
     ]
 }
+
+# Discovery contract, same as SAFI_EXTENSIONS_DIR: synderesis finds built-ins
+# by these attributes instead of importing this module by name.
+KEY = "safi"
+AGENT = THE_SAFI_STEWARD_AGENT
+FALLBACK = True

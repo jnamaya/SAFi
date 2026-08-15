@@ -233,3 +233,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
         "What are the main types of investment risk?"
     ]
 }
+
+# Discovery contract, same as SAFI_EXTENSIONS_DIR: synderesis finds built-ins
+# by these attributes instead of importing this module by name.
+KEY = "fiduciary"
+AGENT = THE_FIDUCIARY_AGENT

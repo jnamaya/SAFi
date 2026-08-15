@@ -10,9 +10,11 @@ produced by this module are what all other faculties rely on to function.
 """
 from typing import Dict, Any, List, Optional
 import copy
+import importlib
 import os
 import json
 import logging
+import pkgutil
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -22,23 +24,34 @@ from ...persistence import database as db
 from ...config import Config
 from ..tool_connectors import expand_connectors
 
-# 2. Import Agents
-from ..agents.fiduciary import THE_FIDUCIARY_AGENT
-from ..agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
-from ..agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
-from ..agents.safi_steward import THE_SAFI_STEWARD_AGENT
-from ..agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
-
-# 3. Define the Agent Registry
-# ALL_AGENTS is the complete built-in catalog — used for reserved-name checks
+# 2. Discover Built-in Agents
+# Built-ins are content, not mechanism. Each module in ..agents declares KEY
+# and AGENT (the same contract SAFI_EXTENSIONS_DIR requires), and this file
+# discovers them without naming any. The Core Loop certifies the loader, never
+# the catalog: adding or removing a shipped agent touches no manifest file.
+# A module missing the contract is skipped loudly; a module that fails to
+# IMPORT stays fatal, as it was under the by-name imports, because a broken
+# shipped file should stop the boot rather than silently shrink the catalog.
+# ALL_AGENTS is the complete built-in catalog, used for reserved-name checks
 # so a custom agent can never shadow a built-in key, even one currently disabled.
-ALL_AGENTS: Dict[str, Dict[str, Any]] = {
-    "fiduciary": THE_FIDUCIARY_AGENT,
-    "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
-    "bible_scholar": THE_BIBLE_SCHOLAR_AGENT,
-    "safi": THE_SAFI_STEWARD_AGENT,
-    "tutor": THE_SOCRATIC_TUTOR_AGENT,
-}
+from .. import agents as _agents_pkg
+
+ALL_AGENTS: Dict[str, Dict[str, Any]] = {}
+_FALLBACK_KEYS: List[str] = []
+for _info in pkgutil.iter_modules(_agents_pkg.__path__):
+    _mod = importlib.import_module(f"{_agents_pkg.__name__}.{_info.name}")
+    _key = getattr(_mod, "KEY", None)
+    _agent = getattr(_mod, "AGENT", None)
+    if not isinstance(_key, str) or not _key.strip() or not isinstance(_agent, dict):
+        logging.error(f"Built-in agent module '{_info.name}' lacks KEY/AGENT and was skipped.")
+        continue
+    _key = _key.lower().strip()
+    if _key in ALL_AGENTS:
+        logging.error(f"Built-in agent module '{_info.name}' duplicates key '{_key}' and was skipped.")
+        continue
+    ALL_AGENTS[_key] = _agent
+    if getattr(_mod, "FALLBACK", False):
+        _FALLBACK_KEYS.append(_key)
 
 # Code-defined EXTENSION agents, loaded from outside the package so that adding
 # one never touches a Core Loop file (backlog 37; agreement §III). Each *.py in
@@ -92,8 +105,10 @@ for _unknown in set(Config.BUILTIN_AGENTS) - set(ALL_AGENTS) - {"all"}:
     logging.warning(f"SAFI_BUILTIN_AGENTS names unknown agent '{_unknown}' — ignored. "
                     f"Valid keys: {', '.join(sorted(ALL_AGENTS))}, or 'all'.")
 if not AGENTS:
-    logging.warning("SAFI_BUILTIN_AGENTS matched no agents — falling back to 'tutor,safi'.")
-    AGENTS = {k: ALL_AGENTS[k] for k in ("tutor", "safi")}
+    _fb = {k: ALL_AGENTS[k] for k in _FALLBACK_KEYS}
+    logging.warning("SAFI_BUILTIN_AGENTS matched no agents. Falling back to the "
+                    f"declared fallback set: {', '.join(_FALLBACK_KEYS) or '(none, enabling all)'}.")
+    AGENTS = _fb or dict(ALL_AGENTS)
 if Config.DEFAULT_PROFILE not in AGENTS:
     logging.warning(f"SAFI_PROFILE '{Config.DEFAULT_PROFILE}' is not an enabled built-in agent; "
                     f"users without a stored profile will fall back to another agent.")
