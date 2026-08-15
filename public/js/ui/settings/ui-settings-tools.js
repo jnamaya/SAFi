@@ -58,16 +58,11 @@ function shell() {
               that policy can never use a tool it does not list.</li>
           <li><strong>Assign.</strong> The agent is given tools its policy allows. Every call it
               makes is then checked against that list before it runs, and recorded in the audit
-              trail.</li>
+              trail. More details in the
+              <a href="https://github.com/jnamaya/SAFi/blob/main/docs/KNOWLEDGE_AND_TOOLS.md"
+                 target="_blank" rel="noopener"
+                 class="text-green-700 dark:text-green-400 underline">README</a>.</li>
         </ol>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mt-3">
-          <strong>Servers that act as a person</strong> need one more step: each member signs in
-          once, here or from the composer's <strong>+</strong> panel, and every call their agents
-          make then runs as them, with their permissions, under their name in the source system's
-          own logs. The first sign-in is also what reveals such a server's tool list.
-          Disconnecting, or removing the member, revokes their access at the server itself, not
-          just here.
-        </p>
       </div>
 
       <div id="tools-list"></div>
