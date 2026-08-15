@@ -164,8 +164,13 @@ def build_app(store: Optional[Store] = None):
 
     server = MCPServer(name="microsoft-graph-gateway")
 
+    # Not `whoami`: the Workspace gateway already claims that name, and two
+    # servers on one deployment collide in mcp_manager's connector registry,
+    # where the first registration wins and the loser is skipped. Unique names
+    # across our own gateways cost nothing; the collision rule exists for
+    # servers we do not control.
     @server.tool()
-    def whoami() -> str:
+    def microsoft_whoami() -> str:
         """Report the Microsoft identity this call runs as."""
         tokens = store.upstream_tokens(current_subject.get())
         return f"Authorized as {tokens['email'] if tokens else 'nobody'}"

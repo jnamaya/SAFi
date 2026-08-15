@@ -274,7 +274,7 @@ as a dependency for its own tools. The two gateways share one implementation
 of the OAuth machinery (`scripts/gateway_core.py`); each provider file is
 only the endpoints, scopes, identity mapping and tools.
 
-v1 tools, read-only by doctrine: `whoami`, `files_search`,
+v1 tools, read-only by doctrine: `microsoft_whoami`, `files_search`,
 `file_get_contents`, `sites_search`, `site_files_search`. OneDrive and
 SharePoint, nothing writable.
 

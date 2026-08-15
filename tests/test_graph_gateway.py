@@ -251,7 +251,7 @@ class GraphGatewayTests(unittest.TestCase):
         self.assertIn("refresh_token", body)
 
         out = asyncio.run(mcp_runtime.call_with_token(
-            self.resource_uri, "whoami", {}, body["access_token"]))
+            self.resource_uri, "microsoft_whoami", {}, body["access_token"]))
         # preferred_username filled in for the absent email claim.
         self.assertIn("member@contoso.com", out)
 
@@ -297,7 +297,7 @@ class GraphGatewayTests(unittest.TestCase):
             discovery, {"client_id": client_id, "client_secret": ""},
             body["refresh_token"])
         out = asyncio.run(mcp_runtime.call_with_token(
-            self.resource_uri, "whoami", {}, refreshed["access_token"]))
+            self.resource_uri, "microsoft_whoami", {}, refreshed["access_token"]))
         self.assertIn("member@contoso.com", out)
 
     # ── the core is wired in, not just imported ──────────────────────────────
