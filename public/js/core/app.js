@@ -550,7 +550,7 @@ function renderControlPanel() {
   // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {
-    if (canSeeOrg || canSeeGovernance || canSeeDashboard || canSeeReview) {
+    if (canSeeOrg || canSeeGovernance || canSeeDashboard || canSeeReview || canSeeKnowledge) {
       navGroupManagement.classList.remove('hidden');
     } else {
       navGroupManagement.classList.add('hidden');
