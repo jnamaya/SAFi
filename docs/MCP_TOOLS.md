@@ -205,6 +205,30 @@ Operational notes:
   exercised end to end by the test suite, ships as
   `scripts/oauth_resource_server.py`.
 
+### The Workspace gateway: per-user Google, ready to run
+
+`scripts/workspace_gateway.py` is a complete example of this architecture with
+real tools behind it: each member signs in at Google's own consent screen and
+their agents gain read-only Google tools that run as them. It is its own small
+authorization server AND the protected resource, co-located, so no Keycloak or
+Auth0 is needed: Google tokens live inside the gateway (Fernet-encrypted,
+keyed by the verified subject) and never reach SAFi; SAFi holds only a token
+whose audience is the gateway.
+
+v1 tools, read-only by doctrine: `whoami`, `calendar_list_events`,
+`drive_search`, `gmail_search`. Nothing that sends, moves or deletes.
+
+Setup:
+
+1. Create (or reuse) a Google OAuth client and add
+   `{GATEWAY_BASE_URL}/google/callback` to its authorized redirect URIs.
+2. Run the gateway (see `deploy/systemd/safi-workspace-gateway.service` for
+   bare metal). Put TLS in front of it; the base URL must be https in
+   production.
+3. Install it in SAFi from the host:
+   `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
+4. Members press Sign in on its card in Settings, Tools Catalog.
+
 ## 6. MCP server or built-in connector?
 
 Both end up as connectors, both are gated identically, and both leave the same

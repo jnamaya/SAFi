@@ -1,0 +1,31 @@
+# The Workspace gateway: per-user Google tools over the MCP authorization spec
+# (scripts/workspace_gateway.py, GOVERNANCE_BACKLOG 48j).
+#
+# Install: copy to /etc/systemd/system/, create the env file below, then
+#   systemctl daemon-reload && systemctl enable --now safi-workspace-gateway
+#
+# The env file (/home/safi/workspace-gateway.env, chmod 600, owned by safi):
+#   GATEWAY_BASE_URL=https://gw.example.com
+#   GOOGLE_CLIENT_ID=...
+#   GOOGLE_CLIENT_SECRET=...
+#   GATEWAY_ENCRYPTION_KEY=...   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   GATEWAY_DB=/home/safi/workspace-gateway.db
+#   PORT=8402
+#
+# ONE process, deliberately: the gateway is its own small authorization server
+# and its state lives in one sqlite file. Do not add workers, and put TLS in
+# front of it (Apache/nginx proxy to :8402); GATEWAY_BASE_URL must be https.
+[Unit]
+Description=SAFi Workspace Gateway (MCP OAuth resource server)
+After=network.target
+
+[Service]
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+EnvironmentFile=/home/safi/workspace-gateway.env
+ExecStart=/var/www/safi/venv/bin/python scripts/workspace_gateway.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
