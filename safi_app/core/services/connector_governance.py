@@ -33,10 +33,10 @@ CONTRACT (mirrors provider_governance, deliberately)
   has no admin to set a policy, and failing closed there would break the
   Quick Start for no security gain.
 
-Note the two namespaces. OAuth *account* keys are google / microsoft —
+Note the two namespaces. OAuth *account* keys are microsoft —
 what oauth_tokens.provider stores and what the login routes are named for. Tool
-*connector* names are google_drive / sharepoint (tool_connectors.py).
-One account serves several connectors: microsoft unlocks sharepoint. This module
+*connector* names are sharepoint (tool_connectors.py).
+One account can serve several connectors: microsoft unlocks sharepoint. This module
 governs the account, and carries the tool mapping so the admin UI can say what
 allowing it actually unlocks.
 """
@@ -49,12 +49,6 @@ from typing import FrozenSet, List, Optional
 # key -> what an admin needs to know to make the decision. "tools" is the
 # tool-connector namespace (tool_connectors.CONNECTOR_TOOLS), not this one.
 CONNECTOR_METADATA = {
-    "google": {
-        "label": "Google Drive",
-        "tools": ("google_drive",),
-        "grants": "Read the member's Drive files and folders on their behalf.",
-        "scopes": "drive.readonly, drive.file",
-    },
     "microsoft": {
         "label": "Microsoft OneDrive / SharePoint",
         "tools": ("sharepoint",),

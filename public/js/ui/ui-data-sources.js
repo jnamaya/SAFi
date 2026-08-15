@@ -2,7 +2,7 @@
  * js/ui/ui-data-sources.js
  * Renders the Tools section of the composer's + panel: the accounts a member
  * can connect so their agents' tools run as them. Two kinds live here under
- * one set of rules: delegated OAuth connectors (Google, Microsoft) and
+ * one set of rules: delegated OAuth connectors (Microsoft) and
  * OAuth-protected MCP tool servers. The section was called "Data Sources"
  * until 2026-08-15; ids and function names keep the old spelling so nothing
  * cached or externally referenced breaks.

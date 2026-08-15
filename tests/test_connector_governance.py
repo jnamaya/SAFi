@@ -101,10 +101,9 @@ class AllowListSemantics(ConnectorGovernanceBase):
             self.assertFalse(cg.connector_allowed(key, self.org_id))
 
     def test_partial_list(self):
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
         cg.invalidate_org(self.org_id)
-        self.assertTrue(cg.connector_allowed("google", self.org_id))
-        self.assertFalse(cg.connector_allowed("microsoft", self.org_id))
+        self.assertTrue(cg.connector_allowed("microsoft", self.org_id))
 
     def test_unknown_key_rejected_on_write(self):
         with self.assertRaises(ValueError):
@@ -114,9 +113,11 @@ class AllowListSemantics(ConnectorGovernanceBase):
         """A key removed from CONNECTOR_METADATA must not come back via a list
         stored before the removal."""
         _exec("UPDATE organizations SET settings=%s WHERE id=%s",
-              ('{"connector_allowlist": ["google", "legacy_thing"]}', self.org_id))
+              ('{"connector_allowlist": ["microsoft", "google", "legacy_thing"]}', self.org_id))
         cg.invalidate_org(self.org_id)
-        self.assertEqual(frozenset({"google"}), cg.get_org_allowlist(self.org_id))
+        # "google" is itself the live example now: a key that WAS real until the
+        # connector retired 2026-08-15, surviving in stored lists.
+        self.assertEqual(frozenset({"microsoft"}), cg.get_org_allowlist(self.org_id))
 
     def test_no_org_is_unrestricted(self):
         """A single-user install has no admin to set a policy; failing closed
@@ -125,13 +126,13 @@ class AllowListSemantics(ConnectorGovernanceBase):
         self.assertTrue(cg.connector_allowed("microsoft", None))
 
     def test_allowlist_change_is_evidence_logged(self):
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
         self.assertIn("connector_allowlist_changed", _log_events(self.org_id))
 
     def test_unchanged_write_logs_nothing(self):
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
         before = _log_events(self.org_id).count("connector_allowlist_changed")
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
         after = _log_events(self.org_id).count("connector_allowlist_changed")
         self.assertEqual(before, after, "a no-op write should not manufacture evidence")
 
@@ -153,7 +154,7 @@ class RouteEnforcement(ConnectorGovernanceBase):
         self.assertNotIn('connector_not_allowed', r.headers.get('Location', ''))
 
     def test_login_fails_closed_when_blocked(self):
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
         cg.invalidate_org(self.org_id)
         r = self.client.get('/api/auth/microsoft/login')
         self.assertEqual(302, r.status_code)
@@ -162,7 +163,7 @@ class RouteEnforcement(ConnectorGovernanceBase):
     def test_callback_fails_closed_when_blocked(self):
         """Guarding only the login route leaves this reachable directly, and
         lets a code obtained before the revocation still redeem into a token."""
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
         cg.invalidate_org(self.org_id)
         for path in ('/api/auth/microsoft/callback?code=x&state=y',
                      '/api/auth/microsoft/callback?code=x&state=y'):
@@ -203,8 +204,8 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
         self.assertIn('google', db.get_connected_providers(self.uid))
 
     def test_disconnect_writes_evidence(self):
-        db.upsert_oauth_token(self.uid, 'google', 'tok', org_id=self.org_id)
-        db.delete_oauth_token(self.uid, 'google', org_id=self.org_id)
+        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
+        db.delete_oauth_token(self.uid, 'microsoft', org_id=self.org_id)
         self.assertIn("connector_disconnected", _log_events(self.org_id))
 
     def test_disconnecting_nothing_writes_nothing(self):
@@ -222,11 +223,11 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
         self.assertIn('google', db.get_connected_providers(self.uid))
 
     def test_connections_never_cross_orgs(self):
-        db.upsert_oauth_token(self.uid, 'google', 'tok', org_id=self.org_id)
+        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
         db.upsert_oauth_token(self.other_uid, 'microsoft', 'tok', org_id=self.other_org)
         mine = db.list_org_connections(self.org_id)
         self.assertEqual({self.uid}, {r["user_id"] for r in mine})
-        self.assertEqual({'google'}, {r["provider"] for r in mine})
+        self.assertEqual({'microsoft'}, {r["provider"] for r in mine})
 
     def test_connections_carry_no_token_material(self):
         db.upsert_oauth_token(self.uid, 'google', 'super-secret-token', org_id=self.org_id)
@@ -265,14 +266,13 @@ class Usability(ConnectorGovernanceBase):
     def test_no_agent_uses_a_source_so_it_is_not_usable(self):
         """The default state for most orgs: built-ins use no data sources."""
         usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
-        self.assertNotIn('google', usable)
+        self.assertNotIn('microsoft', usable)
         self.assertNotIn('microsoft', usable)
 
     def test_an_agent_with_the_tool_makes_it_usable(self):
-        self._agent(['google_drive'])
+        self._agent(['sharepoint'])
         usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
-        self.assertIn('google', usable)
-        self.assertNotIn('microsoft', usable)
+        self.assertIn('microsoft', usable)
 
     def test_connector_name_and_function_name_both_count(self):
         """The wizard grants the connector ('sharepoint'); a policy may narrow
@@ -297,33 +297,30 @@ class Usability(ConnectorGovernanceBase):
         this fails rather than the UI quietly disagreeing with the runtime."""
         from safi_app.core.faculties.synderesis import authorized_tools
         from safi_app.core.tool_connectors import expand_connectors
-        granted = set(authorized_tools(['google_drive'], ['google_drive']))
-        drive_fns = set(expand_connectors(list(cg.CONNECTOR_METADATA['google']['tools'])))
-        self.assertTrue(granted & drive_fns)
+        granted = set(authorized_tools(['sharepoint'], ['sharepoint']))
+        ms_fns = set(expand_connectors(list(cg.CONNECTOR_METADATA['microsoft']['tools'])))
+        self.assertTrue(granted & ms_fns)
 
     def test_status_reports_usable_alongside_allowed(self):
         client = self.app.test_client()
         login_as(client, self.uid, "admin", org_id=self.org_id)
-        self._agent(['google_drive'])
+        self._agent(['sharepoint'])
         body = client.get('/api/auth/status').get_json()
         by_key = {c["key"]: c for c in body["connectors"]}
-        self.assertTrue(by_key['google']['allowed'])
-        self.assertTrue(by_key['google']['usable'])
         self.assertTrue(by_key['microsoft']['allowed'])
-        self.assertFalse(by_key['microsoft']['usable'],
-                         "no agent uses OneDrive/SharePoint, so it must not be offered")
+        self.assertTrue(by_key['microsoft']['usable'])
 
     def test_allowed_and_usable_are_independent(self):
         """Blocking the source must not make it 'usable: false' by accident,
         and vice versa — the UI needs both flags to explain itself."""
         client = self.app.test_client()
         login_as(client, self.uid, "admin", org_id=self.org_id)
-        self._agent(['google_drive'])
+        self._agent(['sharepoint'])
         db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
         cg.invalidate_org(self.org_id)
         by_key = {c["key"]: c for c in client.get('/api/auth/status').get_json()["connectors"]}
-        self.assertFalse(by_key['google']['allowed'])
-        self.assertTrue(by_key['google']['usable'])
+        self.assertFalse(by_key['microsoft']['allowed'])
+        self.assertTrue(by_key['microsoft']['usable'])
 
 
 class AdminApi(ConnectorGovernanceBase):
@@ -339,18 +336,18 @@ class AdminApi(ConnectorGovernanceBase):
         self.assertEqual(len(cg.CONNECTOR_METADATA), len(r.get_json()["connectors"]))
 
         r = self.client.put(f'/api/organizations/{self.org_id}/connectors',
-                            json={"allowlist": ["google"]})
+                            json={"allowlist": ["microsoft"]})
         self.assertEqual(200, r.status_code)
-        self.assertEqual(["google"], r.get_json()["allowlist"])
+        self.assertEqual(["microsoft"], r.get_json()["allowlist"])
 
     def test_blocked_connectors_are_still_listed_for_the_admin(self):
         """An admin needs to see a blocked source to be able to re-enable it."""
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
         self.client.put(f'/api/organizations/{self.org_id}/connectors',
-                        json={"allowlist": ["google"]})
+                        json={"allowlist": []})
         body = self.client.get(f'/api/organizations/{self.org_id}/connectors').get_json()
         by_key = {c["key"]: c for c in body["connectors"]}
-        self.assertTrue(by_key["google"]["allowed"])
+        self.assertIn("microsoft", by_key, "a blocked source must stay visible to the admin")
         self.assertFalse(by_key["microsoft"]["allowed"])
 
     def test_non_admin_is_refused(self):
@@ -369,11 +366,11 @@ class AdminApi(ConnectorGovernanceBase):
 
     def test_status_reports_what_the_org_permits(self):
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
-        db.set_org_connector_allowlist(self.org_id, ["google"], "admin@example.test")
+        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
         cg.invalidate_org(self.org_id)
         body = self.client.get('/api/auth/status').get_json()
         allowed = {c["key"] for c in body["connectors"] if c["allowed"]}
-        self.assertEqual({"google"}, allowed)
+        self.assertEqual({"microsoft"}, allowed)
 
 
 if __name__ == "__main__":

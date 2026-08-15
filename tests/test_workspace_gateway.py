@@ -87,6 +87,16 @@ class _StubGoogle(BaseHTTPRequestHandler):
             return self._json({"items": [
                 {"summary": "Board meeting", "start": {"dateTime": "2026-08-15T10:00:00Z"}},
             ]})
+        if self.path.startswith("/drive/v3/files/f123/export"):
+            body = b"Exported document text."
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/drive/v3/files/f123"):
+            return self._json({"name": "Plan.gdoc",
+                               "mimeType": "application/vnd.google-apps.document"})
         if self.path.startswith("/drive/"):
             return self._json({"files": [
                 {"name": "Q3 Plan.docx", "mimeType": "application/vnd.google-apps.document",
@@ -262,6 +272,22 @@ class WorkspaceGatewayTests(unittest.TestCase):
         mail = asyncio.run(mcp_runtime.call_with_token(
             self.resource_uri, "gmail_search", {"query": "numbers"}, body["access_token"]))
         self.assertIn("Quarterly numbers", mail)
+
+    def test_drive_file_contents_reads_and_attributes(self):
+        """The read that replaced the retired google_drive connector's
+        google_read_file: fetch by id, export Google Docs as text."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        from safi_app.core.services import mcp_oauth
+        code, _, verifier, client_id, discovery = self._run_flow()
+        body = mcp_oauth.exchange_code(
+            discovery, {"client_id": client_id, "client_secret": ""},
+            code, self.redirect_uri, verifier)
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "drive_get_file_contents",
+            {"file_id": "f123"}, body["access_token"]))
+        self.assertIn("Exported document text.", out)
+        self.assertIn("Plan.gdoc", out)
 
     def test_refresh_grant_mints_a_working_token(self):
         import asyncio

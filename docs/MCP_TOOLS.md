@@ -101,7 +101,7 @@ dispatch.
 ### Naming
 
 The server key becomes a connector name. It may not collide with a built-in
-connector (`web_search`, `google_drive`, `sharepoint`, `find_places`,
+connector (`web_search`, `sharepoint`, `find_places`,
 and the finance tools). A colliding server is refused at boot and logged, and
 its tools are unavailable until you rename it.
 
@@ -270,8 +270,8 @@ Both end up as connectors, both are gated identically, and both leave the same
 audit evidence. The difference is the credential, and it decides what each is
 for.
 
-**Built-in connectors act as the member.** Google Drive and SharePoint
-use delegated per-user OAuth. Every read inherits that person's permissions in
+**Built-in connectors act as the member.** SharePoint (OneDrive) uses
+delegated per-user OAuth. Every read inherits that person's permissions in
 the source system, appears under their name in that system's audit log, and
 stops working when they are offboarded.
 
@@ -284,7 +284,7 @@ So:
 | Use | Because |
 |---|---|
 | **MCP server** for a shared or system resource: a company API, an internal pricing service, a read-only operational view, a private service your organization runs | One credential is the correct model, and the data is not scoped to a person |
-| **Delegated OAuth connector** for a member's own data: their drive, their mailbox, their repositories | Attribution, per-person permissions, and access that ends at offboarding |
+| **Delegated OAuth connector** for a member's own data: their files, their mailbox, their repositories | Attribution, per-person permissions, and access that ends at offboarding |
 
 Wiring member data through a service-principal MCP server works, and it costs
 you all three of those properties. The source system's log will say SAFi did it,

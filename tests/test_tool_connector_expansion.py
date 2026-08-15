@@ -104,7 +104,7 @@ class TestExpansionDoesNotOverGrant(unittest.TestCase):
 
     def test_ungranted_connector_still_blocked(self):
         profile = compile_profile(["web_search"])
-        for fn in ("sharepoint_upload", "google_upload_file", "send_email"):
+        for fn in ("sharepoint_upload", "send_files", "send_email"):
             with self.subTest(tool=fn):
                 self.assertEqual(authorize(fn, profile), "violation")
 

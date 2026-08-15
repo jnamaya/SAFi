@@ -355,6 +355,33 @@ def build_app(store: Optional[Store] = None):
         return "\n".join(items) or "No files matched."
 
     @server.tool()
+    def drive_get_file_contents(file_id: str, max_chars: int = 20000) -> str:
+        """Read a file's text content from the member's Google Drive by id
+        (drive_search returns ids). Google Docs are exported as plain text;
+        other files are fetched raw and decoded best-effort. Read-only."""
+        meta = _google_get(store, f"/drive/v3/files/{file_id}", {"fields": "name,mimeType"})
+        if "error" in meta:
+            return f"ERROR: {meta['error']}"
+        import requests
+        token = _google_access_token(store, current_subject.get())
+        mime = meta.get("mimeType", "")
+        if mime.startswith("application/vnd.google-apps"):
+            url = f"{GOOGLE_API_BASE}/drive/v3/files/{file_id}/export"
+            params = {"mimeType": "text/plain"}
+        else:
+            url = f"{GOOGLE_API_BASE}/drive/v3/files/{file_id}"
+            params = {"alt": "media"}
+        resp = requests.get(url, params=params,
+                            headers={"Authorization": f"Bearer {token}"}, timeout=20)
+        if resp.status_code != 200:
+            return f"ERROR: Google answered {resp.status_code} reading {meta.get('name', file_id)}"
+        text = resp.content[: max(1000, int(max_chars or 20000)) * 4].decode("utf-8", "replace")
+        limit = max(1000, int(max_chars or 20000))
+        clipped = text[:limit]
+        suffix = "" if len(text) <= limit else f"\n[truncated at {limit} characters]"
+        return f"{meta.get('name', file_id)}:\n{clipped}{suffix}"
+
+    @server.tool()
     def gmail_search(query: str, max_results: int = 5) -> str:
         """Search the member's Gmail; returns sender, subject and date."""
         listing = _google_get(store, "/gmail/v1/users/me/messages", {

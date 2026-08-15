@@ -182,8 +182,8 @@ class UrlSafetyTests(unittest.TestCase):
 
 class ConnectorKeyTests(unittest.TestCase):
     def test_available_key_never_returns_a_builtin(self):
-        self.assertIn("google_drive", CONNECTOR_TOOLS)
-        self.assertNotEqual(mcp_install.available_key("google_drive"), "google_drive")
+        self.assertIn("web_search", CONNECTOR_TOOLS)
+        self.assertNotEqual(mcp_install.available_key("web_search"), "web_search")
 
     def test_available_key_avoids_names_already_taken(self):
         self.assertNotEqual(mcp_install.available_key("acme", taken={"acme"}), "acme")

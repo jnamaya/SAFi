@@ -19,8 +19,9 @@ The consequence was not a degraded feature, it was a dead one. An agent granted
 and google_drive (3). Every multi-function connector was unusable, deterministically,
 and the only connectors that worked were the ones whose single function happened to be
 named identically to the connector. (The github connector named in this history was
-retired 2026-08-15 in favour of GitHub's official MCP server; the mechanism it
-motivated governs its successor.)
+retired 2026-08-15 in favour of GitHub's official MCP server, and google_drive
+followed the same day, absorbed by the Workspace gateway; the mechanism this
+history motivated governs their successors.)
 
 So synderesis._stamp_tool_authorization() now expands through this table before
 stamping profile["allowed_tools"], and the Will keeps exact matching.
@@ -49,11 +50,6 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
     "get_company_news": ("get_company_news",),
     "get_earnings_history": ("get_earnings_history",),
     "get_stock_price": ("get_stock_price",),
-    "google_drive": (
-        "google_list_files",
-        "google_read_file",
-        "google_upload_file",
-    ),
     "sharepoint": (
         "sharepoint_search",
         "sharepoint_read",

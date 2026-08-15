@@ -15,8 +15,8 @@ Two kinds of tool arrive here and they are not the same thing:
 
 That difference decides what each is FOR, and it belongs in the docs an
 organization reads: a shared or system resource (a company API, an internal
-pricing service) is right for an MCP server; a member's own mailbox or drive
-belongs on a delegated-OAuth connector, or every read in the source system's
+pricing service) is right for an MCP server; a member's own mailbox or files
+belong on per-user authorization (the OAuth MCP path or a delegated connector), or every read in the source system's
 audit log is attributed to SAFi rather than to a person, and offboarding stops
 cutting access.
 
@@ -441,42 +441,6 @@ class MCPManager:
                 }
             })
 
-        # --- GOOGLE DRIVE ---
-        if "google_drive" in allowed_tools:
-            tools.append({
-                "name": "google_list_files",
-                "description": "List files in user's Google Drive.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Optional search term to filter by name."}
-                    }
-                }
-            })
-            tools.append({
-                "name": "google_read_file",
-                "description": "Read content of a Google Drive file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "file_id": {"type": "string", "description": "The ID of the file to read."}
-                    },
-                    "required": ["file_id"]
-                }
-            })
-            tools.append({
-                "name": "google_upload_file",
-                "description": "Create/Upload a file to Google Drive.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Filename."},
-                        "content": {"type": "string", "description": "Text content of the file."}
-                    },
-                    "required": ["name", "content"]
-                }
-            })
-
         # --- MICROSOFT SHAREPOINT ---
         if "sharepoint" in allowed_tools:
             tools.append({
@@ -636,12 +600,6 @@ class MCPManager:
                 "category": "Office & Productivity",
                 "tools": [
                     {
-                        "name": "google_drive",
-                        "label": "Google Drive",
-                        "description": "Read/Write Access to Google Drive",
-                        "icon": "cloud"
-                    },
-                    {
                         "name": "sharepoint",
                         "label": "OneDrive / SharePoint",
                         "description": "Read/Write Access to OneDrive & SharePoint",
@@ -766,16 +724,6 @@ class MCPManager:
                 return await search_web(arguments["query"])
             if tool_name == "web_news":
                 return await get_news(arguments["query"])
-
-        # -- GOOGLE DRIVE --
-        if tool_name.startswith("google_"):
-            from ..mcp_servers import google_drive
-            if tool_name == "google_list_files":
-                return await google_drive.list_files(arguments.get("query"))
-            if tool_name == "google_read_file":
-                return await google_drive.read_file(arguments["file_id"])
-            if tool_name == "google_upload_file":
-                 return await google_drive.upload_file(arguments["name"], arguments["content"])
 
         # -- SHAREPOINT --
         if tool_name.startswith("sharepoint_"):
