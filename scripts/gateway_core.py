@@ -199,6 +199,19 @@ class Store:
                          (digest,)).fetchone()
         return row[0] if row else None
 
+    def revoke_subject(self, subject: str) -> bool:
+        """Offboarding: everything this subject could ever redeem, gone in one
+        motion. Every gateway refresh token for the subject and the stored
+        upstream tokens; outstanding access JWTs stay signature-valid until
+        exp but find no upstream token to act with."""
+        had = bool(self._exec("SELECT 1 FROM refresh_tokens WHERE subject=?",
+                              (subject,)).fetchone()
+                   or self._exec("SELECT 1 FROM google_tokens WHERE subject=?",
+                                 (subject,)).fetchone())
+        self._exec("DELETE FROM refresh_tokens WHERE subject=?", (subject,))
+        self._exec("DELETE FROM google_tokens WHERE subject=?", (subject,))
+        return had
+
 
 @dataclass
 class UpstreamProvider:
@@ -218,6 +231,10 @@ class UpstreamProvider:
     authorize_extra: Dict[str, str] = field(default_factory=dict)
     # (token_response_json) -> (subject, email). Raises on garbage.
     extract_identity: Callable[[Dict[str, Any]], tuple] = None
+    # Where the upstream revokes a refresh token, when it has such a thing.
+    # Google does; Microsoft does not, and None means our /revoke destroys the
+    # only stored copy instead, which is the strongest control available there.
+    revoke_url: Optional[str] = None
 
 
 def decode_jwt_segment(token: str, index: int = 1) -> Dict[str, Any]:
@@ -332,6 +349,7 @@ def build_gateway_app(*, base_url: str, store: Store, provider: UpstreamProvider
                 "authorization_endpoint": f"{base_url}/authorize",
                 "token_endpoint": f"{base_url}/token",
                 "registration_endpoint": f"{base_url}/register",
+                "revocation_endpoint": f"{base_url}/revoke",
                 "jwks_uri": f"{base_url}/jwks",
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
@@ -465,6 +483,49 @@ def build_gateway_app(*, base_url: str, store: Store, provider: UpstreamProvider
                 })
 
             return await _respond(send, 400, {"error": "unsupported_grant_type"})
+
+        if path == "/revoke" and scope["method"] == "POST":
+            # RFC 7009, with offboarding semantics. The clients are public, so
+            # possession IS the authorization: only a holder of a live token
+            # can call this, and the only thing it can do is destroy access.
+            # A valid token resolves to its subject and the revocation
+            # CASCADES: every gateway refresh token for that subject, the
+            # stored upstream tokens, and the upstream's own revocation where
+            # the provider offers one. Per the RFC, the answer is 200 whether
+            # or not the token was known, so this endpoint confirms nothing
+            # to a caller probing with guesses.
+            from urllib.parse import parse_qs as pq
+            form = {k: v[0] for k, v in pq((await _read_body(receive)).decode()).items()}
+            presented = form.get("token", "")
+
+            subject = store.subject_for_refresh(presented) if presented else None
+            if not subject and presented.count(".") == 2:
+                try:
+                    claims = jwt.decode(presented, {"keys": [public_jwk]}, claims_options={
+                        "iss": {"essential": True, "values": [base_url]},
+                        "aud": {"essential": True, "values": [resource_uri]},
+                    })
+                    claims.validate()
+                    subject = str(claims.get("sub") or "") or None
+                except Exception:
+                    subject = None
+
+            if subject:
+                upstream = store.upstream_tokens(subject)
+                if provider.revoke_url and upstream and upstream.get("refresh_token"):
+                    try:
+                        import requests
+                        requests.post(provider.revoke_url,
+                                      data={"token": upstream["refresh_token"]},
+                                      timeout=10)
+                    except Exception:
+                        # Best effort: the upstream being unreachable must not
+                        # keep the local copy alive.
+                        log.warning("%s upstream revocation failed for %s",
+                                    provider.name, subject)
+                store.revoke_subject(subject)
+                log.info("revoked all tokens for subject %s", subject)
+            return await _respond(send, 200, {})
 
         # Everything else needs a valid audience-bound token.
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}

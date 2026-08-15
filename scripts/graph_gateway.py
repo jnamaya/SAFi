@@ -116,6 +116,11 @@ PROVIDER = core.UpstreamProvider(
     scopes=GRAPH_SCOPES,
     callback_path="/microsoft/callback",
     extract_identity=_entra_identity,
+    # No revoke_url: Entra offers no public OAuth token-revocation endpoint.
+    # /revoke therefore destroys the only stored copy of the refresh token,
+    # which is the strongest control available; the token remains technically
+    # valid at Microsoft until natural expiry but exists nowhere.
+    revoke_url=None,
 )
 
 

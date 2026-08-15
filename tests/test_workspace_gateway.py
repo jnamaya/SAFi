@@ -53,6 +53,7 @@ class _StubGoogle(BaseHTTPRequestHandler):
 
     api_auth_headers = []   # Authorization header of every API GET
     token_posts = []
+    revoke_posts = []       # what reached Google's own revocation endpoint
 
     def log_message(self, *args):
         pass
@@ -68,6 +69,9 @@ class _StubGoogle(BaseHTTPRequestHandler):
     def do_POST(self):
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         form = {k: v[0] for k, v in parse_qs(raw).items()}
+        if self.path == "/revoke":
+            _StubGoogle.revoke_posts.append(form)
+            return self._json({})
         _StubGoogle.token_posts.append(form)
         if self.path == "/token":
             id_payload = base64.urlsafe_b64encode(json.dumps(
@@ -149,6 +153,7 @@ class WorkspaceGatewayTests(unittest.TestCase):
             "GOOGLE_OAUTH_BASE": google_base,
             "GOOGLE_TOKEN_URL": f"{google_base}/token",
             "GOOGLE_API_BASE": google_base,
+            "GOOGLE_REVOKE_URL": f"{google_base}/revoke",
         }
         cls._saved_env = {k: os.environ.get(k) for k in env}
         os.environ.update(env)
@@ -371,6 +376,55 @@ class WorkspaceGatewayTests(unittest.TestCase):
         out = asyncio.run(mcp_runtime.call_with_token(
             self.resource_uri, "whoami", {}, "not-a-token"))
         self.assertTrue(out.startswith("ERROR:"))
+
+    # ── revocation (offboarding, RFC 7009) ────────────────────────────────────
+
+    def test_revocation_is_advertised_and_cascades(self):
+        """One revoke call is a full offboarding: the gateway's refresh token
+        dies, the stored Google tokens die, Google's own revocation endpoint
+        hears about it, and an outstanding access JWT, though still
+        signature-valid, is defanged because nothing upstream remains."""
+        import asyncio
+        import requests
+        from safi_app.core import mcp_runtime
+        from safi_app.core.services import mcp_oauth
+
+        discovery = self._discover()
+        self.assertEqual(f"{self.base}/revoke", discovery.get("revocation_endpoint"))
+
+        code, _, verifier, client_id, discovery = self._run_flow()
+        body = mcp_oauth.exchange_code(
+            discovery, {"client_id": client_id, "client_secret": ""},
+            code, self.redirect_uri, verifier)
+
+        _StubGoogle.revoke_posts.clear()
+        resp = requests.post(f"{self.base}/revoke",
+                             data={"token": body["refresh_token"]}, timeout=5)
+        self.assertEqual(200, resp.status_code)
+
+        # Google itself was told, with the GOOGLE refresh token.
+        self.assertIn({"token": GOOGLE_REFRESH}, _StubGoogle.revoke_posts)
+        # The gateway refresh token no longer redeems.
+        with self.assertRaises(mcp_oauth.OAuthConfigError):
+            mcp_oauth.refresh(discovery, {"client_id": client_id, "client_secret": ""},
+                              body["refresh_token"])
+        # The outstanding JWT verifies but finds nobody behind it.
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "whoami", {}, body["access_token"]))
+        self.assertIn("nobody", out)
+        # And nothing upstream survives at rest.
+        conn = sqlite3.connect(self.db_path)
+        left = conn.execute("SELECT COUNT(*) FROM google_tokens").fetchone()[0]
+        conn.close()
+        self.assertEqual(0, left)
+
+    def test_revoking_garbage_confirms_nothing(self):
+        """Per RFC 7009 the answer is 200 either way, so a caller probing with
+        guesses learns nothing about which tokens exist."""
+        import requests
+        for junk in ("gwr-never-issued", "not.a.jwt", ""):
+            resp = requests.post(f"{self.base}/revoke", data={"token": junk}, timeout=5)
+            self.assertEqual(200, resp.status_code, repr(junk))
 
     # ── at-rest properties ────────────────────────────────────────────────────
 

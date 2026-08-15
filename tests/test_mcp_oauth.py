@@ -81,6 +81,7 @@ class _StubHandler(BaseHTTPRequestHandler):
                 "authorization_endpoint": f"{base}/authorize",
                 "token_endpoint": f"{base}/token",
                 "registration_endpoint": f"{base}/register",
+                "revocation_endpoint": f"{base}/revoke",
             })
         return self._json({"error": "not found"}, 404)
 
@@ -91,6 +92,10 @@ class _StubHandler(BaseHTTPRequestHandler):
             _StubHandler.register_count += 1
             _StubHandler.calls.append(("/register", json.loads(raw or "{}")))
             return self._json({"client_id": "safi-test-client"}, 201)
+        if self.path == "/revoke":
+            form = {k: v[0] for k, v in parse_qs(raw).items()}
+            _StubHandler.calls.append(("/revoke", form))
+            return self._json({})
         if self.path == "/token":
             form = {k: v[0] for k, v in parse_qs(raw).items()}
             _StubHandler.calls.append(("/token", form))
@@ -434,6 +439,83 @@ class RouteTests(unittest.TestCase):
     def test_an_unknown_server_is_a_404(self):
         self.assertEqual(
             self._client().get("/api/mcp/auth/nonesuch/login").status_code, 404)
+
+    # ── revocation (offboarding, 48l) ────────────────────────────────────────
+
+    def _seed_token(self, user=None):
+        from datetime import datetime, timedelta
+        self.db.upsert_oauth_token(
+            user or self.user, "mcp:authsrv", "at-live", "rt-1",
+            datetime.now() + timedelta(hours=1), "tools.read", org_id=self.org)
+
+    def _revocations(self):
+        return [form for path, form in _StubHandler.calls if path == "/revoke"]
+
+    def test_disconnect_revokes_at_the_server_first(self):
+        """The stored token is the proof of possession the revocation endpoint
+        needs, so the server hears about it BEFORE the row dies."""
+        mcp_oauth.clear_discovery_cache()
+        self._seed_token()
+        _StubHandler.calls = []
+        r = self._client().post("/api/mcp/auth/authsrv/disconnect")
+        self.assertEqual(200, r.status_code)
+        self.assertIn({"token": "rt-1"}, self._revocations())
+        self.assertIsNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
+
+    def test_the_generic_disconnect_route_also_revokes(self):
+        mcp_oauth.clear_discovery_cache()
+        self._seed_token()
+        _StubHandler.calls = []
+        r = self._client().post("/api/auth/mcp:authsrv/disconnect")
+        self.assertEqual(200, r.status_code)
+        self.assertIn({"token": "rt-1"}, self._revocations())
+        self.assertIsNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
+
+    def test_a_dead_gateway_never_blocks_a_disconnect(self):
+        """Best effort by design: the row must die even when the server is
+        unreachable, or an offboarding could be blocked by an outage."""
+        mcp_oauth.clear_discovery_cache()
+        self._seed_token()
+        held, self.stub.RequestHandlerClass.do_POST = (
+            self.stub.RequestHandlerClass.do_POST, lambda s: s._json({}, 503))
+        try:
+            r = self._client().post("/api/mcp/auth/authsrv/disconnect")
+        finally:
+            self.stub.RequestHandlerClass.do_POST = held
+        self.assertEqual(200, r.status_code)
+        self.assertIsNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
+
+    def test_the_offboarding_sweep_reaches_every_connected_server(self):
+        mcp_oauth.clear_discovery_cache()
+        self._seed_token()
+        _StubHandler.calls = []
+        results = mcp_oauth.revoke_all_mcp_tokens(self.user)
+        self.assertEqual({"authsrv": True}, results)
+        self.assertIn({"token": "rt-1"}, self._revocations())
+        # The sweep revokes; deletion stays the caller's move (delete_user
+        # cascades it, the org-removal route deletes explicitly).
+        self.assertIsNotNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
+        self._exec("DELETE FROM oauth_tokens WHERE user_id=%s", (self.user,))
+
+    def test_account_deletion_revokes_before_the_rows_die(self):
+        """/me/delete on a throwaway user: the gateway hears the revocation,
+        then the account and its rows are gone."""
+        mcp_oauth.clear_discovery_cache()
+        doomed = f"doomed_{uuid.uuid4().hex[:8]}"
+        self._exec("INSERT INTO users (id, email, name, org_id, role) "
+                   "VALUES (%s, %s, %s, %s, 'member')",
+                   (doomed, f"{doomed}@example.test", "Doomed", self.org))
+        self._seed_token(user=doomed)
+        _StubHandler.calls = []
+        try:
+            r = self._client(user=doomed).post("/api/me/delete")
+            self.assertEqual(200, r.status_code)
+            self.assertIn({"token": "rt-1"}, self._revocations())
+            self.assertIsNone(self.db.get_user_details(doomed))
+        finally:
+            self._exec("DELETE FROM oauth_tokens WHERE user_id=%s", (doomed,))
+            self._exec("DELETE FROM sessions WHERE user_id=%s", (doomed,))
+            self._exec("DELETE FROM users WHERE id=%s", (doomed,))
 
 
 class LiveProtectedServerTests(unittest.TestCase):

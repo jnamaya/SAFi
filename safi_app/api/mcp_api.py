@@ -266,11 +266,17 @@ def oauth_callback(server_key):
 @mcp_bp.route('/auth/<server_key>/disconnect', methods=['POST'])
 def oauth_disconnect(server_key):
     from ..core.services import mcp_oauth
+    from ..core.services.mcp_manager import file_servers
     from ..persistence import database as db
 
     user = session.get('user') or {}
     if not user.get('id'):
         return jsonify({"ok": False, "error": "Sign in first."}), 401
+    # Revoke at the server BEFORE deleting the row: the stored token is the
+    # proof of possession its revocation endpoint requires. Best effort; the
+    # row dies either way, so disconnect never blocks on a dead gateway.
+    mcp_oauth.revoke_at_server(user['id'], server_key,
+                               file_servers().get(server_key) or {})
     db.delete_oauth_token(user['id'], mcp_oauth.provider_key(server_key),
                           org_id=user.get('org_id'))
     return jsonify({"ok": True})

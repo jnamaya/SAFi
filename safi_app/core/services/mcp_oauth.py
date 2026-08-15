@@ -171,6 +171,9 @@ def discover(server_url: str) -> Dict[str, Any]:
         "authorization_endpoint": str(meta["authorization_endpoint"]),
         "token_endpoint": str(meta["token_endpoint"]),
         "registration_endpoint": meta.get("registration_endpoint"),
+        # RFC 7009, when the AS offers it. Offboarding revocation (48l) reads
+        # this; absent means deleting SAFi's row is the only lever.
+        "revocation_endpoint": meta.get("revocation_endpoint"),
         "scopes_supported": prm.get("scopes_supported") or meta.get("scopes_supported") or [],
     }
     _discovery_cache[server_url] = (time.time(), result)
@@ -404,3 +407,79 @@ def ensure_client_readonly(server_key: str, definition: Dict[str, Any],
         raise OAuthConfigError("No OAuth client is registered for this server.")
     return {"client_id": stored["client_id"],
             "client_secret": stored.get("client_secret") or ""}
+
+
+# ── Revocation (offboarding) ──────────────────────────────────────────────────
+
+def revoke_at_server(user_id: str, server_key: str,
+                     definition: Dict[str, Any]) -> bool:
+    """Tell the server to destroy everything it holds for this member.
+
+    RFC 7009 against the revocation_endpoint the server's AS metadata
+    advertises. SAFi's own gateways cascade from the presented token to the
+    subject: every gateway refresh token dies, the stored upstream tokens die,
+    and where the upstream offers revocation (Google) the grant is revoked
+    there too. Best effort BY DESIGN: an unreachable gateway must never block
+    a disconnect or an offboarding, so every failure path returns False and
+    the caller deletes the SAFi-side row regardless. Returns True only when
+    the endpoint answered 200.
+
+    Servers without AS metadata or without a revocation_endpoint (GitHub's
+    official server is both today) simply return False: deleting SAFi's row
+    is the only lever available there, and pretending otherwise would be a
+    false audit claim.
+    """
+    import requests
+
+    row = db.get_oauth_token(user_id, provider_key(server_key))
+    if not row:
+        return False
+    token = row.get("refresh_token") or row.get("access_token")
+    if not token:
+        return False
+    try:
+        discovery = discover(str(definition.get("url") or ""))
+        endpoint = discovery.get("revocation_endpoint")
+        if not endpoint:
+            return False
+        resp = requests.post(endpoint, data={"token": token}, timeout=10)
+        ok = resp.status_code == 200
+        if not ok:
+            log.warning("revocation at %s answered %s for %s",
+                        server_key, resp.status_code, user_id)
+        return ok
+    except Exception as exc:
+        log.warning("revocation at %s failed for %s: %s", server_key, user_id, exc)
+        return False
+
+
+def revoke_all_mcp_tokens(user_id: str) -> Dict[str, bool]:
+    """Offboarding sweep: every MCP server this member ever connected.
+
+    Called BEFORE the rows die (delete_user cascades them away; the member
+    disconnect deletes one), because the stored token is the proof of
+    possession the revocation endpoint requires. The return maps server key
+    to whether its server confirmed, for the caller's log line; the sweep
+    itself never raises.
+    """
+    from .mcp_manager import file_servers
+
+    results: Dict[str, bool] = {}
+    try:
+        providers = db.get_connected_providers(user_id)
+        definitions = file_servers()
+    except Exception as exc:
+        log.warning("revocation sweep could not enumerate for %s: %s", user_id, exc)
+        return results
+    for provider in providers:
+        if not str(provider).startswith(PROVIDER_PREFIX):
+            continue
+        key = str(provider)[len(PROVIDER_PREFIX):]
+        try:
+            results[key] = revoke_at_server(user_id, key, definitions.get(key) or {})
+        except Exception as exc:  # revoke_at_server already catches; belt and braces
+            log.warning("revocation at %s raised for %s: %s", key, user_id, exc)
+            results[key] = False
+    if results:
+        log.info("offboarding revocation for %s: %s", user_id, results)
+    return results

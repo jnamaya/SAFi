@@ -308,9 +308,19 @@ def remove_organization_member(org_id, user_id):
 
     try:
         prior = (db.get_user_details(user_id) or {}).get('role')
+        # Off-boarding reaches the member's connected tool servers too: their
+        # agents are about to be out of reach, so a token nothing can consume
+        # would be pure blast radius, at SAFi and inside the gateways alike.
+        # Best effort BEFORE the rows die (the token is the proof of
+        # possession revocation requires); removal proceeds regardless.
+        from ..core.services import mcp_oauth
+        revoked = mcp_oauth.revoke_all_mcp_tokens(user_id)
+        for key in revoked:
+            db.delete_oauth_token(user_id, mcp_oauth.provider_key(key), org_id=org_id)
         db.remove_member_from_org(user_id, org_id, actor=_actor())
         db.append_compliance_log(org_id, 'member_removed', f"user:{_actor()}",
-                                 {"member": user_id, "prior_role": prior})
+                                 {"member": user_id, "prior_role": prior,
+                                  "tool_tokens_revoked": revoked})
         return jsonify({"status": "removed", "user_id": user_id})
     except db.LastAdminError as e:
         return jsonify({"error": str(e)}), 409

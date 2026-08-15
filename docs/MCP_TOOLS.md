@@ -200,6 +200,16 @@ Operational notes:
   tools to a token, not to the boot process. Until then the card says so.
 - Tokens live in the encrypted `oauth_tokens` table, with an evidence row
   written in the same transaction.
+- Offboarding reaches the server, not just SAFi's row. When a member
+  disconnects, deletes their account, or is removed from their organization,
+  SAFi calls the revocation endpoint the server's metadata advertises
+  (RFC 7009) before deleting its own token. SAFi's gateways cascade from
+  there: every gateway token for that person dies, the stored upstream
+  tokens die, and Google's own revocation endpoint is called where it
+  applies (Microsoft has no equivalent, so destroying the only stored copy
+  is the control). Best effort by design: an unreachable server never
+  blocks an offboarding, and a server without a revocation endpoint
+  (GitHub's official server, today) falls back to deletion of SAFi's row.
 - Guests can never connect, and the `orgs` restriction applies as usual.
 - A reference resource server, pure Python on SAFi's own dependencies and
   exercised end to end by the test suite, ships as

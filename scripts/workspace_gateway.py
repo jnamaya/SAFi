@@ -82,6 +82,7 @@ PORT = int(os.environ.get("PORT", "8402"))
 GOOGLE_OAUTH_BASE = os.environ.get("GOOGLE_OAUTH_BASE", "https://accounts.google.com")
 GOOGLE_TOKEN_URL = os.environ.get("GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token")
 GOOGLE_API_BASE = os.environ.get("GOOGLE_API_BASE", "https://www.googleapis.com")
+GOOGLE_REVOKE_URL = os.environ.get("GOOGLE_REVOKE_URL", "https://oauth2.googleapis.com/revoke")
 
 # Read-only scopes, matching the read-only tool set. Widening this list is a
 # governance decision, not a convenience: every scope here is something every
@@ -112,6 +113,10 @@ PROVIDER = core.UpstreamProvider(
     # consented grant.
     authorize_extra={"access_type": "offline", "prompt": "consent"},
     extract_identity=_google_identity,
+    # Offboarding reaches Google itself: /revoke here cascades into Google's
+    # own revocation endpoint, so the member's grant disappears from their
+    # Google account permissions page too.
+    revoke_url=GOOGLE_REVOKE_URL,
 )
 
 

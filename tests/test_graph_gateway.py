@@ -329,6 +329,33 @@ class GraphGatewayTests(unittest.TestCase):
             self.resource_uri, "microsoft_whoami", {}, refreshed["access_token"]))
         self.assertIn("member@contoso.com", out)
 
+    def test_revocation_destroys_the_only_copy(self):
+        """Microsoft offers no upstream revocation endpoint, so /revoke's whole
+        effect is local, and it must be total: refresh dead, store empty, an
+        outstanding JWT defanged."""
+        import asyncio
+        import requests
+        from safi_app.core import mcp_runtime
+        from safi_app.core.services import mcp_oauth
+
+        body, discovery, client_id = self._token()
+        self.assertEqual(f"{self.base}/revoke", discovery.get("revocation_endpoint"))
+
+        resp = requests.post(f"{self.base}/revoke",
+                             data={"token": body["refresh_token"]}, timeout=5)
+        self.assertEqual(200, resp.status_code)
+
+        with self.assertRaises(mcp_oauth.OAuthConfigError):
+            mcp_oauth.refresh(discovery, {"client_id": client_id, "client_secret": ""},
+                              body["refresh_token"])
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "microsoft_whoami", {}, body["access_token"]))
+        self.assertIn("nobody", out)
+        conn = sqlite3.connect(self.db_path)
+        left = conn.execute("SELECT COUNT(*) FROM google_tokens").fetchone()[0]
+        conn.close()
+        self.assertEqual(0, left)
+
     # ── the core is wired in, not just imported ──────────────────────────────
 
     def test_the_token_endpoint_demands_the_right_resource(self):

@@ -787,6 +787,13 @@ def disconnect_provider(provider):
     # No allow-list check: removing access is always permitted, even for a
     # connector an admin has since blocked — that is the direction the policy
     # wants to travel in.
+    from ..core.services import mcp_oauth
+    if provider.startswith(mcp_oauth.PROVIDER_PREFIX):
+        # Reach the server too, best effort, while the stored token still
+        # exists to prove possession. The row dies regardless.
+        from ..core.services.mcp_manager import file_servers
+        key = provider[len(mcp_oauth.PROVIDER_PREFIX):]
+        mcp_oauth.revoke_at_server(user_id, key, file_servers().get(key) or {})
     db.delete_oauth_token(user_id, provider, org_id=_connector_org())
     return jsonify({"status": "disconnected", "provider": provider})
 
@@ -912,6 +919,11 @@ def set_user_models():
 def delete_me():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
+    # Before the rows die: revoke this member's tokens at every MCP server
+    # they connected, or the upstream credentials outlive the account inside
+    # the gateways. Best effort; deletion proceeds regardless.
+    from ..core.services.mcp_oauth import revoke_all_mcp_tokens
+    revoke_all_mcp_tokens(user_id)
     db.revoke_user_sessions(user_id, f"user:{user_id}")
     db.delete_user(user_id)
     session.clear()
