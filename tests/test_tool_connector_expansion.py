@@ -1,18 +1,25 @@
 """
-Connector-level authorization: the wizard grants "sharepoint", the model calls
-"sharepoint_read", and the Will matches exactly.
+Connector-level authorization: the wizard grants "web_search", the model calls
+"web_news", and the Will matches exactly.
 
 Before the fix, mcp_manager expanded connector names into per-function schemas
 while WillGate compared the function name against the unexpanded list. An agent
-granted "sharepoint" was therefore offered four tools and could use none of them.
-sharepoint (7 functions) and google_drive (3) were dead the same way, and
-web_news was blocked while web_search worked. The connectors that appeared to
-work did so only because their single function shared the connector's name.
+granted a multi-function connector was offered its tools and could use none of
+them; web_news was blocked while web_search worked. The connectors that
+appeared to work did so only because their single function shared the
+connector's name. (The three multi-function connectors that motivated the fix,
+github, google_drive and sharepoint, all retired 2026-08-15 in favour of MCP
+servers; web_search is the multi-function case that remains, and the mechanism
+now also governs every discovered server.)
 
 The load-bearing test here is test_mapping_matches_the_real_builder: it calls the
 actual mcp_manager schema builder for every connector and asserts the emitted
 names match CONNECTOR_TOOLS. Adding a function to a connector without updating
 the table fails here rather than silently shipping an unauthorizable tool.
+
+The retired names earn their own tests. "sharepoint" survives in agents'
+stored tools_json; it must expand to itself, authorize nothing callable, and
+never resurrect the old functions.
 
 Run:  venv/bin/python tests/test_tool_connector_expansion.py
 """
@@ -75,6 +82,14 @@ class TestMappingIsPinnedToReality(unittest.TestCase):
                          f"connectors gated in mcp_manager but absent from "
                          f"CONNECTOR_TOOLS: {sorted(missing)}")
 
+    def test_retired_connectors_stay_retired(self):
+        # The builder must not gate on a retired name, and the table must not
+        # carry one. A reappearance here means someone resurrected a built-in
+        # whose successor is an MCP server.
+        for retired in ("github", "google_drive", "sharepoint"):
+            with self.subTest(connector=retired):
+                self.assertNotIn(retired, CONNECTOR_TOOLS)
+
 
 class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
 
@@ -87,12 +102,6 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
                         authorize(fn, profile), "violation",
                         f"granting '{connector}' must authorize '{fn}'")
 
-    def test_the_reported_failure(self):
-        # Nelson's exact case: tools_json ["web_search", "sharepoint"], no policy
-        # narrowing, model proposes github_get_repo.
-        profile = compile_profile(["web_search", "sharepoint"])
-        self.assertNotEqual(authorize("sharepoint_read", profile), "violation")
-
     def test_web_news_no_longer_blocked(self):
         # In READ_ONLY_TOOLS, but the allow-list is checked before the fast pass,
         # so it was rejected before it could be fast-passed.
@@ -100,52 +109,68 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
         self.assertEqual(authorize("web_news", profile), "approve")
 
 
+class TestRetiredKeysFailClosed(unittest.TestCase):
+    """Agents' tools_json still carries the retired names. Each must be inert:
+    expand to itself, authorize none of its old functions, and leave the
+    connectors that still exist unaffected."""
+
+    def test_a_stored_retired_grant_authorizes_nothing(self):
+        profile = compile_profile(["web_search", "sharepoint"])
+        self.assertEqual(authorize("web_news", profile), "approve")
+        for old_fn in ("sharepoint_read", "sharepoint_search", "sharepoint_upload"):
+            with self.subTest(tool=old_fn):
+                self.assertEqual(authorize(old_fn, profile), "violation")
+
+    def test_retired_names_expand_to_themselves(self):
+        for retired in ("github", "google_drive", "sharepoint"):
+            with self.subTest(connector=retired):
+                self.assertEqual(expand_connectors([retired]), [retired])
+
+
 class TestExpansionDoesNotOverGrant(unittest.TestCase):
 
-    def test_ungranted_connector_still_blocked(self):
+    def test_ungranted_function_still_blocked(self):
         profile = compile_profile(["web_search"])
-        for fn in ("sharepoint_upload", "send_files", "send_email"):
+        for fn in ("find_places", "send_files", "send_email"):
             with self.subTest(tool=fn):
                 self.assertEqual(authorize(fn, profile), "violation")
 
     def test_no_tools_is_deny_all(self):
         profile = compile_profile([])
         self.assertEqual(profile["allowed_tools"], [])
-        self.assertEqual(authorize("sharepoint_read", profile), "violation")
+        self.assertEqual(authorize("web_search", profile), "violation")
 
     def test_hallucinated_tool_name_blocked(self):
-        profile = compile_profile(["sharepoint"])
-        self.assertEqual(authorize("sharepoint_delete", profile), "violation")
+        profile = compile_profile(["web_search"])
+        self.assertEqual(authorize("web_delete_history", profile), "violation")
 
     def test_policy_can_narrow_within_a_connector(self):
-        # Agent granted all of SharePoint, policy permits only the search.
-        profile = compile_profile(["sharepoint"], policy_allowed=["sharepoint_search"])
-        self.assertEqual(profile["allowed_tools"], ["sharepoint_search"])
-        self.assertNotEqual(authorize("sharepoint_search", profile), "violation")
-        self.assertEqual(authorize("sharepoint_read", profile), "violation")
+        # Agent granted both search tools, policy permits only the news one.
+        profile = compile_profile(["web_search"], policy_allowed=["web_news"])
+        self.assertEqual(profile["allowed_tools"], ["web_news"])
+        self.assertNotEqual(authorize("web_news", profile), "violation")
+        self.assertEqual(authorize("web_search", profile), "violation")
 
     def test_policy_cannot_grant_what_the_agent_lacks(self):
-        profile = compile_profile(["web_search"], policy_allowed=["sharepoint", "web_search"])
-        self.assertNotIn("sharepoint_read", profile["allowed_tools"])
-        self.assertEqual(authorize("sharepoint_read", profile), "violation")
+        profile = compile_profile(["find_places"],
+                                  policy_allowed=["web_search", "find_places"])
+        self.assertNotIn("web_news", profile["allowed_tools"])
+        self.assertEqual(authorize("web_news", profile), "violation")
 
 
 class TestExpandConnectors(unittest.TestCase):
 
     def test_order_preserved_and_deduped(self):
         self.assertEqual(
-            expand_connectors(["web_search", "sharepoint", "web_search"]),
-            ["web_search", "web_news",
-             "sharepoint_search", "sharepoint_read", "sharepoint_upload",
-             "sharepoint_search_sites", "sharepoint_search_site_files",
-             "sharepoint_list_folders", "sharepoint_get_tree"])
+            expand_connectors(["find_places", "web_search", "find_places"]),
+            ["find_places", "web_search", "web_news"])
 
     def test_unknown_names_pass_through(self):
         self.assertEqual(expand_connectors(["send_email"]), ["send_email"])
 
     def test_non_strings_ignored(self):
-        self.assertEqual(expand_connectors(["sharepoint", None, 7]),
-                         list(CONNECTOR_TOOLS["sharepoint"]))
+        self.assertEqual(expand_connectors(["web_search", None, 7]),
+                         list(CONNECTOR_TOOLS["web_search"]))
 
 
 if __name__ == "__main__":

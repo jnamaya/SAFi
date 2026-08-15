@@ -33,12 +33,20 @@ CONTRACT (mirrors provider_governance, deliberately)
   has no admin to set a policy, and failing closed there would break the
   Quick Start for no security gain.
 
-Note the two namespaces. OAuth *account* keys are microsoft —
-what oauth_tokens.provider stores and what the login routes are named for. Tool
-*connector* names are sharepoint (tool_connectors.py).
-One account can serve several connectors: microsoft unlocks sharepoint. This module
-governs the account, and carries the tool mapping so the admin UI can say what
-allowing it actually unlocks.
+Note the two namespaces. OAuth *account* keys (what oauth_tokens.provider
+stores, what the login routes were named for) are distinct from tool
+*connector* names (tool_connectors.py): one account could serve several
+connectors. This module governs the account and carries the tool mapping so
+the admin UI can say what allowing it actually unlocks.
+
+THE CATALOG IS NOW EMPTY, DELIBERATELY. The last delegated connector
+(microsoft/sharepoint) retired 2026-08-15, absorbed by the Graph gateway;
+github and google_drive went the same day (GOVERNANCE_BACKLOG 48k). Their
+successors are OAuth MCP servers, governed per server by the `orgs` field in
+the operator's file and per member by the agent-grant gate in mcp_manager.
+This module and its routes are the machinery an empty catalog leaves idle;
+deleting the machinery itself is a separate, pending decision, because it is
+also the shape any future delegated account would reuse.
 """
 from __future__ import annotations
 
@@ -48,14 +56,7 @@ from typing import FrozenSet, List, Optional
 
 # key -> what an admin needs to know to make the decision. "tools" is the
 # tool-connector namespace (tool_connectors.CONNECTOR_TOOLS), not this one.
-CONNECTOR_METADATA = {
-    "microsoft": {
-        "label": "Microsoft OneDrive / SharePoint",
-        "tools": ("sharepoint",),
-        "grants": "Read the member's OneDrive and the SharePoint sites they can already reach.",
-        "scopes": "Files.Read.All, Sites.Read.All (delegated)",
-    },
-}
+CONNECTOR_METADATA: dict = {}
 
 _CACHE_TTL_SECONDS = 60.0
 _cache: dict = {}

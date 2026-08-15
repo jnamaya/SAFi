@@ -101,9 +101,9 @@ dispatch.
 ### Naming
 
 The server key becomes a connector name. It may not collide with a built-in
-connector (`web_search`, `sharepoint`, `find_places`,
-and the finance tools). A colliding server is refused at boot and logged, and
-its tools are unavailable until you rename it.
+connector (`web_search`, `find_places`, and the finance tools). A colliding
+server is refused at boot and logged, and its tools are unavailable until you
+rename it.
 
 The same rule applies one level down: a discovered tool whose name matches a
 built-in tool is skipped. Built-ins always win, so no server you install can
@@ -198,8 +198,8 @@ Operational notes:
   `{WEB_BASE_URL}/api/mcp/auth/<key>/callback`.
 - The tool catalog appears after the FIRST sign-in: an OAuth server shows its
   tools to a token, not to the boot process. Until then the card says so.
-- Tokens live in the same encrypted table as the delegated-OAuth connectors,
-  with the same evidence row written in the same transaction.
+- Tokens live in the encrypted `oauth_tokens` table, with an evidence row
+  written in the same transaction.
 - Guests can never connect, and the `orgs` restriction applies as usual.
 - A reference resource server, pure Python on SAFi's own dependencies and
   exercised end to end by the test suite, ships as
@@ -292,31 +292,36 @@ Setup:
    `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
 4. Members press Sign in on its card in Settings, Tools Catalog.
 
-## 6. MCP server or built-in connector?
+## 6. Static credential or per-user sign-in?
 
-Both end up as connectors, both are gated identically, and both leave the same
-audit evidence. The difference is the credential, and it decides what each is
-for.
+Both kinds of MCP server end up as connectors, both are gated identically, and
+both leave the same audit evidence. The difference is the credential, and it
+decides what each is for.
 
-**Built-in connectors act as the member.** SharePoint (OneDrive) uses
-delegated per-user OAuth. Every read inherits that person's permissions in
-the source system, appears under their name in that system's audit log, and
-stops working when they are offboarded.
+**A static server acts as the deployment.** It authenticates with one
+credential from its configuration, which makes it a service principal. It has
+one set of permissions for everybody.
 
-**An MCP server acts as the deployment.** It authenticates with one credential
-from its configuration, which makes it a service principal. It has one set of
-permissions for everybody.
+**An OAuth server acts as the member.** Each person signs in once, and every
+call their agents make runs as them: it inherits their permissions in the
+source system, appears under their name in that system's audit log, and stops
+working when they are offboarded.
 
 So:
 
 | Use | Because |
 |---|---|
-| **MCP server** for a shared or system resource: a company API, an internal pricing service, a read-only operational view, a private service your organization runs | One credential is the correct model, and the data is not scoped to a person |
-| **Delegated OAuth connector** for a member's own data: their files, their mailbox, their repositories | Attribution, per-person permissions, and access that ends at offboarding |
+| **A static server** for a shared or system resource: a company API, an internal pricing service, a read-only operational view, a private service your organization runs | One credential is the correct model, and the data is not scoped to a person |
+| **An OAuth server** for a member's own data: their files, their mailbox, their repositories | Attribution, per-person permissions, and access that ends at offboarding |
 
-Wiring member data through a service-principal MCP server works, and it costs
-you all three of those properties. The source system's log will say SAFi did it,
+Wiring member data through a service-principal server works, and it costs you
+all three of those properties. The source system's log will say SAFi did it,
 not who asked.
+
+(Until 2026-08-15 the per-user side was served by built-in "delegated"
+connectors for GitHub, Google Drive and SharePoint. All three retired in
+favour of the OAuth servers above: GitHub's official server, the Workspace
+gateway, and the Graph gateway. Same credential model, no in-process code.)
 
 ---
 

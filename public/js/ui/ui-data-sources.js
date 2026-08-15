@@ -1,11 +1,12 @@
 /**
  * js/ui/ui-data-sources.js
  * Renders the Tools section of the composer's + panel: the accounts a member
- * can connect so their agents' tools run as them. Two kinds live here under
- * one set of rules: delegated OAuth connectors (Microsoft) and
- * OAuth-protected MCP tool servers. The section was called "Data Sources"
- * until 2026-08-15; ids and function names keep the old spelling so nothing
- * cached or externally referenced breaks.
+ * can connect so their agents' tools run as them. Two kinds can live here
+ * under one set of rules: delegated OAuth connectors (a catalogue that has
+ * been empty since the last one retired on 2026-08-15) and OAuth-protected
+ * MCP tool servers, which is everything members connect today. The section
+ * was called "Data Sources" until 2026-08-15; ids and function names keep
+ * the old spelling so nothing cached or externally referenced breaks.
  */
 
 import * as api from '../core/api.js';

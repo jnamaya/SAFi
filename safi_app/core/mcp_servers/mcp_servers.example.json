@@ -6,8 +6,8 @@
     "",
     "Keys starting with an underscore are ignored by nothing: remove them.",
     "Every server key becomes a CONNECTOR name, so it must not collide with a",
-    "built-in connector (web_search, github, google_drive, sharepoint, and the",
-    "finance and maps tools). A collision is refused and logged at boot."
+    "built-in connector (web_search, find_places, and the finance tools).",
+    "A collision is refused and logged at boot."
   ],
 
   "acme_billing": {

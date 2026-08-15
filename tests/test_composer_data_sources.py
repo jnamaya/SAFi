@@ -93,24 +93,22 @@ class TheMenuIsDrivenByThePolicy(unittest.TestCase):
 
 class ItAgreesWithTheServer(unittest.TestCase):
 
-    def test_icon_keys_match_the_connector_keys(self):
-        """Icons are looked up as ICONS[source.key], so they must be keyed the
-        same way CONNECTOR_METADATA is — not by product name."""
+    def test_the_delegated_catalog_is_empty(self):
+        """All three delegated connectors retired through 2026-08-15 (github,
+        google, then microsoft, GOVERNANCE_BACKLOG 48k). The menu's delegated
+        section is populated only by what /auth/status returns, so an empty
+        server catalog renders no delegated rows; a key reappearing here means
+        someone resurrected a built-in whose successor is an MCP server."""
         keys = set(re.findall(r'^\s{4}"(\w+)":\s*\{', GOV, re.M))
-        # github left this set 2026-08-15 (moved to GitHub's official MCP
-        # server) and google followed the same day (absorbed by the Workspace
-        # gateway); microsoft is the delegated account kind that remains.
-        self.assertTrue({"microsoft"} <= keys,
-                        f"unexpected connector keys in metadata: {keys}")
-        icons = JS[JS.index("const ICONS"):JS.index("export function initDataSources")]
-        for key in ("microsoft",):
-            self.assertRegex(icons, rf"\b{key}:\s*`", f"no icon keyed '{key}'")
+        self.assertEqual(set(), keys,
+                         f"unexpected connector keys in metadata: {keys}")
 
-    def test_the_login_route_remains_the_actual_control(self):
-        """The menu is presentation. If this guard ever goes, filtering in the
-        client becomes the only thing standing between a member and a
-        forbidden connector."""
+    def test_the_guard_survives_for_any_future_catalog(self):
+        """The menu is presentation. assert_connector_allowed stays fail-closed
+        (an empty catalog refuses every key) so that any future delegated
+        account is born governed rather than born open."""
         self.assertIn("assert_connector_allowed", GOV)
+        self.assertIn("raise ConnectorNotAllowedError", GOV)
 
 
 if __name__ == "__main__":

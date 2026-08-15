@@ -734,17 +734,19 @@ def callback_microsoft():
 def auth_status():
     """What this member has linked, and what their org permits them to link.
 
-    Each connector carries two independent flags:
+    `connectors` is the delegated-account catalog, empty since the last
+    built-in connector retired (2026-08-15); it stays in the payload so older
+    clients keep parsing. `mcp_servers` is the live successor, and each entry
+    carries two independent flags:
 
-      allowed  the org's policy permits linking it (enforced by
-               _connector_guard on the login and callback routes; the UI
-               filtering is presentation, the routes are the control)
+      allowed  the org may reach this server (the operator's `orgs` field,
+               enforced again at dispatch; the UI filtering is presentation)
       usable   at least one agent this member can reach is authorized to call
                a tool from it. Offering a source no agent uses buys the member
                a live OAuth grant that nothing reads.
 
-    `connected` can legitimately include a connector that is now neither — an
-    admin blocked it, or removed the tool from the policy, after the fact. The
+    `connected` can legitimately include an account whose tools have since
+    been narrowed away. The
     UI keeps showing those so the member can still disconnect; hiding a live
     token is the one thing worse than showing it.
     """
@@ -789,33 +791,16 @@ def disconnect_provider(provider):
     return jsonify({"status": "disconnected", "provider": provider})
 
 # =================================================================
-# DATA-SOURCE CONNECTORS (Google Drive / SharePoint / GitHub)
+# DATA-SOURCE CONNECTORS (retired)
 # =================================================================
-# Connections are delegated per-user OAuth, deliberately — not an org-wide
-# service principal. See core/services/connector_governance.py for why.
-#
-# What the org DOES control is which data sources may be linked at all.
-
-def _connector_guard(provider):
-    """Fail closed on a data source this organization has not allowed.
-
-    Called from BOTH the login route and the callback. Guarding only the login
-    route would leave the callback reachable directly, and would also let a code
-    obtained seconds before an admin revoked the connector still redeem into a
-    stored token.
-
-    Returns a redirect Response to bounce the browser, or None when allowed.
-    """
-    from ..core.rbac import get_current_org_id
-    from ..core.services.connector_governance import (
-        assert_connector_allowed, ConnectorNotAllowedError)
-    try:
-        assert_connector_allowed(provider, get_current_org_id())
-    except ConnectorNotAllowedError as e:
-        current_app.logger.warning("Blocked data-source link attempt: %s", e)
-        return redirect(f'/?error=connector_not_allowed&provider={provider}')
-    return None
-
+# The delegated per-user linking routes that lived here (/auth/github,
+# /auth/google, /auth/microsoft) retired one by one through 2026-08-15 as
+# their connectors were absorbed by MCP OAuth servers (GOVERNANCE_BACKLOG
+# 48k). Members now connect accounts per server via /api/mcp/auth/<key>/login,
+# which carries the same login-and-callback gating these routes pioneered.
+# The generic /auth/<provider>/disconnect above stays: it is how a member
+# removes ANY stored token, including MCP ones, and removing access is always
+# permitted.
 
 def _connector_org():
     """The org to attribute a connect/disconnect to, or None on a single-user
@@ -824,107 +809,7 @@ def _connector_org():
     return get_current_org_id()
 
 
-# --- GOOGLE DRIVE TOOL ---
-@auth_bp.route('/auth/microsoft/login')
-def microsoft_tool_login():
-    blocked = _connector_guard('microsoft')
-    if blocked:
-        return blocked
-    try:
-        user_id = session.get('user_id')
-        if not user_id:
-            return jsonify({"error": "Not logged in"}), 401
-        
-        # Minimal scopes for SharePoint/OneDrive
-        scopes = "Files.ReadWrite.All Sites.Read.All offline_access"
-        
-        client_id = current_app.config['MICROSOFT_CLIENT_ID']
-        if not client_id:
-            current_app.logger.error("Microsoft Client ID not set")
-            return jsonify({"error": "MS Config Missing"}), 500
 
-        redirect_uri = url_for('auth.microsoft_tool_callback', _external=True, _scheme='https')
-        current_app.logger.info(f"MS Tool Login Redirect URI: {redirect_uri}")
-        
-        state = os.urandom(16).hex()
-        session['ms_tool_state'] = state
-        
-        # Generic OAuth2 Code Flow
-        base_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-        params = {
-            "client_id": client_id,
-            "response_type": "code",
-            "redirect_uri": redirect_uri,
-            "response_mode": "query",
-            "scope": scopes,
-            "state": state
-        }
-        
-        import urllib.parse
-        url = f"{base_url}?{urllib.parse.urlencode(params)}"
-        return redirect(url)
-    except Exception as e:
-        current_app.logger.error(f"MS Tool Login Start Failed: {e}")
-        return jsonify({"error": "Authentication failed. Please try again."}), 500
-
-@auth_bp.route('/auth/microsoft/callback')
-def microsoft_tool_callback():
-    current_app.logger.info("Entering MS Tool Callback")
-    user_id = session.get('user_id')
-    if not user_id:
-        return redirect('/chat?error=auth_session_expired')
-
-    blocked = _connector_guard('microsoft')
-    if blocked:
-        return blocked
-        
-    code = request.args.get('code')
-    state = request.args.get('state')
-    
-    if state != session.get('ms_tool_state'):
-         current_app.logger.error("MS State mismatch")
-         return redirect('/chat?error=state_mismatch')
-         
-    token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-    redirect_uri = url_for('auth.microsoft_tool_callback', _external=True, _scheme='https')
-    
-    data = {
-        "client_id": current_app.config['MICROSOFT_CLIENT_ID'],
-        "client_secret": current_app.config['MICROSOFT_CLIENT_SECRET'],
-        "scope": "Files.ReadWrite.All Sites.Read.All offline_access",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "grant_type": "authorization_code"
-    }
-    
-    try:
-        current_app.logger.info(f"Exchanging code for MS tool token. URI: {redirect_uri}")
-        r = requests.post(token_url, data=data)
-        r.raise_for_status()
-        tokens = r.json()
-        
-        access_token = tokens.get('access_token')
-        refresh_token = tokens.get('refresh_token')
-        expires_in = tokens.get('expires_in', 3600)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
-        scope = tokens.get('scope', "")
-        
-        db.upsert_oauth_token(
-            user_id,
-            'microsoft',
-            access_token,
-            refresh_token,
-            expires_at,
-            scope,
-            org_id=_connector_org()
-        )
-        return redirect('/?status=microsoft_connected')
-    except Exception as e:
-        current_app.logger.error(f"Microsoft Tool Auth Error: {e}", exc_info=True)
-        return redirect(f'/?error=microsoft_auth_failed&details={str(e)}')
-
-
-# --- GITHUB TOOL ---
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
     """

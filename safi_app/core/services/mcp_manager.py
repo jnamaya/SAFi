@@ -441,85 +441,10 @@ class MCPManager:
                 }
             })
 
-        # --- MICROSOFT SHAREPOINT ---
-        if "sharepoint" in allowed_tools:
-            tools.append({
-                "name": "sharepoint_search",
-                "description": "Search files in SharePoint/OneDrive.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query."}
-                    },
-                    "required": ["query"]
-                }
-            })
-            tools.append({
-                "name": "sharepoint_read",
-                "description": "Read content of a SharePoint file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "item_id": {"type": "string", "description": "The ID of the item."}
-                    },
-                    "required": ["item_id"]
-                }
-            })
-            tools.append({
-                "name": "sharepoint_upload",
-                "description": "Upload a file to SharePoint root.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Filename."},
-                        "content": {"type": "string", "description": "Text content."}
-                    },
-                    "required": ["name", "content"]
-                }
-            })
-            tools.append({
-                "name": "sharepoint_search_sites",
-                "description": "Find SharePoint Sites (e.g. Teams, Projects) by name.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query for site name/title."}
-                    },
-                    "required": ["query"]
-                }
-            })
-            tools.append({
-                "name": "sharepoint_search_site_files",
-                "description": "Search for files within a specific SharePoint Site.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "site_id": {"type": "string", "description": "The ID of the SharePoint Site."},
-                        "query": {"type": "string", "description": "Search query for file name/content."}
-                    },
-                    "required": ["site_id", "query"]
-                }
-            })
-            tools.append({
-                "name": "sharepoint_list_folders",
-                "description": "List contents of a SharePoint folder (defaults to root).",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "folder_path": {"type": "string", "description": "OPTIONAL: Path to folder (e.g. 'Documents/MyProject'). Defaults to root."}
-                    }
-                }
-            })
-            tools.append({
-                "name": "sharepoint_get_tree",
-                "description": "Get a simplified folder tree structure of the drive.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "max_depth": {"type": "integer", "description": "Depth of recursion (defualt 2)."}
-                    }
-                }
-            })
+        # The sharepoint connector (7 tools) was retired 2026-08-15, absorbed
+        # by the Graph gateway (scripts/graph_gateway.py), the last of the
+        # three delegated built-ins to go. Its upload had no successor: the
+        # gateways are read-only until tool calls can be held for human review.
 
         # --- DISCOVERED MCP SERVERS ---
         # Same rule as the built-ins above: advertise a tool if the agent was
@@ -592,18 +517,6 @@ class MCPManager:
                         "label": "Find Places",
                         "description": "Find places near a location (Google Maps).",
                         "icon": "location-marker"
-                    }
-                ]
-            },
-             # --- OFFICE & PRODUCTIVITY ---
-            {
-                "category": "Office & Productivity",
-                "tools": [
-                    {
-                        "name": "sharepoint",
-                        "label": "OneDrive / SharePoint",
-                        "description": "Read/Write Access to OneDrive & SharePoint",
-                        "icon": "office-building"
                     }
                 ]
             },
@@ -724,24 +637,6 @@ class MCPManager:
                 return await search_web(arguments["query"])
             if tool_name == "web_news":
                 return await get_news(arguments["query"])
-
-        # -- SHAREPOINT --
-        if tool_name.startswith("sharepoint_"):
-            from ..mcp_servers import sharepoint
-            if tool_name == "sharepoint_search":
-                return await sharepoint.search_drive(arguments["query"])
-            if tool_name == "sharepoint_read":
-                return await sharepoint.read_item(arguments["item_id"])
-            if tool_name == "sharepoint_upload":
-                return await sharepoint.upload_item(arguments["name"], arguments["content"])
-            if tool_name == "sharepoint_search_sites":
-                return await sharepoint.search_sites(arguments["query"])
-            if tool_name == "sharepoint_search_site_files":
-                return await sharepoint.search_site_drive(arguments["site_id"], arguments["query"])
-            if tool_name == "sharepoint_list_folders":
-                return await sharepoint.list_folders(arguments.get("folder_path", "root"))
-            if tool_name == "sharepoint_get_tree":
-                return await sharepoint.get_tree(arguments.get("max_depth", 2))
 
         # -- DISCOVERED MCP SERVERS --
         #

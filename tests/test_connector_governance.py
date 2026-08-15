@@ -1,21 +1,22 @@
 """
-Data-source connector governance: which external accounts members may link.
+Data-source connector governance in the zero-catalog world.
 
-Before this, /api/auth/{provider}/login checked only that you were logged in.
-Any member of any org could link Google Drive or SharePoint to a
-governed agent, with no admin involvement and no record it happened.
+The delegated connectors this module governed retired one by one through
+2026-08-15 (github, google_drive, then microsoft/sharepoint, GOVERNANCE_BACKLOG
+48k), so CONNECTOR_METADATA is deliberately empty. The machinery stays, and
+what this suite now pins is different from what it pinned before:
 
-The load-bearing tests:
-
-  * test_callback_fails_closed_when_blocked — the guard everyone forgets. If
-    only the login route is guarded, the callback is still reachable directly,
-    and a code obtained seconds before an admin revoked the connector still
-    redeems into a stored token.
-  * test_connect_writes_evidence_in_the_same_transaction — the evidence row and
-    the token must be one transaction, or a connection can exist with no record
-    that it was made.
-  * test_connections_never_cross_orgs — the admin visibility endpoint joins on
-    users.org_id; a Python-side filter would be one refactor away from leaking.
+  * The retirement is total and fail-closed. Retired account keys refuse on
+    write, drop on read from lists stored before the retirement, and their
+    linking routes are GONE (404), not guarded. A resurrection of any of that
+    fails here first.
+  * The parts of the machinery that OUTLIVED the catalog still work, because
+    the MCP OAuth servers use them: oauth_tokens storage with org attribution
+    and evidence, the always-permitted generic disconnect, and the admin
+    visibility endpoint that must not leak across orgs or expose token
+    material.
+  * The admin allowlist API stays honest about an empty catalog rather than
+    erroring on it.
 
 Run:  venv/bin/python tests/test_connector_governance.py
 """
@@ -30,6 +31,10 @@ from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.core.services import connector_governance as cg
 from support import login_as
+
+# The oauth_tokens machinery's live consumers are MCP servers; exercise it the
+# way they use it, with a provider key in their namespace.
+MCP_PROVIDER = "mcp:workspace"
 
 
 def _exec(sql, params=()):
@@ -73,164 +78,115 @@ class ConnectorGovernanceBase(unittest.TestCase):
             _exec("DELETE FROM organizations WHERE id=%s", (oid,))
 
     def tearDown(self):
-        # Back to unrestricted, and drop the 60s cache so the next test does not
-        # read this one's policy.
         db.set_org_connector_allowlist(self.org_id, None, "test")
         cg.invalidate_org(self.org_id)
         cg.invalidate_org(self.other_org)
         _exec("DELETE FROM oauth_tokens WHERE user_id IN (%s, %s)", (self.uid, self.other_uid))
 
 
-class AllowListSemantics(ConnectorGovernanceBase):
+class TheCatalogIsEmpty(ConnectorGovernanceBase):
 
-    def test_absent_means_unrestricted(self):
-        """Every pre-existing org has no stored list; they must be unaffected."""
-        self.assertIsNone(db.get_org_connector_config(self.org_id)["allowlist"])
-        self.assertIsNone(cg.get_org_allowlist(self.org_id))
-        for key in cg.CONNECTOR_METADATA:
-            self.assertTrue(cg.connector_allowed(key, self.org_id))
+    def test_no_delegated_connectors_remain(self):
+        self.assertEqual({}, cg.CONNECTOR_METADATA)
+        self.assertEqual([], cg.list_connectors_for_org(self.org_id))
+        self.assertEqual([], cg.connectors_for_member(self.uid, self.org_id, 'admin'))
+        self.assertEqual(frozenset(), cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
 
-    def test_empty_list_blocks_everything(self):
-        """Unlike providers, an empty connector list is a coherent policy:
-        'members may link nothing'. An empty PROVIDER list would brick the org,
-        which is why that write path rejects it and this one does not."""
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
+    def test_every_key_fails_closed(self):
+        """With nothing in the catalog, assert_connector_allowed refuses
+        everything, retired keys included. There is no 'still works for old
+        names' path."""
+        for key in ("microsoft", "google", "github", "dropbox"):
+            with self.subTest(key=key):
+                with self.assertRaises(cg.ConnectorNotAllowedError):
+                    cg.assert_connector_allowed(key, self.org_id)
+
+    def test_retired_keys_refuse_on_write(self):
+        """An admin script replaying an old allowlist must fail loudly, not
+        store keys the catalog no longer knows."""
+        for key in ("microsoft", "google", "github"):
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    db.set_org_connector_allowlist(self.org_id, [key], "admin@example.test")
+
+    def test_stale_stored_lists_drop_on_read(self):
+        """Lists stored before the retirements read as empty rather than
+        resurrecting the keys. All three retired names are the live case."""
+        _exec("UPDATE organizations SET settings=%s WHERE id=%s",
+              ('{"connector_allowlist": ["microsoft", "google", "github"]}', self.org_id))
         cg.invalidate_org(self.org_id)
         self.assertEqual(frozenset(), cg.get_org_allowlist(self.org_id))
-        for key in cg.CONNECTOR_METADATA:
-            self.assertFalse(cg.connector_allowed(key, self.org_id))
 
-    def test_partial_list(self):
-        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        self.assertTrue(cg.connector_allowed("microsoft", self.org_id))
-
-    def test_unknown_key_rejected_on_write(self):
-        with self.assertRaises(ValueError):
-            db.set_org_connector_allowlist(self.org_id, ["dropbox"], "admin@example.test")
-
-    def test_unknown_key_dropped_on_read(self):
-        """A key removed from CONNECTOR_METADATA must not come back via a list
-        stored before the removal."""
-        _exec("UPDATE organizations SET settings=%s WHERE id=%s",
-              ('{"connector_allowlist": ["microsoft", "google", "legacy_thing"]}', self.org_id))
-        cg.invalidate_org(self.org_id)
-        # "google" is itself the live example now: a key that WAS real until the
-        # connector retired 2026-08-15, surviving in stored lists.
-        self.assertEqual(frozenset({"microsoft"}), cg.get_org_allowlist(self.org_id))
-
-    def test_no_org_is_unrestricted(self):
-        """A single-user install has no admin to set a policy; failing closed
-        there would break the Quick Start for no security gain."""
-        self.assertIsNone(cg.get_org_allowlist(None))
-        self.assertTrue(cg.connector_allowed("microsoft", None))
-
-    def test_allowlist_change_is_evidence_logged(self):
-        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
-        self.assertIn("connector_allowlist_changed", _log_events(self.org_id))
-
-    def test_unchanged_write_logs_nothing(self):
-        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
-        before = _log_events(self.org_id).count("connector_allowlist_changed")
-        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
-        after = _log_events(self.org_id).count("connector_allowlist_changed")
-        self.assertEqual(before, after, "a no-op write should not manufacture evidence")
-
-    def test_assert_raises_for_unknown_connector(self):
-        with self.assertRaises(cg.ConnectorNotAllowedError):
-            cg.assert_connector_allowed("dropbox", self.org_id)
+    def test_status_reports_an_empty_catalog(self):
+        client = self.app.test_client()
+        login_as(client, self.uid, "admin", org_id=self.org_id)
+        body = client.get('/api/auth/status').get_json()
+        self.assertEqual([], body["connectors"])
+        self.assertIn("mcp_servers", body, "the successor list must ride along")
 
 
-class RouteEnforcement(ConnectorGovernanceBase):
+class TheRoutesAreGone(ConnectorGovernanceBase):
+    """The linking routes were deleted with their connectors. 404, not a
+    guard: a guarded route implies the thing behind it still exists."""
 
     def setUp(self):
         self.client = self.app.test_client()
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
 
-    def test_login_redirects_when_allowed(self):
-        """Unrestricted: the route proceeds to the provider (or fails on missing
-        OAuth config) — either way it is NOT the connector-policy bounce."""
-        r = self.client.get('/api/auth/microsoft/login')
-        self.assertNotIn('connector_not_allowed', r.headers.get('Location', ''))
-
-    def test_login_fails_closed_when_blocked(self):
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        r = self.client.get('/api/auth/microsoft/login')
-        self.assertEqual(302, r.status_code)
-        self.assertIn('connector_not_allowed', r.headers['Location'])
-
-    def test_callback_fails_closed_when_blocked(self):
-        """Guarding only the login route leaves this reachable directly, and
-        lets a code obtained before the revocation still redeem into a token."""
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        for path in ('/api/auth/microsoft/callback?code=x&state=y',
-                     '/api/auth/microsoft/callback?code=x&state=y'):
-            r = self.client.get(path)
-            self.assertEqual(302, r.status_code, path)
-            self.assertIn('connector_not_allowed', r.headers['Location'], path)
-        # And no token was written by the attempt.
-        self.assertEqual([], db.get_connected_providers(self.uid))
-
-    def test_every_connector_has_both_routes_guarded(self):
-        """Adding a connector without guarding its pair is the regression this
-        catches — it would be invisible until someone tried to exploit it."""
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        for key in cg.CONNECTOR_METADATA:
-            for path in (f'/api/auth/{key}/login', f'/api/auth/{key}/callback?code=x&state=y'):
-                r = self.client.get(path)
-                self.assertIn('connector_not_allowed', r.headers.get('Location', ''),
-                              f"{path} is not fail-closed")
+    def test_retired_login_and_callback_routes_404(self):
+        for provider in ("microsoft", "google", "github"):
+            for path in (f'/api/auth/{provider}/login',
+                         f'/api/auth/{provider}/callback?code=x&state=y'):
+                with self.subTest(path=path):
+                    self.assertEqual(404, self.client.get(path).status_code)
 
     def test_disconnect_is_always_permitted(self):
-        """Revoking access must work even for a connector since blocked — that
-        is the direction the policy wants to travel in."""
-        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        r = self.client.post('/api/auth/microsoft/disconnect')
+        """The generic disconnect outlives every catalog entry: it is how a
+        member removes ANY stored token, MCP ones included."""
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=self.org_id)
+        r = self.client.post(f'/api/auth/{MCP_PROVIDER}/disconnect')
         self.assertEqual(200, r.status_code)
         self.assertEqual([], db.get_connected_providers(self.uid))
 
 
 class EvidenceAndVisibility(ConnectorGovernanceBase):
+    """The storage layer outlived the catalog; the MCP servers are its
+    consumers now, and every property the delegated world needed still holds."""
 
     def test_connect_writes_evidence_in_the_same_transaction(self):
-        db.upsert_oauth_token(self.uid, 'google', 'tok', scope='drive.readonly',
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', scope='workspace.read',
                               org_id=self.org_id)
         self.assertIn("connector_connected", _log_events(self.org_id))
-        self.assertIn('google', db.get_connected_providers(self.uid))
+        self.assertIn(MCP_PROVIDER, db.get_connected_providers(self.uid))
 
     def test_disconnect_writes_evidence(self):
-        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
-        db.delete_oauth_token(self.uid, 'microsoft', org_id=self.org_id)
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=self.org_id)
+        db.delete_oauth_token(self.uid, MCP_PROVIDER, org_id=self.org_id)
         self.assertIn("connector_disconnected", _log_events(self.org_id))
 
     def test_disconnecting_nothing_writes_nothing(self):
         """A repeat disconnect, or a probe for a provider never linked, must not
         manufacture history that did not happen."""
         before = _log_events(self.org_id).count("connector_disconnected")
-        db.delete_oauth_token(self.uid, 'microsoft', org_id=self.org_id)
+        db.delete_oauth_token(self.uid, MCP_PROVIDER, org_id=self.org_id)
         after = _log_events(self.org_id).count("connector_disconnected")
         self.assertEqual(before, after)
 
     def test_no_org_still_stores_the_token(self):
         """Single-user install: no evidence log to write to, but the connection
         must still work."""
-        db.upsert_oauth_token(self.uid, 'google', 'tok', org_id=None)
-        self.assertIn('google', db.get_connected_providers(self.uid))
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=None)
+        self.assertIn(MCP_PROVIDER, db.get_connected_providers(self.uid))
 
     def test_connections_never_cross_orgs(self):
-        db.upsert_oauth_token(self.uid, 'microsoft', 'tok', org_id=self.org_id)
-        db.upsert_oauth_token(self.other_uid, 'microsoft', 'tok', org_id=self.other_org)
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=self.org_id)
+        db.upsert_oauth_token(self.other_uid, MCP_PROVIDER, 'tok', org_id=self.other_org)
         mine = db.list_org_connections(self.org_id)
         self.assertEqual({self.uid}, {r["user_id"] for r in mine})
-        self.assertEqual({'microsoft'}, {r["provider"] for r in mine})
+        self.assertEqual({MCP_PROVIDER}, {r["provider"] for r in mine})
 
     def test_connections_carry_no_token_material(self):
-        db.upsert_oauth_token(self.uid, 'google', 'super-secret-token', org_id=self.org_id)
+        db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'super-secret-token', org_id=self.org_id)
         rows = db.list_org_connections(self.org_id)
         self.assertTrue(rows)
         blob = repr(rows)
@@ -239,116 +195,28 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
             self.assertNotIn(forbidden, rows[0], f"{forbidden} must not be selected")
 
 
-class Usability(ConnectorGovernanceBase):
-    """
-    Org-allowed is not enough to be worth offering. If no agent this member can
-    reach is authorized to call a tool from a source, connecting it grants a
-    live OAuth token that nothing ever reads.
-
-    The intersection must be the SAME one WillGate enforces — that is why
-    usable_connector_keys calls synderesis.authorized_tools rather than
-    reimplementing it. A second copy would drift and the tab would offer a
-    source the Will then refuses to use.
-    """
-
-    def _agent(self, tools, policy_id=None, visibility='member'):
-        aid = f"agent_{uuid.uuid4().hex[:8]}"
-        import json
-        # PK is agent_key, not id — see the CREATE at database.py:297.
-        _exec("""INSERT INTO agents (agent_key, name, created_by, org_id, tools_json,
-                                     policy_id, visibility, worldview)
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'x')""",
-              (aid, aid, self.uid, self.org_id, json.dumps(tools),
-               policy_id or 'standalone', visibility))
-        self.addCleanup(_exec, "DELETE FROM agents WHERE agent_key=%s", (aid,))
-        return aid
-
-    def test_no_agent_uses_a_source_so_it_is_not_usable(self):
-        """The default state for most orgs: built-ins use no data sources."""
-        usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
-        self.assertNotIn('microsoft', usable)
-        self.assertNotIn('microsoft', usable)
-
-    def test_an_agent_with_the_tool_makes_it_usable(self):
-        self._agent(['sharepoint'])
-        usable = cg.usable_connector_keys(self.uid, self.org_id, 'admin')
-        self.assertIn('microsoft', usable)
-
-    def test_connector_name_and_function_name_both_count(self):
-        """The wizard grants the connector ('sharepoint'); a policy may narrow
-        to a single function ('sharepoint_read'). Either must mark the
-        microsoft account usable."""
-        self._agent(['sharepoint_read'])
-        self.assertIn('microsoft', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
-
-    def test_policy_narrowing_can_make_it_unusable(self):
-        """An agent advertising google_drive whose policy allows only
-        web_search is not authorized for Drive — so Drive is not offered."""
-        pid = f"pol_{uuid.uuid4().hex[:8]}"
-        _exec("""INSERT INTO policies (id, name, org_id, worldview, will_rules, values_weights, version)
-                 VALUES (%s, 'narrow', %s, '', %s, '[]', 1)""",
-              (pid, self.org_id, '{"allowed_tools": ["web_search"]}'))
-        self.addCleanup(_exec, "DELETE FROM policies WHERE id=%s", (pid,))
-        self._agent(['google_drive'], policy_id=pid)
-        self.assertNotIn('google', cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
-
-    def test_matches_what_the_will_would_authorize(self):
-        """Pin the two to each other. If authorized_tools ever changes shape,
-        this fails rather than the UI quietly disagreeing with the runtime."""
-        from safi_app.core.faculties.synderesis import authorized_tools
-        from safi_app.core.tool_connectors import expand_connectors
-        granted = set(authorized_tools(['sharepoint'], ['sharepoint']))
-        ms_fns = set(expand_connectors(list(cg.CONNECTOR_METADATA['microsoft']['tools'])))
-        self.assertTrue(granted & ms_fns)
-
-    def test_status_reports_usable_alongside_allowed(self):
-        client = self.app.test_client()
-        login_as(client, self.uid, "admin", org_id=self.org_id)
-        self._agent(['sharepoint'])
-        body = client.get('/api/auth/status').get_json()
-        by_key = {c["key"]: c for c in body["connectors"]}
-        self.assertTrue(by_key['microsoft']['allowed'])
-        self.assertTrue(by_key['microsoft']['usable'])
-
-    def test_allowed_and_usable_are_independent(self):
-        """Blocking the source must not make it 'usable: false' by accident,
-        and vice versa — the UI needs both flags to explain itself."""
-        client = self.app.test_client()
-        login_as(client, self.uid, "admin", org_id=self.org_id)
-        self._agent(['sharepoint'])
-        db.set_org_connector_allowlist(self.org_id, [], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        by_key = {c["key"]: c for c in client.get('/api/auth/status').get_json()["connectors"]}
-        self.assertFalse(by_key['microsoft']['allowed'])
-        self.assertTrue(by_key['microsoft']['usable'])
-
-
 class AdminApi(ConnectorGovernanceBase):
 
     def setUp(self):
         self.client = self.app.test_client()
 
-    def test_admin_can_read_and_write(self):
+    def test_admin_reads_an_empty_catalog_without_error(self):
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
         r = self.client.get(f'/api/organizations/{self.org_id}/connectors')
         self.assertEqual(200, r.status_code)
         self.assertIsNone(r.get_json()["allowlist"])
-        self.assertEqual(len(cg.CONNECTOR_METADATA), len(r.get_json()["connectors"]))
+        self.assertEqual([], r.get_json()["connectors"])
 
-        r = self.client.put(f'/api/organizations/{self.org_id}/connectors',
-                            json={"allowlist": ["microsoft"]})
-        self.assertEqual(200, r.status_code)
-        self.assertEqual(["microsoft"], r.get_json()["allowlist"])
-
-    def test_blocked_connectors_are_still_listed_for_the_admin(self):
-        """An admin needs to see a blocked source to be able to re-enable it."""
+    def test_admin_can_still_write_the_empty_policy(self):
+        """'Members may link nothing' remains a coherent, storable policy even
+        with nothing to block; it will bind any future catalog entry from the
+        moment it exists."""
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
-        self.client.put(f'/api/organizations/{self.org_id}/connectors',
-                        json={"allowlist": []})
-        body = self.client.get(f'/api/organizations/{self.org_id}/connectors').get_json()
-        by_key = {c["key"]: c for c in body["connectors"]}
-        self.assertIn("microsoft", by_key, "a blocked source must stay visible to the admin")
-        self.assertFalse(by_key["microsoft"]["allowed"])
+        r = self.client.put(f'/api/organizations/{self.org_id}/connectors',
+                            json={"allowlist": []})
+        self.assertEqual(200, r.status_code)
+        self.assertEqual([], r.get_json()["allowlist"])
+        self.assertIn("connector_allowlist_changed", _log_events(self.org_id))
 
     def test_non_admin_is_refused(self):
         login_as(self.client, self.uid, "member", org_id=self.org_id)
@@ -363,14 +231,6 @@ class AdminApi(ConnectorGovernanceBase):
         for path in (f'/api/organizations/{self.other_org}/connectors',
                      f'/api/organizations/{self.other_org}/connections'):
             self.assertEqual(403, self.client.get(path).status_code, path)
-
-    def test_status_reports_what_the_org_permits(self):
-        login_as(self.client, self.uid, "admin", org_id=self.org_id)
-        db.set_org_connector_allowlist(self.org_id, ["microsoft"], "admin@example.test")
-        cg.invalidate_org(self.org_id)
-        body = self.client.get('/api/auth/status').get_json()
-        allowed = {c["key"] for c in body["connectors"] if c["allowed"]}
-        self.assertEqual({"microsoft"}, allowed)
 
 
 if __name__ == "__main__":
