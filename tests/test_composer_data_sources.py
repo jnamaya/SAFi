@@ -77,6 +77,14 @@ class TheMenuIsDrivenByThePolicy(unittest.TestCase):
         self.assertIn("item.href = connectable ?", JS)
         self.assertIn("if (!connectable) {", JS)
 
+    def test_the_empty_state_considers_both_kinds(self):
+        """A member whose agents use only MCP tool servers must not be told
+        nothing needs setting up while a connected server sits unrendered
+        below an early return keyed to the delegated connectors alone."""
+        self.assertIn("!visible.length && !visibleMcp.length", JS)
+        # And the MCP visibility is computed BEFORE that decision.
+        self.assertLess(JS.index("const visibleMcp"), JS.index("nothing to set up here"))
+
     def test_a_failed_status_call_offers_nothing(self):
         """It used to render the full catalogue regardless of the response."""
         i = JS.index("catch (e)")

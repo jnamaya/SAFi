@@ -73,8 +73,15 @@ function renderMenu(connectedList, connectors, mcpServers) {
     const visible = (connectors || []).filter(
         c => (c.allowed !== false && c.usable !== false) || connectedList.includes(c.key)
     );
+    const visibleMcp = (mcpServers || []).filter(
+        s => (s.allowed !== false && s.usable !== false) || s.connected
+    );
 
-    if (!visible.length) {
+    // The empty state considers BOTH lists. The first version checked only the
+    // delegated connectors and returned early, so a member whose agents used
+    // exclusively MCP tool servers was told nothing needed setting up while a
+    // connected GitHub sat unrendered below the return.
+    if (!visible.length && !visibleMcp.length) {
         dropdown.innerHTML = `
             <p class="px-3 py-2 text-xs text-neutral-500">
                 None of your agents use connected tools, so there is
@@ -143,13 +150,12 @@ function renderMenu(connectedList, connectors, mcpServers) {
     // granted its tools (the backend computes both; the login route enforces
     // them again). A connected server stays visible regardless, because a
     // member must always be able to see and revoke a live grant.
-    const visibleMcp = (mcpServers || []).filter(
-        s => (s.allowed !== false && s.usable !== false) || s.connected
-    );
     if (visibleMcp.length) {
-        const divider = document.createElement('div');
-        divider.className = 'my-1 border-t border-neutral-200 dark:border-neutral-800';
-        dropdown.appendChild(divider);
+        if (visible.length) {
+            const divider = document.createElement('div');
+            divider.className = 'my-1 border-t border-neutral-200 dark:border-neutral-800';
+            dropdown.appendChild(divider);
+        }
 
         visibleMcp.forEach(server => {
             const connectable = !server.connected && server.allowed !== false
