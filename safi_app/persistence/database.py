@@ -2740,10 +2740,8 @@ def list_agents(user_id, org_id=None, user_role='member'):
             ORDER BY created_at DESC
         """
         
-        logging.info(f"Listing agents for user={user_id}, org={org_id}, role={user_role}")
         cursor.execute(sql, (user_id, org_id, user_role, user_role, user_role))
         rows = cursor.fetchall()
-        logging.info(f"Found {len(rows)} agents")
         res = []
         for row in rows:
             row['key'] = row['agent_key']
