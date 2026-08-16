@@ -267,7 +267,7 @@ export function handleCreateProject(activeProfileData, user) {
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
                 ui.showToast('Folder created.', 'success');
             } catch (e) {
-                console.error('Failed to create project:', e);
+                console.error('Failed to create folder:', e);
                 ui.showToast('Could not create folder.', 'error');
             }
         },
@@ -285,7 +285,7 @@ function handleRenameProject(projectId, oldName, activeProfileData, user) {
                 await api.renameProject(projectId, name);
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
             } catch (e) {
-                console.error('Failed to rename project:', e);
+                console.error('Failed to rename folder:', e);
                 ui.showToast('Could not rename folder.', 'error');
             }
         },
@@ -304,7 +304,7 @@ function handleDeleteProject(projectId, name, activeProfileData, user) {
                 await refreshConvoListOnly(activeProfileData, user, ui.showModal);
                 ui.showToast('Folder deleted.', 'success');
             } catch (e) {
-                console.error('Failed to delete project:', e);
+                console.error('Failed to delete folder:', e);
                 ui.showToast('Could not delete folder.', 'error');
             }
         },
