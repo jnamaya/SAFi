@@ -119,7 +119,7 @@ def _render_history(messages, max_chars: int) -> str:
 
 # --- Import Mixins ---
 from .orchestrator_mixins.tts import TtsMixin
-from .orchestrator_mixins.tasks import BackgroundTasksMixin
+from .orchestrator_mixins.tasks import BackgroundTasksMixin, apply_memory_budget
 
 # --- Import Refactored Services ---
 from .services import LLMProvider, RAGService, MCPManager
@@ -662,6 +662,14 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             db.fetch_agent_context_memory(user_id, self.active_profile_name)
             if track_work_context else "{}"
         )
+        # Two copies on purpose. The budgeted copy is what the Intellect sees
+        # (bounded like RAG context, oldest entries dropped, truncation named
+        # in-band). The FULL copy stays the extractor's merge base below: if
+        # the truncated copy fed the merge, the next write would persist the
+        # loss and quietly break merge_agent_context's anti-shrink guarantee.
+        agent_context_for_prompt = apply_memory_budget(
+            current_agent_context_json, self.config.AGENT_MEMORY_MAX_CHARS
+        )
 
         # Recent turns verbatim window. Depth is configurable (SAFI_HISTORY_TURNS,
         # or `history_turns` on the agent) because some agents need the whole
@@ -771,7 +779,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             spirit_feedback=spirit_feedback,
             plugin_context=plugin_context_data,
             user_profile_json=current_profile_json,
-            agent_context_json=current_agent_context_json,
+            agent_context_json=agent_context_for_prompt,
             user_name=user_name,
             user_id=user_id,
             message_id=message_id
@@ -930,7 +938,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
-                        agent_context_json=current_agent_context_json,
+                        agent_context_json=agent_context_for_prompt,
                         user_name=user_name,
                         user_id=user_id,
                         message_id=message_id,
@@ -977,7 +985,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                             spirit_feedback=spirit_feedback,
                             plugin_context=plugin_context_data,
                             user_profile_json=current_profile_json,
-                            agent_context_json=current_agent_context_json,
+                            agent_context_json=agent_context_for_prompt,
                             user_name=user_name,
                             user_id=user_id,
                             message_id=message_id,
@@ -996,7 +1004,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                         spirit_feedback=spirit_feedback,
                         plugin_context=plugin_context_data,
                         user_profile_json=current_profile_json,
-                        agent_context_json=current_agent_context_json,
+                        agent_context_json=agent_context_for_prompt,
                         user_name=user_name,
                         user_id=user_id,
                         message_id=message_id,
@@ -1023,7 +1031,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                     spirit_feedback=spirit_feedback,
                     plugin_context=plugin_context_data,
                     user_profile_json=current_profile_json,
-                    agent_context_json=current_agent_context_json,
+                    agent_context_json=agent_context_for_prompt,
                     user_name=user_name,
                     user_id=user_id,
                     message_id=message_id
@@ -1153,7 +1161,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 spirit_feedback=spirit_feedback,
                 plugin_context=plugin_context_data,
                 user_profile_json=current_profile_json,
-                agent_context_json=current_agent_context_json,
+                agent_context_json=agent_context_for_prompt,
                 user_name=user_name,
                 user_id=user_id,
                 message_id=message_id,
@@ -1363,7 +1371,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         if track_work_context:
             self._submit_bg(
                 self._run_agent_context_update_thread,
-                user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t
+                user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t,
+                message_id
             )
 
         return {

@@ -4,6 +4,7 @@ Mixin for background task management (summarization, profile extraction).
 from __future__ import annotations
 import json as _json
 import re as _re
+from datetime import date as _date
 from ...persistence import database as db
 from ...config import Config
 from ..services.model_routing import detect_provider
@@ -42,7 +43,7 @@ def _ctx_identity(cat: str, item) -> str:
     return _ctx_norm(item.get(_CTX_ID_FIELD.get(cat, "")))
 
 
-def merge_agent_context(current: dict, delta: dict) -> dict:
+def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -> dict:
     """
     Merge a model-produced delta into the stored work-context memory.
 
@@ -50,6 +51,13 @@ def merge_agent_context(current: dict, delta: dict) -> dict:
     or remove is carried forward unchanged. Accepts either the delta shape
     ({"upserts": {...}, "removals": {...}}) or a legacy full-object shape (whose
     present categories are treated as upserts) — both are safe, neither drops data.
+
+    `stamp` (e.g. {"updated": "2026-08-15", "src": "<message_id>"}) is applied in
+    Python — never requested from the model — to every entry an upsert creates or
+    actually changes. It gives each entry an age (so eviction and the injection
+    budget can prefer dropping stale items) and provenance (which governed turn
+    stated it — the write-side half of backlog 50). Plain-string notes stay
+    unstamped; changing their shape would break every stored memory.
     """
     current = current if isinstance(current, dict) else {}
     out = {k: list(current.get(k) or []) for k in _CTX_LIST_FIELDS}
@@ -87,10 +95,16 @@ def merge_agent_context(current: dict, delta: dict) -> dict:
                 continue
             if ident in index:
                 target = out[cat][index[ident]]  # update in place; non-empty new values win
+                changed = False
                 for f, v in it.items():
-                    if v not in (None, "", []):
+                    if v not in (None, "", []) and target.get(f) != v:
                         target[f] = v
+                        changed = True
+                if changed and stamp:
+                    target.update(stamp)
             else:
+                if stamp:
+                    it = {**it, **stamp}
                 out[cat].append(it)
                 index[ident] = len(out[cat]) - 1
 
@@ -112,12 +126,66 @@ def merge_agent_context(current: dict, delta: dict) -> dict:
         remset.discard("")
         out[cat] = [it for it in out[cat] if _ctx_identity(cat, it) not in remset]
 
-    # --- Soft cap (keep most-recent; only guards runaway growth) ---
+    # --- Soft cap (only guards runaway growth) ---
+    # Evict by staleness, not position: keep the _CTX_CAP most recently updated
+    # entries. Position alone could drop an active project while a stale one
+    # survived. Entries without an `updated` stamp (pre-stamp rows) count as
+    # oldest; original list order is preserved among what is kept, and breaks
+    # ties, so pre-stamp behaviour (keep the tail) is unchanged.
     for cat in _CTX_LIST_FIELDS:
         if len(out[cat]) > _CTX_CAP:
-            out[cat] = out[cat][-_CTX_CAP:]
+            if cat == "notes":
+                out[cat] = out[cat][-_CTX_CAP:]
+                continue
+            ranked = sorted(
+                range(len(out[cat])),
+                key=lambda i: (str(out[cat][i].get("updated") or ""), i),
+            )
+            keep = set(ranked[-_CTX_CAP:])
+            out[cat] = [it for i, it in enumerate(out[cat]) if i in keep]
 
     return out
+
+
+def apply_memory_budget(context_json: str, max_chars: int) -> str:
+    """
+    Bound the work-context memory injected into the prompt, the way
+    _apply_context_budget bounds RAG context: whole entries only, oldest first,
+    and the model is TOLD something was omitted rather than left to guess.
+
+    Read-side only. The full memory stays in the database and remains the merge
+    base for the extractor; truncating that copy would persist the loss on the
+    next merge and silently break the anti-shrink guarantee. Fails open: any
+    parse problem returns the input unchanged, because a malformed budget must
+    degrade to "no budget", never to "no memory".
+    """
+    if not context_json or max_chars <= 0 or len(context_json) <= max_chars:
+        return context_json
+    try:
+        parsed = _json.loads(context_json)
+        if not isinstance(parsed, dict):
+            return context_json
+        dropped = 0
+        def _size(obj) -> int:
+            return len(_json.dumps(obj, ensure_ascii=False))
+        while _size(parsed) > max_chars:
+            # Drop from the front (oldest) of whichever list is longest.
+            cat = max(
+                (c for c in _CTX_LIST_FIELDS if isinstance(parsed.get(c), list) and parsed[c]),
+                key=lambda c: len(parsed[c]),
+                default=None,
+            )
+            if cat is None:
+                break
+            parsed[cat].pop(0)
+            dropped += 1
+            parsed["truncation_notice"] = (
+                f"{dropped} older item(s) omitted to fit the memory budget; "
+                "ask the user rather than guessing about older work."
+            )
+        return _json.dumps(parsed, ensure_ascii=False)
+    except Exception:
+        return context_json
 
 
 class BackgroundTasksMixin:
@@ -364,7 +432,7 @@ class BackgroundTasksMixin:
             context_prompt_config["system_prompt"], content, model=self.config.NOTETAKER_MODEL
         )
 
-    def _run_agent_context_update_thread(self, user_id: str, agent_id: str, current_context_json: str, user_prompt: str, ai_response: str):
+    def _run_agent_context_update_thread(self, user_id: str, agent_id: str, current_context_json: str, user_prompt: str, ai_response: str, message_id: str | None = None):
         """
         Runs the per-agent work context memory update in a background thread.
         Extracts only explicitly stated, durable, work-relevant facts — no inference.
@@ -373,6 +441,10 @@ class BackgroundTasksMixin:
         context in code (merge_agent_context), so an under-performing extraction can never
         drop previously-stored projects/people/tasks (anti-shrink). Invalid model JSON
         leaves the stored memory unchanged rather than overwriting it with garbage.
+
+        `message_id` becomes each touched entry's `src` stamp: the governed turn
+        the fact came from, so a remembered item can be traced back to an
+        audited exchange (backlog 50, write side).
         """
         raw = self._extract_agent_context_raw(current_context_json, user_prompt, ai_response)
         if raw is None:
@@ -388,7 +460,15 @@ class BackgroundTasksMixin:
             self.log.warning("[AgentMemory] extractor returned non-JSON; leaving memory unchanged.")
             return
         try:
-            merged = merge_agent_context(current, delta)
+            stamp = {"updated": _date.today().isoformat()}
+            if message_id:
+                stamp["src"] = str(message_id)
+            merged = merge_agent_context(current, delta, stamp=stamp)
+            # An empty delta merges to the same content; skip the pointless
+            # re-encrypt-and-write (idle Q&A turns used to rewrite the row).
+            if _json.dumps(merged, sort_keys=True) == _json.dumps(
+                    {k: current.get(k) or [] for k in _CTX_LIST_FIELDS}, sort_keys=True):
+                return
             db.upsert_agent_context_memory(user_id, agent_id, _json.dumps(merged, ensure_ascii=False))
             self.log.info(f"[AgentMemory] Updated context for user={user_id} agent={agent_id}")
         except Exception as e:

@@ -374,6 +374,12 @@ class Config:
     AGENT_MEMORY_TEMPERATURE = float(os.environ.get("SAFI_AGENT_MEMORY_TEMPERATURE", "0.0"))
     # Max entries retained per memory key after the code-side merge (bounds growth).
     AGENT_MEMORY_MAX_ITEMS_PER_KEY = int(os.environ.get("SAFI_AGENT_MEMORY_MAX_ITEMS", "80"))
+
+    # Character budget for the work-context memory injected into the prompt each
+    # turn (the RAG equivalent is _MAX_CONTEXT_CHARS = 8000 in intellect.py).
+    # Read-side only: the stored memory is never truncated, oldest entries are
+    # simply left out of the injection and the model is told so. 0 disables.
+    AGENT_MEMORY_MAX_CHARS = int(os.environ.get("SAFI_AGENT_MEMORY_MAX_CHARS", "12000"))
     # Memory structure: key -> identity field for dict items (None = list of strings).
     # Drives both the empty-context shape and the merge dedupe behavior.
     AGENT_MEMORY_SCHEMA = {
