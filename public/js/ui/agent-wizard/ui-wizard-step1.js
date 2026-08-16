@@ -151,7 +151,7 @@ async function loadPolicies(agentData) {
                     agentData._policyData = policy; // Store for Values step to read
 
                     const missionSnippet = policy.worldview
-                        ? policy.worldview.replace(/<!-- CONTEXT:.*?-->\n?/, '').trim().substring(0, 120) + '…'
+                        ? policy.worldview.replace(/<!-- CONTEXT:[\s\S]*?-->\n?/g, '').trim().substring(0, 120) + '…'
                         : 'No mission defined.';
 
                     const policyValues = policy.values_weights || [];

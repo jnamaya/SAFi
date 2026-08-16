@@ -146,6 +146,10 @@ def create_policy():
         policy_config = {
             "business_unit":      data.get("business_unit", ""),
             "scope_statement":    data.get("scope_statement", ""),
+            # The human-facing description. Stored as its own field; older
+            # builds embedded it in worldview as an HTML comment, which the
+            # wizard still reads as a legacy fallback.
+            "context":            data.get("context", ""),
             "ethical_memory":     data.get("ethical_memory", 0.90),
             "alignment_threshold": data.get("alignment_threshold", 0.5),
         }
@@ -228,6 +232,10 @@ def update_policy(policy_id):
         policy_config = {
             "business_unit":      data.get("business_unit", ""),
             "scope_statement":    data.get("scope_statement", ""),
+            # The human-facing description. Stored as its own field; older
+            # builds embedded it in worldview as an HTML comment, which the
+            # wizard still reads as a legacy fallback.
+            "context":            data.get("context", ""),
             "ethical_memory":     data.get("ethical_memory", 0.90),
             "alignment_threshold": data.get("alignment_threshold", 0.5),
         }

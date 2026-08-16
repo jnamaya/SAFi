@@ -173,7 +173,10 @@ function hydratePolicy(existingPolicy) {
         policy_id:       existingPolicy.id,
         name:            existingPolicy.name,
         business_unit:   cfg.business_unit  || "",
-        context:         existingPolicy.context || extractContext(existingPolicy.worldview) || "",
+        // policy_config.context is the stored description. The extract is a
+        // legacy fallback: older builds embedded the description in worldview
+        // as an HTML comment instead of storing it.
+        context:         cfg.context || extractContext(existingPolicy.worldview) || "",
         worldview:       cleanWorldview(existingPolicy.worldview),
         scope_statement: cfg.scope_statement || "",
 
@@ -188,13 +191,20 @@ function hydratePolicy(existingPolicy) {
     };
 }
 
+// Legacy readers. Older builds embedded the description in worldview as
+// `<!-- CONTEXT: ... -->`; the description now lives in policy_config.context
+// and nothing writes the comment anymore. [\s\S] because a multi-line
+// description broke the old dot-based patterns, which is exactly the bug that
+// silently "lost" descriptions and left comment fragments in the Purpose box.
+// cleanWorldview strips globally because repeated saves under the old code
+// could stack several comments; opening and saving once now repairs the row.
 function extractContext(wv) {
-    const match = wv && wv.match(/<!-- CONTEXT: (.*?) -->/);
-    return match ? match[1] : "";
+    const match = wv && wv.match(/<!-- CONTEXT: ([\s\S]*?) -->/);
+    return match ? match[1].trim() : "";
 }
 
 function cleanWorldview(wv) {
-    return wv ? wv.replace(/<!-- CONTEXT: (.*?) -->\n?/, "") : "";
+    return wv ? wv.replace(/<!-- CONTEXT: [\s\S]*? -->\n?/g, "").trim() : "";
 }
 
 function saveDraft() {
@@ -259,8 +269,6 @@ async function submitPolicy() {
     btn.disabled = true;
 
     try {
-        const finalWorldview = `<!-- CONTEXT: ${policyData.context} -->\n${policyData.worldview}`;
-
         // Assemble the structured will_rules the engine expects, embedding the W3
         // alignment threshold so WillGate.evaluate_spirit_score picks it up.
         const structuredWillRules = {
@@ -283,7 +291,11 @@ async function submitPolicy() {
         const payload = {
             name:            policyData.name,
             business_unit:   policyData.business_unit,
-            worldview:       finalWorldview,
+            // Description travels as its own field (policy_config.context).
+            // It used to be embedded in worldview as an HTML comment, which
+            // corrupted the round-trip whenever it contained a newline.
+            context:         policyData.context,
+            worldview:       policyData.worldview,
             scope_statement: policyData.scope_statement,
             values:          policyData.values,
             will_rules:      structuredWillRules,

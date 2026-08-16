@@ -1,8 +1,9 @@
 """
 `policy_config` must come back as a dict from EVERY policy reader.
 
-WHY. `policy_config` is a JSON column holding four wizard-authored values:
-business_unit, scope_statement, alignment_threshold, ethical_memory.
+WHY. `policy_config` is a JSON column holding five wizard-authored values:
+business_unit, scope_statement, context (the description), alignment_threshold,
+ethical_memory.
 `get_policy` and `get_policy_version_detail` json.loads it; `list_policies` did
 not, so it reached the browser as a JSON *string*.
 
@@ -45,6 +46,12 @@ from safi_app.persistence import database as db
 CONFIG = {
     "business_unit": "Marketing",
     "scope_statement": "Campaign strategy only — no legal or medical guidance.",
+    # Deliberately multi-line. The description used to be embedded in worldview
+    # as `<!-- CONTEXT: ... -->` and recovered with a dot-based regex, so the
+    # first newline broke the round trip: the description read back empty and
+    # the comment fragment leaked into the Purpose box. Reported 2026-08-15 on
+    # the demo's Accion IT Service Delivery policy.
+    "context": "Governs the marketing agents.\nSecond line, which used to break the round trip.",
     "alignment_threshold": 0.75,
     "ethical_memory": 0.55,
 }
@@ -147,6 +154,35 @@ class PolicyConfigRoundTrip(unittest.TestCase):
         self.assertIn("typeof cfg === 'string'", seg,
                       "hydratePolicy should defensively parse a string config")
         self.assertIn("JSON.parse(cfg)", seg)
+
+
+    def test_08_a_multiline_description_survives_intact(self):
+        """The description is its own field now. Newlines must survive both
+        readers byte-for-byte; the embedded-comment scheme could not do this."""
+        for cfg in (self._listed()["policy_config"],
+                    db.get_policy(self.pid)["policy_config"]):
+            self.assertEqual(cfg.get("context"), CONFIG["context"])
+            self.assertIn("\n", cfg.get("context"))
+
+    def test_09_the_wizard_no_longer_embeds_the_description_in_worldview(self):
+        """The writer is the bug's origin: `<!-- CONTEXT: ... -->` prepended to
+        worldview. It must stay deleted; the comment syntax may remain only in
+        the legacy READERS, which must be newline-tolerant ([\\s\\S])."""
+        core = (Path(__file__).resolve().parent.parent / "public" / "js" / "ui"
+                / "policy-wizard" / "ui-policy-wizard-core.js").read_text(
+                    encoding="utf-8", errors="replace")
+        self.assertNotIn("<!-- CONTEXT: ${", core,
+                         "submitPolicy is embedding the description in worldview "
+                         "again — that round trip corrupts on the first newline")
+        self.assertIn("[\\s\\S]*?", core,
+                      "the legacy CONTEXT readers must tolerate newlines, or "
+                      "old rows keep hydrating empty")
+        step1 = (Path(__file__).resolve().parent.parent / "public" / "js" / "ui"
+                 / "agent-wizard" / "ui-wizard-step1.js").read_text(
+                     encoding="utf-8", errors="replace")
+        self.assertIn("[\\s\\S]*?", step1,
+                      "the agent wizard's policy summary strip must tolerate "
+                      "newlines for legacy rows")
 
 
 if __name__ == "__main__":
