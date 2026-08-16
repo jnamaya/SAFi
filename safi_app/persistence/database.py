@@ -2571,6 +2571,40 @@ def upsert_user_profile_memory(uid, data):
         cursor.close()
         conn.close()
 
+def list_agent_context_agents(user_id: str) -> list:
+    """The agents holding work-context memory for this user, for the
+    user-facing memory manager (backlog 50b). Ownership is the WHERE clause."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT agent_id, updated_at FROM agent_context_memory "
+            "WHERE user_id=%s ORDER BY updated_at DESC",
+            (user_id,)
+        )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_agent_context_memory(user_id: str, agent_id: str) -> bool:
+    """Forget everything one agent remembers for this user. Forward-looking
+    only: governance records keep the copies injected on past turns."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM agent_context_memory WHERE user_id=%s AND agent_id=%s",
+            (user_id, agent_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
     """Load the per-agent work context memory for a user. Returns '{}' if none exists."""
     conn = get_db_connection()

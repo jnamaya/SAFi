@@ -126,5 +126,50 @@ class TheBudgetBoundsThePromptCopyOnly(unittest.TestCase):
         self.assertEqual(apply_memory_budget("not json {", 10), "not json {")
 
 
+class UserFacingMemoryManagement(unittest.TestCase):
+    """The view+delete surface (backlog 50b): list, per-item removal through
+    the same deterministic merge machinery the extractor uses, and clear.
+    Needs the disposable stack (writes agent_context_memory rows)."""
+
+    def setUp(self):
+        import uuid
+        from safi_app.persistence import database as db
+        self.db = db
+        self.user = f"test_user_{uuid.uuid4().hex[:8]}"
+        self.agent = "test_agent"
+        mem = {"tasks": [task("Call Comcast", updated="2026-08-15", src="m1"),
+                         task("Ship the report")],
+               "milestones": [{"event": "Go-live", "date": "2026-09-01"}]}
+        db.upsert_agent_context_memory(self.user, self.agent,
+                                       json.dumps(mem, ensure_ascii=False))
+
+    def tearDown(self):
+        self.db.delete_agent_context_memory(self.user, self.agent)
+
+    def test_list_shows_the_agent(self):
+        rows = self.db.list_agent_context_agents(self.user)
+        self.assertEqual([r["agent_id"] for r in rows], [self.agent])
+
+    def test_item_delete_via_merge_removals_and_roundtrip(self):
+        current = json.loads(self.db.fetch_agent_context_memory(self.user, self.agent))
+        merged = merge_agent_context(current, {"removals": {"tasks": ["Call Comcast"]}})
+        self.assertEqual([t["task"] for t in merged["tasks"]], ["Ship the report"])
+        # Milestones remove by dict identity (event+date).
+        merged = merge_agent_context(merged, {"removals": {
+            "milestones": [{"event": "Go-live", "date": "2026-09-01"}]}})
+        self.assertEqual(merged["milestones"], [])
+        self.db.upsert_agent_context_memory(self.user, self.agent,
+                                            json.dumps(merged, ensure_ascii=False))
+        back = json.loads(self.db.fetch_agent_context_memory(self.user, self.agent))
+        self.assertEqual([t["task"] for t in back["tasks"]], ["Ship the report"])
+
+    def test_clear_deletes_the_row_and_only_for_the_owner(self):
+        self.assertFalse(self.db.delete_agent_context_memory("someone_else", self.agent),
+                         "another user's delete must not reach this row")
+        self.assertTrue(self.db.delete_agent_context_memory(self.user, self.agent))
+        self.assertEqual(self.db.list_agent_context_agents(self.user), [])
+        self.assertEqual(self.db.fetch_agent_context_memory(self.user, self.agent), "{}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

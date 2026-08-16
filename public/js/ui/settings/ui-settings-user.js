@@ -285,6 +285,9 @@ function _buildProfileUI(container) {
                 </button>
             </div>
         </div>
+
+        <!-- What agents remember about the user's work (backlog 50b) -->
+        <div id="agent-memory-section"></div>
     `;
 
     container.querySelector('#export-my-data-btn')?.addEventListener('click', () => {
@@ -292,6 +295,146 @@ function _buildProfileUI(container) {
     });
 
     _attachProfileEventListeners(container);
+    _renderAgentMemorySection(container.querySelector('#agent-memory-section'));
+}
+
+// ---------------------------------------------------------------------------
+// Agent work-context memory: view + delete (backlog 50b)
+//
+// View and delete only, deliberately no editing: every stored entry traces to
+// a governed turn via its src stamp, and a user-typed fact would have no
+// audited origin. Deletion is forward-looking; the copy of the memory each
+// past turn saw stays inside that turn's governance record — that is the
+// record's purpose.
+// ---------------------------------------------------------------------------
+
+const MEMORY_CATEGORIES = [
+    { key: 'projects',   title: 'Projects',       main: 'name',     extra: (i) => [i.status, i.target_date].filter(Boolean).join(' · ') },
+    { key: 'tasks',      title: 'Tasks',          main: 'task',     extra: (i) => [i.status, i.owner, i.due].filter(Boolean).join(' · ') },
+    { key: 'decisions',  title: 'Open decisions', main: 'question', extra: (i) => [i.status, i.owner, i.due].filter(Boolean).join(' · ') },
+    { key: 'people',     title: 'People',         main: 'name',     extra: (i) => i.role || '' },
+    { key: 'milestones', title: 'Milestones',     main: 'event',    extra: (i) => i.date || '' },
+    { key: 'vendors',    title: 'Vendors',        main: 'name',     extra: (i) => i.notes || '' },
+    { key: 'notes',      title: 'Notes',          main: null,       extra: () => '' },
+];
+
+function _memoryIdentity(catKey, item) {
+    if (catKey === 'notes') return item;
+    if (catKey === 'milestones') return { event: item.event || '', date: item.date || '' };
+    const field = { projects: 'name', tasks: 'task', decisions: 'question',
+                    people: 'name', vendors: 'name' }[catKey];
+    return item[field] || '';
+}
+
+async function _renderAgentMemorySection(host) {
+    if (!host) return;
+    let agents = [];
+    try { agents = await api.fetchMemoryAgents(); } catch (e) { return; }
+    if (!Array.isArray(agents) || agents.length === 0) return;
+
+    host.innerHTML = `
+        <div class="profile-section-container shadow-sm mt-6">
+            <div class="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
+                <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">Agent Memory</h4>
+                <span class="text-xs text-neutral-400 font-normal ml-auto">What agents remember about your work</span>
+            </div>
+            <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
+                Task-oriented agents remember durable facts you state — projects, tasks,
+                decisions, people, deadlines — and use them on future turns. Deleting is
+                forward-looking: the agent forgets it from now on, while past audit records
+                keep what the agent saw at the time.
+            </p>
+            <div class="space-y-2">
+                ${agents.map(a => `
+                    <div class="border border-gray-200 dark:border-neutral-700 rounded-lg" data-mem-agent="${escapeHtml(a.agent_id)}">
+                        <div class="flex items-center justify-between px-4 py-2.5">
+                            <button class="mem-agent-toggle text-sm font-medium text-gray-800 dark:text-gray-200 hover:underline text-left">
+                                ${escapeHtml(String(a.agent_id).replace(/_/g, ' '))}
+                            </button>
+                            <button class="mem-agent-clear text-xs text-red-600 dark:text-red-400 hover:underline">Forget all</button>
+                        </div>
+                        <div class="mem-agent-body hidden px-4 pb-3"></div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    host.querySelectorAll('[data-mem-agent]').forEach((card) => {
+        const agentId = card.getAttribute('data-mem-agent');
+        const body = card.querySelector('.mem-agent-body');
+
+        card.querySelector('.mem-agent-toggle').addEventListener('click', async () => {
+            if (!body.classList.contains('hidden')) { body.classList.add('hidden'); return; }
+            body.classList.remove('hidden');
+            await _loadAgentMemoryInto(body, agentId, host);
+        });
+
+        card.querySelector('.mem-agent-clear').addEventListener('click', async () => {
+            if (!confirm(`Forget everything this agent remembers about your work? Past audit records are unaffected.`)) return;
+            try {
+                await api.clearAgentMemory(agentId);
+                ui.showToast('Memory cleared.', 'success');
+                card.remove();
+            } catch (e) {
+                ui.showToast('Could not clear the memory.', 'error');
+            }
+        });
+    });
+}
+
+async function _loadAgentMemoryInto(body, agentId, host) {
+    body.innerHTML = `<div class="thinking-spinner w-4 h-4"></div>`;
+    let mem = {};
+    try { mem = await api.fetchAgentMemory(agentId); } catch (e) { mem = {}; }
+
+    const sections = MEMORY_CATEGORIES.map(({ key, title, main, extra }) => {
+        const items = Array.isArray(mem[key]) ? mem[key] : [];
+        if (!items.length) return '';
+        const rows = items.map((item, idx) => {
+            const label = key === 'notes' ? String(item) : String(item[main] || '');
+            const detail = key === 'notes' ? '' : extra(item);
+            const stamp = key !== 'notes' && item.updated ? item.updated : '';
+            return `
+                <div class="flex items-start justify-between gap-3 py-1.5 border-b border-gray-50 dark:border-neutral-800 last:border-0">
+                    <div class="min-w-0 text-sm">
+                        <span class="text-gray-800 dark:text-gray-200">${escapeHtml(label)}</span>
+                        ${detail ? `<span class="text-xs text-gray-400 ml-2">${escapeHtml(detail)}</span>` : ''}
+                        ${stamp ? `<span class="text-xs text-gray-300 dark:text-gray-600 ml-2" title="Last updated">${escapeHtml(stamp)}</span>` : ''}
+                    </div>
+                    <button class="mem-item-del shrink-0 text-gray-300 hover:text-red-600 dark:text-gray-600 dark:hover:text-red-400"
+                        data-cat="${key}" data-idx="${idx}" title="Forget this">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>`;
+        }).join('');
+        return `
+            <div class="mt-3">
+                <div class="text-xs uppercase font-bold tracking-wider text-gray-400 mb-1">${title}</div>
+                ${rows}
+            </div>`;
+    }).join('');
+
+    body.innerHTML = sections || `<p class="text-sm text-gray-400 py-2">Nothing remembered yet.</p>`;
+
+    body.querySelectorAll('.mem-item-del').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const cat = btn.getAttribute('data-cat');
+            const idx = parseInt(btn.getAttribute('data-idx'), 10);
+            const items = Array.isArray(mem[cat]) ? mem[cat] : [];
+            const identity = _memoryIdentity(cat, items[idx]);
+            if (identity === '' || identity == null) return;
+            try {
+                await api.deleteAgentMemoryItem(agentId, cat, identity);
+                ui.showToast('Forgotten.', 'success');
+                await _loadAgentMemoryInto(body, agentId, host);
+            } catch (e) {
+                ui.showToast('Could not delete the item.', 'error');
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------

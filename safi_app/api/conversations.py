@@ -889,6 +889,78 @@ def handle_delete_saved_content(saved_id):
         return jsonify({"error": "Saved item not found."}), 404
     return jsonify({"status": "success"})
 
+
+# --- Agent work-context memory: user-facing view + delete (backlog 50b) -----
+# View and delete ONLY, no edit: every stored entry traces to a governed turn
+# via its src stamp, and a user-typed fact would break that provenance story.
+# Deletions run through merge_agent_context's removal machinery — the same
+# deterministic path the extractor uses — never through a model. Deletion is
+# forward-looking; governance records keep the snapshot each past turn saw.
+
+def _memory_edit_evidence(event_type, user_id, agent_id, detail):
+    """Best-effort compliance evidence for a memory edit. A logging failure
+    must not block the user from deleting their own memory."""
+    try:
+        org_id = (session.get('user') or {}).get('org_id')
+        db.append_compliance_log(org_id, event_type, user_id,
+                                 detail={"agent_id": agent_id, **detail})
+    except Exception:
+        current_app.logger.warning("memory edit evidence logging failed", exc_info=True)
+
+
+@conversations_bp.route('/memory/agents', methods=['GET'])
+def list_memory_agents():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    return jsonify(db.list_agent_context_agents(user_id))
+
+
+@conversations_bp.route('/memory/<agent_id>', methods=['GET'])
+def get_agent_memory(agent_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    try:
+        return jsonify(json.loads(db.fetch_agent_context_memory(user_id, agent_id) or "{}"))
+    except Exception:
+        return jsonify({})
+
+
+@conversations_bp.route('/memory/<agent_id>/items', methods=['DELETE'])
+def delete_agent_memory_item(agent_id):
+    from ..core.orchestrator_mixins.tasks import merge_agent_context, _CTX_LIST_FIELDS
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    category = data.get('category')
+    identity = data.get('identity')  # string, or {event, date} for milestones
+    if category not in _CTX_LIST_FIELDS or not identity:
+        return jsonify({"error": "'category' and 'identity' are required."}), 400
+    try:
+        current = json.loads(db.fetch_agent_context_memory(user_id, agent_id) or "{}")
+    except Exception:
+        current = {}
+    merged = merge_agent_context(current, {"removals": {category: [identity]}})
+    if len(merged.get(category) or []) >= len(current.get(category) or []):
+        return jsonify({"error": "No matching memory item."}), 404
+    db.upsert_agent_context_memory(user_id, agent_id, json.dumps(merged, ensure_ascii=False))
+    _memory_edit_evidence('agent_memory_item_deleted', user_id, agent_id,
+                          {"category": category})
+    return jsonify(merged)
+
+
+@conversations_bp.route('/memory/<agent_id>', methods=['DELETE'])
+def clear_agent_memory(agent_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not db.delete_agent_context_memory(user_id, agent_id):
+        return jsonify({"error": "No memory for this agent."}), 404
+    _memory_edit_evidence('agent_memory_cleared', user_id, agent_id, {})
+    return jsonify({"status": "success"})
+
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])
 def get_chat_history(conversation_id):
     user_id = get_user_id()

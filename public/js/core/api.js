@@ -50,6 +50,9 @@ export const urls = {
     SAVED_CONTENT: j('/api/saved-content'),
     SAVED_ITEM: (id) => `${j('/api/saved-content')}/${id}`,
     MOVE_SAVED_ITEM: (id) => `${j('/api/saved-content')}/${id}/project`,
+    MEMORY_AGENTS: j('/api/memory/agents'),
+    MEMORY: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}`,
+    MEMORY_ITEMS: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}/items`,
 
     // Org & Domain
     ORG_ME: j('/api/organizations/me'),
@@ -190,6 +193,11 @@ export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
 
 // Projects (workspaces)
+export const fetchMemoryAgents = () => httpGet(urls.MEMORY_AGENTS);
+export const fetchAgentMemory = (agentId) => httpGet(urls.MEMORY(agentId));
+export const deleteAgentMemoryItem = (agentId, category, identity) =>
+    httpJSON(urls.MEMORY_ITEMS(agentId), 'DELETE', { category, identity });
+export const clearAgentMemory = (agentId) => httpJSON(urls.MEMORY(agentId), 'DELETE', {});
 export const fetchProjects = () => httpGet(urls.PROJECTS);
 export const createProject = (name) => httpJSON(urls.PROJECTS, 'POST', { name });
 export const renameProject = (id, name) => httpJSON(urls.PROJECT(id), 'PUT', { name });
