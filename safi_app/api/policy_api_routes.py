@@ -422,12 +422,13 @@ async def generate_policy_content_endpoint():
 
         if gen_type == 'worldview':
             prompt = (
-                f"Draft a concise 'Purpose & Mandate' statement for an AI policy governing: '{context}'. "
-                "In under 150 words, cover three things: the unit's Purpose (what it exists to do and the "
-                "outcomes it owns); its Mandate (the principles and priorities its agents must operate by, and "
-                "the limits of their authority); and the Perspective agents should reason from (their orientation "
-                "-- e.g. evidence-driven, compliance-first). Write it as the operating frame an agent reasons "
-                "from. Be specific and concrete; avoid marketing language."
+                f"Draft a concise Purpose statement for an AI policy governing: '{context}'. "
+                "In under 150 words of plain prose, cover: what this unit exists to do, who its "
+                "agents serve, the outcomes they own, the priorities that win when goals conflict, "
+                "and where their authority ends. Write it as the operating frame an agent reasons "
+                "from. Be specific and concrete; avoid marketing language. "
+                "Output flowing paragraphs only: no headings, no section labels, no bullet points, "
+                "no bold or any other markdown."
             )
         
         elif gen_type == 'values':

@@ -171,7 +171,7 @@ def save_agent():
                     return jsonify({
                         "error": "This agent's policy does not authorize: "
                                  + ", ".join(refused)
-                                 + ". Enable them in the policy's Tools & Guardrails step first."
+                                 + ". Enable them in the policy's Tools & Controls step first."
                     }), 400
 
         # Governance requirement (enforced per-branch, AFTER auth/existence checks
