@@ -762,6 +762,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 user_id=user_id,
                 org_id=org_id,
                 will_stage="phase_zero",
+                agent_context=agent_context_for_prompt,
             )
         self.log.info(f"[Governance | Phase 0 | Injection Gate] PASS — {gate_reason}")
 
@@ -1110,6 +1111,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 failing_ledger=result["ledger"],
                 blocked_draft=a_t,
                 will_stage=result["stage"],
+                agent_context=agent_context_for_prompt,
             )
 
         ledger = result["ledger"]
@@ -1241,6 +1243,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                     failing_ledger=result["ledger"],
                     blocked_draft=a_t,
                     will_stage=result["stage"],
+                    agent_context=agent_context_for_prompt,
                 )
 
             # Commit the best candidate: a clean approve beats a low-alignment
@@ -1318,6 +1321,11 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "recentTurns": recent_turns_text,
             "spiritFeedback": spirit_feedback,
             "retrievedContext": retrieved_context or "",
+            # The work-context memory AS THE MODEL SAW IT (the budgeted copy,
+            # not the stored row), so the audit can answer "what memory shaped
+            # this draft" — backlog 50, read side. "{}" (empty sentinel) is
+            # recorded as "" so the Audit Hub card only renders real memory.
+            "agentWorkContext": "" if agent_context_for_prompt in ("{}", "null", "") else agent_context_for_prompt,
             "retryMetadata": retry_metadata,
             "policyId": (self.profile or {}).get("policy_id"),
             "policyVersion": (self.profile or {}).get("policy_version"),
@@ -1688,6 +1696,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         failing_ledger: Optional[List[Dict[str, Any]]] = None,
         blocked_draft: str = "",
         will_stage: Optional[str] = None,
+        agent_context: str = "",
     ) -> Dict[str, Any]:
         """Agent Redirect: Re-engages the Intellect to handle boundaries in the agent's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
@@ -1799,6 +1808,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "memorySummary": "",
             "spiritFeedback": "",
             "retrievedContext": "",
+            # What memory the blocked draft was conditioned on, same contract
+            # as the approve path's record (backlog 50, read side).
+            "agentWorkContext": "" if agent_context in ("{}", "null", "") else agent_context,
             "policyId": self.profile.get("policy_id"),
             "policyVersion": self.profile.get("policy_version"),
             "orgId": org_id or self.profile.get("org_id"),

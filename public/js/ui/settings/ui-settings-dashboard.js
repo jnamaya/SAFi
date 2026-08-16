@@ -720,6 +720,8 @@ async function renderDetail(messagePk) {
                 ${r.memorySummary ? textCard('Context — memory summary', esc(r.memorySummary)) : ''}
                 ${r.recentTurns ? textCard('Context — recent turns', esc(r.recentTurns)) : ''}
                 ${r.retrievedContext ? textCard('Context — retrieved documents', esc(r.retrievedContext)) : ''}
+                ${r.agentWorkContext ? textCard('Context — work memory', esc(r.agentWorkContext),
+                    'The agent’s accumulated work-context memory as injected this turn (budgeted copy). Entries carry updated/src stamps; src is the message id of the governed turn that stated the fact.') : ''}
                 ${r.spiritFeedback ? textCard('Context — self-correction nudge', esc(r.spiritFeedback),
                     'Injected into the agent’s prompt for this turn because recent consistency had slipped. Deliberately blind: it names at most one value and never contains scoring criteria, so the agent cannot optimize toward the audit.') : ''}
             </div>`,
