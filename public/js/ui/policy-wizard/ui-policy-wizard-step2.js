@@ -8,8 +8,8 @@ export function renderConstitutionStep(container, policyData) {
                  <div>
                     <div class="flex justify-between items-end mb-4">
                          <div>
-                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose &amp; Mandate</label>
-                            <p class="text-base text-gray-500 mb-4">What every agent under this policy exists to do and the perspective it reasons from — the unit's mission, the objectives it is responsible for, and the orientation it should approach its work with.</p>
+                            <label class="block text-2xl font-bold text-gray-900 dark:text-white mb-2">Purpose</label>
+                            <p class="text-base text-gray-500 mb-4">What every agent under this policy exists to do. Plain language, written for a person; agents receive it as context for every response.</p>
                          </div>
                          <button id="btn-gen-worldview" class="shrink-0 text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors shadow-sm font-medium">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -17,14 +17,9 @@ export function renderConstitutionStep(container, policyData) {
                          </button>
                     </div>
                     <div class="relative">
-                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500 shadow-sm resize-y" placeholder="Purpose:
-What this unit exists to do — its mission and the outcomes it is responsible for.
+                        <textarea id="pw-worldview" class="w-full h-[500px] p-6 rounded-xl border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 font-mono text-base leading-relaxed text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500 shadow-sm resize-y" placeholder="Describe what this business unit is for and what its agents are responsible for. There is no required format.
 
-Mandate:
-The principles and priorities agents must operate by, and the limits of their authority.
-
-Perspective:
-The orientation agents should reason from — e.g. rigorous and evidence-driven; compliance before speed.">${policyData.worldview}</textarea>
+A few things worth covering: who the agents serve, the outcomes they own, the priorities that win when goals conflict (for example, compliance before speed), and where their authority ends. A few short paragraphs is plenty.">${policyData.worldview}</textarea>
                         
 
                     </div>
@@ -42,8 +37,8 @@ The orientation agents should reason from — e.g. rigorous and evidence-driven;
                         Be concrete about what this unit is for and the outcomes it owns. A clear mandate keeps every agent pulling in the same direction.
                     </li>
                     <li>
-                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Name the perspective</strong>
-                        Specify the orientation agents reason from — "evidence-driven and cautious" guides judgment better than "smart."
+                        <strong class="block text-gray-900 dark:text-gray-200 mb-1">Say what wins when goals conflict</strong>
+                        "Compliance before speed" or "evidence-driven and cautious" guides judgment better than "be smart."
                     </li>
                     <li>
                         <strong class="block text-gray-900 dark:text-gray-200 mb-1">Already have a charter or mandate?</strong>
@@ -54,10 +49,8 @@ The orientation agents should reason from — e.g. rigorous and evidence-driven;
         </div>
     `;
 
-    // Bind Handlers
     document.getElementById('pw-worldview')?.addEventListener('input', (e) => policyData.worldview = e.target.value);
 
-    // GEN WORLDVIEW
     document.getElementById('btn-gen-worldview')?.addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;
@@ -70,9 +63,9 @@ The orientation agents should reason from — e.g. rigorous and evidence-driven;
             if (res.ok && res.content) {
                 document.getElementById('pw-worldview').value = res.content;
                 policyData.worldview = res.content;
-                ui.showToast("Purpose & Mandate drafted!", "success");
+                ui.showToast("Purpose drafted!", "success");
             } else {
-                ui.showToast("Failed to generate Purpose & Mandate", "error");
+                ui.showToast("Failed to generate the Purpose", "error");
             }
         } catch (err) { console.error(err); }
         btn.innerHTML = original;
@@ -82,7 +75,7 @@ The orientation agents should reason from — e.g. rigorous and evidence-driven;
 
 export function validateConstitutionStep(policyData) {
     if (!policyData.worldview || policyData.worldview.length < 10) {
-        ui.showToast("A Purpose & Mandate statement is required (at least 10 chars).", "error");
+        ui.showToast("A Purpose statement is required (at least 10 chars).", "error");
         return false;
     }
     return true;

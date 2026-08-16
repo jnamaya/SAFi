@@ -82,12 +82,10 @@ export function openAgentWizard(existingAgent = null) {
             max_agent_turns: existingAgent.max_agent_turns || null,
             track_work_context: existingAgent.track_work_context !== false
         };
-        // Fallback checks
         if (existingAgent.worldview && !agentData.instructions) {
             agentData.instructions = existingAgent.worldview;
         }
     } else {
-        // Create Mode Reset
         agentData = {
             key: "",
             name: "",
@@ -135,7 +133,6 @@ export function closeWizard() {
     wizardView.classList.add('hidden');
     wizardView.classList.remove('flex');
 
-    // Restore previous tab
     const prevTabId = document.body.dataset.wizardPreviousTab;
     if (prevTabId) {
         const prevTab = document.getElementById(prevTabId);

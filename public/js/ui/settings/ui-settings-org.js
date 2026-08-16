@@ -1034,7 +1034,8 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
                         : (v.hard_gate
                             ? `<span class="text-[10px] uppercase font-bold tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-full" title="This core value blocks on violation. Non-negotiable rules belong in AI Standards; this one is kept working, but new ones should be added there.">Legacy gate</span>`
                             : '')}
-                    <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800">
+                    <div class="flex items-center gap-2 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800"
+                        title="Weight is relative, not absolute. Values are weighed against each other and rescaled to the organization's share of the score, so 50 next to 100 counts half as much, and equal numbers count equally, whatever they are.">
                         <label class="text-xs font-bold text-gray-500 uppercase">Weight</label>
                         <input type="range" min="1" max="100" value="${weightPct}" class="cv-weight-slider w-20 h-1.5 accent-green-600 cursor-pointer"/>
                         <span class="cv-weight-lbl text-xs font-mono font-bold text-gray-700 dark:text-gray-300 w-8 text-right">${weightPct}%</span>

@@ -93,7 +93,7 @@ async function renderTools(agentData, governance) {
             note.classList.remove('hidden');
 
             if (filter.size === 0) {
-                noteText.innerHTML = "This agent's governing policy authorizes <strong>no tools</strong>. It will run without tool access. Edit the policy's Tools &amp; Guardrails step to authorize tools.";
+                noteText.innerHTML = "This agent's governing policy authorizes <strong>no tools</strong>. It will run without tool access. Edit the policy's Tools &amp; Controls step to authorize tools.";
                 loader.classList.add('hidden');
                 return;
             }
@@ -171,7 +171,7 @@ async function renderKnowledgeBasePicker(agentData, governance) {
             <div class="p-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 text-sm text-green-800 dark:text-green-300">
                 This agent's governing policy authorizes <strong>no knowledge
                 bases</strong>. It will answer without retrieval. Edit the
-                policy's Tools &amp; Guardrails step to authorize one.
+                policy's Tools &amp; Controls step to authorize one.
             </div>`;
         return;
     }

@@ -201,13 +201,13 @@ function renderValuesList(policyData) {
                 </div>
 
                 <div class="flex items-center gap-4 flex-wrap">
-                    <label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="If checked, any violation of this standard blocks the response outright, regardless of other scores.">
+                    <label class="flex items-center gap-2 cursor-pointer select-none bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800" title="If checked, any violation of this standard blocks the response outright, regardless of other scores. It stops counting toward the score, so its Importance slider is ignored. Reserve it for absolutes: every non-negotiable is judged on every request.">
                         <input type="checkbox" id="pw-hardgate-${idx}" ${v.hard_gate ? 'checked' : ''} class="accent-red-600 w-4 h-4">
                         <span class="text-xs uppercase font-bold text-gray-500">Non-negotiable</span>
                     </label>
 
                     <div id="pw-weight-wrap-${idx}" class="flex items-center gap-3 bg-gray-50 dark:bg-neutral-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-neutral-800 ${v.hard_gate ? 'opacity-40' : ''}"
-                        title="${v.hard_gate ? 'Not used: a non-negotiable standard blocks on violation instead of contributing to the score.' : 'How much this standard counts toward the overall score.'}">
+                        title="${v.hard_gate ? 'Not used: a non-negotiable standard blocks on violation instead of contributing to the score.' : 'Importance is relative, not absolute. Standards are weighed against each other and rescaled to the policy\'s share of the score, so 50 next to 100 counts half as much, and equal numbers count equally, whatever they are.'}">
                         <label class="text-xs uppercase font-bold text-gray-500">Importance</label>
                         <input type="range" min="0" max="100" value="${weightToPct(v.weight)}" ${v.hard_gate ? 'disabled' : ''}
                             class="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-green-600 disabled:cursor-not-allowed">

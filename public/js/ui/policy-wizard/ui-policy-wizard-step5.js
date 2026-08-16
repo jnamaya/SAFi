@@ -92,7 +92,7 @@ export function renderWillStep(container, policyData) {
     container.innerHTML = `
         <div class="space-y-8">
             <div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Tools &amp; Guardrails</h2>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">Tools &amp; Controls</h2>
                 <p class="text-gray-500 text-sm">Choose which tools agents under this policy may use, plus hard requirements checked on every response. If a response breaks a guardrail, the agent automatically tries once to fix it; if it still fails, the response is replaced with a safe, on-policy reply.</p>
             </div>
 

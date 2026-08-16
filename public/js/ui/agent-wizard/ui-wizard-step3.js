@@ -40,16 +40,13 @@ export function renderIntellectStep(container, agentData) {
         </div>
     `;
 
-    // Attach Text Listeners
     document.getElementById('wiz-instructions')?.addEventListener('input', (e) => agentData.instructions = e.target.value);
     document.getElementById('wiz-style')?.addEventListener('input', (e) => agentData.style = e.target.value);
 
-    // AI Handlers
     attachAiHandlers(agentData);
 }
 
 function attachAiHandlers(agentData) {
-    // AI AGENT HANDLER
     document.getElementById('wiz-gen-agent-btn').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;
@@ -77,7 +74,6 @@ function attachAiHandlers(agentData) {
         }
     });
 
-    // AI STYLE HANDLER
     document.getElementById('wiz-gen-style-btn').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;

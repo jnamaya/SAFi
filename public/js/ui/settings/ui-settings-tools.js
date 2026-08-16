@@ -54,7 +54,7 @@ function shell() {
           <li><strong>Discover.</strong> SAFi connects to the server, asks what tools it offers, and
               catalogs them here, visible and completely inactive.</li>
           <li><strong>Enable.</strong> An admin or editor enables specific tools in the policy
-              wizard, under <strong>Tools &amp; Guardrails</strong>. This is a ceiling: agents under
+              wizard, under <strong>Tools &amp; Controls</strong>. This is a ceiling: agents under
               that policy can never use a tool it does not list.</li>
           <li><strong>Assign.</strong> The agent is given tools its policy allows. Every call it
               makes is then checked against that list before it runs, and recorded in the audit
@@ -225,7 +225,7 @@ function openToolsModal(key) {
         + (enabled === 0 ? `
             <p class="text-xs text-gray-400 pt-2 border-t border-gray-100 dark:border-neutral-800">
               None of these are enabled yet. Turn on the ones you want in a policy's
-              Tools &amp; Guardrails step.
+              Tools &amp; Controls step.
             </p>` : '');
     modal.classList.remove('hidden');
 }

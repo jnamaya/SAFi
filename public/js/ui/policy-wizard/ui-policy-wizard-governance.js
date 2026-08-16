@@ -1,5 +1,4 @@
 export function renderGovernanceStep(container, policyData) {
-    // Hydrate defaults
     if (policyData.alignment_threshold === undefined) policyData.alignment_threshold = 0.5;
     if (policyData.ethical_memory === undefined)      policyData.ethical_memory      = 0.90;
 
@@ -60,7 +59,7 @@ export function renderGovernanceStep(container, policyData) {
                 </div>
 
                 <div class="space-y-2 text-sm">
-                    ${summaryRow('Purpose & Mandate', policyData.worldview ? policyData.worldview.length + ' chars' : '—', policyData.worldview)}
+                    ${summaryRow('Purpose', policyData.worldview ? policyData.worldview.length + ' chars' : '—', policyData.worldview)}
                     ${summaryRow('Scope', policyData.scope_statement ? policyData.scope_statement.length + ' chars' : '—', policyData.scope_statement)}
                     ${summaryRow('Standards', (policyData.values || []).length, (policyData.values || []).length > 0)}
                     ${summaryRow('Non-negotiable standards', (policyData.values || []).filter(v => v.hard_gate).length, (policyData.values || []).some(v => v.hard_gate), 'red')}
