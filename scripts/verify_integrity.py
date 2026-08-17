@@ -279,9 +279,19 @@ def main() -> int:
               "collapse the faculty separation, but per Section IV they must still be "
               "submitted for review to retain the SAFi name.")
 
-    print("\nRESULT:", "INTACT — this deployment may represent itself as SAFi (Section IV)."
-          if intact else
-          "MODIFIED — per Section IV, submit the changes for review or rebrand the deployment.")
+    # The verdict is only ever relative to the manifest in THIS tree, and
+    # --update regenerates that manifest from whatever is on disk. So a clean
+    # match must never be phrased as a naming right: authenticity is decided
+    # by comparing the fingerprint against an official release's published
+    # value, and that comparison happens outside this script.
+    if intact:
+        print(f"\nRESULT: INTACT — this tree matches its own manifest.")
+        print(f"  Fingerprint: {_root_fingerprint(current)}")
+        print("  This deployment can only claim to be authentic SAFi if this fingerprint")
+        print("  matches an official SAFi release posted on the official GitHub repo")
+        print("  (License & Governance Agreement, Section IV).")
+    else:
+        print("\nRESULT: MODIFIED — per Section IV, submit the changes for review or rebrand the deployment.")
     return 0 if intact else 1
 
 
