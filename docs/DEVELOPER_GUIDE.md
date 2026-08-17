@@ -553,7 +553,14 @@ worry about when you add a value. A single value entry looks like this
 `weight` is a float; add `"hard_gate": true` to make it a pass/fail gate
 instead of a scored value — hard-gate values are pinned to `weight=0.0`
 and excluded from the Spirit EMA (§6, §16), and a score of `-1` on one
-trips Will's Pass 2 regardless of the alignment average. `rubric` needs
+trips Will's Pass 2 regardless of the alignment average. A gate may also
+carry `"gate_reason"` — one of `scope_violation`, `grounding_violation`,
+`ethical_violation` — which routes the redirect when it fails
+(`ethical_violation` gates take the reflexion retry; the others redirect
+outright). The reason is data on the value, stamped into the compiled
+profile by Synderesis; the Will never derives routing from a value's
+name. Anything missing or invalid collapses to a generic
+`hard_gate_violation`. `rubric` needs
 either a `description` or a non-empty `scoring_guide` — `_has_usable_rubric()`
 (`synderesis.py`) rejects anything with neither, both at save
 time and at compile time.
@@ -669,6 +676,25 @@ distinguishing them is the retention/compliance log's row count — there
 is no cryptographic manifest of what was purged. Keep this in mind if
 you're ever asked to prove a specific purge was legitimate after the
 fact.
+
+**Agent work-context memory is audited context, like retrieval.** For
+task-oriented agents (`track_work_context`, default on for org/custom
+agents), a background note-taker extracts durable work facts — projects,
+tasks, decisions, people, milestones, vendors, notes — into
+`agent_context_memory` (one encrypted row per user + agent). The model
+emits only a delta; the merge is deterministic Python
+(`orchestrator_mixins/tasks.py: merge_agent_context`) with an anti-shrink
+guarantee, and stamps each created or changed entry with `updated` (date)
+and `src` (the message id of the governed turn that stated it). At
+injection time the memory is bounded by `SAFI_AGENT_MEMORY_MAX_CHARS`
+(oldest entries omitted, disclosure in-band); the injected copy is
+snapshotted into the turn's governance record as `agentWorkContext`, on
+approve and redirect paths alike, so an auditor can see exactly what
+memory shaped a draft. Users see and delete their own memory under My
+Profile → Agent Memory (`/api/memory/*`, view + delete only, no edit —
+a user-typed fact would have no audited origin); deletions run through
+the same deterministic removal machinery, are logged as compliance
+evidence, and are forward-looking — past records keep their snapshots.
 
 ## 13. Encryption at rest
 
@@ -913,7 +939,7 @@ and is only the right choice for delegated per-user OAuth:
    show up in the UI** — `GET /api/agents/tools`
    (`agent_api_routes.py`) returns `list_all_tools()` directly,
    and the shared `tool-picker.js` (used by both the agent-wizard's
-   Tools step and the policy-wizard's Tools & Guardrails step) renders
+   Tools step and the policy-wizard's Tools & Controls step) renders
    whatever that endpoint returns. Neither wizard has its own hardcoded
    tool list, so there's no separate front-end file to touch.
 3. Add a dispatch branch in `execute_tool` (`mcp_manager.py`).
@@ -1031,7 +1057,10 @@ AGENT = {
 
 Installing the file is the enablement. Extension agents compile through
 `get_profile()` like every other agent: same scope gate, same charter
-layering, same Will. Two caveats. A broken file is skipped with an error and
+layering, same Will. The shipped built-ins use the same `KEY`/`AGENT`
+contract — `synderesis.py` discovers them from the agents package instead
+of importing any by name — so this is the one agent-definition interface,
+not a side door. Two caveats. A broken file is skipped with an error and
 never takes the app down. Loading executes the file, so the directory is
 equivalent in trust to installing the package itself; the feature is off
 until an operator points it somewhere.
