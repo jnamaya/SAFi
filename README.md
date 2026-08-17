@@ -184,6 +184,13 @@ The only thing to have ready is an **API key from one AI provider**.
 [Google AI Studio](https://aistudio.google.com) also has one. The wizard checks
 the key against the provider before writing it.
 
+Cloning like this gives you `main`, which is kept stable and is fine for
+evaluation. **For production, install the [latest release](https://github.com/jnamaya/SAFi/releases/latest)
+and pin its published TCB Fingerprint** — releases are the only tier whose
+exact code is verifiable. See the [Release Process](docs/RELEASE_PROCESS.md)
+for the branch tiers, the release cadence, and how verification and pinning
+work.
+
 > **Requirements:** Docker, and roughly **8 GB of free disk** — about 3 GB for
 > the images (SAFi ~1.3 GB, MySQL ~1.1 GB) and the rest as headroom for the
 > build, the database, and Docker's layer cache. On a fresh VM, check
@@ -592,7 +599,8 @@ SAFi is licensed under [AGPL-3.0](LICENSE), with a Section 7 exception that keep
 The full terms, the Core Loop boundary, the trademark policy, and the integrity-check process live in one document:
 
 - **[SAFi License & Governance Agreement](docs/SAFi%20License%20%26%20Governance%20Agreement.md)** — what must stay open, what stays yours, and what it takes to call a modified deployment SAFi
-- **Verify a deployment:** `python scripts/verify_integrity.py` — recomputes the Core Loop fingerprint against the release manifest and checks the structural invariants (no model calls in the deterministic faculties, phase order intact)
+- **Verify a deployment:** `python scripts/verify_integrity.py` — recomputes the Core Loop's TCB Fingerprint against the release manifest and checks the structural invariants (no model calls in the deterministic faculties, phase order intact); compare the value against an official release's published `TCB Fingerprint:` line
+- **[Release Process](docs/RELEASE_PROCESS.md)** — the branch tiers (dev, main, releases), the 8-week release cadence, and how deployments verify and pin the TCB Fingerprint
 - **[The SAF License](https://selfalignmentframework.com/license/)** — the framework itself is licensed separately: free to use with attribution
 
 ---
