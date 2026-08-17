@@ -185,6 +185,31 @@ class BrandedEmailTemplate(unittest.TestCase):
         for banned in ("#2563eb", "#7e22ce", "indigo", "purple"):
             self.assertNotIn(banned, html)
 
+    def test_markdown_renders_simply(self):
+        md = ("## Morning briefing\n\n"
+              "**Two** items today:\n"
+              "- First `code` item\n"
+              "- Second item\n\n"
+              "1. Step one\n"
+              "2. Step two\n\n---\nDone.")
+        html = runner.md_to_email_html(md)
+        self.assertIn(">Morning briefing</div>", html)
+        self.assertIn("<strong>Two</strong>", html)
+        self.assertEqual(html.count("<li"), 4)
+        self.assertIn("<ul", html)
+        self.assertIn("<ol", html)
+        self.assertIn("<hr", html)
+
+    def test_markdown_rendering_still_escapes_first(self):
+        """The escape-first order is the whole defense: markdown transforms
+        run on escaped text, so injected tags stay visible characters even
+        inside bullets and headings."""
+        html = runner.md_to_email_html("## <script>x</script>\n- **<img src=x>**")
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<img", html)
+        self.assertIn("<strong>&lt;img src=x&gt;</strong>", html)
+
     def test_plain_text_stays_the_fallback(self):
         """set_content(plain) before add_alternative(html): text-only clients
         must still get the digest."""

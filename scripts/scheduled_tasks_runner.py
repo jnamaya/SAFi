@@ -76,17 +76,79 @@ def task_is_due(task: dict, now_utc: datetime) -> bool:
     return 0 <= delta < GRACE_MINUTES
 
 
+def _md_inline(escaped: str) -> str:
+    """Bold and inline code only, applied to ALREADY-ESCAPED text."""
+    import re as _re
+    escaped = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = _re.sub(
+        r"`([^`]+)`",
+        r'<code style="background-color:#f5f5f5;padding:1px 4px;border-radius:3px;font-size:13px;">\1</code>',
+        escaped)
+    return escaped
+
+
+def md_to_email_html(body: str) -> str:
+    """Minimal markdown for mail clients: headings, bullets, numbered lists,
+    bold, inline code, horizontal rules. Line-based and deliberately dumb —
+    anything unrecognized is a paragraph. SAFETY ORDER: the raw text is
+    HTML-escaped FIRST and the transforms run on escaped text, so the only
+    tags in the output are the ones this function writes; a prompt-injected
+    <script> arrives as visible characters."""
+    import html as _html
+    import re as _re
+
+    lines = _html.escape(body).split("\n")
+    out, para, bullets, numbers = [], [], [], []
+
+    def flush_para():
+        if para:
+            out.append(f'<p style="margin:0 0 12px 0;">{_md_inline("<br>".join(para))}</p>')
+            para.clear()
+
+    def flush_lists():
+        if bullets:
+            items = "".join(f'<li style="margin:0 0 6px 0;">{_md_inline(b)}</li>' for b in bullets)
+            out.append(f'<ul style="margin:0 0 12px 0;padding-left:22px;">{items}</ul>')
+            bullets.clear()
+        if numbers:
+            items = "".join(f'<li style="margin:0 0 6px 0;">{_md_inline(n)}</li>' for n in numbers)
+            out.append(f'<ol style="margin:0 0 12px 0;padding-left:22px;">{items}</ol>')
+            numbers.clear()
+
+    for raw in lines:
+        line = raw.strip()
+        h = _re.match(r"^(#{1,4})\s+(.*)$", line)
+        if h:
+            flush_para(); flush_lists()
+            size = {1: 20, 2: 18, 3: 16, 4: 14}[len(h.group(1))]
+            out.append(f'<div style="font-size:{size}px;font-weight:bold;margin:16px 0 8px 0;">{_md_inline(h.group(2))}</div>')
+        elif _re.match(r"^[-*]\s+", line):
+            flush_para()
+            if numbers: flush_lists()
+            bullets.append(_re.sub(r"^[-*]\s+", "", line))
+        elif _re.match(r"^\d+[.)]\s+", line):
+            flush_para()
+            if bullets: flush_lists()
+            numbers.append(_re.sub(r"^\d+[.)]\s+", "", line))
+        elif _re.match(r"^(-{3,}|\*{3,}|_{3,})$", line):
+            flush_para(); flush_lists()
+            out.append('<hr style="border:none;border-top:1px solid #e5e5e5;margin:16px 0;">')
+        elif not line:
+            flush_para(); flush_lists()
+        else:
+            flush_lists()
+            para.append(line)
+    flush_para(); flush_lists()
+    return "".join(out)
+
+
 def build_email_html(agent_name: str, body: str, date_label: str) -> str:
     """Simple branded HTML for the digest. Inline styles only (email clients
     ignore stylesheets), the official palette only (green #16a34a accent on
-    the #f9f9f9 canvas), and the model's output is HTML-ESCAPED before layout:
-    the agent writes text, never markup, so a prompt-injected <script> or a
-    forged-looking table arrives as visible text instead of rendering."""
+    the #f9f9f9 canvas). Markdown is rendered by md_to_email_html, whose
+    escape-first order is the injection defense."""
     import html as _html
-    paragraphs = "".join(
-        f'<p style="margin:0 0 12px 0;">{_html.escape(p).replace(chr(10), "<br>")}</p>'
-        for p in body.split("\n\n") if p.strip()
-    )
+    paragraphs = md_to_email_html(body)
     safe_agent = _html.escape(agent_name)
     return f"""\
 <html><body style="margin:0;padding:0;background-color:#f9f9f9;">
