@@ -28,6 +28,26 @@ then fixes only until the tag is cut. A target is not a contract; if a cycle
 ends with something half-settled, the release waits for it rather than
 shipping it.
 
+## Versioning
+
+Releases use three-part semantic versions (`vMAJOR.MINOR.PATCH`, e.g.
+`v1.5.0`), tags lowercase, release titles matching their tags. The parts
+carry governance meaning, so the number answers the operator's real
+question: do I need to re-verify and re-pin?
+
+- **PATCH** (`v1.5.1`): fixes only. Normally the TCB Fingerprint is
+  unchanged, so a pinned deployment can take the patch without updating
+  `SAFI_EXPECTED_FINGERPRINT`. When a fix must touch the Core Loop, the
+  release notes say so loudly and the fingerprint changes.
+- **MINOR** (`v1.5.0`): the regular cadence releases. Features and reviewed
+  Core Loop changes; expect a new TCB Fingerprint and read the upgrade
+  notes.
+- **MAJOR** (`v2.0.0`): breaking for operators. Manual migration steps, API
+  breaks, or changes to what the Core Loop covers.
+
+Releases before this convention used two-part versions (`v1.4`); from
+`v1.5.0` on, versions are always three parts.
+
 ## What every release contains
 
 - A tag on `main`, with notes covering what changed and any upgrade steps.
