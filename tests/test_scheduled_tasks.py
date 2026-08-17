@@ -122,6 +122,22 @@ class TableAndOwnership(unittest.TestCase):
         self.assertFalse(self.db.delete_scheduled_task(self.created["id"], "someone_else"))
         self.assertTrue(self.db.delete_scheduled_task(self.created["id"], self.user))
 
+    def test_time_change_rearms_the_daily_guard(self):
+        """Moving a schedule's time means 'fire at the new time', including
+        today. Without the re-arm, editing the time after a run silently does
+        nothing until tomorrow — the exact confusion this fixes."""
+        self.db.mark_scheduled_task_run(self.created["id"], "2026-08-17", "sent (approve)")
+        self.db.update_scheduled_task(self.created["id"], self.user,
+                                      {"time_of_day": "18:00"})
+        row = self.db.fetch_scheduled_tasks(self.user)[0]
+        self.assertIsNone(row["last_run_date"])
+        # A prompt-only edit must NOT re-arm: content changed, not the appointment.
+        self.db.mark_scheduled_task_run(self.created["id"], "2026-08-17", "sent (approve)")
+        self.db.update_scheduled_task(self.created["id"], self.user,
+                                      {"prompt": "new prompt"})
+        row = self.db.fetch_scheduled_tasks(self.user)[0]
+        self.assertEqual(row["last_run_date"], "2026-08-17")
+
     def test_run_bookkeeping(self):
         self.db.mark_scheduled_task_run(self.created["id"], "2026-08-17",
                                         "sent (approve)", conversation_id=None)

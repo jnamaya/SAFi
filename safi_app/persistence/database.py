@@ -2649,7 +2649,13 @@ def fetch_enabled_scheduled_tasks():
 
 
 def update_scheduled_task(task_id, user_id, fields):
-    """Update the editable columns only. Ownership is the WHERE clause."""
+    """Update the editable columns only. Ownership is the WHERE clause.
+
+    Changing the TIME re-arms the once-per-day guard (last_run_date=NULL):
+    a user who moves a schedule to a later time today means "fire at the new
+    time", and without the reset the edit silently does nothing until
+    tomorrow. Prompt or agent edits alone do not re-arm — the content
+    changed, not the appointment."""
     allowed = {"prompt", "time_of_day", "days", "timezone", "enabled", "agent_key"}
     sets = {k: v for k, v in (fields or {}).items() if k in allowed}
     if not sets:
@@ -2658,6 +2664,8 @@ def update_scheduled_task(task_id, user_id, fields):
     cursor = conn.cursor()
     try:
         assignments = ", ".join(f"{k}=%s" for k in sets)
+        if "time_of_day" in sets or "days" in sets:
+            assignments += ", last_run_date=NULL"
         cursor.execute(
             f"UPDATE scheduled_tasks SET {assignments} WHERE id=%s AND user_id=%s",
             (*sets.values(), task_id, user_id)
