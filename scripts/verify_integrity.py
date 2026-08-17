@@ -233,7 +233,7 @@ def main() -> int:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"manifest written: {manifest_path}")
-        print(f"core loop fingerprint: {manifest['root_fingerprint']}")
+        print(f"TCB Fingerprint: {manifest['root_fingerprint']}")
         return 0
 
     if not manifest_path.exists():
@@ -286,7 +286,7 @@ def main() -> int:
     # value, and that comparison happens outside this script.
     if intact:
         print(f"\nRESULT: INTACT — this tree matches its own manifest.")
-        print(f"  Fingerprint: {_root_fingerprint(current)}")
+        print(f"  TCB Fingerprint: {_root_fingerprint(current)}")
         print("  This deployment can only claim to be authentic SAFi if this fingerprint")
         print("  matches an official SAFi release posted on the official GitHub repo")
         print("  (License & Governance Agreement, Section IV).")

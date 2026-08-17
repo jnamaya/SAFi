@@ -134,7 +134,7 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
     verified intact. `status` is injectable for tests.
 
     SAFI_EXPECTED_FINGERPRINT is the operator's pin: the fingerprint copied
-    from an official release's published `Fingerprint:` line at install time.
+    from an official release's published `TCB Fingerprint:` line at install time.
     The manifest ships INSIDE the tree it guards, so a local tamper can also
     regenerate it; the pin lives in the operator's config, provisioned apart
     from the code, and holds the deployment to the value a human verified
@@ -156,7 +156,7 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
             f"TCB FINGERPRINT PIN MISMATCH — the operator pinned "
             f"{pin} (SAFI_EXPECTED_FINGERPRINT) but this tree measures "
             f"{s['fingerprint']}. If this is a deliberate upgrade, update the pin "
-            f"from the new release's published Fingerprint line; otherwise treat "
+            f"from the new release's published TCB Fingerprint line; otherwise treat "
             f"the deployment as tampered."
         )
 
@@ -191,6 +191,6 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
         raise RuntimeError(
             "SAFI_ENFORCE_INTEGRITY=strict and the TCB fingerprint does not match "
             "SAFI_EXPECTED_FINGERPRINT — refusing to start. Update the pin from the "
-            "release's published Fingerprint line if this is a deliberate upgrade."
+            "release's published TCB Fingerprint line if this is a deliberate upgrade."
         )
     return s

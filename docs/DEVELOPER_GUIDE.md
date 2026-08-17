@@ -1192,7 +1192,7 @@ Three runtime behaviors build on it:
   modified code; representing the deployment as SAFi is what requires an
   intact TCB or upstream review (agreement, Section IV).
 - **The operator's pin**: `SAFI_EXPECTED_FINGERPRINT` holds the fingerprint
-  the operator copied from an official release's published `Fingerprint:`
+  the operator copied from an official release's published `TCB Fingerprint:`
   line at install time. The manifest ships inside the tree it guards, so a
   local tamper can regenerate it; the pin lives in config provisioned apart
   from the code, and every boot is held to the value a human verified out

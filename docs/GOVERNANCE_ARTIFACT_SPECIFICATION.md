@@ -1,6 +1,6 @@
 # SAFi Governance Artifact Specification
 
-> **Version:** 1.0
+> **Version:** 1.0.1
 > **Last updated:** 2026-08-16
 > **Status:** Descriptive. The code is the authority; this document names the
 > shapes it produces so you can build on them. Verified against the tree at
@@ -127,10 +127,11 @@ inside a multi-turn tool loop.
 { "fingerprint": "7ce01276...", "intact": true, "state": "intact" }
 ```
 
-`fingerprint` is the boot-time Core Loop root fingerprint; `state` is
-`intact`, `modified`, or `unverifiable`. Compare the fingerprint against the
-`Fingerprint:` line published on the official GitHub release to determine
-whether the producing code was an unmodified release. A custom interface
+`fingerprint` is the TCB Fingerprint: the boot-time root hash over the Core
+Loop file hashes. `state` is `intact`, `modified`, or `unverifiable`.
+Compare the value against the `TCB Fingerprint:` line published on the
+official GitHub release to determine whether the producing code was an
+unmodified release. A custom interface
 displaying governance records should surface a non-intact stamp loudly.
 
 ## 5. Retry metadata
@@ -205,6 +206,9 @@ in the version history below.
 
 ## Version history
 
+- **1.0.1 (2026-08-16)** - Terminology: the Core Loop root hash is called the
+  **TCB Fingerprint** everywhere (script output, release notes, this spec).
+  No shapes changed.
 - **1.0 (2026-08-16)** - Initial specification: governance record (including
   `agentWorkContext` and variant fields), ledger entries, tool-call entries,
   TCB stamp, retry metadata, hash-chain entries, compiled-profile keys,
