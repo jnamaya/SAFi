@@ -28,6 +28,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 17. [Running the tests](#17-running-the-tests)
 18. [Extending SAFi: agents and plugins without core changes](#18-extending-safi-agents-and-plugins-without-core-changes)
 19. [The TCB, User Space, and how they talk](#19-the-tcb-user-space-and-how-they-talk)
+20. [Adding models and providers](#20-adding-models-and-providers)
 
 ## 1. Front-end structure
 
@@ -1227,3 +1228,61 @@ authenticity claim.
 
 Keep the TCB small. Every addition is argued file by file in the comments
 inside `verify_integrity.py`; read those before proposing one.
+
+## 20. Adding models and providers
+
+All of this is User Space: none of the files below is in the integrity
+manifest, which is exactly right, since which model drafts is a deployment
+choice while how it is governed is not. Adding a model never touches the
+TCB.
+
+**A new model from an existing provider** takes four checks:
+
+1. **`Config.AVAILABLE_MODELS`** (`config.py`): add `{"id": ..., "label":
+   ...}`. This list is the UI's model picker (served by `/api/models`); it
+   is curation, not capability. A model absent from it still works when set
+   through the `SAFI_*_MODEL` env vars, as long as the next two steps hold.
+2. **`detect_provider()`** (`services/model_routing.py`): the model id's
+   prefix must route to the right provider. Most new ids from known vendors
+   already match a rule. The trap is vendors serving other vendors' models
+   under different ids: Cerebras serves `gpt-oss` bare while Groq serves it
+   as `openai/gpt-oss-*`, which is why the prefix rules in that function
+   are order-sensitive. Test the id against the function before trusting
+   the default (an unmatched id silently routes to Groq).
+3. **Request-shape adapters** (`services/llm_provider.py`,
+   `_chat_completion`): some model families change the API contract itself.
+   Live example: the gpt-5.x family requires `max_completion_tokens` and
+   rejects `temperature`/`top_p`. These adapters belong in
+   `_chat_completion` and nowhere else. They are API contracts. Per-model
+   branching inside `run_intellect`/`run_conscience` is forbidden: it would
+   make the discernment tier behave differently per deployment on a
+   substring match nobody reviewed.
+4. Optionally, **`_FACULTY_DEFAULTS_BY_PROVIDER`** (`config.py`) if the
+   model should become what a fresh install auto-selects for a faculty when
+   no `SAFI_*_MODEL` var is set.
+
+**A completely new provider** is all of the above, plus the step that is a
+governance decision rather than plumbing:
+
+5. **`PROVIDER_METADATA`** (`services/model_routing.py`). Every provider
+   entry carries compliance badges: `baa_capable`, `eu_hostable`, and the
+   zero-data-retention posture with a `zdr_note` surfaced verbatim as the
+   badge tooltip. The per-org provider allow-list enforces against these
+   fail-closed at every model call, so a wrong badge is a wrong compliance
+   claim in a regulated deployment. Adding a provider means verifying its
+   actual BAA and retention posture against the provider's official
+   documents, dating that verification in the comment, and refusing to
+   badge what cannot be verified (Zhipu's unbadged ZDR claim is the
+   precedent: a policy assertion without a contractual program does not
+   count). This verification is the repo owner's call.
+6. The wiring: a `*_API_KEY` env var read in `config.py` and listed in
+   `_PROVIDER_KEY_ENV_ORDER` (which controls auto-detection order for a
+   fresh install), the client construction in `build_providers_config` and
+   `llm_provider.py`, a row in `_FACULTY_DEFAULTS_BY_PROVIDER`, the key
+   documented in `.env.example`, and entries in `AVAILABLE_MODELS`.
+
+After either change, rebuild the Docker image (the files are copied in, not
+mounted) and verify the model answers through a governed turn, not just a
+raw API call: the Conscience runs on the same providers, so a
+request-shape quirk that only breaks long prompts will surface in the
+audit call before it surfaces in chat.
