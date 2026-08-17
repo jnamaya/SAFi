@@ -1201,12 +1201,20 @@ python scripts/verify_integrity.py --update
 
 Then submit the change upstream — commit the TCB edit and the regenerated
 manifest together and open a pull request against the
-[official repo](https://github.com/jnamaya/SAFi). Regenerating the manifest
-only makes your tree consistent with itself; it is review and acceptance
-upstream that lets a modified deployment keep representing itself as SAFi
-(agreement, Section IV). A fork that keeps its Core Loop changes private is
-fine under the AGPL — it just verifies against its own fingerprint and
-rebrands.
+[official repo](https://github.com/jnamaya/SAFi).
+
+Regenerating your local manifest only makes your tree consistent with your
+local install. Authenticity has two states and no third: a deployment is
+authentic SAFi when its fingerprint matches an official release published
+on the official repo, and it is not authentic otherwise. No local command
+changes that. Please submit your changes for review and acceptance in the
+upstream official SAFi repo (agreement, Section IV). A fork that keeps its
+Core Loop changes private cannot use the SAFi brand or claim authenticity.
+
+You have no restrictions from the software — a fork runs fully, governs
+fully, and its own records still attest to its own verified build. What it
+loses is the certification: the right to the SAFi name and to the
+authenticity claim.
 
 Keep the TCB small. Every addition is argued file by file in the comments
 inside `verify_integrity.py`; read those before proposing one.
