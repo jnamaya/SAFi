@@ -42,6 +42,9 @@ capabilities, and you are welcome to use it if it fits your needs. But
 you can build any GUI you want, on whatever tech stack, as long as you
 adhere to the specifications:
 
+- **[Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md)** —
+  the contract for everything you hand the TCB (agents, policies, values,
+  rubrics, enforcement rules)
 - **[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)**
   — the contract for everything the TCB produces (records, ledgers, the
   hash chain, the integrity stamp)

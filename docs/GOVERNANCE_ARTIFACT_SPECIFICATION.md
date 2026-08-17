@@ -11,7 +11,9 @@ structured artifacts on every governed turn. This specification is the
 contract for reading them, so a developer can build a custom dashboard, an
 examiner tool, a SIEM feed, or a reporting pipeline without
 reverse-engineering `orchestrator.py`. It documents User Space's read
-surface; the write side of the boundary is covered in the
+surface; the write side, the shapes you hand the TCB, is the
+[Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md), and the
+boundary itself is drawn in the
 [Developer Guide, section 19](DEVELOPER_GUIDE.md#19-the-tcb-user-space-and-how-they-talk).
 
 Two properties hold for everything below:
