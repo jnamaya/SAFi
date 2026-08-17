@@ -633,6 +633,11 @@ case, not something you can build through the wizard.
 
 ## 12. The audit trail & hash chain
 
+> Building a custom interface on this data? The
+> [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
+> is the field-by-field contract for every artifact the TCB produces —
+> records, ledgers, tool entries, chain entries, the attestation stamp.
+
 `chat_audit_trail` (`database.py`) journals every create, update,
 and delete on a `chat_history` row: `id, message_pk, message_id,
 conversation_id, action, actor, state, event_at, prev_hash, entry_hash,
@@ -1158,7 +1163,10 @@ out. The catalog:
 - **Reading**: governance records, the Audit Hub, the export, and the
   hash chain (§12) are the read surface. They carry snapshots (context,
   work memory, tool calls), so nothing you change in User Space rewrites
-  what a past turn saw.
+  what a past turn saw. The
+  [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
+  is the formal contract for these shapes — build custom interfaces
+  against it, not against `orchestrator.py`.
 
 **If you genuinely must change a TCB file**, the bar is different: the
 repo requires the owner's explicit per-change approval for faculty files,
