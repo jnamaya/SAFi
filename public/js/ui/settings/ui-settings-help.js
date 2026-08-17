@@ -1,6 +1,9 @@
 /**
- * Help Tab — User-facing guide for SAFi.
- * Written for a general audience: no backend or technical references.
+ * Help Tab. A user guide, deliberately scoped to what a signed-in user can
+ * actually do in the product (backlog 56). Product positioning, deployment,
+ * and admin walkthroughs live in the GitHub docs, not here: a member reading
+ * this page should never hit a section they cannot act on. The one exception
+ * is the short "for administrators" pointer at the bottom.
  */
 
 export function renderSettingsHelpTab() {
@@ -12,108 +15,24 @@ export function renderSettingsHelpTab() {
 
             <div class="settings-page-header">
                 <h1>Help &amp; User Guide</h1>
-                <p>Everything you need to know to get the most out of SAFi.</p>
+                <p>How to work with your agents, and what the scores and labels mean.</p>
             </div>
 
             <div class="bg-gray-50 dark:bg-neutral-800 rounded-xl p-4 mb-6 border border-gray-200 dark:border-neutral-700">
                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">On this page</p>
                 <div class="grid grid-cols-2 gap-1 text-sm">
-                    <a href="#help-what"        class="text-green-600 dark:text-green-400 hover:underline py-0.5">What is SAFi?</a>
-                    <a href="#help-who"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">Who is SAFi for?</a>
-                    <a href="#help-start"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">Using SAFi</a>
-                    <a href="#help-concepts"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Key concepts</a>
-                    <a href="#help-chat"        class="text-green-600 dark:text-green-400 hover:underline py-0.5">Conversations</a>
-                    <a href="#help-agents"      class="text-green-600 dark:text-green-400 hover:underline py-0.5">Agents</a>
-                    <a href="#help-policies"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Policies</a>
-                    <a href="#help-org"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">Organization</a>
-                    <a href="#help-models"      class="text-green-600 dark:text-green-400 hover:underline py-0.5">AI Models</a>
-                    <a href="#help-roles"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">Roles &amp; Permissions</a>
-                    <a href="#help-faq"         class="text-green-600 dark:text-green-400 hover:underline py-0.5">FAQ</a>
+                    <a href="#help-start"     class="text-green-600 dark:text-green-400 hover:underline py-0.5">Getting started</a>
+                    <a href="#help-agents"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Agents</a>
+                    <a href="#help-score"     class="text-green-600 dark:text-green-400 hover:underline py-0.5">The alignment score</a>
+                    <a href="#help-chat"      class="text-green-600 dark:text-green-400 hover:underline py-0.5">Conversations</a>
+                    <a href="#help-schedules" class="text-green-600 dark:text-green-400 hover:underline py-0.5">Scheduled updates</a>
+                    <a href="#help-memory"    class="text-green-600 dark:text-green-400 hover:underline py-0.5">Agent memory</a>
+                    <a href="#help-roles"     class="text-green-600 dark:text-green-400 hover:underline py-0.5">Roles</a>
+                    <a href="#help-faq"       class="text-green-600 dark:text-green-400 hover:underline py-0.5">FAQ</a>
                 </div>
             </div>
 
-            <!-- What is SAFi — starts open -->
-            <div id="help-what" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
-                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">What is SAFi?</h2>
-                    </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <div class="section-body px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-
-                    <p>SAFi is an open-source governance engine for AI agents. It provides the infrastructure, rules, and oversight layer that lets organizations deploy AI responsibly — without depending on any single vendor or platform.</p>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Think of it like a console</p>
-                        <p>The easiest way to understand SAFi is through an analogy. Think of SAFi as a game console or a video player. The console itself doesn't define what you play or watch — that's up to you. The <strong class="text-gray-900 dark:text-white">console is SAFi</strong>, and the <strong class="text-gray-900 dark:text-white">game or movie is the agent</strong>.</p>
-                        <p class="mt-2">Just as one console can run thousands of different games, SAFi runs unlimited agents — each with its own name, purpose, role, and rules — all powered by the same underlying engine. You swap the agent, not the infrastructure.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">How it works</p>
-                        <p>SAFi sits between the user and the AI model. Every message goes through the engine, which checks whether the agent is staying within its defined scope, evaluates each response against your organization's values and standards, and blocks or retries anything that doesn't meet the standard. The result is an AI that behaves consistently — not just most of the time, but every time.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Open source by design</p>
-                        <p>SAFi is fully open source. You can inspect the code, audit the governance logic, modify it for your needs, and self-host it on your own infrastructure. There is no black box — the rules your agents follow are the rules you can read and change. This makes SAFi especially well-suited for organizations that require transparency, compliance, or full data sovereignty.</p>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Who is SAFi for -->
-            <div id="help-who" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
-                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Who is SAFi for?</h2>
-                    </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-
-                    <p>SAFi is built for organizations and individuals who need to comply with regulatory requirements, or who simply want full control and privacy over their AI systems.</p>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Organizational structure</p>
-                        <p>Out of the box, SAFi assumes a basic organizational structure: a unique domain (e.g., <code class="bg-gray-100 dark:bg-neutral-700 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded text-xs font-mono">company.com</code>), a mission statement with core values, and a separation of roles — Members, Auditors, Editors, and Admins.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Authentication</p>
-                        <p>SAFi has native support for enterprise authentication via <strong class="text-gray-900 dark:text-white">Microsoft</strong> and <strong class="text-gray-900 dark:text-white">Google</strong> identity providers, so you can control and manage access from those systems. You can also sign in through the demo account or a local admin account. Support for creating local user accounts is a planned feature.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Self-hosted by design</p>
-                        <p>SAFi is designed to be self-hosted. You need a server — either on your private network or in the cloud — to run it. All data, including databases, conversation histories, and logs, stays on your server. The only external interactions are API calls to the AI models.</p>
-                        <p class="mt-2">If you need a fully private AI system, you can also self-host the language models and keep the whole setup air-gapped. Several open-weight model families are capable enough for everyday reasoning work and will run on your own hardware — and because SAFi is model-independent, the governance behaves the same whichever you choose.</p>
-                    </div>
-
-                    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
-                        <p class="text-green-800 dark:text-green-300 font-medium text-xs">📖 Technical documentation</p>
-                        <p class="text-green-700 dark:text-green-400 mt-1">The sections below give you an overview of each SAFi component from a user's perspective. For a technical deep-dive, the README in the <a href="https://github.com/jnamaya/SAFi" target="_blank" rel="noopener" class="underline hover:text-green-600">GitHub repository</a> is a good starting point.</p>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Using SAFi -->
+            <!-- Getting started: starts open -->
             <div id="help-start" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
                 <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                     <div class="flex items-center gap-3">
@@ -122,171 +41,34 @@ export function renderSettingsHelpTab() {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Using SAFi</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Getting started</h2>
                     </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
+                <div class="section-body px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
-                    <p>Since you are already here, this is how you can test and demo SAFi.</p>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 1 — Pick an agent</p>
-                        <p>From the conversations icon in the sidebar or <strong class="text-gray-900 dark:text-white">Control Panel → Agents</strong>, browse the available agents. Each card shows the agent's name, purpose, and the policy it follows. Click <strong class="text-gray-900 dark:text-white">Select</strong> on the one you are interested in testing.</p>
-                    </div>
+                    <p>You talk to SAFi through <strong class="text-gray-900 dark:text-white">agents</strong>: assistants your organization has set up for specific jobs. Every answer an agent gives is checked against your organization's values and standards before it reaches you.</p>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 2 — Choose the AI model</p>
-                        <p>Which model powers an agent is configuration, not architecture: the same policy is enforced identically whichever one sits underneath. Admins set the available options under <strong class="text-gray-900 dark:text-white">AI Models</strong>.</p>
-                        <p class="mt-2">What you pick depends on what you want to test. To test the <strong class="text-gray-900 dark:text-white">governance</strong>, choose a smaller model with weaker built-in safety layers — then what you are watching is SAFi holding the line rather than the model's own guardrails. To judge <strong class="text-gray-900 dark:text-white">answer quality</strong>, choose a stronger reasoning model.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Pick an agent</p>
+                        <p>Open the <strong class="text-gray-900 dark:text-white">+</strong> menu next to the message box and choose an agent, or browse the cards under <strong class="text-gray-900 dark:text-white">Control Panel → Agents</strong>. The agent you pick stays active until you switch, and switching starts a new conversation.</p>
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 3 — Send your first message</p>
-                        <p>Type a question related to the agent's topic and press <strong class="text-gray-900 dark:text-white">Enter</strong> to send. The agent will respond based on its defined purpose and scope. If your question is outside its scope, it will let you know.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Send a message</p>
+                        <p>Type your question and press <strong class="text-gray-900 dark:text-white">Enter</strong>. While the agent is answering, the send button turns red; click it to stop the response.</p>
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 4 — Try attaching a document</p>
-                        <p>Click the attachment icon in the message input and upload a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> or <strong class="text-gray-900 dark:text-white">Markdown</strong> file. Ask the agent a question about it. SAFi will extract the content and include it in the agent's context.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Attach a document</p>
+                        <p>Use the attachment icon to add a <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> or <strong class="text-gray-900 dark:text-white">Markdown</strong> file, then ask about it. The agent reads the content as part of your message.</p>
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 5 — Check the alignment score</p>
-                        <p>After the agent responds, expand the response details to see how it was judged. The chip reads <strong class="text-gray-900 dark:text-white">Aligned</strong>, <strong class="text-gray-900 dark:text-white">Caution</strong> or <strong class="text-gray-900 dark:text-white">Concern</strong> depending on the score, or <strong class="text-gray-900 dark:text-white">Audit pending</strong> while the evaluation is still running.</p>
-                        <p class="mt-2">A Caution or Concern is not an error — it is the system's honest mark on the answer you were given. Requests that breach the agent's scope or a non-negotiable standard are stopped before they reach you. The alignment score works differently, as a soft threshold: falling below it prompts the agent to correct itself, and if the corrected draft is no better, the original is delivered <em>with its real low score</em> rather than leaving your question unanswered.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Step 6 — Listen to the response</p>
-                        <p>Use the audio playback button on any response to have it read aloud. Useful when reviewing long answers or working hands-free.</p>
-                    </div>
-
-                    <div class="bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-lg p-3">
-                        <p class="text-gray-700 dark:text-gray-300 font-medium text-xs">🛠️ Setting up SAFi for the first time?</p>
-                        <p class="text-gray-600 dark:text-gray-400 mt-1">Installation and deployment instructions — including Docker setup — are covered in the <a href="https://github.com/jnamaya/SAFi" target="_blank" rel="noopener" class="text-green-600 dark:text-green-400 underline hover:text-green-500">GitHub repository README</a>. That's the right place to start if you're deploying SAFi for your organization.</p>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Key concepts -->
-            <div id="help-concepts" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
-                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Key concepts</h2>
-                    </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
-
-                    <p>These are the core terms you'll encounter throughout SAFi. Understanding them will help you get more out of the platform.</p>
-
-                    <div class="space-y-2">
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Governance Engine</p>
-                            <p class="mt-0.5">The engine sitting between the user and the AI model. It enforces the agent's scope, applies the policy, evaluates every response, and blocks or retries anything that doesn't meet the standard — before the user ever sees it.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Agent</p>
-                            <p class="mt-0.5">An AI assistant that does more than generate answers from training data. An agent can gather information from a RAG system, call external tools via MCP, and perform actions — whatever it has been programmed to do. Think of it as a purpose-built AI worker, not just a chatbot.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Charter</p>
-                            <p class="mt-0.5">Your organization's mission and <strong class="text-gray-700 dark:text-gray-300">core values</strong>. The Charter applies to every agent in the organization, so its values are scored on every response — it's the culture all agents share.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Policy</p>
-                            <p class="mt-0.5">A business unit's rulebook. A policy defines the <strong class="text-gray-700 dark:text-gray-300">standards</strong> it holds agents to, plus their scope, required disclaimers, and rules. An agent inherits its scored criteria from the Charter (core values) and its Policy (standards). One policy can govern many agents.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Purpose</p>
-                            <p class="mt-0.5">What a policy's agents exist to do: who they serve, the outcomes they own, and the priorities that win when goals conflict. It is the foundation the agent reasons from, before any specific rules apply.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Charter vs Policy weighting</p>
-                            <p class="mt-0.5">How much of an agent's scored ethics comes from the organization's Charter (core values) versus the business-unit Policy (standards). A higher setting gives the org-wide Charter more weight; a lower setting favors the specific Policy.</p>
-                        </div>
-
-                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
-                            <p class="font-medium text-gray-900 dark:text-white">Ethical Memory</p>
-                            <p class="mt-0.5">The memory retention capacity of an agent — how heavily it weighs past interactions when shaping new responses. A higher setting means the agent draws more from conversation history to maintain consistency and context over time.</p>
-                        </div>
-
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Using the Chat -->
-            <div id="help-chat" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
-                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Conversations</h2>
-                    </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Conversation Interface</p>
-                        <p>The conversation view in SAFi is the native way you communicate with your agent. SAFi's backend engine is API-based, so you can use any other interface — such as <strong class="text-gray-900 dark:text-white">Microsoft Teams</strong>, <strong class="text-gray-900 dark:text-white">Slack</strong>, <strong class="text-gray-900 dark:text-white">Telegram</strong>, <strong class="text-gray-900 dark:text-white">WhatsApp</strong>, or any other chat application that supports custom API calls — to communicate with your agent. SAFi extracts text from <strong class="text-gray-900 dark:text-white">PDF</strong>, <strong class="text-gray-900 dark:text-white">DOCX</strong>, <strong class="text-gray-900 dark:text-white">XLSX</strong>, <strong class="text-gray-900 dark:text-white">CSV</strong>, <strong class="text-gray-900 dark:text-white">TXT</strong> and <strong class="text-gray-900 dark:text-white">Markdown</strong> files, and you can listen to generated answers using the built-in audio playback.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Sending a message</p>
-                        <p>Type your message in the input box at the bottom of the screen and press <strong class="text-gray-900 dark:text-white">Enter</strong> or click the send button. The agent will respond based on its defined purpose and scope.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Analyzing Documents</p>
-                        <p>You can attach files (like PDFs or text documents) to your messages using the attachment icon. The agent will read the document and analyze it, provided the content falls within the agent's defined scope and expertise.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Cancelling a response</p>
-                        <p>While the agent is generating a response, the send button turns <strong class="text-red-600 dark:text-red-400">red</strong> and shows a stop icon. Click it to cancel the current response immediately.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Suggested follow-ups</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Conversation history</p>
-                        <p>Your past conversations are saved and accessible from the left sidebar in the conversation view. Click on any conversation to continue where you left off.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Out-of-scope requests</p>
-                        <p>If you ask the agent something outside its defined scope, it will politely let you know and redirect the conversation. This is the governance layer doing its job — the agent is staying true to its purpose.</p>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Compliance Audits</p>
-                        <p>Each response carries an alignment score showing how well it matched the agent's values and standards. Expand the response details for the value-by-value breakdown behind it. The chip reads Aligned, Caution or Concern — or Audit pending, while the evaluation is still running.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Listen instead of reading</p>
+                        <p>Every response has an audio playback button. Useful for long answers or working hands-free.</p>
                     </div>
 
                 </div>
@@ -309,64 +91,36 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
-                    <p>An <strong class="text-gray-900 dark:text-white">Agent</strong> is an AI assistant built for a specific role — its name, purpose, tone, the tools and knowledge it can use, and the model that powers it. An agent does not define its own values; it inherits its scored criteria from your organization's <strong class="text-gray-900 dark:text-white">Charter</strong> (core values) and the <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to (standards).</p>
+                    <p>Each agent is built for a specific purpose: a topic it knows, a tone it keeps, and boundaries it respects. Use the <strong class="text-gray-900 dark:text-white">Details</strong> button on an agent's card to see what it is for and which standards it answers under.</p>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Types of agents</p>
-                        <div class="space-y-2">
-                            <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
-                                <span class="text-lg">🏛️</span>
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">Built-in Agents</p>
-                                    <p class="mt-0.5">Pre-configured agents that come with the platform (like the Socratic Tutor). These are ready to use immediately.</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-3 bg-gray-50 dark:bg-neutral-800 rounded-lg p-3">
-                                <span class="text-lg">✨</span>
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">Custom Agents</p>
-                                    <p class="mt-0.5">Agents created by your organization's admins using the Agent Wizard. These are built specifically for your team's needs.</p>
-                                </div>
-                            </div>
-                        </div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Staying in scope</p>
+                        <p>If you ask something outside an agent's purpose, it will decline and say so. That is intentional: the agent is staying true to its job, not malfunctioning. For a different topic, switch to an agent that covers it.</p>
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">How to select an agent</p>
-                        <ol class="list-decimal list-inside space-y-1">
-                            <li>Open the Control Panel and go to <strong class="text-gray-900 dark:text-white">Agents</strong>.</li>
-                            <li>Browse the available agent cards. Each card shows the agent's name, description, and purpose.</li>
-                            <li>Click <strong class="text-gray-900 dark:text-white">Select</strong> on the agent you want to use.</li>
-                            <li>Return to the conversation — your selected agent will be active immediately.</li>
-                        </ol>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Agents shared with you</p>
+                        <p>Some agents reach you because a colleague shared them with you directly or with a group you belong to. They carry a <strong class="text-gray-900 dark:text-white">Shared with you</strong> label in the agent picker. If one disappears, the share was removed; ask the person who shared it.</p>
                     </div>
 
                     <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating a custom agent <span class="text-xs font-normal text-gray-400">(Admins &amp; Editors only)</span></p>
-                        <p>Click <strong class="text-gray-900 dark:text-white">Create Agent</strong> on the Agents page to open the Agent Wizard. Because values and standards live in the Charter and the Policy, the agent builder focuses on the agent's <em>role</em>:</p>
-                        <ul class="list-disc list-inside mt-1 space-y-0.5">
-                            <li><strong class="text-gray-900 dark:text-white">Identity</strong> — Name, description, avatar, visibility, and the governing <strong class="text-gray-900 dark:text-white">Policy</strong> it's attached to</li>
-                            <li><strong class="text-gray-900 dark:text-white">Tools</strong> — Any tools the agent may use and an optional knowledge base</li>
-                            <li><strong class="text-gray-900 dark:text-white">Role &amp; Style</strong> — What the agent is for and how it speaks: its instructions and communication style</li>
-                            <li><strong class="text-gray-900 dark:text-white">Operational Settings</strong> — Limits such as how many turns it may take</li>
-                            <li><strong class="text-gray-900 dark:text-white">Review</strong> — A final check before the agent goes live</li>
-                        </ul>
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">An agent needs at least a Charter or an attached Policy — otherwise it has no values or standards to be governed by.</p>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Sharing your own agents</p>
+                        <p>If you created an agent, the <strong class="text-gray-900 dark:text-white">Share</strong> button on its card lets you give people or groups in your organization access to use it. Sharing never allows editing.</p>
                     </div>
 
                 </div>
             </div>
 
-            <!-- Policies -->
-            <div id="help-policies" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
+            <!-- The alignment score -->
+            <div id="help-score" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
                 <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/>
+                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Policies</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">The alignment score</h2>
                     </div>
                     <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -374,100 +128,124 @@ export function renderSettingsHelpTab() {
                 </button>
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
 
-                    <p>A <strong class="text-gray-900 dark:text-white">Policy</strong> is a business unit's rulebook — the <strong class="text-gray-900 dark:text-white">standards</strong>, scope, and rules an agent is held to. Together with your organization's <strong class="text-gray-900 dark:text-white">Charter</strong> (core values), it defines what every response is evaluated against before it reaches you.</p>
+                    <p>Every response is evaluated against the agent's values and standards, and the result shows on a chip under the answer. Expand the response details to see the value-by-value breakdown.</p>
 
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">What's in a policy?</p>
-                        <div class="space-y-2">
-                            <div class="flex gap-2">
-                                <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Purpose</strong> — What every agent under the policy exists to do, given to each agent as context.</div>
-                            </div>
-                            <div class="flex gap-2">
-                                <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Scope</strong> — The topics the agent is allowed to handle; anything outside is declined.</div>
-                            </div>
-                            <div class="flex gap-2">
-                                <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Standards</strong> — Specific dimensions a response is scored on (e.g., Accuracy, Data Privacy, Compliance). Each standard has a weight that reflects its importance, and can be marked non-negotiable.</div>
-                            </div>
-                            <div class="flex gap-2">
-                                <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                                <div><strong class="text-gray-900 dark:text-white">Response Rules</strong> — Hard requirements like required disclaimers, prohibited formatting, and permitted tools.</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-white mb-2">Creating and managing policies <span class="text-xs font-normal text-gray-400">(Admins &amp; Editors only)</span></p>
-                        <p>Go to <strong class="text-gray-900 dark:text-white">Policies</strong> in the sidebar to view, create, or edit policies. When creating a policy, you can define its standards and rules from scratch or start from the default SAFi template.</p>
-                    </div>
-
-                    <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                        <p class="text-yellow-800 dark:text-yellow-300 font-medium text-xs">⚠️ One policy, many agents</p>
-                        <p class="text-yellow-700 dark:text-yellow-400 mt-1">A single policy can be assigned to multiple agents. Updating a policy affects all agents that use it, so edit with care.</p>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Organization -->
-            <div id="help-org" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
-                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-4 h-4 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Organization</h2>
-                    </div>
-                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
-                    <p>The <strong class="text-gray-900 dark:text-white">Organization</strong> settings are where admins manage the workspace, users, and global AI behavior.</p>
                     <div class="space-y-2">
-                        <div class="flex gap-2">
-                            <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                            <div><strong class="text-gray-900 dark:text-white">Domain Verification</strong> — Admins can verify a company domain (via TXT record) so anyone with a matching email address automatically joins the workspace.</div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Aligned</p>
+                            <p class="mt-0.5">The response met the agent's standards.</p>
                         </div>
-                        <div class="flex gap-2">
-                            <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                            <div><strong class="text-gray-900 dark:text-white">AI Governance</strong> — This is also where you set your organization's <em>Charter</em> (mission + core values). Sliders configure global AI behavior: <em>Charter vs Policy weighting</em> (how much of an agent's scored ethics comes from the Charter vs the business-unit Policy) and <em>Ethical Memory</em> (how heavily the AI weighs past interactions).</div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Caution and Concern</p>
+                            <p class="mt-0.5">The response fell short on one or more values. This is not an error. It is the system's honest mark on the answer you were given: read the breakdown to see where it fell short.</p>
                         </div>
-                        <div class="flex gap-2">
-                            <span class="text-green-600 dark:text-green-400 font-bold mt-0.5">→</span>
-                            <div><strong class="text-gray-900 dark:text-white">Members</strong> — View and manage everyone in the workspace, change their roles, or remove them entirely.</div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Audit pending</p>
+                            <p class="mt-0.5">The evaluation is still running. The chip updates when it finishes.</p>
                         </div>
                     </div>
+
+                    <p>Requests that breach the agent's scope or a non-negotiable standard are stopped before they reach you. A low score works differently: the agent is asked to correct itself first, and if the corrected draft is no better, you get the original answer with its real score rather than no answer at all.</p>
+
                 </div>
             </div>
 
-            <!-- AI Models -->
-            <div id="help-models" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
+            <!-- Conversations -->
+            <div id="help-chat" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
                 <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
                             <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">AI Models</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Conversations</h2>
                     </div>
                     <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
-                    <p>The <strong class="text-gray-900 dark:text-white">AI Models</strong> page is where admins configure which underlying LLM powers the platform's conversational capabilities.</p>
-                    <p>Here, admins select the <strong class="text-gray-900 dark:text-white">Response Generator</strong> — the model that writes the text you see in the conversation. The layers that rule on and score each response run independently of it, so changing this model changes who writes the answer, never what the answer is held to.</p>
-                    <p class="text-gray-400 dark:text-gray-500">Model configuration is for admins only. If you're a regular user, the models are already set up and ready to go.</p>
+                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
+
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">History</p>
+                        <p>Past conversations live in the left sidebar. Click one to continue where you left off. You can rename or pin a conversation from its menu, and organize related conversations into projects.</p>
+                    </div>
+
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Deleting</p>
+                        <p>Delete a conversation from its menu in the sidebar. Deleted conversations cannot be recovered.</p>
+                    </div>
+
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Saving content</p>
+                        <p>Use the save option on a response to keep it in your saved content, so you can find it later without scrolling through history.</p>
+                    </div>
+
                 </div>
             </div>
 
-            <!-- Roles & Permissions -->
+            <!-- Scheduled updates -->
+            <div id="help-schedules" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
+                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Scheduled updates</h2>
+                    </div>
+                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
+
+                    <p>An agent can run a prompt for you on a schedule: a morning briefing, daily readings, a weekly summary. The result is emailed to your account address and also appears in your conversation history.</p>
+
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Setting one up</p>
+                        <ol class="list-decimal list-inside space-y-1">
+                            <li>Go to <strong class="text-gray-900 dark:text-white">Scheduled Updates</strong> in the Control Panel.</li>
+                            <li>Pick the agent and write the prompt it should run.</li>
+                            <li>Choose the time, the days of the week, and your timezone.</li>
+                        </ol>
+                        <p class="mt-2">You can pause, edit, or delete a schedule at any time. Delivery goes only to the email on your own account. If the page says email is not configured, ask your administrator.</p>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Agent memory -->
+            <div id="help-memory" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
+                <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Agent memory</h2>
+                    </div>
+                    <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-4 text-sm text-gray-600 dark:text-gray-400">
+
+                    <p>Some agents keep short working notes about what you are working on together, so you do not have to repeat context in every conversation.</p>
+
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white mb-2">Seeing and deleting it</p>
+                        <p>Go to <strong class="text-gray-900 dark:text-white">My Profile</strong> and open the <strong class="text-gray-900 dark:text-white">Agent Memory</strong> section. It shows, per agent, exactly what is remembered, with timestamps. You can delete individual items or everything an agent remembers about you.</p>
+                        <p class="mt-2">Deleting is forward-looking: the agent stops using the memory from that point on. Past audit records keep what the agent saw at the time, which is what makes them trustworthy as records.</p>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Roles -->
             <div id="help-roles" class="scroll-mt-4 border border-gray-200 dark:border-neutral-700 rounded-xl overflow-hidden mb-3">
                 <button class="section-toggle w-full flex items-center justify-between px-5 py-4 bg-white dark:bg-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                     <div class="flex items-center gap-3">
@@ -476,57 +254,37 @@ export function renderSettingsHelpTab() {
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                             </svg>
                         </div>
-                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Roles &amp; Permissions</h2>
+                        <h2 class="text-base font-semibold text-gray-900 dark:text-white">Roles</h2>
                     </div>
                     <svg class="section-chevron w-5 h-5 text-gray-400 flex-shrink-0 transition-transform duration-200" style="transform: rotate(-90deg)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
-                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 text-sm text-gray-600 dark:text-gray-400">
-                    <p class="mb-3">SAFi uses four roles to control what each person can see and do.</p>
-                    <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-neutral-700">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="bg-gray-50 dark:bg-neutral-800">
-                                    <th class="text-left px-4 py-2.5 font-semibold text-gray-900 dark:text-white">Permission</th>
-                                    <th class="text-center px-3 py-2.5 font-semibold text-gray-900 dark:text-white">Member</th>
-                                    <th class="text-center px-3 py-2.5 font-semibold text-gray-900 dark:text-white">Auditor</th>
-                                    <th class="text-center px-3 py-2.5 font-semibold text-gray-900 dark:text-white">Editor</th>
-                                    <th class="text-center px-3 py-2.5 font-semibold text-gray-900 dark:text-white">Admin</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-neutral-700">
-                                <tr class="bg-white dark:bg-neutral-900">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Start conversations &amp; select agents</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                </tr>
-                                <tr class="bg-gray-50/50 dark:bg-neutral-800/50">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">View Audit Hub</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                </tr>
-                                <tr class="bg-white dark:bg-neutral-900">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Create &amp; edit agents/policies</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                </tr>
-                                <tr class="bg-gray-50/50 dark:bg-neutral-800/50">
-                                    <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">Manage org, models, &amp; users</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-gray-300 dark:text-gray-600">—</td>
-                                    <td class="text-center px-3 py-2.5 text-green-600">✓</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-3 text-sm text-gray-600 dark:text-gray-400">
+
+                    <p>What you can see and do depends on your role in the organization.</p>
+
+                    <div class="space-y-2">
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Member</p>
+                            <p class="mt-0.5">Chat with agents, manage your own conversations, schedules, and memory.</p>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Auditor</p>
+                            <p class="mt-0.5">Everything a member has, plus read-only oversight: the Audit Hub and compliance views.</p>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Editor</p>
+                            <p class="mt-0.5">Builds and edits agents and policies.</p>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg px-4 py-3">
+                            <p class="font-medium text-gray-900 dark:text-white">Admin</p>
+                            <p class="mt-0.5">Manages the organization: members, groups, models, and settings.</p>
+                        </div>
                     </div>
+
+                    <p>If an option you expect is missing (Create Agent, Edit Policy, Organization settings), your role likely does not include it. Ask your organization's admin.</p>
+
                 </div>
             </div>
 
@@ -548,34 +306,31 @@ export function renderSettingsHelpTab() {
                 <div class="section-body hidden px-5 pb-5 pt-4 border-t border-gray-200 dark:border-neutral-700 space-y-1" id="faq-list">
 
                     ${faqItem("Why did the agent refuse my request?",
-                        "Agents are scoped to a specific purpose. If your request falls outside that scope, the agent will decline and explain its boundaries. This is intentional — it means the governance layer is working. Try rephrasing your question to stay within the agent's topic area.")}
-
-                    ${faqItem("Why is the agent's response different from what I expected?",
-                        "Each response is evaluated against the agent's policy before it reaches you. If the first draft falls short, the agent is asked to correct itself, and the corrected draft goes through the same evaluation. If neither clears the alignment threshold, you still get an answer — delivered with its honest low score, rather than the system quietly withholding a reply. Anything breaching the agent's scope or a non-negotiable standard is stopped outright instead.")}
-
-                    ${faqItem("Can I use the same agent for different topics?",
-                        "Each agent is designed for a specific purpose, so it works best when you stick to its intended topic area. If you need help with something different, check whether another agent covers that topic or ask your admin about creating a new one.")}
+                        "Agents are scoped to a specific purpose. If your request falls outside that scope, the agent declines and explains its boundaries. That is the governance layer working as intended. Try rephrasing within the agent's topic, or switch to an agent that covers yours.")}
 
                     ${faqItem("What does the alignment score mean?",
-                        "SAFi scores every response against the agent's values and standards, value by value, then combines those into the score on the chip: Aligned, Caution, or Concern. It reads Audit pending until the evaluation finishes. The score always describes the answer you actually received — a Caution or Concern is the system marking its own work, not a sign that something was hidden from you.")}
+                        "Every response is scored against the agent's values and standards. Aligned means it met them; Caution or Concern means it fell short somewhere, and the expanded details show exactly where. The score always describes the answer you actually received.")}
 
-                    ${faqItem("How do I invite someone to my organization?",
-                        "If your organization has verified its domain, users with a matching email address will join automatically when they sign up. You can also review current members in the Organization tab (Admins only).")}
+                    ${faqItem("Someone shared an agent with me. Where do I find it?",
+                        "Shared agents appear in your agent picker with a 'Shared with you' label, alongside your own agents. If it is missing, the share may have been removed, or it was shared with a group you are no longer in.")}
 
                     ${faqItem("Can I delete a conversation?",
-                        "Yes. In the chat view, find the conversation in the left sidebar and use the delete option. Deleted conversations cannot be recovered.")}
-
-                    ${faqItem("What is the Audit Hub?",
-                        "The Audit Hub shows a detailed log of all conversations and how each response was evaluated — including the alignment scores and any policy flags. It's designed for transparency and oversight, not for monitoring users.")}
+                        "Yes. Find it in the left sidebar and use the delete option in its menu. Deleted conversations cannot be recovered.")}
 
                     ${faqItem("I'm not seeing an option I expect. Why?",
-                        "Some features are only visible to certain roles. If you don't see an option like Create Agent, Edit Policy, or Manage Organization, your account may be set to Member or Auditor role. Contact your organization's admin if you believe your access should be different.")}
+                        "Some features are only visible to certain roles. If you don't see Create Agent, Edit Policy, or Organization settings, your account is likely a Member or Auditor. Contact your organization's admin if you believe your access should be different.")}
 
                 </div>
             </div>
 
+            <!-- Admin pointer: the one non-user item, kept to three lines -->
+            <div class="bg-gray-50 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-4 mt-6">
+                <p class="text-gray-700 dark:text-gray-300 font-medium text-sm">For administrators and editors</p>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mt-1">Building agents and policies, organization setup, models, and deployment are covered in the technical documentation in the <a href="https://github.com/jnamaya/SAFi" target="_blank" rel="noopener" class="text-green-600 dark:text-green-400 underline hover:text-green-500">GitHub repository</a>.</p>
+            </div>
+
             <div class="mt-6 pt-6 border-t border-gray-200 dark:border-neutral-700 text-center text-xs text-gray-400 dark:text-gray-500">
-                SAFi — Self-Alignment Framework &nbsp;·&nbsp;
+                SAFi &nbsp;&middot;&nbsp;
                 <a href="https://github.com/jnamaya/SAFi" target="_blank" rel="noopener" class="hover:text-green-500 transition-colors">GitHub</a>
             </div>
 
