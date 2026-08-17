@@ -857,12 +857,25 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     btn.setAttribute('aria-checked', String(isActive));
     btn.className = `w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-3 transition-colors ${isActive ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`;
 
+    // Second line: the governing policy when there is one — the single most
+    // useful fact when choosing between agents — else a trimmed description,
+    // else the tier. Keeps the row honest about what governs the pick.
+    const hasPolicy = profile.policy_id && profile.policy_id !== 'standalone';
+    const subtitleRaw = (hasPolicy && profile.policy_name)
+        ? profile.policy_name
+        : (profile.description || '').trim()
+          || (profile.is_custom === false ? 'Built-in agent' : 'Standalone agent');
+
     // Agent names are org-authored free text and land in an attribute and in
-    // markup; the avatar URL is org-supplied too.
+    // markup; the avatar URL and subtitle are org-supplied too.
     const safeName = escapeHtml(profile.name || '');
+    const safeSub = escapeHtml(subtitleRaw);
     btn.innerHTML = `
-      <img src="${escapeHtml(avatarUrl || '')}" alt="" class="w-5 h-5 rounded-full object-cover shrink-0">
-      <span class="truncate" title="${safeName}">${safeName}</span>
+      <img src="${escapeHtml(avatarUrl || '')}" alt="" class="w-7 h-7 rounded-full object-cover shrink-0 ${isActive ? 'ring-2 ring-green-600/60' : ''}">
+      <span class="min-w-0 flex-1">
+        <span class="block truncate" title="${safeName}">${safeName}</span>
+        <span class="block truncate text-xs font-normal ${isActive ? 'text-neutral-500 dark:text-neutral-400' : 'text-neutral-400 dark:text-neutral-500'}" title="${safeSub}">${safeSub}</span>
+      </span>
       ${isActive ? `<svg class="w-4 h-4 ml-auto shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>` : ''}
     `;
 
