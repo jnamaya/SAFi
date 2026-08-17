@@ -200,6 +200,27 @@ class BrandedEmailTemplate(unittest.TestCase):
         self.assertIn("<ol", html)
         self.assertIn("<hr", html)
 
+    def test_blockquotes_render_with_internal_paragraphs(self):
+        """The scripture shape: quoted paragraphs separated by bare '>' lines,
+        ending with an italic citation. Nelson's Aug 17 digest verbatim-ish."""
+        md = ('&nbsp;'.replace('&nbsp;', '') +
+              '> "Teacher, what must I do?"\n'
+              '>\n'
+              '> Jesus replied, "Keep the commandments."\n'
+              '> *(Matthew 19:16-22, BSB)*\n\n'
+              'Short reflection follows.')
+        html = runner.md_to_email_html(md)
+        self.assertEqual(html.count("<blockquote"), 1)
+        self.assertEqual(html.count("&gt;"), 0, "no literal > markers may survive")
+        self.assertIn("border-left:3px solid #16a34a", html)
+        self.assertEqual(html[html.index("<blockquote"):].count("<p"), 3,
+                         "two quote paragraphs inside, one reflection after")
+        self.assertIn("<em>(Matthew 19:16-22, BSB)</em>", html)
+
+    def test_italics_do_not_eat_arithmetic(self):
+        html = runner.md_to_email_html("2 * 3 * 4 equals 24")
+        self.assertNotIn("<em>", html)
+
     def test_markdown_rendering_still_escapes_first(self):
         """The escape-first order is the whole defense: markdown transforms
         run on escaped text, so injected tags stay visible characters even

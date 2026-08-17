@@ -77,9 +77,12 @@ def task_is_due(task: dict, now_utc: datetime) -> bool:
 
 
 def _md_inline(escaped: str) -> str:
-    """Bold and inline code only, applied to ALREADY-ESCAPED text."""
+    """Bold, italics and inline code, applied to ALREADY-ESCAPED text.
+    Italics require the asterisks to hug non-space characters, so arithmetic
+    like '2 * 3 * 4' stays literal."""
     import re as _re
     escaped = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = _re.sub(r"(?<!\*)\*(\S(?:[^*\n]*\S)?)\*(?!\*)", r"<em>\1</em>", escaped)
     escaped = _re.sub(
         r"`([^`]+)`",
         r'<code style="background-color:#f5f5f5;padding:1px 4px;border-radius:3px;font-size:13px;">\1</code>',
@@ -98,12 +101,31 @@ def md_to_email_html(body: str) -> str:
     import re as _re
 
     lines = _html.escape(body).split("\n")
-    out, para, bullets, numbers = [], [], [], []
+    out, para, bullets, numbers, quote = [], [], [], [], []
 
     def flush_para():
         if para:
             out.append(f'<p style="margin:0 0 12px 0;">{_md_inline("<br>".join(para))}</p>')
             para.clear()
+
+    def flush_quote():
+        if quote:
+            # Blank quote lines ("> " alone) split paragraphs inside the quote.
+            paras, cur = [], []
+            for q in quote:
+                if q:
+                    cur.append(q)
+                elif cur:
+                    paras.append(cur); cur = []
+            if cur:
+                paras.append(cur)
+            inner = "".join(
+                f'<p style="margin:0 0 8px 0;">{_md_inline("<br>".join(p))}</p>'
+                for p in paras)
+            out.append(
+                '<blockquote style="margin:0 0 12px 0;padding:2px 0 2px 14px;'
+                f'border-left:3px solid #16a34a;color:#404040;">{inner}</blockquote>')
+            quote.clear()
 
     def flush_lists():
         if bullets:
@@ -118,27 +140,31 @@ def md_to_email_html(body: str) -> str:
     for raw in lines:
         line = raw.strip()
         h = _re.match(r"^(#{1,4})\s+(.*)$", line)
-        if h:
+        q = _re.match(r"^&gt;\s?(.*)$", line)  # text is already escaped, so > is &gt;
+        if q:
             flush_para(); flush_lists()
+            quote.append(q.group(1).strip())
+        elif h:
+            flush_para(); flush_lists(); flush_quote()
             size = {1: 20, 2: 18, 3: 16, 4: 14}[len(h.group(1))]
             out.append(f'<div style="font-size:{size}px;font-weight:bold;margin:16px 0 8px 0;">{_md_inline(h.group(2))}</div>')
         elif _re.match(r"^[-*]\s+", line):
-            flush_para()
+            flush_para(); flush_quote()
             if numbers: flush_lists()
             bullets.append(_re.sub(r"^[-*]\s+", "", line))
         elif _re.match(r"^\d+[.)]\s+", line):
-            flush_para()
+            flush_para(); flush_quote()
             if bullets: flush_lists()
             numbers.append(_re.sub(r"^\d+[.)]\s+", "", line))
         elif _re.match(r"^(-{3,}|\*{3,}|_{3,})$", line):
-            flush_para(); flush_lists()
+            flush_para(); flush_lists(); flush_quote()
             out.append('<hr style="border:none;border-top:1px solid #e5e5e5;margin:16px 0;">')
         elif not line:
-            flush_para(); flush_lists()
+            flush_para(); flush_lists(); flush_quote()
         else:
-            flush_lists()
+            flush_lists(); flush_quote()
             para.append(line)
-    flush_para(); flush_lists()
+    flush_para(); flush_lists(); flush_quote()
     return "".join(out)
 
 
