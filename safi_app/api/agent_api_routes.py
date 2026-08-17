@@ -251,6 +251,24 @@ def save_agent():
                 track_work_context=bool(data.get('track_work_context', True))
             )
 
+        # Tool-list changes are the highest-consequence capability change an
+        # agent can receive, and until backlog 57a they left no record. Old
+        # list comes from the pre-update row (empty on create); best-effort,
+        # so evidence failure never blocks the save it describes.
+        if user.get('org_id'):
+            try:
+                old_tools = sorted(exist.get('tools') or []) if request.method == 'PUT' else []
+                new_tools = sorted(requested_tools)
+                if old_tools != new_tools:
+                    db.append_compliance_log(
+                        user['org_id'], 'agent_tools_changed', f"user:{user_id}",
+                        {"agent": key,
+                         "added": sorted(set(new_tools) - set(old_tools)),
+                         "removed": sorted(set(old_tools) - set(new_tools)),
+                         "tools": new_tools})
+            except Exception as e:
+                current_app.logger.error(f"tool-change evidence failed for {key}: {e}")
+
         # Invalidate Cache to ensure runtime uses new config
         global_safi_cache.invalidate_profile(key)
 

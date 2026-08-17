@@ -296,6 +296,12 @@ export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
 
+// --- Attention inbox: everything waiting on this user, role-aware ---
+
+export async function fetchAttention() {
+    return httpGet('/api/attention');
+}
+
 // --- Agent sharing: per-agent can_use grants to users and groups ---
 
 export async function getAgentShares(key) {

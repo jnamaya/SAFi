@@ -169,6 +169,7 @@ def create_app():
     from .api.audit_api import audit_bp
     from .api.mcp_api import mcp_bp
     from .api.groups_api import groups_bp
+    from .api.attention_api import attention_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -185,6 +186,7 @@ def create_app():
     app.register_blueprint(review_bp, url_prefix='/api')
     app.register_blueprint(audit_bp, url_prefix='/api')
     app.register_blueprint(groups_bp, url_prefix='/api')
+    app.register_blueprint(attention_bp, url_prefix='/api')
     app.register_blueprint(mcp_bp)
 
     # Server-side session resolution (enterprise identity Phase 1).
