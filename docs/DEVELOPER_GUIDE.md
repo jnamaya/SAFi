@@ -27,7 +27,7 @@ model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
 16. [The Audit Hub metrics](#16-the-audit-hub-metrics)
 17. [Running the tests](#17-running-the-tests)
 18. [Extending SAFi: agents and plugins without core changes](#18-extending-safi-agents-and-plugins-without-core-changes)
-19. [The Trusted Computing Base and integrity verification](#19-the-trusted-computing-base-and-integrity-verification)
+19. [The TCB, User Space, and how they talk](#19-the-tcb-user-space-and-how-they-talk)
 
 ## 1. Front-end structure
 
@@ -112,6 +112,19 @@ rag/                          # index builder + doc sources for agent retrieval
 deploy/systemd/                # example units for production
 teams_bot.py, telegram_bot.py   # bot-channel integrations
 ```
+
+**The one mental model to carry through this whole guide: the code is two
+spaces, not one.** A small, enumerated set of files is the Trusted
+Computing Base (TCB): the governance pipeline, the five faculties, the
+audit schema, the enforcement content, RBAC, the plugin mechanism, and the
+attestation module. Everything else — every API blueprint, the whole front
+end, the agents, the policies, the plugins' content, the bots, the scripts
+— is User Space: it configures what the TCB enforces and reads what the
+TCB records, but a defect in it cannot violate the governance policy. You
+will work in User Space almost all of the time, and User Space talks to
+the TCB through a handful of stable, data-shaped interfaces rather than by
+reaching into it. Section 19 draws the full boundary and catalogs those
+interfaces; internalize it before your first change.
 
 ## 3. Mobile structure
 
@@ -1098,16 +1111,62 @@ server authenticates with the **deployment's** credential rather than a
 member's, so it suits shared and system resources; a member's own drive or
 mailbox belongs on a delegated-OAuth connector instead.
 
-## 19. The Trusted Computing Base and integrity verification
+## 19. The TCB, User Space, and how they talk
 
 The files that governance claims depend on are enumerated in
-`scripts/core_integrity_manifest.json`: the orchestrator, the five
-faculties, the audit schema, the enforcement content (threat signatures,
-faculty prompts), RBAC, the plugin registry, and the attestation module.
-The License & Governance Agreement calls this set the Core Loop; in
-security-engineering terms it is the Trusted Computing Base (TCB). A defect
-inside the set can violate the governance policy. A defect outside it
-cannot.
+`scripts/core_integrity_manifest.json`: the orchestrator and its mixins,
+the five faculties, the audit schema, the enforcement content (threat
+signatures, faculty prompts), RBAC, the plugin registry, and the
+attestation module — 17 files. The License & Governance Agreement calls
+this set the Core Loop; in security-engineering terms it is the Trusted
+Computing Base (TCB). A defect inside the set can violate the governance
+policy. A defect outside it cannot. Everything outside it is User Space.
+
+**The boundary's two laws.** First: inside the TCB, enforcement is
+deterministic and discernment is not. Every block, approval, redirect and
+threshold decision is fixed Python; only the Intellect and the Conscience
+may call a model, and the Will may consume discernment's output but never
+produce it. Second: the TCB is mechanism, never content. No agent's name,
+value, corpus or plugin appears in TCB code; agents, policies, plugins and
+tools are all User Space data that the TCB compiles and enforces. Both
+laws are what make the audit story true — anyone holding the compiled
+profile and the record can recompute the enforcement outcome.
+
+**How User Space talks to the TCB.** You do not import faculty internals
+or call the Will; you hand data in through stable seams and read evidence
+out. The catalog:
+
+- **The compiled profile** is the master interface. Everything an agent
+  is — values with weights and `gate_reason` (§11), `allowed_tools`
+  (expanded from connector names at compile time), scope, knowledge
+  authorization, worldview layers — is configuration that
+  `get_profile()` (`synderesis.py`) compiles into one inspectable dict.
+  You configure what the Will enforces; you never invoke it.
+- **Running a turn**: `POST /api/process_prompt` for interactive chat,
+  the `/evaluate` gateway (§9) to have SAFi govern an external system's
+  output, the bot endpoints for channels. All of them enter the same
+  pipeline; there is no side door that skips a phase.
+- **Defining agents**: the wizard/DB path needs no code; code-defined
+  agents (built-in or extension) declare `KEY`/`AGENT` module attributes
+  and are discovered, never imported by name (§18).
+- **Plugins**: `register_plugin()` at import time; the registry is TCB,
+  each registration is User Space content (§18).
+- **Tools**: operator-installed MCP servers are declared in the servers
+  file, discovered at boot, and become connector names a policy can
+  authorize (§15). Adding a tool never edits the Will; the allow-list it
+  enforces is compiled data.
+- **Reading**: governance records, the Audit Hub, the export, and the
+  hash chain (§12) are the read surface. They carry snapshots (context,
+  work memory, tool calls), so nothing you change in User Space rewrites
+  what a past turn saw.
+
+**If you genuinely must change a TCB file**, the bar is different: the
+repo requires the owner's explicit per-change approval for faculty files,
+model calls remain forbidden outright in the deterministic ones
+(`will.py`, `phase_zero.py`, `spirit.py`, `synderesis.py`), and every TCB
+edit must regenerate the manifest in the same commit. Prefer the User
+Space route even when the TCB edit looks smaller; the blast radius of a
+TCB change is every agent, org and turn at once.
 
 Verify any tree or deployment:
 
