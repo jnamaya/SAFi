@@ -131,10 +131,34 @@ def tcb_stamp() -> Dict[str, Any]:
 
 def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Log the verification result; refuse to start in strict mode unless
-    verified intact. `status` is injectable for tests."""
+    verified intact. `status` is injectable for tests.
+
+    SAFI_EXPECTED_FINGERPRINT is the operator's pin: the fingerprint copied
+    from an official release's published `Fingerprint:` line at install time.
+    The manifest ships INSIDE the tree it guards, so a local tamper can also
+    regenerate it; the pin lives in the operator's config, provisioned apart
+    from the code, and holds the deployment to the value a human verified
+    out of band. It protects honest deployments from drift and tampering; it
+    does nothing against a fork that simply does not set it, and claims
+    nothing about authenticity — that comparison stays with the human at pin
+    time.
+    """
     logger = app_logger or log
     s = status if status is not None else get_status()
     mode = os.environ.get("SAFI_ENFORCE_INTEGRITY", "").strip().lower()
+    pin = os.environ.get("SAFI_EXPECTED_FINGERPRINT", "").strip().lower()
+
+    pin_mismatch = bool(pin) and s["fingerprint"] is not None and pin != s["fingerprint"]
+    if pin and not pin_mismatch and s["fingerprint"] is not None:
+        logger.info(f"TCB fingerprint matches the operator's pinned value ({pin[:16]}…).")
+    elif pin_mismatch:
+        logger.error(
+            f"TCB FINGERPRINT PIN MISMATCH — the operator pinned "
+            f"{pin} (SAFI_EXPECTED_FINGERPRINT) but this tree measures "
+            f"{s['fingerprint']}. If this is a deliberate upgrade, update the pin "
+            f"from the new release's published Fingerprint line; otherwise treat "
+            f"the deployment as tampered."
+        )
 
     if s["state"] == "intact":
         logger.info(f"Core Loop verified INTACT — TCB fingerprint {s['fingerprint']}")
@@ -162,5 +186,11 @@ def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) ->
             f"to start. Restore the shipped files (or regenerate the manifest upstream "
             f"via scripts/verify_integrity.py --update), or unset strict mode to run "
             f"tainted with every governance record saying so."
+        )
+    if mode == "strict" and pin_mismatch:
+        raise RuntimeError(
+            "SAFI_ENFORCE_INTEGRITY=strict and the TCB fingerprint does not match "
+            "SAFI_EXPECTED_FINGERPRINT — refusing to start. Update the pin from the "
+            "release's published Fingerprint line if this is a deliberate upgrade."
         )
     return s

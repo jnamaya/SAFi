@@ -1191,6 +1191,15 @@ Three runtime behaviors build on it:
   anything but verified-intact. Off by default: the AGPL permits running
   modified code; representing the deployment as SAFi is what requires an
   intact TCB or upstream review (agreement, Section IV).
+- **The operator's pin**: `SAFI_EXPECTED_FINGERPRINT` holds the fingerprint
+  the operator copied from an official release's published `Fingerprint:`
+  line at install time. The manifest ships inside the tree it guards, so a
+  local tamper can regenerate it; the pin lives in config provisioned apart
+  from the code, and every boot is held to the value a human verified out
+  of band. A mismatch logs loudly, and refuses startup under strict mode.
+  It protects honest deployments from drift and tampering; it claims
+  nothing about authenticity, and does nothing against a fork that simply
+  leaves it unset.
 
 If you modify a TCB file on purpose, regenerate the manifest in the same
 commit or CI fails on the staleness guard:

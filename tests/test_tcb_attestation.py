@@ -145,5 +145,45 @@ class StrictMode(unittest.TestCase):
                         "config validation first, then attestation")
 
 
+class FingerprintPin(unittest.TestCase):
+    """SAFI_EXPECTED_FINGERPRINT: the operator's out-of-band anchor. The
+    manifest ships inside the tree it guards, so a tamper can regenerate it;
+    the pin lives in config provisioned apart from the code and holds every
+    boot to the value a human copied from a published release."""
+
+    INTACT = StrictMode.INTACT
+
+    def _boot(self, status, mode, pin):
+        env = {"SAFI_ENFORCE_INTEGRITY": mode, "SAFI_EXPECTED_FINGERPRINT": pin}
+        with patch.dict(os.environ, env):
+            return integrity.enforce_at_boot(logging.getLogger("t"), status=status)
+
+    def test_no_pin_changes_nothing(self):
+        s = self._boot(self.INTACT, "strict", "")
+        self.assertTrue(s["intact"])
+
+    def test_matching_pin_boots(self):
+        s = self._boot(self.INTACT, "strict", "f" * 64)
+        self.assertTrue(s["intact"])
+
+    def test_mismatched_pin_boots_loudly_in_default_mode(self):
+        """Same AGPL posture as the taint flag: default mode runs, the log
+        carries the alarm."""
+        s = self._boot(self.INTACT, "", "a" * 64)
+        self.assertTrue(s["intact"])  # returned, not raised
+
+    def test_strict_refuses_a_mismatched_pin(self):
+        with self.assertRaises(RuntimeError) as cm:
+            self._boot(self.INTACT, "strict", "a" * 64)
+        self.assertIn("SAFI_EXPECTED_FINGERPRINT", str(cm.exception))
+
+    def test_unverifiable_tree_does_not_count_as_a_pin_match(self):
+        """fingerprint=None must not slip past the pin: strict already refuses
+        the unverifiable state itself, and the pin comparison must not crash
+        or masquerade as a pass on the way there."""
+        with self.assertRaises(RuntimeError):
+            self._boot(StrictMode.UNVERIFIABLE, "strict", "a" * 64)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
