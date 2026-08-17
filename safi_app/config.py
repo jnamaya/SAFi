@@ -18,7 +18,7 @@ load_dotenv(dotenv_path=dotenv_path, override=True)
 # "light" covers the background roles: summarizer, backend, and note-taker.
 _FACULTY_DEFAULTS_BY_PROVIDER = {
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
-    "gemini":    {"intellect": "gemini-3.6-flash",          "conscience": "gemini-3.6-flash",          "light": "gemini-3.5-flash-lite"},
+    "gemini":    {"intellect": "gemini-3.7-flash",          "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
     "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
     "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
@@ -516,6 +516,7 @@ class Config:
         # Google Models
         {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite"},
         {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash"},
+        {"id": "gemini-3.7-flash", "label": "Gemini 3.7 Flash"},
 
         # Mistral Models
         {"id": "mistral-medium-latest", "label": "Mistral-Medium-3.5"},
