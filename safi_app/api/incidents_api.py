@@ -231,6 +231,18 @@ def _actor():
     return user.get('id'), user.get('email')
 
 
+def _mirror_to_compliance_log(org_id, event_type, actor_id, detail):
+    """Thin pointer event into org_compliance_log (backlog 58). The
+    incident's own append-only journal (incident_events) stays the
+    authoritative detail; this puts the lifecycle into the org-wide
+    evidence stream an auditor reads first. Best-effort: the authoritative
+    record is already written, so a mirror failure logs and never blocks."""
+    try:
+        db.append_compliance_log(org_id, event_type, f"user:{actor_id}", detail)
+    except Exception as e:
+        current_app.logger.error(f"incident compliance mirror failed ({event_type}): {e}")
+
+
 def _validate(data, creating):
     if creating:
         if not (data.get("title") or "").strip():
@@ -296,6 +308,10 @@ def create_incident(org_id):
     try:
         actor_id, actor_email = _actor()
         iid = db.create_security_incident(org_id, data, actor_id, actor_email)
+        _mirror_to_compliance_log(org_id, 'incident_created', actor_id, {
+            "incident": iid, "title": data.get("title"),
+            "severity": data.get("severity") or "medium",
+            "regimes": data.get("regimes")})
         return jsonify(_decorated(db.get_security_incident(org_id, iid))), 201
     except Exception as e:
         current_app.logger.error(f"Error creating incident: {e}")
@@ -329,9 +345,22 @@ def update_incident(org_id, incident_id):
         return jsonify({"error": err}), 400
     try:
         actor_id, actor_email = _actor()
+        before = db.get_security_incident(org_id, incident_id)
         incident = db.update_security_incident(org_id, incident_id, data, actor_id, actor_email)
         if not incident:
             return jsonify({"error": "Not found"}), 404
+        # Mirror the compliance-relevant transitions into the org-wide
+        # evidence stream (backlog 58). Field-level detail stays in the
+        # incident's own append-only journal; these are pointer events.
+        if before:
+            if str(before.get('status')) != str(incident.get('status')):
+                _mirror_to_compliance_log(org_id, 'incident_status_changed', actor_id, {
+                    "incident": incident_id, "title": incident.get("title"),
+                    "from": before.get('status'), "to": incident.get('status')})
+            if str(before.get('harm_determination') or '') != str(incident.get('harm_determination') or ''):
+                _mirror_to_compliance_log(org_id, 'incident_harm_determination', actor_id, {
+                    "incident": incident_id, "title": incident.get("title"),
+                    "determination": incident.get('harm_determination')})
         return jsonify(_decorated(incident))
     except Exception as e:
         current_app.logger.error(f"Error updating incident: {e}")
@@ -354,7 +383,13 @@ def log_incident_event(org_id, incident_id):
         actor_id, actor_email = _actor()
         if not db.append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
             return jsonify({"error": "Not found"}), 404
-        return jsonify({"incident": _decorated(db.get_security_incident(org_id, incident_id)),
+        # Regime notices are the compliance ACTS (customers told, authority
+        # told); mirror them into the org-wide stream too (backlog 58).
+        incident = db.get_security_incident(org_id, incident_id)
+        _mirror_to_compliance_log(org_id, 'incident_notice_recorded', actor_id, {
+            "incident": incident_id, "title": (incident or {}).get("title"),
+            "notice": event_type})
+        return jsonify({"incident": _decorated(incident),
                         "events": db.list_incident_events(org_id, incident_id)})
     except Exception as e:
         current_app.logger.error(f"Error logging incident event: {e}")

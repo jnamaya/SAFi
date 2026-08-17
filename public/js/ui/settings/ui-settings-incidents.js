@@ -139,7 +139,7 @@ async function renderList(container) {
 
     const defaultsBoxes = Object.entries(REGIME_LABELS).map(([k, label]) => `
         <label class="flex items-center gap-1.5 text-sm">
-            <input type="checkbox" name="regime-default" value="${k}" ${orgRegimeDefaults.includes(k) ? 'checked' : ''}> ${label}
+            <input type="checkbox" name="regime-default" value="${k}" class="accent-green-600" ${orgRegimeDefaults.includes(k) ? 'checked' : ''}> ${label}
         </label>`).join('');
 
     container.innerHTML = `
@@ -194,7 +194,14 @@ function formField(label, inner, help = '') {
         ${help ? `<span class="block text-xs text-gray-400 mb-1">${help}</span>` : ''}${inner}</label>`;
 }
 
-const INPUT_CLS = 'mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+// Text color is EXPLICIT, not inherited: this class forces a background, and
+// forcing a background while inheriting the foreground is how the
+// 'Individuals affected' field once rendered white-on-white (backlog 58).
+// Any class that sets bg must set text.
+const INPUT_CLS = 'mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 '
+    + 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white '
+    + 'placeholder-gray-400 dark:placeholder-neutral-500 px-3 py-2 text-sm '
+    + 'focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent';
 
 function renderForm(container, incident) {
     const i = incident || {};
@@ -202,7 +209,7 @@ function renderForm(container, incident) {
     const sel = (opts, cur) => opts.map(o => `<option value="${o}" ${o === cur ? 'selected' : ''}>${o.replace(/_/g, ' ')}</option>`).join('');
     const regimeBoxes = Object.entries(REGIME_LABELS).map(([k, label]) => `
         <label class="flex items-center gap-1.5 text-sm">
-            <input type="checkbox" name="regimes" value="${k}" data-regime-box ${tagged.includes(k) ? 'checked' : ''}> ${label}
+            <input type="checkbox" name="regimes" value="${k}" data-regime-box class="accent-green-600" ${tagged.includes(k) ? 'checked' : ''}> ${label}
         </label>`).join('');
     enterSubview(container, true);
     container.innerHTML = `
