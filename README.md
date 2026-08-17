@@ -404,6 +404,8 @@ Working on the code? Start with the **[Developer Guide](docs/DEVELOPER_GUIDE.md)
 - **RAG & tool integrations** — FAISS-backed retrieval, the plugin-vs-tool distinction, the two-layer tool authorization (advertised schemas + the Will's per-intent allow-list gate), and the recipe for adding a new tool.
 - **The Audit Hub metrics & testing** — what Alignment, Consistency, and the Beta retention setting actually measure, why scores stabilize only after a policy is finished being tested, and how to run the test suite.
 
+Building your own dashboard, examiner tool, or SIEM feed on SAFi's audit data? The **[Governance Artifact Specification](docs/GOVERNANCE_ARTIFACT_SPECIFICATION.md)** is the field-by-field contract for everything the governance core produces — per-turn records, conscience ledgers, tool-call entries, the hash chain, and the integrity stamp — with a stability policy you can build against.
+
 ---
 
 ## Knowledge Bases & Tools
