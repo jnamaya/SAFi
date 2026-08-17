@@ -4,8 +4,56 @@
 working on SAFi's code — the front-end, back-end, and mobile layouts, how
 to run it locally, the five-faculty architecture and the math behind it,
 multi-agent design, and how to authenticate against and extend the API.
-For the product overview see the [README](../README.md); for the formal
-model see the [Mathematical Specification](MATHEMATICAL_SPECIFICATION.md).
+For the product overview see the [README](../README.md).
+
+## A note from the author
+
+Hi developers,
+
+SAFi is divided into two code bases: the **TCB**, the Trusted Computing
+Base, and the **ULB**, the User Land Base (called User Space elsewhere in
+this guide; same thing).
+
+My goal with the TCB is to keep it small, bug free, and stable. The ULB
+can be anything, as long as you adhere to the
+[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md).
+
+This split saves you the mental load of the more than two thousand years
+of philosophy SAFi is built upon. Keep using the frameworks you are
+already familiar with (LangChain, for example) and build on top of SAFi
+without breaking the TCB core loop.
+
+If it helps, think of the TCB and the ULB as the Linux kernel and a
+desktop environment. You can develop whatever desktop environment you
+want, and keep those changes to yourself if you want to. But if you need
+to expand or add anything in the TCB, commit those changes to the
+upstream project; they will be reviewed and accepted if they help the
+system in any way ([section 19](#19-the-tcb-user-space-and-how-they-talk)).
+The idea is to keep the TCB generic and universal.
+
+If you modify the TCB and never commit the changes upstream, SAFi keeps
+working without any limitations, but you cannot claim authenticity and
+cannot use the SAFi name: your install is an independent fork until your
+code is reconciled with the upstream version (see the
+[Release Process](RELEASE_PROCESS.md)).
+
+The demo install of SAFi is a showcase of the system's current
+capabilities, and you are welcome to use it if it fits your needs. But
+you can build any GUI you want, on whatever tech stack, as long as you
+adhere to the specifications:
+
+- **[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)**
+  — the contract for everything the TCB produces (records, ledgers, the
+  hash chain, the integrity stamp)
+- **[Mathematical Specification](MATHEMATICAL_SPECIFICATION.md)** — the
+  formal model of the five-faculty pipeline
+
+If you are interested in the philosophy side of SAFi, the best resource
+is the article section of the main project website:
+[selfalignmentframework.com](https://selfalignmentframework.com).
+
+Thank you!
+Nelson
 
 ## Table of Contents
 
@@ -119,8 +167,9 @@ Computing Base (TCB): the governance pipeline, the five faculties, the
 audit schema, the enforcement content, RBAC, the plugin mechanism, and the
 attestation module. Everything else — every API blueprint, the whole front
 end, the agents, the policies, the plugins' content, the bots, the scripts
-— is User Space: it configures what the TCB enforces and reads what the
-TCB records, but a defect in it cannot violate the governance policy. You
+— is User Space (the ULB, User Land Base): it configures what the TCB
+enforces and reads what the TCB records, but a defect in it cannot
+violate the governance policy. You
 will work in User Space almost all of the time, and User Space talks to
 the TCB through a handful of stable, data-shaped interfaces rather than by
 reaching into it. Section 19 draws the full boundary and catalogs those
@@ -1117,7 +1166,8 @@ signatures, faculty prompts), RBAC, the plugin registry, and the
 attestation module — 17 files. The License & Governance Agreement calls
 this set the Core Loop; in security-engineering terms it is the Trusted
 Computing Base (TCB). A defect inside the set can violate the governance
-policy. A defect outside it cannot. Everything outside it is User Space.
+policy. A defect outside it cannot. Everything outside it is User Space,
+the ULB (User Land Base).
 
 **The boundary's two laws.** First: inside the TCB, enforcement is
 deterministic and discernment is not. Every block, approval, redirect and
