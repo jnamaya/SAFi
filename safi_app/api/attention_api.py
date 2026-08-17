@@ -13,17 +13,19 @@ becomes a second place where sensitive content must be access-controlled.
 from flask import Blueprint, jsonify, session
 
 from ..persistence import attention_store
+from ..persistence import tool_approval_store
 from ..core.rbac import check_any_role
 
 attention_bp = Blueprint('attention_api', __name__)
 
 # category key -> (control panel tab it deep-links to, human title)
 _CATEGORIES = {
-    "kb_documents": ("knowledge", "Documents awaiting review"),
-    "review_queue": ("review", "Flagged turns awaiting disposition"),
-    "invitations":  ("organization", "Open invitations"),
-    "incidents":    ("compliance", "Open security incidents"),
-    "schedules":    ("schedules", "Scheduled updates failing"),
+    "kb_documents":  ("knowledge", "Documents awaiting review"),
+    "review_queue":  ("review", "Flagged turns awaiting disposition"),
+    "tool_requests": ("agents", "Tool grants awaiting approval"),
+    "invitations":   ("organization", "Open invitations"),
+    "incidents":     ("compliance", "Open security incidents"),
+    "schedules":     ("schedules", "Scheduled updates failing"),
 }
 
 
@@ -58,7 +60,8 @@ def get_attention():
 
     if org_id and check_any_role(('admin', 'auditor')):
         for key, fn in (("kb_documents", attention_store.pending_kb_documents),
-                        ("review_queue", attention_store.pending_review_items)):
+                        ("review_queue", attention_store.pending_review_items),
+                        ("tool_requests", tool_approval_store.pending_summary)):
             try:
                 agg = fn(org_id)
                 if agg["count"]:

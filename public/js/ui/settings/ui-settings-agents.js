@@ -38,6 +38,10 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
             <p>Select an agent to start a conversation. Switching agents will start a new one.</p>
         </div>
 
+        <!-- Tool-grant approvals (backlog 57b): reviewers see pending
+             widenings here; the host stays empty for everyone else. -->
+        <div id="tool-approvals-host"></div>
+
         <!-- NEW: "Create New Agent" Button (Admins/Editors Only) -->
         ${(currentUser && ['admin', 'editor'].includes(currentUser.role)) ? `
         <div class="mb-6">
@@ -226,6 +230,74 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
             openAgentWizard(null);
         });
     }
+
+    // --- Tool-grant approvals (reviewers only) ---
+    if (currentUser && ['admin', 'auditor'].includes(currentUser.role)) {
+        renderToolApprovals();
+    }
+}
+
+// --- TOOL-GRANT APPROVALS PANEL ---
+
+async function renderToolApprovals() {
+    const host = document.getElementById('tool-approvals-host');
+    if (!host) return;
+    let requests = [];
+    try {
+        const res = await api.listToolRequests('pending');
+        requests = res.requests || [];
+    } catch (e) {
+        return; // reviewers without an org, or a transient failure: no panel
+    }
+    if (!requests.length) {
+        host.innerHTML = '';
+        return;
+    }
+    host.innerHTML = `
+        <div class="mb-6 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-amber-200 dark:border-amber-800">
+                <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">Tool grants awaiting approval</h3>
+                <p class="text-xs text-amber-700 dark:text-amber-400 mt-0.5">The agent keeps its current tools until a reviewer approves. Requesters cannot approve their own change.</p>
+            </div>
+            ${requests.map(r => `
+                <div class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-amber-100 dark:border-amber-900/40 last:border-0 bg-white dark:bg-neutral-900">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${escSh(r.agent_name || r.agent_key)}</p>
+                        <p class="text-xs text-gray-500 truncate">requested by ${escSh(r.requester_name || r.requested_by)} &middot; adds ${(r.added || []).map(t => `<code class="bg-gray-100 dark:bg-neutral-800 px-1 py-0.5 rounded">${escSh(t)}</code>`).join(' ')}</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button data-req="${escSh(r.id)}" class="tool-req-approve px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">Approve</button>
+                        <button data-req="${escSh(r.id)}" class="tool-req-reject px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">Reject</button>
+                    </div>
+                </div>`).join('')}
+        </div>`;
+
+    host.querySelectorAll('.tool-req-approve').forEach(btn => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const res = await api.approveToolRequest(btn.dataset.req);
+            ui.showToast(res.self_approved
+                ? 'Approved (recorded as non-independent: you are the only eligible reviewer).'
+                : 'Tool grant approved.', 'success');
+            renderToolApprovals();
+        } catch (e) {
+            ui.showToast(e.message || 'Approval failed', 'error');
+            btn.disabled = false;
+        }
+    }));
+    host.querySelectorAll('.tool-req-reject').forEach(btn => btn.addEventListener('click', async () => {
+        const reason = prompt('Reason for rejecting (optional):') ?? null;
+        if (reason === null) return;
+        btn.disabled = true;
+        try {
+            await api.rejectToolRequest(btn.dataset.req, reason);
+            ui.showToast('Tool grant rejected.', 'success');
+            renderToolApprovals();
+        } catch (e) {
+            ui.showToast(e.message || 'Rejection failed', 'error');
+            btn.disabled = false;
+        }
+    }));
 }
 
 // --- AGENT SHARE DIALOG ---

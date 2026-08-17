@@ -329,12 +329,19 @@ async function finishWizard() {
 
         // Handle SUCCESS or QUEUED
         if (res === 'QUEUED' || res.ok) {
-            ui.showToast(agentData.is_update_mode ? "Agent Updated!" : "Agent Created!", "success");
+            // Tool additions on org agents wait for a reviewer (backlog 57b);
+            // say so before the reload wipes the toast.
+            const pending = (res && Array.isArray(res.tools_pending_approval)) ? res.tools_pending_approval : [];
+            if (pending.length) {
+                ui.showToast(`Saved. ${pending.length} tool grant${pending.length === 1 ? '' : 's'} (${pending.join(', ')}) awaits approval by an admin or auditor.`, 'warning', 6000);
+            } else {
+                ui.showToast(agentData.is_update_mode ? "Agent Updated!" : "Agent Created!", "success");
+            }
             closeWizard();
             // Force reload to update UI lists (User Request)
             setTimeout(() => {
                 window.location.reload();
-            }, 500);
+            }, pending.length ? 2600 : 500);
         } else {
             // Should be unreachable if offlineManager throws, but handled for safety
             throw new Error(res.error || "Save failed");

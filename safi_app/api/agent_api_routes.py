@@ -2,8 +2,9 @@ import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
 from ..persistence import sharing_store
+from ..persistence import tool_approval_store
 from ..core.faculties.synderesis import AGENTS, ALL_AGENTS, get_profile
-from ..core.rbac import check_permission
+from ..core.rbac import check_permission, check_any_role
 from ..config import Config
 from .conversations import global_safi_cache  # Import Cache
 
@@ -194,8 +195,26 @@ def save_agent():
         if kb_error:
             return jsonify({"error": kb_error}), 403
 
+        existing = db.get_agent(key)
+
+        # Backlog 57b: WIDENING an org agent's tool list waits for a second
+        # person; narrowing never does. Additions are split out here and
+        # filed as a pending request after the row write succeeds, so the
+        # agent keeps running on its current tool set until an admin or
+        # auditor applies them. Personal (no-org) agents are exempt: there
+        # is no org authority to protect and no reviewer to wait for.
+        requested_full = list(requested_tools)
+        pending_additions = []
+        tools_to_save = requested_tools
+        if user.get('org_id'):
+            old_tools = (existing.get('tools') or []) if (existing and request.method == 'PUT') else []
+            pending_additions = sorted(set(requested_tools) - set(old_tools))
+            if pending_additions:
+                blocked = set(pending_additions)
+                tools_to_save = [t for t in requested_tools if t not in blocked]
+
         if request.method == 'POST':
-            if db.get_agent(key): return jsonify({"error": "Agent exists"}), 409
+            if existing: return jsonify({"error": "Agent exists"}), 409
             if not governed: return jsonify({"error": UNGOVERNED_MSG}), 400
             db.create_agent(
                 key=key, name=str(data['name']),
@@ -210,13 +229,13 @@ def save_agent():
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=(data.get('rag_format_string') or '').strip() or None,
-                tools=data.get('tools', []),
+                tools=tools_to_save,
                 scope_statement=str(data.get('scope_statement') or ''),
                 max_agent_turns=data.get('max_agent_turns'),
                 track_work_context=bool(data.get('track_work_context', True))
             )
         elif request.method == 'PUT':
-            exist = db.get_agent(key)
+            exist = existing
             if not exist: return jsonify({"error": "Not found"}), 404
             
             # Additional check: even if editor, maybe restrict editing others' agents?
@@ -245,20 +264,34 @@ def save_agent():
                 conscience_model=data.get('conscience_model'),
                 rag_knowledge_base=data.get('rag_knowledge_base'),
                 rag_format_string=(data.get('rag_format_string') or '').strip() or None,
-                tools=data.get('tools', []),
+                tools=tools_to_save,
                 scope_statement=str(data.get('scope_statement') or ''),
                 max_agent_turns=data.get('max_agent_turns'),
                 track_work_context=bool(data.get('track_work_context', True))
             )
 
+        # File the pending widening (57b) now that the row write succeeded.
+        request_id = None
+        if pending_additions:
+            request_id = tool_approval_store.create_request(
+                key, user['org_id'], user_id, pending_additions, requested_full)
+            try:
+                db.append_compliance_log(
+                    user['org_id'], 'tool_request_created', f"user:{user_id}",
+                    {"agent": key, "request": request_id, "added": pending_additions})
+            except Exception as e:
+                current_app.logger.error(f"tool-request evidence failed for {key}: {e}")
+
         # Tool-list changes are the highest-consequence capability change an
         # agent can receive, and until backlog 57a they left no record. Old
         # list comes from the pre-update row (empty on create); best-effort,
-        # so evidence failure never blocks the save it describes.
+        # so evidence failure never blocks the save it describes. Compares
+        # what was actually SAVED: pending additions are not on the agent
+        # yet and get their own tool_request_* evidence instead.
         if user.get('org_id'):
             try:
-                old_tools = sorted(exist.get('tools') or []) if request.method == 'PUT' else []
-                new_tools = sorted(requested_tools)
+                old_tools = sorted(existing.get('tools') or []) if (existing and request.method == 'PUT') else []
+                new_tools = sorted(tools_to_save)
                 if old_tools != new_tools:
                     db.append_compliance_log(
                         user['org_id'], 'agent_tools_changed', f"user:{user_id}",
@@ -272,7 +305,9 @@ def save_agent():
         # Invalidate Cache to ensure runtime uses new config
         global_safi_cache.invalidate_profile(key)
 
-        return jsonify({"ok": True, "key": key}), 200
+        return jsonify({"ok": True, "key": key,
+                        "tools_pending_approval": pending_additions,
+                        "tool_request_id": request_id}), 200
         
     except Exception as e:
         current_app.logger.error(f"Agent Save Exception: {e}")
@@ -666,6 +701,129 @@ def revoke_agent_share(key, grantee_type, grantee_id):
                                  {"agent": agent['agent_key'],
                                   "grantee_type": grantee_type, "grantee": grantee_id})
     return jsonify({"ok": True, "removed": removed})
+
+
+# ---------------------------------------------------------------------------
+# Tool-grant approvals (backlog 57b). Additions wait here; the author may not
+# approve their own request unless they are the org's only eligible reviewer,
+# in which case the sign-off is recorded as non-independent (KB pattern).
+# ---------------------------------------------------------------------------
+
+def _reviewer_context():
+    """(user_id, email, org_id, error_response) for the review endpoints."""
+    user = session.get('user')
+    if not user:
+        return None, None, None, (jsonify({"error": "Unauthorized"}), 401)
+    if not check_any_role(('admin', 'auditor')):
+        return None, None, None, (jsonify({"error": "Forbidden: requires admin or auditor."}), 403)
+    org_id = user.get('org_id')
+    if not org_id:
+        return None, None, None, (jsonify({"error": "You are not part of an organization."}), 400)
+    return (user.get('id') or user.get('sub')), user.get('email'), org_id, None
+
+
+@agent_api_bp.route('/agents/tool-requests', methods=['GET'], strict_slashes=False)
+def list_tool_requests():
+    uid, _email, org_id, err = _reviewer_context()
+    if err:
+        return err
+    status = request.args.get('status', 'pending')
+    if status not in ('pending', 'approved', 'rejected', 'superseded'):
+        return jsonify({"error": "Invalid status."}), 400
+    return jsonify({"ok": True,
+                    "requests": tool_approval_store.list_requests(org_id, status)})
+
+
+@agent_api_bp.route('/agents/tool-requests/<request_id>/approve',
+                    methods=['POST'], strict_slashes=False)
+def approve_tool_request(request_id):
+    uid, email, org_id, err = _reviewer_context()
+    if err:
+        return err
+    req = tool_approval_store.get_request(request_id)
+    if not req or str(req['org_id']) != str(org_id):
+        return jsonify({"error": "Not found"}), 404
+    if req['status'] != 'pending':
+        return jsonify({"error": f"This request is already {req['status']}."}), 409
+
+    # Separation of duties: authors do not approve their own widening. The
+    # sole-reviewer exception prevents a one-admin org from deadlocking and
+    # stamps the non-independence on the request row itself.
+    self_approved = False
+    if str(req['requested_by']) == str(uid):
+        if tool_approval_store.other_reviewer_exists(org_id, uid):
+            return jsonify({"error": "You requested this change; another admin "
+                                     "or auditor must approve it."}), 403
+        self_approved = True
+
+    agent = db.get_agent(req['agent_key'])
+    if not agent or str(agent.get('org_id')) != str(org_id):
+        tool_approval_store.resolve_request(request_id, 'rejected', uid, email,
+                                            reason='agent no longer exists')
+        return jsonify({"error": "The agent no longer exists; request closed."}), 409
+
+    # Re-check the policy ceiling AT APPROVAL TIME: the policy may have
+    # narrowed since the request was filed, and approval is the moment the
+    # capability becomes real.
+    added = req.get('added') or []
+    ceiling = policy_tool_ceiling(agent.get('policy_id'))
+    if ceiling is not None:
+        from ..core.tool_connectors import expand_connectors
+        refused = sorted({t for t in added if not set(expand_connectors([t])) <= ceiling})
+        if refused:
+            return jsonify({"error": "The governing policy no longer authorizes: "
+                                     + ", ".join(refused)
+                                     + ". Reject the request or update the policy first."}), 409
+
+    new_tools = sorted(set(agent.get('tools') or []) | set(added))
+    tool_approval_store.apply_tools(req['agent_key'], new_tools)
+    tool_approval_store.resolve_request(request_id, 'approved', uid, email,
+                                        self_approved=self_approved)
+    global_safi_cache.invalidate_profile(req['agent_key'])
+    for event_type, detail in (
+        ('tool_request_approved', {"agent": req['agent_key'], "request": request_id,
+                                   "added": added, "requested_by": req['requested_by'],
+                                   "self_approved": self_approved}),
+        ('agent_tools_changed', {"agent": req['agent_key'], "added": added,
+                                 "removed": [], "tools": new_tools}),
+    ):
+        try:
+            db.append_compliance_log(org_id, event_type, f"user:{uid}", detail)
+        except Exception as e:
+            current_app.logger.error(f"tool-approval evidence failed ({event_type}): {e}")
+    return jsonify({"ok": True, "tools": new_tools, "self_approved": self_approved})
+
+
+@agent_api_bp.route('/agents/tool-requests/<request_id>/reject',
+                    methods=['POST'], strict_slashes=False)
+def reject_tool_request(request_id):
+    # A reviewer rejects; the AUTHOR may also hit this to cancel their own
+    # request, which needs no separation of duties (withdrawing a widening
+    # is narrowing).
+    user = session.get('user')
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = user.get('id') or user.get('sub')
+    org_id = user.get('org_id')
+    req = tool_approval_store.get_request(request_id)
+    if not req or not org_id or str(req['org_id']) != str(org_id):
+        return jsonify({"error": "Not found"}), 404
+    is_author = str(req['requested_by']) == str(uid)
+    if not (is_author or check_any_role(('admin', 'auditor'))):
+        return jsonify({"error": "Forbidden"}), 403
+    if req['status'] != 'pending':
+        return jsonify({"error": f"This request is already {req['status']}."}), 409
+    reason = ((request.get_json(silent=True) or {}).get('reason') or '').strip() or None
+    tool_approval_store.resolve_request(request_id, 'rejected', uid,
+                                        user.get('email'), reason=reason)
+    try:
+        db.append_compliance_log(org_id, 'tool_request_rejected', f"user:{uid}",
+                                 {"agent": req['agent_key'], "request": request_id,
+                                  "added": req.get('added'), "reason": reason,
+                                  "withdrawn_by_author": is_author})
+    except Exception as e:
+        current_app.logger.error(f"tool-reject evidence failed: {e}")
+    return jsonify({"ok": True})
 
 
 @agent_api_bp.route('/agents/tools', methods=['GET'], strict_slashes=False)

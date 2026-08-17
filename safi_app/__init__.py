@@ -114,6 +114,12 @@ def create_app():
             sharing_store.init_schema()
         except Exception as e:
             app.logger.error("Sharing table init failed, agent sharing disabled: %s", e)
+        # Tool-grant approvals (backlog 57b): workflow state, not audit ledger.
+        try:
+            from .persistence import tool_approval_store
+            tool_approval_store.init_schema()
+        except Exception as e:
+            app.logger.error("Tool-approval table init failed: %s", e)
 
     # Register the Google OAuth client with Authlib
     oauth.register(

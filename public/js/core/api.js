@@ -296,6 +296,18 @@ export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
 
+// --- Tool-grant approvals: widening an agent's tool list needs a reviewer ---
+
+export async function listToolRequests(status = 'pending') {
+    return httpGet(`/api/agents/tool-requests?status=${encodeURIComponent(status)}`);
+}
+export async function approveToolRequest(requestId) {
+    return httpJSON(`/api/agents/tool-requests/${requestId}/approve`, 'POST', {});
+}
+export async function rejectToolRequest(requestId, reason = '') {
+    return httpJSON(`/api/agents/tool-requests/${requestId}/reject`, 'POST', { reason });
+}
+
 // --- Attention inbox: everything waiting on this user, role-aware ---
 
 export async function fetchAttention() {
