@@ -318,6 +318,10 @@ def remove_organization_member(org_id, user_id):
         for key in revoked:
             db.delete_oauth_token(user_id, mcp_oauth.provider_key(key), org_id=org_id)
         db.remove_member_from_org(user_id, org_id, actor=_actor())
+        # Sharing rows must not outlive the membership: direct grants and
+        # group memberships in this org go with the member (backlog 55).
+        from ..persistence import sharing_store
+        sharing_store.remove_user_from_org_sharing(user_id, org_id)
         db.append_compliance_log(org_id, 'member_removed', f"user:{_actor()}",
                                  {"member": user_id, "prior_role": prior,
                                   "tool_tokens_revoked": revoked})

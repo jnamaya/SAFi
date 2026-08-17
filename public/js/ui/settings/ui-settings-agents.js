@@ -99,6 +99,9 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
                         <button type="button" data-key="${profile.key}" class="dup-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
                             Duplicate
                         </button>
+                        <button type="button" data-key="${profile.key}" data-name="${profile.name}" class="share-agent-btn px-3 py-1.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition-colors">
+                            Share
+                        </button>
                         <button type="button" data-key="${profile.key}" class="delete-agent-btn px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">
                             Delete
                         </button>
@@ -206,6 +209,15 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
+    // --- Attach listeners for "Share Agent" buttons ---
+    container.querySelectorAll('.share-agent-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openShareDialog(btn.dataset.key, btn.dataset.name);
+        };
+    });
+
     // --- NEW: Attach Event Listener for "Create New Agent" ---
     const createBtn = document.getElementById('btn-create-agent');
     if (createBtn) {
@@ -214,6 +226,113 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
             openAgentWizard(null);
         });
     }
+}
+
+// --- AGENT SHARE DIALOG ---
+
+function escSh(s) {
+    const div = document.createElement('div');
+    div.textContent = String(s ?? '');
+    return div.innerHTML;
+}
+
+/**
+ * Self-contained share dialog: grants can_use access to org members and
+ * groups on top of the visibility tier. Owner or org admin only (the button
+ * is gated the same way, and the backend enforces it regardless).
+ */
+async function openShareDialog(key, agentName) {
+    document.getElementById('agent-share-modal')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'agent-share-modal';
+    modal.className = 'fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Share &ldquo;${escSh(agentName)}&rdquo;</h3>
+                <button id="agent-share-close" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="agent-share-body" class="p-6 overflow-y-auto custom-scrollbar">
+                <div class="text-center text-gray-500 py-8"><div class="thinking-spinner w-6 h-6 mx-auto mb-3"></div>Loading sharing...</div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.querySelector('#agent-share-close').addEventListener('click', close);
+    await renderShareBody(modal, key);
+}
+
+async function renderShareBody(modal, key) {
+    const body = modal.querySelector('#agent-share-body');
+    if (!body) return;
+    let res;
+    try {
+        res = await api.getAgentShares(key);
+    } catch (err) {
+        body.innerHTML = `<p class="text-sm text-red-500">${escSh(err.message || 'Could not load sharing.')}</p>`;
+        return;
+    }
+    const grants = res.grants || [];
+    const grantedIds = new Set(grants.map(g => `${g.grantee_type}:${g.grantee_id}`));
+    const groups = (res.groups || []).filter(g => !grantedIds.has(`group:${g.id}`));
+    const members = (res.members || []).filter(m => !grantedIds.has(`user:${m.id}`));
+
+    const grantRows = grants.length ? grants.map(g => `
+        <div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">${escSh(g.grantee_name || g.grantee_id)}</p>
+                <p class="text-xs text-gray-500 truncate">${g.grantee_type === 'group' ? 'Group' : escSh(g.grantee_email || '')} &middot; can use</p>
+            </div>
+            <button type="button" data-type="${g.grantee_type}" data-id="${escSh(g.grantee_id)}"
+                class="share-revoke-btn text-xs text-red-500 hover:underline flex-shrink-0 ml-3">Remove</button>
+        </div>`).join('')
+        : `<p class="text-sm text-gray-500 py-2">Not shared with anyone yet. Only you and organization admins can use it.</p>`;
+
+    const groupOpts = groups.map(g =>
+        `<option value="group:${escSh(g.id)}">${escSh(g.name)} (${g.member_count} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
+    const memberOpts = members.map(m =>
+        `<option value="user:${escSh(m.id)}">${escSh(m.name || m.email || m.id)}</option>`).join('');
+
+    body.innerHTML = `
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">People and groups with access can chat with this agent. Sharing does not allow editing it.</p>
+        <div class="flex gap-2 mb-5">
+            <select id="share-grantee-select" class="settings-modal-select flex-1">
+                <option value="">Select a person or group...</option>
+                ${groupOpts ? `<optgroup label="Groups">${groupOpts}</optgroup>` : ''}
+                ${memberOpts ? `<optgroup label="People">${memberOpts}</optgroup>` : ''}
+            </select>
+            <button id="share-grant-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Share</button>
+        </div>
+        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Who has access</h4>
+        <div>${grantRows}</div>`;
+
+    body.querySelector('#share-grant-btn').addEventListener('click', async () => {
+        const sel = body.querySelector('#share-grantee-select');
+        if (!sel.value) return;
+        const [granteeType, granteeId] = [sel.value.slice(0, sel.value.indexOf(':')), sel.value.slice(sel.value.indexOf(':') + 1)];
+        try {
+            await api.grantAgentShare(key, granteeType, granteeId);
+            ui.showToast('Shared.', 'success');
+            await renderShareBody(modal, key);
+        } catch (err) {
+            ui.showToast(err.message || 'Share failed', 'error');
+        }
+    });
+
+    body.querySelectorAll('.share-revoke-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                await api.revokeAgentShare(key, btn.dataset.type, btn.dataset.id);
+                ui.showToast('Access removed.', 'success');
+                await renderShareBody(modal, key);
+            } catch (err) {
+                ui.showToast(err.message || 'Remove failed', 'error');
+            }
+        });
+    });
 }
 
 // --- PROFILE DETAILS MODAL HELPERS ---

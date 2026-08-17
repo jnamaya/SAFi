@@ -861,10 +861,13 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     // useful fact when choosing between agents — else a trimmed description,
     // else the tier. Keeps the row honest about what governs the pick.
     const hasPolicy = profile.policy_id && profile.policy_id !== 'standalone';
-    const subtitleRaw = (hasPolicy && profile.policy_name)
+    let subtitleRaw = (hasPolicy && profile.policy_name)
         ? profile.policy_name
         : (profile.description || '').trim()
           || (profile.is_custom === false ? 'Built-in agent' : 'Standalone agent');
+    // An agent reaching this user through a grant rather than the visibility
+    // tier says so: the reader should know it was shared with them.
+    if (profile.shared_via_grant) subtitleRaw = `Shared with you · ${subtitleRaw}`;
 
     // Agent names are org-authored free text and land in an attribute and in
     // markup; the avatar URL and subtitle are org-supplied too.

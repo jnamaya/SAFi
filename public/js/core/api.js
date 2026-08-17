@@ -296,6 +296,40 @@ export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
 
+// --- Agent sharing: per-agent can_use grants to users and groups ---
+
+export async function getAgentShares(key) {
+    return httpGet(`${urls.AGENTS}/${key}/share`);
+}
+export async function grantAgentShare(key, granteeType, granteeId) {
+    return httpJSON(`${urls.AGENTS}/${key}/share`, 'POST',
+        { grantee_type: granteeType, grantee_id: granteeId });
+}
+export async function revokeAgentShare(key, granteeType, granteeId) {
+    return httpJSON(`${urls.AGENTS}/${key}/share/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
+}
+
+// --- Custom groups (org admin) ---
+
+export async function listGroups() {
+    return httpGet('/api/groups');
+}
+export async function createGroup(name) {
+    return httpJSON('/api/groups', 'POST', { name });
+}
+export async function deleteGroup(groupId) {
+    return httpJSON(`/api/groups/${groupId}`, 'DELETE', {});
+}
+export async function listGroupMembers(groupId) {
+    return httpGet(`/api/groups/${groupId}/members`);
+}
+export async function addGroupMember(groupId, userId) {
+    return httpJSON(`/api/groups/${groupId}/members`, 'POST', { user_id: userId });
+}
+export async function removeGroupMember(groupId, userId) {
+    return httpJSON(`/api/groups/${groupId}/members/${encodeURIComponent(userId)}`, 'DELETE', {});
+}
+
 export async function fetchAvailableTools(policyId = null) {
     // With a policy id the backend marks each tool with allowed_by_policy,
     // expanding connector names to function names the way the compiler does.

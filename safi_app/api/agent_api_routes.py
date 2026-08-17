@@ -1,6 +1,7 @@
 import json
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
+from ..persistence import sharing_store
 from ..core.faculties.synderesis import AGENTS, ALL_AGENTS, get_profile
 from ..core.rbac import check_permission
 from ..config import Config
@@ -281,6 +282,14 @@ def list_all_agents():
         try:
             # Raw list from DB (Updated to fetch shared organization agents)
             raw_list = db.list_agents(user_id, user.get('org_id'), user.get('role', 'member'))
+            # Grants widen the ladder (backlog 55): union in agents shared with
+            # this user or one of their groups. Done here rather than inside
+            # db.list_agents, which is manifest-covered.
+            seen_keys = {a.get('agent_key') or a.get('key') for a in raw_list}
+            for granted in sharing_store.granted_agents(user_id, user.get('org_id')):
+                if granted['key'] not in seen_keys:
+                    granted['shared_via_grant'] = True
+                    raw_list.append(granted)
             # Enhance with merged policy data
             for agent in raw_list:
                 try:
@@ -293,6 +302,7 @@ def list_all_agents():
                     merged['key'] = agent['key']
                     merged['is_custom'] = agent.get('is_custom', True)
                     merged['created_by'] = agent.get('created_by')
+                    merged['shared_via_grant'] = agent.get('shared_via_grant', False)
                     
                     db_agents.append(merged)
                 except Exception:
@@ -347,10 +357,12 @@ def delete_agent(key):
     if agent.get('created_by') != uid: return jsonify({"error": "Unauthorized"}), 403
     
     db.delete_agent(clean)
-    
+    # Grants must not outlive the agent (no FKs, so cleanup is explicit).
+    sharing_store.delete_grants_for_agent(clean)
+
     # Invalidate Cache
     global_safi_cache.invalidate_profile(clean)
-    
+
     return jsonify({"ok": True})
 
 @agent_api_bp.route('/generate/rubric', methods=['POST'], strict_slashes=False)
@@ -532,6 +544,110 @@ async def generate_scope():
     except Exception as e:
         current_app.logger.error(f"generate_scope error: {e}")
         return jsonify({"ok": False, "error": "An internal error occurred."}), 500
+
+
+# ---------------------------------------------------------------------------
+# Agent sharing (backlog 55): per-agent can_use grants to users and groups.
+# Grants only widen the visibility ladder, never narrow it, and are org-scoped:
+# an agent with no org cannot be shared, and a grantee must be in the same org.
+# ---------------------------------------------------------------------------
+
+def _share_authority(key):
+    """Returns (agent, error_response). The caller may manage sharing when
+    they own the agent or are an admin of the agent's org."""
+    user = session.get('user')
+    user_id = (user.get('id') or user.get('sub')) if user else None
+    if not user_id:
+        return None, (jsonify({"error": "Unauthorized"}), 401)
+    clean = "".join(c for c in key.lower() if c.isalnum() or c == '_')
+    agent = db.get_agent(clean)
+    if not agent:
+        return None, (jsonify({"error": "Not found"}), 404)
+    is_owner = str(agent.get('created_by') or '') == str(user_id)
+    is_org_admin = (check_permission('admin') and agent.get('org_id')
+                    and str(agent['org_id']) == str(user.get('org_id')))
+    if not (is_owner or is_org_admin):
+        return None, (jsonify({"error": "Unauthorized"}), 403)
+    if not agent.get('org_id'):
+        return None, (jsonify({"error": "This agent belongs to no organization, "
+                                        "so there is no one to share it with."}), 400)
+    if str(agent['org_id']) != str(user.get('org_id')):
+        return None, (jsonify({"error": "Unauthorized"}), 403)
+    agent['agent_key'] = agent.get('agent_key') or clean
+    return agent, None
+
+
+@agent_api_bp.route('/agents/<key>/share', methods=['GET'], strict_slashes=False)
+def list_agent_shares(key):
+    agent, err = _share_authority(key)
+    if err:
+        return err
+    org_id = agent['org_id']
+    # Candidates ride along so the dialog needs one request. The member list
+    # is already org-visible via GET /organizations/<id>/members.
+    try:
+        members = db.get_organization_members(org_id)
+    except Exception:
+        members = []
+    return jsonify({
+        "ok": True,
+        "grants": sharing_store.list_grants(agent['agent_key']),
+        "groups": [{"id": g['id'], "name": g['name'],
+                    "member_count": g.get('member_count', 0)}
+                   for g in sharing_store.list_groups(org_id)],
+        "members": [{"id": m.get('id'), "name": m.get('name'),
+                     "email": m.get('email')} for m in members],
+    })
+
+
+@agent_api_bp.route('/agents/<key>/share', methods=['POST'], strict_slashes=False)
+def grant_agent_share(key):
+    agent, err = _share_authority(key)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    grantee_type = (data.get('grantee_type') or '').strip()
+    grantee_id = (data.get('grantee_id') or '').strip()
+    level = (data.get('permission_level') or 'can_use').strip()
+    if grantee_type not in ('user', 'group') or not grantee_id:
+        return jsonify({"error": "'grantee_type' (user|group) and 'grantee_id' are required."}), 400
+    if level not in sharing_store.GRANT_LEVELS:
+        return jsonify({"error": "Only 'can_use' grants are supported."}), 400
+
+    org_id = agent['org_id']
+    if grantee_type == 'user':
+        target = db.get_user_details(grantee_id)
+        if not target or str(target.get('org_id')) != str(org_id):
+            return jsonify({"error": "That user is not a member of this agent's organization."}), 400
+    else:
+        group = sharing_store.get_group(grantee_id)
+        if not group or str(group.get('org_id')) != str(org_id):
+            return jsonify({"error": "That group does not belong to this agent's organization."}), 400
+
+    actor = (session.get('user') or {}).get('id')
+    sharing_store.set_grant(agent['agent_key'], grantee_type, grantee_id,
+                            org_id, actor, level)
+    db.append_compliance_log(org_id, 'agent_share_granted', f"user:{actor}",
+                             {"agent": agent['agent_key'], "grantee_type": grantee_type,
+                              "grantee": grantee_id, "level": level})
+    return jsonify({"ok": True})
+
+
+@agent_api_bp.route('/agents/<key>/share/<grantee_type>/<path:grantee_id>',
+                    methods=['DELETE'], strict_slashes=False)
+def revoke_agent_share(key, grantee_type, grantee_id):
+    agent, err = _share_authority(key)
+    if err:
+        return err
+    if grantee_type not in ('user', 'group'):
+        return jsonify({"error": "'grantee_type' must be user or group."}), 400
+    removed = sharing_store.revoke_grant(agent['agent_key'], grantee_type, grantee_id)
+    if removed:
+        actor = (session.get('user') or {}).get('id')
+        db.append_compliance_log(agent['org_id'], 'agent_share_revoked', f"user:{actor}",
+                                 {"agent": agent['agent_key'],
+                                  "grantee_type": grantee_type, "grantee": grantee_id})
+    return jsonify({"ok": True, "removed": removed})
 
 
 @agent_api_bp.route('/agents/tools', methods=['GET'], strict_slashes=False)

@@ -107,6 +107,13 @@ def create_app():
             mcp_store.init_schema()
         except Exception as e:
             app.logger.error("MCP server table init failed, GUI install disabled: %s", e)
+        # Scoped agent sharing (backlog 55). Also outside database.py: who may
+        # use which agent is Section III org configuration, not audit ledger.
+        try:
+            from .persistence import sharing_store
+            sharing_store.init_schema()
+        except Exception as e:
+            app.logger.error("Sharing table init failed, agent sharing disabled: %s", e)
 
     # Register the Google OAuth client with Authlib
     oauth.register(
@@ -161,6 +168,7 @@ def create_app():
     from .api.review_api import review_bp
     from .api.audit_api import audit_bp
     from .api.mcp_api import mcp_bp
+    from .api.groups_api import groups_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -176,6 +184,7 @@ def create_app():
     app.register_blueprint(evaluate_bp, url_prefix='/api')
     app.register_blueprint(review_bp, url_prefix='/api')
     app.register_blueprint(audit_bp, url_prefix='/api')
+    app.register_blueprint(groups_bp, url_prefix='/api')
     app.register_blueprint(mcp_bp)
 
     # Server-side session resolution (enterprise identity Phase 1).

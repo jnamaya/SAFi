@@ -8,6 +8,7 @@ from flask import Blueprint, session, jsonify, request, Response, current_app
 from datetime import datetime, timezone
 
 from ..persistence import database as db
+from ..persistence import sharing_store
 from ..core.orchestrator import SAFi
 from ..core.faculties.synderesis import get_profile, list_profiles
 from ..core.services import provider_governance as pg
@@ -575,6 +576,25 @@ async def process_prompt_endpoint():
     except Exception:
         agent_profile = {}
 
+    # Use-path enforcement (backlog 55b): the visibility ladder used to gate
+    # the picker only, so a key learned out of band chatted with any private
+    # agent. Built-ins are not rows and stay platform-wide; a custom agent
+    # must clear the sharing resolver on EVERY turn, so a revoked share stops
+    # working immediately rather than at the next profile switch.
+    raw_agent = db.get_agent(user_profile_name)
+    if raw_agent and not sharing_store.can_use_agent(
+            user_id, user_details.get('role'), user_details.get('org_id'), raw_agent):
+        # Heal the stored selection so the next page load recovers.
+        try:
+            db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
+        except Exception:
+            pass
+        return jsonify({
+            "error": "You no longer have access to this agent. Your active "
+                     "agent has been reset to the default.",
+            "code": "AGENT_ACCESS_DENIED"
+        }), 403
+
     # PRIORITY: Agent -> User -> System Default
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
     conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
@@ -672,10 +692,20 @@ def profiles_list():
         return jsonify({"error": "Authentication required."}), 401
 
     user_profile_name = get_user_profile_name()
-    
+
+    candidates = list_profiles(owner_id=user_id)
+    # Grants widen the ladder (backlog 55): agents shared with this user or
+    # one of their groups join the picker. Unioned here, in the API layer,
+    # because db.list_agents is manifest-covered.
+    sess_user = session.get('user') or {}
+    seen = {p['key'] for p in candidates}
+    for granted in sharing_store.granted_agents(user_id, sess_user.get('org_id')):
+        if granted['key'] not in seen:
+            candidates.append({"key": granted['key'], "name": granted.get('name'),
+                               "is_custom": True, "created_by": granted.get('created_by')})
+
     all_profiles = []
-    # FIX: Pass user_id to filter private agents
-    for p in list_profiles(owner_id=user_id):
+    for p in candidates:
         try:
             profile_details = get_profile(p['key'])
             profile_details['key'] = p['key'] 
@@ -955,6 +985,15 @@ def _validate_schedule_fields(data, require_all):
             get_profile(agent_key)
         except Exception:
             return None, f"Unknown agent '{agent_key}'."
+        # A schedule is a standing chat turn, so it clears the same sharing
+        # resolver the live path does (backlog 55). Built-ins are not rows.
+        raw_agent = db.get_agent(agent_key)
+        if raw_agent:
+            sess_user = session.get('user') or {}
+            uid = sess_user.get('sub') or sess_user.get('id')
+            if not sharing_store.can_use_agent(uid, sess_user.get('role'),
+                                               sess_user.get('org_id'), raw_agent):
+                return None, "You do not have access to that agent."
         fields['agent_key'] = agent_key
     return fields, None
 

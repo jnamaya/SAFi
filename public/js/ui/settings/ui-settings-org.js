@@ -440,6 +440,31 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                 </div>
             </section>
         </div>
+
+        ${(currentUser && currentUser.role === 'admin') ? `
+        <div class="settings-card">
+            <section>
+                <div class="flex items-center justify-between mb-3">
+                     <h4 class="text-lg font-semibold">Groups</h4>
+                     <span class="text-xs text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full" id="group-count-badge">...</span>
+                </div>
+                <p class="text-xs text-gray-400 mb-3">Groups collect members for agent sharing. Sharing an agent with a group lets every member of that group use it in chat.</p>
+                <div id="org-groups-list" class="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[60px]">
+                     <div class="p-6 text-center text-neutral-500">
+                         <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
+                     </div>
+                </div>
+                <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
+                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Create a group</span>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="text" id="inp-group-name" placeholder="e.g. Finance team" maxlength="100"
+                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                        <button id="btn-create-group" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+        ` : ''}
     `;
 
     // Attach Listeners
@@ -934,6 +959,133 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
     // (Retention, legal hold, examiner export, evidence log, and the provider
     // allow-list moved to the Compliance tab — ui-settings-compliance.js.)
     loadOrganizationMembers(org.id);
+
+    // --- Groups (admin only; the card is only rendered for admins) ---
+    if (currentUser && currentUser.role === 'admin') {
+        document.getElementById('btn-create-group')?.addEventListener('click', async () => {
+            const inp = document.getElementById('inp-group-name');
+            const name = (inp?.value || '').trim();
+            if (!name) return;
+            try {
+                await api.createGroup(name);
+                inp.value = '';
+                ui.showToast('Group created.', 'success');
+                loadOrgGroups(org.id);
+            } catch (e) {
+                ui.showToast(e.message || 'Create failed', 'error');
+            }
+        });
+        loadOrgGroups(org.id);
+    }
+}
+
+async function loadOrgGroups(orgId) {
+    const el = document.getElementById('org-groups-list');
+    const badge = document.getElementById('group-count-badge');
+    if (!el) return;
+    try {
+        const res = await api.listGroups();
+        const groups = res.groups || [];
+        if (badge) badge.textContent = `${groups.length} group${groups.length === 1 ? '' : 's'}`;
+        if (!groups.length) {
+            el.innerHTML = `<p class="p-4 text-sm text-gray-500">No groups yet. Create one below, then share agents with it from the Agents tab.</p>`;
+            return;
+        }
+        el.innerHTML = groups.map(g => `
+            <div class="border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <div class="flex items-center justify-between px-4 py-2.5">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">${escapeHtml(g.name)}</p>
+                        <p class="text-xs text-gray-400">${g.member_count} member${g.member_count === 1 ? '' : 's'}</p>
+                    </div>
+                    <div class="flex items-center gap-3 flex-shrink-0 ml-3">
+                        <button data-group="${escapeHtml(g.id)}" class="grp-members-btn text-xs text-green-600 hover:underline">Members</button>
+                        <button data-group-del="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}" class="text-xs text-red-500 hover:underline">Delete</button>
+                    </div>
+                </div>
+                <div id="grp-panel-${escapeHtml(g.id)}" class="hidden px-4 pb-3"></div>
+            </div>`).join('');
+
+        el.querySelectorAll('.grp-members-btn').forEach(btn => btn.addEventListener('click', () => {
+            toggleGroupPanel(orgId, btn.getAttribute('data-group'));
+        }));
+        el.querySelectorAll('[data-group-del]').forEach(btn => btn.addEventListener('click', async () => {
+            const name = btn.getAttribute('data-name');
+            if (!confirm(`Delete the group "${name}"? Agents shared with it will no longer be shared through it.`)) return;
+            try {
+                await api.deleteGroup(btn.getAttribute('data-group-del'));
+                ui.showToast('Group deleted.', 'success');
+                loadOrgGroups(orgId);
+            } catch (e) {
+                ui.showToast(e.message || 'Delete failed', 'error');
+            }
+        }));
+    } catch (e) {
+        el.innerHTML = `<p class="p-4 text-sm text-red-500">${escapeHtml(e.message || 'Could not load groups.')}</p>`;
+    }
+}
+
+async function toggleGroupPanel(orgId, groupId) {
+    const panel = document.getElementById(`grp-panel-${groupId}`);
+    if (!panel) return;
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+    }
+    panel.classList.remove('hidden');
+    panel.innerHTML = `<div class="py-2 text-sm text-gray-400">Loading...</div>`;
+    try {
+        const [grpRes, orgRes] = await Promise.all([
+            api.listGroupMembers(groupId),
+            api.getOrganizationMembers(orgId),
+        ]);
+        const inGroup = grpRes.members || [];
+        const inGroupIds = new Set(inGroup.map(m => m.user_id));
+        const candidates = (orgRes.members || []).filter(m => !inGroupIds.has(m.id));
+
+        const rows = inGroup.length ? inGroup.map(m => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <span class="text-sm text-gray-700 dark:text-gray-300 truncate">${escapeHtml(m.name || m.user_id)} <span class="text-xs text-gray-400">${escapeHtml(m.email || '')}</span></span>
+                <button data-member="${escapeHtml(m.user_id)}" class="grp-remove-member text-xs text-red-500 hover:underline flex-shrink-0 ml-3">Remove</button>
+            </div>`).join('')
+            : `<p class="py-1.5 text-sm text-gray-400">No members yet.</p>`;
+
+        panel.innerHTML = `
+            <div class="bg-gray-50 dark:bg-neutral-800/50 rounded-lg p-3">
+                ${rows}
+                <div class="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700">
+                    <select class="grp-add-select settings-modal-select flex-1 text-sm">
+                        <option value="">Add a member...</option>
+                        ${candidates.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.email || m.id)}</option>`).join('')}
+                    </select>
+                    <button class="grp-add-btn px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold">Add</button>
+                </div>
+            </div>`;
+
+        panel.querySelector('.grp-add-btn').addEventListener('click', async () => {
+            const sel = panel.querySelector('.grp-add-select');
+            if (!sel.value) return;
+            try {
+                await api.addGroupMember(groupId, sel.value);
+                await loadOrgGroups(orgId);
+                await toggleGroupPanel(orgId, groupId);
+            } catch (e) {
+                ui.showToast(e.message || 'Add failed', 'error');
+            }
+        });
+        panel.querySelectorAll('.grp-remove-member').forEach(btn => btn.addEventListener('click', async () => {
+            try {
+                await api.removeGroupMember(groupId, btn.getAttribute('data-member'));
+                await loadOrgGroups(orgId);
+                await toggleGroupPanel(orgId, groupId);
+            } catch (e) {
+                ui.showToast(e.message || 'Remove failed', 'error');
+            }
+        }));
+    } catch (e) {
+        panel.innerHTML = `<p class="py-2 text-sm text-red-500">${escapeHtml(e.message || 'Could not load members.')}</p>`;
+    }
 }
 
 async function loadPendingInvites(orgId) {

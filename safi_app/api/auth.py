@@ -903,7 +903,23 @@ def set_user_profile():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     data = request.json
-    profile_name = data.get('profile')
+    profile_name = (data.get('profile') or '').strip()
+    if not profile_name:
+        return jsonify({"error": "'profile' is required."}), 400
+    # Use-path enforcement (backlog 55b). This field used to be written with
+    # no validation at all, and the chat path trusts it, so this endpoint was
+    # a way to use any private agent by key. Built-ins are platform-wide;
+    # custom agents must clear the sharing resolver.
+    from ..core.faculties.synderesis import AGENTS
+    if profile_name not in AGENTS:
+        from ..persistence import sharing_store
+        agent = db.get_agent(profile_name)
+        if not agent:
+            return jsonify({"error": "Unknown agent."}), 404
+        user = session.get('user') or {}
+        if not sharing_store.can_use_agent(user_id, user.get('role'),
+                                           user.get('org_id'), agent):
+            return jsonify({"error": "You do not have access to that agent."}), 403
     db.update_user_profile(user_id, profile_name)
     return jsonify({"status": "success", "active_profile": profile_name})
 

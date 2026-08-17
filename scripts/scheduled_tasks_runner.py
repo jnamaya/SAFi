@@ -239,6 +239,17 @@ def run_task(task: dict) -> None:
         db.mark_scheduled_task_run(task["id"], run_date, f"error: unknown agent ({e})")
         return
 
+    # A schedule is a standing chat turn, so a revoked share stops it too
+    # (backlog 55). Built-in agents are not rows and stay platform-wide.
+    raw_agent = db.get_agent(task["agent_key"])
+    if raw_agent:
+        from safi_app.persistence import sharing_store
+        if not sharing_store.can_use_agent(task["user_id"], owner.get("role"),
+                                           owner.get("org_id"), raw_agent):
+            db.mark_scheduled_task_run(task["id"], run_date,
+                                       "error: the owner no longer has access to this agent")
+            return
+
     org_id = prof.get("org_id") or owner.get("org_id")
     activate_org(org_id)  # provider allow-list applies to scheduled turns too
 
