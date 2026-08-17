@@ -6,7 +6,7 @@
 > shapes it accepts so you can build on them. Verified against the tree at
 > the commit that introduced this file.
 
-This is the write-side contract: the shapes User Space (the ULB) hands the
+This is the write-side contract: the shapes User Space (the USB, User Space Base) hands the
 TCB to define what gets governed. The read-side contract, everything the
 TCB produces, is the
 [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md).

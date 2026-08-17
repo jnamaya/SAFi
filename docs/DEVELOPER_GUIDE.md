@@ -11,10 +11,10 @@ For the product overview see the [README](../README.md).
 Hi developers,
 
 SAFi is divided into two code bases: the **TCB**, the Trusted Computing
-Base, and the **ULB**, the User Land Base (called User Space elsewhere in
+Base, and the **USB**, the User Space Base (called User Space elsewhere in
 this guide; same thing).
 
-My goal with the TCB is to keep it small, bug free, and stable. The ULB
+My goal with the TCB is to keep it small, bug free, and stable. The USB
 can be anything, as long as you adhere to the
 [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md).
 
@@ -23,7 +23,7 @@ of philosophy SAFi is built upon. Keep using the frameworks you are
 already familiar with (LangChain, for example) and build on top of SAFi
 without breaking the TCB core loop.
 
-If it helps, think of the TCB and the ULB as the Linux kernel and a
+If it helps, think of the TCB and the USB as the Linux kernel and a
 desktop environment. You can develop whatever desktop environment you
 want, and keep those changes to yourself if you want to. But if you need
 to expand or add anything in the TCB, commit those changes to the
@@ -60,7 +60,7 @@ Nelson
 
 ## How to read this guide
 
-Most of this guide documents the **reference implementation**: the ULB
+Most of this guide documents the **reference implementation**: the USB
 that ships with SAFi (the vanilla-JS front end, the Capacitor mobile
 shell, the wizards, the settings screens). It exists so you can evaluate
 SAFi in one command and so contributors can improve it. **None of it
@@ -199,7 +199,7 @@ Computing Base (TCB): the governance pipeline, the five faculties, the
 audit schema, the enforcement content, RBAC, the plugin mechanism, and the
 attestation module. Everything else — every API blueprint, the whole front
 end, the agents, the policies, the plugins' content, the bots, the scripts
-— is User Space (the ULB, User Land Base): it configures what the TCB
+— is User Space (the USB, User Space Base): it configures what the TCB
 enforces and reads what the TCB records, but a defect in it cannot
 violate the governance policy. You
 will work in User Space almost all of the time, and User Space talks to
@@ -1219,7 +1219,7 @@ attestation module — 17 files. The License & Governance Agreement calls
 this set the Core Loop; in security-engineering terms it is the Trusted
 Computing Base (TCB). A defect inside the set can violate the governance
 policy. A defect outside it cannot. Everything outside it is User Space,
-the ULB (User Land Base).
+the USB (User Space Base).
 
 **The boundary's two laws.** First: inside the TCB, enforcement is
 deterministic and discernment is not. Every block, approval, redirect and
