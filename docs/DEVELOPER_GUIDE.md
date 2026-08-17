@@ -58,6 +58,32 @@ is the article section of the main project website:
 Thank you!
 Nelson
 
+## How to read this guide
+
+Most of this guide documents the **reference implementation**: the ULB
+that ships with SAFi (the vanilla-JS front end, the Capacitor mobile
+shell, the wizards, the settings screens). It exists so you can evaluate
+SAFi in one command and so contributors can improve it. **None of it
+binds you.** Your own client, GUI, or integration replaces any of it,
+and owes conformance only to the contract.
+
+Read by what you are building:
+
+- **Building your own interface or integration on SAFi** (your stack,
+  your framework): you need the contract only — section 5 (what the
+  pipeline does), sections 9 and 10 (the API and its RBAC), section 19
+  (the boundary), and the two specifications: the
+  [Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md) for
+  what you hand in, the
+  [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
+  for what you read back. You can skip every section that describes the
+  shipped interface (1, 3, and the wizard walkthroughs) without missing
+  anything that constrains you.
+- **Working on the shipped implementation itself** (fixing or extending
+  what SAFi ships): the whole guide applies, including the build steps
+  and layout sections, plus the contribution rules in section 19 for
+  anything that touches the TCB.
+
 ## Table of Contents
 
 1. [Front-end structure](#1-front-end-structure)
@@ -83,11 +109,14 @@ Nelson
 
 ## 1. Front-end structure
 
-The front-end is plain HTML, JavaScript, and CSS — no framework. That's a
-deliberate choice: I don't have hands-on experience with any front-end
-framework, and a governance product benefits from fewer dependencies to
-keep the security surface small. You're welcome to port it to a framework
-of your choice; nothing about the backend assumes vanilla JS.
+*Reference implementation. This describes the shipped interface; your own
+client owes it nothing.*
+
+The front-end is plain HTML, JavaScript, and CSS — no framework. A
+deliberate choice: a governance product benefits from fewer dependencies
+to keep the security surface small. You're welcome to port it to a
+framework of your choice, or replace it entirely; nothing about the
+backend assumes vanilla JS.
 
 ```
 public/
@@ -179,6 +208,9 @@ reaching into it. Section 19 draws the full boundary and catalogs those
 interfaces; internalize it before your first change.
 
 ## 3. Mobile structure
+
+*Reference implementation. The mobile app is a shell around the shipped
+web interface; a custom client needs none of this.*
 
 The Android app is a thin Capacitor shell around the same web app the
 browser serves — no separate UI to maintain. `chat/`, the folder
@@ -586,6 +618,10 @@ touching rather than assuming — don't take "no org-match check visible"
 as license to skip adding one where it's actually needed.
 
 ## 11. Setting up a policy
+
+*The formal field-by-field contract lives in the
+[Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md); this
+section explains the semantics and how the shipped wizard exercises them.*
 
 Policies are plain dicts/JSON, not classes — no schema migration to
 worry about when you add a value. A single value entry looks like this
@@ -1021,6 +1057,12 @@ Tools discovered from an installed MCP server need none of these: they
 register themselves through the same table at boot, in a separate
 namespace that built-ins take precedence over.
 ## 16. The Audit Hub metrics
+
+*The Audit Hub is the reference audit interface. The metric definitions
+below matter beyond it: every number derives from governance-record
+fields the
+[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
+documents, so a custom dashboard can recompute all of them.*
 
 The Audit Hub (Control Panel → Audit tab,
 `public/js/ui/settings/ui-settings-dashboard.js`) has its own display
