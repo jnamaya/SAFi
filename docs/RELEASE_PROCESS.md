@@ -74,7 +74,8 @@ and there are exactly two states:
 - **Not authentic**: everything else. A fork that keeps Core Loop changes
   private runs fully and governs fully, and its own records still attest
   to its own build, but it cannot use the SAFi name or claim authenticity
-  (License & Governance Agreement, Section IV).
+  ([License & Governance Agreement](SAFi%20License%20%26%20Governance%20Agreement.md),
+  Section IV).
 
 No local command crosses that line. Regenerating a manifest
 (`verify_integrity.py --update`) only makes a tree consistent with itself.
