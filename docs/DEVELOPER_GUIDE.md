@@ -238,15 +238,22 @@ mobile/
 
 ## 4. Setting up SAFi on your local machine
 
-Setting up SAFi is easy — just make sure you have Git and Docker installed
-first.
+Setting up SAFi is easy — just make sure you have Git, Docker, and
+Python 3 installed first.
 
 ```bash
 git clone https://github.com/jnamaya/SAFi.git
 cd SAFi
-cp .env.example .env   # set at least one AI model API key, plus your MySQL and local admin credentials
+python3 scripts/setup.py   # asks four questions, generates every secret, writes .env
 docker compose up
 ```
+
+The setup wizard needs nothing beyond Python 3, verifies your provider
+API key before writing it, prints the admin password once at the end,
+and refuses to overwrite an existing `.env` unless you pass `--force`
+(`--defaults` runs it non-interactively). Prefer configuring by hand?
+`cp .env.example .env` and follow the comments — set at least one AI
+provider key, the MySQL passwords, and the local admin credentials.
 
 Visit `http://localhost:5000` once it's up.
 
