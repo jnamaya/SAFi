@@ -164,6 +164,16 @@ class DeliveryIsNotAgentControlled(unittest.TestCase):
         self.assertIn('get_user_details(task["user_id"])', src)
         self.assertIn("smtp_configured", src)
 
+    def test_runner_never_mails_ungoverned_output(self):
+        """The Aug 17 regression: a stale conversation id crashed the turn and
+        the orchestrator's failure notice got emailed as if it were a digest.
+        Two guards now: the stored conversation is verified before reuse, and
+        an output without a Will decision is never mailed."""
+        src = (REPO_ROOT / "scripts" / "scheduled_tasks_runner.py").read_text(encoding="utf-8")
+        self.assertIn("verify_conversation_ownership", src)
+        self.assertLess(src.index("if not decision:"), src.index("send_email(Config"),
+                        "the no-decision guard must sit before the send")
+
 
 class BrandedEmailTemplate(unittest.TestCase):
     """The HTML alternative: brand palette, and above all the escape rule —

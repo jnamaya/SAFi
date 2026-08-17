@@ -242,7 +242,13 @@ def run_task(task: dict) -> None:
     org_id = prof.get("org_id") or owner.get("org_id")
     activate_org(org_id)  # provider allow-list applies to scheduled turns too
 
+    # The stored conversation can be gone — users may delete the digest
+    # thread from the sidebar — and reusing a stale id crashes the turn on
+    # the chat_history foreign key. Verify, and create a fresh thread when
+    # the old one is missing or no longer the owner's.
     conversation_id = task.get("conversation_id")
+    if conversation_id and not db.verify_conversation_ownership(task["user_id"], conversation_id):
+        conversation_id = None
     if not conversation_id:
         convo = db.create_conversation(task["user_id"])
         conversation_id = convo["id"] if isinstance(convo, dict) else convo
@@ -270,10 +276,18 @@ def run_task(task: dict) -> None:
         return
 
     output = (result or {}).get("finalOutput") or ""
-    decision = (result or {}).get("willDecision") or "unknown"
+    decision = (result or {}).get("willDecision") or ""
 
     if not output:
         db.mark_scheduled_task_run(task["id"], run_date, "error: empty output",
+                                   conversation_id=conversation_id)
+        return
+    if not decision:
+        # A result without a Will decision is a failure notice, not a governed
+        # output (e.g. the orchestrator's internal-error return). Never mail
+        # those as if they were the digest.
+        db.mark_scheduled_task_run(task["id"], run_date,
+                                   "error: turn failed before governance completed",
                                    conversation_id=conversation_id)
         return
 
