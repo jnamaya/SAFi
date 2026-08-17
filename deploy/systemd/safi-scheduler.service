@@ -1,0 +1,28 @@
+# SAFi Scheduled Updates runner (backlog 54) — bare-metal deployments.
+# Docker deployments get this as the `scheduler` compose service instead.
+#
+# Executes due schedules as fully governed turns and emails the approved
+# output to each task owner's account address. Reads .env from the
+# WorkingDirectory via safi_app.config, same as every other unit here.
+#
+# Install:
+#   sudo cp deploy/systemd/safi-scheduler.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now safi-scheduler.service
+
+[Unit]
+Description=SAFi Scheduled Updates runner
+After=network.target mysql.service
+
+[Service]
+User=safi
+Group=www-data
+WorkingDirectory=/var/www/safi
+ExecStart=/var/www/safi/venv/bin/python /var/www/safi/scripts/scheduled_tasks_runner.py --loop
+# A crash here is silent — the app keeps serving while digests quietly stop —
+# so always come back, with enough backoff not to hammer a broken DB.
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
