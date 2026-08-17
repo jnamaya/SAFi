@@ -67,8 +67,7 @@ public/
 ## 2. Back-end structure
 
 The backend is pure Python — it's the core of the system. SAFi uses MySQL
-as its database, also a deliberate choice: it's the database I'm most
-familiar with. Unlike the front-end, this one isn't a free swap — the
+as its database. Unlike the front-end, this one isn't a free swap — the
 persistence layer (`persistence/database.py`) leans on MySQL-specific SQL
 and runs its own ad hoc schema-migration guards at startup rather than
 using a migration tool, so moving to Postgres or another database would
@@ -204,13 +203,11 @@ answer. The Conscience is sampled at temperature 0 to make the ledger as
 reproducible as the provider allows, but the guarantee SAFi offers is about the
 rule, not the score.
 
-The architecture is a separation of powers across five faculties,
-modeled on the classical faculties of the soul (see
+The architecture is a separation of powers across five faculties. The
+names come from classical philosophy — background at
 [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/)
-for why). If you want the primary source, the relevant background is Aquinas,
-*Summa Theologiae*, I-II, Q. 79 (on the faculties of practical reason) —
-not required reading, but useful if the terminology below raises
-questions:
+if you're curious — but nothing below requires it; each name is defined
+here by what the component does:
 
 - **Synderesis** compiles the immutable baseline before any turn runs —
   the governing policy, scope boundaries, and value weights for the
@@ -236,12 +233,6 @@ the ledger, the enforcement decision, and the exact policy version in
 force — written to a hash-chained, tamper-evident audit trail. That
 record, not the chat reply, is what an auditor or examiner actually
 relies on afterward.
-
-One important caveat: keeping the philosophical vocabulary doesn't mean
-SAFi tries to replicate the human soul. The terms are borrowed the way
-the Wright brothers borrowed "wing" from birds — for the concept, not to
-replicate the mechanism. SAFi is a moral actor — it acts within a moral framework — not a moral
-agent capable of bearing responsibility for it.
 
 ## 6. The math, briefly
 
