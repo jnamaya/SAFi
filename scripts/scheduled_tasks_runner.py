@@ -82,8 +82,16 @@ def send_email(config, to_addr: str, subject: str, body: str) -> None:
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg.set_content(body)
-    with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30) as s:
-        s.starttls()
+    # Port decides the transport: 465 is implicit TLS from the first byte
+    # (SMTP_SSL); anything else is plaintext upgraded via STARTTLS. Gmail
+    # serves both; the demo host's proven credentials use 465.
+    if int(config.SMTP_PORT) == 465:
+        ctx = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, timeout=30)
+    else:
+        ctx = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30)
+    with ctx as s:
+        if int(config.SMTP_PORT) != 465:
+            s.starttls()
         if config.SMTP_USERNAME:
             s.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
         s.send_message(msg)
