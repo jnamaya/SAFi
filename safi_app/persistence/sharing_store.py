@@ -30,11 +30,33 @@ agent across organizations even if rows are tampered with directly.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 from . import database as db
 
 log = logging.getLogger(__name__)
+
+_COLLATION_RE = re.compile(r'^[a-z0-9_]+$')
+
+
+def _target_collation(cursor) -> str:
+    """The collation of the tables these tables JOIN against.
+
+    Learned the hard way (demo outage 2026-08-17): CREATE TABLE with only a
+    charset takes the server's default collation, which on MySQL 8 is
+    utf8mb4_0900_ai_ci, while a database that has lived since 5.7 holds its
+    tables at utf8mb4_unicode_ci. The first join then throws 1267 ("illegal
+    mix of collations") and every caller that unions grants into a listing
+    loses the whole listing. So the new tables copy the collation of
+    `agents`, whatever it is on this deployment, instead of trusting the
+    server default to match."""
+    cursor.execute(
+        "SELECT TABLE_COLLATION FROM information_schema.TABLES "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agents'")
+    row = cursor.fetchone()
+    coll = (row[0] if row else None) or 'utf8mb4_unicode_ci'
+    return coll if _COLLATION_RE.match(coll) else 'utf8mb4_unicode_ci'
 
 # Mirror of the visibility ladder in db.list_agents. 'private' appears in no
 # set on purpose: without a grant, only the owner (and an org admin) clears it.
@@ -58,7 +80,9 @@ def init_schema() -> None:
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        coll = _target_collation(cursor)
+        charset = coll.split('_')[0]
+        cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS custom_groups (
                 id CHAR(36) PRIMARY KEY,
                 org_id CHAR(36) NOT NULL,
@@ -66,9 +90,9 @@ def init_schema() -> None:
                 owner_id VARCHAR(255),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_groups_org (org_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        cursor.execute("""
+        cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS group_memberships (
                 group_id CHAR(36) NOT NULL,
                 user_id VARCHAR(255) NOT NULL,
@@ -76,11 +100,11 @@ def init_schema() -> None:
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (group_id, user_id),
                 INDEX idx_memberships_user (user_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
         # agent_key matches agents.agent_key (VARCHAR(100) string key, not a
         # UUID). grantee_id is a users.id (VARCHAR(255)) or a custom_groups.id.
-        cursor.execute("""
+        cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS agent_visibility_grants (
                 agent_key VARCHAR(100) NOT NULL,
                 grantee_type ENUM('user','group') NOT NULL,
@@ -91,8 +115,22 @@ def init_schema() -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (agent_key, grantee_type, grantee_id),
                 INDEX idx_grants_grantee (grantee_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
+        # Converge tables that already exist at a different collation (the
+        # 2026-08-17 rollout created them at the server default before this
+        # guard existed). CONVERT rewrites the rows, but these tables are
+        # small by construction.
+        cursor.execute(
+            "SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
+            "('custom_groups','group_memberships','agent_visibility_grants')")
+        for name, table_coll in cursor.fetchall():
+            if table_coll and table_coll != coll:
+                log.warning("sharing table %s is %s, converting to %s to match agents",
+                            name, table_coll, coll)
+                cursor.execute(
+                    f"ALTER TABLE {name} CONVERT TO CHARACTER SET {charset} COLLATE {coll}")
         conn.commit()
     finally:
         cursor.close()
@@ -129,9 +167,22 @@ def can_use_agent(user_id, role, org_id, agent) -> bool:
 
 def has_grant(agent_key, user_id, org_id) -> bool:
     """True when a can_use grant reaches this user directly or via a group
-    they belong to, scoped to `org_id` on both the grant and the group."""
+    they belong to, scoped to `org_id` on both the grant and the group.
+
+    Fails CLOSED: a storage error here denies grant-based access (and is
+    logged loudly) rather than crashing the caller. Owner, admin and ladder
+    access are decided before this is consulted, so they are unaffected."""
     if not agent_key or not user_id or not org_id:
         return False
+    try:
+        return _has_grant_query(agent_key, user_id, org_id)
+    except Exception as e:
+        log.error("grant lookup failed for agent %s: %s — denying grant-based access",
+                  agent_key, e)
+        return False
+
+
+def _has_grant_query(agent_key, user_id, org_id) -> bool:
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -159,9 +210,23 @@ def has_grant(agent_key, user_id, org_id) -> bool:
 def granted_agents(user_id, org_id):
     """Full agent rows this user can use through grants, for the pickers.
     The join re-asserts the org scope so a stray grant row cannot surface a
-    foreign org's agent."""
+    foreign org's agent.
+
+    Fails EMPTY: grants only widen a listing, so when this query breaks the
+    caller must still get its base list. The 2026-08-17 demo outage was this
+    exact failure unguarded: a collation mismatch threw inside the caller's
+    try-block and took the user's own agents down with it."""
     if not user_id or not org_id:
         return []
+    try:
+        return _granted_agents_query(user_id, org_id)
+    except Exception as e:
+        log.error("granted-agents lookup failed for user %s: %s — omitting "
+                  "shared agents from the listing", user_id, e)
+        return []
+
+
+def _granted_agents_query(user_id, org_id):
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:

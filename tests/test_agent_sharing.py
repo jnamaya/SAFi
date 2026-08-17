@@ -282,5 +282,59 @@ class ShareAndGroupApi(SharingTestBase):
         self.assertIn('agent_share_revoked', events)
 
 
+class CollationConvergence(SharingTestBase):
+    """Regression for the 2026-08-17 demo outage. The sharing tables were
+    created with only a charset, so they took the server-default collation
+    (utf8mb4_0900_ai_ci on MySQL 8) while a database alive since 5.7 holds
+    `agents` at utf8mb4_unicode_ci. The first grants join threw 1267 inside
+    list_all_agents' try-block, and every custom agent vanished from the GUI.
+    init_schema now copies the collation of `agents` and converges tables
+    that already drifted."""
+
+    def _coll_of(self, table):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT TABLE_COLLATION FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s", (table,))
+            return cur.fetchone()[0]
+        finally:
+            cur.close()
+            conn.close()
+
+    def test_init_schema_converges_a_drifted_table(self):
+        agents_coll = self._coll_of('agents')
+        drifted = ('utf8mb4_unicode_ci' if agents_coll != 'utf8mb4_unicode_ci'
+                   else 'utf8mb4_general_ci')
+        _exec("ALTER TABLE agent_visibility_grants "
+              f"CONVERT TO CHARACTER SET utf8mb4 COLLATE {drifted}")
+        self.assertNotEqual(self._coll_of('agent_visibility_grants'), agents_coll)
+
+        sharing_store.init_schema()
+        self.assertEqual(self._coll_of('agent_visibility_grants'), agents_coll)
+
+        # And the exact query that died in production runs clean again.
+        sharing_store.set_grant(self.agent_key, 'user', self.member, self.org, self.owner)
+        rows = sharing_store._granted_agents_query(self.member, self.org)
+        self.assertEqual([r['key'] for r in rows], [self.agent_key])
+
+    def test_listing_survives_a_broken_grants_query(self):
+        """Grants only widen, so a grants-side failure must degrade to the
+        base list, never blank it."""
+        original = sharing_store._granted_agents_query
+        sharing_store._granted_agents_query = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            self.assertEqual(sharing_store.granted_agents(self.member, self.org), [])
+            client = self.app.test_client()
+            login_as(client, self.owner, 'editor', org_id=self.org)
+            r = client.get('/api/agents/all')
+            keys = {a.get('key') for a in (r.get_json() or {}).get('available', [])}
+            self.assertIn(self.agent_key, keys,
+                          "the owner's own agent disappeared when grants broke")
+        finally:
+            sharing_store._granted_agents_query = original
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
