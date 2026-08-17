@@ -5,7 +5,7 @@ import { formatRelativeTime, escapeHtml } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
 import { updateAgentLabel, closeComposerMenu } from './ui-composer-menu.js';
 import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
-import { initAttentionBell } from './ui-attention.js';
+import { initAttentionBadge } from './ui-attention.js';
 
 /**
  * Icons (for pin feature)
@@ -58,17 +58,6 @@ export function updateUIForAuthState(user) {
             </div>
 
             <div class="flex items-center">
-              <!-- Attention bell (backlog 57): the badge is a to-do count of
-                   items waiting on this user, filled by ui-attention.js from
-                   the role-aware /api/attention endpoint. -->
-              <button id="attention-bell" type="button" aria-label="Items needing attention" title="Needs attention"
-                class="relative p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>
-                </svg>
-                <span id="attention-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-green-600 text-white text-[10px] font-bold flex items-center justify-center leading-none"></span>
-              </button>
-
               <!-- Collapse sidebar (desktop only) -->
               <button data-sidebar-toggle type="button" aria-label="Collapse sidebar" title="Collapse sidebar" class="hidden md:inline-flex p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
@@ -180,8 +169,9 @@ export function updateUIForAuthState(user) {
     document.getElementById('rail-settings')?.addEventListener('click', () =>
         document.getElementById('control-panel-btn')?.click());
 
-    // Attention bell: badge + panel, data from the role-aware endpoint.
-    initAttentionBell();
+    // Inbox count pill on the Control Panel nav (backlog 57): starts polling
+    // once a user is signed in. The tab itself renders on entry.
+    initAttentionBadge();
 
     // --- Search Logic ---
     const searchInput = document.getElementById('convo-search-input');

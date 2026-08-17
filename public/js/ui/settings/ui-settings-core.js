@@ -155,6 +155,8 @@ export function setupControlPanelTabs() {
                 renderSettingsKnowledgeTab();
             } else if (tabId === 'help') {
                 renderSettingsHelpTab();
+            } else if (tabId === 'inbox') {
+                import('../ui-attention.js').then(m => m.renderSettingsInboxTab());
             }
 
             // The Knowledge tab polls while an index builds. Leaving the tab

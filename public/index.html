@@ -607,6 +607,20 @@
                     <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Account</h3>
                     <ul class="space-y-0.5">
                       <li>
+                        <!-- Inbox (backlog 57): everything waiting on this user.
+                             The pill is a to-do count kept fresh by ui-attention.js;
+                             the tab lists categories and deep-links each one. -->
+                        <button data-tab="inbox" id="nav-inbox"
+                          class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-5l-2 3h-2l-2-3H4"></path>
+                          </svg>
+                          <span class="flex-1 text-left">Inbox</span>
+                          <span id="nav-inbox-badge" class="hidden min-w-[20px] h-5 px-1.5 rounded-full bg-green-600 text-white text-[11px] font-bold flex items-center justify-center leading-none"></span>
+                        </button>
+                      </li>
+                      <li>
                         <button data-tab="profile" id="nav-profile"
                           class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -726,6 +740,9 @@
                 </div>
                 <div id="tab-dashboard" class="tab-content hidden">
                   <!-- Content injected by JS -->
+                </div>
+                <div id="tab-inbox" class="tab-content hidden">
+                  <!-- Content injected by renderSettingsInboxTab() -->
                 </div>
                 <div id="tab-profile" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">My Profile</h1>

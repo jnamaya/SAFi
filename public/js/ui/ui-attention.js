@@ -1,17 +1,19 @@
 /**
- * Attention bell (backlog 57): a badge with the count of items waiting on
- * this user, and a panel that deep-links each category to the tab where the
- * action happens.
+ * Inbox (backlog 57): everything waiting on this user, as a Control Panel
+ * tab under Account, with a count pill on its nav row.
  *
- * The badge is a TO-DO count, not an unread count: pending work stays on it
+ * The pill is a TO-DO count, not an unread count: pending work stays on it
  * until someone acts, so there is no read-state to store anywhere. The data
- * is fetched from /api/attention, which is role-aware server-side; this
- * module renders whatever it is given and never decides visibility itself.
+ * comes from /api/attention, which is role-aware server-side; this module
+ * renders whatever it is given and never decides visibility itself.
+ *
+ * Originally a bell in the chat sidebar header; moved here 2026-08-17 at
+ * Nelson's request, next to the other personal surfaces (Profile, Scheduled
+ * Updates) instead of crowding the sidebar chrome.
  */
 import * as api from '../core/api.js';
 
 let _timer = null;
-let _last = { items: [], total: 0 };
 
 function esc(s) {
     const div = document.createElement('div');
@@ -30,75 +32,82 @@ function age(iso) {
     return 'new';
 }
 
-async function refresh() {
-    const badge = document.getElementById('attention-badge');
-    if (!badge) return;
+async function _fetch() {
     try {
-        _last = await api.fetchAttention();
+        return await api.fetchAttention();
     } catch (e) {
-        return; // keep the last known badge rather than flashing it away
+        return null; // a failed poll keeps the last badge rather than flashing it away
     }
-    const total = _last.total || 0;
+}
+
+function _updateBadge(payload) {
+    const badge = document.getElementById('nav-inbox-badge');
+    if (!badge || !payload) return;
+    const total = payload.total || 0;
     badge.textContent = total > 99 ? '99+' : String(total);
     badge.classList.toggle('hidden', total === 0);
 }
 
-function goTo(target) {
-    document.getElementById('attention-panel')?.remove();
-    document.getElementById('control-panel-btn')?.click();
-    document.getElementById(`nav-${target}`)?.click();
+async function refreshBadge() {
+    _updateBadge(await _fetch());
 }
 
-async function openPanel() {
-    document.getElementById('attention-panel')?.remove();
-    const modal = document.createElement('div');
-    modal.id = 'attention-panel';
-    modal.className = 'fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50';
-    modal.innerHTML = `
-        <div class="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800">
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Needs attention</h3>
-                <button id="attention-close" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
+/** Start the badge poller. Called once the user is signed in (the sidebar
+ * render); safe to call again, it just restarts the timer. */
+export function initAttentionBadge() {
+    refreshBadge();
+    if (_timer) clearInterval(_timer);
+    _timer = setInterval(refreshBadge, 5 * 60 * 1000);
+}
+
+/** The Inbox tab. Fetches fresh on every entry: the list must reflect the
+ * work as it stands now, not as it stood when the badge last polled. */
+export async function renderSettingsInboxTab() {
+    const container = document.getElementById('tab-inbox');
+    if (!container) return;
+    container.innerHTML = `
+        <div class="max-w-3xl">
+            <div class="settings-page-header">
+                <h1>Inbox</h1>
+                <p>Everything currently waiting on you. Items leave on their own once the work is done.</p>
             </div>
-            <div id="attention-body" class="p-4 overflow-y-auto custom-scrollbar">
-                <div class="text-center text-gray-500 py-6"><div class="thinking-spinner w-5 h-5 mx-auto"></div></div>
+            <div id="inbox-list">
+                <div class="text-center text-gray-500 py-10"><div class="thinking-spinner w-6 h-6 mx-auto"></div></div>
             </div>
         </div>`;
-    document.body.appendChild(modal);
-    const close = () => modal.remove();
-    modal.addEventListener('click', e => { if (e.target === modal) close(); });
-    modal.querySelector('#attention-close').addEventListener('click', close);
 
-    await refresh();
-    const body = modal.querySelector('#attention-body');
-    if (!body) return;
-    const items = _last.items || [];
-    if (!items.length) {
-        body.innerHTML = `<p class="text-sm text-gray-500 text-center py-6">Nothing is waiting on you.</p>`;
+    const payload = await _fetch();
+    _updateBadge(payload);
+    const list = container.querySelector('#inbox-list');
+    if (!list) return;
+    if (!payload) {
+        list.innerHTML = `<p class="text-sm text-red-500">Could not load the inbox. Try again in a moment.</p>`;
         return;
     }
-    body.innerHTML = items.map(it => `
+    const items = payload.items || [];
+    if (!items.length) {
+        list.innerHTML = `
+            <div class="border border-gray-200 dark:border-neutral-700 rounded-xl p-10 text-center">
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Nothing is waiting on you.</p>
+                <p class="text-xs text-gray-400 mt-1">Pending reviews, invitations, incidents, and failing schedules will show up here.</p>
+            </div>`;
+        return;
+    }
+    list.innerHTML = `<div class="space-y-2">` + items.map(it => `
         <button type="button" data-target="${esc(it.target)}"
-            class="attention-row w-full text-left px-3 py-3 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors flex items-start gap-3">
-            <span class="min-w-[24px] h-6 px-1.5 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
+            class="attention-row w-full text-left px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3">
+            <span class="min-w-[26px] h-6 px-1.5 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
             <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">${esc(it.title)}</span>
                 ${it.examples && it.examples.length ? `<span class="block text-xs text-gray-500 truncate mt-0.5">${esc(it.examples.join(', '))}</span>` : ''}
                 ${age(it.oldest) ? `<span class="block text-[11px] text-gray-400 mt-0.5">${esc(age(it.oldest))}</span>` : ''}
             </span>
             <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-        </button>`).join('');
-    body.querySelectorAll('.attention-row').forEach(btn =>
-        btn.addEventListener('click', () => goTo(btn.dataset.target)));
-}
+        </button>`).join('') + `</div>`;
 
-export function initAttentionBell() {
-    const bell = document.getElementById('attention-bell');
-    if (!bell) return;
-    bell.addEventListener('click', openPanel);
-    refresh();
-    if (_timer) clearInterval(_timer);
-    _timer = setInterval(refresh, 5 * 60 * 1000);
+    // Deep link: we are already inside the Control Panel, so switching tab
+    // is one click on the target's own nav button.
+    list.querySelectorAll('.attention-row').forEach(btn =>
+        btn.addEventListener('click', () =>
+            document.getElementById(`nav-${btn.dataset.target}`)?.click()));
 }
