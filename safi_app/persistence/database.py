@@ -185,6 +185,31 @@ def init_db():
             )
         ''')
 
+        # --- Scheduled tasks (personal agent digests, backlog 54) ---
+        # Per-user: an agent, a prompt, a local time + weekday set. The runner
+        # executes each due task as a FULL governed turn and emails the
+        # approved output to the owner's account email — delivery is USB
+        # plumbing for an approved response (the bot pattern), never an agent
+        # tool call. conversation_id keeps every digest in a chat thread the
+        # user can open, so scheduled turns are as visible as typed ones.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id CHAR(36) PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                agent_key VARCHAR(255) NOT NULL,
+                prompt TEXT NOT NULL,
+                time_of_day CHAR(5) NOT NULL,
+                days VARCHAR(32) NOT NULL,
+                timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+                enabled TINYINT(1) DEFAULT 1,
+                conversation_id CHAR(36) NULL,
+                last_run_date CHAR(10) NULL,
+                last_status VARCHAR(255) DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+
         # --- Organizations ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS organizations (
@@ -2570,6 +2595,114 @@ def upsert_user_profile_memory(uid, data):
     finally:
         cursor.close()
         conn.close()
+
+def create_scheduled_task(user_id, agent_key, prompt, time_of_day, days, timezone):
+    """One scheduled digest. Ownership is the caller's user_id; validation of
+    the fields is the API's job (this layer stores what it is given)."""
+    import uuid as _uuid
+    pid = str(_uuid.uuid4())
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO scheduled_tasks (id, user_id, agent_key, prompt, time_of_day, days, timezone) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (pid, user_id, agent_key, prompt, time_of_day, days, timezone)
+        )
+        conn.commit()
+        return {"id": pid}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def fetch_scheduled_tasks(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, agent_key, prompt, time_of_day, days, timezone, enabled, "
+            "conversation_id, last_run_date, last_status, created_at "
+            "FROM scheduled_tasks WHERE user_id=%s ORDER BY created_at DESC",
+            (user_id,)
+        )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def fetch_enabled_scheduled_tasks():
+    """All enabled tasks, for the runner. Due-ness is computed in Python per
+    task timezone; the table stays free of timezone arithmetic."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, user_id, agent_key, prompt, time_of_day, days, timezone, "
+            "conversation_id, last_run_date FROM scheduled_tasks WHERE enabled=1"
+        )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_scheduled_task(task_id, user_id, fields):
+    """Update the editable columns only. Ownership is the WHERE clause."""
+    allowed = {"prompt", "time_of_day", "days", "timezone", "enabled", "agent_key"}
+    sets = {k: v for k, v in (fields or {}).items() if k in allowed}
+    if not sets:
+        return False
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        assignments = ", ".join(f"{k}=%s" for k in sets)
+        cursor.execute(
+            f"UPDATE scheduled_tasks SET {assignments} WHERE id=%s AND user_id=%s",
+            (*sets.values(), task_id, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_scheduled_task(task_id, user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM scheduled_tasks WHERE id=%s AND user_id=%s",
+                       (task_id, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def mark_scheduled_task_run(task_id, run_date, status, conversation_id=None):
+    """The runner's bookkeeping: the once-per-local-day guard plus an honest
+    last_status the owner can see in the UI."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        if conversation_id:
+            cursor.execute(
+                "UPDATE scheduled_tasks SET last_run_date=%s, last_status=%s, conversation_id=%s WHERE id=%s",
+                (run_date, (status or "")[:255], conversation_id, task_id)
+            )
+        else:
+            cursor.execute(
+                "UPDATE scheduled_tasks SET last_run_date=%s, last_status=%s WHERE id=%s",
+                (run_date, (status or "")[:255], task_id)
+            )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def list_agent_context_agents(user_id: str) -> list:
     """The agents holding work-context memory for this user, for the

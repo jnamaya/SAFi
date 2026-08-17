@@ -58,6 +58,11 @@ if [ "${SERVICE}" = "purge" ]; then
         python scripts/retention_purge.py || echo "retention purge failed; retrying in 24h"
         sleep 86400
     done
+elif [ "${SERVICE}" = "scheduler" ]; then
+    # Scheduled Updates (backlog 54): governed digest turns + email delivery.
+    echo "Scheduled Updates runner: waiting 90s for first-boot schema migrations..."
+    sleep 90
+    exec python scripts/scheduled_tasks_runner.py --loop
 elif [ "${SERVICE}" = "indexer" ]; then
     # Knowledge-base indexer. Builds user-created RAG corpora out of the
     # request path — embedding a large PDF takes tens of seconds and gunicorn

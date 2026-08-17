@@ -1187,6 +1187,10 @@ video {
   min-height: 2.5rem;
 }
 
+.min-h-28 {
+  min-height: 7rem;
+}
+
 .min-h-\[100px\] {
   min-height: 100px;
 }
@@ -1733,6 +1737,10 @@ video {
 .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(229 231 235 / var(--tw-divide-opacity, 1));
+}
+
+.self-end {
+  align-self: flex-end;
 }
 
 .overflow-hidden {
@@ -3589,6 +3597,10 @@ video {
 .dark\:border-amber-800:is(.dark *) {
   --tw-border-opacity: 1;
   border-color: rgb(146 64 14 / var(--tw-border-opacity, 1));
+}
+
+.dark\:border-amber-800\/40:is(.dark *) {
+  border-color: rgb(146 64 14 / 0.4);
 }
 
 .dark\:border-amber-900\/30:is(.dark *) {

@@ -375,6 +375,20 @@ class Config:
     # Max entries retained per memory key after the code-side merge (bounds growth).
     AGENT_MEMORY_MAX_ITEMS_PER_KEY = int(os.environ.get("SAFI_AGENT_MEMORY_MAX_ITEMS", "80"))
 
+    # --- Outbound email (Scheduled Updates, backlog 54) ---
+    # SAFi sends email in exactly one place: delivering a scheduled task's
+    # APPROVED output to its owner's account address. Unset = the feature
+    # reports "email not configured" and schedules simply don't fire mail.
+    SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+    SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
+    SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+    SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
+
+    @classmethod
+    def smtp_configured(cls) -> bool:
+        return bool(cls.SMTP_HOST and cls.SMTP_FROM)
+
     # Character budget for the work-context memory injected into the prompt each
     # turn (the RAG equivalent is _MAX_CONTEXT_CHARS = 8000 in intellect.py).
     # Read-side only: the stored memory is never truncated, oldest entries are

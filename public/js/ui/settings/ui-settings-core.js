@@ -131,6 +131,9 @@ export function setupControlPanelTabs() {
                 renderSettingsReviewTab();
             } else if (tabId === 'profile') {
                 renderSettingsMyProfileTab();
+            } else if (tabId === 'schedules') {
+                import('./ui-settings-schedules.js').then(m =>
+                    m.renderSettingsSchedulesTab(settingsState.profiles));
             } else if (tabId === 'agents') {
                 // Pass args from state
                 renderSettingsProfileTab(

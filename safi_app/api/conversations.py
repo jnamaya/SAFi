@@ -908,6 +908,110 @@ def _memory_edit_evidence(event_type, user_id, agent_id, detail):
         current_app.logger.warning("memory edit evidence logging failed", exc_info=True)
 
 
+# --- Scheduled Updates: personal agent digests (backlog 54) -----------------
+# v1 rules, decided 2026-08-17: delivery goes to the owner's own account
+# email only (resolved at send time by the runner, never stored as a field);
+# schedules are a local time + weekday set in the user's timezone. The runner
+# (scripts/scheduled_tasks_runner.py) executes due tasks as full governed
+# turns; these routes only manage the rows.
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_schedule_fields(data, require_all):
+    """Returns (fields, error). Only validated fields are returned, so a
+    partial update cannot smuggle arbitrary columns."""
+    from zoneinfo import ZoneInfo
+    fields = {}
+    if 'prompt' in data or require_all:
+        prompt = (data.get('prompt') or '').strip()
+        if not prompt:
+            return None, "'prompt' is required."
+        fields['prompt'] = prompt[:4000]
+    if 'time_of_day' in data or require_all:
+        t = (data.get('time_of_day') or '').strip()
+        if not _TIME_RE.match(t):
+            return None, "'time_of_day' must be HH:MM (24h)."
+        fields['time_of_day'] = t
+    if 'days' in data or require_all:
+        days = data.get('days')
+        if not isinstance(days, list) or not days or \
+           not all(isinstance(d, int) and 0 <= d <= 6 for d in days):
+            return None, "'days' must be a non-empty list of weekday numbers 0-6 (Monday=0)."
+        fields['days'] = ",".join(str(d) for d in sorted(set(days)))
+    if 'timezone' in data or require_all:
+        tz = (data.get('timezone') or 'UTC').strip()
+        try:
+            ZoneInfo(tz)
+        except Exception:
+            return None, f"Unknown timezone '{tz}'."
+        fields['timezone'] = tz
+    if 'enabled' in data:
+        fields['enabled'] = 1 if data.get('enabled') else 0
+    if 'agent_key' in data or require_all:
+        agent_key = (data.get('agent_key') or '').strip()
+        try:
+            from ..core.faculties.synderesis import get_profile
+            get_profile(agent_key)
+        except Exception:
+            return None, f"Unknown agent '{agent_key}'."
+        fields['agent_key'] = agent_key
+    return fields, None
+
+
+@conversations_bp.route('/schedules', methods=['GET'])
+def list_schedules():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    from ..config import Config
+    return jsonify({
+        "email_configured": Config.smtp_configured(),
+        "schedules": db.fetch_scheduled_tasks(user_id),
+    })
+
+
+@conversations_bp.route('/schedules', methods=['POST'])
+def create_schedule():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    fields, err = _validate_schedule_fields(data, require_all=True)
+    if err:
+        return jsonify({"error": err}), 400
+    created = db.create_scheduled_task(
+        user_id, fields['agent_key'], fields['prompt'],
+        fields['time_of_day'], fields['days'], fields['timezone'])
+    return jsonify(created), 201
+
+
+@conversations_bp.route('/schedules/<schedule_id>', methods=['PUT'])
+def update_schedule(schedule_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    data = request.get_json(silent=True) or {}
+    fields, err = _validate_schedule_fields(data, require_all=False)
+    if err:
+        return jsonify({"error": err}), 400
+    if not fields:
+        return jsonify({"error": "Nothing to update."}), 400
+    if not db.update_scheduled_task(schedule_id, user_id, fields):
+        return jsonify({"error": "Schedule not found."}), 404
+    return jsonify({"status": "success"})
+
+
+@conversations_bp.route('/schedules/<schedule_id>', methods=['DELETE'])
+def delete_schedule(schedule_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not db.delete_scheduled_task(schedule_id, user_id):
+        return jsonify({"error": "Schedule not found."}), 404
+    return jsonify({"status": "success"})
+
+
 @conversations_bp.route('/memory/agents', methods=['GET'])
 def list_memory_agents():
     user_id = get_user_id()

@@ -92,6 +92,27 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
+  # ── Scheduled Updates runner ─────────────────────────────────────────────────
+  # Backlog 54: runs each due schedule as a full governed turn and emails the
+  # approved output to the owner. Same image tag as `app` for the same
+  # one-build-one-image reason as `purge`.
+  scheduler:
+    build: .
+    pull_policy: build
+    image: safi:latest
+    env_file: .env
+    environment:
+      DB_HOST: db
+      SERVICE: scheduler
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
   # ── Knowledge-base indexer ───────────────────────────────────────────────────
   # Builds user-created RAG corpora out of the request path. Same image tag as
   # `app` and `purge` for the same reason: one build, one image.

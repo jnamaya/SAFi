@@ -50,6 +50,8 @@ export const urls = {
     SAVED_CONTENT: j('/api/saved-content'),
     SAVED_ITEM: (id) => `${j('/api/saved-content')}/${id}`,
     MOVE_SAVED_ITEM: (id) => `${j('/api/saved-content')}/${id}/project`,
+    SCHEDULES: j('/api/schedules'),
+    SCHEDULE: (id) => `${j('/api/schedules')}/${id}`,
     MEMORY_AGENTS: j('/api/memory/agents'),
     MEMORY: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}`,
     MEMORY_ITEMS: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}/items`,
@@ -193,6 +195,10 @@ export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
 
 // Projects (workspaces)
+export const fetchSchedules = () => httpGet(urls.SCHEDULES);
+export const createSchedule = (payload) => httpJSON(urls.SCHEDULES, 'POST', payload);
+export const updateSchedule = (id, payload) => httpJSON(urls.SCHEDULE(id), 'PUT', payload);
+export const deleteSchedule = (id) => httpJSON(urls.SCHEDULE(id), 'DELETE', {});
 export const fetchMemoryAgents = () => httpGet(urls.MEMORY_AGENTS);
 export const fetchAgentMemory = (agentId) => httpGet(urls.MEMORY(agentId));
 export const deleteAgentMemoryItem = (agentId, category, identity) =>
