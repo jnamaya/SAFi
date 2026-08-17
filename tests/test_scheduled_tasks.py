@@ -149,5 +149,33 @@ class DeliveryIsNotAgentControlled(unittest.TestCase):
         self.assertIn("smtp_configured", src)
 
 
+class BrandedEmailTemplate(unittest.TestCase):
+    """The HTML alternative: brand palette, and above all the escape rule —
+    the agent writes text, never markup, so injected HTML must arrive as
+    visible characters rather than rendering in the reader's mail client."""
+
+    def test_model_output_is_escaped(self):
+        html = runner.build_email_html(
+            "IT Director <b>", 'Hello <script>alert(1)</script>\n\n"quotes" & ampersands',
+            "Monday, August 17, 2026")
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("IT Director &lt;b&gt;", html)
+
+    def test_brand_palette_only(self):
+        html = runner.build_email_html("Agent", "Body text.", "Today")
+        self.assertIn("#16a34a", html)   # the one green accent
+        self.assertIn("#f9f9f9", html)   # the canvas
+        for banned in ("#2563eb", "#7e22ce", "indigo", "purple"):
+            self.assertNotIn(banned, html)
+
+    def test_plain_text_stays_the_fallback(self):
+        """set_content(plain) before add_alternative(html): text-only clients
+        must still get the digest."""
+        src = (REPO_ROOT / "scripts" / "scheduled_tasks_runner.py").read_text(encoding="utf-8")
+        self.assertLess(src.index("msg.set_content(body)"),
+                        src.index("msg.add_alternative"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

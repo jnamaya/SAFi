@@ -14,6 +14,7 @@ import { escapeHtml } from '../../core/utils.js';
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 let _profiles = [];
+let _editing = null;   // the schedule being edited, or null for create mode
 
 export async function renderSettingsSchedulesTab(profiles) {
     if (Array.isArray(profiles) && profiles.length) _profiles = profiles;
@@ -24,6 +25,9 @@ export async function renderSettingsSchedulesTab(profiles) {
     let data = { email_configured: false, schedules: [] };
     try {
         data = await api.fetchSchedules();
+        // Editing something that no longer exists (deleted elsewhere) resets
+        // the form to create mode rather than saving into a 404.
+        if (_editing && !(data.schedules || []).some(s => s.id === _editing.id)) _editing = null;
     } catch (e) {
         container.innerHTML = `<p class="text-red-500 p-6">Could not load schedules: ${escapeHtml(e.message || '')}</p>`;
         return;
@@ -50,35 +54,47 @@ function _paint(container, data) {
             email will be sent until an operator configures SMTP.
         </div>`}
 
-        <div class="profile-section-container shadow-sm mb-6">
+        <div class="profile-section-container shadow-sm mb-6" id="sched-form">
             <div class="flex items-center gap-2 mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
-                <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">New schedule</h4>
-                <span class="text-xs text-neutral-400 font-normal ml-auto">Times are in ${escapeHtml(tz)}</span>
+                <h4 class="text-base font-semibold text-neutral-800 dark:text-neutral-200">${_editing ? 'Edit schedule' : 'New schedule'}</h4>
+                <span class="text-xs text-neutral-400 font-normal ml-auto">Times are in ${escapeHtml(_editing ? (_editing.timezone || tz) : tz)}</span>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="text-xs font-bold text-gray-500 uppercase">Agent</label>
                     <select id="sched-agent" class="w-full mt-1 p-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm">
-                        ${_profiles.map(p => `<option value="${escapeHtml(p.key || p.id || '')}">${escapeHtml(p.name || p.key || '')}</option>`).join('')}
+                        ${_profiles.map(p => {
+                            const k = p.key || p.id || '';
+                            const sel = _editing && _editing.agent_key === k ? ' selected' : '';
+                            return `<option value="${escapeHtml(k)}"${sel}>${escapeHtml(p.name || k)}</option>`;
+                        }).join('')}
                     </select>
                     <label class="text-xs font-bold text-gray-500 uppercase mt-3 block">Time</label>
-                    <input id="sched-time" type="time" value="06:00"
+                    <input id="sched-time" type="time" value="${escapeHtml(_editing ? (_editing.time_of_day || '06:00') : '06:00')}"
                         class="mt-1 p-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm">
                     <label class="text-xs font-bold text-gray-500 uppercase mt-3 block">Days</label>
                     <div id="sched-days" class="flex flex-wrap gap-2 mt-1">
-                        ${DAY_LABELS.map((d, i) => `
+                        ${DAY_LABELS.map((d, i) => {
+                            const on = _editing
+                                ? String(_editing.days || '').split(',').includes(String(i))
+                                : i < 5;
+                            return `
                             <label class="flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 cursor-pointer select-none">
-                                <input type="checkbox" value="${i}" ${i < 5 ? 'checked' : ''} class="accent-green-600">${d}
-                            </label>`).join('')}
+                                <input type="checkbox" value="${i}" ${on ? 'checked' : ''} class="accent-green-600">${d}
+                            </label>`;
+                        }).join('')}
                     </div>
                 </div>
                 <div class="flex flex-col">
                     <label class="text-xs font-bold text-gray-500 uppercase">What should the agent do?</label>
                     <textarea id="sched-prompt" class="flex-1 mt-1 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm resize-y min-h-28"
-                        placeholder="e.g. Summarize today's market headlines and any earnings reports relevant to my portfolio watchlist."></textarea>
-                    <button id="sched-create" class="mt-3 self-end px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm shadow-sm">
-                        Create schedule
-                    </button>
+                        placeholder="e.g. Summarize today's market headlines and any earnings reports relevant to my portfolio watchlist.">${escapeHtml(_editing ? (_editing.prompt || '') : '')}</textarea>
+                    <div class="mt-3 self-end flex items-center gap-3">
+                        ${_editing ? `<button id="sched-cancel" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800">Cancel</button>` : ''}
+                        <button id="sched-create" class="px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm shadow-sm">
+                            ${_editing ? 'Save changes' : 'Create schedule'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -93,15 +109,36 @@ function _paint(container, data) {
             prompt: container.querySelector('#sched-prompt').value.trim(),
             time_of_day: container.querySelector('#sched-time').value,
             days,
-            timezone: tz,
         };
         try {
-            await api.createSchedule(payload);
-            ui.showToast('Schedule created.', 'success');
+            if (_editing) {
+                // Deliberately no timezone in the update payload: editing a
+                // schedule from another timezone must not silently shift when
+                // it fires. The stored timezone stays until recreated.
+                await api.updateSchedule(_editing.id, payload);
+                _editing = null;
+                ui.showToast('Schedule updated.', 'success');
+            } else {
+                await api.createSchedule({ ...payload, timezone: tz });
+                ui.showToast('Schedule created.', 'success');
+            }
             renderSettingsSchedulesTab();
         } catch (e) {
-            ui.showToast(_err(e) || 'Could not create the schedule.', 'error');
+            ui.showToast(_err(e) || 'Could not save the schedule.', 'error');
         }
+    });
+
+    container.querySelector('#sched-cancel')?.addEventListener('click', () => {
+        _editing = null;
+        renderSettingsSchedulesTab();
+    });
+
+    container.querySelectorAll('[data-sched-edit]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            _editing = (data.schedules || []).find(s => s.id === btn.dataset.schedEdit) || null;
+            _paint(container, data);
+            container.querySelector('#sched-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
     });
 
     container.querySelectorAll('[data-sched-toggle]').forEach(btn => {
@@ -139,6 +176,7 @@ function _scheduleRow(s) {
                 ${s.last_status ? `<div class="text-xs text-gray-400 mt-1">Last run: ${escapeHtml(s.last_run_date || '')} — ${escapeHtml(s.last_status)}</div>` : ''}
             </div>
             <div class="shrink-0 flex items-center gap-3">
+                <button data-sched-edit="${escapeHtml(s.id)}" class="text-xs font-medium text-green-700 dark:text-green-400 hover:underline">Edit</button>
                 <button data-sched-toggle="${escapeHtml(s.id)}" data-enabled="${on ? 1 : 0}"
                     class="text-xs font-medium ${on ? 'text-gray-500 hover:text-gray-700' : 'text-green-600 hover:underline'}">${on ? 'Pause' : 'Resume'}</button>
                 <button data-sched-delete="${escapeHtml(s.id)}" class="text-xs text-red-600 dark:text-red-400 hover:underline">Delete</button>

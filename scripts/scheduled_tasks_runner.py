@@ -76,12 +76,47 @@ def task_is_due(task: dict, now_utc: datetime) -> bool:
     return 0 <= delta < GRACE_MINUTES
 
 
-def send_email(config, to_addr: str, subject: str, body: str) -> None:
+def build_email_html(agent_name: str, body: str, date_label: str) -> str:
+    """Simple branded HTML for the digest. Inline styles only (email clients
+    ignore stylesheets), the official palette only (green #16a34a accent on
+    the #f9f9f9 canvas), and the model's output is HTML-ESCAPED before layout:
+    the agent writes text, never markup, so a prompt-injected <script> or a
+    forged-looking table arrives as visible text instead of rendering."""
+    import html as _html
+    paragraphs = "".join(
+        f'<p style="margin:0 0 12px 0;">{_html.escape(p).replace(chr(10), "<br>")}</p>'
+        for p in body.split("\n\n") if p.strip()
+    )
+    safe_agent = _html.escape(agent_name)
+    return f"""\
+<html><body style="margin:0;padding:0;background-color:#f9f9f9;">
+  <div style="max-width:640px;margin:0 auto;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#171717;">
+    <div style="background-color:#16a34a;border-radius:8px 8px 0 0;padding:14px 20px;">
+      <span style="color:#ffffff;font-size:16px;font-weight:bold;">SAFi</span>
+      <span style="color:#dcfce7;font-size:13px;"> &nbsp;·&nbsp; Scheduled update</span>
+    </div>
+    <div style="background-color:#ffffff;border:1px solid #e5e5e5;border-top:none;border-radius:0 0 8px 8px;padding:20px;">
+      <div style="font-size:14px;font-weight:bold;color:#15803d;margin-bottom:2px;">{safe_agent}</div>
+      <div style="font-size:12px;color:#737373;margin-bottom:16px;">{_html.escape(date_label)}</div>
+      <div style="font-size:14px;line-height:1.6;">{paragraphs}</div>
+    </div>
+    <p style="font-size:11px;color:#a3a3a3;margin:12px 4px 0;">
+      Produced as a governed turn. The full audit record and this conversation
+      are available in your SAFi workspace.
+    </p>
+  </div>
+</body></html>"""
+
+
+def send_email(config, to_addr: str, subject: str, body: str,
+               agent_name: str = "", date_label: str = "") -> None:
     msg = EmailMessage()
     msg["From"] = config.SMTP_FROM
     msg["To"] = to_addr
     msg["Subject"] = subject
-    msg.set_content(body)
+    msg.set_content(body)  # plain-text part stays the canonical fallback
+    msg.add_alternative(build_email_html(agent_name or "SAFi agent", body,
+                                         date_label), subtype="html")
     # Port decides the transport: 465 is implicit TLS from the first byte
     # (SMTP_SSL); anything else is plaintext upgraded via STARTTLS. Gmail
     # serves both; the demo host's proven credentials use 465.
@@ -166,9 +201,10 @@ def run_task(task: dict) -> None:
         return
 
     agent_name = prof.get("name") or task["agent_key"]
+    date_label = datetime.now(_tz.utc).astimezone(tz).strftime("%A, %B %d, %Y")
     try:
         send_email(Config, to_addr, f"[SAFi] {agent_name} — scheduled update",
-                   output)
+                   output, agent_name=agent_name, date_label=date_label)
         db.mark_scheduled_task_run(task["id"], run_date, f"sent ({decision})",
                                    conversation_id=conversation_id)
     except Exception as e:
