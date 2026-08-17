@@ -1,6 +1,6 @@
 # SAFi Agent & Policy Specification
 
-> **Version:** 1.0
+> **Version:** 1.1
 > **Last updated:** 2026-08-17
 > **Status:** Descriptive. The code is the authority; this document names the
 > shapes it accepts so you can build on them. Verified against the tree at
@@ -43,7 +43,7 @@ The most important shape in the system. One entry per value:
 | Field | Type | Rules |
 |---|---|---|
 | `name` (or `value`) | string | The identity. The Conscience's ledger entries and the Will's gate matching key off it, normalized (case- and whitespace-insensitive). |
-| `weight` | float | **Relative, not absolute.** Values are weighed against each other and rescaled to their tier's share of the score (see section 4). Scored values must have `weight > 0`; hard gates are pinned to `0.0` at compile time regardless of what you send. |
+| `weight` | float | **Relative, not absolute.** Values are weighed against each other and rescaled to their tier's share of the score (see section 5). Scored values must have `weight > 0`; hard gates are pinned to `0.0` at compile time regardless of what you send. |
 | `hard_gate` | bool | `true` makes this a pass/fail gate: a ledger score of `-1.0` blocks the response outright, and the value is excluded from the alignment average. Gates are not free: every gate must appear in the Conscience's ledger on every turn or the Will fails closed. |
 | `gate_reason` | string | Hard gates only. One of `scope_violation`, `grounding_violation`, `ethical_violation`. Routes the redirect when the gate fails (`ethical_violation` gates take the reflexion retry; the others redirect outright). Missing or invalid collapses to a generic `hard_gate_violation`. |
 | `description` | string | Shown to the Conscience to anchor its evaluation. |
@@ -71,7 +71,7 @@ version), `GET /api/policies`, version history and restore under
 | `business_unit` | string | Display and attribution. |
 | `context` | string | The human-facing description. Stored as its own field (`policy_config.context`); may be multi-line. |
 | `worldview` | string | The Purpose statement. One prose blob, no required format; injected into every agent's context between the Charter preamble and the agent's own role. |
-| `scope_statement` | string | The agent's lane. Compiled into an injected "Scope Compliance" hard gate (section 4); also shown to the model so it declines out-of-scope requests up front. |
+| `scope_statement` | string | The agent's lane. Compiled into an injected "Scope Compliance" hard gate (section 5); also shown to the model so it declines out-of-scope requests up front. |
 | `values` | list | Section 1 shapes. **At least one is required.** These are the policy's scored standards and gates. |
 | `will_rules` | object or list | The structured enforcement dict (2.2). A bare list is accepted as legacy free-text rules. |
 | `alignment_threshold` | float 0..1 | The Will's blocking threshold: how well a response must score to ship. Persisted into `policy_config` and embedded as `structural_requirements.alignment_score_threshold`. Default 0.5. |
@@ -115,12 +115,78 @@ Rejected with a 400 and a human-readable reason: a missing name, zero
 values, any value failing the rubric rule, a scored value with weight 0,
 `will_rules` that is neither list nor dict.
 
-## 3. The agent
+## 3. The organization tier: Charter, AI Standards, and the split
+
+Two org-wide artifacts sit above every policy. Both are admin-only and
+scoped to the caller's own org.
+
+### 3.1 The Charter (who the organization is)
+
+`PUT /api/organizations/<org_id>/charter` (GET to read, DELETE to remove):
+
+```json
+{ "mission": "...", "core_values": [ ...section 1 shapes... ] }
+```
+
+The mission and the value names are injected into every agent's context as
+descriptive preamble (context, not mandate; see section 5). The
+`core_values` are SCORED on every turn and take the organization's share
+of the weight split. Charter values flagged `hard_gate` are honored as
+legacy; new non-negotiables belong in AI Standards.
+
+### 3.2 AI Standards (how the org's AI must behave)
+
+`PUT /api/organizations/<org_id>/ai-standards`. A separate artifact from
+the Charter on purpose: the Charter is identity and contributes scored
+values; Standards are conduct rules and contribute gates and
+deterministic checks. Filing one as the other is not cosmetic (a rule
+stored as a charter value gets scored every turn; a required disclosure
+once blocked every response that way).
+
+```json
+{
+  "values": [ ...section 1 shapes, each blocking or scored... ],
+  "structural_requirements": {
+    "require_disclaimer": false,
+    "mandatory_disclaimer_substring": "",
+    "banned_markdown_syntaxes": [],
+    "alignment_score_threshold": 0.5
+  },
+  "early_prompt_blacklist": ["..."],
+  "allowed_tools": null
+}
+```
+
+Semantics:
+
+- Each standard in `values` is either **blocking** (`hard_gate: true`, a
+  weight-0 gate outside the split) or **scored** (joins the organization's
+  share next to the charter values).
+- The deterministic keys merge with every policy under one rule: a policy
+  may ADD to what the org requires, never quietly drop it. Blacklists and
+  banned syntaxes union; `require_disclaimer` cannot be turned off by a
+  policy; the org's disclaimer substring wins when set (only one substring
+  can be enforced); `alignment_score_threshold` takes the strictest value;
+  `allowed_tools` intersects (org ∩ policy ∩ advertised). `null` for
+  `allowed_tools` means the org does not narrow.
+- Validation worth knowing: `require_disclaimer` without a non-empty
+  `mandatory_disclaimer_substring` is rejected outright, because the Will
+  can only check a substring, and a required disclaimer with nothing to
+  check for would read as enforced while enforcing nothing.
+
+### 3.3 The governance split
+
+An org setting (`governance_split`, default `0.40`): the share of every
+agent's scored values that comes from the Charter tier, with the policy
+tier taking the rest. Charter-only and policy-only agents get the whole
+share either way (section 5).
+
+## 4. The agent
 
 An agent is identity and role; its scored values come from governance
-(section 4), never from itself. Three ways to define one:
+(sections 2, 3, and 5), never from itself. Three ways to define one:
 
-### 3.1 Wizard / API agents (the normal path, no code)
+### 4.1 Wizard / API agents (the normal path, no code)
 
 `POST /api/agents` (create), `PUT /api/agents/<key>` (update). Payload:
 
@@ -143,7 +209,7 @@ An agent is identity and role; its scored values come from governance
 | `track_work_context` | bool | Default `true`. Whether the agent accumulates per-user work-context memory (see the Artifact Specification for what that memory looks like in records). |
 | `avatar` | string | Display. |
 
-### 3.2 Code-defined agents (built-ins and extensions)
+### 4.2 Code-defined agents (built-ins and extensions)
 
 A Python module exporting two attributes, discovered, never imported by
 name:
@@ -164,14 +230,14 @@ fields available only to code-defined agents:
 | `history_turns` | Verbatim conversation window depth for this agent (int, or `"all"`); unset uses the deployment default. |
 | `FALLBACK = True` | Module attribute (built-ins only): membership in the set enabled when `SAFI_BUILTIN_AGENTS` matches nothing. |
 
-### 3.3 What an agent can never do
+### 4.3 What an agent can never do
 
 Grant itself tools its policy does not allow, carry scored values of its
 own under the two-tier model, exempt itself from the scope gate, or call
 anything: the Intellect proposes, the Will disposes, and both read only
 the compiled profile.
 
-## 4. Compilation semantics (what the TCB does with your data)
+## 5. Compilation semantics (what the TCB does with your data)
 
 `get_profile()` compiles Charter + AI Standards + Policy + Agent into one
 profile per turn. The rules a shape author must know:
@@ -195,7 +261,7 @@ profile per turn. The rules a shape author must know:
   ordered to embody the values; the Conscience measures alignment after
   generation, which is what keeps the audit meaningful.
 
-## 5. Stability
+## 6. Stability
 
 Same policy as the Artifact Specification: fields are added, never renamed
 or repurposed; unknown fields are ignored rather than rejected; semantics
@@ -204,6 +270,9 @@ rule) only change with a version bump and a note in the history below.
 
 ## Version history
 
+- **1.1 (2026-08-17)** - Added the organization tier: the Charter payload,
+  AI Standards with the blocking-or-scored choice and the org-over-policy
+  merge rules, and the governance split.
 - **1.0 (2026-08-17)** - Initial specification: the shared value/rubric
   shape, the policy payload and `will_rules` block, the three agent
   definition paths, and the compilation semantics.
