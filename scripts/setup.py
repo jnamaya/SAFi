@@ -306,6 +306,61 @@ def verify_key(provider: dict, key: str) -> Tuple[bool, str]:
 
 # ── the wizard ───────────────────────────────────────────────────────────────
 
+def _local_tcb_fingerprint() -> str:
+    """Measure THIS tree, for the install-time honesty check only. The wizard
+    never offers this value as the pin: pinning a tree to itself would be
+    self-attestation, the exact loophole the pin exists to close. The pin is
+    only meaningful copied from an official release's published line."""
+    try:
+        import importlib.util
+        checker = Path(__file__).resolve().parent / "verify_integrity.py"
+        spec = importlib.util.spec_from_file_location("safi_setup_checker", checker)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        root = checker.parent.parent
+        current = {}
+        for rel in mod.CORE_FILES:
+            f = root / rel
+            if not f.exists():
+                return ""
+            current[rel] = mod._hash_file(f)
+        return mod._root_fingerprint(current)
+    except Exception:
+        return ""
+
+
+def ask_fingerprint_pin() -> str:
+    """Optional TCB Fingerprint pin for production installs. Returns "" to skip."""
+    print()
+    print(dim("  Optional: if you installed from an official release, you can pin\n"
+              "  this deployment to it. Copy the 'TCB Fingerprint:' line from the\n"
+              "  release's notes on GitHub; every boot then re-checks the running\n"
+              "  code against the value you verified, and strict mode refuses to\n"
+              "  start on a mismatch. Only paste the value from the release page —\n"
+              "  a fingerprint computed from this tree would pin it to itself."))
+    while True:
+        pin = ask("TCB Fingerprint to pin (Enter to skip)").strip().lower()
+        if not pin:
+            return ""
+        if not re.fullmatch(r"[0-9a-f]{64}", pin):
+            print(yellow("  That is not a fingerprint (expected 64 hex characters). "
+                         "A truncated paste would mismatch at every boot."))
+            continue
+        measured = _local_tcb_fingerprint()
+        if measured and measured != pin:
+            print(yellow("  This tree measures a DIFFERENT fingerprint:"))
+            print(yellow(f"    pinned:   {pin}"))
+            print(yellow(f"    measured: {measured}"))
+            print(dim("  If you cloned a branch instead of installing the release, every\n"
+                      "  boot will log a pin mismatch, and strict mode will refuse to\n"
+                      "  start. Install from the release tag to make them match."))
+            if not ask_yes_no("Keep this pin anyway?", default=False):
+                continue
+        elif measured:
+            print(green("  Matches this tree."))
+        return pin
+
+
 def collect_interactive() -> Dict[str, str]:
     values: Dict[str, str] = {}
     total = 4
@@ -418,6 +473,13 @@ def collect_interactive() -> Dict[str, str]:
         print(dim(f"\n  Redirect URI: {base_url}/api/callback/microsoft"))
         values["MICROSOFT_CLIENT_ID"] = ask("Microsoft client ID")
         values["MICROSOFT_CLIENT_SECRET"] = ask("Microsoft client secret")
+
+    # Optional TCB Fingerprint pin — production-grade installs only. Trial
+    # installs run from a cloned branch, where a pin can only mismatch.
+    if is_prod:
+        pin = ask_fingerprint_pin()
+        if pin:
+            values["SAFI_EXPECTED_FINGERPRINT"] = pin
 
     values.update(generated_secrets())
     values["_admin_password"] = admin_password  # stripped before render; shown at the end

@@ -326,5 +326,44 @@ class BackupNaming(unittest.TestCase):
             self.assertFalse(second.exists())
 
 
+class FingerprintPinQuestion(unittest.TestCase):
+    """The optional TCB Fingerprint pin (production installs). The rule that
+    matters: the wizard measures the local tree only to WARN, never to offer
+    the value as the pin — a tree pinned to itself would be self-attestation."""
+
+    def test_local_measurement_agrees_with_the_manifest(self):
+        """The wizard's honesty check must use the same measurement as
+        verify_integrity, or its warnings would be noise."""
+        import json
+        fp = setup._local_tcb_fingerprint()
+        expected = json.loads(
+            (REPO_ROOT / "scripts" / "core_integrity_manifest.json").read_text()
+        )["root_fingerprint"]
+        self.assertEqual(fp, expected)
+
+    def test_the_wizard_never_autofills_the_pin(self):
+        """No code path may write SAFI_EXPECTED_FINGERPRINT from the local
+        measurement. The pin enters through ask() (a paste) or not at all."""
+        src = (REPO_ROOT / "scripts" / "setup.py").read_text(encoding="utf-8")
+        at = src.index("def collect_interactive")
+        body = src[at:src.index("\ndef ", at + 10)]
+        self.assertNotIn("_local_tcb_fingerprint", body,
+                         "collect_interactive must not measure the tree; only the "
+                         "pin question's warning path may, inside ask_fingerprint_pin")
+        pin_fn = src[src.index("def ask_fingerprint_pin"):src.index("def collect_interactive")]
+        self.assertNotIn("return measured", pin_fn)
+
+    def test_defaults_mode_never_pins(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"GROQ_API_KEY": "gsk_test"}):
+            values = setup.collect_defaults()
+        self.assertNotIn("SAFI_EXPECTED_FINGERPRINT", values)
+
+    def test_template_carries_the_pin_key(self):
+        """The rendered .env must be able to hold the pin the wizard writes."""
+        lines, index = setup.parse_template(REPO_ROOT / ".env.example")
+        self.assertIn("SAFI_EXPECTED_FINGERPRINT", index)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
