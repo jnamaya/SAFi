@@ -75,7 +75,7 @@ function _paint(container, data) {
                 <div class="flex flex-col">
                     <label class="text-xs font-bold text-gray-500 uppercase">What should the agent do?</label>
                     <textarea id="sched-prompt" class="flex-1 mt-1 p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm resize-y min-h-28"
-                        placeholder="e.g. Give me today's Mass readings with a short reflection."></textarea>
+                        placeholder="e.g. Summarize today's market headlines and any earnings reports relevant to my portfolio watchlist."></textarea>
                     <button id="sched-create" class="mt-3 self-end px-5 py-2 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 text-sm shadow-sm">
                         Create schedule
                     </button>
