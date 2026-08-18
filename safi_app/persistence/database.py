@@ -3600,17 +3600,25 @@ def get_policy(pid):
         conn.close()
 
 def list_policies(user_id=None, org_id=None):
+    # Demo rows are matched against the current seed set, not the is_demo flag
+    # alone. Retired demo policies (e.g. demo_contoso_genai_policy) stay in the
+    # DB as provenance for old governance records but must not surface as
+    # examples. get_policy stays unfiltered so those records keep resolving.
+    from ..core.policies.demo.policies import DEMO_AGENT_POLICIES
+    demo_ids = list(DEMO_AGENT_POLICIES) + ["safi_default_policy"]
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         # Filter by Demo, Creator, OR Organization
-        cursor.execute("""
-            SELECT * FROM policies 
-            WHERE is_demo=TRUE 
-            OR created_by=%s 
+        demo_placeholders = ", ".join(["%s"] * len(demo_ids))
+        cursor.execute(f"""
+            SELECT * FROM policies
+            WHERE (is_demo=TRUE AND id IN ({demo_placeholders}))
+            OR created_by=%s
             OR (org_id IS NOT NULL AND org_id=%s)
             ORDER BY created_at DESC
-        """, (user_id, org_id))
+        """, (*demo_ids, user_id, org_id))
         
         rows = cursor.fetchall()
         for row in rows:
