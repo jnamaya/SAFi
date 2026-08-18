@@ -164,6 +164,8 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             </div>
         </div>
 
+        ${verificationSection}
+
         <!-- CHARTER SECTION -->
         <div class="settings-card">
             <div class="flex items-start justify-between mb-4">
@@ -309,8 +311,6 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                 </div>
             </div>
         </div>
-
-        ${verificationSection}
 
         <div class="settings-card">
              <h4 class="text-lg font-semibold mb-4">AI Governance Configuration</h4>
