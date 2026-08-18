@@ -236,6 +236,7 @@ def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
         "IMPORTANT: You MUST politely decline any USER REQUEST whose topic falls outside this scope. "
         "Do not engage with, partially answer, or acknowledge off-topic requests. "
         "When declining, begin with ONE explicit sentence stating that the question falls outside your area of focus, then briefly explain what you can help with and invite a relevant question.\n"
+        "When a request IS within your scope, simply answer it directly. Do NOT preface an in-scope answer with any commentary about your scope, about whether the request fits your role, or about what kind of analysis you are or are not performing. Just respond to the request.\n"
         "NOTE: The tools available to you are implementation details — use them freely to fulfill in-scope requests. "
         "A tool is not 'out of scope'; only the user's requested topic can be."
     )
