@@ -189,6 +189,7 @@ export async function renderSettingsUsageTab(days = 30) {
 
         <div id="usage-deployment-section"></div>
         <div id="usage-model-catalog-section"></div>
+        <div id="usage-provider-keys-section"></div>
     `;
 
     const daySelect = document.getElementById('usage-days');
@@ -200,6 +201,100 @@ export async function renderSettingsUsageTab(days = 30) {
 
     renderDeploymentSection(days, prices);
     renderModelCatalogSection();
+    renderProviderKeysSection(org.id);
+}
+
+// Provider API Keys (backlog 64): the org's own keys, layered over the
+// deployment .env defaults. Write-only by design — the server stores the
+// key encrypted and only ever returns the last 4 characters.
+async function renderProviderKeysSection(orgId) {
+    const host = document.getElementById('usage-provider-keys-section');
+    if (!host) return;
+    let res;
+    try {
+        res = await api.getOrgProviderKeys(orgId);
+    } catch (e) {
+        return;
+    }
+    if (!res || !res.ok) return;
+
+    const own = new Map(res.keys.map(k => [k.provider, k]));
+
+    host.innerHTML = `
+        <div class="settings-card">
+            <h4 class="text-lg font-semibold">Provider API Keys</h4>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-4">
+                Bring your organization's own provider keys. A stored key replaces the deployment default
+                for this org's calls only (including background work), so your usage bills to your account.
+                Keys are stored encrypted, are never displayed after saving, and changes apply within a minute.
+            </p>
+            <div class="overflow-x-auto"><table class="w-full text-sm">
+                <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
+                    <th class="py-2 pr-4">Provider</th><th class="py-2 pr-4">Status</th><th class="py-2 pr-4">Key</th><th class="py-2"></th>
+                </tr></thead>
+                <tbody>${res.providers.map(p => {
+                    const mine = own.get(p.id);
+                    const status = mine
+                        ? `<span class="text-green-600 dark:text-green-400 font-medium">Your org's key, ends in …${escapeHtml(mine.last4)}</span>`
+                        : (p.deployment_configured
+                            ? '<span class="text-gray-500">Using deployment default</span>'
+                            : '<span class="text-gray-400">Not configured</span>');
+                    return `
+                    <tr class="border-b border-gray-100 dark:border-neutral-800/60">
+                        <td class="py-2 pr-4 font-medium">${escapeHtml(p.label)}</td>
+                        <td class="py-2 pr-4">${status}</td>
+                        <td class="py-2 pr-4">
+                            <input type="password" autocomplete="off" data-provider="${escapeHtml(p.id)}"
+                                class="provider-key-input w-full min-w-[160px] p-1.5 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-xs"
+                                placeholder="${mine ? 'Paste to replace' : 'Paste key to set'}">
+                        </td>
+                        <td class="py-2 text-right whitespace-nowrap">
+                            <button class="provider-key-set text-xs font-semibold text-green-600 hover:text-green-700 hover:underline mr-3" data-provider="${escapeHtml(p.id)}">${mine ? 'Replace' : 'Set'}</button>
+                            ${mine ? `<button class="provider-key-del text-xs text-red-500 hover:text-red-600 hover:underline" data-provider="${escapeHtml(p.id)}">Remove</button>` : ''}
+                        </td>
+                    </tr>`;
+                }).join('')}
+                </tbody></table></div>
+        </div>
+    `;
+
+    host.querySelectorAll('.provider-key-set').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const provider = btn.dataset.provider;
+            const input = host.querySelector(`.provider-key-input[data-provider="${provider}"]`);
+            const key = (input?.value || '').trim();
+            if (!key) return ui.showToast('Paste the key first.', 'error');
+            try {
+                const r = await api.setOrgProviderKey(orgId, provider, key);
+                if (r && r.ok) {
+                    ui.showToast(`Key stored for ${provider}. Applies within a minute.`, 'success');
+                    renderProviderKeysSection(orgId);
+                } else {
+                    throw new Error((r && r.error) || 'Save failed');
+                }
+            } catch (e) {
+                ui.showToast(e.message, 'error');
+            }
+        });
+    });
+
+    host.querySelectorAll('.provider-key-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const provider = btn.dataset.provider;
+            if (!confirm(`Remove your org's ${provider} key? Calls fall back to the deployment default.`)) return;
+            try {
+                const r = await api.deleteOrgProviderKey(orgId, provider);
+                if (r && r.ok) {
+                    ui.showToast('Key removed.', 'success');
+                    renderProviderKeysSection(orgId);
+                } else {
+                    throw new Error((r && r.error) || 'Remove failed');
+                }
+            } catch (e) {
+                ui.showToast(e.message, 'error');
+            }
+        });
+    });
 }
 
 // Operator-only (backlog 65): usage across every org on this deployment,

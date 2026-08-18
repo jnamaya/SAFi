@@ -877,6 +877,23 @@ def init_db():
             )
         ''')
 
+        # --- Per-org provider API keys (backlog 64, BYOK over .env) ---
+        # key_enc holds the Fernet-encrypted key; last4 exists so the UI can
+        # say "ends in ...x4F2" without ever reading the key back. The key
+        # itself leaves this table only through
+        # get_org_provider_keys_decrypted, consumed at dispatch time.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS org_provider_keys (
+                org_id CHAR(36) NOT NULL,
+                provider VARCHAR(40) NOT NULL,
+                key_enc TEXT NOT NULL,
+                last4 VARCHAR(8) NOT NULL,
+                updated_by VARCHAR(255) NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (org_id, provider)
+            )
+        ''')
+
         # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
         # Workflow state only — the regulatory evidence for each disposition is
         # the 'review' entry appended to chat_audit_trail in the same
@@ -4359,6 +4376,70 @@ def get_deployment_llm_usage(days=30):
             r["tokens_out"] = int(r["tokens_out"] or 0)
             r["calls"] = int(r["calls"] or 0)
         return {"days": days, "by_org_model": rows}
+    finally:
+        cursor.close()
+        conn.close()
+
+def set_org_provider_key(org_id, provider, key, updated_by=None):
+    """Stores (or replaces) an org's own provider key, encrypted (backlog 64).
+    The plaintext never persists and is never logged."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO org_provider_keys (org_id, provider, key_enc, last4, updated_by) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE key_enc=VALUES(key_enc), last4=VALUES(last4), "
+            "updated_by=VALUES(updated_by)",
+            (org_id, provider, crypto.encrypt_value(key), key[-4:], updated_by))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_org_provider_key(org_id, provider):
+    """Returns True when a row was removed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM org_provider_keys WHERE org_id=%s AND provider=%s",
+            (org_id, provider))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_org_provider_keys(org_id):
+    """Display shape only: provider, last4, updated_at. The key itself is
+    write-only from the UI's point of view — never returned here."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT provider, last4, updated_at FROM org_provider_keys "
+            "WHERE org_id=%s ORDER BY provider", (org_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_org_provider_keys_decrypted(org_id):
+    """{provider: plaintext key} for dispatch (org_keys.org_key_map). The one
+    read path that decrypts."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT provider, key_enc FROM org_provider_keys WHERE org_id=%s",
+            (org_id,))
+        out = {}
+        for r in cursor.fetchall():
+            key = crypto.decrypt_value(r["key_enc"])
+            if key:
+                out[r["provider"]] = key
+        return out
     finally:
         cursor.close()
         conn.close()

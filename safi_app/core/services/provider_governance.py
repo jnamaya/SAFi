@@ -108,8 +108,11 @@ def list_models_for_org(org_id) -> List[dict]:
     actually be dispatched is never offered."""
     from ...config import Config
     from .model_routing import custom_models
+    from .org_keys import org_key_providers
     allow = get_org_allowlist(org_id)
-    configured = configured_providers(Config)
+    # A provider is usable with a deployment .env key OR the org's own key
+    # (backlog 64) — either way its models can actually dispatch for this org.
+    configured = configured_providers(Config) | org_key_providers(org_id)
     # Built-ins first, then operator-added rows (backlog 63) marked custom
     # so the catalog UI knows which entries are deletable. Both pass the
     # same configured-provider and allow-list filters.

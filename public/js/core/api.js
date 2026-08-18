@@ -467,6 +467,18 @@ export async function getDeploymentUsage(days = 30) {
     return httpGet(`/api/organizations/usage/deployment?days=${days}`);
 }
 
+export async function getOrgProviderKeys(orgId) {
+    return httpGet(`/api/organizations/${orgId}/provider-keys`);
+}
+
+export async function setOrgProviderKey(orgId, provider, key) {
+    return httpJSON(`/api/organizations/${orgId}/provider-keys`, 'PUT', { provider, key });
+}
+
+export async function deleteOrgProviderKey(orgId, provider) {
+    return httpJSON(`/api/organizations/${orgId}/provider-keys?provider=${encodeURIComponent(provider)}`, 'DELETE', {});
+}
+
 export async function getCustomModels() {
     return httpGet('/api/models/custom');
 }

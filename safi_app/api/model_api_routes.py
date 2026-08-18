@@ -7,7 +7,7 @@ from ..persistence import database as db
 from ..core.rbac import require_role, get_current_org_id
 from ..core.services.provider_governance import list_models_for_org
 from ..core.services.model_routing import (
-    PROVIDER_METADATA, custom_models, invalidate_custom_models_cache)
+    PROVIDER_METADATA, invalidate_custom_models_cache)
 
 model_api_bp = Blueprint('model_api', __name__)
 
@@ -42,15 +42,19 @@ def list_models():
 @require_role('admin')
 def list_custom():
     """The operator-added rows plus the provider options for the add form
-    (backlog 63). Only providers with a configured .env key are offered:
-    a model that cannot dispatch must not be addable."""
+    (backlog 63). Reads the DB directly, NOT the 60s custom_models() cache:
+    that cache is per gunicorn worker, so right after an add the worker
+    serving this list may still hold the pre-add copy — the management view
+    must always show what is actually stored. Only providers with a
+    configured .env key are offered: a model that cannot dispatch must not
+    be addable."""
     from ..core.services.model_routing import configured_providers
     configured = configured_providers(Config)
     return jsonify({
         "ok": True,
         "models": [
             {"id": r["model_id"], "label": r["label"], "provider": r["provider"]}
-            for r in custom_models()
+            for r in db.list_custom_models()
         ],
         "providers": [
             {"id": p, "label": PROVIDER_METADATA[p]["label"]}
@@ -76,7 +80,9 @@ def add_custom():
         return jsonify({"error": f"No API key is configured for '{provider}', so this model could never dispatch."}), 400
     if any(m["id"].lower() == model_id.lower() for m in Config.AVAILABLE_MODELS):
         return jsonify({"error": "That model is already in the built-in catalog."}), 409
-    if any(r["model_id"].lower() == model_id.lower() for r in custom_models()):
+    # Fresh read, not the worker-local cache: a stale cache here would let a
+    # duplicate through to the primary-key constraint as a raw 500.
+    if any(r["model_id"].lower() == model_id.lower() for r in db.list_custom_models()):
         return jsonify({"error": "That model is already in the catalog."}), 409
 
     user = session.get('user') or {}

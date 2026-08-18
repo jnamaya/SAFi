@@ -11,6 +11,17 @@ from ..services.model_routing import detect_provider
 from ..services.provider_governance import assert_provider_allowed, ProviderNotAllowedError
 
 
+def _record_backend_usage(provider, model, resp):
+    """Backend completions bypass LLMProvider._chat_completion, so they record
+    their own usage rows (closes the item-61 gap). Attribution rides the same
+    ContextVars, copied into these threads by _submit_bg. Never raises."""
+    from ..services.usage_tracking import extract_usage, record_usage
+    shape = provider if provider in ("anthropic", "gemini") else "openai"
+    usage = extract_usage(shape, resp)
+    if usage:
+        record_usage("background", provider, model, usage[0], usage[1])
+
+
 # --- Work-context memory: deterministic merge ----------------------------------
 # The extractor LLM emits only a DELTA (upserts/removals) for the latest exchange.
 # We merge it into the stored memory in Python so existing items can NEVER be
@@ -294,30 +305,37 @@ class BackgroundTasksMixin:
         """
         Lazily builds and caches a synchronous client for the given provider, from
         the same provider config the LLMProvider uses (build_providers_config), so
-        background threads can reach every provider the faculties can. Returns
-        None when the provider has no API key configured. Gemini is excluded —
-        its google-genai client is already sync-capable and shared via self.clients.
+        background threads can reach every provider the faculties can. The active
+        org's own key (backlog 64) wins over the deployment key, same layering as
+        the faculty path, so background work bills to the org's key too. Returns
+        None when neither key exists. Cache is keyed (provider, key) so a rotated
+        key gets a fresh client. Gemini is excluded — its google-genai client is
+        already sync-capable; the gemini branch below handles its override.
         """
         cache = getattr(self, "_backend_sync_clients", None)
         if cache is None:
             cache = self._backend_sync_clients = {}
-        if provider in cache:
-            return cache[provider]
 
         from ..services.model_routing import build_providers_config
+        from ..services.org_keys import active_org_key
         details = build_providers_config(self.config).get(provider)
+        api_key = active_org_key(provider) or (details or {}).get("api_key")
+        cache_key = (provider, api_key)
+        if cache_key in cache:
+            return cache[cache_key]
+
         client = None
-        if details and details.get("api_key"):
+        if details and api_key:
             try:
                 if details["type"] == "openai":
                     from openai import OpenAI
-                    client = OpenAI(api_key=details["api_key"], base_url=details.get("base_url"))
+                    client = OpenAI(api_key=api_key, base_url=details.get("base_url"))
                 elif details["type"] == "anthropic":
                     from anthropic import Anthropic
-                    client = Anthropic(api_key=details["api_key"])
+                    client = Anthropic(api_key=api_key)
             except Exception as e:
                 self.log.warning(f"[Backend] sync client init failed for '{provider}': {e}")
-        cache[provider] = client
+        cache[cache_key] = client
         return client
 
     def _backend_completion(self, system_prompt: str, user_content: str, model: str | None = None,
@@ -352,6 +370,23 @@ class BackgroundTasksMixin:
         try:
             if provider == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")
+                # Org key overlay (backlog 64): same layering as the faculty
+                # path. Cached alongside the sync clients, keyed by the key.
+                from ..services.org_keys import active_org_key
+                org_key = active_org_key("gemini")
+                if org_key:
+                    cache = getattr(self, "_backend_sync_clients", None)
+                    if cache is None:
+                        cache = self._backend_sync_clients = {}
+                    cache_key = ("gemini", org_key)
+                    if cache_key not in cache:
+                        try:
+                            from google import genai as _genai
+                            cache[cache_key] = _genai.Client(api_key=org_key)
+                        except Exception as e:
+                            self.log.warning(f"[Backend] gemini org-key client init failed: {e}")
+                            cache[cache_key] = None
+                    client = cache[cache_key] or client
                 if client is None:
                     self.log.warning("[Backend] gemini client unavailable; skipping.")
                     return None
@@ -362,6 +397,7 @@ class BackgroundTasksMixin:
                     response_mime_type="application/json" if json_mode else None,
                 )
                 resp = client.models.generate_content(model=model, contents=user_content, config=cfg)
+                _record_backend_usage("gemini", model, resp)
                 return (getattr(resp, "text", "") or "").strip()
 
             if provider == "anthropic":
@@ -379,6 +415,7 @@ class BackgroundTasksMixin:
                     messages=[{"role": "user", "content": user_content}],
                     temperature=temperature,
                 )
+                _record_backend_usage("anthropic", model, resp)
                 text = "".join(
                     b.text for b in resp.content if getattr(b, "type", "") == "text"
                 ).strip()
@@ -405,6 +442,7 @@ class BackgroundTasksMixin:
             if json_mode:
                 params["response_format"] = {"type": "json_object"}
             resp = client.chat.completions.create(**params)
+            _record_backend_usage(provider, model, resp)
             return resp.choices[0].message.content.strip()
         except Exception as e:
             self.log.warning(f"[Backend] completion failed ({model}): {e}")

@@ -173,6 +173,112 @@ def get_deployment_usage():
         current_app.logger.error(f"Error fetching deployment usage: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+def _provider_keys_forbidden(org_id):
+    """Shared guard for the provider-key endpoints: admin of THIS org only."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
+@organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['GET'])
+@require_role('admin')
+def list_provider_keys(org_id):
+    """
+    [GET /api/organizations/<org_id>/provider-keys]
+    Which providers this org holds its own key for — display shape only
+    (provider, last 4, updated). The key itself is write-only and never
+    returned by any endpoint. Also carries the provider options and whether
+    the deployment has its own .env key for each.
+    """
+    forbidden = _provider_keys_forbidden(org_id)
+    if forbidden:
+        return forbidden
+    from ..core.services.model_routing import PROVIDER_METADATA, configured_providers
+    from ..config import Config
+    deployment = configured_providers(Config)
+    try:
+        return jsonify({
+            "ok": True,
+            "keys": [
+                {"provider": r["provider"], "last4": r["last4"],
+                 "updated_at": utc_isoformat(r["updated_at"])}
+                for r in db.list_org_provider_keys(org_id)
+            ],
+            "providers": [
+                {"id": p, "label": PROVIDER_METADATA[p]["label"],
+                 "deployment_configured": p in deployment}
+                for p in sorted(PROVIDER_METADATA)
+            ],
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error listing provider keys: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['PUT'])
+@require_role('admin')
+def set_provider_key(org_id):
+    """
+    [PUT /api/organizations/<org_id>/provider-keys]  {provider, key}
+    Stores the org's own key for one provider, encrypted. It overlays the
+    deployment .env key for this org's calls within a minute (per-worker
+    cache TTL). The key is never echoed back and never logged.
+    """
+    forbidden = _provider_keys_forbidden(org_id)
+    if forbidden:
+        return forbidden
+    from ..core.services.model_routing import PROVIDER_METADATA
+    from ..core.services.org_keys import invalidate_org_keys_cache
+    data = request.json or {}
+    provider = (data.get('provider') or '').strip().lower()
+    key = (data.get('key') or '').strip()
+    if provider not in PROVIDER_METADATA:
+        return jsonify({"error": f"Unknown provider '{provider}'."}), 400
+    if len(key) < 8 or len(key) > 512 or any(c.isspace() for c in key):
+        return jsonify({"error": "That does not look like an API key."}), 400
+    user = session.get('user') or {}
+    user_id = user.get('sub') or user.get('id')
+    try:
+        db.set_org_provider_key(org_id, provider, key, updated_by=user_id)
+        invalidate_org_keys_cache(org_id)
+        # Evidence: the change, never the key.
+        db.append_compliance_log(org_id, 'provider_key_change', f"user:{user_id}",
+                                 {"action": "set", "provider": provider,
+                                  "last4": key[-4:]})
+        return jsonify({"ok": True, "provider": provider, "last4": key[-4:]})
+    except Exception as e:
+        current_app.logger.error(f"Error storing provider key: {type(e).__name__}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['DELETE'])
+@require_role('admin')
+def delete_provider_key(org_id):
+    """
+    [DELETE /api/organizations/<org_id>/provider-keys?provider=x]
+    Removes the org's key; calls fall back to the deployment .env default.
+    """
+    forbidden = _provider_keys_forbidden(org_id)
+    if forbidden:
+        return forbidden
+    from ..core.services.org_keys import invalidate_org_keys_cache
+    provider = (request.args.get('provider') or '').strip().lower()
+    if not provider:
+        return jsonify({"error": "Missing provider."}), 400
+    user = session.get('user') or {}
+    user_id = user.get('sub') or user.get('id')
+    try:
+        if not db.delete_org_provider_key(org_id, provider):
+            return jsonify({"error": "Not found."}), 404
+        invalidate_org_keys_cache(org_id)
+        db.append_compliance_log(org_id, 'provider_key_change', f"user:{user_id}",
+                                 {"action": "remove", "provider": provider})
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.error(f"Error removing provider key: {type(e).__name__}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @organizations_bp.route('/organizations/domain/cancel', methods=['POST'])
 @require_role('admin')
 def cancel_domain_verification():

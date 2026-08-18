@@ -46,6 +46,10 @@ class LLMProvider:
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
         self.clients = {}
+        # Clients bound to an org's own key (backlog 64), keyed
+        # (provider, key) so a rotated key gets a fresh client. Bounded in
+        # practice by providers x orgs that stored a key.
+        self._org_clients: Dict[Any, Any] = {}
         self._initialize_clients()
 
     def _initialize_clients(self):
@@ -75,6 +79,35 @@ class LLMProvider:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
             except Exception as e:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
+
+    def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):
+        """A client bound to the active org's own key for this provider
+        (backlog 64), or None = use the deployment client. Mirrors
+        _initialize_clients per provider type; construction failures fall
+        back to the deployment client rather than breaking the turn."""
+        from .org_keys import active_org_key
+        key = active_org_key(provider_name)
+        if not key:
+            return None
+        cache_key = (provider_name, key)
+        client = self._org_clients.get(cache_key)
+        if client is not None:
+            return client
+        try:
+            p_type = provider_details.get("type")
+            if p_type == "openai":
+                client = AsyncOpenAI(api_key=key, base_url=provider_details.get("base_url"))
+            elif p_type == "anthropic":
+                client = AsyncAnthropic(api_key=key)
+            elif p_type == "gemini":
+                client = genai.Client(api_key=key)
+            else:
+                return None
+        except Exception as e:
+            self.log.error(f"Org key client init failed for '{provider_name}': {e}")
+            return None
+        self._org_clients[cache_key] = client
+        return client
 
     def _capture_usage(self, route, provider_name, model_name, provider_type, resp):
         """Record the call's token counts for the Usage & Cost tab (backlog 61).
@@ -125,7 +158,10 @@ class LLMProvider:
              raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
 
         provider_type = provider_details["type"]
-        client = self.clients.get(provider_name)
+        # The active org's own key wins over the deployment client (backlog
+        # 64) — and makes a provider usable that has no .env key at all.
+        client = self._org_override_client(provider_name, provider_details) \
+            or self.clients.get(provider_name)
 
         if not client:
             raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
