@@ -61,6 +61,10 @@ class ToolApprovalBase(unittest.TestCase):
     def tearDown(self):
         _exec("DELETE FROM agents WHERE agent_key=%s", (self.agent_key,))
         _exec("DELETE FROM agent_tool_requests WHERE org_id=%s", (self.org,))
+        _exec("DELETE FROM approval_settings WHERE org_id=%s", (self.org,))
+        _exec("DELETE FROM custom_groups WHERE org_id=%s", (self.org,))
+        _exec("DELETE m FROM group_memberships m LEFT JOIN custom_groups c "
+              "ON c.id = m.group_id WHERE c.id IS NULL")
         _exec("DELETE FROM org_compliance_log WHERE org_id=%s", (self.org,))
         for uid in self.users:
             _exec("DELETE FROM sessions WHERE user_id=%s", (uid,))
@@ -289,6 +293,167 @@ class TheOutcome(ToolApprovalBase):
         rid = tool_approval_store.list_requests(self.org, 'pending')[0]['id']
         self.assertEqual(client.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 200)
         self.assertIsNone(self._inbox_item(client, 'my_tool_requests'))
+
+
+class PolicyGate(ToolApprovalBase):
+    """57d: authorization is born at the policy's DECLARED allowed_tools.
+    Widening it waits; agents drawing from an approved list flow free;
+    undeclared policies keep the agent-level gate (covered by TheGate)."""
+
+    def setUp(self):
+        super().setUp()
+        # policies.org_id carries a real FK, so the org needs a row.
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Approval Test Org')",
+              (self.org,))
+        self.policy_id = f"tap_policy_{uuid.uuid4().hex[:8]}"
+        db.create_policy(
+            name=f"Approval Policy {self.policy_id[-4:]}", worldview='',
+            will_rules={"allowed_tools": []}, values=[],
+            created_by=self.editor, org_id=self.org, policy_id=self.policy_id)
+
+    def tearDown(self):
+        _exec("DELETE FROM api_keys WHERE policy_id LIKE 'p_gatecreate%%'")
+        _exec("DELETE FROM policies WHERE id=%s OR id LIKE 'p_gatecreate%%'", (self.policy_id,))
+        _exec("DELETE FROM organizations WHERE id=%s", (self.org,))
+        super().tearDown()
+
+    def _declared(self):
+        rules = (db.get_policy(self.policy_id) or {}).get('will_rules') or {}
+        return rules.get('allowed_tools')
+
+    def _put_policy_tools(self, client, tools):
+        return client.put(f'/api/policies/{self.policy_id}', json={
+            "name": f"Approval Policy {self.policy_id[-4:]}",
+            "will_rules": {"allowed_tools": tools}})
+
+    def test_policy_widening_is_held(self):
+        client = self._client(self.editor, 'editor')
+        r = self._put_policy_tools(client, ['send_email'])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()['tools_pending_approval'], ['send_email'])
+        self.assertEqual(self._declared(), [],
+                         "the declared list widened without approval")
+        pending = tool_approval_store.list_requests(self.org, 'pending')
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]['request_type'], 'policy')
+        self.assertEqual(pending[0]['policy_id'], self.policy_id)
+
+    def test_policy_narrowing_is_immediate(self):
+        tool_approval_store.apply_policy_tools(self.policy_id, ['send_email', 'calendar'])
+        client = self._client(self.editor, 'editor')
+        r = self._put_policy_tools(client, ['send_email'])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['tools_pending_approval'], [])
+        self.assertEqual(self._declared(), ['send_email'])
+        self.assertEqual(tool_approval_store.list_requests(self.org, 'pending'), [])
+
+    def test_approved_ceiling_lets_agents_flow_free(self):
+        client = self._client(self.editor, 'editor')
+        self._put_policy_tools(client, ['send_email'])
+        rid = tool_approval_store.list_requests(self.org, 'pending')[0]['id']
+        r = self._client(self.admin, 'admin').post(f'/api/agents/tool-requests/{rid}/approve')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self._declared(), ['send_email'])
+        self.assertEqual(len([e for e in db.list_compliance_log(self.org, limit=50)
+                              if e['event_type'] == 'policy_tools_changed']), 1)
+
+        # The agent addition WITHIN the approved list applies immediately.
+        with KNOWN:
+            r = client.put('/api/agents', json={
+                "key": self.agent_key, "name": "Approval Agent",
+                "policy_id": self.policy_id, "tools": ['send_email']})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()['tools_pending_approval'], [])
+        self.assertEqual(db.get_agent(self.agent_key).get('tools'), ['send_email'])
+
+        # Beyond the list is refused outright, not queued.
+        with KNOWN:
+            r = client.put('/api/agents', json={
+                "key": self.agent_key, "name": "Approval Agent",
+                "policy_id": self.policy_id, "tools": ['send_email', 'calendar']})
+        self.assertEqual(r.status_code, 400)
+
+    def test_creating_a_policy_with_tools_is_held(self):
+        client = self._client(self.editor, 'editor')
+        r = client.post('/api/policies', json={
+            "name": f"gatecreate {uuid.uuid4().hex[:6]}",
+            "will_rules": {"allowed_tools": ['send_email']}})
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+        body = r.get_json()
+        self.assertEqual(body['tools_pending_approval'], ['send_email'])
+        rules = (db.get_policy(body['policy_id']) or {}).get('will_rules') or {}
+        self.assertEqual(rules.get('allowed_tools'), [])
+        _exec("DELETE FROM api_keys WHERE policy_id=%s", (body['policy_id'],))
+        _exec("DELETE FROM policies WHERE id=%s", (body['policy_id'],))
+
+
+class NamedApprovers(ToolApprovalBase):
+    """57e: a designated approver group REPLACES the admin|auditor default;
+    an unset or empty designation falls back so approvals never deadlock."""
+
+    def _designate(self, member_ids, name="Legal"):
+        from safi_app.persistence import sharing_store
+        gid = sharing_store.create_group(self.org, name, self.admin)
+        for uid in member_ids:
+            sharing_store.add_group_member(gid, uid, self.admin)
+        r = self._client(self.admin, 'admin').put('/api/agents/tool-approvers',
+                                                  json={"group_id": gid})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return gid
+
+    def _file_request(self):
+        self._put_tools(self._client(self.editor, 'editor'), ['send_email'])
+        return tool_approval_store.list_requests(self.org, 'pending')[0]['id']
+
+    def test_designated_member_approves_and_admin_cannot(self):
+        self._designate([self.member])
+        rid = self._file_request()
+        # A plain member in the approver group decides...
+        member = self._client(self.member, 'member')
+        self.assertIsNotNone(next((i for i in member.get('/api/attention').get_json()['items']
+                                   if i['key'] == 'tool_requests'), None),
+                             "the designated approver never saw the request")
+        self.assertEqual(member.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 200)
+        self.assertEqual(db.get_agent(self.agent_key).get('tools'), ['send_email'])
+        # ...and evidence recorded the designation itself.
+        events = {e['event_type'] for e in db.list_compliance_log(self.org, limit=50)}
+        self.assertIn('tool_approvers_changed', events)
+
+    def test_admin_outside_the_group_is_not_an_approver(self):
+        self._designate([self.member])
+        rid = self._file_request()
+        admin = self._client(self.admin, 'admin')
+        self.assertEqual(admin.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 403)
+        item = next((i for i in admin.get('/api/attention').get_json()['items']
+                     if i['key'] == 'tool_requests'), None)
+        self.assertIsNone(item, "a replaced approver still saw the queue")
+
+    def test_empty_group_falls_back_to_roles(self):
+        self._designate([])  # designated but empty: fallback must engage
+        rid = self._file_request()
+        r = self._client(self.admin, 'admin').post(f'/api/agents/tool-requests/{rid}/approve')
+        self.assertEqual(r.status_code, 200,
+                         "an empty approver group must not deadlock approvals")
+
+    def test_sod_holds_inside_the_group(self):
+        self._designate([self.editor, self.member])
+        rid = self._file_request()  # editor is the author AND a group member
+        editor = self._client(self.editor, 'editor')
+        self.assertEqual(editor.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 403)
+
+    def test_sole_group_member_author_self_approves_non_independent(self):
+        self._designate([self.editor])
+        rid = self._file_request()
+        r = self._client(self.editor, 'editor').post(f'/api/agents/tool-requests/{rid}/approve')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['self_approved'])
+
+    def test_designation_is_admin_only(self):
+        from safi_app.persistence import sharing_store
+        gid = sharing_store.create_group(self.org, "Legal2", self.admin)
+        r = self._client(self.editor, 'editor').put('/api/agents/tool-approvers',
+                                                    json={"group_id": gid})
+        self.assertEqual(r.status_code, 403)
 
 
 if __name__ == "__main__":

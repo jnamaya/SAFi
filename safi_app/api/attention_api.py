@@ -74,14 +74,25 @@ def get_attention():
 
     if org_id and check_any_role(('admin', 'auditor')):
         for key, fn in (("kb_documents", attention_store.pending_kb_documents),
-                        ("review_queue", attention_store.pending_review_items),
-                        ("tool_requests", tool_approval_store.pending_summary)):
+                        ("review_queue", attention_store.pending_review_items)):
             try:
                 agg = fn(org_id)
                 if agg["count"]:
                     items.append(_item(key, agg))
             except Exception:
                 pass
+
+    # Tool requests route to the ACTIVE approver set (backlog 57e): the
+    # designated approver group when one exists, admin|auditor otherwise. A
+    # designated approver may hold any role, so this is not role-gated.
+    if org_id:
+        try:
+            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role')):
+                agg = tool_approval_store.pending_summary(org_id)
+                if agg["count"]:
+                    items.append(_item("tool_requests", agg))
+        except Exception:
+            pass
 
     if org_id and check_any_role(('admin',)):
         for key, fn in (("invitations", attention_store.pending_invitations),

@@ -311,7 +311,14 @@ async function submitPolicy() {
         const res = await api.savePolicy(payload);
         if (res.ok) {
             localStorage.removeItem(STORAGE_KEY);
-            ui.showToast("Policy Saved!", "success");
+            // Widening the declared tool list waits for an approver (57d);
+            // say so, or the author reads the missing tools as a lost save.
+            const pendingTools = Array.isArray(res.tools_pending_approval) ? res.tools_pending_approval : [];
+            if (pendingTools.length) {
+                ui.showToast(`Policy saved. ${pendingTools.length} tool${pendingTools.length === 1 ? '' : 's'} (${pendingTools.join(', ')}) awaits approval before agents can use ${pendingTools.length === 1 ? 'it' : 'them'}.`, 'warning', 7000);
+            } else {
+                ui.showToast("Policy Saved!", "success");
+            }
             generatedCredentials = res.credentials || { policy_id: "unknown", api_key: "unknown" };
             currentStep = TOTAL_STEPS + 1;
             renderSuccessStep(document.getElementById('pw-content'), policyData, generatedCredentials);

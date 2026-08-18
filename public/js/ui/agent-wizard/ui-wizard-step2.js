@@ -6,7 +6,7 @@ export async function renderToolsStep(container, agentData) {
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Tools &amp; Knowledge</h2>
         <p class="text-gray-500 mb-2">Select the tools and knowledge bases this agent can access.</p>
-        <p class="text-xs text-amber-700 dark:text-amber-400 mb-6">In an organization, newly added tools take effect only after an admin or auditor approves them. Removing a tool applies immediately.</p>
+        <p class="text-xs text-amber-700 dark:text-amber-400 mb-6">Tools already authorized by this agent's policy apply immediately. Without policy authorization, new tools take effect only after one of your organization's approvers signs off. Removing a tool always applies immediately.</p>
 
         <div id="wiz-policy-note" class="hidden mb-6 flex items-start gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
             <svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>

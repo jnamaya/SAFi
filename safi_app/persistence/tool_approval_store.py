@@ -76,6 +76,28 @@ def init_schema() -> None:
         if not cursor.fetchone():
             cursor.execute(
                 "ALTER TABLE agent_tool_requests ADD COLUMN acknowledged_at TIMESTAMP NULL")
+        # Policy-widening requests (backlog 57d): the same workflow, aimed at
+        # a policy's declared allowed_tools instead of an agent's list.
+        # agent_key becomes nullable; exactly one of agent_key / policy_id is
+        # set per row. target_tools holds the requested final declared list.
+        cursor.execute("SHOW COLUMNS FROM agent_tool_requests LIKE 'request_type'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agent_tool_requests MODIFY agent_key VARCHAR(100) NULL")
+            cursor.execute("ALTER TABLE agent_tool_requests "
+                           "ADD COLUMN request_type ENUM('agent','policy') NOT NULL DEFAULT 'agent'")
+            cursor.execute("ALTER TABLE agent_tool_requests ADD COLUMN policy_id VARCHAR(255) NULL")
+            cursor.execute("ALTER TABLE agent_tool_requests ADD COLUMN target_tools JSON NULL")
+        # Named approvers (backlog 57e): the org may designate one group as
+        # the tool-approval reviewer set; unset or empty falls back to
+        # admin|auditor so no org can deadlock itself.
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS approval_settings (
+                org_id CHAR(36) PRIMARY KEY,
+                approver_group_id CHAR(36) NULL,
+                updated_by VARCHAR(255),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
+        """)
         conn.commit()
     finally:
         cursor.close()
@@ -83,9 +105,10 @@ def init_schema() -> None:
 
 
 def create_request(agent_key, org_id, requested_by, added, requested_tools) -> str:
-    """Open a pending request, superseding any earlier pending request for
-    the same agent: the latest ask is the only live one, or a reviewer could
-    approve a stale widening the requester already walked back."""
+    """Open a pending agent-level request, superseding any earlier pending
+    request for the same agent: the latest ask is the only live one, or a
+    reviewer could approve a stale widening the requester already walked
+    back."""
     request_id = str(uuid.uuid4())
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -106,10 +129,35 @@ def create_request(agent_key, org_id, requested_by, added, requested_tools) -> s
         conn.close()
 
 
+def create_policy_request(policy_id, org_id, requested_by, added, target_tools) -> str:
+    """Open a pending policy-widening request (backlog 57d): the policy's
+    declared allowed_tools stays at its approved value until a reviewer
+    applies target_tools. Same supersede rule, keyed by policy."""
+    request_id = str(uuid.uuid4())
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE agent_tool_requests SET status='superseded' "
+            "WHERE policy_id=%s AND request_type='policy' AND status='pending'",
+            (policy_id,))
+        cursor.execute(
+            "INSERT INTO agent_tool_requests "
+            "(id, request_type, policy_id, org_id, requested_by, added, target_tools) "
+            "VALUES (%s, 'policy', %s, %s, %s, %s, %s)",
+            (request_id, policy_id, org_id, requested_by,
+             json.dumps(sorted(added)), json.dumps(sorted(target_tools))))
+        conn.commit()
+        return request_id
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def _load(row):
     if not row:
         return None
-    for col in ('added', 'requested_tools'):
+    for col in ('added', 'requested_tools', 'target_tools'):
         if isinstance(row.get(col), str):
             try:
                 row[col] = json.loads(row[col])
@@ -139,7 +187,8 @@ def list_requests(org_id, status='pending'):
             """
             SELECT r.*,
                    (SELECT u.name FROM users u WHERE u.id = r.requested_by) AS requester_name,
-                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name
+                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
             FROM agent_tool_requests r
             WHERE r.org_id = %s AND r.status = %s
             ORDER BY r.created_at ASC
@@ -181,32 +230,148 @@ def apply_tools(agent_key, tools) -> None:
         conn.close()
 
 
-def other_reviewer_exists(org_id, exclude_user_id) -> bool:
-    """Is there an eligible reviewer besides this person? When not, the
-    sole-administrator exception applies and self-approval is recorded as
-    non-independent rather than being a deadlock."""
+def apply_policy_tools(policy_id, target_tools) -> bool:
+    """The approved policy widening: set the declared allowed_tools on the
+    policy's will_rules. Returns False when the policy is gone or its
+    will_rules is no longer the structured dict shape the request assumed
+    (legacy list policies carry no declared ceiling), so the caller can
+    close the request instead of corrupting the shape."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT will_rules FROM policies WHERE id=%s FOR UPDATE", (policy_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        rules = row.get('will_rules')
+        if isinstance(rules, str):
+            try:
+                rules = json.loads(rules)
+            except ValueError:
+                return False
+        if rules is None:
+            rules = {}
+        if not isinstance(rules, dict):
+            return False
+        rules['allowed_tools'] = sorted(target_tools)
+        cursor.execute("UPDATE policies SET will_rules=%s WHERE id=%s",
+                       (json.dumps(rules), policy_id))
+        conn.commit()
+        return True
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_approver_group(org_id):
+    """The designated approver group's id, or None. A designation pointing
+    at a deleted or empty group counts as None: the fallback must engage
+    rather than deadlock approvals (backlog 57e)."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT 1 FROM users WHERE org_id=%s AND role IN ('admin','auditor') "
-            "AND id != %s LIMIT 1", (org_id, exclude_user_id))
+            "SELECT s.approver_group_id FROM approval_settings s "
+            "JOIN custom_groups c ON c.id = s.approver_group_id AND c.org_id = s.org_id "
+            "WHERE s.org_id = %s AND EXISTS "
+            "(SELECT 1 FROM group_memberships m WHERE m.group_id = s.approver_group_id)",
+            (org_id,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_approver_setting(org_id):
+    """The raw designation for the settings UI, without the empty-group
+    fallback that get_approver_group applies for enforcement."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT approver_group_id FROM approval_settings WHERE org_id=%s", (org_id,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_approver_group(org_id, group_id, actor) -> None:
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO approval_settings (org_id, approver_group_id, updated_by) "
+            "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE "
+            "approver_group_id = VALUES(approver_group_id), updated_by = VALUES(updated_by)",
+            (org_id, group_id, actor))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def is_reviewer(org_id, user_id, role) -> bool:
+    """May this person decide tool requests in this org? A designated (and
+    non-empty) approver group REPLACES the role fallback: naming the legal
+    counsel as approver means the admins stop being approvers, which is the
+    point of naming anyone (backlog 57e)."""
+    if not org_id or not user_id:
+        return False
+    group_id = get_approver_group(org_id)
+    if group_id:
+        conn = db.get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM group_memberships WHERE group_id=%s AND user_id=%s LIMIT 1",
+                (group_id, user_id))
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+            conn.close()
+    return (role or 'member') in ('admin', 'auditor')
+
+
+def other_reviewer_exists(org_id, exclude_user_id) -> bool:
+    """Is there an eligible reviewer besides this person, against the ACTIVE
+    set (the designated group when one exists, the role fallback otherwise)?
+    When not, the sole-approver exception applies and self-approval is
+    recorded as non-independent rather than being a deadlock."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        group_id = get_approver_group(org_id)
+        if group_id:
+            cursor.execute(
+                "SELECT 1 FROM group_memberships WHERE group_id=%s AND user_id != %s LIMIT 1",
+                (group_id, exclude_user_id))
+        else:
+            cursor.execute(
+                "SELECT 1 FROM users WHERE org_id=%s AND role IN ('admin','auditor') "
+                "AND id != %s LIMIT 1", (org_id, exclude_user_id))
         return cursor.fetchone() is not None
     finally:
         cursor.close()
         conn.close()
 
 
+def _request_label(r):
+    if r.get('request_type') == 'policy':
+        name = r.get('policy_name') or r.get('policy_id')
+        return f"Policy {name}: +{', +'.join(r.get('added') or [])}"
+    name = r.get('agent_name') or r.get('agent_key')
+    return f"{name}: +{', +'.join(r.get('added') or [])}"
+
+
 def pending_summary(org_id):
     """For the attention inbox: count, oldest, and short labels."""
     rows = list_requests(org_id, 'pending')
-    examples = []
-    for r in rows[:3]:
-        name = r.get('agent_name') or r['agent_key']
-        examples.append(f"{name}: +{', +'.join(r.get('added') or [])}")
     return {"count": len(rows),
             "oldest": rows[0]['created_at'] if rows else None,
-            "examples": examples}
+            "examples": [_request_label(r) for r in rows[:3]]}
 
 
 def unacknowledged_outcomes(user_id):
@@ -221,7 +386,8 @@ def unacknowledged_outcomes(user_id):
         cursor.execute(
             """
             SELECT r.*,
-                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name
+                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
             FROM agent_tool_requests r
             WHERE r.requested_by = %s AND r.status IN ('approved','rejected')
               AND r.acknowledged_at IS NULL
@@ -234,7 +400,10 @@ def unacknowledged_outcomes(user_id):
         conn.close()
     examples = []
     for r in rows[:3]:
-        name = r.get('agent_name') or r['agent_key']
+        if r.get('request_type') == 'policy':
+            name = f"Policy {r.get('policy_name') or r.get('policy_id')}"
+        else:
+            name = r.get('agent_name') or r.get('agent_key')
         label = f"{name}: {r['status']} (+{', +'.join(r.get('added') or [])})"
         if r['status'] == 'rejected' and r.get('reason'):
             label += f": {r['reason']}"

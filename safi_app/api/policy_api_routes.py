@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
+from ..persistence import tool_approval_store
 from ..core.rbac import require_role
 import logging
 import json
@@ -16,6 +17,34 @@ from ..core.services.provider_governance import activate_org
 from ..core.faculties.synderesis import _has_usable_rubric
 
 policy_api_bp = Blueprint('policy_api', __name__)
+
+
+def _declared_tools(will_rules):
+    """The policy's declared allowed_tools list, or None when it declares
+    nothing (legacy list-form policies and dicts without the key)."""
+    if isinstance(will_rules, dict):
+        at = will_rules.get('allowed_tools')
+        if isinstance(at, list):
+            return [t for t in at if isinstance(t, str)]
+    return None
+
+
+def _hold_tool_widening(data, old_rules, org_id):
+    """Backlog 57d: additions to a policy's DECLARED allowed_tools wait for
+    an approver, because the declared list is the pre-approved menu agents
+    draw from freely. Mutates data['will_rules'] so the save carries only
+    the already-approved tools; removals and undeclaring pass through
+    (narrowing never waits). Returns (held_additions, requested_target)."""
+    new_list = _declared_tools(data.get('will_rules'))
+    if new_list is None or not org_id:
+        return [], None
+    old_list = _declared_tools(old_rules) or []
+    additions = sorted(set(new_list) - set(old_list))
+    if not additions:
+        return [], None
+    blocked = set(additions)
+    data['will_rules']['allowed_tools'] = [t for t in new_list if t not in blocked]
+    return additions, sorted(set(new_list))
 
 
 # --- Integration endpoint, resolved per deployment -------------------------
@@ -143,6 +172,12 @@ def create_policy():
         slug = re.sub(r'[^a-z0-9]', '_', data.get("name", "").lower()).strip('_')
         readable_id = f"{org_prefix}_{slug}"
 
+        # Declaring a tool list at creation is the birth of that
+        # authorization, so it is held for approval like any widening
+        # (backlog 57d): the policy saves with an empty declared list and a
+        # pending request for the full one.
+        pending_tools, target_tools = _hold_tool_widening(data, None, org_id)
+
         policy_config = {
             "business_unit":      data.get("business_unit", ""),
             "scope_statement":    data.get("scope_statement", ""),
@@ -174,12 +209,19 @@ def create_policy():
             "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
         })
 
+        if pending_tools:
+            rid = tool_approval_store.create_policy_request(
+                pid, org_id, user_id, pending_tools, target_tools)
+            db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
+                "policy": pid, "request": rid, "added": pending_tools})
+
         # Auto-generate credentials for immediate use
         default_key = db.create_api_key(pid, "Initial Key")
-        
+
         return jsonify({
             "ok": True,
             "policy_id": pid,
+            "tools_pending_approval": pending_tools,
             "credentials": {
                 "policy_id": pid,
                 "api_key": default_key,
@@ -229,6 +271,12 @@ def update_policy(policy_id):
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
 
+        # Widening the declared tool list waits for an approver (backlog
+        # 57d); the save proceeds with the already-approved tools.
+        org_id = get_current_org_id()
+        pending_tools, target_tools = _hold_tool_widening(
+            data, policy.get('will_rules'), org_id)
+
         policy_config = {
             "business_unit":      data.get("business_unit", ""),
             "scope_statement":    data.get("scope_statement", ""),
@@ -258,16 +306,23 @@ def update_policy(policy_id):
             "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
         })
 
+        if pending_tools:
+            rid = tool_approval_store.create_policy_request(
+                policy_id, org_id, user_id, pending_tools, target_tools)
+            db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
+                "policy": policy_id, "request": rid, "added": pending_tools})
+
         # Return existing (or new) credentials for UI convenience
         keys = db.get_policy_keys(policy_id)
         # Fix: handle keys that only have hashes (return masked)
         if keys:
-            api_key = keys[0].get('key', 'sk_************************') 
+            api_key = keys[0].get('key', 'sk_************************')
         else:
             api_key = db.create_api_key(policy_id, "Default Key")
-        
+
         return jsonify({
             "ok": True,
+            "tools_pending_approval": pending_tools,
             "credentials": {
                 "policy_id": policy_id,
                 "api_key": api_key,

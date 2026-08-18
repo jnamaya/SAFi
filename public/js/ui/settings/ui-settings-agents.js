@@ -231,10 +231,10 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         });
     }
 
-    // --- Tool-grant approvals (reviewers only) ---
-    if (currentUser && ['admin', 'auditor'].includes(currentUser.role)) {
-        renderToolApprovals();
-    }
+    // --- Tool-grant approvals: the server decides who is a reviewer
+    // (designated approver group, or the admin|auditor fallback), so this
+    // renders for everyone and quietly shows nothing to non-reviewers.
+    renderToolApprovals();
 }
 
 // --- TOOL-GRANT APPROVALS PANEL ---
@@ -262,7 +262,9 @@ async function renderToolApprovals() {
             ${requests.map(r => `
                 <div class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-amber-100 dark:border-amber-900/40 last:border-0 bg-white dark:bg-neutral-900">
                     <div class="min-w-0 flex-1">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${escSh(r.agent_name || r.agent_key)}</p>
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${r.request_type === 'policy'
+                            ? `<span class="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 mr-1.5">Policy</span>${escSh(r.policy_name || r.policy_id)}`
+                            : escSh(r.agent_name || r.agent_key)}</p>
                         <p class="text-xs text-gray-500 truncate">requested by ${escSh(r.requester_name || r.requested_by)} &middot; adds ${(r.added || []).map(t => `<code class="bg-gray-100 dark:bg-neutral-800 px-1 py-0.5 rounded">${escSh(t)}</code>`).join(' ')}</p>
                     </div>
                     <div class="flex items-center gap-2 flex-shrink-0">

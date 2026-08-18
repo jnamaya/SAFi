@@ -458,9 +458,16 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Create a group</span>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                         <input type="text" id="inp-group-name" placeholder="e.g. Finance team" maxlength="100"
-                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white px-3 py-2 text-sm">
                         <button id="btn-create-group" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create</button>
                     </div>
+                </div>
+                <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
+                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Tool approvers</span>
+                    <p class="text-xs text-gray-400 mt-1 mb-2">Who approves tool authorizations (on policies and agents). Designating a group replaces the default; members of that group approve regardless of their role. When no group is designated, or it has no members, admins and auditors approve.</p>
+                    <select id="sel-tool-approvers" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white px-3 py-2 text-sm min-w-[240px]">
+                        <option value="">Default (admins and auditors)</option>
+                    </select>
                 </div>
             </section>
         </div>
@@ -976,6 +983,32 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
             }
         });
         loadOrgGroups(org.id);
+        loadToolApprovers();
+    }
+}
+
+async function loadToolApprovers() {
+    const sel = document.getElementById('sel-tool-approvers');
+    if (!sel) return;
+    try {
+        const [cfg, groupsRes] = await Promise.all([api.getToolApprovers(), api.listGroups()]);
+        const groups = groupsRes.groups || [];
+        sel.innerHTML = `<option value="">Default (admins and auditors)</option>` +
+            groups.map(g => `<option value="${escapeHtml(g.id)}" ${cfg.approver_group_id === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.member_count} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
+        if (cfg.fallback_active) {
+            ui.showToast('The designated approver group is empty, so admins and auditors are approving. Add members to it or clear the designation.', 'warning', 6000);
+        }
+        sel.onchange = async () => {
+            try {
+                await api.setToolApprovers(sel.value || null);
+                ui.showToast(sel.value ? 'Approver group designated.' : 'Approvers reset to admins and auditors.', 'success');
+            } catch (e) {
+                ui.showToast(e.message || 'Save failed', 'error');
+                loadToolApprovers();
+            }
+        };
+    } catch (e) {
+        sel.closest('div')?.classList.add('hidden');
     }
 }
 

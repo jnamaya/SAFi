@@ -206,7 +206,15 @@ def save_agent():
         requested_full = list(requested_tools)
         pending_additions = []
         tools_to_save = requested_tools
-        if user.get('org_id'):
+        # 57d refinement: a policy's DECLARED allowed_tools is the
+        # pre-approved menu, so agent additions within it apply immediately
+        # (the validation above already refused anything beyond it, and the
+        # declared list itself only widens through a reviewed
+        # policy-widening request). The agent-level gate remains only where
+        # no ceiling is declared (standalone, charter-only, legacy
+        # policies): there the agent addition IS the birth of the
+        # authorization.
+        if user.get('org_id') and policy_tool_ceiling(data.get('policy_id', 'standalone')) is None:
             old_tools = (existing.get('tools') or []) if (existing and request.method == 'PUT') else []
             pending_additions = sorted(set(requested_tools) - set(old_tools))
             if pending_additions:
@@ -710,16 +718,21 @@ def revoke_agent_share(key, grantee_type, grantee_id):
 # ---------------------------------------------------------------------------
 
 def _reviewer_context():
-    """(user_id, email, org_id, error_response) for the review endpoints."""
+    """(user_id, email, org_id, error_response) for the review endpoints.
+    Eligibility is the ACTIVE approver set (backlog 57e): the org's
+    designated approver group when one exists and has members, otherwise
+    the admin|auditor fallback."""
     user = session.get('user')
     if not user:
         return None, None, None, (jsonify({"error": "Unauthorized"}), 401)
-    if not check_any_role(('admin', 'auditor')):
-        return None, None, None, (jsonify({"error": "Forbidden: requires admin or auditor."}), 403)
     org_id = user.get('org_id')
     if not org_id:
         return None, None, None, (jsonify({"error": "You are not part of an organization."}), 400)
-    return (user.get('id') or user.get('sub')), user.get('email'), org_id, None
+    uid = user.get('id') or user.get('sub')
+    if not tool_approval_store.is_reviewer(org_id, uid, user.get('role')):
+        return None, None, None, (jsonify({"error": "Forbidden: you are not one of "
+                                                    "this organization's tool approvers."}), 403)
+    return uid, user.get('email'), org_id, None
 
 
 @agent_api_bp.route('/agents/tool-requests', methods=['GET'], strict_slashes=False)
@@ -752,9 +765,35 @@ def approve_tool_request(request_id):
     self_approved = False
     if str(req['requested_by']) == str(uid):
         if tool_approval_store.other_reviewer_exists(org_id, uid):
-            return jsonify({"error": "You requested this change; another admin "
-                                     "or auditor must approve it."}), 403
+            return jsonify({"error": "You requested this change; another "
+                                     "approver must decide it."}), 403
         self_approved = True
+
+    # Policy-widening request (backlog 57d): apply the requested declared
+    # list to the policy's will_rules. Agents under that policy then add
+    # these tools freely, which is the point of reviewing at the policy.
+    if req.get('request_type') == 'policy':
+        target = req.get('target_tools') or []
+        if not tool_approval_store.apply_policy_tools(req['policy_id'], target):
+            tool_approval_store.resolve_request(request_id, 'rejected', uid, email,
+                                                reason='policy gone or no longer structured')
+            return jsonify({"error": "The policy no longer exists or changed shape; "
+                                     "request closed."}), 409
+        tool_approval_store.resolve_request(request_id, 'approved', uid, email,
+                                            self_approved=self_approved)
+        for event_type, detail in (
+            ('tool_request_approved', {"policy": req['policy_id'], "request": request_id,
+                                       "added": req.get('added'),
+                                       "requested_by": req['requested_by'],
+                                       "self_approved": self_approved}),
+            ('policy_tools_changed', {"policy": req['policy_id'],
+                                      "added": req.get('added'), "tools": target}),
+        ):
+            try:
+                db.append_compliance_log(org_id, event_type, f"user:{uid}", detail)
+            except Exception as e:
+                current_app.logger.error(f"policy-approval evidence failed ({event_type}): {e}")
+        return jsonify({"ok": True, "tools": sorted(target), "self_approved": self_approved})
 
     agent = db.get_agent(req['agent_key'])
     if not agent or str(agent.get('org_id')) != str(org_id):
@@ -792,6 +831,51 @@ def approve_tool_request(request_id):
         except Exception as e:
             current_app.logger.error(f"tool-approval evidence failed ({event_type}): {e}")
     return jsonify({"ok": True, "tools": new_tools, "self_approved": self_approved})
+
+
+@agent_api_bp.route('/agents/tool-approvers', methods=['GET'], strict_slashes=False)
+def get_tool_approvers():
+    """The org's approver designation (backlog 57e), for the settings UI."""
+    user = session.get('user')
+    if not user or not check_permission('admin'):
+        return jsonify({"error": "Forbidden"}), 403
+    org_id = user.get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    designated = tool_approval_store.get_approver_setting(org_id)
+    effective = tool_approval_store.get_approver_group(org_id)
+    return jsonify({"ok": True, "approver_group_id": designated,
+                    "effective": bool(effective),
+                    "fallback_active": designated is not None and effective is None})
+
+
+@agent_api_bp.route('/agents/tool-approvers', methods=['PUT'], strict_slashes=False)
+def set_tool_approvers():
+    """Designate (or clear) the approver group. Admin-only and
+    evidence-logged: choosing who authorizes capability is itself a
+    governance-config change."""
+    user = session.get('user')
+    if not user or not check_permission('admin'):
+        return jsonify({"error": "Forbidden"}), 403
+    org_id = user.get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    data = request.get_json(silent=True) or {}
+    group_id = (data.get('group_id') or '').strip() or None
+    group = None
+    if group_id:
+        group = sharing_store.get_group(group_id)
+        if not group or str(group.get('org_id')) != str(org_id):
+            return jsonify({"error": "That group does not belong to your organization."}), 400
+    actor = user.get('id')
+    tool_approval_store.set_approver_group(org_id, group_id, actor)
+    try:
+        db.append_compliance_log(org_id, 'tool_approvers_changed', f"user:{actor}",
+                                 {"approver_group": group_id,
+                                  "group_name": group.get('name') if group else None})
+    except Exception as e:
+        current_app.logger.error(f"approver-designation evidence failed: {e}")
+    return jsonify({"ok": True, "approver_group_id": group_id})
 
 
 @agent_api_bp.route('/agents/tool-requests/acknowledge',

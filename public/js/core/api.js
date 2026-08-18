@@ -310,6 +310,12 @@ export async function rejectToolRequest(requestId, reason = '') {
 export async function acknowledgeToolOutcomes() {
     return httpJSON('/api/agents/tool-requests/acknowledge', 'POST', {});
 }
+export async function getToolApprovers() {
+    return httpGet('/api/agents/tool-approvers');
+}
+export async function setToolApprovers(groupId) {
+    return httpJSON('/api/agents/tool-approvers', 'PUT', { group_id: groupId || null });
+}
 
 // --- Attention inbox: everything waiting on this user, role-aware ---
 
