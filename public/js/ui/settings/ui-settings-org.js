@@ -487,10 +487,15 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                 </div>
             </section>
         </div>
+
+        <div id="scim-section"></div>
         ` : ''}
     `;
 
     // Attach Listeners
+    if (currentUser && currentUser.role === 'admin') {
+        renderScimSection(org.id);
+    }
 
     // --- Charter ---
     const valuesList = document.getElementById('charter-values-list');
@@ -1451,5 +1456,121 @@ function renderMembersTable(container, members, orgId) {
                 ui.showToast(err.message, "error");
             }
         });
+    });
+}
+
+// --- Directory Sync (SCIM 2.0), backlog 68. Admin-only. ---
+// Automated provisioning/deprovisioning and group->role from the org's IdP.
+async function renderScimSection(orgId) {
+    const host = document.getElementById('scim-section');
+    if (!host) return;
+    let cfg;
+    try {
+        cfg = await api.getScimConfig(orgId);
+    } catch (e) {
+        return;
+    }
+    if (!cfg || !cfg.ok) return;
+
+    const roleOptions = (cfg.roles || ['member', 'auditor', 'editor', 'admin'])
+        .map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
+
+    host.innerHTML = `
+        <div class="settings-card">
+            <div class="flex items-start justify-between mb-3">
+                <div>
+                    <h4 class="text-lg font-semibold">Directory Sync (SCIM)</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Let your identity provider (Okta, Entra, etc.) provision and deprovision members automatically. Removing someone in your directory removes their access here, and group membership can set their role.</p>
+                </div>
+                <span class="px-2.5 py-1 text-xs font-semibold rounded-full mt-1 shrink-0 ${cfg.enabled ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-neutral-800 text-gray-500'}">${cfg.enabled ? 'Enabled' : 'Off'}</span>
+            </div>
+
+            <label class="flex items-center gap-2 mb-4 text-sm">
+                <input type="checkbox" id="scim-enabled" class="accent-green-600 w-4 h-4" ${cfg.enabled ? 'checked' : ''}>
+                Enable SCIM provisioning for this organization
+            </label>
+
+            <div class="mb-4">
+                <span class="text-xs text-gray-500 block mb-1">SCIM Base URL (paste into your IdP)</span>
+                <code class="block bg-gray-100 dark:bg-gray-800 px-2 py-1.5 rounded text-xs select-all break-all">${escapeHtml(cfg.base_url)}</code>
+            </div>
+
+            <div class="mb-4">
+                <span class="text-xs text-gray-500 block mb-1">Bearer token</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm ${cfg.has_token ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}">${cfg.has_token ? 'A token is configured (shown once, at creation).' : 'No token yet.'}</span>
+                    <button id="scim-rotate" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold">${cfg.has_token ? 'Rotate token' : 'Generate token'}</button>
+                </div>
+                <div id="scim-token-reveal" class="hidden mt-2 bg-white dark:bg-black p-3 rounded border border-amber-300 dark:border-amber-700 font-mono text-xs break-all"></div>
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-neutral-700 pt-4">
+                <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Group to role mapping</span>
+                <p class="text-xs text-gray-400 mt-1 mb-2">Members of a mapped directory group get that role (highest wins). Unmapped groups do not affect roles. Use the group's exact display name from your IdP.</p>
+                <div id="scim-group-roles" class="space-y-1 mb-3"></div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <input type="text" id="scim-group-name" placeholder="IdP group display name" class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white px-3 py-2 text-sm">
+                    <select id="scim-group-role" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white px-3 py-2 text-sm">${roleOptions}</select>
+                    <button id="scim-add-mapping" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold">Add</button>
+                </div>
+            </div>
+
+            <p class="text-xs text-gray-400 mt-4">${cfg.resource_count} user${cfg.resource_count === 1 ? '' : 's'} currently provisioned via SCIM.</p>
+        </div>
+    `;
+
+    const renderMappings = (rows) => {
+        const box = document.getElementById('scim-group-roles');
+        if (!box) return;
+        box.innerHTML = (rows && rows.length)
+            ? rows.map(m => `
+                <div class="flex items-center justify-between text-sm bg-gray-50 dark:bg-neutral-800/50 px-3 py-1.5 rounded">
+                    <span><strong>${escapeHtml(m.group_name)}</strong> &rarr; ${escapeHtml(m.role)}</span>
+                    <button class="scim-del-mapping text-xs text-red-500 hover:underline" data-group="${escapeHtml(m.group_name)}">Remove</button>
+                </div>`).join('')
+            : '<p class="text-xs text-gray-400">No mappings yet.</p>';
+        box.querySelectorAll('.scim-del-mapping').forEach(b => {
+            b.addEventListener('click', async () => {
+                try {
+                    await api.deleteScimGroupRole(orgId, b.dataset.group);
+                    renderScimSection(orgId);
+                } catch (e) { ui.showToast(e.message, 'error'); }
+            });
+        });
+    };
+    renderMappings(cfg.group_roles);
+
+    document.getElementById('scim-enabled')?.addEventListener('change', async (e) => {
+        try {
+            await api.setScimEnabled(orgId, e.target.checked);
+            ui.showToast(e.target.checked ? 'SCIM enabled' : 'SCIM disabled', 'success');
+            renderScimSection(orgId);
+        } catch (err) { ui.showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('scim-rotate')?.addEventListener('click', async () => {
+        if (cfg.has_token && !confirm('Rotate the SCIM token? Your IdP will stop syncing until you update it with the new token.')) return;
+        try {
+            const res = await api.rotateScimToken(orgId);
+            if (res && res.ok && res.token) {
+                const reveal = document.getElementById('scim-token-reveal');
+                reveal.textContent = res.token + '  (copy now — it will not be shown again)';
+                reveal.classList.remove('hidden');
+                ui.showToast('Token generated. Copy it now.', 'success');
+            } else {
+                throw new Error((res && res.error) || 'Token generation failed');
+            }
+        } catch (err) { ui.showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('scim-add-mapping')?.addEventListener('click', async () => {
+        const name = document.getElementById('scim-group-name').value.trim();
+        const role = document.getElementById('scim-group-role').value;
+        if (!name) return ui.showToast('Enter the group name.', 'error');
+        try {
+            await api.setScimGroupRole(orgId, name, role);
+            ui.showToast('Mapping saved.', 'success');
+            renderScimSection(orgId);
+        } catch (err) { ui.showToast(err.message, 'error'); }
     });
 }

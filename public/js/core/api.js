@@ -503,6 +503,26 @@ export async function getDeploymentUsage(days = 30) {
     return httpGet(`/api/organizations/usage/deployment?days=${days}`);
 }
 
+export async function getScimConfig(orgId) {
+    return httpGet(`/api/organizations/${orgId}/scim`);
+}
+
+export async function setScimEnabled(orgId, enabled) {
+    return httpJSON(`/api/organizations/${orgId}/scim`, 'PUT', { enabled });
+}
+
+export async function rotateScimToken(orgId) {
+    return httpJSON(`/api/organizations/${orgId}/scim/token`, 'POST', {});
+}
+
+export async function setScimGroupRole(orgId, groupName, role) {
+    return httpJSON(`/api/organizations/${orgId}/scim/group-roles`, 'PUT', { group_name: groupName, role });
+}
+
+export async function deleteScimGroupRole(orgId, groupName) {
+    return httpJSON(`/api/organizations/${orgId}/scim/group-roles?group_name=${encodeURIComponent(groupName)}`, 'DELETE', {});
+}
+
 export async function getOrgProviderKeys(orgId) {
     return httpGet(`/api/organizations/${orgId}/provider-keys`);
 }

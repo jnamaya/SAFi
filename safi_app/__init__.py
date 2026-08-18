@@ -120,6 +120,14 @@ def create_app():
             tool_approval_store.init_schema()
         except Exception as e:
             app.logger.error("Tool-approval table init failed: %s", e)
+        # SCIM directory sync (backlog 68): IdP-facing provisioning state.
+        # Userland, same class as the stores above — org identity config, not
+        # the governance ledger.
+        try:
+            from .persistence import scim_store
+            scim_store.init_schema()
+        except Exception as e:
+            app.logger.error("SCIM table init failed, directory sync disabled: %s", e)
 
     # Register the Google OAuth client with Authlib
     oauth.register(
@@ -176,6 +184,7 @@ def create_app():
     from .api.mcp_api import mcp_bp
     from .api.groups_api import groups_bp
     from .api.attention_api import attention_bp
+    from .api.scim import scim_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -194,6 +203,9 @@ def create_app():
     app.register_blueprint(groups_bp, url_prefix='/api')
     app.register_blueprint(attention_bp, url_prefix='/api')
     app.register_blueprint(mcp_bp)
+    # SCIM lives at its own root, not under /api: identity providers expect a
+    # clean /scim/v2 base URL. Auth is the per-org bearer token, not a session.
+    app.register_blueprint(scim_bp, url_prefix='/scim/v2')
 
     # Server-side session resolution (enterprise identity Phase 1).
     # Pick up servers the operator added with scripts/safi_mcp.py. One indexed

@@ -279,6 +279,110 @@ def delete_provider_key(org_id):
         return jsonify({"error": "Internal Server Error"}), 500
 
 
+@organizations_bp.route('/organizations/<org_id>/scim', methods=['GET'])
+@require_role('admin')
+def get_scim_config(org_id):
+    """SCIM directory-sync status for the admin UI (backlog 68): enabled,
+    whether a token exists (never the token itself), the base URL the IdP
+    points at, the group->role map, and how many resources the IdP has pushed.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    try:
+        cfg = scim_store.get_config(org_id)
+        base = request.url_root.rstrip('/') + '/scim/v2'
+        return jsonify({
+            "ok": True,
+            "enabled": cfg["enabled"],
+            "has_token": cfg["has_token"],
+            "base_url": base,
+            "group_roles": scim_store.list_group_role_map(org_id),
+            "resource_count": len(scim_store.list_resources(org_id)),
+            "roles": sorted(scim_store.VALID_ROLES),
+        })
+    except Exception as e:
+        current_app.logger.error(f"SCIM config read failed: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/scim', methods=['PUT'])
+@require_role('admin')
+def set_scim_enabled(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    enabled = bool((request.json or {}).get('enabled'))
+    try:
+        scim_store.set_enabled(org_id, enabled)
+        db.append_compliance_log(org_id, 'scim_config_changed', f"user:{_actor()}",
+                                 {"action": "enabled" if enabled else "disabled"})
+        return jsonify({"ok": True, "enabled": enabled})
+    except Exception as e:
+        current_app.logger.error(f"SCIM enable failed: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/scim/token', methods=['POST'])
+@require_role('admin')
+def rotate_scim_token(org_id):
+    """Generate a new SCIM bearer token and return it ONCE. Any previous token
+    stops working immediately. Only the hash is stored."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    try:
+        token = scim_store.rotate_token(org_id)
+        db.append_compliance_log(org_id, 'scim_config_changed', f"user:{_actor()}",
+                                 {"action": "token_rotated"})
+        return jsonify({"ok": True, "token": token})
+    except Exception as e:
+        current_app.logger.error(f"SCIM token rotate failed: {type(e).__name__}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/scim/group-roles', methods=['PUT'])
+@require_role('admin')
+def set_scim_group_role(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    data = request.json or {}
+    group_name = (data.get('group_name') or '').strip()
+    role = (data.get('role') or '').strip().lower()
+    if not group_name:
+        return jsonify({"error": "group_name is required."}), 400
+    if role not in scim_store.VALID_ROLES:
+        return jsonify({"error": "Invalid role."}), 400
+    try:
+        scim_store.set_group_role(org_id, group_name, role)
+        db.append_compliance_log(org_id, 'scim_config_changed', f"user:{_actor()}",
+                                 {"action": "group_role_set", "group": group_name, "role": role})
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.error(f"SCIM group-role set failed: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/scim/group-roles', methods=['DELETE'])
+@require_role('admin')
+def delete_scim_group_role(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    group_name = (request.args.get('group_name') or '').strip()
+    if not group_name:
+        return jsonify({"error": "group_name is required."}), 400
+    try:
+        scim_store.delete_group_role(org_id, group_name)
+        db.append_compliance_log(org_id, 'scim_config_changed', f"user:{_actor()}",
+                                 {"action": "group_role_removed", "group": group_name})
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.error(f"SCIM group-role delete failed: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @organizations_bp.route('/organizations/domain/cancel', methods=['POST'])
 @require_role('admin')
 def cancel_domain_verification():
