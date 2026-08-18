@@ -469,6 +469,13 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                         <option value="">Default (admins and auditors)</option>
                     </select>
                 </div>
+                <div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
+                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Policy approvers</span>
+                    <p class="text-xs text-gray-400 mt-1 mb-2">Who activates policy content changes (standards, scope, rules). A separate designation from tool approvers: your policy body (for example Legal) may be different people from your tool committee. Same fallback to admins and auditors.</p>
+                    <select id="sel-policy-approvers" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white px-3 py-2 text-sm min-w-[240px]">
+                        <option value="">Default (admins and auditors)</option>
+                    </select>
+                </div>
             </section>
         </div>
         ` : ''}
@@ -988,23 +995,30 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
 }
 
 async function loadToolApprovers() {
-    const sel = document.getElementById('sel-tool-approvers');
+    await _loadApproverSelector('sel-tool-approvers', api.getToolApprovers,
+                                api.setToolApprovers, 'tool');
+    await _loadApproverSelector('sel-policy-approvers', api.getPolicyApprovers,
+                                api.setPolicyApprovers, 'policy');
+}
+
+async function _loadApproverSelector(selId, getCfg, setCfg, label) {
+    const sel = document.getElementById(selId);
     if (!sel) return;
     try {
-        const [cfg, groupsRes] = await Promise.all([api.getToolApprovers(), api.listGroups()]);
+        const [cfg, groupsRes] = await Promise.all([getCfg(), api.listGroups()]);
         const groups = groupsRes.groups || [];
         sel.innerHTML = `<option value="">Default (admins and auditors)</option>` +
             groups.map(g => `<option value="${escapeHtml(g.id)}" ${cfg.approver_group_id === g.id ? 'selected' : ''}>${escapeHtml(g.name)} (${g.member_count} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
         if (cfg.fallback_active) {
-            ui.showToast('The designated approver group is empty, so admins and auditors are approving. Add members to it or clear the designation.', 'warning', 6000);
+            ui.showToast(`The designated ${label} approver group is empty, so admins and auditors are approving. Add members to it or clear the designation.`, 'warning', 6000);
         }
         sel.onchange = async () => {
             try {
-                await api.setToolApprovers(sel.value || null);
-                ui.showToast(sel.value ? 'Approver group designated.' : 'Approvers reset to admins and auditors.', 'success');
+                await setCfg(sel.value || null);
+                ui.showToast(sel.value ? `${label === 'policy' ? 'Policy' : 'Tool'} approver group designated.` : 'Approvers reset to admins and auditors.', 'success');
             } catch (e) {
                 ui.showToast(e.message || 'Save failed', 'error');
-                loadToolApprovers();
+                _loadApproverSelector(selId, getCfg, setCfg, label);
             }
         };
     } catch (e) {

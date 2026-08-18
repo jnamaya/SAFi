@@ -98,6 +98,39 @@ def init_schema() -> None:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
+        # Policy approvers (backlog 57f) are a SEPARATE designation: in
+        # Nelson's org the AI committee decides tools and legal decides
+        # policies, and conflating them would misroute both.
+        cursor.execute("SHOW COLUMNS FROM approval_settings LIKE 'policy_approver_group_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE approval_settings "
+                           "ADD COLUMN policy_approver_group_id CHAR(36) NULL")
+        # Policy-content change requests (backlog 57f): the policies row
+        # always holds the APPROVED content (the compiler reads that row and
+        # the compiler is TCB, so the pending state must live off-row); the
+        # submitted payload waits here until a policy approver applies it
+        # through db.update_policy, which also writes the version history.
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS policy_change_requests (
+                id CHAR(36) PRIMARY KEY,
+                policy_id VARCHAR(255) NOT NULL,
+                org_id CHAR(36) NOT NULL,
+                requested_by VARCHAR(255) NOT NULL,
+                payload JSON NOT NULL,
+                changed JSON,
+                status ENUM('pending','approved','rejected','superseded')
+                    NOT NULL DEFAULT 'pending',
+                reviewed_by VARCHAR(255) NULL,
+                reviewer_email VARCHAR(255) NULL,
+                reviewed_at TIMESTAMP NULL,
+                self_approved BOOLEAN DEFAULT FALSE,
+                reason TEXT NULL,
+                acknowledged_at TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_polreq_org (org_id, status, created_at),
+                INDEX idx_polreq_policy (policy_id, status)
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
+        """)
         conn.commit()
     finally:
         cursor.close()
@@ -263,18 +296,24 @@ def apply_policy_tools(policy_id, target_tools) -> bool:
         conn.close()
 
 
-def get_approver_group(org_id):
-    """The designated approver group's id, or None. A designation pointing
-    at a deleted or empty group counts as None: the fallback must engage
-    rather than deadlock approvals (backlog 57e)."""
+# Which approval_settings column holds each domain's designation. Fixed map,
+# never user input: the column name is interpolated into SQL.
+_APPROVER_COLS = {'tools': 'approver_group_id', 'policy': 'policy_approver_group_id'}
+
+
+def get_approver_group(org_id, kind='tools'):
+    """The designated approver group's id for this domain, or None. A
+    designation pointing at a deleted or empty group counts as None: the
+    fallback must engage rather than deadlock approvals (backlog 57e)."""
+    col = _APPROVER_COLS[kind]
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT s.approver_group_id FROM approval_settings s "
-            "JOIN custom_groups c ON c.id = s.approver_group_id AND c.org_id = s.org_id "
-            "WHERE s.org_id = %s AND EXISTS "
-            "(SELECT 1 FROM group_memberships m WHERE m.group_id = s.approver_group_id)",
+            f"SELECT s.{col} FROM approval_settings s "
+            f"JOIN custom_groups c ON c.id = s.{col} AND c.org_id = s.org_id "
+            f"WHERE s.org_id = %s AND EXISTS "
+            f"(SELECT 1 FROM group_memberships m WHERE m.group_id = s.{col})",
             (org_id,))
         row = cursor.fetchone()
         return row[0] if row else None
@@ -283,14 +322,15 @@ def get_approver_group(org_id):
         conn.close()
 
 
-def get_approver_setting(org_id):
+def get_approver_setting(org_id, kind='tools'):
     """The raw designation for the settings UI, without the empty-group
     fallback that get_approver_group applies for enforcement."""
+    col = _APPROVER_COLS[kind]
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT approver_group_id FROM approval_settings WHERE org_id=%s", (org_id,))
+            f"SELECT {col} FROM approval_settings WHERE org_id=%s", (org_id,))
         row = cursor.fetchone()
         return row[0] if row else None
     finally:
@@ -298,14 +338,15 @@ def get_approver_setting(org_id):
         conn.close()
 
 
-def set_approver_group(org_id, group_id, actor) -> None:
+def set_approver_group(org_id, group_id, actor, kind='tools') -> None:
+    col = _APPROVER_COLS[kind]
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO approval_settings (org_id, approver_group_id, updated_by) "
-            "VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE "
-            "approver_group_id = VALUES(approver_group_id), updated_by = VALUES(updated_by)",
+            f"INSERT INTO approval_settings (org_id, {col}, updated_by) "
+            f"VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE "
+            f"{col} = VALUES({col}), updated_by = VALUES(updated_by)",
             (org_id, group_id, actor))
         conn.commit()
     finally:
@@ -313,14 +354,14 @@ def set_approver_group(org_id, group_id, actor) -> None:
         conn.close()
 
 
-def is_reviewer(org_id, user_id, role) -> bool:
-    """May this person decide tool requests in this org? A designated (and
-    non-empty) approver group REPLACES the role fallback: naming the legal
-    counsel as approver means the admins stop being approvers, which is the
-    point of naming anyone (backlog 57e)."""
+def is_reviewer(org_id, user_id, role, kind='tools') -> bool:
+    """May this person decide requests of this kind in this org? A
+    designated (and non-empty) approver group REPLACES the role fallback:
+    naming the legal counsel as approver means the admins stop being
+    approvers, which is the point of naming anyone (backlog 57e)."""
     if not org_id or not user_id:
         return False
-    group_id = get_approver_group(org_id)
+    group_id = get_approver_group(org_id, kind)
     if group_id:
         conn = db.get_db_connection()
         cursor = conn.cursor()
@@ -335,7 +376,7 @@ def is_reviewer(org_id, user_id, role) -> bool:
     return (role or 'member') in ('admin', 'auditor')
 
 
-def other_reviewer_exists(org_id, exclude_user_id) -> bool:
+def other_reviewer_exists(org_id, exclude_user_id, kind='tools') -> bool:
     """Is there an eligible reviewer besides this person, against the ACTIVE
     set (the designated group when one exists, the role fallback otherwise)?
     When not, the sole-approver exception applies and self-approval is
@@ -343,7 +384,7 @@ def other_reviewer_exists(org_id, exclude_user_id) -> bool:
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
-        group_id = get_approver_group(org_id)
+        group_id = get_approver_group(org_id, kind)
         if group_id:
             cursor.execute(
                 "SELECT 1 FROM group_memberships WHERE group_id=%s AND user_id != %s LIMIT 1",
@@ -356,6 +397,113 @@ def other_reviewer_exists(org_id, exclude_user_id) -> bool:
     finally:
         cursor.close()
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Policy-content change requests (backlog 57f)
+# ---------------------------------------------------------------------------
+
+def create_policy_change(policy_id, org_id, requested_by, payload, changed) -> str:
+    """Hold a full policy update for the policy approvers. Supersedes any
+    earlier pending change for the same policy: the latest submission is
+    the only live one."""
+    request_id = str(uuid.uuid4())
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE policy_change_requests SET status='superseded' "
+            "WHERE policy_id=%s AND status='pending'", (policy_id,))
+        cursor.execute(
+            "INSERT INTO policy_change_requests "
+            "(id, policy_id, org_id, requested_by, payload, changed) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (request_id, policy_id, org_id, requested_by,
+             json.dumps(payload), json.dumps(sorted(changed))))
+        conn.commit()
+        return request_id
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _load_policy_change(row):
+    if not row:
+        return None
+    for col in ('payload', 'changed'):
+        if isinstance(row.get(col), str):
+            try:
+                row[col] = json.loads(row[col])
+            except ValueError:
+                row[col] = None
+    return row
+
+
+def get_policy_change(request_id):
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM policy_change_requests WHERE id=%s", (request_id,))
+        return _load_policy_change(cursor.fetchone())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_policy_changes(org_id, status='pending'):
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT r.*,
+                   (SELECT u.name FROM users u WHERE u.id = r.requested_by) AS requester_name,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
+            FROM policy_change_requests r
+            WHERE r.org_id = %s AND r.status = %s
+            ORDER BY r.created_at ASC
+            """, (org_id, status))
+        return [_load_policy_change(r) for r in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def resolve_policy_change(request_id, status, reviewer_id, reviewer_email,
+                          self_approved=False, reason=None) -> bool:
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE policy_change_requests SET status=%s, reviewed_by=%s, "
+            "reviewer_email=%s, reviewed_at=UTC_TIMESTAMP(), self_approved=%s, "
+            "reason=%s WHERE id=%s AND status='pending'",
+            (status, reviewer_id, reviewer_email, bool(self_approved),
+             reason, request_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _policy_change_label(r, with_status=False):
+    name = r.get('policy_name') or r.get('policy_id')
+    changed = ', '.join(r.get('changed') or []) or 'content'
+    label = f"Policy {name}: {changed}"
+    if with_status:
+        label = f"Policy {name}: {r['status']} ({changed})"
+        if r['status'] == 'rejected' and r.get('reason'):
+            label += f": {r['reason']}"
+    return label
+
+
+def pending_policy_summary(org_id):
+    """For the attention inbox: policy changes awaiting the policy approvers."""
+    rows = list_policy_changes(org_id, 'pending')
+    return {"count": len(rows),
+            "oldest": rows[0]['created_at'] if rows else None,
+            "examples": [_policy_change_label(r) for r in rows[:3]]}
 
 
 def _request_label(r):
@@ -375,10 +523,11 @@ def pending_summary(org_id):
 
 
 def pending_own_requests(user_id):
-    """The caller's own requests still awaiting review, for their inbox:
-    the submission should be as visible to the requester as the outcome
-    (Nelson, 2026-08-18). Purely derived; the row leaves on its own when a
-    reviewer decides, at which point the outcome row replaces it."""
+    """The caller's own requests still awaiting review, across BOTH request
+    kinds, for their inbox: the submission should be as visible to the
+    requester as the outcome (Nelson, 2026-08-18). Purely derived; each row
+    leaves on its own when a reviewer decides, at which point the outcome
+    row replaces it."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -391,13 +540,25 @@ def pending_own_requests(user_id):
             WHERE r.requested_by = %s AND r.status = 'pending'
             ORDER BY r.created_at ASC
             """, (user_id,))
-        rows = [_load(r) for r in cursor.fetchall()]
+        tool_rows = [_load(r) for r in cursor.fetchall()]
+        cursor.execute(
+            """
+            SELECT r.*,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
+            FROM policy_change_requests r
+            WHERE r.requested_by = %s AND r.status = 'pending'
+            ORDER BY r.created_at ASC
+            """, (user_id,))
+        policy_rows = [_load_policy_change(r) for r in cursor.fetchall()]
     finally:
         cursor.close()
         conn.close()
-    return {"count": len(rows),
-            "oldest": rows[0]['created_at'] if rows else None,
-            "examples": [_request_label(r) for r in rows[:3]]}
+    labeled = ([(r['created_at'], _request_label(r)) for r in tool_rows]
+               + [(r['created_at'], _policy_change_label(r)) for r in policy_rows])
+    labeled.sort(key=lambda x: (x[0] is None, x[0]))
+    return {"count": len(labeled),
+            "oldest": labeled[0][0] if labeled else None,
+            "examples": [label for _, label in labeled[:3]]}
 
 
 def unacknowledged_outcomes(user_id):
@@ -420,12 +581,23 @@ def unacknowledged_outcomes(user_id):
               AND (r.reviewed_by IS NULL OR r.reviewed_by != r.requested_by)
             ORDER BY r.reviewed_at ASC
             """, (user_id,))
-        rows = [_load(r) for r in cursor.fetchall()]
+        tool_rows = [_load(r) for r in cursor.fetchall()]
+        cursor.execute(
+            """
+            SELECT r.*,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
+            FROM policy_change_requests r
+            WHERE r.requested_by = %s AND r.status IN ('approved','rejected')
+              AND r.acknowledged_at IS NULL
+              AND (r.reviewed_by IS NULL OR r.reviewed_by != r.requested_by)
+            ORDER BY r.reviewed_at ASC
+            """, (user_id,))
+        policy_rows = [_load_policy_change(r) for r in cursor.fetchall()]
     finally:
         cursor.close()
         conn.close()
-    examples = []
-    for r in rows[:3]:
+    labeled = []
+    for r in tool_rows:
         if r.get('request_type') == 'policy':
             name = f"Policy {r.get('policy_name') or r.get('policy_id')}"
         else:
@@ -433,24 +605,31 @@ def unacknowledged_outcomes(user_id):
         label = f"{name}: {r['status']} (+{', +'.join(r.get('added') or [])})"
         if r['status'] == 'rejected' and r.get('reason'):
             label += f": {r['reason']}"
-        examples.append(label)
-    return {"count": len(rows),
-            "oldest": rows[0]['reviewed_at'] if rows else None,
-            "examples": examples}
+        labeled.append((r['reviewed_at'], label))
+    labeled.extend((r['reviewed_at'], _policy_change_label(r, with_status=True))
+                   for r in policy_rows)
+    labeled.sort(key=lambda x: (x[0] is None, x[0]))
+    return {"count": len(labeled),
+            "oldest": labeled[0][0] if labeled else None,
+            "examples": [label for _, label in labeled[:3]]}
 
 
 def acknowledge_outcomes(user_id) -> int:
-    """Dismiss all of the caller's decided-and-unseen outcomes. Scoped to
-    requested_by, so nobody can clear anyone else's inbox."""
+    """Dismiss all of the caller's decided-and-unseen outcomes, across both
+    request kinds. Scoped to requested_by, so nobody can clear anyone
+    else's inbox."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE agent_tool_requests SET acknowledged_at=UTC_TIMESTAMP() "
-            "WHERE requested_by=%s AND status IN ('approved','rejected') "
-            "AND acknowledged_at IS NULL", (user_id,))
+        cleared = 0
+        for table in ('agent_tool_requests', 'policy_change_requests'):
+            cursor.execute(
+                f"UPDATE {table} SET acknowledged_at=UTC_TIMESTAMP() "
+                f"WHERE requested_by=%s AND status IN ('approved','rejected') "
+                f"AND acknowledged_at IS NULL", (user_id,))
+            cleared += cursor.rowcount
         conn.commit()
-        return cursor.rowcount
+        return cleared
     finally:
         cursor.close()
         conn.close()

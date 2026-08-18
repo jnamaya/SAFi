@@ -317,6 +317,24 @@ export async function setToolApprovers(groupId) {
     return httpJSON('/api/agents/tool-approvers', 'PUT', { group_id: groupId || null });
 }
 
+// --- Policy-content approvals: editors submit, policy approvers activate ---
+
+export async function listPolicyChanges(status = 'pending') {
+    return httpGet(`/api/policies/change-requests?status=${encodeURIComponent(status)}`);
+}
+export async function approvePolicyChange(requestId) {
+    return httpJSON(`/api/policies/change-requests/${requestId}/approve`, 'POST', {});
+}
+export async function rejectPolicyChange(requestId, reason = '') {
+    return httpJSON(`/api/policies/change-requests/${requestId}/reject`, 'POST', { reason });
+}
+export async function getPolicyApprovers() {
+    return httpGet('/api/policies/policy-approvers');
+}
+export async function setPolicyApprovers(groupId) {
+    return httpJSON('/api/policies/policy-approvers', 'PUT', { group_id: groupId || null });
+}
+
 // --- Attention inbox: everything waiting on this user, role-aware ---
 
 export async function fetchAttention() {

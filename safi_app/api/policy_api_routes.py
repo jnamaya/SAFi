@@ -29,6 +29,41 @@ def _declared_tools(will_rules):
     return None
 
 
+_POLICY_CONFIG_FIELDS = ('business_unit', 'scope_statement', 'context',
+                         'ethical_memory', 'alignment_threshold')
+
+
+def _norm(v):
+    return json.dumps(v, sort_keys=True) if isinstance(v, (dict, list)) else v
+
+
+def _policy_content_diff(current, data):
+    """Which governance-bearing fields this submission changes, against the
+    approved row (backlog 57f). Runs AFTER the tool carve-out, so a save
+    whose only change was a tool widening diffs empty here and files no
+    content request."""
+    changed = []
+    for field, col in (('name', 'name'), ('worldview', 'worldview'),
+                       ('values', 'values_weights'), ('will_rules', 'will_rules')):
+        if field in data and _norm(data.get(field)) != _norm(current.get(col)):
+            changed.append(field)
+    cfg = current.get('policy_config') or {}
+    for field in _POLICY_CONFIG_FIELDS:
+        if field not in data:
+            continue
+        old, new = cfg.get(field), data.get(field)
+        if field in ('ethical_memory', 'alignment_threshold'):
+            try:
+                if float(new) != float(new if old is None else old):
+                    changed.append(field)
+            except (TypeError, ValueError):
+                if _norm(new) != _norm(old):
+                    changed.append(field)
+        elif (new or '') != (old or ''):
+            changed.append(field)
+    return changed
+
+
 def _hold_tool_widening(data, old_rules, org_id):
     """Backlog 57d: additions to a policy's DECLARED allowed_tools wait for
     an approver, because the declared list is the pre-approved menu agents
@@ -277,34 +312,54 @@ def update_policy(policy_id):
         pending_tools, target_tools = _hold_tool_widening(
             data, policy.get('will_rules'), org_id)
 
-        policy_config = {
-            "business_unit":      data.get("business_unit", ""),
-            "scope_statement":    data.get("scope_statement", ""),
-            # The human-facing description. Stored as its own field; older
-            # builds embedded it in worldview as an HTML comment, which the
-            # wizard still reads as a legacy fallback.
-            "context":            data.get("context", ""),
-            "ethical_memory":     data.get("ethical_memory", 0.90),
-            "alignment_threshold": data.get("alignment_threshold", 0.5),
-        }
-        db.update_policy(
-            policy_id,
-            name=data.get('name'),
-            worldview=data.get('worldview'),
-            will_rules=data.get('will_rules'),
-            values=data.get('values'),
-            policy_config=policy_config
-        )
-        
-        _vals = data.get('values') or []
-        _after = db.get_policy(policy_id) or {}
-        db.append_compliance_log(get_current_org_id(), 'policy_updated',
-                                 f"user:{session.get('user', {}).get('id')}", {
-            "policy_id": policy_id, "name": data.get('name'),
-            "version": _after.get('version'),
-            "standards": len(_vals),
-            "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
-        })
+        # Content changes wait for the POLICY approvers (backlog 57f): the
+        # row keeps the approved content, and the submission becomes a
+        # pending change request. IT writes policies; legal activates them.
+        # Personal (no-org) policies apply directly: there is no org
+        # authority to protect. Tool widenings above already went to THEIR
+        # approvers, so a save whose only change is tools files no content
+        # request.
+        pending_change_id = None
+        changed = _policy_content_diff(policy, data) if org_id else []
+        if changed:
+            payload = {k: data[k] for k in
+                       (('name', 'worldview', 'values', 'will_rules')
+                        + _POLICY_CONFIG_FIELDS) if k in data}
+            pending_change_id = tool_approval_store.create_policy_change(
+                policy_id, org_id, user_id, payload, changed)
+            db.append_compliance_log(org_id, 'policy_change_requested',
+                                     f"user:{user_id}",
+                                     {"policy": policy_id, "request": pending_change_id,
+                                      "changed": sorted(changed)})
+        else:
+            policy_config = {
+                "business_unit":      data.get("business_unit", ""),
+                "scope_statement":    data.get("scope_statement", ""),
+                # The human-facing description. Stored as its own field; older
+                # builds embedded it in worldview as an HTML comment, which the
+                # wizard still reads as a legacy fallback.
+                "context":            data.get("context", ""),
+                "ethical_memory":     data.get("ethical_memory", 0.90),
+                "alignment_threshold": data.get("alignment_threshold", 0.5),
+            }
+            db.update_policy(
+                policy_id,
+                name=data.get('name'),
+                worldview=data.get('worldview'),
+                will_rules=data.get('will_rules'),
+                values=data.get('values'),
+                policy_config=policy_config
+            )
+
+            _vals = data.get('values') or []
+            _after = db.get_policy(policy_id) or {}
+            db.append_compliance_log(get_current_org_id(), 'policy_updated',
+                                     f"user:{session.get('user', {}).get('id')}", {
+                "policy_id": policy_id, "name": data.get('name'),
+                "version": _after.get('version'),
+                "standards": len(_vals),
+                "blocking": sum(1 for v in _vals if isinstance(v, dict) and v.get('hard_gate')),
+            })
 
         if pending_tools:
             rid = tool_approval_store.create_policy_request(
@@ -323,6 +378,9 @@ def update_policy(policy_id):
         return jsonify({
             "ok": True,
             "tools_pending_approval": pending_tools,
+            "pending_approval": bool(pending_change_id),
+            "change_request_id": pending_change_id,
+            "changed": sorted(changed),
             "credentials": {
                 "policy_id": policy_id,
                 "api_key": api_key,
@@ -333,6 +391,174 @@ def update_policy(policy_id):
     except Exception as e:
         current_app.logger.error(f"update_policy error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
+
+# ---------------------------------------------------------------------------
+# Policy-content approvals (backlog 57f): editors submit, the designated
+# policy approvers (or the admin|auditor fallback) activate. Same SoD,
+# sole-approver, and evidence pattern as tool approvals, separately routed
+# because the deciding bodies differ (AI committee vs legal, in Nelson's org).
+# ---------------------------------------------------------------------------
+
+def _policy_reviewer_context():
+    user = session.get('user')
+    if not user:
+        return None, None, None, (jsonify({"error": "Unauthorized"}), 401)
+    org_id = user.get('org_id')
+    if not org_id:
+        return None, None, None, (jsonify({"error": "You are not part of an organization."}), 400)
+    uid = user.get('id') or user.get('sub')
+    if not tool_approval_store.is_reviewer(org_id, uid, user.get('role'), kind='policy'):
+        return None, None, None, (jsonify({"error": "Forbidden: you are not one of "
+                                                    "this organization's policy approvers."}), 403)
+    return uid, user.get('email'), org_id, None
+
+
+@policy_api_bp.route('/policies/change-requests', methods=['GET'], strict_slashes=False)
+def list_policy_change_requests():
+    uid, _email, org_id, err = _policy_reviewer_context()
+    if err:
+        return err
+    status = request.args.get('status', 'pending')
+    if status not in ('pending', 'approved', 'rejected', 'superseded'):
+        return jsonify({"error": "Invalid status."}), 400
+    return jsonify({"ok": True,
+                    "requests": tool_approval_store.list_policy_changes(org_id, status)})
+
+
+@policy_api_bp.route('/policies/change-requests/<request_id>/approve',
+                     methods=['POST'], strict_slashes=False)
+def approve_policy_change(request_id):
+    uid, email, org_id, err = _policy_reviewer_context()
+    if err:
+        return err
+    req = tool_approval_store.get_policy_change(request_id)
+    if not req or str(req['org_id']) != str(org_id):
+        return jsonify({"error": "Not found"}), 404
+    if req['status'] != 'pending':
+        return jsonify({"error": f"This request is already {req['status']}."}), 409
+
+    self_approved = False
+    if str(req['requested_by']) == str(uid):
+        if tool_approval_store.other_reviewer_exists(org_id, uid, kind='policy'):
+            return jsonify({"error": "You submitted this change; another "
+                                     "policy approver must decide it."}), 403
+        self_approved = True
+
+    policy = db.get_policy(req['policy_id'])
+    if not policy or str(policy.get('org_id')) != str(org_id):
+        tool_approval_store.resolve_policy_change(request_id, 'rejected', uid, email,
+                                                  reason='policy no longer exists')
+        return jsonify({"error": "The policy no longer exists; request closed."}), 409
+
+    payload = req.get('payload') or {}
+    policy_config = None
+    if any(k in payload for k in _POLICY_CONFIG_FIELDS):
+        policy_config = {
+            "business_unit":       payload.get("business_unit", ""),
+            "scope_statement":     payload.get("scope_statement", ""),
+            "context":             payload.get("context", ""),
+            "ethical_memory":      payload.get("ethical_memory", 0.90),
+            "alignment_threshold": payload.get("alignment_threshold", 0.5),
+        }
+    db.update_policy(
+        req['policy_id'],
+        name=payload.get('name'),
+        worldview=payload.get('worldview'),
+        will_rules=payload.get('will_rules'),
+        values=payload.get('values'),
+        policy_config=policy_config,
+        note=f"change request {request_id} approved",
+        updated_by=uid,
+    )
+    tool_approval_store.resolve_policy_change(request_id, 'approved', uid, email,
+                                              self_approved=self_approved)
+    after = db.get_policy(req['policy_id']) or {}
+    try:
+        db.append_compliance_log(org_id, 'policy_change_approved', f"user:{uid}", {
+            "policy": req['policy_id'], "request": request_id,
+            "changed": req.get('changed'), "version": after.get('version'),
+            "requested_by": req['requested_by'], "self_approved": self_approved})
+    except Exception as e:
+        current_app.logger.error(f"policy-change evidence failed: {e}")
+    return jsonify({"ok": True, "version": after.get('version'),
+                    "self_approved": self_approved})
+
+
+@policy_api_bp.route('/policies/change-requests/<request_id>/reject',
+                     methods=['POST'], strict_slashes=False)
+def reject_policy_change(request_id):
+    # A policy approver rejects; the AUTHOR may also cancel their own
+    # submission, which needs no separation of duties.
+    user = session.get('user')
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = user.get('id') or user.get('sub')
+    org_id = user.get('org_id')
+    req = tool_approval_store.get_policy_change(request_id)
+    if not req or not org_id or str(req['org_id']) != str(org_id):
+        return jsonify({"error": "Not found"}), 404
+    is_author = str(req['requested_by']) == str(uid)
+    if not (is_author or tool_approval_store.is_reviewer(org_id, uid,
+                                                         user.get('role'), kind='policy')):
+        return jsonify({"error": "Forbidden"}), 403
+    if req['status'] != 'pending':
+        return jsonify({"error": f"This request is already {req['status']}."}), 409
+    reason = ((request.get_json(silent=True) or {}).get('reason') or '').strip() or None
+    tool_approval_store.resolve_policy_change(request_id, 'rejected', uid,
+                                              user.get('email'), reason=reason)
+    try:
+        db.append_compliance_log(org_id, 'policy_change_rejected', f"user:{uid}", {
+            "policy": req['policy_id'], "request": request_id,
+            "changed": req.get('changed'), "reason": reason,
+            "withdrawn_by_author": is_author})
+    except Exception as e:
+        current_app.logger.error(f"policy-reject evidence failed: {e}")
+    return jsonify({"ok": True})
+
+
+@policy_api_bp.route('/policies/policy-approvers', methods=['GET'], strict_slashes=False)
+def get_policy_approvers():
+    from ..core.rbac import check_permission
+    user = session.get('user')
+    if not user or not check_permission('admin'):
+        return jsonify({"error": "Forbidden"}), 403
+    org_id = user.get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    designated = tool_approval_store.get_approver_setting(org_id, kind='policy')
+    effective = tool_approval_store.get_approver_group(org_id, kind='policy')
+    return jsonify({"ok": True, "approver_group_id": designated,
+                    "effective": bool(effective),
+                    "fallback_active": designated is not None and effective is None})
+
+
+@policy_api_bp.route('/policies/policy-approvers', methods=['PUT'], strict_slashes=False)
+def set_policy_approvers():
+    from ..core.rbac import check_permission
+    from ..persistence import sharing_store
+    user = session.get('user')
+    if not user or not check_permission('admin'):
+        return jsonify({"error": "Forbidden"}), 403
+    org_id = user.get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    data = request.get_json(silent=True) or {}
+    group_id = (data.get('group_id') or '').strip() or None
+    group = None
+    if group_id:
+        group = sharing_store.get_group(group_id)
+        if not group or str(group.get('org_id')) != str(org_id):
+            return jsonify({"error": "That group does not belong to your organization."}), 400
+    actor = user.get('id')
+    tool_approval_store.set_approver_group(org_id, group_id, actor, kind='policy')
+    try:
+        db.append_compliance_log(org_id, 'policy_approvers_changed', f"user:{actor}",
+                                 {"approver_group": group_id,
+                                  "group_name": group.get('name') if group else None})
+    except Exception as e:
+        current_app.logger.error(f"policy-approver evidence failed: {e}")
+    return jsonify({"ok": True, "approver_group_id": group_id})
+
 
 @policy_api_bp.route('/policies/<policy_id>/versions', methods=['GET'], strict_slashes=False)
 def list_policy_version_history(policy_id):

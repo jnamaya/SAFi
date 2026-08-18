@@ -357,14 +357,24 @@ class PolicyGate(ToolApprovalBase):
         self.assertEqual(pending[0]['request_type'], 'policy')
         self.assertEqual(pending[0]['policy_id'], self.policy_id)
 
-    def test_policy_narrowing_is_immediate(self):
+    def test_policy_narrowing_is_a_content_change_not_a_tool_request(self):
+        """Narrowing files no TOOL request (nothing widens), but since 57f
+        it is still a policy-content change, so it waits for the POLICY
+        approvers rather than applying on save."""
         tool_approval_store.apply_policy_tools(self.policy_id, ['send_email', 'calendar'])
         client = self._client(self.editor, 'editor')
         r = self._put_policy_tools(client, ['send_email'])
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json()['tools_pending_approval'], [])
+        body = r.get_json()
+        self.assertEqual(body['tools_pending_approval'], [])
+        self.assertTrue(body['pending_approval'])
+        self.assertEqual(tool_approval_store.list_requests(self.org, 'pending'), [],
+                         "a narrowing must never open a tool request")
+        self.assertEqual(self._declared(), ['calendar', 'send_email'])
+        rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
+        self._client(self.admin, 'admin').post(
+            f'/api/policies/change-requests/{rid}/approve')
         self.assertEqual(self._declared(), ['send_email'])
-        self.assertEqual(tool_approval_store.list_requests(self.org, 'pending'), [])
 
     def test_approved_ceiling_lets_agents_flow_free(self):
         client = self._client(self.editor, 'editor')

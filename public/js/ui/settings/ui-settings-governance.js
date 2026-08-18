@@ -87,6 +87,10 @@ export async function renderSettingsGovernanceTab() {
                 <h1>Policies</h1>
                 <p>Create policies for specific business units, teams, or use cases — HR, Finance, Legal, Customer Service, and so on. Each agent is assigned one policy that defines its purpose &amp; voice, standards, scope, and rules.</p>
             </div>
+
+            <!-- Policy-change approvals (backlog 57f): policy approvers see
+                 pending activations here; empty for everyone else. -->
+            <div id="policy-approvals-host"></div>
             <div class="mb-8">
                 ${canEditPolicy ? `
                 <button id="btn-create-policy" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm">
@@ -193,9 +197,80 @@ export async function renderSettingsGovernanceTab() {
             });
         });
 
+        renderPolicyApprovals();
+
     } catch (e) {
         container.innerHTML = `<div class="p-8 text-center text-red-500">Error loading policies: ${e.message}</div>`;
     }
+}
+
+// --- POLICY-CHANGE APPROVALS PANEL (backlog 57f) ---
+
+function escGov(s) {
+    const div = document.createElement('div');
+    div.textContent = String(s ?? '');
+    return div.innerHTML;
+}
+
+async function renderPolicyApprovals() {
+    const host = document.getElementById('policy-approvals-host');
+    if (!host) return;
+    let requests = [];
+    try {
+        const res = await api.listPolicyChanges('pending');
+        requests = res.requests || [];
+    } catch (e) {
+        return; // not a policy approver, or a transient failure: no panel
+    }
+    if (!requests.length) {
+        host.innerHTML = '';
+        return;
+    }
+    host.innerHTML = `
+        <div class="mb-6 border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 rounded-xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-amber-200 dark:border-amber-800">
+                <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">Policy changes awaiting approval</h3>
+                <p class="text-xs text-amber-700 dark:text-amber-400 mt-0.5">Each policy keeps its current content until a change is approved. Submitters cannot approve their own change.</p>
+            </div>
+            ${requests.map(r => `
+                <div class="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-amber-100 dark:border-amber-900/40 last:border-0 bg-white dark:bg-neutral-900">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${escGov(r.policy_name || r.policy_id)}</p>
+                        <p class="text-xs text-gray-500 truncate">submitted by ${escGov(r.requester_name || r.requested_by)} &middot; changes ${(r.changed || []).map(f => `<code class="bg-gray-100 dark:bg-neutral-800 px-1 py-0.5 rounded">${escGov(f)}</code>`).join(' ')}</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button data-req="${escGov(r.id)}" class="policy-req-approve px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">Approve</button>
+                        <button data-req="${escGov(r.id)}" class="policy-req-reject px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">Reject</button>
+                    </div>
+                </div>`).join('')}
+        </div>`;
+
+    host.querySelectorAll('.policy-req-approve').forEach(btn => btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const res = await api.approvePolicyChange(btn.dataset.req);
+            ui.showToast(res.self_approved
+                ? `Activated as version ${res.version} (recorded as non-independent: you are the only eligible approver).`
+                : `Policy change activated as version ${res.version}.`, 'success');
+            renderSettingsGovernanceTab();
+        } catch (e) {
+            ui.showToast(e.message || 'Approval failed', 'error');
+            btn.disabled = false;
+        }
+    }));
+    host.querySelectorAll('.policy-req-reject').forEach(btn => btn.addEventListener('click', async () => {
+        const reason = prompt('Reason for rejecting (optional):') ?? null;
+        if (reason === null) return;
+        btn.disabled = true;
+        try {
+            await api.rejectPolicyChange(btn.dataset.req, reason);
+            ui.showToast('Policy change rejected.', 'success');
+            renderPolicyApprovals();
+        } catch (e) {
+            ui.showToast(e.message || 'Rejection failed', 'error');
+            btn.disabled = false;
+        }
+    }));
 }
 
 // --- Policy Version History (modal) ---

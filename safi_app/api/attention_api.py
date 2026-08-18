@@ -23,8 +23,9 @@ _CATEGORIES = {
     "kb_documents":  ("knowledge", "Documents awaiting review"),
     "review_queue":  ("review", "Flagged turns awaiting disposition"),
     "tool_requests": ("agents", "Tool grants awaiting approval"),
-    "my_pending_requests": ("agents", "Your tool requests: awaiting review"),
-    "my_tool_requests": ("agents", "Your tool requests: decided"),
+    "policy_changes": ("governance", "Policy changes awaiting approval"),
+    "my_pending_requests": ("agents", "Your requests: awaiting review"),
+    "my_tool_requests": ("agents", "Your requests: decided"),
     "invitations":   ("organization", "Open invitations"),
     "incidents":     ("compliance", "Open security incidents"),
     "schedules":     ("schedules", "Scheduled updates failing"),
@@ -89,15 +90,24 @@ def get_attention():
             except Exception:
                 pass
 
-    # Tool requests route to the ACTIVE approver set (backlog 57e): the
-    # designated approver group when one exists, admin|auditor otherwise. A
-    # designated approver may hold any role, so this is not role-gated.
+    # Tool and policy requests route to their ACTIVE approver sets (backlog
+    # 57e/57f): the designated group when one exists, admin|auditor
+    # otherwise. A designated approver may hold any role, so neither is
+    # role-gated.
     if org_id:
         try:
             if tool_approval_store.is_reviewer(org_id, user_id, user.get('role')):
                 agg = tool_approval_store.pending_summary(org_id)
                 if agg["count"]:
                     items.append(_item("tool_requests", agg))
+        except Exception:
+            pass
+        try:
+            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role'),
+                                               kind='policy'):
+                agg = tool_approval_store.pending_policy_summary(org_id)
+                if agg["count"]:
+                    items.append(_item("policy_changes", agg))
         except Exception:
             pass
 

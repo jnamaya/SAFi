@@ -311,10 +311,15 @@ async function submitPolicy() {
         const res = await api.savePolicy(payload);
         if (res.ok) {
             localStorage.removeItem(STORAGE_KEY);
-            // Widening the declared tool list waits for an approver (57d);
-            // say so, or the author reads the missing tools as a lost save.
+            // Held work must be announced, or the author reads the missing
+            // changes as a lost save: tool widenings wait for the tool
+            // approvers (57d), content changes wait for the policy
+            // approvers (57f).
             const pendingTools = Array.isArray(res.tools_pending_approval) ? res.tools_pending_approval : [];
-            if (pendingTools.length) {
+            if (res.pending_approval) {
+                const what = (res.changed || []).join(', ') || 'changes';
+                ui.showToast(`Submitted for approval: ${what}. The policy keeps its current content until a policy approver activates the change.`, 'warning', 8000);
+            } else if (pendingTools.length) {
                 ui.showToast(`Policy saved. ${pendingTools.length} tool${pendingTools.length === 1 ? '' : 's'} (${pendingTools.join(', ')}) awaits approval before agents can use ${pendingTools.length === 1 ? 'it' : 'them'}.`, 'warning', 7000);
             } else {
                 ui.showToast("Policy Saved!", "success");
