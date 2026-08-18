@@ -374,6 +374,32 @@ def pending_summary(org_id):
             "examples": [_request_label(r) for r in rows[:3]]}
 
 
+def pending_own_requests(user_id):
+    """The caller's own requests still awaiting review, for their inbox:
+    the submission should be as visible to the requester as the outcome
+    (Nelson, 2026-08-18). Purely derived; the row leaves on its own when a
+    reviewer decides, at which point the outcome row replaces it."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT r.*,
+                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name,
+                   (SELECT p.name FROM policies p WHERE p.id = r.policy_id) AS policy_name
+            FROM agent_tool_requests r
+            WHERE r.requested_by = %s AND r.status = 'pending'
+            ORDER BY r.created_at ASC
+            """, (user_id,))
+        rows = [_load(r) for r in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+    return {"count": len(rows),
+            "oldest": rows[0]['created_at'] if rows else None,
+            "examples": [_request_label(r) for r in rows[:3]]}
+
+
 def unacknowledged_outcomes(user_id):
     """The caller's own decided requests they have not dismissed yet, for
     the inbox (backlog 57c). Two exclusions: superseded (the requester

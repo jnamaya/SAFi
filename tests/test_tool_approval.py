@@ -281,6 +281,25 @@ class TheOutcome(ToolApprovalBase):
         item = self._inbox_item(client, 'my_tool_requests')
         self.assertIsNone(item)
 
+    def test_submission_shows_as_awaiting_review_until_decided(self):
+        """The requester sees their submission in the inbox while it waits,
+        and the row replaces itself with the outcome on decision."""
+        client = self._client(self.editor, 'editor')
+        self._put_tools(client, ['send_email'])
+        self.assertIsNotNone(self._inbox_item(client, 'my_pending_requests'))
+        self.assertIsNone(self._inbox_item(client, 'my_tool_requests'))
+
+        rid = tool_approval_store.list_requests(self.org, 'pending')[0]['id']
+        self._client(self.admin, 'admin').post(f'/api/agents/tool-requests/{rid}/approve')
+        self.assertIsNone(self._inbox_item(client, 'my_pending_requests'),
+                          "a decided request kept showing as awaiting review")
+        self.assertIsNotNone(self._inbox_item(client, 'my_tool_requests'))
+
+    def test_awaiting_review_is_private_to_the_requester(self):
+        self._put_tools(self._client(self.editor, 'editor'), ['send_email'])
+        member = self._client(self.member, 'member')
+        self.assertIsNone(self._inbox_item(member, 'my_pending_requests'))
+
     def test_self_approved_outcome_does_not_notify(self):
         """A sole admin who approves their own request already knows the
         outcome; notifying them created a row they could only dismiss

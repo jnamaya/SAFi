@@ -23,6 +23,7 @@ _CATEGORIES = {
     "kb_documents":  ("knowledge", "Documents awaiting review"),
     "review_queue":  ("review", "Flagged turns awaiting disposition"),
     "tool_requests": ("agents", "Tool grants awaiting approval"),
+    "my_pending_requests": ("agents", "Your tool requests: awaiting review"),
     "my_tool_requests": ("agents", "Your tool requests: decided"),
     "invitations":   ("organization", "Open invitations"),
     "incidents":     ("compliance", "Open security incidents"),
@@ -65,6 +66,12 @@ def get_attention():
             items.append(_item("schedules", agg))
     except Exception:
         pass  # a broken source must never take the inbox down
+    try:
+        agg = tool_approval_store.pending_own_requests(user_id)
+        if agg["count"]:
+            items.append(_item("my_pending_requests", agg))
+    except Exception:
+        pass
     try:
         agg = tool_approval_store.unacknowledged_outcomes(user_id)
         if agg["count"]:
