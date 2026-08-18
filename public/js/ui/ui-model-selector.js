@@ -45,12 +45,17 @@ function _renderDropdown() {
     // (the /models endpoint ships provider_label), because a flat list of
     // eleven ids from seven vendors reads as soup. With a single provider
     // configured the caption is skipped — one group needs no label.
+    // Group by provider by LABEL, not by consecutive run: the /models list
+    // puts built-ins first and appends operator-added models at the end, so a
+    // custom model (e.g. a new Gemini) would otherwise open a second group
+    // with the same caption. Merge into the provider's first-seen group.
     const groups = [];
+    const byLabel = new Map();
     for (const m of _models) {
         const label = m.provider_label || m.provider || '';
-        const last = groups[groups.length - 1];
-        if (last && last.label === label) last.models.push(m);
-        else groups.push({ label, models: [m] });
+        let g = byLabel.get(label);
+        if (!g) { g = { label, models: [] }; byLabel.set(label, g); groups.push(g); }
+        g.models.push(m);
     }
     const showCaptions = groups.length > 1;
 
