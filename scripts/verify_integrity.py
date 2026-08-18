@@ -118,6 +118,28 @@ CORE_FILES = [
     # record. A fork that no-ops the stamp would mint records claiming an
     # intact TCB — the exact lie the stamp exists to make impossible.
     "safi_app/core/integrity.py",
+    # Scoped-visibility enforcement semantics (added 2026-08-17, backlog 59),
+    # admitted by the same test as rbac.py: these files hold rules about who
+    # may do what, and no organization ever needs to edit them, because grant
+    # and membership ASSIGNMENT is data in the database.
+    #   sharing_store.py       — the can_use_agent resolver every agent_key
+    #                            entry point consults, and the grant/group
+    #                            queries that widen it. A fork editing it is
+    #                            changing who may use an agent and must not
+    #                            verify INTACT.
+    #   tool_approval_store.py — the separation-of-duties kernel for tool
+    #                            grants: authors do not approve their own
+    #                            widening, sole-reviewer sign-offs are
+    #                            recorded as non-independent on the row, and
+    #                            the approved widening is what reaches the
+    #                            agent.
+    # Ruled OUT at the same time, deliberately: attention_store.py is
+    # read-only aggregation, a defect there cannot violate any policy, and
+    # the list stays minimal. Coverage fixes the RULES, not the call sites:
+    # the API routes that consult these stores remain open, the same bounded
+    # guarantee rbac.py carries.
+    "safi_app/persistence/sharing_store.py",
+    "safi_app/persistence/tool_approval_store.py",
 ]
 
 # Deterministic components: no provider imports, no model calls, ever.
