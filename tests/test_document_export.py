@@ -79,6 +79,24 @@ class PdfExport(unittest.TestCase):
         self.assertGreater(len(content), 800, "PDF suspiciously small")
 
 
+class MarkdownExport(unittest.TestCase):
+
+    def test_returns_the_source_markdown_plus_footer(self):
+        content, mimetype, ext = de.render(SAMPLE, "Quarterly Summary", "md", "Fiduciary")
+        self.assertEqual(ext, "md")
+        self.assertEqual(mimetype, "text/markdown")
+        out = content.decode("utf-8")
+        # Faithful source: the original markdown is preserved verbatim.
+        self.assertIn("# Quarterly Summary", out)
+        self.assertIn("| Alpha | 1 |", out)
+        self.assertIn("exported from SAFi", out, "transparency footer missing")
+        self.assertIn("Fiduciary", out)
+
+    def test_markdown_alias_accepted(self):
+        _, _, ext = de.render("hello", "T", "markdown")
+        self.assertEqual(ext, "md")
+
+
 class Validation(unittest.TestCase):
 
     def test_empty_text_rejected(self):

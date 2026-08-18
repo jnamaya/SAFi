@@ -289,4 +289,10 @@ def render(text: str, title: str, fmt: str,
         )
     if fmt == "pdf":
         return (_md_to_pdf(text, title, attribution), "application/pdf", "pdf")
+    if fmt in ("md", "markdown"):
+        # The faithful source: the answer's own markdown, with the same
+        # transparency footer appended as a plain markdown block. No render.
+        body = text if text.endswith("\n") else text + "\n"
+        out = f"{body}\n---\n\n_{_footer_text(attribution)}_\n"
+        return (out.encode("utf-8"), "text/markdown", "md")
     raise ValueError(f"Unsupported format '{fmt}'.")

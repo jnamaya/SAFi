@@ -82,6 +82,7 @@ function _createExportControl(getText, getAgent) {
     };
     menu.appendChild(item('PDF', 'pdf'));
     menu.appendChild(item('Word (.docx)', 'docx'));
+    menu.appendChild(item('Markdown (.md)', 'md'));
 
     btn.onclick = (e) => {
         e.stopPropagation();
