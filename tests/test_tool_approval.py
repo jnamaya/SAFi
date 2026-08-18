@@ -277,6 +277,19 @@ class TheOutcome(ToolApprovalBase):
         item = self._inbox_item(client, 'my_tool_requests')
         self.assertIsNone(item)
 
+    def test_self_approved_outcome_does_not_notify(self):
+        """A sole admin who approves their own request already knows the
+        outcome; notifying them created a row they could only dismiss
+        (found live by Nelson, 2026-08-18)."""
+        _exec("UPDATE users SET role='member' WHERE id=%s", (self.auditor,))
+        _exec("UPDATE agents SET created_by=%s WHERE agent_key=%s",
+              (self.admin, self.agent_key))
+        client = self._client(self.admin, 'admin')
+        self._put_tools(client, ['send_email'])
+        rid = tool_approval_store.list_requests(self.org, 'pending')[0]['id']
+        self.assertEqual(client.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 200)
+        self.assertIsNone(self._inbox_item(client, 'my_tool_requests'))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

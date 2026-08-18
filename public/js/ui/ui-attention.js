@@ -94,7 +94,7 @@ export async function renderSettingsInboxTab() {
         return;
     }
     list.innerHTML = `<div class="space-y-2">` + items.map(it => `
-        <div class="attention-row w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3 cursor-pointer" data-target="${esc(it.target)}">
+        <div class="attention-row w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3 cursor-pointer" data-target="${esc(it.target)}" data-dismissible="${it.dismissible ? '1' : ''}">
             <span class="min-w-[26px] h-6 px-1.5 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
             <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">${esc(it.title)}</span>
@@ -107,16 +107,25 @@ export async function renderSettingsInboxTab() {
         </div>`).join('') + `</div>`;
 
     // Deep link: we are already inside the Control Panel, so switching tab
-    // is one click on the target's own nav button. Dismiss acknowledges the
-    // caller's decided tool requests without navigating.
+    // is one click on the target's own nav button. Clicking a DISMISSIBLE
+    // row also acknowledges it first: clicking a notification is universally
+    // read as "seen", and making only the small Dismiss link clear it left
+    // rows that would not go away (Nelson, 2026-08-18). Dismiss remains for
+    // clearing without navigating.
     list.querySelectorAll('.attention-row').forEach(row =>
-        row.addEventListener('click', () =>
-            document.getElementById(`nav-${row.dataset.target}`)?.click()));
+        row.addEventListener('click', async () => {
+            if (row.dataset.dismissible === '1') {
+                try { await api.acknowledgeToolOutcomes(); } catch (err) { /* retry next open */ }
+                refreshBadge();
+            }
+            document.getElementById(`nav-${row.dataset.target}`)?.click();
+        }));
     list.querySelectorAll('.attention-dismiss').forEach(btn =>
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             try {
                 await api.acknowledgeToolOutcomes();
+                refreshBadge();
                 renderSettingsInboxTab();
             } catch (err) {
                 // leave the row; the next open retries

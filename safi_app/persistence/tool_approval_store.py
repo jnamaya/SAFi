@@ -211,8 +211,10 @@ def pending_summary(org_id):
 
 def unacknowledged_outcomes(user_id):
     """The caller's own decided requests they have not dismissed yet, for
-    the inbox (backlog 57c). Superseded is excluded: the requester caused
-    those themselves by filing a newer ask."""
+    the inbox (backlog 57c). Two exclusions: superseded (the requester
+    caused those themselves by filing a newer ask) and decisions the
+    requester made themselves (a sole-admin self-approval is not news to
+    the person who clicked Approve)."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -223,6 +225,7 @@ def unacknowledged_outcomes(user_id):
             FROM agent_tool_requests r
             WHERE r.requested_by = %s AND r.status IN ('approved','rejected')
               AND r.acknowledged_at IS NULL
+              AND (r.reviewed_by IS NULL OR r.reviewed_by != r.requested_by)
             ORDER BY r.reviewed_at ASC
             """, (user_id,))
         rows = [_load(r) for r in cursor.fetchall()]
