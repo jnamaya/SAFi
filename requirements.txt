@@ -52,6 +52,13 @@ pypdf>=6.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 lxml>=5.0.0
+# Governed-answer document export (core/services/document_export.py). markdown
+# renders the answer's markdown to HTML; xhtml2pdf turns that HTML into a PDF.
+# Both are pure-Python wheels (xhtml2pdf pulls reportlab + html5lib), so no apt
+# packages and no Dockerfile change — unlike weasyprint, which needs pango/cairo.
+# DOCX uses python-docx above.
+markdown>=3.5
+xhtml2pdf>=0.2.16
 
 # ── MCP Protocol ──────────────────────────────────────────────────────────────
 mcp>=1.0.0

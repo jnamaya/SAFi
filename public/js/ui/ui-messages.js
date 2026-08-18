@@ -2,6 +2,7 @@
 
 import { formatTime } from '../core/utils.js';
 import * as ui from './ui.js';
+import * as api from '../core/api.js';
 import { getAvatarForProfile } from './ui-auth-sidebar.js';
 import { playSpeech } from '../services/tts-audio.js';
 import { iconPlay } from './ui-render-constants.js';
@@ -13,6 +14,86 @@ const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBo
 const iconBookmark = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>`;
 const iconShield = `<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
 const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
+const iconDownload = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>`;
+
+// Export-menu outside-click close: bind once for the whole module, not per
+// message (a listener per rendered message would leak).
+let _exportOutsideBound = false;
+function _bindExportOutsideClose() {
+    if (_exportOutsideBound) return;
+    _exportOutsideBound = true;
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.export-menu:not(.hidden)')
+            .forEach(m => m.classList.add('hidden'));
+    });
+}
+
+// A document needs a title. Prefer the answer's first markdown heading, else
+// its first non-empty line trimmed to a sensible length, else a default.
+function _deriveDocTitle(raw) {
+    const lines = String(raw || '').split('\n');
+    for (const ln of lines) {
+        const h = ln.match(/^#{1,6}\s+(.*)$/);
+        if (h && h[1].trim()) return h[1].trim().slice(0, 80);
+    }
+    for (const ln of lines) {
+        const t = ln.trim().replace(/[*_`#>-]/g, '').trim();
+        if (t) return t.slice(0, 60);
+    }
+    return 'SAFi Document';
+}
+
+// The [Export ▾] control: a button that opens a small PDF / Word menu. Renders
+// the already-governed answer to a downloadable file via the export endpoint.
+function _createExportControl(getText, getAgent) {
+    _bindExportOutsideClose();
+    const wrap = document.createElement('div');
+    wrap.className = 'export-control relative shrink-0';
+
+    const btn = document.createElement('button');
+    btn.className = 'export-btn shrink-0';
+    btn.innerHTML = iconDownload;
+    btn.title = 'Download as document';
+    btn.setAttribute('aria-label', 'Download this response as a document');
+
+    const menu = document.createElement('div');
+    menu.className = 'export-menu hidden absolute z-50 bottom-full mb-1 left-0 min-w-[150px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
+
+    const item = (label, fmt) => {
+        const b = document.createElement('button');
+        b.className = 'block w-full text-left px-3 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700';
+        b.textContent = label;
+        b.onclick = async (e) => {
+            e.stopPropagation();
+            menu.classList.add('hidden');
+            try {
+                ui.showToast(`Preparing ${label}…`, 'info');
+                await api.exportDocument({
+                    text: getText(),
+                    format: fmt,
+                    title: _deriveDocTitle(getText()),
+                    agent: getAgent(),
+                });
+            } catch (err) {
+                ui.showToast(err.message || 'Export failed', 'error');
+            }
+        };
+        return b;
+    };
+    menu.appendChild(item('PDF', 'pdf'));
+    menu.appendChild(item('Word (.docx)', 'docx'));
+
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        const open = !menu.classList.contains('hidden');
+        document.querySelectorAll('.export-menu').forEach(m => m.classList.add('hidden'));
+        if (!open) menu.classList.remove('hidden');
+    };
+
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
+    return wrap;
+}
 
 // --- MARKDOWN SETUP ---
 const renderer = new marked.Renderer();
@@ -476,7 +557,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageDiv.className = `message ${sender}`;
 
     // Define buttons variable here
-    let ttsBtn, copyBtn, retryBtn, saveBtn, redoBtn;
+    let ttsBtn, copyBtn, retryBtn, saveBtn, redoBtn, exportCtrl;
 
     // 1. BUILD BASIC STRUCTURE (No text yet for AI)
         if (sender === 'ai') {
@@ -498,6 +579,12 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
                 setTimeout(() => copyBtn.innerHTML = iconCopy, 2000);
             });
         };
+
+        // Export the governed answer as a formatted DOCX/PDF (backlog 66).
+        exportCtrl = _createExportControl(
+            () => final_text_raw,
+            () => payload?.profile || '',
+        );
 
         // Redo: re-ask the prompt that produced this answer. Handed in by
         // chat.js because regenerating means re-entering sendMessage with the
@@ -601,6 +688,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         if (copyBtn) bar.appendChild(copyBtn);
         if (saveBtn) bar.appendChild(saveBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
+        if (exportCtrl) bar.appendChild(exportCtrl);
         if (redoBtn) bar.appendChild(redoBtn);
 
         const stamp = document.createElement('div');

@@ -34,6 +34,7 @@ export const urls = {
     AUDIT: j('/api/audit_result'),
     DELETE_ACCOUNT: j('/api/me/delete'),
     TTS: j('/api/tts_audio'),
+    EXPORT_DOCUMENT: j('/api/export_document'),
     MY_PROFILE: j('/api/me/profile'),
     AGENTS: j('/api/agents'),
     TOOLS: j('/api/agents/tools'),
@@ -255,6 +256,41 @@ export const fetchTTSAudio = async (text) => {
         throw new Error('TTS audio generation failed.');
     }
     return response.blob();
+};
+
+// Export a governed answer as a downloadable DOCX/PDF (backlog 66). Streams the
+// file over an authenticated POST (same auth as TTS), then triggers a browser
+// download via a blob URL — <a download> works on plain HTTP, unlike the
+// file-picker APIs. Returns nothing; throws on failure so the caller can toast.
+export const exportDocument = async ({ text, format, title, agent }) => {
+    const headers = await createHeaders();
+    const response = await fetch(urls.EXPORT_DOCUMENT, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text, format, title, agent }),
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        let msg = 'Document export failed.';
+        try { const j = await response.json(); if (j && j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+    }
+    const blob = await response.blob();
+
+    // Filename from Content-Disposition, else a sensible default.
+    let filename = `${(title || 'SAFi-Document').replace(/[^A-Za-z0-9 _-]/g, '').trim() || 'SAFi-Document'}.${format}`;
+    const cd = response.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    if (m) filename = m[1];
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
 };
 
 // Returns the raw Response so the caller can stream the body

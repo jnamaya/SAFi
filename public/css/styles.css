@@ -1914,7 +1914,8 @@ html.native body { font-size: 14px; }
 .msg-actionbar .tts-btn,
 .msg-actionbar .copy-btn,
 .msg-actionbar .save-btn,
-.msg-actionbar .redo-btn {
+.msg-actionbar .redo-btn,
+.msg-actionbar .export-btn {
   width: 26px;
   height: 26px;
 }
@@ -1964,7 +1965,8 @@ html.native body { font-size: 14px; }
 .tts-btn,
 .copy-btn,
 .save-btn,
-.redo-btn {
+.redo-btn,
+.export-btn {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -1981,7 +1983,8 @@ html.native body { font-size: 14px; }
 .tts-btn:hover,
 .copy-btn:hover,
 .save-btn:hover,
-.redo-btn:hover {
+.redo-btn:hover,
+.export-btn:hover {
   color: var(--fg) !important;
   background: rgba(0, 0, 0, 0.04) !important;
   border-color: rgba(0, 0, 0, 0.05) !important;
@@ -1990,14 +1993,16 @@ html.native body { font-size: 14px; }
 
 .dark .tts-btn:hover,
 .dark .copy-btn:hover,
-.dark .save-btn:hover {
+.dark .save-btn:hover,
+.dark .export-btn:hover {
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .tts-btn:active,
 .copy-btn:active,
-.save-btn:active {
+.save-btn:active,
+.export-btn:active {
   transform: scale(0.95);
 }
 

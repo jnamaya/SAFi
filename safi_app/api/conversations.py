@@ -406,6 +406,46 @@ def tts_audio_endpoint():
         return jsonify({"error": "Failed to process audio request."}), 500
 
 
+@conversations_bp.route('/export_document', methods=['POST'])
+def export_document_endpoint():
+    """Render a governed answer to a downloadable DOCX or PDF (backlog 66).
+
+    A deterministic render of text the Will already approved — no model call,
+    same trust model as /tts_audio, which turns a governed answer into audio.
+    The client sends the answer it is displaying; the endpoint only formats it,
+    so it creates no new governed content and needs no faculty involvement."""
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+
+    data = request.get_json() or {}
+    text = data.get('text')
+    fmt = (data.get('format') or 'pdf').lower()
+    title = (data.get('title') or '').strip()
+    attribution = (data.get('agent') or '').strip() or None
+    if not text:
+        return jsonify({"error": "Missing 'text' in request body."}), 400
+
+    from ..core.services import document_export
+    try:
+        content, mimetype, ext = document_export.render(text, title, fmt, attribution)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Document export failed ({fmt}): {e}")
+        return jsonify({"error": "Failed to generate the document."}), 500
+
+    # Filename from the title, sanitized to a safe basename.
+    base = re.sub(r'[^A-Za-z0-9 _-]', '', title).strip() or 'SAFi-Document'
+    filename = f"{base[:80]}.{ext}"
+
+    resp = Response(content, mimetype=mimetype)
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp.headers['Content-Length'] = len(content)
+    resp.headers['X-Generated-By'] = 'SAFi'
+    return resp
+
+
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
 async def public_process_prompt_endpoint():
     """
