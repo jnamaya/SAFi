@@ -263,8 +263,8 @@ function validateCurrentStep() {
 }
 
 // --- SUBMIT ---
-async function submitPolicy() {
-    const btn = document.getElementById('pw-next-btn');
+async function submitPolicy(btn = null) {
+    btn = btn || document.getElementById('pw-next-btn');
     btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Saving...`;
     btn.disabled = true;
 
@@ -382,7 +382,13 @@ function ensureWizardInlineExists() {
 
         <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0 footer-container">
             <button id="pw-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
-            <button id="pw-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+            <div class="flex items-center gap-3">
+                <!-- Edit mode only: save from any step without walking to the
+                     end. Runs the same submitPolicy path as the final step,
+                     after validating the step on screen. -->
+                <button id="pw-save-btn" class="hidden px-6 py-2.5 rounded-lg text-sm font-semibold text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-50 transition-colors">Save Changes</button>
+                <button id="pw-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+            </div>
         </div>
     </div>`;
 
@@ -390,6 +396,11 @@ function ensureWizardInlineExists() {
     document.getElementById('close-pw-btn').addEventListener('click', () => closeWizard(false));
     document.getElementById('pw-back-btn').addEventListener('click', prevStep);
     document.getElementById('pw-next-btn').addEventListener('click', nextStep);
+    document.getElementById('pw-save-btn').addEventListener('click', async () => {
+        if (!validateCurrentStep()) return;
+        saveDraft();
+        await submitPolicy(document.getElementById('pw-save-btn'));
+    });
 
     // Step labels navigate BACK to any earlier step. Forward stays gated
     // behind Next so per-step validation can't be skipped.
@@ -419,6 +430,15 @@ function updateProgress() {
     nextBtn.innerText = currentStep === TOTAL_STEPS
         ? (policyData.policy_id ? 'Save Changes' : 'Create Policy')
         : 'Next';
+
+    // Save-from-any-step, edit mode only (a policy_id exists only on edits;
+    // a half-built create must not be saveable). Hidden on the last step,
+    // where Next IS the save, and on the success screen.
+    const saveBtn = document.getElementById('pw-save-btn');
+    if (saveBtn) {
+        if (policyData.policy_id && currentStep < TOTAL_STEPS) saveBtn.classList.remove('hidden');
+        else saveBtn.classList.add('hidden');
+    }
 
     const view = document.getElementById('policy-wizard-view');
     const footer = view.querySelector('.footer-container');

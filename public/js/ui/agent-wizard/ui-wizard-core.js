@@ -41,9 +41,6 @@ export let agentData = {
     policy_id: "standalone",
     is_update_mode: false,
     visibility: "private",
-    intellect_model: "",
-    will_model: "",
-    conscience_model: "",
     rag_knowledge_base: "",
     rag_format_string: "",
     tools: [],
@@ -69,9 +66,6 @@ export function openAgentWizard(existingAgent = null) {
             policy_id: existingAgent.policy_id || "standalone",
             visibility: existingAgent.visibility || "private",
             is_update_mode: isUpdate,
-            intellect_model: existingAgent.intellect_model || "",
-            will_model: existingAgent.will_model || "",
-            conscience_model: existingAgent.conscience_model || "",
             rag_knowledge_base: existingAgent.rag_knowledge_base || "",
             rag_format_string: existingAgent.rag_format_string || "",
             tools: existingAgent.tools || [],
@@ -97,9 +91,6 @@ export function openAgentWizard(existingAgent = null) {
             policy_id: "standalone",
             visibility: "private",
             is_update_mode: false,
-            intellect_model: "",
-            will_model: "",
-            conscience_model: "",
             rag_knowledge_base: "",
             rag_format_string: "",
             tools: [],
@@ -188,7 +179,13 @@ function ensureWizardInlineExists() {
             <!-- Footer -->
             <div class="bg-gray-50 dark:bg-neutral-950 px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 flex justify-between shrink-0">
                 <button id="wizard-back-btn" class="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-50 transition-colors">Back</button>
-                <button id="wizard-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+                <div class="flex items-center gap-3">
+                    <!-- Edit mode only: save from any step without walking to
+                         Review. Runs the same finishWizard path as the final
+                         step, after validating the step on screen. -->
+                    <button id="wizard-save-btn" class="hidden px-6 py-2.5 rounded-lg text-sm font-semibold text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-50 transition-colors">Save Changes</button>
+                    <button id="wizard-next-btn" class="px-8 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">Next</button>
+                </div>
             </div>
         </div>
     `;
@@ -197,6 +194,10 @@ function ensureWizardInlineExists() {
     document.getElementById('close-wizard-btn').addEventListener('click', closeWizard);
     document.getElementById('wizard-back-btn').addEventListener('click', prevStep);
     document.getElementById('wizard-next-btn').addEventListener('click', nextStep);
+    document.getElementById('wizard-save-btn').addEventListener('click', () => {
+        if (!validateCurrentStep()) return;
+        finishWizard(document.getElementById('wizard-save-btn'));
+    });
 }
 
 function updateProgress() {
@@ -226,6 +227,14 @@ function updateProgress() {
     nextBtn.innerText = currentStep === TOTAL_STEPS
         ? (isEdit ? 'Save Changes' : 'Create Agent')
         : 'Next';
+
+    // Save-from-any-step, edit mode only: a half-built create must not be
+    // saveable. Hidden on the last step, where Next IS the save.
+    const saveBtn = document.getElementById('wizard-save-btn');
+    if (saveBtn) {
+        if (isEdit && currentStep < TOTAL_STEPS) saveBtn.classList.remove('hidden');
+        else saveBtn.classList.add('hidden');
+    }
 }
 
 async function renderStep(step) {
@@ -306,8 +315,8 @@ function validateCurrentStep() {
     }
 }
 
-async function finishWizard() {
-    const btn = document.getElementById('wizard-next-btn');
+async function finishWizard(btn = null) {
+    btn = btn || document.getElementById('wizard-next-btn');
     const originalText = btn.innerText;
     btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Saving...`;
     btn.disabled = true;
