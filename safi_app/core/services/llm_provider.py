@@ -76,6 +76,15 @@ class LLMProvider:
             except Exception as e:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
+    def _capture_usage(self, route, provider_name, model_name, provider_type, resp):
+        """Record the call's token counts for the Usage & Cost tab (backlog 61).
+        Attribution (org, agent) comes from context vars; failures are logged
+        and swallowed inside usage_tracking — never a broken turn."""
+        from .usage_tracking import extract_usage, record_usage
+        usage = extract_usage(provider_type, resp)
+        if usage:
+            record_usage(route, provider_name, model_name, usage[0], usage[1])
+
     async def _chat_completion(
         self,
         route: str,
@@ -219,7 +228,8 @@ class LLMProvider:
                  params["max_tokens"] = max_tokens
 
             resp = await client.chat.completions.create(**params)
-            
+            self._capture_usage(route, provider_name, model_name, provider_type, resp)
+
             # OpenAI Tool Use Handling
             msg = resp.choices[0].message
             if msg.tool_calls:
@@ -257,7 +267,8 @@ class LLMProvider:
                 kwargs["tools"] = anthropic_tools
 
             resp = await client.messages.create(**kwargs)
-            
+            self._capture_usage(route, provider_name, model_name, provider_type, resp)
+
             # Check for tool use
             if resp.stop_reason == "tool_use":
                 tool_calls = []
@@ -330,7 +341,8 @@ class LLMProvider:
             except Exception as e:
                 self.log.error(f"Gemini generation failed: {e}")
                 return "{}"
-            
+            self._capture_usage(route, provider_name, model_name, provider_type, resp)
+
             # --- GEMINI FIX: Safe Text Access & Tool Check ---
             try:
                 if getattr(resp, 'function_calls', None):

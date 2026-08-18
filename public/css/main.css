@@ -3724,6 +3724,10 @@ video {
   border-color: rgb(38 38 38 / var(--tw-border-opacity, 1));
 }
 
+.dark\:border-neutral-800\/60:is(.dark *) {
+  border-color: rgb(38 38 38 / 0.6);
+}
+
 .dark\:border-red-800:is(.dark *) {
   --tw-border-opacity: 1;
   border-color: rgb(153 27 27 / var(--tw-border-opacity, 1));

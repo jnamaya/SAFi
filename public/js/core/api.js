@@ -459,6 +459,10 @@ export async function getMyOrganization() {
     return httpGet(urls.ORG_ME);
 }
 
+export async function getOrgUsage(orgId, days = 30) {
+    return httpGet(`/api/organizations/${orgId}/usage?days=${days}`);
+}
+
 export async function saveOrganization(orgData) {
     // If we were editing, we'd use PUT, but currently we only confirm creation via Wizard
     // which uses this. If we implement "Update Settings", we will need a PUT route.

@@ -151,6 +151,8 @@ export function setupControlPanelTabs() {
                 );
             } else if (tabId === 'tools') {
                 import('./ui-settings-tools.js').then(m => m.renderSettingsToolsTab());
+            } else if (tabId === 'usage') {
+                import('./ui-settings-usage.js').then(m => m.renderSettingsUsageTab());
             } else if (tabId === 'knowledge') {
                 renderSettingsKnowledgeTab();
             } else if (tabId === 'help') {

@@ -839,6 +839,28 @@ def init_db():
             )
         ''')
 
+        # --- LLM token usage (backlog 61, Usage & Cost tab) ---
+        # One row per provider call, written fire-and-forget from
+        # usage_tracking.record_usage. Plaintext by design: token counts are
+        # operational telemetry, not governance evidence, and the Usage & Cost
+        # tab aggregates them per org. NULL org_id = ungoverned context (no
+        # active org); those rows never surface in any org's tab. No FKs
+        # (house style). Dollars are computed at display time, never stored.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                org_id CHAR(36) NULL,
+                agent VARCHAR(64) NULL,
+                route VARCHAR(32) NOT NULL,
+                provider VARCHAR(40) NOT NULL,
+                model VARCHAR(128) NOT NULL,
+                tokens_in INT NOT NULL DEFAULT 0,
+                tokens_out INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_llm_usage_org (org_id, created_at)
+            )
+        ''')
+
         # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
         # Workflow state only — the regulatory evidence for each disposition is
         # the 'review' entry appended to chat_audit_trail in the same
@@ -4187,6 +4209,74 @@ def list_compliance_log(org_id, limit=20):
                 except (ValueError, TypeError):
                     pass
         return rows
+    finally:
+        cursor.close()
+        conn.close()
+
+def insert_llm_usage(org_id, agent, route, provider, model, tokens_in, tokens_out):
+    """One row per provider call (backlog 61). Called fire-and-forget from
+    usage_tracking.record_usage, which swallows any failure here — a usage
+    write must never break a chat turn."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO llm_usage (org_id, agent, route, provider, model, tokens_in, tokens_out) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (org_id, agent, route, provider, model, int(tokens_in), int(tokens_out)),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_org_llm_usage(org_id, days=30):
+    """Aggregated token usage for one org's Usage & Cost tab. Raw counts only;
+    dollar estimates are computed at display time from the price map."""
+    days = max(1, min(int(days), 365))
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        window = "org_id=%s AND created_at >= NOW() - INTERVAL %s DAY"
+        cursor.execute(
+            f"SELECT DATE(created_at) AS day, COUNT(*) AS calls, "
+            f"SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out "
+            f"FROM llm_usage WHERE {window} GROUP BY day ORDER BY day DESC",
+            (org_id, days),
+        )
+        by_day = cursor.fetchall()
+        cursor.execute(
+            f"SELECT provider, model, COUNT(*) AS calls, "
+            f"SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out "
+            f"FROM llm_usage WHERE {window} GROUP BY provider, model "
+            f"ORDER BY tokens_out DESC",
+            (org_id, days),
+        )
+        by_model = cursor.fetchall()
+        cursor.execute(
+            f"SELECT route, COUNT(*) AS calls, "
+            f"SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out "
+            f"FROM llm_usage WHERE {window} GROUP BY route ORDER BY tokens_out DESC",
+            (org_id, days),
+        )
+        by_route = cursor.fetchall()
+        cursor.execute(
+            f"SELECT COALESCE(agent, '(none)') AS agent, COUNT(*) AS calls, "
+            f"SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out "
+            f"FROM llm_usage WHERE {window} GROUP BY agent ORDER BY tokens_out DESC",
+            (org_id, days),
+        )
+        by_agent = cursor.fetchall()
+        # MySQL SUM() returns Decimal and DATE() returns date; make it JSON-safe.
+        for rows in (by_day, by_model, by_route, by_agent):
+            for r in rows:
+                if "day" in r:
+                    r["day"] = str(r["day"])
+                r["tokens_in"] = int(r["tokens_in"] or 0)
+                r["tokens_out"] = int(r["tokens_out"] or 0)
+                r["calls"] = int(r["calls"] or 0)
+        return {"days": days, "by_day": by_day, "by_model": by_model,
+                "by_route": by_route, "by_agent": by_agent}
     finally:
         cursor.close()
         conn.close()

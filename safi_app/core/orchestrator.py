@@ -125,6 +125,7 @@ from .orchestrator_mixins.tasks import BackgroundTasksMixin, apply_memory_budget
 from .services import LLMProvider, RAGService, MCPManager
 from .services.model_routing import detect_provider, build_providers_config
 from .services.provider_governance import activate_org
+from .services.usage_tracking import activate_agent
 from .services import review_alerts
 
 # Configure basic logging
@@ -611,6 +612,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # (Intellect, Conscience, backgrounds via _submit_bg) checks this
         # context and fails closed on a disallowed provider.
         activate_org(org_id or (self.profile or {}).get("org_id"))
+        # Usage attribution rides the same context (backlog 61).
+        activate_agent(self.active_profile_name)
 
         now_utc = datetime.now(timezone.utc)
         current_date_string = _current_date_line(now_utc, user_timezone)
@@ -1426,6 +1429,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # Per-org provider governance: the Conscience audit below must honor
         # the governing org's provider allow-list, same as a native turn.
         activate_org(org_id or (self.profile or {}).get("org_id"))
+        # Usage attribution rides the same context (backlog 61).
+        activate_agent(self.active_profile_name)
 
         if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
             return {"error": "duplicate message_id", "messageId": message_id, "duplicate": True}

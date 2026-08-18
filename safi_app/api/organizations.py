@@ -119,6 +119,29 @@ def verify_domain_dns():
         current_app.logger.error(f"DNS Lookup Failed: {e}")
         return jsonify({"error": f"DNS Lookup Failed: {str(e)}"}), 500
 
+@organizations_bp.route('/organizations/<org_id>/usage', methods=['GET'])
+@require_role('admin')
+def get_org_usage(org_id):
+    """
+    [GET /api/organizations/<org_id>/usage?days=30]
+    Aggregated LLM token usage for the Usage & Cost tab (backlog 61).
+    Raw counts plus the display-time price map; dollars are computed in the
+    browser so a price change never rewrites stored history.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        days = request.args.get('days', 30, type=int)
+        from ..core.services.usage_tracking import get_price_map
+        return jsonify({
+            "ok": True,
+            "usage": db.get_org_llm_usage(org_id, days=days),
+            "prices": get_price_map(),
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error fetching org usage: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
 @organizations_bp.route('/organizations/domain/cancel', methods=['POST'])
 @require_role('admin')
 def cancel_domain_verification():

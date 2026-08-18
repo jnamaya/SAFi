@@ -547,6 +547,14 @@ function renderControlPanel() {
     else navTools.classList.add('hidden');
   }
 
+  // Usage & Cost: admin only, same contract as Tools Catalog — the endpoint
+  // behind it is require_role('admin').
+  const navUsage = document.getElementById('nav-usage');
+  if (navUsage) {
+    if (user.role === 'admin') navUsage.classList.remove('hidden');
+    else navUsage.classList.add('hidden');
+  }
+
   // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {
