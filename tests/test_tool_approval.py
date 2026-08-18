@@ -220,5 +220,63 @@ class TheReview(ToolApprovalBase):
         self.assertIn('tool_requests', keys)
 
 
+class TheOutcome(ToolApprovalBase):
+    """57c: the requester sees the decision in their inbox until they
+    dismiss it. Superseded requests never notify: the requester caused
+    those themselves."""
+
+    def _file_and_decide(self, decision, reason=None):
+        self._put_tools(self._client(self.editor, 'editor'), ['send_email'])
+        rid = tool_approval_store.list_requests(self.org, 'pending')[0]['id']
+        admin = self._client(self.admin, 'admin')
+        if decision == 'approve':
+            self.assertEqual(admin.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 200)
+        else:
+            self.assertEqual(admin.post(f'/api/agents/tool-requests/{rid}/reject',
+                                        json={"reason": reason}).status_code, 200)
+        return rid
+
+    def _inbox_item(self, client, key):
+        payload = client.get('/api/attention').get_json()
+        return next((i for i in payload['items'] if i['key'] == key), None)
+
+    def test_requester_sees_the_approval(self):
+        self._file_and_decide('approve')
+        item = self._inbox_item(self._client(self.editor, 'editor'), 'my_tool_requests')
+        self.assertIsNotNone(item)
+        self.assertTrue(item['dismissible'])
+        self.assertTrue(any('approved' in x for x in item['examples']))
+
+    def test_requester_sees_the_rejection_with_reason(self):
+        self._file_and_decide('reject', reason='not needed')
+        item = self._inbox_item(self._client(self.editor, 'editor'), 'my_tool_requests')
+        self.assertIsNotNone(item)
+        self.assertTrue(any('rejected' in x and 'not needed' in x for x in item['examples']))
+
+    def test_the_reviewer_does_not_get_the_outcome(self):
+        self._file_and_decide('approve')
+        item = self._inbox_item(self._client(self.admin, 'admin'), 'my_tool_requests')
+        self.assertIsNone(item, "outcomes belong to the requester, not the reviewer")
+
+    def test_dismiss_clears_it_and_only_for_the_caller(self):
+        self._file_and_decide('approve')
+        editor = self._client(self.editor, 'editor')
+        # Another user's dismiss must not clear the editor's outcome.
+        r = self._client(self.member, 'member').post('/api/agents/tool-requests/acknowledge')
+        self.assertEqual(r.get_json()['cleared'], 0)
+        self.assertIsNotNone(self._inbox_item(editor, 'my_tool_requests'))
+        # The requester's own dismiss does.
+        r = editor.post('/api/agents/tool-requests/acknowledge')
+        self.assertEqual(r.get_json()['cleared'], 1)
+        self.assertIsNone(self._inbox_item(editor, 'my_tool_requests'))
+
+    def test_superseded_requests_never_notify(self):
+        client = self._client(self.editor, 'editor')
+        self._put_tools(client, ['send_email'])
+        self._put_tools(client, ['calendar'])  # supersedes the first
+        item = self._inbox_item(client, 'my_tool_requests')
+        self.assertIsNone(item)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

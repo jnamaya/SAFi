@@ -794,6 +794,19 @@ def approve_tool_request(request_id):
     return jsonify({"ok": True, "tools": new_tools, "self_approved": self_approved})
 
 
+@agent_api_bp.route('/agents/tool-requests/acknowledge',
+                    methods=['POST'], strict_slashes=False)
+def acknowledge_tool_outcomes():
+    """The requester dismisses their decided requests from the inbox
+    (backlog 57c). Scoped to the caller's own rows by construction."""
+    user = session.get('user')
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+    uid = user.get('id') or user.get('sub')
+    cleared = tool_approval_store.acknowledge_outcomes(uid)
+    return jsonify({"ok": True, "cleared": cleared})
+
+
 @agent_api_bp.route('/agents/tool-requests/<request_id>/reject',
                     methods=['POST'], strict_slashes=False)
 def reject_tool_request(request_id):

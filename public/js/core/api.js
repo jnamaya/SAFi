@@ -307,6 +307,9 @@ export async function approveToolRequest(requestId) {
 export async function rejectToolRequest(requestId, reason = '') {
     return httpJSON(`/api/agents/tool-requests/${requestId}/reject`, 'POST', { reason });
 }
+export async function acknowledgeToolOutcomes() {
+    return httpJSON('/api/agents/tool-requests/acknowledge', 'POST', {});
+}
 
 // --- Attention inbox: everything waiting on this user, role-aware ---
 

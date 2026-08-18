@@ -23,10 +23,16 @@ _CATEGORIES = {
     "kb_documents":  ("knowledge", "Documents awaiting review"),
     "review_queue":  ("review", "Flagged turns awaiting disposition"),
     "tool_requests": ("agents", "Tool grants awaiting approval"),
+    "my_tool_requests": ("agents", "Your tool requests: decided"),
     "invitations":   ("organization", "Open invitations"),
     "incidents":     ("compliance", "Open security incidents"),
     "schedules":     ("schedules", "Scheduled updates failing"),
 }
+
+# Categories that are information rather than work: the reader may dismiss
+# them, the one exception to "items leave on their own once the work is
+# done" (an outcome has no work to do the leaving).
+_DISMISSIBLE = {"my_tool_requests"}
 
 
 def _item(key, agg):
@@ -38,6 +44,7 @@ def _item(key, agg):
         "count": agg["count"],
         "oldest": agg["oldest"].isoformat() if agg.get("oldest") else None,
         "examples": agg.get("examples") or [],
+        "dismissible": key in _DISMISSIBLE,
     }
 
 
@@ -50,13 +57,20 @@ def get_attention():
     org_id = user.get('org_id')
 
     items = []
-    # Everyone: their own failing schedules.
+    # Everyone: their own failing schedules, and the outcomes of their own
+    # tool requests (backlog 57c).
     try:
         agg = attention_store.failed_schedules(user_id)
         if agg["count"]:
             items.append(_item("schedules", agg))
     except Exception:
         pass  # a broken source must never take the inbox down
+    try:
+        agg = tool_approval_store.unacknowledged_outcomes(user_id)
+        if agg["count"]:
+            items.append(_item("my_tool_requests", agg))
+    except Exception:
+        pass
 
     if org_id and check_any_role(('admin', 'auditor')):
         for key, fn in (("kb_documents", attention_store.pending_kb_documents),

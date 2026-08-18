@@ -94,20 +94,32 @@ export async function renderSettingsInboxTab() {
         return;
     }
     list.innerHTML = `<div class="space-y-2">` + items.map(it => `
-        <button type="button" data-target="${esc(it.target)}"
-            class="attention-row w-full text-left px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3">
+        <div class="attention-row w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3 cursor-pointer" data-target="${esc(it.target)}">
             <span class="min-w-[26px] h-6 px-1.5 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
             <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">${esc(it.title)}</span>
                 ${it.examples && it.examples.length ? `<span class="block text-xs text-gray-500 truncate mt-0.5">${esc(it.examples.join(', '))}</span>` : ''}
                 ${age(it.oldest) ? `<span class="block text-[11px] text-gray-400 mt-0.5">${esc(age(it.oldest))}</span>` : ''}
             </span>
-            <svg class="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-        </button>`).join('') + `</div>`;
+            ${it.dismissible
+                ? `<button type="button" class="attention-dismiss text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:underline shrink-0 mt-1">Dismiss</button>`
+                : `<svg class="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`}
+        </div>`).join('') + `</div>`;
 
     // Deep link: we are already inside the Control Panel, so switching tab
-    // is one click on the target's own nav button.
-    list.querySelectorAll('.attention-row').forEach(btn =>
-        btn.addEventListener('click', () =>
-            document.getElementById(`nav-${btn.dataset.target}`)?.click()));
+    // is one click on the target's own nav button. Dismiss acknowledges the
+    // caller's decided tool requests without navigating.
+    list.querySelectorAll('.attention-row').forEach(row =>
+        row.addEventListener('click', () =>
+            document.getElementById(`nav-${row.dataset.target}`)?.click()));
+    list.querySelectorAll('.attention-dismiss').forEach(btn =>
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                await api.acknowledgeToolOutcomes();
+                renderSettingsInboxTab();
+            } catch (err) {
+                // leave the row; the next open retries
+            }
+        }));
 }

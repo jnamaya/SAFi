@@ -69,6 +69,13 @@ def init_schema() -> None:
                         row[0], coll)
             cursor.execute(
                 f"ALTER TABLE agent_tool_requests CONVERT TO CHARACTER SET {charset} COLLATE {coll}")
+        # Requester acknowledgment (backlog 57c): NULL until the requester
+        # dismisses the outcome from their inbox. Workflow state on the
+        # workflow row, so the inbox stays derived.
+        cursor.execute("SHOW COLUMNS FROM agent_tool_requests LIKE 'acknowledged_at'")
+        if not cursor.fetchone():
+            cursor.execute(
+                "ALTER TABLE agent_tool_requests ADD COLUMN acknowledged_at TIMESTAMP NULL")
         conn.commit()
     finally:
         cursor.close()
@@ -200,3 +207,52 @@ def pending_summary(org_id):
     return {"count": len(rows),
             "oldest": rows[0]['created_at'] if rows else None,
             "examples": examples}
+
+
+def unacknowledged_outcomes(user_id):
+    """The caller's own decided requests they have not dismissed yet, for
+    the inbox (backlog 57c). Superseded is excluded: the requester caused
+    those themselves by filing a newer ask."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT r.*,
+                   (SELECT a.name FROM agents a WHERE a.agent_key = r.agent_key) AS agent_name
+            FROM agent_tool_requests r
+            WHERE r.requested_by = %s AND r.status IN ('approved','rejected')
+              AND r.acknowledged_at IS NULL
+            ORDER BY r.reviewed_at ASC
+            """, (user_id,))
+        rows = [_load(r) for r in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+    examples = []
+    for r in rows[:3]:
+        name = r.get('agent_name') or r['agent_key']
+        label = f"{name}: {r['status']} (+{', +'.join(r.get('added') or [])})"
+        if r['status'] == 'rejected' and r.get('reason'):
+            label += f": {r['reason']}"
+        examples.append(label)
+    return {"count": len(rows),
+            "oldest": rows[0]['reviewed_at'] if rows else None,
+            "examples": examples}
+
+
+def acknowledge_outcomes(user_id) -> int:
+    """Dismiss all of the caller's decided-and-unseen outcomes. Scoped to
+    requested_by, so nobody can clear anyone else's inbox."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE agent_tool_requests SET acknowledged_at=UTC_TIMESTAMP() "
+            "WHERE requested_by=%s AND status IN ('approved','rejected') "
+            "AND acknowledged_at IS NULL", (user_id,))
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        cursor.close()
+        conn.close()
