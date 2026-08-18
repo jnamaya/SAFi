@@ -861,6 +861,22 @@ def init_db():
             )
         ''')
 
+        # --- Operator-added models (backlog 63, Model Catalog section) ---
+        # Extends the hardcoded Config.AVAILABLE_MODELS from the GUI. The
+        # provider is EXPLICIT because detect_provider's prefix heuristics
+        # default to groq: a custom id must never depend on guessable
+        # spelling. Deployment-wide (models are offered to every org and
+        # then filtered by each org's provider allow-list, same as built-ins).
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS custom_models (
+                model_id VARCHAR(128) PRIMARY KEY,
+                label VARCHAR(120) NOT NULL,
+                provider VARCHAR(40) NOT NULL,
+                created_by VARCHAR(255) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
         # Workflow state only — the regulatory evidence for each disposition is
         # the 'review' entry appended to chat_audit_trail in the same
@@ -4277,6 +4293,72 @@ def get_org_llm_usage(org_id, days=30):
                 r["calls"] = int(r["calls"] or 0)
         return {"days": days, "by_day": by_day, "by_model": by_model,
                 "by_route": by_route, "by_agent": by_agent}
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_custom_models():
+    """Operator-added models (backlog 63), oldest first for a stable picker."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT model_id, label, provider, created_by, created_at "
+            "FROM custom_models ORDER BY created_at, model_id")
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def add_custom_model(model_id, label, provider, created_by=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO custom_models (model_id, label, provider, created_by) "
+            "VALUES (%s, %s, %s, %s)",
+            (model_id, label, provider, created_by))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_custom_model(model_id):
+    """Returns True when a row was removed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM custom_models WHERE model_id=%s", (model_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_deployment_llm_usage(days=30):
+    """Whole-deployment usage grouped by org and model (backlog 65) — the
+    operator's view of who spends the shared .env provider keys. NULL org is
+    the public bot / ungoverned traffic. Per-model rows so the UI can price
+    each org's consumption; the org name rides along for display."""
+    days = max(1, min(int(days), 365))
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT u.org_id, o.name AS org_name, u.provider, u.model, "
+            "COUNT(*) AS calls, SUM(u.tokens_in) AS tokens_in, "
+            "SUM(u.tokens_out) AS tokens_out "
+            "FROM llm_usage u LEFT JOIN organizations o ON o.id = u.org_id "
+            "WHERE u.created_at >= NOW() - INTERVAL %s DAY "
+            "GROUP BY u.org_id, o.name, u.provider, u.model "
+            "ORDER BY tokens_out DESC",
+            (days,))
+        rows = cursor.fetchall()
+        for r in rows:
+            r["tokens_in"] = int(r["tokens_in"] or 0)
+            r["tokens_out"] = int(r["tokens_out"] or 0)
+            r["calls"] = int(r["calls"] or 0)
+        return {"days": days, "by_org_model": rows}
     finally:
         cursor.close()
         conn.close()

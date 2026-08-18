@@ -463,6 +463,22 @@ export async function getOrgUsage(orgId, days = 30) {
     return httpGet(`/api/organizations/${orgId}/usage?days=${days}`);
 }
 
+export async function getDeploymentUsage(days = 30) {
+    return httpGet(`/api/organizations/usage/deployment?days=${days}`);
+}
+
+export async function getCustomModels() {
+    return httpGet('/api/models/custom');
+}
+
+export async function addCustomModel(payload) {
+    return httpJSON('/api/models/custom', 'POST', payload);
+}
+
+export async function deleteCustomModel(modelId) {
+    return httpJSON(`/api/models/custom?model_id=${encodeURIComponent(modelId)}`, 'DELETE', {});
+}
+
 export async function saveOrganization(orgData) {
     // If we were editing, we'd use PUT, but currently we only confirm creation via Wizard
     // which uses this. If we implement "Update Settings", we will need a PUT route.

@@ -142,6 +142,37 @@ def get_org_usage(org_id):
         current_app.logger.error(f"Error fetching org usage: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+@organizations_bp.route('/organizations/usage/deployment', methods=['GET'])
+@require_role('admin')
+def get_deployment_usage():
+    """
+    [GET /api/organizations/usage/deployment?days=30]
+    Whole-deployment usage grouped by org (backlog 65) — the operator's view
+    of who spends the shared .env provider keys. Gated on SAFI_SUPER_ADMINS
+    (deployment config), never on any org role: an org admin who is not a
+    named super admin gets 403 and the Usage & Cost tab skips the section
+    silently. Blank SAFI_SUPER_ADMINS = nobody, the documented safe default.
+    """
+    from ..config import Config
+    user = session.get('user') or {}
+    user_id = user.get('sub') or user.get('id')
+    details = db.get_user_details(user_id) or {}
+    email = (details.get('email') or user.get('email') or '').lower()
+    supers = {e.lower() for e in Config.SUPER_ADMIN_EMAILS}
+    if not email or email not in supers:
+        return jsonify({"error": "Forbidden: not a deployment operator."}), 403
+    try:
+        days = request.args.get('days', 30, type=int)
+        from ..core.services.usage_tracking import get_price_map
+        return jsonify({
+            "ok": True,
+            "usage": db.get_deployment_llm_usage(days=days),
+            "prices": get_price_map(),
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error fetching deployment usage: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
 @organizations_bp.route('/organizations/domain/cancel', methods=['POST'])
 @require_role('admin')
 def cancel_domain_verification():

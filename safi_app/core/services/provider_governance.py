@@ -107,10 +107,17 @@ def list_models_for_org(org_id) -> List[dict]:
     Single source of truth for every model picker — a model that can't
     actually be dispatched is never offered."""
     from ...config import Config
+    from .model_routing import custom_models
     allow = get_org_allowlist(org_id)
     configured = configured_providers(Config)
+    # Built-ins first, then operator-added rows (backlog 63) marked custom
+    # so the catalog UI knows which entries are deletable. Both pass the
+    # same configured-provider and allow-list filters.
+    merged = [dict(m) for m in Config.AVAILABLE_MODELS]
+    merged += [{"id": r["model_id"], "label": r["label"], "custom": True}
+               for r in custom_models()]
     out = []
-    for m in Config.AVAILABLE_MODELS:
+    for m in merged:
         prov = detect_provider(m["id"])
         if prov not in configured:
             continue

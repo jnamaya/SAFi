@@ -1,4 +1,5 @@
 import * as api from '../../core/api.js';
+import * as ui from '../ui.js';
 import { escapeHtml } from '../../core/utils.js';
 
 /**
@@ -185,6 +186,9 @@ export async function renderSettingsUsageTab(days = 30) {
                 fmtTokens(r.tokens_out),
             ])
         )}
+
+        <div id="usage-deployment-section"></div>
+        <div id="usage-model-catalog-section"></div>
     `;
 
     const daySelect = document.getElementById('usage-days');
@@ -193,4 +197,149 @@ export async function renderSettingsUsageTab(days = 30) {
             renderSettingsUsageTab(parseInt(daySelect.value, 10));
         });
     }
+
+    renderDeploymentSection(days, prices);
+    renderModelCatalogSection();
+}
+
+// Operator-only (backlog 65): usage across every org on this deployment,
+// so the operator can separate their org's spend from everyone riding the
+// shared .env keys. Anyone not named in SAFI_SUPER_ADMINS gets a 403
+// from the endpoint and never sees the section.
+async function renderDeploymentSection(days, prices) {
+    const host = document.getElementById('usage-deployment-section');
+    if (!host) return;
+    let res;
+    try {
+        res = await api.getDeploymentUsage(days);
+    } catch (e) {
+        return; // not an operator, or endpoint unavailable — skip silently
+    }
+    if (!res || !res.ok) return;
+
+    // Roll the per-org-per-model rows up to one line per org, pricing each
+    // model row before it loses its identity.
+    const orgs = new Map();
+    for (const r of res.usage.by_org_model) {
+        const key = r.org_id || null;
+        if (!orgs.has(key)) {
+            orgs.set(key, {
+                name: r.org_id ? (r.org_name || r.org_id) : 'Public / ungoverned',
+                calls: 0, tokens_in: 0, tokens_out: 0, cost: 0, unpriced: false,
+            });
+        }
+        const o = orgs.get(key);
+        o.calls += r.calls; o.tokens_in += r.tokens_in; o.tokens_out += r.tokens_out;
+        const c = estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices));
+        if (c === null) o.unpriced = true; else o.cost += c;
+    }
+    const rows = [...orgs.values()].sort((a, b) => b.tokens_out - a.tokens_out);
+
+    host.innerHTML = usageTable(
+        'Whole deployment (operator view)',
+        'Every organization on this install, plus public traffic: who spends the shared provider keys. Visible only to the super admins named in SAFI_SUPER_ADMINS.',
+        ['Organization', 'Calls', 'Tokens in', 'Tokens out', 'Est. cost'],
+        rows.map(o => [
+            escapeHtml(o.name),
+            o.calls,
+            fmtTokens(o.tokens_in),
+            fmtTokens(o.tokens_out),
+            fmtUsd(o.unpriced ? null : o.cost),
+        ])
+    );
+}
+
+// Model Catalog (backlog 63): operator-added models offered in the composer
+// alongside the built-ins, each with an explicit provider so dispatch never
+// guesses. Admin-only endpoints; the whole tab is already admin-gated.
+async function renderModelCatalogSection() {
+    const host = document.getElementById('usage-model-catalog-section');
+    if (!host) return;
+    let res;
+    try {
+        res = await api.getCustomModels();
+    } catch (e) {
+        return;
+    }
+    if (!res || !res.ok) return;
+
+    const providerOptions = res.providers.map(p =>
+        `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`).join('');
+
+    host.innerHTML = `
+        <div class="settings-card">
+            <h4 class="text-lg font-semibold">Model Catalog</h4>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-4">
+                Add models to the composer picker without a code change. Use the provider's exact model id.
+                Only providers with a configured API key are offered; each org's provider allow-list still applies.
+            </p>
+            ${res.models.length === 0
+                ? '<p class="text-sm text-gray-400 mb-4">No custom models yet. The built-in catalog is unaffected.</p>'
+                : `<div class="overflow-x-auto mb-4"><table class="w-full text-sm">
+                    <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
+                        <th class="py-2 pr-4">Model id</th><th class="py-2 pr-4">Label</th><th class="py-2 pr-4">Provider</th><th class="py-2"></th>
+                    </tr></thead>
+                    <tbody>${res.models.map(m => `
+                        <tr class="border-b border-gray-100 dark:border-neutral-800/60">
+                            <td class="py-2 pr-4"><code class="text-xs">${escapeHtml(m.id)}</code></td>
+                            <td class="py-2 pr-4">${escapeHtml(m.label)}</td>
+                            <td class="py-2 pr-4">${escapeHtml(m.provider)}</td>
+                            <td class="py-2 text-right">
+                                <button class="catalog-del-btn text-xs text-red-500 hover:text-red-600 hover:underline" data-id="${escapeHtml(m.id)}">Remove</button>
+                            </td>
+                        </tr>`).join('')}
+                    </tbody></table></div>`
+            }
+            <div class="flex flex-wrap gap-2 items-end">
+                <div class="flex-1 min-w-[180px]">
+                    <label class="text-xs text-gray-500 block mb-1">Model id (exact)</label>
+                    <input type="text" id="catalog-model-id" placeholder="e.g. claude-sonnet-5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+                </div>
+                <div class="flex-1 min-w-[140px]">
+                    <label class="text-xs text-gray-500 block mb-1">Display label</label>
+                    <input type="text" id="catalog-model-label" placeholder="e.g. Claude Sonnet 5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+                </div>
+                <div class="min-w-[140px]">
+                    <label class="text-xs text-gray-500 block mb-1">Provider</label>
+                    <select id="catalog-model-provider" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">${providerOptions}</select>
+                </div>
+                <button id="catalog-add-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">Add Model</button>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('catalog-add-btn')?.addEventListener('click', async () => {
+        const id = document.getElementById('catalog-model-id').value.trim();
+        const label = document.getElementById('catalog-model-label').value.trim();
+        const provider = document.getElementById('catalog-model-provider').value;
+        if (!id) return ui.showToast('Model id is required.', 'error');
+        try {
+            const r = await api.addCustomModel({ id, label, provider });
+            if (r && r.ok) {
+                ui.showToast('Model added. It appears in the composer within a minute.', 'success');
+                renderModelCatalogSection();
+            } else {
+                throw new Error((r && r.error) || 'Add failed');
+            }
+        } catch (e) {
+            ui.showToast(e.message, 'error');
+        }
+    });
+
+    host.querySelectorAll('.catalog-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm(`Remove ${btn.dataset.id} from the catalog? Users currently set to it fall back to the default model.`)) return;
+            try {
+                const r = await api.deleteCustomModel(btn.dataset.id);
+                if (r && r.ok) {
+                    ui.showToast('Model removed.', 'success');
+                    renderModelCatalogSection();
+                } else {
+                    throw new Error((r && r.error) || 'Remove failed');
+                }
+            } catch (e) {
+                ui.showToast(e.message, 'error');
+            }
+        });
+    });
 }

@@ -53,11 +53,47 @@ PROVIDER_METADATA = {
 }
 
 
+# Operator-added models (backlog 63): id -> provider, cached from the
+# custom_models table. Consulted by detect_provider BEFORE the prefix
+# heuristics, because those default to groq and a custom id must never
+# depend on guessable spelling. 60s TTL like the org allow-list cache;
+# fails open to the last known map so a DB hiccup cannot change routing.
+_CUSTOM_MODELS_TTL = 60.0
+_custom_models_cache = {"at": None, "rows": [], "map": {}}
+
+
+def custom_models() -> list:
+    """Rows from custom_models, cached. Each: model_id, label, provider."""
+    import time
+    now = time.monotonic()
+    cache = _custom_models_cache
+    if cache["at"] is None or now - cache["at"] > _CUSTOM_MODELS_TTL:
+        try:
+            from ...persistence import database as db
+            rows = db.list_custom_models()
+            cache["rows"] = rows
+            cache["map"] = {r["model_id"].lower(): r["provider"] for r in rows}
+        except Exception:
+            pass  # keep the last known catalog
+        cache["at"] = now
+    return cache["rows"]
+
+
+def invalidate_custom_models_cache() -> None:
+    _custom_models_cache["at"] = None
+
+
 def detect_provider(model_name: str) -> str:
-    """Map a model name to its provider key by prefix. Defaults to 'groq'."""
+    """Map a model name to its provider key. Operator-added models carry an
+    explicit provider (exact-id match); everything else falls back to the
+    prefix heuristics below. Defaults to 'groq'."""
     if not model_name:
         return "groq"
     m = model_name.lower()
+    custom_models()
+    custom = _custom_models_cache["map"].get(m)
+    if custom:
+        return custom
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
     # "openai/gpt-oss-*"), so this must be checked before the bare "gpt-" rule.
     if m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4"):
