@@ -589,10 +589,52 @@ def restore_policy_version_endpoint(policy_id, version):
     user = session.get('user')
     user_id = user.get('id') if user else None
     try:
-        if not db.get_policy(policy_id): return jsonify({"error": "Not found"}), 404
-        ok = db.restore_policy_version(policy_id, version, restored_by=user_id)
-        if not ok: return jsonify({"error": "Version not found"}), 404
-        return jsonify({"ok": True})
+        policy = db.get_policy(policy_id)
+        if not policy: return jsonify({"error": "Not found"}), 404
+
+        # 57f: a restore is a content change like any other, or it would be
+        # the one door around the policy approvers (restore an old version
+        # instead of editing). For org policies the version's content goes
+        # through the SAME holds: tool widenings to the tool approvers,
+        # content to the policy approvers. Personal policies apply directly.
+        org_id = get_current_org_id()
+        if not org_id or not policy.get('org_id'):
+            ok = db.restore_policy_version(policy_id, version, restored_by=user_id)
+            if not ok: return jsonify({"error": "Version not found"}), 404
+            return jsonify({"ok": True})
+
+        ver = db.get_policy_version(policy_id, version)
+        if not ver: return jsonify({"error": "Version not found"}), 404
+        cfg = ver.get('policy_config') or {}
+        data = {"name": ver.get('name'), "worldview": ver.get('worldview'),
+                "will_rules": ver.get('will_rules'), "values": ver.get('values_weights')}
+        for k in _POLICY_CONFIG_FIELDS:
+            if k in cfg:
+                data[k] = cfg.get(k)
+
+        pending_tools, _target = _hold_tool_widening(data, policy.get('will_rules'), org_id)
+        if pending_tools:
+            rid = tool_approval_store.create_policy_request(
+                policy_id, org_id, user_id, pending_tools,
+                _declared_tools(ver.get('will_rules')) or [])
+            db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
+                "policy": policy_id, "request": rid, "added": pending_tools,
+                "via": f"restore v{version}"})
+
+        changed = _policy_content_diff(policy, data)
+        if not changed:
+            return jsonify({"ok": True, "pending_approval": False,
+                            "tools_pending_approval": pending_tools,
+                            "changed": []})
+        payload = {k: data[k] for k in data if data[k] is not None}
+        rid = tool_approval_store.create_policy_change(
+            policy_id, org_id, user_id, payload, changed)
+        db.append_compliance_log(org_id, 'policy_change_requested', f"user:{user_id}", {
+            "policy": policy_id, "request": rid, "changed": sorted(changed),
+            "via": f"restore v{version}"})
+        return jsonify({"ok": True, "pending_approval": True,
+                        "change_request_id": rid, "changed": sorted(changed),
+                        "tools_pending_approval": pending_tools})
     except Exception as e:
         current_app.logger.error(f"restore_policy_version error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500

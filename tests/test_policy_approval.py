@@ -144,6 +144,29 @@ class TheHold(PolicyApprovalBase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0]['payload']['worldview'], "Draft two")
 
+    def test_restore_is_held_like_any_other_change(self):
+        """Version restore must not be the one door around the approvers."""
+        editor = self._client(self.editor, 'editor')
+        # Build version history: v+1 via an approved change.
+        self._submit(editor, worldview="Second worldview")
+        rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
+        self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
+        target_version = self._row().get('version')
+        self.assertEqual(self._row()['worldview'], "Second worldview")
+        # Roll forward again so restoring target_version is a real change.
+        self._submit(editor, worldview="Third worldview")
+        rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
+        self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
+
+        r = editor.post(f'/api/policies/{self.policy_id}/versions/{target_version}/restore')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['pending_approval'])
+        self.assertEqual(self._row()['worldview'], "Third worldview",
+                         "a restore applied without approval")
+        rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
+        self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
+        self.assertEqual(self._row()['worldview'], "Second worldview")
+
     def test_create_stays_immediate(self):
         client = self._client(self.editor, 'editor')
         r = client.post('/api/policies', json={"name": f"fresh {uuid.uuid4().hex[:6]}"})

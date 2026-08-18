@@ -343,7 +343,12 @@ async function openPolicyHistory(policyId, policyName, canEdit) {
             if (!confirm(`Restore policy to v${b.dataset.v}? This creates a new version with that content; agents using this policy will pick it up.`)) return;
             b.disabled = true; b.textContent = 'Restoring…';
             const r = await api.restorePolicyVersion(policyId, b.dataset.v);
-            if (r.ok) { close(); renderSettingsGovernanceTab(); }
+            if (r.ok) {
+                if (r.pending_approval) {
+                    ui.showToast('Restore submitted for approval. The policy keeps its current content until a policy approver activates it.', 'warning', 7000);
+                }
+                close(); renderSettingsGovernanceTab();
+            }
             else { alert(r.error || 'Restore failed.'); b.disabled = false; b.textContent = 'Restore'; }
         }));
     } catch (e) {
