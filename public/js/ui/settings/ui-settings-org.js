@@ -97,8 +97,17 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                 
                 ${org.verification_token
             ? `
-                        <div class="mb-4 bg-white dark:bg-black p-3 rounded border border-neutral-200 dark:border-neutral-700 font-mono text-xs break-all">
+                        <div class="mb-3 bg-white dark:bg-black p-3 rounded border border-neutral-200 dark:border-neutral-700 font-mono text-xs break-all">
                             TXT Record: <strong>${org.verification_token}</strong>
+                        </div>
+                        <div class="mb-4 text-xs text-green-800 dark:text-green-200 space-y-1">
+                            <p class="font-semibold">How to add this record:</p>
+                            <ol class="list-decimal list-inside space-y-0.5">
+                                <li>Sign in to the service that manages DNS for <strong>${org.domain_to_verify}</strong> (for example Cloudflare, GoDaddy, Namecheap, or your domain registrar).</li>
+                                <li>Open the DNS settings and add a new record of type <strong>TXT</strong>.</li>
+                                <li>Set the host/name to <strong>@</strong> (the root domain) and paste the value above into the record's content.</li>
+                                <li>Save, then click Check DNS Records. Changes usually apply within minutes but can take up to a few hours to propagate.</li>
+                            </ol>
                         </div>
                         <div class="flex gap-2">
                              <button id="btn-check-verify" data-org-id="${org.id}" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">
@@ -839,7 +848,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                     ui.showToast("Domain Verified!", "success");
                     renderSettingsOrganizationTab(); // Refresh
                 } else {
-                    ui.showToast("TXT record not found yet. It may take a few minutes.", "warning");
+                    ui.showToast(res && res.error ? res.error : "TXT record not found yet. It may take a few minutes.", "warning");
                     checkBtn.disabled = false;
                     checkBtn.textContent = "Check Again";
                 }

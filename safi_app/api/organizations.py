@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request, current_app, session
 import uuid
 import json
 import dns.resolver
+import dns.exception
 from ..persistence import database as db
 from ..timeutil import utc_isoformat
 from ..core.rbac import require_role, check_permission, get_current_org_id
@@ -102,6 +103,19 @@ def verify_domain_dns():
             
     except dns.resolver.NXDOMAIN:
         return jsonify({"status": "failed", "error": "Domain does not exist."}), 200
+    except dns.resolver.NoAnswer:
+        # The domain resolves but has no TXT records at all yet. This is the
+        # normal state right after starting verification, not a server error.
+        return jsonify({
+            "status": "failed",
+            "error": "No TXT records found on the domain yet. DNS changes can take a few minutes to a few hours to propagate."
+        }), 200
+    except (dns.resolver.NoNameservers, dns.exception.Timeout):
+        return jsonify({
+            "status": "failed",
+            "error": "DNS lookup failed or timed out. Try again in a few minutes."
+        }), 200
+    except Exception as e:
         current_app.logger.error(f"DNS Lookup Failed: {e}")
         return jsonify({"error": f"DNS Lookup Failed: {str(e)}"}), 500
 
