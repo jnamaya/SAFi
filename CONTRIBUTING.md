@@ -8,7 +8,6 @@ Contributions of all kinds are welcome, including bug reports, documentation imp
 
 - Read the [README](README.md) for an overview of SAFi’s architecture and evaluation path.
 - Review the project’s license and attribution notices.
-- Read [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/) for the philosophical background.
 - Review the [faculty table in the README](README.md#the-five-faculties) to understand how the runtime components are organized.
 - Browse [open issues](https://github.com/jnamaya/SAFi/issues). Issues labeled [`good first issue`](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are the best starting points.
 - For substantial changes, open a discussion before beginning implementation.
@@ -70,6 +69,23 @@ Describe the use case rather than only requesting a feature.
 ### Documentation
 
 Documentation improvements are always welcome. The `docs/` directory holds the developer guide, the mathematical specification, and the License and Governance Agreement. The main `README.md` is the public face of the project.
+
+## Branching and Releases
+
+SAFi uses a dev-first flow with three stability tiers. Knowing it tells you where to send a change and when it will ship.
+
+- **`dev`** is the active development branch. Every contribution lands here first. Branch from `dev` and open your pull request against `dev`, never against `main`.
+- **`main`** is release-staging. It holds only tested, soaked, release-ready code, and it advances only at a release, so it deliberately lags `dev` for most of a cycle. Do not open pull requests against it.
+- **Tags** are the official releases, cut from `main`. Production installs run these, because only a tagged release publishes the Core Loop fingerprint used to verify authenticity.
+
+Releases are cut on a fixed cadence of every 8 weeks. After your pull request is merged to `dev`, it soaks there until the next release, when the accumulated work is promoted to `main` in one move and tagged. That gap between merge and release is deliberate: it is how regressions surface before they reach a release.
+
+Maintainers promote `dev` to `main` only when all of the following hold, so keeping your pull request green is what keeps that path clear:
+
+- The full test suite passes on the disposable stack.
+- The Core Loop integrity manifest verifies INTACT (see below).
+- The change has soaked on `dev` without regressions.
+- It is release time (the freeze week, or the week before). Urgent security fixes are the only exception, and they still must pass the tests.
 
 ## Architecture Principles to Respect
 
