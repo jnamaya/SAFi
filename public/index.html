@@ -517,7 +517,22 @@
                               d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
                             </path>
                           </svg>
-                          Org Settings
+                          Settings
+                        </button>
+                      </li>
+                      <li>
+                        <!-- Identity & Access (backlog 68 follow-up): members,
+                             roles, groups, approvers, domain verification, and
+                             SCIM. Split out of the org Settings tab. Revealed
+                             by role in app.js, same audience as Settings. -->
+                        <button data-tab="identity" id="nav-identity"
+                          class="sidebar-item hidden w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-3-6.65">
+                            </path>
+                          </svg>
+                          Identity &amp; Access
                         </button>
                       </li>
                       <li>
@@ -739,7 +754,10 @@
                 </div>
 
                 <div id="tab-organization" class="tab-content hidden">
-                  <h1 class="text-2xl font-bold mb-4">Org Settings</h1>
+                  <h1 class="text-2xl font-bold mb-4">Settings</h1>
+                </div>
+                <div id="tab-identity" class="tab-content hidden">
+                  <!-- Content injected by renderSettingsIdentityTab() -->
                 </div>
                 <div id="tab-compliance" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Compliance</h1>

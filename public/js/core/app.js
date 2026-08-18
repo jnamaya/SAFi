@@ -491,6 +491,13 @@ function renderControlPanel() {
     else navOrg.classList.add('hidden');
   }
 
+  // Identity & Access: split out of the org Settings tab, same audience.
+  const navIdentity = document.getElementById('nav-identity');
+  if (navIdentity) {
+    if (canSeeOrg) navIdentity.classList.remove('hidden');
+    else navIdentity.classList.add('hidden');
+  }
+
 
   const navGov = document.getElementById('nav-governance'); // NEW ID
   if (navGov) {

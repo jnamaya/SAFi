@@ -29,28 +29,46 @@ export function setOrgCurrentUser(u) {
  * (historically "Organization Settings"). Admin only.
  * Handles fetching org details and Domain Verification.
  */
+// The Settings tab (org identity, charter, governance) and the Identity &
+// Access tab (domain, members, groups, approvers, SCIM) render from one data
+// fetch and one listener pass — the cards are split across the two containers,
+// and the listener block finds elements in both by id. Either tab's entry
+// point triggers the shared render, so opening either shows current data.
 export async function renderSettingsOrganizationTab() {
+    return _renderOrgTabs();
+}
+
+export async function renderSettingsIdentityTab() {
+    return _renderOrgTabs();
+}
+
+async function _renderOrgTabs() {
     ui._ensureElements();
     const container = ui.elements.cpTabOrganization;
-    if (!container) return;
+    const identityContainer = document.getElementById('tab-identity');
+    if (!container && !identityContainer) return;
 
-    container.innerHTML = `
+    const spinner = `
         <div class="flex items-center justify-center h-32">
             <div class="thinking-spinner"></div>
         </div>
     `;
+    if (container) container.innerHTML = spinner;
+    if (identityContainer) identityContainer.innerHTML = spinner;
 
     try {
         const res = await api.getMyOrganization();
         const org = res ? res.organization : null;
 
         if (!org) {
-            container.innerHTML = `
+            const none = `
                 <div class="text-center p-8">
                     <h3 class="text-xl font-semibold mb-2">No Organization Found</h3>
                     <p class="text-neutral-500">You do not seem to belong to an organization yet.</p>
                 </div>
             `;
+            if (container) container.innerHTML = none;
+            if (identityContainer) identityContainer.innerHTML = none;
             return;
         }
 
@@ -62,15 +80,15 @@ export async function renderSettingsOrganizationTab() {
         const charter = charterRes ? charterRes.charter : null;
         const aiStandards = standardsRes ? standardsRes.ai_standards : null;
 
-        renderOrganizationUI(container, org, charter, aiStandards);
+        renderOrganizationUI(container, identityContainer, org, charter, aiStandards);
 
     } catch (error) {
-        container.innerHTML = `<p class="text-red-500">Error loading organization: ${error.message}</p>`;
+        if (container) container.innerHTML = `<p class="text-red-500">Error loading organization: ${error.message}</p>`;
     }
 }
 
 
-function renderOrganizationUI(container, org, charter, aiStandards) {
+function renderOrganizationUI(container, identityContainer, org, charter, aiStandards) {
     const isVerified = org.domain_verified;
     const verificationSection = isVerified
         ? `
@@ -143,7 +161,7 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
     container.innerHTML = `
         <div class="settings-page-header">
             <h1>Organization</h1>
-            <p>Your organization's identity, charter, domain, and members — applied across all agents.</p>
+            <p>Your organization's charter and AI governance configuration, applied across all agents.</p>
         </div>
 
         <div class="settings-card">
@@ -172,8 +190,6 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                 </div>
             </div>
         </div>
-
-        ${verificationSection}
 
         <!-- CHARTER SECTION -->
         <div class="settings-card">
@@ -368,6 +384,16 @@ function renderOrganizationUI(container, org, charter, aiStandards) {
                  </div>
              </div>
         </div>
+    `;
+
+    // --- Identity & Access tab: everything about who is in the org ---
+    if (identityContainer) identityContainer.innerHTML = `
+        <div class="settings-page-header">
+            <h1>Identity &amp; Access</h1>
+            <p>Members, roles, groups, approvers, domain verification, and directory sync (SCIM).</p>
+        </div>
+
+        ${verificationSection}
 
         <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">Identity &amp; Sessions</h4>

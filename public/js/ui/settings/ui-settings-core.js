@@ -1,6 +1,6 @@
 import * as ui from '../ui.js';
 import { renderSettingsDashboardTab } from './ui-settings-dashboard.js';
-import { renderSettingsOrganizationTab, setOrgCurrentUser } from './ui-settings-org.js';
+import { renderSettingsOrganizationTab, renderSettingsIdentityTab, setOrgCurrentUser } from './ui-settings-org.js';
 import { renderSettingsProfileTab } from './ui-settings-agents.js';
 import { renderSettingsMyProfileTab, setProfileIdentity } from './ui-settings-user.js';
 import { renderSettingsGovernanceTab } from './ui-settings-governance.js';
@@ -125,6 +125,8 @@ export function setupControlPanelTabs() {
                 renderSettingsGovernanceTab();
             } else if (tabId === 'organization') {
                 renderSettingsOrganizationTab();
+            } else if (tabId === 'identity') {
+                renderSettingsIdentityTab();
             } else if (tabId === 'compliance') {
                 renderSettingsComplianceTab();
             } else if (tabId === 'review') {
