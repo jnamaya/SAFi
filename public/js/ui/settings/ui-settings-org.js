@@ -196,7 +196,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             <div class="flex items-start justify-between mb-4">
                 <div>
                     <h4 class="text-lg font-semibold">Organization Identity / Charter</h4>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">The mission and core values of your organization. Once set, it applies to all agents. This will force all agents to speak with your brand and culture.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Your organization's mission and core values. Once set, it applies to every agent, so their responses are scored against the same values and speak in a consistent voice.</p>
                 </div>
                 ${charter
                     ? '<span class="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-semibold rounded-full mt-1 shrink-0">Active</span>'
@@ -214,7 +214,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 </div>
 
                 <div>
-                    <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
                         <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Core Values & Rubrics</label>
                         <div class="flex items-center gap-2">
                             <button id="btn-gen-charter-values" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors font-medium">

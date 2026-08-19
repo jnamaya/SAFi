@@ -2742,6 +2742,13 @@ html {
         padding: 0 12px;
     }
 
+    /* Settings cards keep 1.5rem padding on desktop, which is too much on a
+       phone once the inner cards (e.g. core-value editors) add their own. Trim
+       it so the nested content has room and stops looking cramped. */
+    .settings-card {
+        padding: 1rem;
+    }
+
     /* Mobile drawers (chat sidebar + control-panel menu): clear the status
        bar / notch at the top and the gesture bar at the bottom so headers and
        footers aren't cut off. Desktop is unaffected (max-width: 767px only). */
