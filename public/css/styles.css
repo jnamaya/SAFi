@@ -2680,6 +2680,13 @@ html {
    ============================================================ */
 @media (max-width: 767px) {
 
+    /* Bump the root size on phones so all rem-based text and spacing scale up
+       together (~6%). This is the same single knob the retired Capacitor shell
+       used, which set it the other way (14px) to shrink. */
+    html {
+        font-size: 17px;
+    }
+
     /* Smaller avatars — 42px eats into the narrow content area */
     .ai-avatar,
     .user-avatar {
