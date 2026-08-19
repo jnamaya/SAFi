@@ -40,29 +40,12 @@ function shell() {
         <p class="text-sm text-gray-500 mt-1 max-w-3xl">
           The tools installed on this deployment, and what each one is enabled by.
           Installing grants nothing: a tool does nothing until a policy enables it
-          and an agent is assigned it.
+          and an agent is assigned it. For how a tool becomes usable, from install
+          to a governed call, see
+          <a href="https://github.com/jnamaya/SAFi/blob/main/docs/KNOWLEDGE_AND_TOOLS.md"
+             target="_blank" rel="noopener"
+             class="text-green-700 dark:text-green-400 underline">the documentation on GitHub</a>.
         </p>
-      </div>
-
-      <div class="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900/50 p-4">
-        <h2 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">How a tool becomes usable</h2>
-        <ol class="text-sm text-gray-600 dark:text-gray-400 space-y-1.5 list-decimal list-outside pl-5">
-          <li><strong>Install.</strong> Whoever operates the deployment adds the MCP server from the
-              host's terminal. There is deliberately no way to install one from the browser:
-              installing can mean running external code, and that decision belongs to the person
-              who already holds that level of access.</li>
-          <li><strong>Discover.</strong> SAFi connects to the server, asks what tools it offers, and
-              catalogs them here, visible and completely inactive.</li>
-          <li><strong>Enable.</strong> An admin or editor enables specific tools in the policy
-              wizard, under <strong>Tools &amp; Controls</strong>. This is a ceiling: agents under
-              that policy can never use a tool it does not list.</li>
-          <li><strong>Assign.</strong> The agent is given tools its policy allows. Every call it
-              makes is then checked against that list before it runs, and recorded in the audit
-              trail. More details in the
-              <a href="https://github.com/jnamaya/SAFi/blob/main/docs/KNOWLEDGE_AND_TOOLS.md"
-                 target="_blank" rel="noopener"
-                 class="text-green-700 dark:text-green-400 underline">README</a>.</li>
-        </ol>
       </div>
 
       <div id="tools-list"></div>
