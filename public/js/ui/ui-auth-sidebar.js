@@ -42,7 +42,12 @@ function _onRecentEsc(e) {
 
 function _openRecentConvoPopup(anchorBtn) {
     _closeRecentPopup();
-    const links = Array.from(document.querySelectorAll('#convo-list a[data-id]')).slice(0, 15);
+    // Most-recent first. The sidebar DOM is ordered by group (pinned, project
+    // folders, date buckets), not by pure recency, so sort by the timestamp
+    // each link carries before taking the top 15.
+    const links = Array.from(document.querySelectorAll('#convo-list a[data-id]'))
+        .sort((a, b) => (b.dataset.updated || '').localeCompare(a.dataset.updated || ''))
+        .slice(0, 15);
 
     const pop = document.createElement('div');
     _recentPopupEl = pop;
@@ -612,6 +617,9 @@ export function renderConversationLink(convo, handlers) {
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
+  // Recency, for the collapsed-rail "Recent" popup to sort by. ISO 8601 sorts
+  // lexically in time order, so a string compare is enough.
+  link.dataset.updated = convo.last_updated || convo.created_at || '';
 
   const innerContent = document.createElement('div');
   innerContent.className = 'convo-item-inner group relative flex items-center justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
