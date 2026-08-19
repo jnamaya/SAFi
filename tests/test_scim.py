@@ -91,6 +91,36 @@ class Auth(ScimBase):
         self.assertTrue(r.get_json()["patch"]["supported"])
 
 
+class HttpsEnforcement(ScimBase):
+    """On an https deployment, SCIM must refuse a non-TLS request before the
+    token is even considered. Localhost/plain-http deployments are exempt."""
+
+    def test_https_deployment_rejects_plain_http(self):
+        # The test client forces wsgi.url_scheme via PREFERRED_URL_SCHEME, so
+        # drive the incoming scheme explicitly (as ProxyFix would from
+        # X-Forwarded-Proto) to simulate a real plain-http vs https request.
+        from safi_app.config import Config
+        original = Config.WEB_BASE_URL
+        Config.WEB_BASE_URL = "https://safi.example.com"
+        try:
+            r = self.client.get("/scim/v2/Users", headers=self._h(),
+                                environ_overrides={"wsgi.url_scheme": "http"})
+            self.assertEqual(r.status_code, 403)
+            self.assertIn("HTTPS", r.get_json()["detail"])
+            r2 = self.client.get("/scim/v2/Users", headers=self._h(),
+                                 environ_overrides={"wsgi.url_scheme": "https"})
+            self.assertEqual(r2.status_code, 200)
+        finally:
+            Config.WEB_BASE_URL = original
+
+    def test_localhost_deployment_allows_http(self):
+        # Default WEB_BASE_URL is http://localhost:5000 in the test env, so the
+        # https requirement does not apply even to a plain-http request.
+        r = self.client.get("/scim/v2/Users", headers=self._h(),
+                            environ_overrides={"wsgi.url_scheme": "http"})
+        self.assertEqual(r.status_code, 200)
+
+
 class UserProvisioning(ScimBase):
 
     def _pending_emails(self):

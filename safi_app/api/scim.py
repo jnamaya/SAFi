@@ -58,9 +58,20 @@ def _scim_json(body, status=200):
 
 
 def require_scim_token(f):
-    """Resolve the org from the Bearer token; 401 if absent/invalid/disabled."""
+    """Enforce HTTPS, then resolve the org from the Bearer token.
+
+    HTTPS is checked FIRST, before the token is even read: the bearer token
+    authenticates the IdP, and accepting it over plain HTTP would expose it to
+    anyone on the path. On a deployment that declares an https public URL
+    (WEB_BASE_URL), a request that did not arrive over TLS is refused. The
+    check honors the reverse proxy via ProxyFix (request.is_secure reflects
+    X-Forwarded-Proto). A localhost/plain-http deployment (dev, the test
+    client, plain-HTTP self-host) declares http and is left alone."""
     @wraps(f)
     def wrapper(*args, **kwargs):
+        from ..config import Config
+        if Config.WEB_BASE_URL.startswith("https") and not request.is_secure:
+            return _scim_error(403, "SCIM requires HTTPS.")
         auth = request.headers.get("Authorization", "")
         token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
         org_id = scim_store.resolve_org_by_token(token) if token else None

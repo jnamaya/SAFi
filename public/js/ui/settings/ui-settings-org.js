@@ -1519,6 +1519,9 @@ async function renderScimSection(orgId) {
             <div class="mb-4">
                 <span class="text-xs text-gray-500 block mb-1">SCIM Base URL (paste into your IdP)</span>
                 <code class="block bg-gray-100 dark:bg-gray-800 px-2 py-1.5 rounded text-xs select-all break-all">${escapeHtml(cfg.base_url)}</code>
+                ${cfg.secure
+                    ? ''
+                    : `<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">SCIM requires HTTPS. This deployment's public URL is not https, so identity providers will refuse it and the endpoint rejects non-HTTPS calls. Set WEB_BASE_URL to your https address (behind TLS) before connecting an IdP.</p>`}
             </div>
 
             <div class="mb-4">

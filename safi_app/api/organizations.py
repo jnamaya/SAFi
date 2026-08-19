@@ -289,14 +289,19 @@ def get_scim_config(org_id):
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     from ..persistence import scim_store
+    from ..config import Config
     try:
         cfg = scim_store.get_config(org_id)
-        base = request.url_root.rstrip('/') + '/scim/v2'
+        # The deployment's declared public URL, not request.url_root: it is the
+        # real external base an IdP must call, with the correct scheme. SCIM
+        # requires HTTPS, so surface whether this deployment provides it.
+        base = Config.WEB_BASE_URL.rstrip('/') + '/scim/v2'
         return jsonify({
             "ok": True,
             "enabled": cfg["enabled"],
             "has_token": cfg["has_token"],
             "base_url": base,
+            "secure": Config.WEB_BASE_URL.startswith("https"),
             "group_roles": scim_store.list_group_role_map(org_id),
             "resource_count": len(scim_store.list_resources(org_id)),
             "roles": sorted(scim_store.VALID_ROLES),
