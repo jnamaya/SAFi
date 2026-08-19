@@ -6,7 +6,6 @@ import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as cache from './cache.js'; // Use cache for optimistic updates
 // CHANGE: Import the utility function
-import { formatRelativeTime } from './utils.js';
 
 
 // --- CONVERSATION STATE ---
@@ -1230,9 +1229,7 @@ export async function sendMessage(activeProfileData, user) {
             const link = document.querySelector(`a[data-id="${currentConversationId}"]`);
             if (link) {
                 const titleEl = link.querySelector('.convo-title');
-                const timeEl = link.querySelector('.convo-timestamp');
                 if (updateMeta.title) titleEl.textContent = updateMeta.title;
-                if (timeEl) timeEl.textContent = formatRelativeTime(new Date());
                 uiAuthSidebar.updateChatTitle(updateMeta.title || 'Untitled');
             }
         }

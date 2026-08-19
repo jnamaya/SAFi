@@ -1,7 +1,7 @@
 // ui-auth-sidebar.js
 
 import * as ui from './ui.js';
-import { formatRelativeTime, escapeHtml } from '../core/utils.js';
+import { escapeHtml } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
 import { updateAgentLabel, closeComposerMenu } from './ui-composer-menu.js';
 import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
@@ -614,7 +614,7 @@ export function renderConversationLink(convo, handlers) {
   link.dataset.id = convo.id;
 
   const innerContent = document.createElement('div');
-  innerContent.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
+  innerContent.className = 'convo-item-inner group relative flex items-center justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
@@ -634,9 +634,6 @@ export function renderConversationLink(convo, handlers) {
         ${markHtml}
         <div class="flex-1 min-w-0">
             <span class="convo-title truncate block text-sm font-medium" title="${(convo.title || 'Untitled').replace(/"/g, '&quot;')}">${convo.title || 'Untitled'}</span>
-            <span class="convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400">
-                ${convo.last_updated ? formatRelativeTime(convo.last_updated) : ''}
-            </span>
         </div>
     </div>
     <button data-action="menu" class="convo-menu-button opacity-0 focus:opacity-100 menu-icon-hidden
@@ -766,14 +763,14 @@ export function setActiveConvoLink(id) {
     // -- Active State --
     if (isActive) {
       // Active row: subtle raised fill + green left accent (styled in CSS via .is-active)
-      inner.className = 'convo-item-inner is-active group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-all duration-200 text-neutral-900 dark:text-neutral-100 font-bold my-0.5';
+      inner.className = 'convo-item-inner is-active group relative flex items-center justify-between px-3 py-1.5 rounded-md transition-all duration-200 text-neutral-900 dark:text-neutral-100 font-bold my-0.5';
 
       if (timestamp) {
         // Timestamp text made slightly lighter than main text
         timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-500";
       }
     } else {
-      inner.className = 'convo-item-inner group relative flex items-start justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
+      inner.className = 'convo-item-inner group relative flex items-center justify-between px-3 py-1.5 rounded-md transition-colors duration-150 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] text-neutral-600 dark:text-neutral-400 font-medium my-0.5';
 
       if (title) title.className = `convo-title truncate block text-sm ${isActive ? 'font-semibold' : 'font-medium'}`;
     }
