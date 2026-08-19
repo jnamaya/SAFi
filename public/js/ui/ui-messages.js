@@ -11,19 +11,18 @@ import { getActiveModelLabel, isPublicDemoUi } from './ui-model-selector.js';
 // --- ICONS ---
 const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>`;
 const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
-const iconBookmark = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>`;
 const iconShield = `<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
 const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
-const iconDownload = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>`;
+const iconDots = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="19" cy="12" r="1.75"/></svg>`;
 
-// Export-menu outside-click close: bind once for the whole module, not per
+// Action-menu outside-click close: bind once for the whole module, not per
 // message (a listener per rendered message would leak).
-let _exportOutsideBound = false;
-function _bindExportOutsideClose() {
-    if (_exportOutsideBound) return;
-    _exportOutsideBound = true;
+let _actionMenuOutsideBound = false;
+function _bindActionMenuOutsideClose() {
+    if (_actionMenuOutsideBound) return;
+    _actionMenuOutsideBound = true;
     document.addEventListener('click', () => {
-        document.querySelectorAll('.export-menu:not(.hidden)')
+        document.querySelectorAll('.msg-action-menu:not(.hidden)')
             .forEach(m => m.classList.add('hidden'));
     });
 }
@@ -43,51 +42,67 @@ function _deriveDocTitle(raw) {
     return 'SAFi Document';
 }
 
-// The [Export ▾] control: a button that opens a small PDF / Word menu. Renders
-// the already-governed answer to a downloadable file via the export endpoint.
-function _createExportControl(getText, getAgent) {
-    _bindExportOutsideClose();
+// The overflow (⋯) control: keeps the action bar to copy/retry/audio and
+// tucks the rest (save, exports) behind one button. Renders the already-
+// governed answer to a downloadable file via the export endpoint.
+function _createOverflowControl({ getText, getAgent, messageId }) {
+    _bindActionMenuOutsideClose();
     const wrap = document.createElement('div');
-    wrap.className = 'export-control relative shrink-0';
+    wrap.className = 'overflow-control relative shrink-0';
 
     const btn = document.createElement('button');
-    btn.className = 'export-btn shrink-0';
-    btn.innerHTML = iconDownload;
-    btn.title = 'Download as document';
-    btn.setAttribute('aria-label', 'Download this response as a document');
+    btn.className = 'overflow-btn shrink-0';
+    btn.innerHTML = iconDots;
+    btn.title = 'More actions';
+    btn.setAttribute('aria-label', 'More actions');
 
     const menu = document.createElement('div');
-    menu.className = 'export-menu hidden absolute z-50 bottom-full mb-1 left-0 min-w-[150px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
+    // right-0: the button sits near the right of the bar, so the menu opens
+    // toward the left edge rather than off-screen.
+    menu.className = 'msg-action-menu hidden absolute z-50 bottom-full mb-1 right-0 min-w-[180px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
 
-    const item = (label, fmt) => {
+    const item = (label, onClick) => {
         const b = document.createElement('button');
         b.className = 'block w-full text-left px-3 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700';
         b.textContent = label;
-        b.onclick = async (e) => {
+        b.onclick = (e) => {
             e.stopPropagation();
             menu.classList.add('hidden');
-            try {
-                ui.showToast(`Preparing ${label}…`, 'info');
-                await api.exportDocument({
-                    text: getText(),
-                    format: fmt,
-                    title: _deriveDocTitle(getText()),
-                    agent: getAgent(),
-                });
-            } catch (err) {
-                ui.showToast(err.message || 'Export failed', 'error');
-            }
+            onClick();
         };
         return b;
     };
-    menu.appendChild(item('PDF', 'pdf'));
-    menu.appendChild(item('Word (.docx)', 'docx'));
-    menu.appendChild(item('Markdown (.md)', 'md'));
+
+    // Save only when the message has a server-side id (snapshot needs it).
+    if (messageId) {
+        menu.appendChild(item('Save response', () => {
+            document.dispatchEvent(new CustomEvent('safi:save-content', {
+                detail: { messageId, anchor: btn },
+            }));
+        }));
+    }
+
+    const exportAs = (label, fmt) => item(label, async () => {
+        try {
+            ui.showToast(`Preparing ${label}…`, 'info');
+            await api.exportDocument({
+                text: getText(),
+                format: fmt,
+                title: _deriveDocTitle(getText()),
+                agent: getAgent(),
+            });
+        } catch (err) {
+            ui.showToast(err.message || 'Export failed', 'error');
+        }
+    });
+    menu.appendChild(exportAs('Export as PDF', 'pdf'));
+    menu.appendChild(exportAs('Export as Word (.docx)', 'docx'));
+    menu.appendChild(exportAs('Export as Markdown', 'md'));
 
     btn.onclick = (e) => {
         e.stopPropagation();
         const open = !menu.classList.contains('hidden');
-        document.querySelectorAll('.export-menu').forEach(m => m.classList.add('hidden'));
+        document.querySelectorAll('.msg-action-menu').forEach(m => m.classList.add('hidden'));
         if (!open) menu.classList.remove('hidden');
     };
 
@@ -558,7 +573,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageDiv.className = `message ${sender}`;
 
     // Define buttons variable here
-    let ttsBtn, copyBtn, retryBtn, saveBtn, redoBtn, exportCtrl;
+    let ttsBtn, copyBtn, retryBtn, redoBtn, overflowCtrl;
 
     // 1. BUILD BASIC STRUCTURE (No text yet for AI)
         if (sender === 'ai') {
@@ -581,12 +596,6 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             });
         };
 
-        // Export the governed answer as a formatted DOCX/PDF (backlog 66).
-        exportCtrl = _createExportControl(
-            () => final_text_raw,
-            () => payload?.profile || '',
-        );
-
         // Redo: re-ask the prompt that produced this answer. Handed in by
         // chat.js because regenerating means re-entering sendMessage with the
         // preceding user prompt — knowledge this renderer doesn't have. Note it
@@ -602,21 +611,14 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             redoBtn.onclick = () => options.onRedo();
         }
 
-        // Save-to-folder: only offered when the message has a server-side id
-        // (the snapshot is taken from chat_history, so an id must exist).
-        // The picker/persistence live app-side; this just announces the intent.
-        if (messageId) {
-            saveBtn = document.createElement('button');
-            saveBtn.className = 'save-btn shrink-0';
-            saveBtn.innerHTML = iconBookmark;
-            saveBtn.title = 'Save this response';
-            saveBtn.setAttribute('aria-label', 'Save this response');
-            saveBtn.onclick = () => {
-                document.dispatchEvent(new CustomEvent('safi:save-content', {
-                    detail: { messageId, anchor: saveBtn }
-                }));
-            };
-        }
+        // Overflow (⋯): Save + the export options, so the bar stays copy /
+        // retry / audio. Save-to-folder needs a server-side message id (the
+        // snapshot is taken from chat_history), so it only appears with one.
+        overflowCtrl = _createOverflowControl({
+            getText: () => final_text_raw,
+            getAgent: () => payload?.profile || '',
+            messageId,
+        });
 
         messageDiv.innerHTML = `
       <div class="ai-avatar"><img src="${avatarUrl}" alt="${escapeHtml(profileName || 'AI agent')}" class="w-full h-full"></div>
@@ -686,11 +688,12 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         if (hasScore && whyHandler) {
             bar.appendChild(_createScoreWrap(payload, () => whyHandler(payload)));
         }
+        // Kept visible: copy, retry, audio. Everything else (save, exports)
+        // lives behind the overflow (⋯) so the bar stays uncluttered.
         if (copyBtn) bar.appendChild(copyBtn);
-        if (saveBtn) bar.appendChild(saveBtn);
-        if (ttsBtn) bar.appendChild(ttsBtn);
-        if (exportCtrl) bar.appendChild(exportCtrl);
         if (redoBtn) bar.appendChild(redoBtn);
+        if (ttsBtn) bar.appendChild(ttsBtn);
+        if (overflowCtrl) bar.appendChild(overflowCtrl);
 
         const stamp = document.createElement('div');
         stamp.className = 'stamp actionbar-time';
