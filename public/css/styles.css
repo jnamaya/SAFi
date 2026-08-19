@@ -1823,6 +1823,20 @@ html.native body { font-size: 14px; }
   padding: 0 8px 0 4px;
 }
 
+/* Timestamp on hover only, and only where a real pointer exists. The user
+   prompt bubble already timestamps the exchange, so the answer's time is
+   redundant clutter until wanted. On touch devices (hover: none) it stays
+   visible, since there is no hover to reveal it. */
+@media (hover: hover) {
+  .actionbar-time {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .message-container:hover .actionbar-time {
+    opacity: 1;
+  }
+}
+
 /* Named top conflict, on its own line above the action bar. `.meta` is a flex
    row, so the full-basis + order pair is what puts this above the bar without
    restructuring the meta footer for every message. */

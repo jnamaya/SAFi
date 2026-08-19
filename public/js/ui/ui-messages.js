@@ -42,10 +42,12 @@ function _deriveDocTitle(raw) {
     return 'SAFi Document';
 }
 
-// The overflow (⋯) control: keeps the action bar to copy/retry/audio and
-// tucks the rest (save, exports) behind one button. Renders the already-
-// governed answer to a downloadable file via the export endpoint.
-function _createOverflowControl({ getText, getAgent, messageId }) {
+// The overflow (⋯) control: keeps the action bar to copy + audio and tucks
+// the rest (retry, save, exports) behind one button. Retry lives here rather
+// than as an icon so it can't be misclicked for Listen — an accidental retry
+// re-runs a governed turn, which the deliberate menu click prevents. Renders
+// the already-governed answer to a downloadable file via the export endpoint.
+function _createOverflowControl({ getText, getAgent, messageId, onRedo }) {
     _bindActionMenuOutsideClose();
     const wrap = document.createElement('div');
     wrap.className = 'overflow-control relative shrink-0';
@@ -72,6 +74,13 @@ function _createOverflowControl({ getText, getAgent, messageId }) {
         };
         return b;
     };
+
+    // Retry first: re-ask the prompt that produced this answer. In the menu
+    // (not an icon) so it is a deliberate click — a stray retry re-runs a
+    // governed turn.
+    if (onRedo) {
+        menu.appendChild(item('Retry — ask again', () => onRedo()));
+    }
 
     // Save only when the message has a server-side id (snapshot needs it).
     if (messageId) {
@@ -573,7 +582,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
     messageDiv.className = `message ${sender}`;
 
     // Define buttons variable here
-    let ttsBtn, copyBtn, retryBtn, redoBtn, overflowCtrl;
+    let ttsBtn, copyBtn, retryBtn, overflowCtrl;
 
     // 1. BUILD BASIC STRUCTURE (No text yet for AI)
         if (sender === 'ai') {
@@ -596,20 +605,13 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             });
         };
 
-        // Redo: re-ask the prompt that produced this answer. Handed in by
-        // chat.js because regenerating means re-entering sendMessage with the
-        // preceding user prompt — knowledge this renderer doesn't have. Note it
-        // asks AGAIN rather than replacing: the governed turn it produces is a
-        // new audit record, and the old one stays on the trail (an "audited
-        // response" that could be silently swapped out would be worth little).
-        if (options.onRedo) {
-            redoBtn = document.createElement('button');
-            redoBtn.className = 'redo-btn shrink-0';
-            redoBtn.innerHTML = iconRetry;
-            redoBtn.title = 'Redo — ask this again';
-            redoBtn.setAttribute('aria-label', 'Redo — ask this prompt again');
-            redoBtn.onclick = () => options.onRedo();
-        }
+        // Retry now lives in the overflow menu (see _createOverflowControl):
+        // re-asking re-runs a governed turn, so it is a deliberate menu click
+        // rather than an icon adjacent to Listen. chat.js hands in onRedo
+        // because regenerating means re-entering sendMessage with the preceding
+        // prompt, which this renderer doesn't know. It asks AGAIN rather than
+        // replacing: the new governed turn is its own audit record and the old
+        // one stays on the trail.
 
         // Overflow (⋯): Save + the export options, so the bar stays copy /
         // retry / audio. Save-to-folder needs a server-side message id (the
@@ -618,6 +620,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             getText: () => final_text_raw,
             getAgent: () => payload?.profile || '',
             messageId,
+            onRedo: options.onRedo,
         });
 
         messageDiv.innerHTML = `
@@ -688,10 +691,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         if (hasScore && whyHandler) {
             bar.appendChild(_createScoreWrap(payload, () => whyHandler(payload)));
         }
-        // Kept visible: copy, retry, audio. Everything else (save, exports)
-        // lives behind the overflow (⋯), which sits last in the bar.
+        // Kept visible: copy, audio. Retry, save, and exports live behind the
+        // overflow (⋯), which sits last. Retry is out of the bar so it can't
+        // be misclicked for Listen.
         if (copyBtn) bar.appendChild(copyBtn);
-        if (redoBtn) bar.appendChild(redoBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
 
         const stamp = document.createElement('div');
