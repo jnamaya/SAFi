@@ -69,18 +69,26 @@ class TheBarIsFlatOnTheCanvas(unittest.TestCase):
     def test_the_buttons_keep_their_hover_affordance(self):
         """Removing the resting chrome is fine only because hover still shows
         the buttons are buttons."""
-        self.assertRegex(CSS, r"\.redo-btn:hover")
+        self.assertRegex(CSS, r"\.overflow-btn:hover")
 
 
 class RedoOnTheAnswer(unittest.TestCase):
+    """Retry moved into the overflow (...) menu (2026-08-18) so it can't be
+    misclicked for Listen — a stray retry re-runs a governed turn. The intent
+    (ask-again not replace, built only with a handler, clean prompt, accessible)
+    is unchanged; only its location did."""
 
     def test_the_renderer_builds_it_only_when_a_handler_is_supplied(self):
-        self.assertIn("if (options.onRedo)", MSGS)
-        self.assertIn("redoBtn.onclick = () => options.onRedo()", MSGS)
+        # The overflow control adds a Retry item only when onRedo is present,
+        # and the renderer passes options.onRedo into it.
+        self.assertIn("if (onRedo)", MSGS)
+        self.assertIn("() => onRedo()", MSGS)
+        self.assertIn("onRedo: options.onRedo", MSGS)
 
-    def test_it_sits_in_the_action_bar_and_is_sized_like_its_neighbours(self):
-        self.assertIn("if (redoBtn) bar.appendChild(redoBtn)", MSGS)
-        self.assertRegex(CSS, r"\.msg-actionbar \.redo-btn")
+    def test_it_lives_in_the_overflow_menu(self):
+        self.assertIn("_createOverflowControl", MSGS)
+        self.assertIn("Retry — ask again", MSGS)
+        self.assertIn("if (overflowCtrl) bar.appendChild(overflowCtrl)", MSGS)
 
     def test_the_live_turn_redoes_the_clean_prompt(self):
         """userMessage is the typed text; the outgoing prompt may carry an
@@ -100,10 +108,13 @@ class RedoOnTheAnswer(unittest.TestCase):
     def test_redo_is_labelled_as_ask_again_not_replace(self):
         """The wording is load-bearing: a redo that read as 'replace' would
         imply the audited answer can be swapped out from under its record."""
-        self.assertIn("ask this again", MSGS.lower())
+        self.assertIn("ask again", MSGS.lower())
 
     def test_accessible_name_exists(self):
-        self.assertIn("redoBtn.setAttribute('aria-label'", MSGS)
+        # The retry menu item's visible text is its accessible name, and the
+        # overflow trigger carries its own aria-label.
+        self.assertIn("Retry — ask again", MSGS)
+        self.assertIn("'aria-label', 'More actions'", MSGS)
 
 
 class CopyOnThePrompt(unittest.TestCase):

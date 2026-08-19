@@ -19,6 +19,62 @@ from ..core.faculties.synderesis import _has_usable_rubric
 policy_api_bp = Blueprint('policy_api', __name__)
 
 
+# --- Cross-org access guards (backlog 70) --------------------------------------
+# The DB getters are intentionally org-unfiltered (historical resolution relies
+# on it), so the guard belongs here, at the endpoints. Mirrors the working
+# pattern in knowledge_api._can_read. Returns (policy, error_response); the
+# caller does: p, err = _load_policy_for_read(pid); if err: return err.
+
+def _visible_policy(policy, user_id, org_id):
+    """Read visibility mirrors list_policies: demo templates, the caller's own
+    personal policy, or a policy owned by the caller's org."""
+    if not policy:
+        return False
+    if policy.get('is_demo'):
+        return True
+    if policy.get('created_by') and policy.get('created_by') == user_id:
+        return True
+    pol_org = policy.get('org_id')
+    return pol_org is not None and str(pol_org) == str(org_id)
+
+
+def _writable_policy(policy, user_id, org_id):
+    """Writes only to the caller's org policy or their own personal (no-org)
+    policy — never a demo template or another org's policy."""
+    if not policy or policy.get('is_demo'):
+        return False
+    pol_org = policy.get('org_id')
+    if pol_org is not None:
+        return str(pol_org) == str(org_id)
+    # Personal policy (no org): only its creator may write it.
+    return bool(policy.get('created_by')) and policy.get('created_by') == user_id
+
+
+def _load_policy_for_read(policy_id):
+    """(policy, None) when the caller may read it, else (None, response).
+    404 (not 403) on a cross-org id so existence is not confirmed."""
+    user = session.get('user')
+    if not user:
+        return None, (jsonify({"error": "Unauthorized"}), 401)
+    policy = db.get_policy(policy_id)
+    if not policy or not _visible_policy(policy, user.get('id'), user.get('org_id')):
+        return None, (jsonify({"error": "Not found"}), 404)
+    return policy, None
+
+
+def _load_policy_for_write(policy_id):
+    """(policy, None) when the caller may modify it, else (None, response)."""
+    user = session.get('user')
+    if not user:
+        return None, (jsonify({"error": "Unauthorized"}), 401)
+    policy = db.get_policy(policy_id)
+    if not policy:
+        return None, (jsonify({"error": "Not found"}), 404)
+    if not _writable_policy(policy, user.get('id'), user.get('org_id')):
+        return None, (jsonify({"error": "Not found"}), 404)
+    return policy, None
+
+
 def _declared_tools(will_rules):
     """The policy's declared allowed_tools list, or None when it declares
     nothing (legacy list-form policies and dicts without the key)."""
@@ -284,10 +340,9 @@ def list_policies():
 
 @policy_api_bp.route('/policies/<policy_id>', methods=['GET'], strict_slashes=False)
 def get_policy(policy_id):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
-        policy = db.get_policy(policy_id)
-        if not policy: return jsonify({"error": "Not found"}), 404
+        policy, err = _load_policy_for_read(policy_id)
+        if err: return err
         return jsonify({"ok": True, "policy": policy})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -299,9 +354,9 @@ def update_policy(policy_id):
     user_id = user.get('id') if user else None
     
     try:
-        policy = db.get_policy(policy_id)
-        if not policy: return jsonify({"error": "Not found"}), 404
-        
+        policy, err = _load_policy_for_write(policy_id)
+        if err: return err
+
         data = request.get_json(force=True, silent=True) or {}
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
@@ -562,9 +617,9 @@ def set_policy_approvers():
 
 @policy_api_bp.route('/policies/<policy_id>/versions', methods=['GET'], strict_slashes=False)
 def list_policy_version_history(policy_id):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
-        if not db.get_policy(policy_id): return jsonify({"error": "Not found"}), 404
+        _policy, err = _load_policy_for_read(policy_id)
+        if err: return err
         return jsonify({"ok": True, "versions": db.list_policy_versions(policy_id)})
     except Exception as e:
         current_app.logger.error(f"list_policy_versions error: {e}")
@@ -573,8 +628,9 @@ def list_policy_version_history(policy_id):
 
 @policy_api_bp.route('/policies/<policy_id>/versions/<int:version>', methods=['GET'], strict_slashes=False)
 def get_policy_version_detail(policy_id, version):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
+        _policy, err = _load_policy_for_read(policy_id)
+        if err: return err
         v = db.get_policy_version(policy_id, version)
         if not v: return jsonify({"error": "Version not found"}), 404
         return jsonify({"ok": True, "version": v})
@@ -589,8 +645,8 @@ def restore_policy_version_endpoint(policy_id, version):
     user = session.get('user')
     user_id = user.get('id') if user else None
     try:
-        policy = db.get_policy(policy_id)
-        if not policy: return jsonify({"error": "Not found"}), 404
+        policy, err = _load_policy_for_write(policy_id)
+        if err: return err
 
         # 57f: a restore is a content change like any other, or it would be
         # the one door around the policy approvers (restore an old version
@@ -648,9 +704,9 @@ def rotate_key(policy_id):
         if not hasattr(db, 'delete_policy_keys'):
             return jsonify({"error": "FATAL: database.delete_policy_keys missing"}), 500
 
-        policy = db.get_policy(policy_id)
-        if not policy: return jsonify({"error": "Not found"}), 404
-        
+        policy, err = _load_policy_for_write(policy_id)
+        if err: return err
+
         # Revoke old keys
         db.delete_policy_keys(policy_id)
         
@@ -675,9 +731,8 @@ def rotate_key(policy_id):
 @require_role('editor')
 def delete_policy(policy_id):
     try:
-        policy = db.get_policy(policy_id)
-        if not policy: return jsonify({"error": "Not found"}), 404
-        # Ownership check removed in favor of strict Admin RBAC
+        policy, err = _load_policy_for_write(policy_id)
+        if err: return err
 
         db.delete_policy(policy_id)
         db.append_compliance_log(get_current_org_id(), 'policy_deleted',
@@ -691,8 +746,9 @@ def delete_policy(policy_id):
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['POST'], strict_slashes=False)
 @require_role('editor')
 def generate_key(policy_id):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
+        _policy, err = _load_policy_for_write(policy_id)
+        if err: return err
         data = request.get_json(force=True, silent=True) or {}
         label = data.get("label", "Default Key")
         raw_key = db.create_api_key(policy_id, label)
@@ -703,8 +759,9 @@ def generate_key(policy_id):
 
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['GET'], strict_slashes=False)
 def list_keys(policy_id):
-    if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     try:
+        _policy, err = _load_policy_for_write(policy_id)
+        if err: return err
         keys = db.get_policy_keys(policy_id)
         return jsonify({"ok": True, "keys": keys})
     except Exception as e:

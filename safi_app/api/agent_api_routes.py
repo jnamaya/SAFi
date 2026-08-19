@@ -252,10 +252,13 @@ def save_agent():
             # actually check_permission('admin') OR ownership.
             
             is_owner = (exist.get('created_by') == user_id)
-            # FIX: check_permission takes 1 arg
+            # An admin may edit agents IN THEIR OWN ORG only, not another org's
+            # (backlog 70): the admin bypass previously had no org constraint.
+            exist_org = exist.get('org_id')
+            same_org = exist_org is not None and str(exist_org) == str(get_current_org_id())
             is_admin = check_permission('admin')
-            
-            if not (is_owner or is_admin):
+
+            if not (is_owner or (is_admin and same_org)):
                  return jsonify({"error": "Unauthorized"}), 403
 
             if not governed: return jsonify({"error": UNGOVERNED_MSG}), 400
@@ -383,12 +386,19 @@ def get_agent(key):
     try:
         agent = get_profile(clean)
         
-        # Verify ownership (get_profile pulls from DB, need to check owner manually if strictly private)
+        # Cross-org guard (backlog 70): db.get_agent is org-unfiltered, so the
+        # full raw config of a custom agent may only be returned to the owning
+        # org or the creator. Built-in agents have no DB row (raw is None) and
+        # stay visible via the merged profile. 404 on a cross-org key so it
+        # does not confirm existence.
         raw = db.get_agent(clean)
         if raw:
-             if raw.get('created_by') != session.get('user')['id']:
-                 pass # Ownership check placeholder
-             
+             uid = session.get('user')['id']
+             raw_org = raw.get('org_id')
+             same_org = raw_org is not None and str(raw_org) == str(get_current_org_id())
+             if not (same_org or raw.get('created_by') == uid):
+                 return jsonify({"error": "Not found"}), 404
+
              # RESTORE METADATA & RAW CONFIG (For Editor)
              agent['created_by'] = raw.get('created_by')
              agent['is_custom'] = True

@@ -186,11 +186,15 @@ class CascadeOrderAndScope(unittest.TestCase):
         self.assertNotIn("@media", CSS[:at].rsplit("}", 1)[-1])
 
     def test_the_mobile_drawer_keeps_its_own_width(self):
-        """A different md:hidden element. 18rem of a 375px phone is half the
-        screen, so it does not follow --sidebar-w."""
-        m = re.search(r'class="fixed inset-y-0 left-0 w-(\d+)[^"]*md:hidden', INDEX)
+        """A different md:hidden element. It carries its own viewport-relative
+        width (widened from w-64 on 2026-08-18 — w-64 read as thin), and must
+        NOT follow --sidebar-w (18rem of a 375px phone is half the screen)."""
+        m = re.search(r'id="mobile-menu"\s+class="([^"]+)"', INDEX)
         self.assertIsNotNone(m, "the mobile drawer went missing")
-        self.assertEqual(m.group(1), "64")
+        cls = m.group(1)
+        self.assertIn("md:hidden", cls)
+        self.assertRegex(cls, r"w-\[\d+vw\]", "expected a viewport-relative width")
+        self.assertNotIn("--sidebar-w", cls)
 
     def test_the_collapsed_rail_does_not_track_the_sidebar(self):
         """3.5rem by its own reasoning — content clears the rail rather than
