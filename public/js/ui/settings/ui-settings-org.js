@@ -960,27 +960,30 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     }
 
     // --- Identity & Sessions ---
-    const selPolicy = container.querySelector('#sel-join-policy');
+    // These cards live in the Identity & Access tab (identityContainer), not
+    // the Settings container, so look them up by id document-wide rather than
+    // scoped to `container` — otherwise the save button never wires.
+    const selPolicy = document.getElementById('sel-join-policy');
     if (selPolicy) {
         api.getOrgIdentity(org.id).then(cfg => {
             selPolicy.value = cfg.join_policy || 'domain_auto_join';
-            container.querySelector('#inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
-            container.querySelector('#inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
-            container.querySelector('#sel-require-mfa').value = String(!!cfg.require_mfa);
-            container.querySelector('#inp-ms-tenant').value = cfg.ms_tenant_id || '';
-            container.querySelector('#inp-google-hd').value = cfg.google_hd || '';
+            document.getElementById('inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
+            document.getElementById('inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
+            document.getElementById('sel-require-mfa').value = String(!!cfg.require_mfa);
+            document.getElementById('inp-ms-tenant').value = cfg.ms_tenant_id || '';
+            document.getElementById('inp-google-hd').value = cfg.google_hd || '';
         }).catch(() => {});
-        container.querySelector('#btn-save-identity').addEventListener('click', async () => {
-            const idleRaw = container.querySelector('#inp-idle-timeout').value;
-            const lifeRaw = container.querySelector('#inp-session-lifetime').value;
+        document.getElementById('btn-save-identity').addEventListener('click', async () => {
+            const idleRaw = document.getElementById('inp-idle-timeout').value;
+            const lifeRaw = document.getElementById('inp-session-lifetime').value;
             try {
                 await api.updateOrgIdentity(org.id, {
                     join_policy: selPolicy.value,
                     idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
                     session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
-                    require_mfa: container.querySelector('#sel-require-mfa').value === 'true',
-                    ms_tenant_id: container.querySelector('#inp-ms-tenant').value.trim() || null,
-                    google_hd: container.querySelector('#inp-google-hd').value.trim() || null,
+                    require_mfa: document.getElementById('sel-require-mfa').value === 'true',
+                    ms_tenant_id: document.getElementById('inp-ms-tenant').value.trim() || null,
+                    google_hd: document.getElementById('inp-google-hd').value.trim() || null,
                 });
                 ui.showToast('Identity settings saved', 'success');
             } catch (e) {
@@ -990,17 +993,17 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     }
 
     // --- Invitations ---
-    const btnInvite = container.querySelector('#btn-send-invite');
+    const btnInvite = document.getElementById('btn-send-invite');
     if (btnInvite) {
         btnInvite.addEventListener('click', async () => {
-            const email = container.querySelector('#inp-invite-email').value.trim();
+            const email = document.getElementById('inp-invite-email').value.trim();
             if (!email) { ui.showToast('Enter an email address', 'error'); return; }
             try {
-                const res = await api.createInvitation(org.id, email, container.querySelector('#sel-invite-role').value);
+                const res = await api.createInvitation(org.id, email, document.getElementById('sel-invite-role').value);
                 ui.showToast(res.invitation?.external_domain
                     ? 'Invite created (outside your verified domain) — no email is sent; it applies when they sign in'
                     : 'Invite created — no email is sent; it applies when they sign in', 'success');
-                container.querySelector('#inp-invite-email').value = '';
+                document.getElementById('inp-invite-email').value = '';
                 loadPendingInvites(org.id);
             } catch (e) {
                 ui.showToast(e.message || 'Invite failed', 'error');
