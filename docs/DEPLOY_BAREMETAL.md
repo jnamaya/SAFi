@@ -152,10 +152,25 @@ is the demo host's Apache configuration, reduced to the essentials:
     ServerName safi.example.com
 
     ProxyPreserveHost On
+    # Tell the app the browser-side request was HTTPS. Apache does NOT add this
+    # header on its own (unlike X-Forwarded-For/-Host), and ProxyFix in
+    # safi_app/__init__.py derives request.is_secure from it. Without it the app
+    # sees every request as plain HTTP, and SCIM (/scim/v2) refuses the call
+    # with "SCIM requires HTTPS". Requires `a2enmod headers`.
+    RequestHeader set X-Forwarded-Proto "https"
+
     ProxyPass        /api/ http://127.0.0.1:5001/api/
     ProxyPassReverse /api/ http://127.0.0.1:5001/api/
+    # The catch-all also carries /scim/v2 (directory sync) to the app; no
+    # separate ProxyPass is needed for it.
     ProxyPass        /     http://127.0.0.1:5001/
     ProxyPassReverse /     http://127.0.0.1:5001/
+
+    # NOTE: if instead you serve the SPA statically (DocumentRoot on public/)
+    # and proxy only specific paths, there is no catch-all, so /scim/v2 must be
+    # forwarded explicitly or directory sync 404s at Apache:
+    #   ProxyPass        /scim/v2 http://127.0.0.1:5001/scim/v2
+    #   ProxyPassReverse /scim/v2 http://127.0.0.1:5001/scim/v2
 
     SSLCertificateFile    /etc/letsencrypt/live/safi.example.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/safi.example.com/privkey.pem
