@@ -331,12 +331,25 @@ class LLMProvider:
                         })
                 return json.dumps({"tool_calls": tool_calls})
 
+            # A safety refusal comes back as stop_reason "refusal" with no content
+            # blocks. Surface it as a distinct, accurate error instead of letting
+            # the empty content fall through to the generic "{}" / empty-response
+            # path, which tells the user to check an API key that is working fine.
+            # Some models (e.g. creative-writing models) refuse the Intellect's
+            # reflection format on every turn, which makes them unusable here.
+            if getattr(resp, "stop_reason", None) == "refusal":
+                raise RuntimeError(
+                    "the model refused to generate a response for this request "
+                    "(stop_reason=refusal); this model may be incompatible with the "
+                    "governance prompt format"
+                )
+
             # Check for text content
             text_content = ""
             for block in resp.content:
                 if block.type == "text":
                     text_content += block.text
-            
+
             return text_content or "{}"
 
         # 3. Google Gemini
@@ -475,6 +488,13 @@ class LLMProvider:
         ))
 
     @staticmethod
+    def _is_refusal_error(exc: Exception) -> bool:
+        """True if the model refused the request (e.g. Anthropic stop_reason
+        'refusal'). Like a timeout, retrying is pointless: the same model given
+        the same prompt refuses again. Fail fast rather than burn the retries."""
+        return "refus" in f"{exc}".lower()
+
+    @staticmethod
     def explain_provider_error(exc: Exception) -> str:
         """Turn a provider exception into something an operator can act on.
 
@@ -499,6 +519,11 @@ class LLMProvider:
         if "404" in text or "model_not_found" in low or "does not exist" in low:
             return ("the provider does not recognise the configured model. Check the model "
                     "selected for this agent and SAFI_INTELLECT_MODEL in .env.")
+        if "refus" in low:
+            return ("the model refused to generate a response for this request. Some models, "
+                    "notably creative-writing models, decline SAFi's governance and self-audit "
+                    "prompt format on every turn, which makes them unusable for drafting. Choose "
+                    "a general-purpose model for this agent.")
         if any(k in low for k in ("connection", "timeout", "timed out", "resolve",
                                   "network", "unreachable", "getaddrinfo")):
             return ("the model provider could not be reached. Check outbound network access "
@@ -583,6 +608,9 @@ class LLMProvider:
                 # errors still retry.
                 if self._is_timeout_error(e):
                     self.log.warning("Intellect call timed out; failing fast without retry.")
+                    break
+                if self._is_refusal_error(e):
+                    self.log.warning("Intellect call was refused by the model; failing fast without retry.")
                     break
                 continue
 
