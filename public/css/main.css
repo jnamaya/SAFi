@@ -4659,13 +4659,16 @@ video {
     padding-right: 0px;
   }
 
-  .md\:px-4 {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-
   .md\:pb-4 {
     padding-bottom: 1rem;
+  }
+
+  .md\:pl-\[74px\] {
+    padding-left: 74px;
+  }
+
+  .md\:pr-4 {
+    padding-right: 1rem;
   }
 
   .md\:pt-10 {
