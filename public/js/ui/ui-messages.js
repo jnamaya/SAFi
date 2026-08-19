@@ -14,6 +14,9 @@ const iconCheck = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBo
 const iconShield = `<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
 const iconRetry = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`;
 const iconDots = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="19" cy="12" r="1.75"/></svg>`;
+// Overflow-menu item icons (monochrome, inherit currentColor).
+const iconBookmark = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>`;
+const iconDownload = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>`;
 
 // Action-menu outside-click close: bind once for the whole module, not per
 // message (a listener per rendered message would leak).
@@ -63,10 +66,11 @@ function _createOverflowControl({ getText, getAgent, messageId, onRedo }) {
     // toward the left edge rather than off-screen.
     menu.className = 'msg-action-menu hidden absolute z-50 bottom-full mb-1 right-0 min-w-[180px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
 
-    const item = (label, onClick) => {
+    const item = (label, icon, onClick) => {
         const b = document.createElement('button');
-        b.className = 'block w-full text-left px-3 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700';
-        b.textContent = label;
+        b.className = 'flex items-center gap-2.5 w-full text-left px-3 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700';
+        // icon inherits a muted currentColor; label carries the text.
+        b.innerHTML = `<span class="shrink-0 text-neutral-500 dark:text-neutral-400">${icon}</span><span>${label}</span>`;
         b.onclick = (e) => {
             e.stopPropagation();
             menu.classList.add('hidden');
@@ -79,19 +83,19 @@ function _createOverflowControl({ getText, getAgent, messageId, onRedo }) {
     // (not an icon) so it is a deliberate click — a stray retry re-runs a
     // governed turn.
     if (onRedo) {
-        menu.appendChild(item('Retry — ask again', () => onRedo()));
+        menu.appendChild(item('Retry — ask again', iconRetry, () => onRedo()));
     }
 
     // Save only when the message has a server-side id (snapshot needs it).
     if (messageId) {
-        menu.appendChild(item('Save response', () => {
+        menu.appendChild(item('Save response', iconBookmark, () => {
             document.dispatchEvent(new CustomEvent('safi:save-content', {
                 detail: { messageId, anchor: btn },
             }));
         }));
     }
 
-    const exportAs = (label, fmt) => item(label, async () => {
+    const exportAs = (label, fmt) => item(label, iconDownload, async () => {
         try {
             ui.showToast(`Preparing ${label}…`, 'info');
             await api.exportDocument({
