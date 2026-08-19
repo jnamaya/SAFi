@@ -2727,6 +2727,13 @@ html {
         min-height: 44px;
     }
 
+    /* Lift the whole send button (circle and arrow together) 3px on phones so
+       it lines up with the + button. Moving the button, not the icon, keeps
+       the arrow centered in its circle. */
+    #send-button {
+        transform: translateY(-3px);
+    }
+
     /* iOS safe area: keep the composer above the home indicator */
     .composer-bg-wrapper {
         padding-bottom: max(12px, env(safe-area-inset-bottom));
