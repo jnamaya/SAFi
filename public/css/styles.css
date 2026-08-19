@@ -2727,10 +2727,11 @@ html {
         min-height: 44px;
     }
 
-    /* Nudge the send icon up a couple pixels on phones. Applied to the icon
-       wrapper, not the svg, so it does not disturb the svg's -rotate-45. */
+    /* Nudge the send icon up on phones so it lines up with the + button.
+       Applied to the icon wrapper, not the svg, so it does not disturb the
+       svg's -rotate-45. */
     #send-button #button-icon {
-        transform: translateY(-2px);
+        transform: translateY(-6px);
     }
 
     /* iOS safe area: keep the composer above the home indicator */
