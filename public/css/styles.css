@@ -2727,6 +2727,12 @@ html {
         min-height: 44px;
     }
 
+    /* Nudge the send icon up a couple pixels on phones. Applied to the icon
+       wrapper, not the svg, so it does not disturb the svg's -rotate-45. */
+    #send-button #button-icon {
+        transform: translateY(-2px);
+    }
+
     /* iOS safe area: keep the composer above the home indicator */
     .composer-bg-wrapper {
         padding-bottom: max(12px, env(safe-area-inset-bottom));
