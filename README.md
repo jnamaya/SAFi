@@ -25,6 +25,8 @@
 - [For Developers](#for-developers)
 - [Knowledge Bases & Tools](#knowledge-bases--tools)
 - [Roles & Permissions](#roles--permissions)
+- [Releases](#releases)
+- [Managed hosting](#managed-hosting)
 - [Contributing](#contributing)
 - [License & Governance](#license--governance)
 - [About the Author](#about-the-author)
@@ -578,6 +580,22 @@ Stated plainly, because knowing the edges matters more than the summary:
 Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
 `check_permission`), with per-surface role sets in `audit_api.py`
 (`OBSERVER_ROLES`) and `review_api.py` (`REVIEWER_ROLES`).
+
+---
+
+## Releases
+
+SAFi ships on an **8-week release cadence**, anchored on v1.4.1 (August 2026). The last week of each cycle is a freeze: a final promotion to the release branch, then fixes only.
+
+For production, install a [tagged release](https://github.com/jnamaya/SAFi/releases/latest) and pin its published TCB Fingerprint. Releases are the only tier whose exact code is verifiable. The branch tiers (dev, main, releases), the cadence, and the verify-and-pin process are documented in the [Release Process](docs/RELEASE_PROCESS.md).
+
+---
+
+## Managed hosting
+
+SAFi is open source: run it yourself with the [Quick Start](#quick-start) above, or have us operate a dedicated instance for you. We deploy SAFi in your own environment (your servers or your cloud), keep it patched, backed up, and monitored, and attest its integrity against a published release. Your infrastructure, your model keys, your data, no lock-in, and we can train your team to take over whenever you want.
+
+Interested? [selfalignmentframework.com](https://selfalignmentframework.com)
 
 ---
 
