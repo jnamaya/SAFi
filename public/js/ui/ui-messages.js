@@ -693,15 +693,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         }
         // Kept visible: copy, audio. Retry, save, and exports live behind the
         // overflow (⋯), which sits last. Retry is out of the bar so it can't
-        // be misclicked for Listen.
+        // be misclicked for Listen. No timestamp on the answer bar — the user
+        // prompt bubble already timestamps the exchange.
         if (copyBtn) bar.appendChild(copyBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
-
-        const stamp = document.createElement('div');
-        stamp.className = 'stamp actionbar-time';
-        stamp.textContent = formatTime(date);
-        bar.appendChild(stamp);
-
         if (overflowCtrl) bar.appendChild(overflowCtrl);
 
         // Conflict note claims its own line above the bar (see .conflict-note).
