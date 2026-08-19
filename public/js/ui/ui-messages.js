@@ -689,16 +689,17 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             bar.appendChild(_createScoreWrap(payload, () => whyHandler(payload)));
         }
         // Kept visible: copy, retry, audio. Everything else (save, exports)
-        // lives behind the overflow (⋯) so the bar stays uncluttered.
+        // lives behind the overflow (⋯), which sits last in the bar.
         if (copyBtn) bar.appendChild(copyBtn);
         if (redoBtn) bar.appendChild(redoBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
-        if (overflowCtrl) bar.appendChild(overflowCtrl);
 
         const stamp = document.createElement('div');
         stamp.className = 'stamp actionbar-time';
         stamp.textContent = formatTime(date);
         bar.appendChild(stamp);
+
+        if (overflowCtrl) bar.appendChild(overflowCtrl);
 
         // Conflict note claims its own line above the bar (see .conflict-note).
         const conflictNote = whyHandler ? _createConflictNote(payload, () => whyHandler(payload)) : null;
