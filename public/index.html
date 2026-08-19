@@ -809,21 +809,18 @@
         <!-- Mobile Drawer (Backdrop + Sidebar clone) -->
         <div id="mobile-menu-backdrop" class="fixed inset-0 bg-black/50 z-[60] hidden transition-opacity"></div>
         <div id="mobile-menu"
-          class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-neutral-900 z-[70] transform -translate-x-full transition-transform duration-300 ease-in-out md:hidden flex flex-col">
-          <div class="h-16 flex items-center justify-between px-6 border-b border-gray-100 dark:border-gray-800">
+          class="fixed inset-y-0 left-0 w-[80vw] max-w-[360px] bg-white dark:bg-neutral-900 z-[70] transform -translate-x-full transition-transform duration-300 ease-in-out md:hidden flex flex-col">
+          <div class="h-16 flex items-center justify-between px-6 border-b border-gray-100 dark:border-gray-800 shrink-0">
             <span class="font-bold text-lg">Menu</span>
             <button id="close-mobile-menu" class="text-gray-500"><svg class="w-6 h-6" fill="none" stroke="currentColor"
                 viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg></button>
           </div>
-          <div class="p-4" id="mobile-nav-links">
-            <!-- Populated by JS equivalent to sidebar, usually just duplicate structure or inject -->
-            <!-- For simplicity in this fix, I'll just leave it empty and let users rely on the header button if I don't implement full clone logic. 
-                      Wait, the plan said "mobile drawer". 
-                      I am adding the structure but I need to make sure I update the JS to populate it or just clone the sidebar content.
-                      Let's stick to the visible sidebar on desktop first. -->
-          </div>
+          <!-- flex-1 + overflow-y-auto so a tall nav scrolls instead of being
+               clipped. Populated at runtime by app.js (clones the desktop
+               control-panel nav, RBAC-filtered). -->
+          <div class="flex-1 overflow-y-auto custom-scrollbar p-4" id="mobile-nav-links"></div>
         </div>
 
 

@@ -1291,10 +1291,6 @@ video {
   width: 1.5rem;
 }
 
-.w-64 {
-  width: 16rem;
-}
-
 .w-7 {
   width: 1.75rem;
 }
@@ -1313,6 +1309,10 @@ video {
 
 .w-\[18px\] {
   width: 18px;
+}
+
+.w-\[80vw\] {
+  width: 80vw;
 }
 
 .w-\[85vw\] {
@@ -1401,6 +1401,10 @@ video {
 
 .max-w-\[340px\] {
   max-width: 340px;
+}
+
+.max-w-\[360px\] {
+  max-width: 360px;
 }
 
 .max-w-lg {
