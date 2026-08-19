@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
-[![Managed Hosting](https://img.shields.io/badge/Managed%20Hosting-Available-16a34a)](https://selfalignmentframework.com/get-involved/)
+[![Managed Hosting](https://img.shields.io/badge/Managed%20Hosting-Available-16a34a)](docs/MANAGED_OPERATOR.md)
 
 # SAFi: Self-Alignment Framework Interface
 
