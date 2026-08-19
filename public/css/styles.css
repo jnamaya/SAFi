@@ -2727,6 +2727,14 @@ html.native body { font-size: 14px; }
     .message-container {
         padding: 0 12px;
     }
+
+    /* Mobile drawer: clear the status bar / notch at the top and the gesture
+       bar at the bottom so the sidebar header and footer aren't cut off.
+       Desktop is unaffected (this block is max-width: 767px only). */
+    #sidebar {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
 }
 /* --- Sidebar dropdown menu (conversation + project actions) --- */
 .convo-menu-dropdown {

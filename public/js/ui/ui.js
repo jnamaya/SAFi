@@ -129,60 +129,41 @@ function updateSidebarState(open) {
     hideSidebarTimeout = null;
   }
 
-  // Reset inline transform property for CSS classes to take over transitions
+  // Reset inline transform so the CSS classes drive the transition. The drawer
+  // width lives on the element (w-[85vw] max-w-[340px]); on desktop the
+  // #sidebar id width rule (18rem, >=768px) wins, so this is mobile-only.
   elements.sidebarElement.style.transform = '';
 
   if (open) {
-    // 1. Make it visible immediately so the slide-in transition can occur
+    // Reveal first (display can't animate), then flip the transform on the next
+    // frame so the drawer slides in instead of snapping.
     elements.sidebarElement.classList.remove('hidden');
-
-    // FIX: Force flex display so flex-col and flex-1 work on mobile, pushing footer down
     elements.sidebarElement.classList.add('flex');
-
-    // 2. Apply positioning classes
-    elements.sidebarElement.classList.remove('-translate-x-full');
-    elements.sidebarElement.classList.remove('w-72');
-    elements.sidebarElement.classList.add('w-full');
     elements.sidebarOverlay.classList.remove('hidden');
 
-    // Fade in overlay
-    setTimeout(() => {
+    requestAnimationFrame(() => {
+      elements.sidebarElement.classList.remove('-translate-x-full');
       elements.sidebarOverlay.classList.remove('opacity-0');
-    }, 10);
+    });
 
     isSidebarOpen = true;
 
   } else {
-    // 1. Apply off-screen translation
+    // Slide off-screen and fade the scrim.
     elements.sidebarElement.classList.add('-translate-x-full');
-
-    // FIX: Do NOT remove w-full immediately. Let it transition out at full width.
-    // elements.sidebarElement.classList.remove('w-full');
-    // elements.sidebarElement.classList.add('w-72');
-
-    // Fade out overlay
     elements.sidebarOverlay.classList.add('opacity-0');
 
-    // Hide overlay completely after fade
     setTimeout(() => {
-      if (!isSidebarOpen) {
-        elements.sidebarOverlay.classList.add('hidden');
-      }
+      if (!isSidebarOpen) elements.sidebarOverlay.classList.add('hidden');
     }, 300);
 
     isSidebarOpen = false;
 
-    // 2. Hide the element completely after the transition (300ms duration in CSS)
+    // Hide the drawer after the slide completes (300ms CSS duration).
     hideSidebarTimeout = setTimeout(() => {
       if (!isSidebarOpen) {
         elements.sidebarElement.classList.add('hidden');
-
-        // FIX: Remove flex so it returns to default hidden state safely
         elements.sidebarElement.classList.remove('flex');
-
-        // FIX: Reset width ONLY after it is hidden to prepare for next open/desktop
-        elements.sidebarElement.classList.remove('w-full');
-        elements.sidebarElement.classList.add('w-72');
       }
     }, 350);
   }

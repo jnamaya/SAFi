@@ -1315,6 +1315,10 @@ video {
   width: 18px;
 }
 
+.w-\[85vw\] {
+  width: 85vw;
+}
+
 .w-\[calc\(100\%-2rem\)\] {
   width: calc(100% - 2rem);
 }
@@ -1393,6 +1397,10 @@ video {
 
 .max-w-\[280px\] {
   max-width: 280px;
+}
+
+.max-w-\[340px\] {
+  max-width: 340px;
 }
 
 .max-w-lg {

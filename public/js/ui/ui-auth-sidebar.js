@@ -45,7 +45,7 @@ export function updateUIForAuthState(user) {
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-[85vw] max-w-[340px] bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
           
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
