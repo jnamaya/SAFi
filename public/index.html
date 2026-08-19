@@ -17,8 +17,7 @@
        cached and the org's offline_enabled kill switch keeps meaning what it
        says. Consequence: Safari "Add to Dock" and Android "Add to Home Screen"
        work, Chrome's install button does not (it requires a fetch handler).
-       Relative href, like every other asset here, so the Capacitor shell
-       resolves it inside its own bundle. -->
+       Relative href, like every other asset here, served same-origin. -->
   <link rel="manifest" href="manifest.json">
   <!-- Two values because the app itself is theme-aware (dark:bg-black); a
        single light value leaves a white title bar above a black UI. -->
@@ -56,12 +55,6 @@
     // Restore the desktop sidebar collapsed preference before paint to avoid a layout flash.
     if (localStorage.getItem('sidebarCollapsed') === '1') {
       document.documentElement.classList.add('sidebar-collapsed');
-    }
-    // Tag the native (Capacitor) app so CSS can scale the UI down on phones.
-    // window.Capacitor is injected into the WebView before page scripts run.
-    if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
-        && window.Capacitor.isNativePlatform()) {
-      document.documentElement.classList.add('native');
     }
   </script>
 
@@ -122,7 +115,7 @@
   </style>
 </head>
 
-<body class="bg-[#f9f9f9] dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
+<body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
 
   <div id="offline-banner"
     class="fixed top-0 left-0 right-0 z-50 bg-yellow-500 text-black text-center text-sm p-1.5 hidden">
@@ -224,13 +217,13 @@
 
         <!-- Chat View -->
         <div id="chat-view"
-          class="w-full hidden flex flex-col flex-1 min-h-0 bg-[#f9f9f9] dark:bg-black relative md:z-auto z-45 overflow-hidden">
+          class="w-full hidden flex flex-col flex-1 min-h-0 bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
 
 
           <!-- Floating Mobile Menu Toggle -->
           <!-- Restored Mobile Header (Visible only on mobile) -->
           <header
-            class="w-full border-b border-neutral-200 dark:border-neutral-800 bg-[#f9f9f9] dark:bg-black z-20 shrink-0 md:hidden">
+            class="w-full border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black z-20 shrink-0 md:hidden">
             <div class="w-full max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
               <div class="flex items-center gap-3">
                 <button id="menu-toggle" type="button" aria-label="Open sidebar"
@@ -257,7 +250,7 @@
           </div>
 
           <div
-            class="shrink-0 bg-gradient-to-t from-[#f9f9f9] via-[#f9f9f9]/90 to-transparent dark:from-black dark:via-black/90 dark:to-transparent w-full flex justify-center z-20 composer-bg-wrapper pb-3 md:pb-4 pt-4 md:pt-8 px-2 md:px-0">
+            class="shrink-0 bg-gradient-to-t from-white via-white/90 to-transparent dark:from-black dark:via-black/90 dark:to-transparent w-full flex justify-center z-20 composer-bg-wrapper pb-3 md:pb-4 pt-4 md:pt-8 px-2 md:px-0">
             <footer id="composer-footer" class="w-full max-w-3xl px-4 md:px-4">
               <div class="relative w-full">
 
@@ -460,7 +453,7 @@
 
           <!-- SIDEBAR (Desktop) -->
           <aside
-            class="hidden md:flex flex-col bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-gray-800 h-full flex-shrink-0">
+            class="hidden md:flex flex-col bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 h-full flex-shrink-0">
 
             <!-- Header -->
             <div class="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
@@ -710,7 +703,7 @@
 
 
           <!-- MAIN CONTENT AREA -->
-          <main class="flex-1 flex flex-col h-full overflow-hidden bg-[#f9f9f9] dark:bg-black relative">
+          <main class="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-black relative">
 
             <!-- Top Mobile Header -->
             <header
@@ -1023,9 +1016,9 @@
 
   <!-- Login page feature flags + local account form handler -->
   <script>
-    // Native detection — mirrors api.js logic without needing an import
-    const _isNative = !!(window.Capacitor?.isNativePlatform?.());
-    const _HOST = _isNative ? 'https://safi.selfalignmentframework.com' : '';
+    // PWA client (Capacitor retired 2026-08-19): same-origin, no native host.
+    const _isNative = false;
+    const _HOST = '';
 
     // Surface login errors passed back via redirect (?error=...&reason=...)
     (function () {
@@ -1090,11 +1083,7 @@
           if (data.token) {
             // Server returned a bearer token — store it and reload
             const TOKEN_KEY = 'safi_auth_token';
-            if (_isNative && window.Capacitor?.Plugins?.Preferences) {
-              await window.Capacitor.Plugins.Preferences.set({ key: TOKEN_KEY, value: data.token });
-            } else {
-              localStorage.setItem(TOKEN_KEY, data.token);
-            }
+            localStorage.setItem(TOKEN_KEY, data.token);
             window.location.reload();
           } else {
             // Server may have used a cookie session (redirect-based flow).

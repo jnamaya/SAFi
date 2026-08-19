@@ -10,10 +10,8 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
 
     const { policy_id, api_key } = generatedCredentials;
 
-    // Comes from the server (Config.WEB_BASE_URL), never hardcoded and never
-    // window.location.origin: the mobile shell serves from capacitor://localhost,
-    // which is not an address any bot can post to. The fallback is only for a
-    // response predating this field.
+    // Comes from the server (Config.WEB_BASE_URL), never hardcoded. The
+    // fallback is only for a response predating this field.
     const endpointUrl = generatedCredentials.endpoint_url
         || `${window.location.origin}/api/bot/process_prompt`;
     // Correct-but-unreachable is the confusing case worth naming out loud.

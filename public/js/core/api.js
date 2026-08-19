@@ -9,13 +9,8 @@ import {
 
 import offlineManager from '../services/offline-manager.js';
 
-const Cap = typeof window !== "undefined" ? window.Capacitor : null;
-const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
-
-
-// Use the fixed host for Capacitor builds
-const HOST = "https://safi.selfalignmentframework.com";
-const j = (p) => (isNative ? `${HOST}${p}` : p);
+// PWA is served same-origin, so API paths are bare and relative.
+const j = (p) => p;
 
 // Export Auth utilities used by app.js
 export { awaitAuthInit, setAuthToken, getAuthToken, clearAuthToken };
@@ -79,21 +74,8 @@ async function createHeaders() {
     return headers;
 }
 
-// Absolute-ise a same-origin path for the native shell.
-//
-// In the browser a bare "/api/..." is same-origin and correct. Inside the
-// Capacitor WebView the page is served from capacitor://localhost, so the same
-// string resolves against THAT and the request can never reach the server. The
-// `urls` table above wraps its entries in j() for this reason, but seventeen
-// endpoints built their path inline and were never wrapped — the charter, AI
-// standards, members, roles, invitations and identity config among them. Each
-// worked in a mobile browser and failed silently in the app.
-//
-// Normalising here rather than at each call site makes the mistake unavailable:
-// a caller cannot forget something it does not have to remember. Already-absolute
-// URLs (the j()-wrapped ones) start with a scheme and pass through untouched.
-const apiUrl = (u) =>
-    (isNative && typeof u === 'string' && u.startsWith('/')) ? `${HOST}${u}` : u;
+// Same-origin PWA: API paths are already correct as-is.
+const apiUrl = (u) => u;
 
 // GET requests use offlineManager.fetchWithCache
 async function httpGet(url) {

@@ -166,16 +166,13 @@ class Config:
     # to the cause. Any real deployment, including the public demo, sets
     # WEB_BASE_URL explicitly in its own .env.
     #
-    # The capacitor:// and ionic:// origins stay in the default list because the
-    # mobile shell serves bundled assets from a spoofed local origin and cannot
-    # set them per-deployment.
+    # The official device client is the PWA (served same-origin), so no native
+    # shell origins are needed (Capacitor retired 2026-08-19).
     _default_base_url = "http://localhost:5000"
     _default_origins = [
         "http://localhost:5000",
         "http://127.0.0.1:5000",
-        "capacitor://localhost",
         "http://localhost",
-        "ionic://localhost",
     ]
 
     WEB_BASE_URL = os.environ.get("WEB_BASE_URL", _default_base_url)

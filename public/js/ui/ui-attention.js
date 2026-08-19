@@ -94,8 +94,8 @@ export async function renderSettingsInboxTab() {
         return;
     }
     list.innerHTML = `<div class="space-y-2">` + items.map(it => `
-        <div class="attention-row w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm transition-all flex items-start gap-3 cursor-pointer" data-target="${esc(it.target)}" data-dismissible="${it.dismissible ? '1' : ''}">
-            <span class="min-w-[26px] h-6 px-1.5 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
+        <div class="attention-row w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 transition-all flex items-start gap-3 ${it.actionable ? 'hover:border-green-300 dark:hover:border-green-700 hover:shadow-sm cursor-pointer' : ''}" data-target="${esc(it.target)}" data-dismissible="${it.dismissible ? '1' : ''}" data-actionable="${it.actionable ? '1' : ''}">
+            <span class="min-w-[26px] h-6 px-1.5 rounded-full ${it.actionable ? 'bg-green-600' : 'bg-gray-400 dark:bg-neutral-600'} text-white text-xs font-bold flex items-center justify-center mt-0.5">${it.count > 99 ? '99+' : it.count}</span>
             <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">${esc(it.title)}</span>
                 ${it.examples && it.examples.length ? `<span class="block text-xs text-gray-500 truncate mt-0.5">${esc(it.examples.join(', '))}</span>` : ''}
@@ -103,21 +103,20 @@ export async function renderSettingsInboxTab() {
             </span>
             ${it.dismissible
                 ? `<button type="button" class="attention-dismiss text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:underline shrink-0 mt-1">Dismiss</button>`
-                : `<svg class="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`}
+                : (it.actionable
+                    ? `<svg class="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`
+                    : `<span class="text-[11px] text-gray-400 shrink-0 mt-1">Waiting</span>`)}
         </div>`).join('') + `</div>`;
 
-    // Deep link: we are already inside the Control Panel, so switching tab
-    // is one click on the target's own nav button. Clicking a DISMISSIBLE
-    // row also acknowledges it first: clicking a notification is universally
-    // read as "seen", and making only the small Dismiss link clear it left
-    // rows that would not go away (Nelson, 2026-08-18). Dismiss remains for
-    // clearing without navigating.
+    // Only ACTIONABLE rows deep-link (we are already in the Control Panel, so
+    // it is one click on the target tab's nav button). Informational rows
+    // ("your request is awaiting review", decided-outcome notices) do NOT
+    // navigate — clicking them used to throw the reader into an unrelated tab.
+    // Dismissible info rows clear via their Dismiss button; non-dismissible
+    // info rows leave on their own when the work behind them is done.
     list.querySelectorAll('.attention-row').forEach(row =>
         row.addEventListener('click', async () => {
-            if (row.dataset.dismissible === '1') {
-                try { await api.acknowledgeToolOutcomes(); } catch (err) { /* retry next open */ }
-                refreshBadge();
-            }
+            if (row.dataset.actionable !== '1') return;
             document.getElementById(`nav-${row.dataset.target}`)?.click();
         }));
     list.querySelectorAll('.attention-dismiss').forEach(btn =>

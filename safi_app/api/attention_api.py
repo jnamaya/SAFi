@@ -36,6 +36,14 @@ _CATEGORIES = {
 # done" (an outcome has no work to do the leaving).
 _DISMISSIBLE = {"my_tool_requests"}
 
+# Informational categories: nothing for THIS reader to do (their own request
+# awaiting someone else's review, or the outcome of one). These must not
+# deep-link anywhere — clicking "your request was sent for review" and being
+# thrown into the Agents tab is the confusing behavior this flag removes. Only
+# actionable items (approvals, reviews, invitations, incidents, own failing
+# schedules) navigate.
+_INFORMATIONAL = {"my_pending_requests", "my_tool_requests"}
+
 
 def _item(key, agg):
     target, title = _CATEGORIES[key]
@@ -47,6 +55,7 @@ def _item(key, agg):
         "oldest": agg["oldest"].isoformat() if agg.get("oldest") else None,
         "examples": agg.get("examples") or [],
         "dismissible": key in _DISMISSIBLE,
+        "actionable": key not in _INFORMATIONAL,
     }
 
 

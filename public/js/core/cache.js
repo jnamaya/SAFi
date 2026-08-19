@@ -3,10 +3,10 @@
  * Handles LOCAL UI STATE CACHING and Auth Token Persistence.
  */
 
-// Get native plugin from the global Capacitor object
-const Cap = typeof window !== "undefined" ? window.Capacitor : null;
-const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
-const Preferences = Cap?.Plugins?.Preferences;
+// PWA client (Capacitor retired 2026-08-19): device storage is the browser's
+// localStorage. These constants keep the storage wrapper's shape intact.
+const isNative = false;
+const Preferences = null;
 
 /**
  * A wrapper for native key-value storage.

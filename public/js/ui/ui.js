@@ -225,9 +225,9 @@ export function scrollToBottom() {
 
 // --- MODAL / TOAST ---
 
-const Cap = typeof window !== "undefined" ? window.Capacitor : null;
-const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
-const Toast = Cap?.Plugins?.Toast;
+// PWA client (Capacitor retired 2026-08-19): toasts render in-DOM below.
+const isNative = false;
+const Toast = null;
 
 export async function showToast(message, type = 'info', duration = 3000) {
   // 'success' confirms a user-initiated action (saves, deletes, copies) and

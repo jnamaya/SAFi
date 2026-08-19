@@ -41,8 +41,8 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   font-size: 16px;
   line-height: 1.6;
-  /* Stop mobile WebViews (Capacitor/Android font-boosting, iOS auto-adjust)
-     from inflating text so 16px renders as 16px on phones too. */
+  /* Stop mobile browsers (Android font-boosting, iOS auto-adjust) from
+     inflating text so 16px renders as 16px on phones too. */
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -75,14 +75,6 @@ html {
   overflow: hidden;
   overscroll-behavior: none;
 }
-
-/* --- Native (Capacitor) app scaling ---
-   The desktop sizing renders a touch large on phones. Tailwind sizes are all
-   rem, so lowering the root font-size shrinks text AND spacing proportionally.
-   This is the single knob to tune — 15px ≈ 94% of desktop. Try 14px for more,
-   16px to disable. Only applies in the native app (class added in index.html). */
-html.native { font-size: 14px; }
-html.native body { font-size: 14px; }
 
 #app-container {
   max-width: 100%;
@@ -2716,6 +2708,16 @@ html.native body { font-size: 14px; }
        capsule, and horizontal padding comes from the wrapper's px-2 here. */
     #composer-footer {
         padding: 4px 0 0 0;
+    }
+
+    /* Make the composer more compact on phones: smaller input text and a
+       shorter capsule so it takes less of the screen. */
+    #message-input {
+        font-size: 0.9375rem; /* 15px */
+        line-height: 1.4;
+    }
+    #composer-capsule {
+        min-height: 44px;
     }
 
     /* iOS safe area: keep the composer above the home indicator */

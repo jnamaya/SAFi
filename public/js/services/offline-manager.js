@@ -1,12 +1,10 @@
 /**
  * offline-manager.js
  * Handles GET caching, POST/PUT/DELETE queuing, and reconnect flush.
- * Safe for both web and Capacitor native.
+ * PWA client (Capacitor retired 2026-08-19): online state comes from the
+ * browser's online/offline events and navigator.onLine.
  */
 
-const Cap = typeof window !== 'undefined' ? window.Capacitor : null;
-const Plugins = Cap?.Plugins || {};
-const Network = Plugins?.Network; // optional
 // Simple storage abstraction. Uses localStorage everywhere for simplicity.
 const storage = {
   async get(key) {
@@ -93,22 +91,7 @@ async function initNetworkListener() {
     window.addEventListener('offline', () => { isOnline = false; });
   } catch { }
 
-  // Capacitor Network plugin if present
-  if (Network && typeof Network.addListener === 'function') {
-    try {
-      const status = await Network.getStatus();
-      isOnline = !!status.connected;
-      Network.addListener('networkStatusChange', (st) => {
-        isOnline = !!st.connected;
-        if (isOnline) flushQueue();
-      });
-    } catch {
-      // fallback to navigator.onLine
-      isOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
-    }
-  } else {
-    isOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
-  }
+  isOnline = typeof navigator !== 'undefined' ? !!navigator.onLine : true;
 
   if (isOnline) flushQueue(); // try once at startup
 }

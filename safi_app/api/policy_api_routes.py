@@ -149,8 +149,7 @@ def _hold_tool_widening(data, old_rules, org_id):
 # WEB_BASE_URL is the right source: it is what the OAuth callback and CORS
 # origins already derive from, so if it is wrong the deployment is already
 # broken in more visible ways. Resolved server-side rather than from
-# window.location.origin because the mobile shell serves from capacitor://
-# localhost, which is not an address any bot can post to.
+# window.location.origin so the endpoint URL is always the real backend host.
 
 def _bot_endpoint_url():
     from ..config import Config

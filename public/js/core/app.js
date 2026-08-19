@@ -14,17 +14,17 @@ import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-se
 import offlineManager from '../services/offline-manager.js';
 import * as cache from './cache.js';
 
-// --- CAPACITOR GLOBAL STATE & PLUGINS ---
-const Cap = typeof window !== 'undefined' ? window.Capacitor : undefined;
-const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
-const Plugins = Cap?.Plugins || {};
-const GoogleAuth = Plugins?.GoogleAuth;
-const SplashScreen = Plugins?.SplashScreen;
-const Haptics = Plugins?.Haptics;
-const StatusBar = Plugins?.StatusBar;
-const Network = Plugins?.Network;
-const App = Plugins?.App;
-const Browser = Plugins?.Browser;
+// PWA client (Capacitor retired 2026-08-19): no native shell or plugins.
+// isNative is permanently false, so every native branch below is inert and
+// the web path runs. Kept as named constants so those branches still compile.
+const isNative = false;
+const GoogleAuth = null;
+const SplashScreen = null;
+const Haptics = null;
+const StatusBar = null;
+const Network = null;
+const App = null;
+const Browser = null;
 
 const WEB_CLIENT_ID = '391499357887-ggqkfpcqptcr93raffcv5mhgufmlu92v.apps.googleusercontent.com';
 
@@ -125,7 +125,7 @@ async function handleNativeLogin() {
   }
 }
 
-/** Opens Microsoft OAuth in the Capacitor in-app browser and waits for the deep link callback. */
+/** Retired native-shell Microsoft login (device client is the PWA now); inert. */
 async function handleNativeMicrosoftLogin() {
   if (!Browser) {
     ui.showToast('Browser plugin not available.', 'error');
@@ -201,7 +201,7 @@ function applyTheme(theme) {
 function showMfaEnrollmentGate() {
   const gate = document.createElement('div');
   gate.id = 'mfa-enrollment-gate';
-  gate.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-[#f9f9f9] dark:bg-black p-4';
+  gate.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-white dark:bg-black p-4';
   gate.innerHTML = `
     <div class="w-full max-w-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-6">
       <h2 class="text-lg font-bold text-neutral-900 dark:text-white mb-1">Two-factor authentication required</h2>
@@ -838,16 +838,9 @@ function attachEventListeners() {
   }
 
   // 3. Guest / Demo Login
-  // No OAuth involved, so unlike Microsoft this doesn't need the Browser
-  // plugin. But it IS cross-origin — bundled assets are served under a
-  // spoofed local origin (mobile/capacitor.config.ts server.hostname),
-  // different from the real backend host below. ?client=native asks the
-  // backend for a plain JSON response instead of a 302 redirect: a
-  // fetch() that follows a redirect needs BOTH hops to pass CORS, a
-  // single JSON response only needs the one. On native, the default
-  // <a href="/api/login/demo"> would navigate against the bundled local
-  // assets instead of the real server, 404ing before the session cookie
-  // is ever set.
+  // Retired native-shell branch (isNative is always false now that the device
+  // client is the PWA): the web login uses the plain <a href="/api/login/demo">
+  // link, same-origin. Kept inert rather than removed to keep this diff small.
   const demoBtn = document.getElementById('login-demo-button');
   if (demoBtn && isNative) {
     demoBtn.addEventListener('click', async (e) => {

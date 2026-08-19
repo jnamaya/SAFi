@@ -118,7 +118,7 @@ export function updateUIForAuthState(user) {
 
     ui.elements.sidebarContainer.innerHTML = `
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity duration-300 opacity-0"></div>
-        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-full bg-[#f9f9f9] dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
+        <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 w-full bg-white dark:bg-[#000000] text-neutral-900 dark:text-white flex-col z-40 transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 h-full border-r border-gray-200 dark:border-neutral-800">
           
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
@@ -197,7 +197,7 @@ export function updateUIForAuthState(user) {
              sidebar is translated off-screen, not removed — so there is
              exactly one implementation of each action. -->
         <div id="sidebar-rail"
-          class="hidden fixed inset-y-0 left-0 w-14 z-40 flex-col items-center py-3 bg-[#f9f9f9] dark:bg-black border-r border-gray-200 dark:border-neutral-800">
+          class="hidden fixed inset-y-0 left-0 w-14 z-40 flex-col items-center py-3 bg-white dark:bg-black border-r border-gray-200 dark:border-neutral-800">
           <!-- Brand mark that IS the expand control: the logo at rest, the
                expand-panel icon on hover or keyboard focus, one click to
                expand. Merging them means one control in the top slot instead
