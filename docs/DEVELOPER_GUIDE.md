@@ -61,8 +61,8 @@ Nelson
 ## How to read this guide
 
 Most of this guide documents the **reference implementation**: the USB
-that ships with SAFi (the vanilla-JS front end, the Capacitor mobile
-shell, the wizards, the settings screens). It exists so you can evaluate
+that ships with SAFi (the vanilla-JS front end, installable as a PWA, the
+wizards, the settings screens). It exists so you can evaluate
 SAFi in one command and so contributors can improve it. **None of it
 binds you.** Your own client, GUI, or integration replaces any of it,
 and owes conformance only to the contract.
@@ -88,7 +88,7 @@ Read by what you are building:
 
 1. [Front-end structure](#1-front-end-structure)
 2. [Back-end structure](#2-back-end-structure)
-3. [Mobile structure](#3-mobile-structure)
+3. [Device clients and mobile apps](#3-device-clients-and-mobile-apps)
 4. [Setting up SAFi on your local machine](#4-setting-up-safi-on-your-local-machine)
 5. [Understanding SAFi](#5-understanding-safi)
 6. [The math, briefly](#6-the-math-briefly)
@@ -207,34 +207,32 @@ the TCB through a handful of stable, data-shaped interfaces rather than by
 reaching into it. Section 19 draws the full boundary and catalogs those
 interfaces; internalize it before your first change.
 
-## 3. Mobile structure
+## 3. Device clients and mobile apps
 
-*Reference implementation. The mobile app is a shell around the shipped
-web interface; a custom client needs none of this.*
+*Reference implementation. SAFi's official client is the web app in
+`public/`, installable as a PWA, and it is the same interface on desktop and
+mobile. A custom client needs none of this.*
 
-The Android app is a thin Capacitor shell around the same web app the
-browser serves — no separate UI to maintain. `chat/`, the folder
-Capacitor actually bundles into the APK, is never hand-edited or
-committed: `build.sh` regenerates it from `public/` via `rsync` before
-every build, so the app can't ship a stale copy of the front-end. See
+The PWA is SAFi's official device client for both desktop and mobile
+devices. It is the vanilla-JS front end in `public/`, served over HTTP with
+a web app manifest (`public/manifest.json`) and responsive layouts, so a
+browser can install it to the home screen or the desktop and run it like an
+installed app. There is no separate mobile codebase: the same `public/` tree
+serves every device, so there is nothing extra to build or keep in sync. See
 [§1](#1-front-end-structure) for what's in `public/`.
 
-```
-mobile/
-├── build.sh                # rsyncs public/ → chat/, then npx cap sync && gradlew
-├── capacitor.config.ts       # app id, webDir, GoogleAuth client IDs, allowNavigation
-├── package.json, package-lock.json   # Capacitor CLI + plugin deps
-├── icons/, assets/            # app icon source images (input to @capacitor/assets)
-├── www/                       # PWA manifest.json (unused by the current webDir)
-├── chat/                      # generated from ../public — gitignored, never commit
-└── android/                  # native Android project
-    ├── local.properties        # SDK path — machine-specific, gitignored, recreate per machine
-    ├── app/
-    │   ├── src/main/AndroidManifest.xml
-    │   ├── src/main/java/com/safi/app/MainActivity.java
-    │   └── src/main/res/        # launcher icons, splash screens
-    └── build.gradle, settings.gradle, gradlew, ...   # standard Gradle wrapper project
-```
+Full native mobile apps are possible, and the mobile APIs are open to anyone
+who wants to build them. Everything a client needs is the HTTP API
+(authentication in §8, the governed-turn gateway in §9, the internal API
+endpoints in §10): login, conversations, governed chat turns, and the rest
+are all reachable the same way the web app reaches them. Any organization that wants a full
+iOS or Android app can build one against that API on whatever stack it
+prefers. That is the organization's decision, not something the platform
+requires or provides.
+
+A Capacitor Android shell used to ship here as a reference client. It was
+retired on 2026-08-19 in favor of the PWA, and the `mobile/` directory was
+removed.
 
 ## 4. Setting up SAFi on your local machine
 
