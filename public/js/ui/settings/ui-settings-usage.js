@@ -43,20 +43,29 @@ function fmtUsd(v) {
     return '$' + v.toFixed(2);
 }
 
-function usageTable(title, note, headers, rows) {
+// Columns from `numericFrom` onward are treated as numbers: right-aligned and
+// tabular so digits line up down the column and are easy to compare. Column 0
+// is always the row label. Anything between (e.g. a Provider name) stays a
+// plain left-aligned text column.
+function usageTable(title, note, headers, rows, numericFrom = 1) {
+    const isNum = (i) => i >= numericFrom;
     return `
         <div class="settings-card">
             <h4 class="text-lg font-semibold">${title}</h4>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-4">${note}</p>
             ${rows.length === 0
                 ? '<p class="text-sm text-gray-400">No usage in this period.</p>'
-                : `<div class="overflow-x-auto"><table class="w-full text-sm">
-                    <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
-                        ${headers.map(h => `<th class="py-2 pr-4">${h}</th>`).join('')}
+                : `<div class="overflow-x-auto -mx-2"><table class="w-full text-sm">
+                    <thead><tr class="text-xs uppercase tracking-wide text-gray-400 border-b border-gray-200 dark:border-neutral-800">
+                        ${headers.map((h, i) => `<th class="py-2 px-3 font-medium ${isNum(i) ? 'text-right' : 'text-left'}">${h}</th>`).join('')}
                     </tr></thead>
                     <tbody>${rows.map(cells => `
-                        <tr class="border-b border-gray-100 dark:border-neutral-800/60">
-                            ${cells.map(c => `<td class="py-2 pr-4">${c}</td>`).join('')}
+                        <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
+                            ${cells.map((c, i) => `<td class="py-2.5 px-3 ${i === 0
+                                ? 'font-medium text-gray-900 dark:text-white'
+                                : isNum(i)
+                                    ? 'text-right tabular-nums text-gray-600 dark:text-gray-300'
+                                    : 'text-gray-600 dark:text-gray-300'}">${c}</td>`).join('')}
                         </tr>`).join('')}
                     </tbody></table></div>`
             }
@@ -117,22 +126,33 @@ export async function renderSettingsUsageTab(days = 30) {
 
         <div class="settings-card">
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Last ${usage.days} days</p>
-                    <p class="text-2xl font-bold text-neutral-900 dark:text-white mt-1">
-                        ${fmtUsd(totCost)}${unpriced ? ' <span class="text-sm font-normal text-gray-400">(+ unpriced models)</span>' : ''}
-                    </p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        ${fmtTokens(totIn)} tokens in, ${fmtTokens(totOut)} tokens out, across ${totCalls} model calls.
-                    </p>
-                </div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Last ${usage.days} days</p>
                 <div class="flex items-center gap-2">
                     <label for="usage-days" class="text-sm text-gray-500">Period</label>
-                    <select id="usage-days" class="p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+                    <select id="usage-days" class="p-2 rounded-lg border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
                         <option value="7" ${usage.days === 7 ? 'selected' : ''}>7 days</option>
                         <option value="30" ${usage.days === 30 ? 'selected' : ''}>30 days</option>
                         <option value="90" ${usage.days === 90 ? 'selected' : ''}>90 days</option>
                     </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+                <div class="rounded-xl border border-gray-100 dark:border-neutral-800 p-4">
+                    <p class="text-xs uppercase tracking-wide text-gray-400">Estimated cost</p>
+                    <p class="text-2xl font-bold text-green-600 dark:text-green-500 mt-1 tabular-nums">${fmtUsd(totCost)}</p>
+                    ${unpriced ? '<p class="text-xs text-gray-400 mt-0.5">+ unpriced models</p>' : ''}
+                </div>
+                <div class="rounded-xl border border-gray-100 dark:border-neutral-800 p-4">
+                    <p class="text-xs uppercase tracking-wide text-gray-400">Model calls</p>
+                    <p class="text-2xl font-bold text-neutral-900 dark:text-white mt-1 tabular-nums">${totCalls.toLocaleString()}</p>
+                </div>
+                <div class="rounded-xl border border-gray-100 dark:border-neutral-800 p-4">
+                    <p class="text-xs uppercase tracking-wide text-gray-400">Tokens in</p>
+                    <p class="text-2xl font-bold text-neutral-900 dark:text-white mt-1 tabular-nums">${fmtTokens(totIn)}</p>
+                </div>
+                <div class="rounded-xl border border-gray-100 dark:border-neutral-800 p-4">
+                    <p class="text-xs uppercase tracking-wide text-gray-400">Tokens out</p>
+                    <p class="text-2xl font-bold text-neutral-900 dark:text-white mt-1 tabular-nums">${fmtTokens(totOut)}</p>
                 </div>
             </div>
         </div>
@@ -144,11 +164,12 @@ export async function renderSettingsUsageTab(days = 30) {
             usage.by_model.map(r => [
                 `<code class="text-xs">${escapeHtml(r.model)}</code>`,
                 escapeHtml(r.provider),
-                r.calls,
+                r.calls.toLocaleString(),
                 fmtTokens(r.tokens_in),
                 fmtTokens(r.tokens_out),
                 fmtUsd(estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices))),
-            ])
+            ]),
+            2,
         )}
 
         ${usageTable(
@@ -157,7 +178,7 @@ export async function renderSettingsUsageTab(days = 30) {
             ['Faculty route', 'Calls', 'Tokens in', 'Tokens out'],
             usage.by_route.map(r => [
                 escapeHtml(routeLabels[r.route] || r.route),
-                r.calls,
+                r.calls.toLocaleString(),
                 fmtTokens(r.tokens_in),
                 fmtTokens(r.tokens_out),
             ])
@@ -169,7 +190,7 @@ export async function renderSettingsUsageTab(days = 30) {
             ['Agent', 'Calls', 'Tokens in', 'Tokens out'],
             usage.by_agent.map(r => [
                 escapeHtml(r.agent),
-                r.calls,
+                r.calls.toLocaleString(),
                 fmtTokens(r.tokens_in),
                 fmtTokens(r.tokens_out),
             ])
@@ -181,7 +202,7 @@ export async function renderSettingsUsageTab(days = 30) {
             ['Day', 'Calls', 'Tokens in', 'Tokens out'],
             usage.by_day.map(r => [
                 escapeHtml(r.day),
-                r.calls,
+                r.calls.toLocaleString(),
                 fmtTokens(r.tokens_in),
                 fmtTokens(r.tokens_out),
             ])
@@ -240,7 +261,7 @@ async function renderProviderKeysSection(orgId) {
                             ? '<span class="text-gray-500">Using deployment default</span>'
                             : '<span class="text-gray-400">Not configured</span>');
                     return `
-                    <tr class="border-b border-gray-100 dark:border-neutral-800/60">
+                    <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
                         <td class="py-2 pr-4 font-medium">${escapeHtml(p.label)}</td>
                         <td class="py-2 pr-4">${status}</td>
                         <td class="py-2 pr-4">
@@ -336,7 +357,7 @@ async function renderDeploymentSection(days, prices) {
         ['Organization', 'Calls', 'Tokens in', 'Tokens out', 'Est. cost'],
         rows.map(o => [
             escapeHtml(o.name),
-            o.calls,
+            o.calls.toLocaleString(),
             fmtTokens(o.tokens_in),
             fmtTokens(o.tokens_out),
             fmtUsd(o.unpriced ? null : o.cost),
@@ -375,7 +396,7 @@ async function renderModelCatalogSection() {
                         <th class="py-2 pr-4">Model id</th><th class="py-2 pr-4">Label</th><th class="py-2 pr-4">Provider</th><th class="py-2"></th>
                     </tr></thead>
                     <tbody>${res.models.map(m => `
-                        <tr class="border-b border-gray-100 dark:border-neutral-800/60">
+                        <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
                             <td class="py-2 pr-4"><code class="text-xs">${escapeHtml(m.id)}</code></td>
                             <td class="py-2 pr-4">${escapeHtml(m.label)}</td>
                             <td class="py-2 pr-4">${escapeHtml(m.provider)}</td>

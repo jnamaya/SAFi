@@ -793,6 +793,11 @@ video {
   margin: auto;
 }
 
+.-mx-2 {
+  margin-left: -0.5rem;
+  margin-right: -0.5rem;
+}
+
 .-mx-6 {
   margin-left: -1.5rem;
   margin-right: -1.5rem;
@@ -978,6 +983,10 @@ video {
 
 .mt-4 {
   margin-top: 1rem;
+}
+
+.mt-5 {
+  margin-top: 1.25rem;
 }
 
 .mt-6 {
@@ -4218,6 +4227,10 @@ video {
 .dark\:hover\:bg-neutral-800:hover:is(.dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(38 38 38 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:hover\:bg-neutral-800\/40:hover:is(.dark *) {
+  background-color: rgb(38 38 38 / 0.4);
 }
 
 .dark\:hover\:bg-neutral-800\/50:hover:is(.dark *) {
