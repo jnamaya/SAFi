@@ -6,6 +6,7 @@ It supports OpenAI, Anthropic, and Gemini natively, and generic OpenAI-compatibl
 providers (like DeepSeek, Groq, Mistral, Ollama) via configuration.
 """
 from __future__ import annotations
+import os
 import json
 import logging
 import asyncio
@@ -31,6 +32,15 @@ from .parsing_utils import (
 # review; that same openness must not extend to quietly changing how strictly
 # every agent in a deployment is audited. Full rationale at the definition.
 from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exported)
+
+
+# Per-call ceiling on any provider request. Without it the SDK defaults (~600s
+# for OpenAI/Anthropic) exceed gunicorn's --timeout (300s), so a provider that
+# stalls rides to the worker-kill, which takes the worker's in-flight siblings
+# with it (docker-entrypoint.sh) — one stuck call becomes a host-wide outage.
+# Kept comfortably under 300s so even a turn's two calls (intellect + conscience)
+# stay inside the request budget, and tunable for slow self-hosted providers.
+LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "120"))
 
 
 class LLMProvider:
@@ -69,12 +79,16 @@ class LLMProvider:
                 if p_type == "openai":
                     self.clients[name] = AsyncOpenAI(
                         api_key=api_key,
-                        base_url=details.get("base_url") # Handles Groq, DeepSeek, Mistral
+                        base_url=details.get("base_url"), # Handles Groq, DeepSeek, Mistral
+                        timeout=LLM_TIMEOUT_SECONDS,
                     )
                 elif p_type == "anthropic":
-                    self.clients[name] = AsyncAnthropic(api_key=api_key)
+                    self.clients[name] = AsyncAnthropic(api_key=api_key, timeout=LLM_TIMEOUT_SECONDS)
                 elif p_type == "gemini":
-                    self.clients[name] = genai.Client(api_key=api_key)
+                    self.clients[name] = genai.Client(
+                        api_key=api_key,
+                        http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
+                    )
                 else:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
             except Exception as e:
@@ -96,11 +110,11 @@ class LLMProvider:
         try:
             p_type = provider_details.get("type")
             if p_type == "openai":
-                client = AsyncOpenAI(api_key=key, base_url=provider_details.get("base_url"))
+                client = AsyncOpenAI(api_key=key, base_url=provider_details.get("base_url"), timeout=LLM_TIMEOUT_SECONDS)
             elif p_type == "anthropic":
-                client = AsyncAnthropic(api_key=key)
+                client = AsyncAnthropic(api_key=key, timeout=LLM_TIMEOUT_SECONDS)
             elif p_type == "gemini":
-                client = genai.Client(api_key=key)
+                client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000))
             else:
                 return None
         except Exception as e:
@@ -448,6 +462,19 @@ class LLMProvider:
     _INTELLECT_MAX_ATTEMPTS = 3
 
     @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        """True if the exception is a provider stall (timeout / connection
+        failure). These must NEVER be retried: a retry just runs the same hang
+        again, and N attempts at the per-call timeout can add up past gunicorn's
+        request timeout, which turns one stuck provider into a killed worker.
+        A blank-but-fast response is a different case and is still retried."""
+        text = f"{type(exc).__name__}: {exc}".lower()
+        return any(k in text for k in (
+            "timeout", "timed out", "connection", "connecterror",
+            "readerror", "network", "unreachable", "getaddrinfo",
+        ))
+
+    @staticmethod
     def explain_provider_error(exc: Exception) -> str:
         """Turn a provider exception into something an operator can act on.
 
@@ -550,6 +577,13 @@ class LLMProvider:
                 self.log.exception(
                     "Intellect execution failed (attempt %d/%d)", attempt, self._INTELLECT_MAX_ATTEMPTS
                 )
+                # A stalled provider must fail this turn now, not be re-run twice
+                # more: three attempts at the per-call timeout would exceed the
+                # request budget and kill the worker. Blanks and other transient
+                # errors still retry.
+                if self._is_timeout_error(e):
+                    self.log.warning("Intellect call timed out; failing fast without retry.")
+                    break
                 continue
 
         # All attempts failed. On a hard error, preserve the legacy failure
@@ -616,9 +650,16 @@ class LLMProvider:
                 # call on those models.
                 self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
             except Exception as e:
-                # A provider that rejects json_mode would otherwise fail BOTH audit
-                # attempts and brick the agent into permanent fail-closed. Retry
-                # once without it; the text parser still handles unconstrained output.
+                # A stalled provider must not be re-run: a second call at the
+                # per-call timeout would push the turn past the request budget.
+                # Fail fast to the outer handler (empty ledger => Will fails
+                # closed), which is the safe outcome when the model is unreachable.
+                if self._is_timeout_error(e):
+                    self.log.warning("Conscience call timed out; failing fast without retry.")
+                    raise
+                # A provider that merely rejects json_mode would otherwise fail BOTH
+                # audit attempts and brick the agent into permanent fail-closed.
+                # Retry once without it; the text parser handles unconstrained output.
                 self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
 
             raw_content = await self._chat_completion(

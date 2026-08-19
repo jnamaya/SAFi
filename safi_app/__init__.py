@@ -30,6 +30,13 @@ def create_app():
     app.config.from_object(Config)
     Config.validate()
 
+    # Reject an oversized request body at the framework edge (413) before Flask
+    # buffers the whole thing into memory. Without this the per-endpoint size
+    # check in documents.py only runs AFTER the upload is fully read, so a large
+    # body is a memory cost we take before we decline it. Sized off the upload
+    # limit plus headroom for multipart overhead and non-upload JSON bodies.
+    app.config['MAX_CONTENT_LENGTH'] = (Config.MAX_UPLOAD_SIZE_MB + 2) * 1024 * 1024
+
     # Measured boot (backlog 39): hash the Core Loop against the release
     # manifest once, log the fingerprint or the taint loudly, and stamp the
     # result into every governance record from here on. Default is
