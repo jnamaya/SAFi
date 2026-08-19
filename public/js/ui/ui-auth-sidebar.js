@@ -218,7 +218,7 @@ export function updateUIForAuthState(user) {
           <!-- Recent conversations without expanding: opens a popup listing the
                current convo links, so a collapsed rail can still jump chats. -->
           <button id="rail-recent" type="button" aria-label="Recent conversations" title="Recent conversations"
-            class="mt-2 w-9 h-9 flex items-center justify-center rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+            class="mt-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 21l1.2-3.6A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
           </button>
           <div class="flex-1"></div>
