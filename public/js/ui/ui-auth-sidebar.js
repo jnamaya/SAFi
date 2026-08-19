@@ -17,6 +17,79 @@ const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" vie
 // --- NEW: Search Icon ---
 const iconSearch = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
 
+// --- Collapsed-rail "recent conversations" popup ---
+// The collapsed rail has no room for the conversation list, so this floats a
+// small menu built from the (still-in-DOM, off-screen) #convo-list links.
+// Clicking an item forwards to the real link, so it runs the exact same
+// switch-conversation path as the expanded list — no duplicated load logic.
+let _recentPopupEl = null;
+
+function _closeRecentPopup() {
+    if (_recentPopupEl) { _recentPopupEl.remove(); _recentPopupEl = null; }
+    document.removeEventListener('click', _onRecentOutside, true);
+    document.removeEventListener('keydown', _onRecentEsc);
+}
+
+function _onRecentOutside(e) {
+    if (_recentPopupEl && !_recentPopupEl.contains(e.target) && !e.target.closest('#rail-recent')) {
+        _closeRecentPopup();
+    }
+}
+
+function _onRecentEsc(e) {
+    if (e.key === 'Escape') _closeRecentPopup();
+}
+
+function _openRecentConvoPopup(anchorBtn) {
+    _closeRecentPopup();
+    const links = Array.from(document.querySelectorAll('#convo-list a[data-id]')).slice(0, 15);
+
+    const pop = document.createElement('div');
+    _recentPopupEl = pop;
+    pop.className = 'recent-convo-popup fixed z-[80] w-64 max-h-[70vh] overflow-y-auto custom-scrollbar rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg py-1';
+
+    const header = document.createElement('div');
+    header.className = 'px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500';
+    header.textContent = 'Recent';
+    pop.appendChild(header);
+
+    if (!links.length) {
+        const empty = document.createElement('div');
+        empty.className = 'px-3 py-2 text-sm text-neutral-400';
+        empty.textContent = 'No conversations yet.';
+        pop.appendChild(empty);
+    } else {
+        links.forEach(link => {
+            const titleEl = link.querySelector('.convo-title');
+            const title = (titleEl ? titleEl.textContent : '').trim() || 'Untitled';
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'block w-full text-left px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 truncate';
+            b.textContent = title;
+            b.title = title;
+            b.addEventListener('click', () => { _closeRecentPopup(); link.click(); });
+            pop.appendChild(b);
+        });
+    }
+
+    document.body.appendChild(pop);
+
+    // Position beside the rail button, clamped to the viewport.
+    const r = anchorBtn.getBoundingClientRect();
+    pop.style.left = (r.right + 8) + 'px';
+    pop.style.top = r.top + 'px';
+    const pr = pop.getBoundingClientRect();
+    if (pr.bottom > window.innerHeight - 8) {
+        pop.style.top = Math.max(8, window.innerHeight - 8 - pr.height) + 'px';
+    }
+
+    // Defer binding so this same click doesn't immediately close it.
+    setTimeout(() => {
+        document.addEventListener('click', _onRecentOutside, true);
+        document.addEventListener('keydown', _onRecentEsc);
+    }, 0);
+}
+
 // --- NEW: Profile Cache ---
 // Allows us to look up avatars for custom profiles by name
 let _knownProfiles = [];
@@ -142,6 +215,12 @@ export function updateUIForAuthState(user) {
             class="mt-2 w-9 h-9 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
           </button>
+          <!-- Recent conversations without expanding: opens a popup listing the
+               current convo links, so a collapsed rail can still jump chats. -->
+          <button id="rail-recent" type="button" aria-label="Recent conversations" title="Recent conversations"
+            class="mt-2 w-9 h-9 flex items-center justify-center rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 21l1.2-3.6A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          </button>
           <div class="flex-1"></div>
           <button id="rail-account" type="button" aria-label="Open Control Panel" title="${name}"
             class="p-1 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors">
@@ -168,6 +247,11 @@ export function updateUIForAuthState(user) {
     });
     document.getElementById('rail-settings')?.addEventListener('click', () =>
         document.getElementById('control-panel-btn')?.click());
+    document.getElementById('rail-recent')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (_recentPopupEl) { _closeRecentPopup(); return; }
+        _openRecentConvoPopup(e.currentTarget);
+    });
 
     // Inbox count pill on the Control Panel nav (backlog 57): starts polling
     // once a user is signed in. The tab itself renders on entry.
