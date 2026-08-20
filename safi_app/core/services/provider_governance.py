@@ -117,8 +117,12 @@ def list_models_for_org(org_id) -> List[dict]:
     # so the catalog UI knows which entries are deletable. Both pass the
     # same configured-provider and allow-list filters.
     merged = [dict(m) for m in Config.AVAILABLE_MODELS]
+    # Custom rows are scoped: this org's own entries plus the deployment-wide
+    # ones (org_id ''). Without the filter every org's picker listed every other
+    # org's models, which disclosed ids and labels across tenants (backlog 77).
     merged += [{"id": r["model_id"], "label": r["label"], "custom": True}
-               for r in custom_models()]
+               for r in custom_models()
+               if str(r.get("org_id") or "") in ("", str(org_id or ""))]
     out = []
     for m in merged:
         prov = detect_provider(m["id"])

@@ -32,7 +32,25 @@ def start_domain_verification():
     
     if not org_id or not domain:
         return jsonify({"error": "Missing org_id or domain"}), 400
-        
+
+    # A domain can be verified by ONE organization (backlog 78). Nothing used to
+    # stop two orgs verifying the same one, and because get_organization_by_domain
+    # takes the first row with no ordering, which org then "owned" the domain was
+    # arbitrary. That matters: a verified domain outranks invitations and drives
+    # auto-join, so an ambiguous owner sends new people to an arbitrary tenant.
+    #
+    # Refused here rather than resolved, because the alternative (moving people
+    # or the domain between orgs) would let a later verifier take over an
+    # existing organization. Reconciliation is a support conversation, not
+    # something an endpoint should decide.
+    existing = db.get_organization_by_domain(str(domain).strip().lower())
+    if existing and str(existing['id']) != str(org_id):
+        return jsonify({
+            "error": "That domain is already verified by another organization on "
+                     "this deployment. If it belongs to you, contact support to "
+                     "reconcile the two organizations."
+        }), 409
+
     token = f"safi-verification={uuid.uuid4()}"
     
     try:
@@ -73,7 +91,19 @@ def verify_domain_dns():
         
         if not domain or not token:
             return jsonify({"error": "No verification in progress."}), 400
-            
+
+        # Re-checked at the moment of commit, not only at start (backlog 78).
+        # The start check can be minutes or days old, and another org can verify
+        # the same domain in between, so this is the one that actually decides.
+        owner = db.get_organization_by_domain(str(domain).strip().lower())
+        if owner and str(owner['id']) != str(org_id):
+            return jsonify({
+                "status": "failed",
+                "error": "That domain has since been verified by another "
+                         "organization on this deployment. Contact support to "
+                         "reconcile the two organizations."
+            }), 409
+
         current_app.logger.info(f"Looking up TXT records for {domain}...")
         answers = dns.resolver.resolve(domain, 'TXT')
         found = False

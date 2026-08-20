@@ -873,9 +873,32 @@ def init_db():
                 label VARCHAR(120) NOT NULL,
                 provider VARCHAR(40) NOT NULL,
                 created_by VARCHAR(255) NULL,
+                org_id VARCHAR(36) NOT NULL DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # org_id scopes a catalog entry to the org that added it (backlog 77).
+        # Empty string, not NULL, means deployment-wide: a PRIMARY KEY column
+        # cannot be NULL, and keeping the sentinel non-null lets the same
+        # comparison work everywhere without an IS NULL special case.
+        #
+        # Rows that predate this column become deployment-wide, because there is
+        # no reliable way to attribute them after the fact. They stay visible to
+        # every org until an operator removes them, but they are no longer
+        # deletable by a tenant admin, which was the actual defect.
+        #
+        # model_id stays the PRIMARY KEY, so a model id is registered once per
+        # DEPLOYMENT rather than once per org. That is deliberate:
+        # detect_provider() maps an id to a provider with no org in scope, and it
+        # sits in the dispatch path, so allowing two orgs to claim one id with
+        # different providers would make routing ambiguous. The cost is that a
+        # second org adding the same id gets a collision, which discloses that
+        # the id is taken but not who took it, its label, or its provider.
+        cursor.execute("SHOW COLUMNS FROM custom_models LIKE 'org_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE custom_models ADD COLUMN org_id VARCHAR(36) NOT NULL DEFAULT ''")
+            cursor.execute("CREATE INDEX idx_custom_models_org ON custom_models(org_id)")
 
         # --- Per-org provider API keys (backlog 64, BYOK over .env) ---
         # key_enc holds the Fernet-encrypted key; last4 exists so the UI can
@@ -3732,8 +3755,23 @@ def get_organization_by_domain(domain):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Check for EXACT match on domain_to_verify AND domain_verified=TRUE
-        cursor.execute("SELECT * FROM organizations WHERE domain_verified=TRUE AND domain_to_verify=%s", (domain,))
+        # Check for EXACT match on domain_to_verify AND domain_verified=TRUE.
+        #
+        # ORDER BY matters (backlog 78): the endpoints now refuse a second
+        # verification of a domain another org already holds, but a database
+        # written before that guard can contain duplicates. Without an order,
+        # fetchone() returned an arbitrary row, so the answer to "who owns this
+        # domain" could change between calls, and that answer decides where new
+        # users land.
+        #
+        # The guarantee is STABILITY, not fairness: created_at is second
+        # granularity, so two orgs created in the same second tie and the id
+        # breaks it. Which of a tied pair wins is arbitrary; that it is the same
+        # one on every call is the point. A real duplicate still needs an
+        # operator to reconcile it.
+        cursor.execute(
+            "SELECT * FROM organizations WHERE domain_verified=TRUE AND domain_to_verify=%s "
+            "ORDER BY created_at, id LIMIT 1", (domain,))
         return cursor.fetchone()
     finally:
         cursor.close()
@@ -4314,38 +4352,60 @@ def get_org_llm_usage(org_id, days=30):
         cursor.close()
         conn.close()
 
-def list_custom_models():
-    """Operator-added models (backlog 63), oldest first for a stable picker."""
+def list_custom_models(visible_to_org=None):
+    """Added models (backlog 63), oldest first for a stable picker.
+
+    visible_to_org=None returns EVERY row, which is what routing needs:
+    detect_provider has to resolve any registered id to its provider and has no
+    org in scope. Pass an org id for anything user-facing, and the result is
+    that org's own rows plus the deployment-wide ones (backlog 77). Before that
+    scoping every org saw, and could delete, every other org's entries.
+    """
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            "SELECT model_id, label, provider, created_by, created_at "
-            "FROM custom_models ORDER BY created_at, model_id")
+        sql = ("SELECT model_id, label, provider, created_by, org_id, created_at "
+               "FROM custom_models")
+        args = ()
+        if visible_to_org is not None:
+            sql += " WHERE org_id IN ('', %s)"
+            args = (str(visible_to_org),)
+        cursor.execute(sql + " ORDER BY created_at, model_id", args)
         return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()
 
-def add_custom_model(model_id, label, provider, created_by=None):
+def add_custom_model(model_id, label, provider, created_by=None, org_id=''):
+    """org_id='' publishes deployment-wide and is reserved for operators; a
+    tenant admin's entry is scoped to their own org."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO custom_models (model_id, label, provider, created_by) "
-            "VALUES (%s, %s, %s, %s)",
-            (model_id, label, provider, created_by))
+            "INSERT INTO custom_models (model_id, label, provider, created_by, org_id) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (model_id, label, provider, created_by, str(org_id or '')))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
-def delete_custom_model(model_id):
-    """Returns True when a row was removed."""
+def delete_custom_model(model_id, org_id=None):
+    """Returns True when a row was removed.
+
+    org_id=None deletes regardless of owner and is for operators only. Passing
+    an org id restricts the delete to that org's own rows, so a tenant admin
+    cannot remove another org's model or a deployment-wide one.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM custom_models WHERE model_id=%s", (model_id,))
+        if org_id is None:
+            cursor.execute("DELETE FROM custom_models WHERE model_id=%s", (model_id,))
+        else:
+            cursor.execute("DELETE FROM custom_models WHERE model_id=%s AND org_id=%s",
+                           (model_id, str(org_id)))
         conn.commit()
         return cursor.rowcount > 0
     finally:

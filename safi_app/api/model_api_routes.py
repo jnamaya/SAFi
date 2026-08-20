@@ -50,11 +50,17 @@ def list_custom():
     be addable."""
     from ..core.services.model_routing import configured_providers
     configured = configured_providers(Config)
+    # Scoped to the caller's org plus the deployment-wide rows (backlog 77).
+    # This used to list every org's entries to every admin.
+    rows = db.list_custom_models(visible_to_org=get_current_org_id() or '')
     return jsonify({
         "ok": True,
         "models": [
-            {"id": r["model_id"], "label": r["label"], "provider": r["provider"]}
-            for r in db.list_custom_models()
+            {"id": r["model_id"], "label": r["label"], "provider": r["provider"],
+             # Deployment-wide rows are not the tenant's to remove, so the UI
+             # can render them read-only instead of offering a Remove that 404s.
+             "deployment_wide": not (r.get("org_id") or "")}
+            for r in rows
         ],
         "providers": [
             {"id": p, "label": PROVIDER_METADATA[p]["label"]}
@@ -82,16 +88,25 @@ def add_custom():
         return jsonify({"error": "That model is already in the built-in catalog."}), 409
     # Fresh read, not the worker-local cache: a stale cache here would let a
     # duplicate through to the primary-key constraint as a raw 500.
+    #
+    # Checked UNSCOPED on purpose, because model_id is unique per deployment
+    # (see the schema comment: detect_provider resolves an id to a provider with
+    # no org in scope). The wording says only that the id is taken, never which
+    # org holds it, its label or its provider.
     if any(r["model_id"].lower() == model_id.lower() for r in db.list_custom_models()):
-        return jsonify({"error": "That model is already in the catalog."}), 409
+        return jsonify({"error": "That model id is already registered on this deployment."}), 409
 
     user = session.get('user') or {}
     user_id = user.get('sub') or user.get('id')
-    db.add_custom_model(model_id, label[:120], provider, created_by=user_id)
+    # Owned by the caller's org, so only that org sees it and only that org can
+    # remove it. An org-less caller (an operator on a deployment with no org)
+    # publishes deployment-wide, which is the original operator-catalog intent.
+    org_id = get_current_org_id()
+    db.add_custom_model(model_id, label[:120], provider,
+                        created_by=user_id, org_id=org_id or '')
     invalidate_custom_models_cache()
 
-    # A catalog change alters what every org can be offered — evidence it.
-    org_id = get_current_org_id()
+    # A catalog change alters what this org can be offered, so evidence it.
     if org_id:
         try:
             db.append_compliance_log(org_id, 'model_catalog_change', f"user:{user_id}",
@@ -110,13 +125,18 @@ def delete_custom():
     model_id = (request.args.get('model_id') or '').strip()
     if not model_id:
         return jsonify({"error": "Missing model_id."}), 400
-    if not db.delete_custom_model(model_id):
+    # Restricted to the caller's own org (backlog 77): any tenant admin used to
+    # be able to delete another org's model, or a deployment-wide one, and the
+    # affected org's users would silently fall back to the default model. A row
+    # this org does not own is reported as not found, which is both true from
+    # the caller's scope and free of information about other tenants.
+    org_id = get_current_org_id()
+    if not db.delete_custom_model(model_id, org_id=org_id or ''):
         return jsonify({"error": "Not found."}), 404
     invalidate_custom_models_cache()
 
     user = session.get('user') or {}
     user_id = user.get('sub') or user.get('id')
-    org_id = get_current_org_id()
     if org_id:
         try:
             db.append_compliance_log(org_id, 'model_catalog_change', f"user:{user_id}",

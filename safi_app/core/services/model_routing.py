@@ -63,7 +63,12 @@ _custom_models_cache = {"at": None, "rows": [], "map": {}}
 
 
 def custom_models() -> list:
-    """Rows from custom_models, cached. Each: model_id, label, provider."""
+    """Rows from custom_models, cached. Each: model_id, label, provider, org_id.
+
+    Deliberately EVERY row, unscoped: detect_provider below must resolve any
+    registered id to its provider and has no org in scope. Callers that show
+    models to a user filter by org_id themselves (see list_models_for_org).
+    """
     import time
     now = time.monotonic()
     cache = _custom_models_cache
