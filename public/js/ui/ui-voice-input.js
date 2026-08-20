@@ -33,17 +33,18 @@ const input = () => document.getElementById('message-input');
  * transcribing so the button does not flip out from under the user's finger. */
 export function updateComposerButtons() {
     if (!_enabled || _recording || _working) return;
-    const hasText = (input()?.value || '').trim().length > 0;
     const mic = micBtn();
     const send = sendBtn();
+    if (!mic || !send) return;
+    const hasText = (input()?.value || '').trim().length > 0;
+    // Inline display beats any class, so exactly one button ever shows,
+    // regardless of the send button's own 'flex'/disabled classes.
     if (hasText) {
-        mic?.classList.add('hidden');
-        mic?.classList.remove('flex');
-        send?.classList.remove('hidden');
+        mic.style.display = 'none';
+        send.style.display = '';       // revert to its 'flex' class
     } else {
-        send?.classList.add('hidden');
-        mic?.classList.remove('hidden');
-        mic?.classList.add('flex');
+        send.style.display = 'none';
+        mic.style.display = 'flex';
     }
 }
 
@@ -150,8 +151,9 @@ function _fillAndSend(text) {
     el.value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));   // enable + reveal send
     const send = sendBtn();
-    send?.classList.remove('hidden');
-    micBtn()?.classList.add('hidden');
+    if (send) send.style.display = '';
+    const mic = micBtn();
+    if (mic) mic.style.display = 'none';
     send?.click();
     // After the send flow clears the input, restore the mic for the next turn.
     setTimeout(updateComposerButtons, 120);
@@ -170,6 +172,7 @@ export async function initVoiceInput() {
     if (!cfg.voice_input_enabled) return;   // feature off: mic stays hidden, send as usual
 
     _enabled = true;
+    mic.classList.remove('hidden');   // visibility is driven by inline display now
 
     // Press and hold to talk. pointerdown starts; a pointerup anywhere ends it,
     // so releasing off the button still stops cleanly.
