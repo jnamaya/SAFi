@@ -185,13 +185,41 @@ def _decode_id_token_unverified(token):
 
 
 def _resolve_membership(user_details, idp):
-    """Membership at login: a live invitation wins; otherwise domain auto-join
-    under the org's join policy (invite_only orgs journal the denial and the
-    user lands org-less — they still authenticate). Mutates user_details."""
+    """Membership at login: a live invitation wins, EXCEPT against the org that
+    has verified the email's domain, which always owns its own people; otherwise
+    domain auto-join under the org's join policy (invite_only orgs journal the
+    denial and the user lands org-less — they still authenticate). Mutates
+    user_details. Only ever called for a user with no org."""
     user_id = user_details['id']
     email = (user_details.get('email') or '').strip().lower()
+    domain = email.split('@')[-1] if '@' in email else None
+
+    # Who, if anyone, has VERIFIED this email's domain.
+    org = None
+    if domain:
+        try:
+            org = db.get_organization_by_domain(domain)
+        except Exception as e:
+            current_app.logger.error(f"Domain lookup failed during login: {e}")
 
     inv = db.match_pending_invitation(email)
+
+    # A verified domain outranks an invitation from anyone else (backlog 75).
+    # create_org_invitation refuses these at the door, but an invitation can
+    # predate the domain verification, so the decision point enforces it too.
+    # Dropping the invite here is journaled: someone tried to place this user in
+    # a tenant their domain owner did not authorize, and that is worth evidence.
+    if inv and org and str(inv['org_id']) != str(org['id']):
+        db.log_auth_event('invite_declined_domain_owned', f"user:{user_id}",
+                          org_id=inv['org_id'], user_id=user_id,
+                          detail={"reason": "domain_verified_by_another_org",
+                                  "domain": domain, "domain_org_id": org['id'],
+                                  "idp": idp})
+        current_app.logger.warning(
+            f"Ignoring invitation from org {inv['org_id']} for {email}: "
+            f"{domain} is verified by org {org['id']}")
+        inv = None
+
     if inv:
         res = db.accept_invitation(inv['id'], user_id, f"user:{user_id}")
         if res:
@@ -201,14 +229,6 @@ def _resolve_membership(user_details, idp):
                               user_id=user_id, detail={"join_method": "invite", "idp": idp})
             return
 
-    if '@' not in email:
-        return
-    domain = email.split('@')[-1]
-    try:
-        org = db.get_organization_by_domain(domain)
-    except Exception as e:
-        current_app.logger.error(f"Domain lookup failed during login: {e}")
-        return
     if not org:
         return
     policy = db.get_org_identity_config(org['id'])['join_policy']

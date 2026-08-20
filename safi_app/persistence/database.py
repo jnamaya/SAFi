@@ -6545,6 +6545,26 @@ def create_org_invitation(org_id, email, role, invited_by, expires_days=14):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # A verified domain is authoritative over its own people (backlog 75).
+        # Without this, inviting someone at another org's verified domain before
+        # they ever sign in would place them in the INVITING org: no data of
+        # theirs leaks, but their turns would then be governed by the wrong
+        # charter and land in the wrong audit trail, and the domain owner would
+        # never see them. Refuse at the door instead. The login path enforces the
+        # same rule again, since invitations can outlive a domain verification.
+        invited_domain = email.split("@")[-1]
+        cursor.execute(
+            "SELECT id, name FROM organizations "
+            "WHERE domain_verified=TRUE AND LOWER(domain_to_verify)=%s LIMIT 1",
+            (invited_domain,),
+        )
+        owner = cursor.fetchone()
+        if owner and str(owner[0]) != str(org_id):
+            raise ValueError(
+                f"{invited_domain} is a verified domain of another organization. "
+                "Its members join that organization directly."
+            )
+
         cursor.execute(
             "INSERT INTO org_invitations (id, org_id, email, role, invited_by, expires_at) "
             "VALUES (%s, %s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL %s DAY)) "
