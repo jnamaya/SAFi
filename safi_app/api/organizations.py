@@ -124,7 +124,30 @@ def verify_domain_dns():
             except Exception as e:
                 current_app.logger.error(f"Failed to auto-rename org verify: {e}")
 
-            return jsonify({"status": "verified", "domain": domain})
+            # Proving the domain claims its identities (backlog 78): existing
+            # accounts on it join this org as members, and this admin decides who
+            # is promoted. Never fatal to the verification itself, which already
+            # succeeded and is committed; a failure here is reported and left for
+            # a retry rather than rolling back a proven domain.
+            absorbed = {"moved": [], "skipped": [], "emptied_orgs": []}
+            try:
+                absorbed = db.absorb_domain_users(org_id, domain, f"user:{_actor()}")
+                if absorbed["moved"]:
+                    current_app.logger.info(
+                        f"Domain {domain} verified: absorbed {len(absorbed['moved'])} "
+                        f"account(s) into org {org_id} as members")
+            except Exception as e:
+                current_app.logger.error(f"Domain absorption failed for {domain}: {e}")
+
+            return jsonify({
+                "status": "verified",
+                "domain": domain,
+                # The admin needs to see this: people they did not invite are now
+                # members, and anyone skipped needs a human decision.
+                "absorbed": absorbed["moved"],
+                "absorb_skipped": absorbed["skipped"],
+                "emptied_orgs": absorbed["emptied_orgs"],
+            })
         else:
             return jsonify({
                 "status": "failed", 

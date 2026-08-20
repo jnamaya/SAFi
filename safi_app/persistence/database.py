@@ -3820,6 +3820,113 @@ def confirm_domain_verification(oid):
     finally:
         cursor.close()
         conn.close()
+
+
+def absorb_domain_users(org_id, domain, actor):
+    """Move existing accounts on a just-verified domain into the owning org as
+    members (backlog 78). Returns a report: moved, skipped, emptied_orgs.
+
+    Proving you control a domain proves you control its identities, so those
+    accounts belong to your organization, at the lowest role. The verifying
+    admin then decides who is promoted. This is the corporate-standard
+    behaviour (Google Workspace and Microsoft 365 both reclaim conflicting
+    accounts on a verified domain), and it is Nelson's explicit product call.
+
+    Everyone lands as 'member', never as an admin, so absorption can only ever
+    REDUCE an absorbed user's authority. Sessions are revoked so the next
+    request re-resolves membership instead of acting in the old org.
+
+    ONE deliberate exception, and it is the reason this is not a bare UPDATE.
+    A user on the domain may be the only admin of a DIFFERENT populated org, for
+    example a contractor at this domain who administers a customer's org whose
+    members are all on another domain. Absorbing them would leave that org with
+    no administrator, so verifying one domain would decapitate an unrelated
+    organization. Those users are skipped and reported for a human to reconcile.
+    Authority over a domain's identities is not authority over whatever orgs
+    those identities happen to run.
+
+    An org left with no members is reported, never deleted: its governance
+    records are evidence, and dissolving them to tidy up a membership change
+    would destroy an audit trail. An operator reconciles it.
+    """
+    dom = (domain or "").strip().lower().lstrip("@")
+    report = {"moved": [], "skipped": [], "emptied_orgs": []}
+    if not dom or not org_id:
+        return report
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, email, org_id, role FROM users "
+            "WHERE LOWER(SUBSTRING_INDEX(email, '@', -1)) = %s "
+            "AND (org_id IS NULL OR org_id != %s)",
+            (dom, str(org_id)),
+        )
+        candidates = cursor.fetchall()
+
+        for u in candidates:
+            old_org = u.get("org_id")
+            # Would absorbing this user leave another org with no admin while
+            # other people are still in it?
+            if old_org and (u.get("role") or "").lower() == "admin":
+                cursor.execute(
+                    "SELECT COUNT(*) AS n FROM users "
+                    "WHERE org_id=%s AND role='admin' AND id != %s",
+                    (old_org, u["id"]),
+                )
+                other_admins = (cursor.fetchone() or {}).get("n", 0)
+                cursor.execute(
+                    "SELECT COUNT(*) AS n FROM users WHERE org_id=%s AND id != %s",
+                    (old_org, u["id"]),
+                )
+                other_members = (cursor.fetchone() or {}).get("n", 0)
+                if not other_admins and other_members:
+                    report["skipped"].append({
+                        "email": u.get("email"),
+                        "reason": "sole admin of another organization that still has members",
+                        "org_id": old_org,
+                    })
+                    continue
+
+            cursor.execute("UPDATE users SET org_id=%s, role='member' WHERE id=%s",
+                           (str(org_id), u["id"]))
+            log_auth_event("member_absorbed_by_domain", actor, org_id=str(org_id),
+                           user_id=u["id"],
+                           detail={"email": u.get("email"), "domain": dom,
+                                   "previous_org_id": old_org,
+                                   "previous_role": u.get("role"),
+                                   "new_role": "member"},
+                           cursor=cursor)
+            report["moved"].append(u.get("email"))
+
+            # Did that empty the old org? Reported, never deleted.
+            if old_org:
+                cursor.execute("SELECT COUNT(*) AS n FROM users WHERE org_id=%s", (old_org,))
+                if not (cursor.fetchone() or {}).get("n", 0):
+                    if old_org not in report["emptied_orgs"]:
+                        report["emptied_orgs"].append(old_org)
+                        log_auth_event("org_left_without_members", actor,
+                                       org_id=str(org_id), detail={
+                                           "emptied_org_id": old_org, "domain": dom,
+                                           "note": "records retained; needs operator reconciliation"},
+                                       cursor=cursor)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Outside the transaction on purpose: the move is committed, and a failed
+    # session revoke must not roll it back. A stale session would otherwise keep
+    # acting in the old org until it expired.
+    for u in candidates:
+        if u.get("email") in report["moved"]:
+            try:
+                revoke_user_sessions(u["id"], actor)
+            except Exception as e:
+                logging.getLogger(__name__).error(
+                    "absorb: session revoke failed for %s: %s", u["id"], e)
+    return report
 def reset_domain_verification(oid):
     conn = get_db_connection()
     cursor = conn.cursor()
