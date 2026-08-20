@@ -2169,11 +2169,24 @@ html {
   z-index: 10;
 }
 
+/* Both composer action buttons share ONE vertical nudge, so the mic and the send
+   button sit in exactly the same place: swapping between them must not move
+   anything. Every state below re-states the lift, because a bare `transform` in a
+   hover or disabled rule would replace it and drop the button back down. Change
+   the one variable to shift both. */
+#send-button,
+#composer-mic-btn {
+  /* Desktop needs no nudge: both buttons are the same circle in the same slot,
+     so they already sit right. Only the phone layout lifts them (below). */
+  --composer-btn-lift: 0px;
+  transform: translateY(var(--composer-btn-lift));
+}
+
 /* Held down: red, so it is unmistakable that audio is being captured. */
 #composer-mic-btn.is-recording {
   background-color: #dc2626 !important;
   box-shadow: 0 2px 5px rgba(220, 38, 38, 0.35);
-  transform: scale(1.06);
+  transform: translateY(var(--composer-btn-lift)) scale(1.06);
 }
 
 /* Transcribing: dimmed and inert until the transcript lands. */
@@ -2184,7 +2197,7 @@ html {
 
 #send-button:hover {
   background-color: #15803d !important;
-  transform: scale(1.05);
+  transform: translateY(var(--composer-btn-lift)) scale(1.05);
   box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
 }
 
@@ -2194,7 +2207,8 @@ html {
   color: #9ca3af !important;
   box-shadow: none;
   cursor: default;
-  transform: none;
+  /* Keep the lift: without it a disabled send sits 2px below an enabled one. */
+  transform: translateY(var(--composer-btn-lift));
 }
 
 .dark #send-button:disabled {
@@ -2211,7 +2225,7 @@ html {
 #send-button.canceling:hover {
   background-color: #b91c1c !important;
   box-shadow: 0 3px 8px rgba(220, 38, 38, 0.45);
-  transform: scale(1.05);
+  transform: translateY(var(--composer-btn-lift)) scale(1.05);
 }
 
 /* Icon Sizing */
@@ -2761,11 +2775,14 @@ html {
         min-height: 44px;
     }
 
-    /* Lift the whole send button (circle and arrow together) 3px on phones so
-       it lines up with the + button. Moving the button, not the icon, keeps
-       the arrow centered in its circle. */
-    #send-button {
-        transform: translateY(-3px);
+    /* Lift the whole button (circle and glyph together) 3px on phones so it
+       lines up with the + button. Moving the button, not the icon, keeps the
+       glyph centered in its circle. Overriding only the variable keeps the mic
+       and the send button on the same line: setting `transform` here instead
+       would apply to one of them and leave the other 3px lower. */
+    #send-button,
+    #composer-mic-btn {
+        --composer-btn-lift: -3px;
     }
 
     /* iOS safe area: keep the composer above the home indicator */
