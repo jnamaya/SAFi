@@ -31,20 +31,24 @@ const input = () => document.getElementById('message-input');
 /** Show the mic in the send slot when the composer is empty; show send when the
  * user has typed. No-op unless voice is enabled. Left alone while recording or
  * transcribing so the button does not flip out from under the user's finger. */
+// styles.css carries `#send-button { display: flex !important }`, and an
+// !important author rule beats a plain inline style, so hiding the send button
+// needs inline !important too. Anything less silently leaves both buttons up.
+function _hide(el) { el.style.setProperty('display', 'none', 'important'); }
+function _show(el) { el.style.setProperty('display', 'flex', 'important'); }
+
 export function updateComposerButtons() {
     if (!_enabled || _recording || _working) return;
     const mic = micBtn();
     const send = sendBtn();
     if (!mic || !send) return;
     const hasText = (input()?.value || '').trim().length > 0;
-    // Inline display beats any class, so exactly one button ever shows,
-    // regardless of the send button's own 'flex'/disabled classes.
     if (hasText) {
-        mic.style.display = 'none';
-        send.style.display = '';       // revert to its 'flex' class
+        _hide(mic);
+        _show(send);
     } else {
-        send.style.display = 'none';
-        mic.style.display = 'flex';
+        _hide(send);
+        _show(mic);
     }
 }
 
@@ -52,12 +56,14 @@ function _setMicState(state) {
     // 'idle' | 'recording' | 'working'
     const mic = micBtn();
     if (!mic) return;
-    mic.classList.remove('text-red-500', 'animate-pulse', 'opacity-60', 'cursor-not-allowed');
+    // The mic sits in the send button's green circle, so state is carried by
+    // background classes (styles.css), not a text colour that would be invisible.
+    mic.classList.remove('is-recording', 'is-working');
     if (state === 'recording') {
-        mic.classList.add('text-red-500', 'animate-pulse');
+        mic.classList.add('is-recording');
         mic.title = 'Release to send';
     } else if (state === 'working') {
-        mic.classList.add('opacity-60', 'cursor-not-allowed');
+        mic.classList.add('is-working');
         mic.title = 'Transcribing...';
     } else {
         mic.title = 'Hold to talk';
@@ -151,9 +157,9 @@ function _fillAndSend(text) {
     el.value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));   // enable + reveal send
     const send = sendBtn();
-    if (send) send.style.display = '';
     const mic = micBtn();
-    if (mic) mic.style.display = 'none';
+    if (mic) _hide(mic);
+    if (send) _show(send);
     send?.click();
     // After the send flow clears the input, restore the mic for the next turn.
     setTimeout(updateComposerButtons, 120);

@@ -2146,6 +2146,42 @@ html {
   z-index: 10;
 }
 
+/* Voice input: the mic takes over the send button's slot when the composer is
+   empty, so it mirrors that button's footprint and treatment and only the glyph
+   differs. Sized here rather than by utility classes because #send-button's own
+   width/height are set in this file too, and the two must match exactly or the
+   capsule visibly jumps on every swap. Visibility is driven from JS with inline
+   !important, since the display rule above is !important. */
+#composer-mic-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #16a34a !important;
+  color: #ffffff !important;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 2px 5px rgba(22, 163, 74, 0.25);
+  z-index: 10;
+}
+
+/* Held down: red, so it is unmistakable that audio is being captured. */
+#composer-mic-btn.is-recording {
+  background-color: #dc2626 !important;
+  box-shadow: 0 2px 5px rgba(220, 38, 38, 0.35);
+  transform: scale(1.06);
+}
+
+/* Transcribing: dimmed and inert until the transcript lands. */
+#composer-mic-btn.is-working {
+  opacity: 0.6;
+  cursor: default;
+}
+
 #send-button:hover {
   background-color: #15803d !important;
   transform: scale(1.05);
