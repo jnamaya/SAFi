@@ -1,83 +1,66 @@
 /**
- * Voice input (backlog 74). Governed by transcribe-then-govern: we record audio,
- * send it to /api/audio/transcribe, and drop the returned TEXT into the composer.
- * The user reviews it and sends it like any typed prompt, so the transcript is
- * what the pipeline governs and audits. Raw audio never reaches a model.
+ * Voice input (backlog 74), press-and-hold.
  *
- * The mic button stays hidden unless /api/app-config reports voice_input_enabled,
- * so a deployment with the feature off (the default) shows nothing.
+ * Governed by transcribe-then-govern: we record audio, send it to
+ * /api/audio/transcribe, and the returned TEXT flows through the normal pipeline
+ * exactly like a typed prompt. Raw audio never reaches a model.
+ *
+ * UX: when voice is enabled and the composer is empty, the mic occupies the send
+ * button's slot. Hold it to record, release to transcribe and auto-send. The
+ * moment the user types anything, the send button takes the slot back, so typing
+ * always beats voice. When the deployment has voice off, none of this runs and
+ * the send button behaves exactly as before.
  */
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
 
-let _mediaRecorder = null;
+let _enabled = false;
+let _recorder = null;
 let _chunks = [];
 let _recording = false;
+let _working = false;
 let _stream = null;
+let _startedAt = 0;
 
-function _micBtn() {
-    return document.getElementById('composer-mic-btn');
-}
+const MIN_MS = 350;   // ignore an accidental tap that records almost nothing
 
-function _setState(state) {
-    // state: 'idle' | 'recording' | 'working'
-    const btn = _micBtn();
-    if (!btn) return;
-    btn.classList.remove('text-red-500', 'animate-pulse', 'opacity-60', 'cursor-not-allowed');
-    btn.disabled = false;
-    if (state === 'recording') {
-        btn.classList.add('text-red-500', 'animate-pulse');
-        btn.title = 'Stop recording';
-        btn.setAttribute('aria-label', 'Stop recording');
-    } else if (state === 'working') {
-        btn.classList.add('opacity-60', 'cursor-not-allowed');
-        btn.disabled = true;
-        btn.title = 'Transcribing...';
+const micBtn = () => document.getElementById('composer-mic-btn');
+const sendBtn = () => document.getElementById('send-button');
+const input = () => document.getElementById('message-input');
+
+/** Show the mic in the send slot when the composer is empty; show send when the
+ * user has typed. No-op unless voice is enabled. Left alone while recording or
+ * transcribing so the button does not flip out from under the user's finger. */
+export function updateComposerButtons() {
+    if (!_enabled || _recording || _working) return;
+    const hasText = (input()?.value || '').trim().length > 0;
+    const mic = micBtn();
+    const send = sendBtn();
+    if (hasText) {
+        mic?.classList.add('hidden');
+        mic?.classList.remove('flex');
+        send?.classList.remove('hidden');
     } else {
-        btn.title = 'Record voice input';
-        btn.setAttribute('aria-label', 'Record voice input');
+        send?.classList.add('hidden');
+        mic?.classList.remove('hidden');
+        mic?.classList.add('flex');
     }
 }
 
-function _insertText(text) {
-    const input = document.getElementById('message-input');
-    if (!input || !text) return;
-    const existing = input.value.trim();
-    input.value = existing ? `${existing} ${text}` : text;
-    // Let the composer's own handlers run: autosize the textarea and enable send.
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.focus();
-}
-
-async function _start() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-        ui.showToast('This browser cannot record audio.', 'error');
-        return;
+function _setMicState(state) {
+    // 'idle' | 'recording' | 'working'
+    const mic = micBtn();
+    if (!mic) return;
+    mic.classList.remove('text-red-500', 'animate-pulse', 'opacity-60', 'cursor-not-allowed');
+    if (state === 'recording') {
+        mic.classList.add('text-red-500', 'animate-pulse');
+        mic.title = 'Release to send';
+    } else if (state === 'working') {
+        mic.classList.add('opacity-60', 'cursor-not-allowed');
+        mic.title = 'Transcribing...';
+    } else {
+        mic.title = 'Hold to talk';
     }
-    try {
-        _stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-        ui.showToast('Microphone access was denied.', 'error');
-        return;
-    }
-    _chunks = [];
-    // Let the browser pick a container it supports (webm/opus on Chrome/Firefox,
-    // mp4 on Safari); ffmpeg on the server normalizes whatever arrives.
-    try {
-        _mediaRecorder = new MediaRecorder(_stream);
-    } catch (e) {
-        _mediaRecorder = null;
-    }
-    if (!_mediaRecorder) {
-        _stopStream();
-        ui.showToast('This browser cannot record audio.', 'error');
-        return;
-    }
-    _mediaRecorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) _chunks.push(ev.data); };
-    _mediaRecorder.onstop = _onStop;
-    _mediaRecorder.start();
-    _recording = true;
-    _setState('recording');
 }
 
 function _stopStream() {
@@ -87,46 +70,116 @@ function _stopStream() {
     }
 }
 
+async function _press(e) {
+    // Only the primary button / a touch, and never while transcribing.
+    if (_working || _recording) return;
+    if (e.button && e.button !== 0) return;
+    e.preventDefault();
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+        ui.showToast('This browser cannot record audio.', 'error');
+        return;
+    }
+    try {
+        _stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        ui.showToast('Microphone access was denied.', 'error');
+        return;
+    }
+    // The user may have released before permission resolved.
+    if (!_pressHeld) { _stopStream(); return; }
+
+    _chunks = [];
+    try {
+        _recorder = new MediaRecorder(_stream);
+    } catch (err) {
+        _stopStream();
+        ui.showToast('This browser cannot record audio.', 'error');
+        return;
+    }
+    _recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) _chunks.push(ev.data); };
+    _recorder.onstop = _onStop;
+    _recorder.start();
+    _recording = true;
+    _startedAt = Date.now();
+    _setMicState('recording');
+}
+
+function _release() {
+    if (_recording && _recorder) {
+        _recording = false;           // stop() is async; block re-entry now
+        try { _recorder.stop(); } catch (e) { /* onstop still fires */ }
+    }
+}
+
 async function _onStop() {
-    _recording = false;
     _stopStream();
+    const tooShort = (Date.now() - _startedAt) < MIN_MS;
     const blob = new Blob(_chunks, { type: _chunks[0]?.type || 'audio/webm' });
     _chunks = [];
-    if (!blob.size) { _setState('idle'); return; }
-    _setState('working');
+    if (tooShort || !blob.size) {
+        _setMicState('idle');
+        updateComposerButtons();
+        return;
+    }
+    _working = true;
+    _setMicState('working');
     try {
         const res = await api.transcribeAudio(blob);
-        if (res && res.text) {
-            _insertText(res.text);
-        } else {
+        const text = (res && res.text || '').trim();
+        if (!text) {
             ui.showToast('No speech was detected.', 'warning');
+        } else {
+            _fillAndSend(text);
         }
-    } catch (e) {
-        ui.showToast(e.message || 'Transcription failed.', 'error');
+    } catch (err) {
+        ui.showToast(err.message || 'Transcription failed.', 'error');
     } finally {
-        _setState('idle');
+        _working = false;
+        _setMicState('idle');
+        updateComposerButtons();
     }
 }
 
-function _toggle() {
-    if (_recording && _mediaRecorder) {
-        _mediaRecorder.stop();   // triggers _onStop
-    } else if (!_recording) {
-        _start();
-    }
+/** Put the transcript into the composer and send it. The send button owns the
+ * actual send path (agent + user context), so we surface it and click it rather
+ * than duplicate that logic here. */
+function _fillAndSend(text) {
+    const el = input();
+    if (!el) return;
+    el.value = text;
+    el.dispatchEvent(new Event('input', { bubbles: true }));   // enable + reveal send
+    const send = sendBtn();
+    send?.classList.remove('hidden');
+    micBtn()?.classList.add('hidden');
+    send?.click();
+    // After the send flow clears the input, restore the mic for the next turn.
+    setTimeout(updateComposerButtons, 120);
 }
 
-/** Called once at startup. Shows and wires the mic button only if the deployment
- * has voice input enabled. Safe to call when logged out; it just stays hidden. */
+// Track hold state across the async getUserMedia gap.
+let _pressHeld = false;
+
+/** Wire the mic button and the mic/send swap. Only runs where voice is enabled. */
 export async function initVoiceInput() {
-    const btn = _micBtn();
-    if (!btn) return;
+    const mic = micBtn();
+    if (!mic) return;
+
     let cfg = {};
     try { cfg = await api.getAppConfig(); } catch (e) { cfg = {}; }
-    if (!cfg.voice_input_enabled) return;   // feature off: button stays hidden
+    if (!cfg.voice_input_enabled) return;   // feature off: mic stays hidden, send as usual
 
-    btn.classList.remove('hidden');
-    btn.classList.add('flex');
-    _setState('idle');
-    btn.addEventListener('click', (e) => { e.preventDefault(); _toggle(); });
+    _enabled = true;
+
+    // Press and hold to talk. pointerdown starts; a pointerup anywhere ends it,
+    // so releasing off the button still stops cleanly.
+    mic.addEventListener('pointerdown', (e) => { _pressHeld = true; _press(e); });
+    window.addEventListener('pointerup', () => { if (_pressHeld) { _pressHeld = false; _release(); } });
+    mic.addEventListener('pointercancel', () => { _pressHeld = false; _release(); });
+    mic.addEventListener('contextmenu', (e) => e.preventDefault());   // no long-press menu
+
+    // Typing beats voice: swap to send as soon as there is text.
+    input()?.addEventListener('input', updateComposerButtons);
+
+    updateComposerButtons();   // initial: empty composer shows the mic
 }

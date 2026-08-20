@@ -418,13 +418,16 @@
                         style="min-height: 24px;"></textarea>
                     </div>
 
-                    <div class="relative flex items-center gap-1" id="composer-actions-container">
-                      <!-- Mic (voice input). Hidden until /api/app-config reports
-                           voice_input_enabled. Audio is transcribed to text and the
-                           text is placed in the input, then sent like any prompt. -->
-                      <button id="composer-mic-btn" type="button" aria-label="Record voice input" title="Record voice input"
-                        class="hidden w-10 h-10 md:w-9 md:h-9 rounded-full items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <div class="relative flex items-center" id="composer-actions-container">
+                      <!-- Mic (voice input). Occupies the send button's slot when
+                           the composer is empty and voice_input_enabled is on. Hold
+                           to talk, release to transcribe and send. Hidden until
+                           /api/app-config reports the feature on, and swapped out
+                           for the send button the moment the user types. Audio is
+                           transcribed to text that flows through the normal pipeline. -->
+                      <button id="composer-mic-btn" type="button" aria-label="Hold to talk" title="Hold to talk"
+                        class="hidden w-10 h-10 md:w-9 md:h-9 rounded-full items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors select-none touch-none">
+                        <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M12 1.5a3 3 0 00-3 3v6a3 3 0 006 0v-6a3 3 0 00-3-3z"/>
                           <path stroke-linecap="round" stroke-linejoin="round" d="M5 10.5a7 7 0 0014 0M12 17.5v3"/>
                         </svg>
