@@ -3836,21 +3836,34 @@ def absorb_domain_users(org_id, domain, actor):
     REDUCE an absorbed user's authority. Sessions are revoked so the next
     request re-resolves membership instead of acting in the old org.
 
-    ONE deliberate exception, and it is the reason this is not a bare UPDATE.
-    A user on the domain may be the only admin of a DIFFERENT populated org, for
-    example a contractor at this domain who administers a customer's org whose
-    members are all on another domain. Absorbing them would leave that org with
-    no administrator, so verifying one domain would decapitate an unrelated
-    organization. Those users are skipped and reported for a human to reconcile.
-    Authority over a domain's identities is not authority over whatever orgs
-    those identities happen to run.
+    The rule has no exceptions, by design (Nelson, 2026-08-20): one domain per
+    org, whoever verifies it is the admin, everyone else on the domain is a
+    member. An account's email domain decides which org it belongs to, so a
+    person administering some other org from an address on this domain is out of
+    model, and the domain wins.
 
-    An org left with no members is reported, never deleted: its governance
-    records are evidence, and dissolving them to tidy up a membership change
-    would destroy an audit trail. An operator reconciles it.
+    WHY, and this is the governance argument rather than a convenience one:
+    accounts created on a domain nobody has claimed are shadow IT. Someone stood
+    up governed agents under a corporate identity with no organizational
+    oversight, no charter, and no accountable administrator. Verifying the
+    domain is the moment that authority is asserted, and the point of asserting
+    it is to bring those accounts under governance. An absorption that politely
+    skipped the awkward cases would leave exactly the ungoverned corners the
+    verification exists to eliminate.
+
+    The consequence, journaled rather than prevented: if an absorbed user was the
+    only admin of another org that still has members, that org is left with no
+    administrator. It is reported as org_left_without_admin so an operator can
+    appoint one. Promoting a replacement automatically was rejected: handing
+    someone admin they never asked for is a silent authority grant, which is
+    exactly what a governance product must not do quietly.
+
+    An org left with no members is likewise reported, never deleted: its
+    governance records are evidence, and dissolving them to tidy up a membership
+    change would destroy an audit trail.
     """
     dom = (domain or "").strip().lower().lstrip("@")
-    report = {"moved": [], "skipped": [], "emptied_orgs": []}
+    report = {"moved": [], "skipped": [], "emptied_orgs": [], "orgs_without_admin": []}
     if not dom or not org_id:
         return report
 
@@ -3867,8 +3880,11 @@ def absorb_domain_users(org_id, domain, actor):
 
         for u in candidates:
             old_org = u.get("org_id")
-            # Would absorbing this user leave another org with no admin while
-            # other people are still in it?
+            # Everyone on the domain is absorbed. Where that removes another
+            # org's last admin, the org is flagged below rather than spared:
+            # the domain decides membership, and a headless org is an operator
+            # problem, not a reason to leave an identity outside its domain.
+            leaves_org_headless = False
             if old_org and (u.get("role") or "").lower() == "admin":
                 cursor.execute(
                     "SELECT COUNT(*) AS n FROM users "
@@ -3881,13 +3897,7 @@ def absorb_domain_users(org_id, domain, actor):
                     (old_org, u["id"]),
                 )
                 other_members = (cursor.fetchone() or {}).get("n", 0)
-                if not other_admins and other_members:
-                    report["skipped"].append({
-                        "email": u.get("email"),
-                        "reason": "sole admin of another organization that still has members",
-                        "org_id": old_org,
-                    })
-                    continue
+                leaves_org_headless = bool(not other_admins and other_members)
 
             cursor.execute("UPDATE users SET org_id=%s, role='member' WHERE id=%s",
                            (str(org_id), u["id"]))
@@ -3899,6 +3909,17 @@ def absorb_domain_users(org_id, domain, actor):
                                    "new_role": "member"},
                            cursor=cursor)
             report["moved"].append(u.get("email"))
+
+            # Took the old org's last admin while people remain in it. Not
+            # prevented, but it must never be silent: those members cannot
+            # administer anything until an operator appoints someone.
+            if leaves_org_headless:
+                report["orgs_without_admin"].append(old_org)
+                log_auth_event("org_left_without_admin", actor, org_id=str(org_id),
+                               detail={"headless_org_id": old_org, "domain": dom,
+                                       "absorbed_admin": u.get("email"),
+                                       "note": "org still has members; needs an admin appointed"},
+                               cursor=cursor)
 
             # Did that empty the old org? Reported, never deleted.
             if old_org:

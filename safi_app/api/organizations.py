@@ -129,7 +129,8 @@ def verify_domain_dns():
             # is promoted. Never fatal to the verification itself, which already
             # succeeded and is committed; a failure here is reported and left for
             # a retry rather than rolling back a proven domain.
-            absorbed = {"moved": [], "skipped": [], "emptied_orgs": []}
+            absorbed = {"moved": [], "skipped": [], "emptied_orgs": [],
+                        "orgs_without_admin": []}
             try:
                 absorbed = db.absorb_domain_users(org_id, domain, f"user:{_actor()}")
                 if absorbed["moved"]:
@@ -143,9 +144,10 @@ def verify_domain_dns():
                 "status": "verified",
                 "domain": domain,
                 # The admin needs to see this: people they did not invite are now
-                # members, and anyone skipped needs a human decision.
+                # members of their org, and any org left without an admin or
+                # without members needs an operator to reconcile it.
                 "absorbed": absorbed["moved"],
-                "absorb_skipped": absorbed["skipped"],
+                "orgs_without_admin": absorbed["orgs_without_admin"],
                 "emptied_orgs": absorbed["emptied_orgs"],
             })
         else:

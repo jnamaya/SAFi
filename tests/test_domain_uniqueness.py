@@ -202,11 +202,11 @@ class VerifiedDomainClaimsItsIdentities(unittest.TestCase):
         self._absorb()
         self.assertEqual(db.get_user_details(uid)["org_id"], self.org_other)
 
-    def test_the_sole_admin_of_a_populated_org_is_skipped_not_absorbed(self):
-        """The safety case. A contractor at this domain may administer a
-        customer's org whose members are on another domain. Absorbing them would
-        leave that org with no administrator, so verifying one domain would
-        decapitate an unrelated organization."""
+    def test_the_rule_has_no_exceptions_even_for_another_orgs_sole_admin(self):
+        """One domain per org, everyone on the domain is a member of it. A user
+        administering another org from an address on this domain is out of model,
+        and the domain wins. The org they leave behind is FLAGGED, not spared:
+        silence there would leave members unable to administer anything."""
         admin = self._user("contractor", org_id=self.org_other, role="admin")
         staff = f"absorb-staff-{self.tag}"
         new_user(user_id=staff, email=f"staff@othercorp{self.tag}.example",
@@ -215,10 +215,40 @@ class VerifiedDomainClaimsItsIdentities(unittest.TestCase):
 
         report = self._absorb()
 
-        self.assertEqual(db.get_user_details(admin)["org_id"], self.org_other,
-                         "must not be absorbed")
-        self.assertTrue(any("sole admin" in s["reason"] for s in report["skipped"]),
-                        "and the admin must be told why, so a human can decide")
+        self.assertEqual(db.get_user_details(admin)["org_id"], self.org_owner,
+                         "the domain claims the identity, no exception")
+        self.assertEqual(db.get_user_details(admin)["role"], "member")
+        self.assertIn(self.org_other, report["orgs_without_admin"],
+                      "and the org left with members but no admin must be reported")
+
+    def test_the_headless_org_is_not_auto_promoted(self):
+        # Handing a remaining member admin they never asked for is a silent
+        # authority grant, which is what this product must not do quietly.
+        self._user("contractor2", org_id=self.org_other, role="admin")
+        staff = f"absorb-staff2-{self.tag}"
+        new_user(user_id=staff, email=f"staff2@othercorp{self.tag}.example",
+                 org_id=self.org_other, role="member")
+        self.made_users.append(staff)
+        self._absorb()
+        self.assertEqual(db.get_user_details(staff)["role"], "member",
+                         "nobody is promoted automatically")
+
+    def test_a_headless_org_is_journaled(self):
+        self._user("contractor3", org_id=self.org_other, role="admin")
+        staff = f"absorb-staff3-{self.tag}"
+        new_user(user_id=staff, email=f"staff3@othercorp{self.tag}.example",
+                 org_id=self.org_other, role="member")
+        self.made_users.append(staff)
+        self._absorb()
+        conn = db.get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT event FROM auth_events WHERE org_id=%s AND event=%s",
+                        (self.org_owner, 'org_left_without_admin'))
+            self.assertIsNotNone(cur.fetchone())
+        finally:
+            cur.close()
+            conn.close()
 
     def test_a_sole_admin_of_an_EMPTY_org_is_absorbed(self):
         # Nobody is left behind, so there is nothing to protect. This is
