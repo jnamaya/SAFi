@@ -19,6 +19,7 @@ its typed pages, which is worse than failing: the extraction looked complete.
 Run:  venv/bin/python tests/test_image_extraction.py
 """
 import io
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -202,10 +203,17 @@ class Packaging(unittest.TestCase):
 
     def test_the_binary_is_installed_in_the_runtime_stage(self):
         """pytesseract shells out to it. Installed in the deps stage only, it
-        would not survive into the final image."""
+        would not survive into the final image.
+
+        The runtime stage is found as the LAST `FROM`, not by matching a literal
+        image tag: the tag carries the interpreter version, so pinning it here
+        made this test fail on a Python bump or on parameterizing the version,
+        for a packaging reason that had not changed."""
         self.assertIn("tesseract-ocr", DOCKERFILE)
         self.assertIn("tesseract-ocr-eng", DOCKERFILE)
-        runtime = DOCKERFILE[DOCKERFILE.index("FROM python:3.11-slim\n"):]
+        from_positions = [m.start() for m in re.finditer(r"(?m)^FROM ", DOCKERFILE)]
+        self.assertTrue(from_positions, "no FROM instruction in the Dockerfile")
+        runtime = DOCKERFILE[from_positions[-1]:]
         self.assertIn("tesseract-ocr", runtime,
                       "the apt install must be in the runtime stage")
 

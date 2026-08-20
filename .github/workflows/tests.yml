@@ -28,6 +28,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
+    # The supported interpreter range is a claim in the tech-stack document, so
+    # it is tested rather than asserted. Floor and ceiling only: the versions in
+    # between share the same dependency wheels, and testing every release would
+    # multiply CI time for very little added signal. Verified green on 3.11,
+    # 3.12 and 3.13 on 2026-08-20; add the next release here when widening the
+    # range, and raise the floor when one goes end of life.
+    #
+    # fail-fast is off on purpose: when one interpreter breaks, the other's
+    # result is the thing that tells you whether it is a version problem or a
+    # real regression.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    name: suite (py${{ matrix.python-version }})
+
     services:
       mysql:
         image: mysql:8.0
@@ -69,7 +86,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Assert no .env is present

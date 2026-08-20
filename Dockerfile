@@ -1,5 +1,12 @@
+# The interpreter version, in one place. Defaults to the version the image has
+# always shipped, so nothing changes unless a build overrides it:
+#   docker build --build-arg PYTHON_VERSION=3.13 .
+# The override exists so the test suite can be run against other interpreters
+# (a supported-range check) without editing this file.
+ARG PYTHON_VERSION=3.11
+
 # ── Stage 1: dependency layer ──────────────────────────────────────────────────
-FROM python:3.11-slim AS deps
+FROM python:${PYTHON_VERSION}-slim AS deps
 
 WORKDIR /app
 
@@ -18,7 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 
 # ── Stage 2: runtime image ─────────────────────────────────────────────────────
-FROM python:3.11-slim
+FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 
