@@ -231,6 +231,10 @@ def _resolve_membership(user_details, idp):
 
     if not org:
         return
+    # Remembered for the caller's Founder Flow: a user whose domain belongs to
+    # an existing org must never be handed a personal org of their own, whatever
+    # this org's join policy decides below (backlog 78).
+    user_details['_domain_owned_by'] = org['id']
     policy = db.get_org_identity_config(org['id'])['join_policy']
     if policy in ('domain_auto_join', 'both'):
         user_details['org_id'] = org['id']
@@ -321,8 +325,19 @@ def callback():
             except Exception as e:
                 current_app.logger.error(f"Error resolving membership: {e}")
 
-        if not user_details.get('org_id'):
-            # NEW: "Founder Flow" - Auto-create Personal Organization
+        if not user_details.get('org_id') and not user_details.get('_domain_owned_by'):
+            # "Founder Flow": a genuinely unaffiliated user gets a personal org
+            # and is its admin.
+            #
+            # NOT when their email domain already belongs to an organization
+            # (backlog 78). That combination reaches here only under
+            # invite_only, since domain_auto_join would have placed them above,
+            # and handing them their own org would recreate the shadow IT that
+            # verifying the domain exists to eliminate: a new account on a
+            # claimed corporate domain, admin of its own ungoverned tenant.
+            # They stay unaffiliated until the domain's admin invites them,
+            # which is what invite_only means. Free to check: the domain owner
+            # was already looked up during membership resolution.
             org_name = f"{user_details.get('name', 'My')} Organization"
             try:
                 new_org = db.create_organization_atomic(org_name, user_id)

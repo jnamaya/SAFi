@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
 from safi_app.persistence import database as db
+from safi_app.api import auth as auth_api
 
 from support import login_as, new_user
 
@@ -129,6 +130,67 @@ class OneDomainOneOrg(unittest.TestCase):
         answers = {db.get_organization_by_domain(self.domain)['id'] for _ in range(6)}
         self.assertEqual(len(answers), 1, "the domain owner must not vary between calls")
         self.assertIn(answers.pop(), (self.org_first, self.org_second))
+
+
+class NoShadowOrgOnAClaimedDomain(unittest.TestCase):
+    """A new account on a domain an org already verified must never be handed a
+    personal org of its own (backlog 78).
+
+    Absorption only runs at verification, so it cannot help an account created
+    afterwards. That account reaches the Founder Flow only under invite_only
+    (domain_auto_join would have placed it in the domain's org), and creating a
+    personal org there would recreate exactly the shadow IT that verifying the
+    domain exists to eliminate: a fresh account on a claimed corporate domain,
+    admin of its own ungoverned tenant.
+
+    The signal is set by _resolve_membership, which already looks the domain
+    owner up, so the guard costs no extra query."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+
+    def setUp(self):
+        self.tag = uuid.uuid4().hex[:8]
+        self.domain = f"claimedlogin{self.tag}.example"
+        self.org_owner = db.create_organization(f"Owner {self.tag}")
+        _verify(self.org_owner, self.domain)
+        db.set_org_identity_config(self.org_owner, {"join_policy": "invite_only"},
+                                   "user:test-admin")
+        self.uid = f"newhire-{self.tag}"
+        new_user(user_id=self.uid, email=f"newhire@{self.domain}")
+
+    def tearDown(self):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM auth_events WHERE user_id=%s", (self.uid,))
+            cur.execute("DELETE FROM users WHERE id=%s", (self.uid,))
+            cur.execute("DELETE FROM auth_events WHERE org_id=%s", (self.org_owner,))
+            cur.execute("UPDATE users SET org_id=NULL WHERE org_id=%s", (self.org_owner,))
+            cur.execute("DELETE FROM organizations WHERE id=%s", (self.org_owner,))
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    def test_membership_resolution_flags_the_domain_as_owned(self):
+        details = {"id": self.uid, "email": f"newhire@{self.domain}"}
+        with self.app.app_context():
+            auth_api._resolve_membership(details, idp="test")
+        # invite_only, so no join happened, but the caller must know the domain
+        # is owned so it does not mint a personal org.
+        self.assertIsNone(details.get("org_id"),
+                          "invite_only must not auto-join")
+        self.assertEqual(details.get("_domain_owned_by"), self.org_owner,
+                         "the Founder Flow guard depends on this signal")
+
+    def test_an_unclaimed_domain_leaves_the_founder_flow_free(self):
+        details = {"id": self.uid, "email": f"someone@unclaimed{self.tag}.example"}
+        with self.app.app_context():
+            auth_api._resolve_membership(details, idp="test")
+        self.assertIsNone(details.get("_domain_owned_by"),
+                          "an unaffiliated user must still get a personal org")
 
 
 class VerifiedDomainClaimsItsIdentities(unittest.TestCase):
