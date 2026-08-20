@@ -240,6 +240,7 @@ def app_config():
     return jsonify({
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
         "local_login_enabled": Config.ENABLE_LOCAL_LOGIN,
+        "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
     })
 
 # =================================================================

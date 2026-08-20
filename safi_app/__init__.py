@@ -35,7 +35,7 @@ def create_app():
     # check in documents.py only runs AFTER the upload is fully read, so a large
     # body is a memory cost we take before we decline it. Sized off the upload
     # limit plus headroom for multipart overhead and non-upload JSON bodies.
-    app.config['MAX_CONTENT_LENGTH'] = (Config.MAX_UPLOAD_SIZE_MB + 2) * 1024 * 1024
+    app.config['MAX_CONTENT_LENGTH'] = (max(Config.MAX_UPLOAD_SIZE_MB, Config.MAX_AUDIO_SIZE_MB) + 2) * 1024 * 1024
 
     # Measured boot (backlog 39): hash the Core Loop against the release
     # manifest once, log the fingerprint or the taint loudly, and stamp the
@@ -192,6 +192,7 @@ def create_app():
     from .api.groups_api import groups_bp
     from .api.attention_api import attention_bp
     from .api.scim import scim_bp
+    from .api.audio_api import audio_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(conversations_bp, url_prefix='/api')
@@ -209,6 +210,7 @@ def create_app():
     app.register_blueprint(audit_bp, url_prefix='/api')
     app.register_blueprint(groups_bp, url_prefix='/api')
     app.register_blueprint(attention_bp, url_prefix='/api')
+    app.register_blueprint(audio_bp, url_prefix='/api')
     app.register_blueprint(mcp_bp)
     # SCIM lives at its own root, not under /api: identity providers expect a
     # clean /scim/v2 base URL. Auth is the per-org bearer token, not a session.

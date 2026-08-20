@@ -61,6 +61,8 @@ export const urls = {
 
     // Document Upload
     DOCUMENTS_EXTRACT: j('/api/documents/extract'),
+    AUDIO_TRANSCRIBE: j('/api/audio/transcribe'),
+    APP_CONFIG: j('/api/app-config'),
 };
 
 
@@ -637,6 +639,44 @@ export async function deleteAiStandards(orgId) {
  * @returns {Promise<{text: string, filename: string, sha256: string, bytes: number,
  *                     total_chars: number, chars_used: number, was_truncated: boolean}>}
  */
+/** Non-sensitive feature flags for the UI (voice input, local login, demo). */
+export async function getAppConfig() {
+    try {
+        const r = await fetch(urls.APP_CONFIG, { credentials: 'include' });
+        return r.ok ? await r.json() : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+/**
+ * Uploads a recorded audio blob and returns the transcript. Same shape as
+ * extractDocumentText: the returned text is put into the composer and sent
+ * through the normal governed pipeline. Raw audio is not stored server-side.
+ * @returns {Promise<{text: string, sha256: string, chars: number}>}
+ */
+export async function transcribeAudio(blob) {
+    const formData = new FormData();
+    formData.append('file', blob, 'recording.webm');
+
+    const auth = await getAuthToken();
+    const headers = new Headers();
+    if (auth) headers.append('Authorization', `Bearer ${auth}`);
+
+    const response = await fetch(urls.AUDIO_TRANSCRIBE, {
+        method: 'POST',
+        headers: headers,
+        body: formData,
+        credentials: 'include'
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Transcription failed.');
+    }
+    return data;
+}
+
 export async function extractDocumentText(file) {
     const formData = new FormData();
     formData.append('file', file);

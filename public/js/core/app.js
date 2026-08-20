@@ -6,6 +6,7 @@ import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import { initDataSources } from '../ui/ui-data-sources.js';
 import { initModelSelector, getActiveModelLabel } from '../ui/ui-model-selector.js';
 import { initComposerMenu, updateAgentLabel, updateModelLabel, updateAiDisclosure } from '../ui/ui-composer-menu.js';
+import { initVoiceInput } from '../ui/ui-voice-input.js';
 import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
 import * as chat from './chat.js';
 import * as uiSaved from '../ui/ui-saved.js';
@@ -374,6 +375,10 @@ async function checkLoginStatus() {
       // lists are sections of the panel, rendered in place by their own
       // modules, so there is nothing left to toggle open.
       initComposerMenu({ onAttachFile: () => chat.triggerFilePicker() });
+
+      // Voice input (backlog 74): shows the mic button only if the deployment
+      // has it enabled. Transcribes to text that flows through the normal pipeline.
+      initVoiceInput();
 
       // Set initial labels in + menu
       updateModelLabel(getActiveModelLabel());

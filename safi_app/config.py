@@ -536,6 +536,19 @@ class Config:
     ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv',
                                  '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.bmp']
 
+    # --- VOICE INPUT (speech to text) ---
+    # Governed transcribe-then-govern: audio is transcribed locally by whisper.cpp
+    # to text, and the TEXT enters the normal governed pipeline through the
+    # composer, so Phase Zero scans it and it lands in the audit record. Raw audio
+    # never reaches a reasoning model and is not stored. Off by default; turn it on
+    # only where the whisper.cpp binary and model exist (an install that ran the
+    # setup, not a stock Docker image). Same shape as the image OCR path.
+    VOICE_INPUT_ENABLED = os.environ.get("SAFI_VOICE_INPUT", "false").lower() == "true"
+    WHISPER_CLI_PATH = os.environ.get("SAFI_WHISPER_BIN", "/opt/whisper.cpp/build/bin/whisper-cli")
+    WHISPER_MODEL_PATH = os.environ.get("SAFI_WHISPER_MODEL", "/opt/whisper.cpp/models/ggml-base.en.bin")
+    MAX_AUDIO_SIZE_MB = int(os.environ.get("SAFI_MAX_AUDIO_MB", "10"))
+    WHISPER_TIMEOUT_SECONDS = int(os.environ.get("SAFI_WHISPER_TIMEOUT", "120"))
+
     # --- CONVERSATION MEMORY ---
     # How much of the conversation is replayed verbatim to the faculties each
     # turn, in USER/ASSISTANT PAIRS. 3 was hardcoded in the orchestrator; some
