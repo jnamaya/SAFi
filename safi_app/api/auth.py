@@ -184,6 +184,57 @@ def _decode_id_token_unverified(token):
         return {}
 
 
+def _enforce_domain_ownership(user_details, idp):
+    """A verified domain owns its identities CONTINUOUSLY, not only at the
+    instant someone verifies it (backlog 78).
+
+    Runs for a user who already has an org. If their email domain is verified by
+    a different org, they are moved into it as a member.
+
+    Why this exists, and why it is not redundant with absorption: absorption
+    fires once, at verification. Any account that ends up outside its domain's
+    org afterwards stays there until a human notices. The visible symptom is an
+    admin of a stray org seeing the domain-verification field for a domain
+    somebody else already owns, which is not a cosmetic problem to hide but
+    evidence that the invariant is broken. Enforcing it here makes the state
+    self-correcting at the next login instead.
+
+    Cost is one indexed lookup per login for users who have an org, which is
+    nothing next to a governed turn.
+
+    Demotion only: the move is always to 'member', so this can never grant
+    authority, and it never touches a user already in the owning org.
+    """
+    user_id = user_details['id']
+    email = (user_details.get('email') or '').strip().lower()
+    if '@' not in email:
+        return
+    domain = email.split('@')[-1]
+    current_org = user_details.get('org_id')
+
+    try:
+        owner = db.get_organization_by_domain(domain)
+    except Exception as e:
+        current_app.logger.error(f"Domain ownership check failed during login: {e}")
+        return
+    if not owner or str(owner['id']) == str(current_org):
+        return
+
+    previous_role = user_details.get('role')
+    db.update_user_org_and_role(user_id, owner['id'], 'member')
+    user_details['org_id'] = owner['id']
+    user_details['role'] = 'member'
+    db.log_auth_event('member_absorbed_by_domain', f"user:{user_id}",
+                      org_id=owner['id'], user_id=user_id,
+                      detail={"email": email, "domain": domain,
+                              "previous_org_id": current_org,
+                              "previous_role": previous_role,
+                              "new_role": "member", "idp": idp,
+                              "trigger": "login"})
+    current_app.logger.info(
+        f"User {user_id} moved into org {owner['id']} as member: {domain} is verified there")
+
+
 def _resolve_membership(user_details, idp):
     """Membership at login: a live invitation wins, EXCEPT against the org that
     has verified the email's domain, which always owns its own people; otherwise
@@ -324,6 +375,12 @@ def callback():
                 _resolve_membership(user_details, idp='google')
             except Exception as e:
                 current_app.logger.error(f"Error resolving membership: {e}")
+        else:
+            # Already in an org: keep the domain invariant true (backlog 78).
+            try:
+                _enforce_domain_ownership(user_details, idp='google')
+            except Exception as e:
+                current_app.logger.error(f"Error enforcing domain ownership: {e}")
 
         if not user_details.get('org_id') and not user_details.get('_domain_owned_by'):
             # "Founder Flow": a genuinely unaffiliated user gets a personal org
@@ -453,6 +510,11 @@ def login_mobile():
                 _resolve_membership(user_details, idp='google_mobile')
             except Exception as e:
                 current_app.logger.error(f"Error resolving membership (mobile): {e}")
+        else:
+            try:
+                _enforce_domain_ownership(user_details, idp='google_mobile')
+            except Exception as e:
+                current_app.logger.error(f"Error enforcing domain ownership (mobile): {e}")
 
         # Per-tenant claim enforcement — the verified Google ID token IS the
         # claims dict here (includes hd for Workspace accounts).
@@ -738,6 +800,11 @@ def callback_microsoft():
                 _resolve_membership(user_details, idp='microsoft')
             except Exception as e:
                 current_app.logger.warning(f"Membership resolution failed for Microsoft user {user_id}: {e}")
+        else:
+            try:
+                _enforce_domain_ownership(user_details, idp='microsoft')
+            except Exception as e:
+                current_app.logger.warning(f"Domain ownership enforcement failed for {user_id}: {e}")
 
         # Per-tenant claim enforcement + directory/MFA evidence (Phase 2).
         # tid/amr come from the id_token minted by the token endpoint.

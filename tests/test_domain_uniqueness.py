@@ -193,6 +193,114 @@ class NoShadowOrgOnAClaimedDomain(unittest.TestCase):
                           "an unaffiliated user must still get a personal org")
 
 
+class DomainOwnershipIsEnforcedAtLogin(unittest.TestCase):
+    """The invariant holds continuously, not only at verification (backlog 78).
+
+    Absorption fires once, when a domain is verified. Anything that ends up
+    outside its domain's org afterwards used to stay there until a human
+    noticed, and the visible symptom was an admin of a stray org being offered
+    domain verification for a domain someone else already owns. That is not a
+    UI blemish to hide; it is evidence the invariant is broken. This makes the
+    state self-correcting at the next login."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+
+    def setUp(self):
+        self.tag = uuid.uuid4().hex[:8]
+        self.domain = f"enforced{self.tag}.example"
+        self.org_owner = db.create_organization(f"Owner {self.tag}")
+        self.org_stray = db.create_organization(f"Stray {self.tag}")
+        _verify(self.org_owner, self.domain)
+        self.uid = f"stray-admin-{self.tag}"
+        new_user(user_id=self.uid, email=f"person@{self.domain}",
+                 org_id=self.org_stray, role="admin")
+
+    def tearDown(self):
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM auth_events WHERE user_id=%s", (self.uid,))
+            cur.execute("DELETE FROM users WHERE id=%s", (self.uid,))
+            for oid in (self.org_owner, self.org_stray):
+                cur.execute("DELETE FROM auth_events WHERE org_id=%s", (oid,))
+                cur.execute("UPDATE users SET org_id=NULL WHERE org_id=%s", (oid,))
+                cur.execute("DELETE FROM organizations WHERE id=%s", (oid,))
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    def _login(self, uid, email, org_id, role):
+        details = {"id": uid, "email": email, "org_id": org_id, "role": role}
+        with self.app.app_context():
+            auth_api._enforce_domain_ownership(details, idp="test")
+        return details
+
+    def test_an_admin_of_a_stray_org_is_moved_in_as_member(self):
+        details = self._login(self.uid, f"person@{self.domain}",
+                              self.org_stray, "admin")
+        self.assertEqual(details["org_id"], self.org_owner)
+        self.assertEqual(details["role"], "member",
+                         "and demoted, so they no longer see admin surfaces "
+                         "like domain verification")
+        self.assertEqual(db.get_user_details(self.uid)["org_id"], self.org_owner,
+                         "persisted, not just mutated in the session dict")
+
+    def test_a_member_already_in_the_owning_org_is_untouched(self):
+        uid = f"insider-{self.tag}"
+        new_user(user_id=uid, email=f"insider@{self.domain}",
+                 org_id=self.org_owner, role="admin")
+        try:
+            details = self._login(uid, f"insider@{self.domain}",
+                                  self.org_owner, "admin")
+            self.assertEqual(details["role"], "admin",
+                             "the owning org's own admin must not be demoted")
+        finally:
+            conn = db.get_db_connection()
+            cur = conn.cursor()
+            try:
+                cur.execute("DELETE FROM users WHERE id=%s", (uid,))
+                conn.commit()
+            finally:
+                cur.close()
+                conn.close()
+
+    def test_an_unclaimed_domain_changes_nothing(self):
+        uid = f"free-{self.tag}"
+        email = f"free@unclaimed{self.tag}.example"
+        new_user(user_id=uid, email=email, org_id=self.org_stray, role="admin")
+        try:
+            details = self._login(uid, email, self.org_stray, "admin")
+            self.assertEqual(details["org_id"], self.org_stray)
+            self.assertEqual(details["role"], "admin")
+        finally:
+            conn = db.get_db_connection()
+            cur = conn.cursor()
+            try:
+                cur.execute("DELETE FROM users WHERE id=%s", (uid,))
+                conn.commit()
+            finally:
+                cur.close()
+                conn.close()
+
+    def test_the_move_is_journaled_with_its_trigger(self):
+        self._login(self.uid, f"person@{self.domain}", self.org_stray, "admin")
+        conn = db.get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT detail FROM auth_events WHERE user_id=%s AND event=%s",
+                        (self.uid, 'member_absorbed_by_domain'))
+            row = cur.fetchone()
+            self.assertIsNotNone(row, "a cross-tenant move must leave evidence")
+            self.assertIn("login", row["detail"],
+                          "and say it came from login, not from a verification")
+        finally:
+            cur.close()
+            conn.close()
+
+
 class VerifiedDomainClaimsItsIdentities(unittest.TestCase):
     """Proving a domain claims the accounts on it (backlog 78, Nelson's call):
     they join the owning org as members, and that admin decides who is promoted.
