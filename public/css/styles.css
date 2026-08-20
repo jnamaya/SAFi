@@ -2590,6 +2590,187 @@ html {
   100% { transform: translateY(0); }
 }
 
+/* ============================================================
+   SMALL DIALOGS  (rename, delete, new folder, clear history)
+   ============================================================
+   One treatment for every confirm/prompt dialog. They were six copies of the
+   same utility soup: a Cancel button with no resting state, no icon, no
+   entrance, inconsistent title weights, destructive buttons that got LIGHTER
+   on hover while the green one got darker, and rename/folder text inputs
+   borrowing .settings-modal-select, which paints a dropdown chevron inside a
+   plain text field.
+
+   Palette per the branding standard: green is the only accent, neutral carries
+   the black-to-white axis, and red appears only where the action is actually
+   destructive. The icon badge is what makes intent readable at a glance, so
+   the colour is doing meaning, not decoration. */
+
+.safi-dialog {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 18px;
+  /* Two layers: a hairline lift plus a soft ambient shadow. shadow-2xl alone
+     reads as a heavy drop under a small panel. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 40px rgba(0, 0, 0, 0.16);
+  padding: 1.5rem;
+  animation: modal-zoom-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dark .safi-dialog {
+  background: #111111;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 20px 48px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .safi-dialog { animation: none; }
+}
+
+/* Header: badge + title on one line, so the eye lands on the icon first. */
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.dialog-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dialog-icon svg { width: 19px; height: 19px; }
+
+/* Green: an ordinary edit. Red: something is destroyed. */
+.dialog-icon-brand { background: #dcfce7; color: #15803d; }
+.dark .dialog-icon-brand { background: rgba(22, 163, 74, 0.16); color: #4ade80; }
+.dialog-icon-danger { background: #fee2e2; color: #b91c1c; }
+.dark .dialog-icon-danger { background: rgba(220, 38, 38, 0.16); color: #f87171; }
+
+.dialog-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  margin: 0;
+}
+
+.dialog-body {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: #4b5563;
+  margin: 0 0 1.25rem 0;
+}
+
+.dark .dialog-body { color: #9ca3af; }
+
+.dialog-field { margin-bottom: 1.25rem; }
+
+.dialog-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #4b5563;
+  margin-bottom: 0.4rem;
+}
+
+.dark .dialog-label { color: #9ca3af; }
+
+/* A text input, not a select: no chevron, and the focus ring is the brand green
+   rather than the browser default. */
+.dialog-input {
+  width: 100%;
+  font-size: 0.9375rem;
+  color: var(--fg);
+  background-color: var(--bg);
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dark .dialog-input { border-color: #374151; }
+
+.dialog-input::placeholder { color: #9ca3af; }
+
+.dialog-input:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.16);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.dialog-btn {
+  height: 38px;
+  padding: 0 1.05rem;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.dialog-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.35);
+}
+
+/* Cancel: a real button at rest, so the pair reads as a pair. */
+.dialog-btn-secondary {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  color: #374151;
+}
+
+.dialog-btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+
+.dark .dialog-btn-secondary {
+  background: transparent;
+  border-color: #374151;
+  color: #d1d5db;
+}
+
+.dark .dialog-btn-secondary:hover { background: #1f2937; border-color: #4b5563; }
+
+.dialog-btn-primary { background: #16a34a; color: #ffffff; }
+.dialog-btn-primary:hover { background: #15803d; }
+
+/* Destructive: darker on hover, matching the primary's direction. The old
+   red-600 -> red-500 got lighter, which read as the button going inactive. */
+.dialog-btn-danger { background: #dc2626; color: #ffffff; }
+.dialog-btn-danger:hover { background: #b91c1c; }
+.dialog-btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.35); }
+
+/* The backdrop earns a slight blur so the dialog sits clearly in front. */
+#modal-backdrop:not(.hidden) {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: backdrop-fade-in 0.18s ease both;
+}
+
+@keyframes backdrop-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@media (max-width: 480px) {
+  .safi-dialog { padding: 1.25rem; border-radius: 16px; }
+  /* Full-width buttons stacked would be taller than the dialog body; keep them
+     side by side but let them share the row evenly. */
+  .dialog-actions .dialog-btn { flex: 1; }
+}
+
 #modal-backdrop {
   backdrop-filter: blur(4px) !important;
   -webkit-backdrop-filter: blur(4px) !important;
