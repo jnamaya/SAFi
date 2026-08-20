@@ -26,6 +26,7 @@
 - [For Developers](#for-developers)
 - [Knowledge Bases & Tools](#knowledge-bases--tools)
 - [Roles & Permissions](#roles--permissions)
+- [SAFi Technology Stack and Supported Deployment](#safi-technology-stack-and-supported-deployment)
 - [Releases](#releases)
 - [Contributing](#contributing)
 - [License & Governance](#license--governance)
@@ -580,6 +581,16 @@ Stated plainly, because knowing the edges matters more than the summary:
 Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
 `check_permission`), with per-surface role sets in `audit_api.py`
 (`OBSERVER_ROLES`) and `review_api.py` (`REVIEWER_ROLES`).
+
+---
+
+## SAFi Technology Stack and Supported Deployment
+
+Python 3.11 to 3.13, Flask 3.x, MySQL 8.0 or later, on Linux. The stack is fixed rather than advisory, because every file in the Trusted Computing Base is Python and the governance engine is not portable across runtimes without becoming a different program.
+
+In production the application is never exposed directly to the internet: it binds to localhost behind a reverse proxy, and all external traffic terminates on port 443.
+
+- **[SAFi Technology Stack and Supported Deployment](docs/TECH_STACK.md)**: what is supported, what you may change and what requires maintainer review, and the architecture a production deployment has to satisfy
 
 ---
 
