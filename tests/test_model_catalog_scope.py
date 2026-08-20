@@ -114,6 +114,21 @@ class CatalogIsPerOrg(unittest.TestCase):
         # assert the leak is absent rather than asserting presence.
         self.assertNotIn(self.model_b, {m["id"] for m in pg.list_models_for_org(self.org_a)})
 
+    # ---- deployment-wide rows must stay manageable by SOMEONE ----
+
+    def test_an_operator_can_delete_a_deployment_wide_model(self):
+        """org_id=None is the operator scope. Scoping every delete to the
+        caller's org left deployment-wide rows deletable by nobody holding an
+        org, which is every admin on a normal install: the org-scoped delete
+        never matches org_id ''. That orphaned the rows entirely."""
+        self.assertTrue(db.delete_custom_model(self.model_global, org_id=None))
+        self.assertNotIn(self.model_global,
+                         {r["model_id"] for r in db.list_custom_models()})
+
+    def test_the_operator_scope_can_also_reach_an_orgs_row(self):
+        # An operator curating the catalog must not be blocked by ownership.
+        self.assertTrue(db.delete_custom_model(self.model_a, org_id=None))
+
     # ---- routing is unaffected ----
 
     def test_routing_still_resolves_any_registered_id(self):

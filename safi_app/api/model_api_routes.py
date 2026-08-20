@@ -16,6 +16,24 @@ model_api_bp = Blueprint('model_api', __name__)
 _MODEL_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/:-]{0,127}$')
 
 
+def _is_deployment_operator():
+    """A named deployment operator (SAFI_SUPER_ADMINS), never an org role.
+
+    Deployment-wide catalog rows (org_id '') belong to the deployment, not to a
+    tenant, so scoping deletes to the caller's org left them unmanageable by
+    ANYONE holding an org: every org-scoped delete misses them. Operators are who
+    the deployment-wide catalog was always for, so they are who can remove from
+    it. Blank SAFI_SUPER_ADMINS = nobody, the same safe default the usage
+    rollup uses.
+    """
+    user = session.get('user') or {}
+    user_id = user.get('sub') or user.get('id')
+    details = db.get_user_details(user_id) or {}
+    email = (details.get('email') or user.get('email') or '').lower()
+    supers = {e.lower() for e in Config.SUPER_ADMIN_EMAILS}
+    return bool(email) and email in supers
+
+
 @model_api_bp.route('/models', methods=['GET'], strict_slashes=False)
 def list_models():
     """Canonical model list: Config.AVAILABLE_MODELS enriched with provider
@@ -51,15 +69,20 @@ def list_custom():
     from ..core.services.model_routing import configured_providers
     configured = configured_providers(Config)
     # Scoped to the caller's org plus the deployment-wide rows (backlog 77).
-    # This used to list every org's entries to every admin.
-    rows = db.list_custom_models(visible_to_org=get_current_org_id() or '')
+    # This used to list every org's entries to every admin. A deployment
+    # operator sees everything, because they are the only one who can manage
+    # the deployment-wide rows and cannot curate what they cannot see.
+    is_operator = _is_deployment_operator()
+    rows = (db.list_custom_models() if is_operator
+            else db.list_custom_models(visible_to_org=get_current_org_id() or ''))
     return jsonify({
         "ok": True,
         "models": [
             {"id": r["model_id"], "label": r["label"], "provider": r["provider"],
-             # Deployment-wide rows are not the tenant's to remove, so the UI
-             # can render them read-only instead of offering a Remove that 404s.
-             "deployment_wide": not (r.get("org_id") or "")}
+             # Deployment-wide rows are not a tenant's to remove, so the UI can
+             # render them read-only instead of offering a Remove that 404s.
+             # An operator can remove them, so for them nothing is read-only.
+             "deployment_wide": bool(not (r.get("org_id") or "") and not is_operator)}
             for r in rows
         ],
         "providers": [
@@ -130,8 +153,13 @@ def delete_custom():
     # affected org's users would silently fall back to the default model. A row
     # this org does not own is reported as not found, which is both true from
     # the caller's scope and free of information about other tenants.
+    #
+    # A deployment operator is unrestricted, because deployment-wide rows
+    # (org_id '') belong to no org: without this they were deletable by nobody
+    # holding an org, which is every admin on a normal install.
     org_id = get_current_org_id()
-    if not db.delete_custom_model(model_id, org_id=org_id or ''):
+    scope = None if _is_deployment_operator() else (org_id or '')
+    if not db.delete_custom_model(model_id, org_id=scope):
         return jsonify({"error": "Not found."}), 404
     invalidate_custom_models_cache()
 
