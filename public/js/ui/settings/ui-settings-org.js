@@ -470,7 +470,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                         </select>
                         <button id="btn-send-invite" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Invite</button>
                     </div>
-                    <p class="text-xs text-gray-400 mt-1">No email is sent — share the app link yourself. The invite is applied automatically when that address signs in (Google or Microsoft), regardless of join policy. Expires after 14 days.</p>
+                    <p class="text-xs text-gray-400 mt-1">Applies automatically if they sign in with a matching Google or Microsoft account. If this deployment has email configured, they'll also be sent a link to set a password and join directly — otherwise a Google or Microsoft account on this address is the only way in. Expires after 14 days.</p>
                     <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
                 </div>
             </section>
@@ -1000,9 +1000,11 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             if (!email) { ui.showToast('Enter an email address', 'error'); return; }
             try {
                 const res = await api.createInvitation(org.id, email, document.getElementById('sel-invite-role').value);
-                ui.showToast(res.invitation?.external_domain
-                    ? 'Invite created (outside your verified domain) — no email is sent; it applies when they sign in'
-                    : 'Invite created — no email is sent; it applies when they sign in', 'success');
+                const outsideDomain = res.invitation?.external_domain ? ' (outside your verified domain)' : '';
+                const emailNote = res.invitation?.claim_email_sent
+                    ? 'A sign-in link was emailed to them.'
+                    : 'No claim email was sent (email is not configured on this deployment) — it applies automatically if they sign in with a matching Google or Microsoft account.';
+                ui.showToast(`Invite created${outsideDomain}. ${emailNote}`, 'success');
                 document.getElementById('inp-invite-email').value = '';
                 loadPendingInvites(org.id);
             } catch (e) {

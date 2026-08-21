@@ -1,10 +1,13 @@
 from flask import Blueprint, jsonify, request, current_app, session
 import uuid
 import json
+import smtplib
+from email.message import EmailMessage
 import dns.resolver
 import dns.exception
 from ..persistence import database as db
 from ..timeutil import utc_isoformat
+from ..config import Config
 from ..core.rbac import require_role, check_permission, get_current_org_id
 # Same check the governance compiler uses, applied at save time: what would
 # raise at chat time is rejected while the admin is still looking at the form.
@@ -680,6 +683,56 @@ def _actor():
     return user.get('email') or user.get('id') or 'unknown'
 
 
+_INVITE_CLAIM_EXPIRES_DAYS = 14  # matches create_org_invitation's own default
+
+
+def _send_invite_claim_email(inv, org):
+    """Backlog 51: emails the SMTP-delivered claim link for a freshly
+    created invitation. The email IS the verification — only whoever can
+    read this exact inbox ever sees the token — which is why there is no
+    "copy invite link" affordance anywhere in the admin UI. A copied link
+    could be pasted anywhere (a Slack channel, a group chat) and would then
+    prove nothing about who is actually claiming it.
+
+    Raises on any SMTP failure; the caller treats that as
+    claim_email_sent=False without failing the invite-creation request —
+    the invitation itself was already created and still works if the
+    invitee already has a matching Google or Microsoft account."""
+    from .auth import issue_invite_claim_token
+
+    token = issue_invite_claim_token(inv['id'], inv['email'], _INVITE_CLAIM_EXPIRES_DAYS)
+    claim_url = f"{Config.WEB_BASE_URL}/?invite={token}"
+    org_name = (org or {}).get('name') or 'an organization'
+
+    msg = EmailMessage()
+    msg["From"] = Config.SMTP_FROM
+    msg["To"] = inv['email']
+    msg["Subject"] = f"You've been invited to join {org_name} on SAFi"
+    msg.set_content(
+        f"You've been invited to join {org_name} on SAFi as a {inv['role']}.\n\n"
+        f"Set up your account: {claim_url}\n\n"
+        f"This link expires in {_INVITE_CLAIM_EXPIRES_DAYS} days and can only be used once."
+    )
+    msg.add_alternative(
+        f"<p>You've been invited to join <b>{org_name}</b> on SAFi as a "
+        f"<b>{inv['role']}</b>.</p>"
+        f'<p><a href="{claim_url}">Set up your account</a></p>'
+        f"<p>This link expires in {_INVITE_CLAIM_EXPIRES_DAYS} days and can only be used once.</p>",
+        subtype="html",
+    )
+
+    port = int(Config.SMTP_PORT)
+    server = smtplib.SMTP_SSL(Config.SMTP_HOST, port, timeout=30) if port == 465 \
+        else smtplib.SMTP(Config.SMTP_HOST, port, timeout=30)
+    with server as s:
+        if port != 465:
+            s.starttls()
+        if Config.SMTP_USERNAME:
+            s.login(Config.SMTP_USERNAME, Config.SMTP_PASSWORD)
+        s.send_message(msg)
+    return True
+
+
 def _member_of_org(org_id, user_id):
     details = db.get_user_details(user_id)
     return bool(details and str(details.get('org_id')) == str(org_id))
@@ -735,12 +788,24 @@ def create_invitation(org_id):
     try:
         inv = db.create_org_invitation(org_id, data.get('email'),
                                        data.get('role', 'member'), _actor())
-        return jsonify({"ok": True, "invitation": inv}), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Error creating invitation: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
+
+    # Claim-link email (backlog 51): only when SMTP is configured. No
+    # fallback link is ever surfaced in the admin UI when it isn't — an
+    # unsent link would be indistinguishable from a verified one to whoever
+    # the admin might otherwise be tempted to hand it to directly.
+    claim_email_sent = False
+    if Config.smtp_configured():
+        try:
+            claim_email_sent = _send_invite_claim_email(inv, db.get_organization(org_id))
+        except Exception as e:
+            current_app.logger.error(f"Error sending invite-claim email to {inv['email']}: {e}")
+    inv['claim_email_sent'] = claim_email_sent
+    return jsonify({"ok": True, "invitation": inv}), 201
 
 
 @organizations_bp.route('/organizations/<org_id>/invitations/<invite_id>', methods=['DELETE'])

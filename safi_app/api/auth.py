@@ -77,6 +77,41 @@ def _verify_mfa_token(token):
     except jwt.PyJWTError:
         return None
 
+
+# =================================================================
+# INVITE CLAIM LINK (backlog 51): password-based join for an invitee with
+# no Google/Microsoft account on their domain.
+# =================================================================
+
+def issue_invite_claim_token(invite_id, email, expires_days):
+    """Signed, stateless proof that this invite's email was reached by SMTP —
+    same shape as _issue_mfa_token. Not itself the authority: the
+    org_invitations row is. claim_invitation_with_password re-checks
+    accepted_at/revoked_at/expires_at there, so revoking the invite kills
+    this token's usefulness immediately even before its own exp. Issued by
+    organizations.py at invite-creation time, verified here."""
+    payload = {
+        "sub": invite_id,
+        "email": email,
+        "type": "invite_claim",
+        "exp": datetime.utcnow() + timedelta(days=expires_days),
+    }
+    token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
+    return token.decode("utf-8") if isinstance(token, bytes) else token
+
+
+def verify_invite_claim_token(token):
+    try:
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "invite_claim":
+            return None
+        invite_id, email = payload.get("sub"), payload.get("email")
+        if not invite_id or not email:
+            return None
+        return {"invite_id": invite_id, "email": email}
+    except jwt.PyJWTError:
+        return None
+
 # =================================================================
 # ENTERPRISE IDENTITY PHASE 1 HELPERS (server-side sessions)
 # =================================================================
@@ -679,6 +714,56 @@ def login_local_mfa():
     _mfa_attempts.pop(user_id, None)
     _establish_session(user, idp='local', extra_context={"amr": ["pwd", "otp"], "mfa": True})
     current_app.logger.info(f"Local MFA login: {user.get('email')}")
+    return jsonify({"ok": True})
+
+
+@auth_bp.route('/invite/claim', methods=['POST'])
+def claim_invitation():
+    """
+    [POST /api/invite/claim]
+    Completes an SMTP-delivered invite-claim link (backlog 51): the token
+    is proof this address received the email, so this endpoint lets the
+    invitee set a password and joins them to the inviting org. Public by
+    design — same trust boundary as /login/local's password check, the
+    token stands in for "an account already exists" up to this point.
+    """
+    data = request.get_json(silent=True) or {}
+    token = data.get('token') or ''
+    password = data.get('password') or ''
+    if not token or len(password) < 8:
+        return jsonify({"error": "A valid invite link and a password of at least 8 "
+                                  "characters are required."}), 400
+
+    claim = verify_invite_claim_token(token)
+    if not claim:
+        return jsonify({"error": "This invite link is invalid or has expired."}), 400
+
+    try:
+        result = db.claim_invitation_with_password(claim['invite_id'], claim['email'], password)
+    except Exception as e:
+        current_app.logger.error(f"Error claiming invitation: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+    if not result:
+        return jsonify({"error": "This invitation is no longer valid — it may have "
+                                  "expired, been revoked, or already been claimed."}), 400
+
+    # accept_invitation re-checks the row's own liveness under a row lock,
+    # same as the OAuth login path — the check above is not the last word.
+    accepted = db.accept_invitation(claim['invite_id'], result['user_id'],
+                                    f"user:{result['user_id']}")
+    if not accepted:
+        return jsonify({"error": "This invitation is no longer valid — it may have "
+                                  "expired, been revoked, or already been claimed."}), 400
+
+    user_details = db.get_user_details(result['user_id'])
+    if not user_details.get('active_profile'):
+        db.update_user_profile(result['user_id'], Config.DEFAULT_PROFILE)
+        user_details['active_profile'] = Config.DEFAULT_PROFILE
+
+    _establish_session(user_details, idp='invite_claim',
+                       extra_context={"amr": ["pwd"], "mfa": False})
+    current_app.logger.info(f"Invite claimed: {claim['email']} joined org {accepted['org_id']}")
     return jsonify({"ok": True})
 
 # =================================================================

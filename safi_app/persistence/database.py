@@ -6870,6 +6870,54 @@ def accept_invitation(invite_id, user_id, actor):
         cursor.close()
         conn.close()
 
+
+def claim_invitation_with_password(invite_id, email, password):
+    """Backlog 51: the user-account half of an SMTP-delivered invite claim.
+    Creates a password-login account for the invited email (or adds a
+    password to one that already exists, e.g. from a prior Google login),
+    without touching org membership — that stays accept_invitation's job,
+    called separately right after this by the caller, so both paths through
+    an invitation set org/role in exactly one place.
+
+    Re-checks the invitation is still live by id AND email rather than
+    trusting the caller's decoded token: revoking or letting an invite
+    expire must kill its claim link immediately, and matching email too is
+    a cheap belt-and-suspenders against the two ever disagreeing.
+
+    Returns {"user_id": ...} or None if the invitation is no longer live."""
+    from werkzeug.security import generate_password_hash
+    email = (email or "").strip().lower()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id FROM org_invitations WHERE id=%s AND email=%s AND accepted_at IS NULL "
+            "AND revoked_at IS NULL AND expires_at > NOW()",
+            (invite_id, email),
+        )
+        if not cursor.fetchone():
+            return None
+
+        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
+        existing = cursor.fetchone()
+        password_hash = generate_password_hash(password)
+        if existing:
+            user_id = existing["id"]
+            cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s",
+                           (password_hash, user_id))
+        else:
+            user_id = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO users (id, email, name, password_hash) VALUES (%s, %s, %s, %s)",
+                (user_id, email, email.split("@")[0], password_hash),
+            )
+        conn.commit()
+        return {"user_id": user_id}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_policy_id_by_api_key(raw_key):
     # Never log the key, any prefix of it, or its hash. This used to emit
     # `logging.error("DEBUG_KEY_CHECK: Input: <first 15 chars>, Hash: <10>")` on
