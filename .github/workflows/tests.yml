@@ -79,6 +79,9 @@ jobs:
       SAFI_LOCAL_ADMIN_EMAIL: ci-admin@test.local
       SAFI_LOCAL_ADMIN_PASSWORD: ci-test-password
       SAFI_DEPLOYMENT_MODE: production
+      # See docker-compose.test.yml: these tests need multi-tenant domain
+      # machinery, which the new single-tenant default would skip.
+      SAFI_TENANCY_MODE: multi
       SAFI_SKIP_INDEX_BOOTSTRAP: "true"
 
     steps:

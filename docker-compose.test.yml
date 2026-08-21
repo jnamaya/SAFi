@@ -77,6 +77,10 @@ services:
       SAFI_LOCAL_ADMIN_PASSWORD: ci-test-password
       # Keep the promotional UI out of any snapshot a test might assert on.
       SAFI_DEPLOYMENT_MODE: production
+      # test_domain_uniqueness.py and test_invitation_domain_authority.py
+      # exercise the multi-tenant domain/invitation machinery directly; the
+      # default single-tenant mode would short-circuit past all of it.
+      SAFI_TENANCY_MODE: multi
       SAFI_SKIP_INDEX_BOOTSTRAP: "true"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:

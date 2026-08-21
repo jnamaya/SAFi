@@ -3777,6 +3777,20 @@ def get_organization_by_domain(domain):
         cursor.close()
         conn.close()
 
+def get_oldest_organization():
+    """The deployment's founding org, for single-tenant mode: whichever
+    organization was created first. Same ORDER BY stability guarantee as
+    get_organization_by_domain (created_at, then id) so repeated calls agree
+    even if two orgs share a created_at second."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM organizations ORDER BY created_at, id LIMIT 1")
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_organization(oid):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)

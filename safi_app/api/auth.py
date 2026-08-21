@@ -235,20 +235,55 @@ def _enforce_domain_ownership(user_details, idp):
         f"User {user_id} moved into org {owner['id']} as member: {domain} is verified there")
 
 
-def _join_single_tenant_org(user_details, idp):
-    """SAFI_SINGLE_TENANT_ORG_ID is set: there is exactly one tenant, so every
-    unaffiliated login joins it directly as a member. No invitation, no
-    domain lookup, no Founder Flow — the org already exists and already has
-    an admin, both set up by the operator before this ever runs."""
+def _resolve_single_tenant_membership(user_details, idp):
+    """SAFI_TENANCY_MODE=single (the default): this deployment serves exactly
+    one organization, so there is nothing to referee between orgs — no
+    domain lookup, no absorption. A pending invitation still wins, the same
+    as multi-tenant mode, since an admin naming a specific role for a
+    specific person is meaningful even with only one org. Otherwise the user
+    joins the deployment's one org: pinned by SAFI_SINGLE_TENANT_ORG_ID if an
+    operator set it, else whichever org already exists, else a fresh one
+    founded by this user as its first login ever."""
     user_id = user_details['id']
+    email = (user_details.get('email') or '').strip().lower()
+
+    inv = db.match_pending_invitation(email)
+    if inv:
+        res = db.accept_invitation(inv['id'], user_id, f"user:{user_id}")
+        if res:
+            user_details['org_id'] = res['org_id']
+            user_details['role'] = res['role']
+            db.log_auth_event('member_joined', f"user:{user_id}", org_id=res['org_id'],
+                              user_id=user_id, detail={"join_method": "invite", "idp": idp})
+            return
+
     org_id = Config.SINGLE_TENANT_ORG_ID
-    db.update_user_org_and_role(user_id, org_id, 'member')
-    user_details['org_id'] = org_id
-    user_details['role'] = 'member'
-    db.log_auth_event('member_joined', f"user:{user_id}", org_id=org_id,
+    if not org_id:
+        existing = db.get_oldest_organization()
+        org_id = existing['id'] if existing else None
+
+    if org_id:
+        db.update_user_org_and_role(user_id, org_id, 'member')
+        user_details['org_id'] = org_id
+        user_details['role'] = 'member'
+        db.log_auth_event('member_joined', f"user:{user_id}", org_id=org_id,
+                          user_id=user_id,
+                          detail={"join_method": "single_tenant", "idp": idp})
+        current_app.logger.info(f"User {user_id} joined single-tenant org {org_id}")
+        return
+
+    # No org exists yet anywhere in this deployment: first login ever on a
+    # fresh install. Found it and become its admin, identical to the
+    # multi-tenant Founder Flow except there will never be a second one.
+    org_name = f"{user_details.get('name', 'My')} Organization"
+    new_org = db.create_organization_atomic(org_name, user_id)
+    user_details['org_id'] = new_org['org_id']
+    user_details['role'] = 'admin'
+    db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
+    db.log_auth_event('org_founded', f"user:{user_id}", org_id=new_org['org_id'],
                       user_id=user_id,
-                      detail={"join_method": "single_tenant", "idp": idp})
-    current_app.logger.info(f"User {user_id} joined single-tenant org {org_id}")
+                      detail={"join_method": "single_tenant_founder", "idp": idp})
+    current_app.logger.info(f"User {user_id} founded single-tenant org {new_org['org_id']}")
 
 
 def _resolve_membership(user_details, idp):
@@ -256,9 +291,12 @@ def _resolve_membership(user_details, idp):
     has verified the email's domain, which always owns its own people; otherwise
     domain auto-join under the org's join policy (invite_only orgs journal the
     denial and the user lands org-less — they still authenticate). Mutates
-    user_details. Only ever called for a user with no org."""
-    if Config.SINGLE_TENANT_ORG_ID:
-        _join_single_tenant_org(user_details, idp)
+    user_details. Only ever called for a user with no org.
+
+    All of the above is the SAFI_TENANCY_MODE=multi path. The default, single,
+    branches out immediately below to _resolve_single_tenant_membership."""
+    if Config.TENANCY_MODE != 'multi':
+        _resolve_single_tenant_membership(user_details, idp)
         return
 
     user_id = user_details['id']

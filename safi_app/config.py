@@ -78,6 +78,31 @@ def _resolve_deployment_mode(raw: str) -> str:
     return "production"
 
 
+TENANCY_MODES = ("single", "multi")
+
+# Set when SAFI_TENANCY_MODE is present but not "single" or "multi", so
+# Config.validate() can surface it the same way as an invalid deployment mode.
+_INVALID_TENANCY_MODE: str = ""
+
+
+def _resolve_tenancy_mode(raw: str) -> str:
+    """Normalise SAFI_TENANCY_MODE, falling back to 'single'.
+
+    Fails toward 'single' rather than raising, and for the same reason
+    _resolve_deployment_mode fails toward 'production': a typo must never be
+    the reason a deployment meant to serve one organization starts minting a
+    fresh org for every unrecognised email domain that logs in. Only the
+    literal value 'multi' opts out.
+    """
+    global _INVALID_TENANCY_MODE
+    mode = (raw or "").strip().lower()
+    if mode in TENANCY_MODES:
+        return mode
+    if mode:
+        _INVALID_TENANCY_MODE = mode
+    return "single"
+
+
 def _env_bool(name: str, default: bool) -> bool:
     """Explicit env var wins over a mode-derived default, so pre-existing .env
     files keep behaving exactly as they did before deployment modes existed."""
@@ -266,12 +291,27 @@ class Config:
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
-    # Single-tenant deployments: when set to an existing org's id, every new
-    # login joins that one org directly, bypassing invitations, domain
-    # verification/absorption and the Founder Flow entirely — there is
-    # exactly one tenant, so nothing needs resolving. Leave unset for the
-    # default multi-tenant behavior (the online demo, or any self-hosted
-    # instance meant to serve more than one organization).
+    # --- Tenancy mode --------------------------------------------------------
+    #
+    # single (default) — this deployment serves exactly one organization.
+    #                     Every login joins that org directly: whoever signs
+    #                     in first founds it and becomes its admin, everyone
+    #                     after joins it as a member. No domain verification,
+    #                     no absorption, no per-domain Founder Flow — there is
+    #                     only ever one org to resolve to, so a fresh clone is
+    #                     single-tenant with zero configuration.
+    # multi               — the online demo's mode, and any self-hosted
+    #                       instance meant to serve more than one
+    #                       organization. Restores the original behavior: an
+    #                       unaffiliated login with no invitation and no
+    #                       verified domain founds its own personal org.
+    #
+    # An unrecognised value falls back to 'single', reported by validate().
+    TENANCY_MODE = _resolve_tenancy_mode(os.environ.get("SAFI_TENANCY_MODE", "single"))
+
+    # Advanced/migration override for single-tenant mode: pin to a specific
+    # existing org id instead of auto-detecting the deployment's oldest org.
+    # Leave unset in the normal case — a fresh install has no org yet to pin.
     SINGLE_TENANT_ORG_ID = os.environ.get("SAFI_SINGLE_TENANT_ORG_ID", "").strip() or None
 
     # --- Deployment mode ----------------------------------------------------
@@ -589,6 +629,13 @@ class Config:
                 "SAFI_DEPLOYMENT_MODE=%r is not a recognised mode (%s) — falling back to "
                 "'production'. Demo login and showcase framing are OFF.",
                 _INVALID_DEPLOYMENT_MODE, "|".join(DEPLOYMENT_MODES),
+            )
+
+        if _INVALID_TENANCY_MODE:
+            _log.warning(
+                "SAFI_TENANCY_MODE=%r is not a recognised mode (%s) — falling back to "
+                "'single'. Every login will join this deployment's one organization.",
+                _INVALID_TENANCY_MODE, "|".join(TENANCY_MODES),
             )
 
         if cls.APP_ENV == 'production':
