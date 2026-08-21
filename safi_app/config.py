@@ -266,6 +266,14 @@ class Config:
     # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
+    # Single-tenant deployments: when set to an existing org's id, every new
+    # login joins that one org directly, bypassing invitations, domain
+    # verification/absorption and the Founder Flow entirely — there is
+    # exactly one tenant, so nothing needs resolving. Leave unset for the
+    # default multi-tenant behavior (the online demo, or any self-hosted
+    # instance meant to serve more than one organization).
+    SINGLE_TENANT_ORG_ID = os.environ.get("SAFI_SINGLE_TENANT_ORG_ID", "").strip() or None
+
     # --- Deployment mode ----------------------------------------------------
     #
     # One declaration of what this instance IS, so an operator states intent

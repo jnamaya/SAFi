@@ -235,12 +235,32 @@ def _enforce_domain_ownership(user_details, idp):
         f"User {user_id} moved into org {owner['id']} as member: {domain} is verified there")
 
 
+def _join_single_tenant_org(user_details, idp):
+    """SAFI_SINGLE_TENANT_ORG_ID is set: there is exactly one tenant, so every
+    unaffiliated login joins it directly as a member. No invitation, no
+    domain lookup, no Founder Flow — the org already exists and already has
+    an admin, both set up by the operator before this ever runs."""
+    user_id = user_details['id']
+    org_id = Config.SINGLE_TENANT_ORG_ID
+    db.update_user_org_and_role(user_id, org_id, 'member')
+    user_details['org_id'] = org_id
+    user_details['role'] = 'member'
+    db.log_auth_event('member_joined', f"user:{user_id}", org_id=org_id,
+                      user_id=user_id,
+                      detail={"join_method": "single_tenant", "idp": idp})
+    current_app.logger.info(f"User {user_id} joined single-tenant org {org_id}")
+
+
 def _resolve_membership(user_details, idp):
     """Membership at login: a live invitation wins, EXCEPT against the org that
     has verified the email's domain, which always owns its own people; otherwise
     domain auto-join under the org's join policy (invite_only orgs journal the
     denial and the user lands org-less — they still authenticate). Mutates
     user_details. Only ever called for a user with no org."""
+    if Config.SINGLE_TENANT_ORG_ID:
+        _join_single_tenant_org(user_details, idp)
+        return
+
     user_id = user_details['id']
     email = (user_details.get('email') or '').strip().lower()
     domain = email.split('@')[-1] if '@' in email else None
