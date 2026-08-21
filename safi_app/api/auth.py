@@ -407,7 +407,11 @@ def app_config():
     """
     return jsonify({
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
-        "local_login_enabled": Config.ENABLE_LOCAL_LOGIN,
+        # Also true whenever SMTP is configured, not just the local admin —
+        # an invite-claim account (backlog 51) needs this same form to log
+        # in again, and it can only exist if SMTP was configured to deliver
+        # its claim link in the first place.
+        "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
     })
 
@@ -633,13 +637,14 @@ def login_mobile():
 def login_local():
     """
     [POST /api/login/local]
-    Authenticates against the persistent local admin account configured
-    via SAFI_LOCAL_ADMIN_EMAIL / SAFI_LOCAL_ADMIN_PASSWORD.
-    Only available when SAFI_ENABLE_LOCAL_LOGIN is true (both vars set).
+    Checks any password-login account by email: the persistent local admin
+    (SAFI_LOCAL_ADMIN_EMAIL/PASSWORD), or an invite-claimed account (backlog
+    51). Available whenever either could exist — see
+    Config.password_login_available().
     """
     from werkzeug.security import check_password_hash
 
-    if not Config.ENABLE_LOCAL_LOGIN:
+    if not Config.password_login_available():
         return jsonify({"error": "Local login is not enabled on this instance."}), 404
 
     data     = request.get_json(silent=True) or {}
@@ -688,7 +693,7 @@ def login_local_mfa():
     Second step of local login for TOTP-enrolled accounts: exchanges the
     mfa_pending token + a live code for a real session.
     """
-    if not Config.ENABLE_LOCAL_LOGIN:
+    if not Config.password_login_available():
         return jsonify({"error": "Local login is not enabled on this instance."}), 404
 
     data = request.get_json(silent=True) or {}

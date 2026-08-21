@@ -434,6 +434,18 @@ class Config:
     def smtp_configured(cls) -> bool:
         return bool(cls.SMTP_HOST and cls.SMTP_FROM)
 
+    @classmethod
+    def password_login_available(cls) -> bool:
+        """Whether /login/local should even be reachable: the persistent
+        local-admin account (ENABLE_LOCAL_LOGIN), or an invite-claim account
+        (backlog 51) — which can only ever have been created while SMTP was
+        configured to deliver its claim link, so smtp_configured() stands in
+        for "a password account might exist" without a DB round trip. Not
+        used by Config.validate()'s "at least one login method" check: an
+        invite-claim account still needs a pre-existing admin to invite it,
+        so SMTP alone can never bootstrap a deployment's first login."""
+        return bool(cls.ENABLE_LOCAL_LOGIN or cls.smtp_configured())
+
     # Character budget for the work-context memory injected into the prompt each
     # turn (the RAG equivalent is _MAX_CONTEXT_CHARS = 8000 in intellect.py).
     # Read-side only: the stored memory is never truncated, oldest entries are

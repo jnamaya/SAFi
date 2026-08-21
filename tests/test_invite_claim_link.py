@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
+from safi_app.config import Config
 from safi_app.persistence import database as db
 from safi_app.api import auth as auth_api
 
@@ -168,6 +169,50 @@ class InviteClaimLink(unittest.TestCase):
         self.assertEqual(user["id"], uid, "must reuse the existing user row, not create a new one")
         self.assertEqual(str(user["org_id"]), str(self.org_id))
         self.assertIsNotNone(user["password_hash"])
+
+    # ---- repeat login after claiming (not the link — the ordinary form) ----
+
+    def test_claimed_account_can_log_in_again_with_login_local(self):
+        email = self._email("k")
+        password = "correct-horse-battery"
+        inv = self._invite(email)
+        claim_res = self._claim(self._token(inv), password=password)
+        self.assertEqual(claim_res.status_code, 200, claim_res.get_json())
+
+        # A fresh client: the claim response's session must not be what
+        # makes this work, or it isn't testing repeat login at all.
+        fresh_client = self.app.test_client()
+        res = fresh_client.post("/api/login/local", json={"email": email, "password": password})
+        self.assertEqual(res.status_code, 200, res.get_json())
+
+        me = fresh_client.get("/api/me")
+        self.assertEqual(me.get_json().get("user", {}).get("email"), email)
+
+    # ---- password_login_available() gates /login/local + app-config ----
+
+    def test_password_login_available_when_only_smtp_is_configured(self):
+        orig_local, orig_host, orig_from = (
+            Config.ENABLE_LOCAL_LOGIN, Config.SMTP_HOST, Config.SMTP_FROM)
+        try:
+            Config.ENABLE_LOCAL_LOGIN = False
+            Config.SMTP_HOST, Config.SMTP_FROM = "smtp.example.test", "noreply@example.test"
+            self.assertTrue(Config.password_login_available(),
+                            "an invite-claim account can only exist if SMTP was "
+                            "configured, so the login form must stay reachable")
+        finally:
+            Config.ENABLE_LOCAL_LOGIN, Config.SMTP_HOST, Config.SMTP_FROM = (
+                orig_local, orig_host, orig_from)
+
+    def test_password_login_unavailable_with_neither_configured(self):
+        orig_local, orig_host, orig_from = (
+            Config.ENABLE_LOCAL_LOGIN, Config.SMTP_HOST, Config.SMTP_FROM)
+        try:
+            Config.ENABLE_LOCAL_LOGIN = False
+            Config.SMTP_HOST, Config.SMTP_FROM = "", ""
+            self.assertFalse(Config.password_login_available())
+        finally:
+            Config.ENABLE_LOCAL_LOGIN, Config.SMTP_HOST, Config.SMTP_FROM = (
+                orig_local, orig_host, orig_from)
 
     # ---- invite creation reports whether a claim email actually went out ----
 
