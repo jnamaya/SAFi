@@ -175,15 +175,30 @@ async function _renderSecurityCard(container) {
                     const res = await api.setupTotp();
                     body.innerHTML = `
                         <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-                            Add this key to your authenticator app, then confirm with the 6-digit code it shows.
+                            Scan this with Google Authenticator, Microsoft Authenticator, or
+                            any TOTP app, then confirm with the 6-digit code it shows.
                         </p>
-                        <div class="mb-2 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-xs break-all select-all">${res.secret}</div>
-                        <a href="${res.otpauth_uri}" class="block text-xs text-green-600 hover:underline mb-3">Open in authenticator app</a>
+                        <div id="mfa-qr" class="mb-2 inline-block rounded-lg overflow-hidden"></div>
+                        <details class="mb-3">
+                            <summary class="text-xs text-neutral-500 dark:text-neutral-400 cursor-pointer">Can't scan? Enter the key manually</summary>
+                            <div class="mt-2 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-xs break-all select-all">${res.secret}</div>
+                            <a href="${res.otpauth_uri}" class="block text-xs text-green-600 hover:underline mt-1">Open in authenticator app on this device</a>
+                        </details>
                         <div class="flex items-center gap-2">
                             <input id="mfa-confirm-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456"
                                 class="w-28 px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-center tracking-widest">
                             <button id="mfa-confirm-btn" class="px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors">Confirm</button>
                         </div>`;
+                    // qrcode global from js/lib/qrcode.js (vendored, MIT). typeNumber 0
+                    // auto-sizes to the data length; 'M' matches common authenticator-app
+                    // QR conventions. Rendered as self-contained SVG (own white background
+                    // baked in), so it stays legible regardless of the app's theme.
+                    try {
+                        const qr = qrcode(0, 'M');
+                        qr.addData(res.otpauth_uri);
+                        qr.make();
+                        body.querySelector('#mfa-qr').innerHTML = qr.createSvgTag(4);
+                    } catch { /* manual-entry details above still work without it */ }
                     body.querySelector('#mfa-confirm-btn').addEventListener('click', async () => {
                         errEl.classList.add('hidden');
                         const code = body.querySelector('#mfa-confirm-code').value.trim();
