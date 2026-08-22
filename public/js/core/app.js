@@ -216,11 +216,15 @@ function showMfaEnrollmentGate() {
       </div>
       <div id="mfa-gate-step2" class="hidden">
         <p class="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-          Add this key to your authenticator app (Google Authenticator, 1Password, Authy…),
-          then enter the 6-digit code it shows.
+          Scan this with Google Authenticator, Microsoft Authenticator, or any
+          TOTP app, then enter the 6-digit code it shows.
         </p>
-        <div class="mb-3 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-sm break-all select-all" id="mfa-gate-secret"></div>
-        <a id="mfa-gate-otpauth" href="#" class="block text-xs text-green-600 hover:underline mb-3">Open in authenticator app</a>
+        <div id="mfa-gate-qr" class="mb-3 inline-block rounded-lg overflow-hidden"></div>
+        <details class="mb-3">
+          <summary class="text-xs text-neutral-500 dark:text-neutral-400 cursor-pointer">Can't scan? Enter the key manually</summary>
+          <div class="mt-2 mb-1 p-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-sm break-all select-all" id="mfa-gate-secret"></div>
+          <a id="mfa-gate-otpauth" href="#" class="block text-xs text-green-600 hover:underline">Open in authenticator app on this device</a>
+        </details>
         <input id="mfa-gate-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"
           class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm tracking-widest text-center dark:text-white mb-2" />
         <button id="mfa-gate-verify" class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
@@ -243,6 +247,14 @@ function showMfaEnrollmentGate() {
       const res = await api.setupTotp();
       gate.querySelector('#mfa-gate-secret').textContent = res.secret;
       gate.querySelector('#mfa-gate-otpauth').href = res.otpauth_uri;
+      // qrcode global from js/lib/qrcode.js (vendored, MIT) — same rendering
+      // as the Settings security card. Self-contained SVG, theme-independent.
+      try {
+        const qr = qrcode(0, 'M');
+        qr.addData(res.otpauth_uri);
+        qr.make();
+        gate.querySelector('#mfa-gate-qr').innerHTML = qr.createSvgTag(4);
+      } catch { /* manual-entry details above still work without it */ }
       gate.querySelector('#mfa-gate-step1').classList.add('hidden');
       gate.querySelector('#mfa-gate-step2').classList.remove('hidden');
       gate.querySelector('#mfa-gate-code').focus();
