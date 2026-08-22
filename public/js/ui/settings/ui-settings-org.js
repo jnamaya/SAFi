@@ -100,7 +100,9 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                     <div>
                         <h4 class="font-bold text-green-900 dark:text-green-100">Domain Verified</h4>
                         <p class="text-sm text-green-700 dark:text-green-300">
-                            Users with <strong>@${org.domain_to_verify}</strong> emails will automatically join this organization.
+                            Sign-in for <strong>@${org.domain_to_verify}</strong> accounts is now locked to
+                            your Google Workspace or Microsoft 365 tenant (see Identity &amp; Sessions below),
+                            and if this deployment ever hosts more than one organization, they'll join this one automatically.
                         </p>
                     </div>
                 </div>
@@ -110,7 +112,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6">
                 <h4 class="font-bold text-green-900 dark:text-green-100 mb-2">Verify Your Domain</h4>
                 <p class="text-sm text-green-700 dark:text-green-300 mb-4">
-                    Claim <strong>${org.domain_to_verify || 'your domain'}</strong> to enable Auto-Join for your team.
+                    Claim <strong>${org.domain_to_verify || 'your domain'}</strong> to lock sign-in to your
+                    Google Workspace or Microsoft 365 tenant, and enable Auto-Join for your team.
+                    Already know your tenant ID or Workspace domain? You can skip this and enter it
+                    directly in Identity &amp; Sessions below.
                 </p>
                 
                 ${org.verification_token
@@ -441,6 +446,15 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      <span class="block text-xs text-gray-400 mt-1">When set, only Google sign-ins from this Workspace domain are accepted; consumer Gmail accounts are rejected.</span>
                  </label>
              </div>
+             <p class="text-xs text-gray-400 mt-4">
+                 Verifying your domain above (DNS TXT record) fills these two fields in
+                 automatically, when the domain's mail is actually hosted on Google
+                 Workspace or Microsoft 365. If you already know your tenant ID or
+                 Workspace domain, you can just type it in here directly — domain
+                 verification is only worth doing in addition if you also want to
+                 formally claim the domain (it decides who owns it if this deployment
+                 ever hosts more than one organization).
+             </p>
              <div class="flex justify-end mt-4">
                  <button id="btn-save-identity" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
              </div>
@@ -876,7 +890,12 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             try {
                 const res = await api.checkDomainVerification(checkBtn.dataset.orgId);
                 if (res && res.status === 'verified') {
-                    ui.showToast("Domain Verified!", "success");
+                    const configured = res.identity_configured || {};
+                    const lockedTo = configured.google_hd ? 'Google Workspace' : (configured.ms_tenant_id ? 'Microsoft 365' : null);
+                    ui.showToast(lockedTo
+                        ? `Domain verified — sign-in is now locked to your ${lockedTo} tenant.`
+                        : "Domain verified! (Mail isn't on Google or Microsoft, so no sign-in restriction was added.)",
+                        "success");
                     renderSettingsOrganizationTab(); // Refresh
                 } else {
                     ui.showToast(res && res.error ? res.error : "TXT record not found yet. It may take a few minutes.", "warning");

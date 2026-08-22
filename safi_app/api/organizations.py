@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request, current_app, session
 import uuid
 import json
+import re
 import smtplib
 from email.message import EmailMessage
+import requests
 import dns.resolver
 import dns.exception
 from ..persistence import database as db
@@ -14,6 +16,48 @@ from ..core.rbac import require_role, check_permission, get_current_org_id
 from ..core.faculties.synderesis import _has_usable_rubric
 
 organizations_bp = Blueprint('organizations', __name__)
+
+
+def _domain_uses_google_workspace(domain):
+    """Best-effort signal that a domain's mail is hosted on Google Workspace:
+    its MX records point at Google's mail servers. Google has no per-domain
+    discovery endpoint the way Microsoft does, so this is the closest
+    equivalent — a real DNS fact about where the domain is hosted, not an
+    assumption. Returns False (never raises) on any lookup failure, which
+    the caller treats as "not on Google Workspace"."""
+    try:
+        answers = dns.resolver.resolve(domain, 'MX')
+        return any(
+            host in str(rdata.exchange).lower()
+            for rdata in answers
+            for host in ('google.com', 'googlemail.com')
+        )
+    except Exception:
+        return False
+
+
+def _discover_ms_tenant_id(domain):
+    """Best-effort Microsoft tenant discovery for a just-verified domain.
+    The OIDC discovery document's issuer embeds the tenant's real GUID
+    (https://login.microsoftonline.com/<tenant-guid>/v2.0) — a standard,
+    publicly documented, unauthenticated lookup; no credentials sent, no
+    secret exposed. Returns None (never raises) on any failure, which the
+    caller treats as "this domain isn't on Microsoft", not an error."""
+    try:
+        resp = requests.get(
+            f"https://login.microsoftonline.com/{domain}/v2.0/.well-known/openid-configuration",
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        issuer = (resp.json().get("issuer") or "").rstrip("/")
+        candidate = issuer.split("/")[-2] if issuer.count("/") >= 2 else ""
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", candidate, re.I):
+            return candidate.lower()
+        return None
+    except Exception:
+        return None
+
 
 @organizations_bp.route('/organizations/domain/start', methods=['POST'])
 @require_role('admin')
@@ -143,9 +187,37 @@ def verify_domain_dns():
             except Exception as e:
                 current_app.logger.error(f"Domain absorption failed for {domain}: {e}")
 
+            # A DNS-verified domain is the strongest ownership signal this
+            # system has — turn it into the thing that actually restricts
+            # logins (backlog 52 follow-up). domain_verified itself gates
+            # nothing on its own in single-tenant deployments; google_hd /
+            # ms_tenant_id are what _org_claim_gate actually checks,
+            # regardless of tenancy mode. Each is only set when there is an
+            # actual signal the domain is hosted there — a domain on
+            # neither (a third-party mail host) gets neither set, which is
+            # correct: nothing to restrict against on a provider nobody at
+            # this org will ever log in through. Never fatal to the
+            # verification, which already committed.
+            identity_configured = {}
+            try:
+                identity_changes = {}
+                if _domain_uses_google_workspace(domain):
+                    identity_changes["google_hd"] = domain
+                tenant_id = _discover_ms_tenant_id(domain)
+                if tenant_id:
+                    identity_changes["ms_tenant_id"] = tenant_id
+                if identity_changes:
+                    db.set_org_identity_config(org_id, identity_changes, f"user:{_actor()}")
+                    identity_configured = identity_changes
+            except Exception as e:
+                current_app.logger.error(
+                    f"Failed to auto-configure login restriction after domain "
+                    f"verification for {domain}: {e}")
+
             return jsonify({
                 "status": "verified",
                 "domain": domain,
+                "identity_configured": identity_configured,
                 # The admin needs to see this: people they did not invite are now
                 # members of their org, and any org left without an admin or
                 # without members needs an operator to reconcile it.
