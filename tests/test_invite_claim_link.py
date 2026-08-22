@@ -158,21 +158,22 @@ class InviteClaimLink(unittest.TestCase):
     def test_claiming_adds_a_password_to_an_existing_oauth_account(self):
         """An invitee who already has a SAFi account via Google keeps it —
         the claim link adds a password credential rather than duplicating
-        the user row."""
+        the user row. The claim form's name is applied even here: there is
+        no way to tell a real prior name apart from a leftover fallback, and
+        whoever filled in the claim form is already trusted enough to set
+        the account's password."""
         email = self._email("i")
         uid = new_user(email=email)  # simulates a prior Google/Microsoft login
         inv = self._invite(email)
 
-        res = self._claim(self._token(inv))
+        res = self._claim(self._token(inv), name="Jane Q. Invitee")
         self.assertEqual(res.status_code, 200, res.get_json())
 
         user = db.get_user_by_email(email)
         self.assertEqual(user["id"], uid, "must reuse the existing user row, not create a new one")
         self.assertEqual(str(user["org_id"]), str(self.org_id))
         self.assertIsNotNone(user["password_hash"])
-        self.assertEqual(user["name"], "Test User",
-                         "an existing account's real display name must not be overwritten "
-                         "by whatever the claim form happened to be filled with")
+        self.assertEqual(user["name"], "Jane Q. Invitee")
 
     def test_claiming_sets_the_display_name_on_a_new_account(self):
         email = self._email("l")

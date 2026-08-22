@@ -6888,11 +6888,16 @@ def claim_invitation_with_password(invite_id, email, password, name=None):
     called separately right after this by the caller, so both paths through
     an invitation set org/role in exactly one place.
 
-    name is only ever applied to a BRAND NEW row, or to an existing row that
-    has none — an existing Google/Microsoft account's real display name is
-    never overwritten by whatever the claim form happened to be filled with.
-    Falls back to the email's local part if no name was given, matching the
-    Founder Flow's own fallback shape elsewhere in this file.
+    name is always applied when given, new row or existing. Originally this
+    only filled in an EMPTY name, to avoid clobbering a real Google/Microsoft
+    display name — but there is no way to tell a real name apart from a
+    leftover fallback (this function's own email-local-part default, from
+    before this parameter existed), and silently discarding what someone just
+    typed is worse than the risk that guard was for: whoever fills in the
+    claim form is already trusted enough to set the account's PASSWORD, so
+    trusting the same form for the display name is the same trust boundary,
+    not a new one. Falls back to the email's local part only when no name is
+    given at all.
 
     Re-checks the invitation is still live by id AND email rather than
     trusting the caller's decoded token: revoking or letting an invite
@@ -6919,7 +6924,7 @@ def claim_invitation_with_password(invite_id, email, password, name=None):
         password_hash = generate_password_hash(password)
         if existing:
             user_id = existing["id"]
-            if name and not existing.get("name"):
+            if name:
                 cursor.execute("UPDATE users SET password_hash=%s, name=%s WHERE id=%s",
                                (password_hash, name, user_id))
             else:
