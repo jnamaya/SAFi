@@ -211,9 +211,12 @@
             <!-- Accept Invitation (shown only when the URL carries an emailed claim token) -->
             <div id="invite-claim-section" class="hidden w-full max-w-xs mt-2">
               <p class="text-sm text-neutral-600 dark:text-neutral-300 text-center mb-3">
-                Set a password to accept your invitation and sign in.
+                Set your name and a password to accept your invitation.
+                You'll be signed in automatically — no separate login step.
               </p>
               <form id="invite-claim-form" class="flex flex-col gap-2 w-full">
+                <input id="invite-name" type="text" placeholder="Your name" required autocomplete="name"
+                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <input id="invite-password" type="password" placeholder="Password (8+ characters)" required
                   minlength="8" autocomplete="new-password"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
@@ -1084,6 +1087,11 @@
     const _isNative = false;
     const _HOST = '';
 
+    // Read once, up front: the app-config fetch below is async and must not
+    // re-reveal the local-login section for this case (see its .then below) —
+    // a claim in progress should show only the claim form.
+    const _inviteToken = new URLSearchParams(window.location.search).get('invite');
+
     // Surface login errors passed back via redirect (?error=...&reason=...)
     (function () {
       const params = new URLSearchParams(window.location.search);
@@ -1110,7 +1118,7 @@
           const btn = document.getElementById('login-demo-button');
           if (btn) btn.remove();
         }
-        if (cfg.local_login_enabled) {
+        if (cfg.local_login_enabled && !_inviteToken) {
           const section = document.getElementById('local-login-section');
           if (section) section.classList.remove('hidden');
         }
@@ -1123,8 +1131,7 @@
     // token here any other way — a link handed over through some other
     // channel would prove nothing about who is actually claiming it.
     (function () {
-      const inviteToken = new URLSearchParams(window.location.search).get('invite');
-      if (!inviteToken) return;
+      if (!_inviteToken) return;
 
       ['login-button', 'login-microsoft-button', 'login-demo-button', 'local-login-section']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
@@ -1132,9 +1139,10 @@
 
       document.getElementById('invite-claim-form')?.addEventListener('submit', async function (e) {
         e.preventDefault();
+        const name     = document.getElementById('invite-name').value.trim();
         const password = document.getElementById('invite-password').value;
         const confirmPw = document.getElementById('invite-password-confirm').value;
-        const errorEl = document.getElementById('invite-claim-error');
+        const errorEl  = document.getElementById('invite-claim-error');
         const submitBtn = this.querySelector('button[type="submit"]');
 
         errorEl.classList.add('hidden');
@@ -1151,7 +1159,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: _isNative ? 'include' : 'same-origin',
-            body: JSON.stringify({ token: inviteToken, password })
+            body: JSON.stringify({ token: _inviteToken, name, password })
           });
           const data = await res.json().catch(() => ({}));
           if (res.ok && data.ok) {

@@ -734,17 +734,19 @@ def claim_invitation():
     """
     data = request.get_json(silent=True) or {}
     token = data.get('token') or ''
+    name = (data.get('name') or '').strip()
     password = data.get('password') or ''
-    if not token or len(password) < 8:
-        return jsonify({"error": "A valid invite link and a password of at least 8 "
-                                  "characters are required."}), 400
+    if not token or not name or len(password) < 8:
+        return jsonify({"error": "A valid invite link, a name, and a password of at "
+                                  "least 8 characters are required."}), 400
 
     claim = verify_invite_claim_token(token)
     if not claim:
         return jsonify({"error": "This invite link is invalid or has expired."}), 400
 
     try:
-        result = db.claim_invitation_with_password(claim['invite_id'], claim['email'], password)
+        result = db.claim_invitation_with_password(claim['invite_id'], claim['email'],
+                                                    password, name=name)
     except Exception as e:
         current_app.logger.error(f"Error claiming invitation: {e}")
         return jsonify({"error": "An internal error occurred."}), 500

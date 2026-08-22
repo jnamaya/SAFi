@@ -6880,13 +6880,19 @@ def accept_invitation(invite_id, user_id, actor):
         conn.close()
 
 
-def claim_invitation_with_password(invite_id, email, password):
+def claim_invitation_with_password(invite_id, email, password, name=None):
     """Backlog 51: the user-account half of an SMTP-delivered invite claim.
     Creates a password-login account for the invited email (or adds a
     password to one that already exists, e.g. from a prior Google login),
     without touching org membership — that stays accept_invitation's job,
     called separately right after this by the caller, so both paths through
     an invitation set org/role in exactly one place.
+
+    name is only ever applied to a BRAND NEW row, or to an existing row that
+    has none — an existing Google/Microsoft account's real display name is
+    never overwritten by whatever the claim form happened to be filled with.
+    Falls back to the email's local part if no name was given, matching the
+    Founder Flow's own fallback shape elsewhere in this file.
 
     Re-checks the invitation is still live by id AND email rather than
     trusting the caller's decoded token: revoking or letting an invite
@@ -6896,6 +6902,7 @@ def claim_invitation_with_password(invite_id, email, password):
     Returns {"user_id": ...} or None if the invitation is no longer live."""
     from werkzeug.security import generate_password_hash
     email = (email or "").strip().lower()
+    name = (name or "").strip()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -6907,18 +6914,22 @@ def claim_invitation_with_password(invite_id, email, password):
         if not cursor.fetchone():
             return None
 
-        cursor.execute("SELECT id FROM users WHERE email=%s", (email,))
+        cursor.execute("SELECT id, name FROM users WHERE email=%s", (email,))
         existing = cursor.fetchone()
         password_hash = generate_password_hash(password)
         if existing:
             user_id = existing["id"]
-            cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s",
-                           (password_hash, user_id))
+            if name and not existing.get("name"):
+                cursor.execute("UPDATE users SET password_hash=%s, name=%s WHERE id=%s",
+                               (password_hash, name, user_id))
+            else:
+                cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s",
+                               (password_hash, user_id))
         else:
             user_id = str(uuid.uuid4())
             cursor.execute(
                 "INSERT INTO users (id, email, name, password_hash) VALUES (%s, %s, %s, %s)",
-                (user_id, email, email.split("@")[0], password_hash),
+                (user_id, email, name or email.split("@")[0], password_hash),
             )
         conn.commit()
         return {"user_id": user_id}

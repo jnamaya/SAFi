@@ -71,8 +71,9 @@ class InviteClaimLink(unittest.TestCase):
         with self.app.app_context():
             return auth_api.issue_invite_claim_token(inv["id"], inv["email"], expires_days)
 
-    def _claim(self, token, password="correct-horse-battery"):
-        return self.client.post("/api/invite/claim", json={"token": token, "password": password})
+    def _claim(self, token, password="correct-horse-battery", name="Test Invitee"):
+        return self.client.post("/api/invite/claim",
+                                json={"token": token, "name": name, "password": password})
 
     # ---- token round trip ----
 
@@ -169,6 +170,24 @@ class InviteClaimLink(unittest.TestCase):
         self.assertEqual(user["id"], uid, "must reuse the existing user row, not create a new one")
         self.assertEqual(str(user["org_id"]), str(self.org_id))
         self.assertIsNotNone(user["password_hash"])
+        self.assertEqual(user["name"], "Test User",
+                         "an existing account's real display name must not be overwritten "
+                         "by whatever the claim form happened to be filled with")
+
+    def test_claiming_sets_the_display_name_on_a_new_account(self):
+        email = self._email("l")
+        inv = self._invite(email)
+        res = self._claim(self._token(inv), name="Jane Q. Invitee")
+        self.assertEqual(res.status_code, 200, res.get_json())
+
+        user = db.get_user_by_email(email)
+        self.assertEqual(user["name"], "Jane Q. Invitee")
+
+    def test_a_missing_name_is_rejected(self):
+        inv = self._invite(self._email("m"))
+        res = self.client.post("/api/invite/claim",
+                               json={"token": self._token(inv), "password": "correct-horse-battery"})
+        self.assertEqual(res.status_code, 400)
 
     def test_reinviting_the_same_email_returns_an_id_the_new_token_can_claim(self):
         """Regression: create_org_invitation's ON DUPLICATE KEY UPDATE path
