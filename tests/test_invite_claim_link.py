@@ -170,6 +170,33 @@ class InviteClaimLink(unittest.TestCase):
         self.assertEqual(str(user["org_id"]), str(self.org_id))
         self.assertIsNotNone(user["password_hash"])
 
+    def test_reinviting_the_same_email_returns_an_id_the_new_token_can_claim(self):
+        """Regression: create_org_invitation's ON DUPLICATE KEY UPDATE path
+        (uq_org_email) used to return a freshly generated id that was never
+        actually written — the existing row keeps its own id. Delete +
+        re-invite is the everyday way to hit this: claim, delete the user,
+        invite the same email again, claim the NEW link."""
+        email = self._email("j")
+        first_inv = self._invite(email)
+        first_claim = self._claim(self._token(first_inv))
+        self.assertEqual(first_claim.status_code, 200, first_claim.get_json())
+
+        conn = db.get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("DELETE FROM users WHERE email=%s", (email,))
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+        second_inv = self._invite(email)  # hits uq_org_email — the update path
+        second_claim = self._claim(self._token(second_inv))
+        self.assertEqual(second_claim.status_code, 200, second_claim.get_json())
+
+        user = db.get_user_by_email(email)
+        self.assertEqual(str(user["org_id"]), str(self.org_id))
+
     # ---- repeat login after claiming (not the link — the ordinary form) ----
 
     def test_claimed_account_can_log_in_again_with_login_local(self):

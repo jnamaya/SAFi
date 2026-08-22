@@ -6774,6 +6774,15 @@ def create_org_invitation(org_id, email, role, invited_by, expires_days=14):
             "expires_at=VALUES(expires_at), accepted_at=NULL, revoked_at=NULL",
             (invite_id, org_id, email, role, invited_by, int(expires_days)),
         )
+        # A re-invite to the same (org_id, email) hits uq_org_email and takes
+        # the ON DUPLICATE KEY UPDATE branch, which keeps the EXISTING row's
+        # id — the invite_id generated above is never actually written
+        # anywhere in that case. Re-reading it here is what makes the
+        # returned id trustworthy either way; backlog 51's claim-link token
+        # is minted against this value, and a stale, never-persisted id
+        # silently produced an unclaimable link on every re-invite.
+        cursor.execute("SELECT id FROM org_invitations WHERE org_id=%s AND email=%s", (org_id, email))
+        invite_id = cursor.fetchone()[0]
         # Flag invites outside the org's verified domain (contractor case).
         cursor.execute("SELECT domain_to_verify FROM organizations WHERE id=%s AND domain_verified=TRUE", (org_id,))
         row = cursor.fetchone()
