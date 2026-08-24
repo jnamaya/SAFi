@@ -29,6 +29,7 @@ from flask import Blueprint, request, jsonify, g, current_app
 from ..persistence import database as db
 from ..persistence import scim_store
 from ..persistence import sharing_store
+from ..persistence import conversation_sharing_store
 from ..core.services import mcp_oauth
 
 scim_bp = Blueprint("scim", __name__)
@@ -129,6 +130,7 @@ def _deprovision(org_id, email):
         try:
             db.remove_member_from_org(uid, org_id, actor=_actor(org_id))
             sharing_store.remove_user_from_org_sharing(uid, org_id)
+            conversation_sharing_store.remove_user_from_org_sharing(uid, org_id)
         except db.LastAdminError:
             current_app.logger.warning("SCIM deprovision skipped: would remove last admin (%s)", email)
             return

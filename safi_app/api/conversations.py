@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from ..persistence import database as db
 from ..persistence import sharing_store
+from ..persistence import conversation_sharing_store
 from ..core.orchestrator import SAFi
 from ..core.faculties.synderesis import get_profile, list_profiles
 from ..core.services import provider_governance as pg
@@ -580,36 +581,63 @@ async def process_prompt_endpoint():
     data = request.json
     if 'message' not in data or 'conversation_id' not in data:
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
-    
+
     conversation_id = data['conversation_id']
 
-    # --- SECURITY: Verify Ownership ---
-    # --- SECURITY: Verify Ownership (and Auto-Create for External Bots) ---
-    if not db.ensure_conversation_access(user_id, conversation_id):
-        return jsonify({"error": "You do not have permission to access this conversation."}), 403
-    # ----------------------------------
-    # ----------------------------------
-
-    if limit > 0 or user_id.startswith('demo_'):
-        db.record_prompt_usage(user_id)
-    
     # 1. Resolve User Configuration
     user_details = db.get_user_details(user_id)
     if not user_details:
          return jsonify({"error": "User not found."}), 404
 
-    user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
+    # --- SECURITY: Verify Ownership (and Auto-Create for External Bots), or a
+    # backlog-56 contributor grant. A brand-new conversation_id has no row yet
+    # and is always a fresh conversation of the caller's own — the shared case
+    # only exists for conversations that already exist, so it can't reach the
+    # auto-create branch.
+    meta = db.get_conversation_meta(conversation_id)
+    if meta is None:
+        if not db.ensure_conversation_access(user_id, conversation_id):
+            return jsonify({"error": "You do not have permission to access this conversation."}), 403
+        is_owner = True
+    else:
+        convo_role = conversation_sharing_store.get_conversation_role(
+            user_id, user_details.get('org_id'), conversation_id,
+            meta.get('user_id'), meta.get('project_id'))
+        if convo_role is None:
+            return jsonify({"error": "You do not have permission to access this conversation."}), 403
+        if convo_role == 'viewer':
+            return jsonify({"error": "You have view-only access to this conversation.",
+                            "code": "VIEWER_ONLY"}), 403
+        is_owner = (convo_role == 'owner')
+    # ----------------------------------
+
+    if limit > 0 or user_id.startswith('demo_'):
+        db.record_prompt_usage(user_id)
+
+    # Which agent governs this turn: the owner's own active_profile, as
+    # always — but a contributor continuing someone else's conversation is
+    # governed by the conversation's OWN established agent instead, so one
+    # conversation stays under one charter no matter who is typing (backlog
+    # 56; see the write-up there for why this can't just be the poster's
+    # own active_profile once posters other than the owner are possible).
+    if is_owner:
+        user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
+    else:
+        user_profile_name = db.get_conversation_agent_profile(conversation_id) or Config.DEFAULT_PROFILE
 
     # FETCH AGENT PROFILE FIRST to check for overrides
     try:
         agent_profile = get_profile(user_profile_name)
     except KeyError:
         # The stored agent no longer exists (retired demo agent or deleted
-        # custom agent). Fall back to the platform default and heal the user
-        # record so the UI and backend agree on the next load.
+        # custom agent). Fall back to the platform default and, for the
+        # owner only, heal the user record so the UI and backend agree on
+        # the next load — a contributor's own active_profile was never the
+        # thing in question here, so it must not be touched.
         user_profile_name = Config.DEFAULT_PROFILE
         try:
-            db.update_user_profile(user_id, user_profile_name)
+            if is_owner:
+                db.update_user_profile(user_id, user_profile_name)
             agent_profile = get_profile(user_profile_name)
         except Exception:
             agent_profile = {}
@@ -624,14 +652,21 @@ async def process_prompt_endpoint():
     raw_agent = db.get_agent(user_profile_name)
     if raw_agent and not sharing_store.can_use_agent(
             user_id, user_details.get('role'), user_details.get('org_id'), raw_agent):
-        # Heal the stored selection so the next page load recovers.
-        try:
-            db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
-        except Exception:
-            pass
+        if is_owner:
+            # Heal the stored selection so the next page load recovers.
+            try:
+                db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
+            except Exception:
+                pass
+            return jsonify({
+                "error": "You no longer have access to this agent. Your active "
+                         "agent has been reset to the default.",
+                "code": "AGENT_ACCESS_DENIED"
+            }), 403
+        # Non-owner: nothing of theirs to heal — it's the conversation's own
+        # agent they've lost access to, not a setting on their account.
         return jsonify({
-            "error": "You no longer have access to this agent. Your active "
-                     "agent has been reset to the default.",
+            "error": "You no longer have access to the agent this conversation uses.",
             "code": "AGENT_ACCESS_DENIED"
         }), 403
 
@@ -857,6 +892,8 @@ def handle_delete_conversation(conversation_id):
     # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
     if not db.delete_conversation(conversation_id, user_id=user_id):
         return jsonify({"error": "Conversation not found."}), 404
+    # Grants must not outlive the conversation (no FKs, so cleanup is explicit).
+    conversation_sharing_store.delete_grants_for_conversation(conversation_id)
     return jsonify({"status": "success"})
 
 # --- Projects (workspaces that group conversations) ---
@@ -899,6 +936,10 @@ def handle_delete_project(project_id):
         return jsonify({"error": "Authentication required."}), 401
     if not db.delete_project(project_id, user_id):
         return jsonify({"error": "Project not found."}), 404
+    # Grants must not outlive the folder (no FKs, so cleanup is explicit).
+    # Conversations that were inside it are preserved (see db.delete_project);
+    # any DIRECT grant on one of them is untouched — only the folder grant goes.
+    conversation_sharing_store.delete_grants_for_project(project_id)
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>/project', methods=['PATCH'])
@@ -912,6 +953,232 @@ def handle_move_conversation(conversation_id):
     if not db.move_conversation_to_project(conversation_id, project_id, user_id):
         return jsonify({"error": "Could not move conversation."}), 404
     return jsonify({"status": "success", "project_id": project_id})
+
+# --- Sharing (backlog 56): per-conversation and per-folder visibility grants,
+# reusing sharing_store's org groups. Owner-only to manage, no org-admin
+# bypass — sharing is peer collaboration, oversight of every conversation
+# already exists separately via the Audit Hub. ---
+
+def _conversation_owner_meta_or_404(conversation_id, user_id):
+    """The conversation's meta if it exists and belongs to user_id, else
+    None — a foreign or missing id both read as 404 at the call site, so an
+    id can never be confirmed to exist by probing."""
+    meta = db.get_conversation_meta(conversation_id)
+    if not meta or meta.get('user_id') != user_id:
+        return None
+    return meta
+
+
+def _project_owner_meta_or_404(project_id, user_id):
+    meta = db.get_project_meta(project_id)
+    if not meta or meta.get('user_id') != user_id:
+        return None
+    return meta
+
+
+def _validate_share_request(data, org_id):
+    """(grantee_type, grantee_id, role, error_response)."""
+    grantee_type = (data.get('grantee_type') or '').strip()
+    grantee_id = (data.get('grantee_id') or '').strip()
+    role = (data.get('role') or 'viewer').strip()
+    if grantee_type not in ('user', 'group') or not grantee_id:
+        return None, None, None, (jsonify({
+            "error": "'grantee_type' (user|group) and 'grantee_id' are required."}), 400)
+    if role not in conversation_sharing_store.ROLES:
+        return None, None, None, (jsonify({"error": "'role' must be 'viewer' or 'contributor'."}), 400)
+    if grantee_type == 'user':
+        target = db.get_user_details(grantee_id)
+        if not target or str(target.get('org_id')) != str(org_id):
+            return None, None, None, (jsonify({
+                "error": "That user is not a member of your organization."}), 400)
+    else:
+        group = sharing_store.get_group(grantee_id)
+        if not group or str(group.get('org_id')) != str(org_id):
+            return None, None, None, (jsonify({
+                "error": "That group does not belong to your organization."}), 400)
+    return grantee_type, grantee_id, role, None
+
+
+def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
+    """None when the share may proceed; an (error, status) tuple when it must
+    be blocked (backlog 56: block, don't loan). Checked only for a direct
+    'user' grant — a group's membership and roles can drift after the grant
+    exists, so that side is enforced live instead, at continue-time, by
+    process_prompt_endpoint's own can_use_agent check."""
+    if grantee_type != 'user':
+        return None
+    profile_name = db.get_conversation_agent_profile(conversation_id)
+    if not profile_name:
+        return None
+    raw_agent = db.get_agent(profile_name)
+    if not raw_agent:
+        return None  # built-in agent: platform-wide, nothing to block
+    target = db.get_user_details(grantee_id)
+    if not target:
+        return None
+    if sharing_store.can_use_agent(grantee_id, target.get('role'), target.get('org_id'), raw_agent):
+        return None
+    return jsonify({"error": "That person cannot use this conversation's agent, "
+                             "so it cannot be shared with them."}), 400
+
+
+@conversations_bp.route('/conversations/<conversation_id>/shares', methods=['GET'], strict_slashes=False)
+def list_conversation_shares(conversation_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _conversation_owner_meta_or_404(conversation_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    org_id = (session.get('user') or {}).get('org_id')
+    try:
+        members = db.get_organization_members(org_id) if org_id else []
+    except Exception:
+        members = []
+    try:
+        groups = sharing_store.list_groups(org_id) if org_id else []
+    except Exception:
+        groups = []
+    return jsonify({
+        "ok": True,
+        "grants": conversation_sharing_store.list_conversation_grants(conversation_id),
+        "groups": [{"id": g['id'], "name": g['name'], "member_count": g.get('member_count', 0)}
+                   for g in groups],
+        "members": [{"id": m.get('id'), "name": m.get('name'), "email": m.get('email')}
+                    for m in members],
+    })
+
+
+@conversations_bp.route('/conversations/<conversation_id>/shares', methods=['POST'], strict_slashes=False)
+def grant_conversation_share(conversation_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _conversation_owner_meta_or_404(conversation_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    org_id = (session.get('user') or {}).get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    data = request.get_json(silent=True) or {}
+    grantee_type, grantee_id, role, err = _validate_share_request(data, org_id)
+    if err:
+        return err
+    block = _agent_block_for_conversation(conversation_id, grantee_type, grantee_id)
+    if block:
+        return block
+    conversation_sharing_store.set_conversation_grant(
+        conversation_id, grantee_type, grantee_id, role, org_id, user_id)
+    db.append_compliance_log(org_id, 'conversation_shared', f"user:{user_id}",
+                             {"conversation_id": conversation_id, "grantee_type": grantee_type,
+                              "grantee": grantee_id, "role": role})
+    return jsonify({"ok": True})
+
+
+@conversations_bp.route('/conversations/<conversation_id>/shares/<grantee_type>/<path:grantee_id>',
+                        methods=['DELETE'], strict_slashes=False)
+def revoke_conversation_share(conversation_id, grantee_type, grantee_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _conversation_owner_meta_or_404(conversation_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    if grantee_type not in ('user', 'group'):
+        return jsonify({"error": "'grantee_type' must be user or group."}), 400
+    removed = conversation_sharing_store.revoke_conversation_grant(conversation_id, grantee_type, grantee_id)
+    if removed:
+        org_id = (session.get('user') or {}).get('org_id')
+        db.append_compliance_log(org_id, 'conversation_unshared', f"user:{user_id}",
+                                 {"conversation_id": conversation_id,
+                                  "grantee_type": grantee_type, "grantee": grantee_id})
+    return jsonify({"ok": True, "removed": removed})
+
+
+@conversations_bp.route('/conversations/shared-with-me', methods=['GET'], strict_slashes=False)
+def list_conversations_shared_with_me():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    org_id = (session.get('user') or {}).get('org_id')
+    return jsonify(conversation_sharing_store.list_shared_with_me(user_id, org_id))
+
+
+@conversations_bp.route('/projects/<project_id>/shares', methods=['GET'], strict_slashes=False)
+def list_project_shares(project_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _project_owner_meta_or_404(project_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    org_id = (session.get('user') or {}).get('org_id')
+    try:
+        members = db.get_organization_members(org_id) if org_id else []
+    except Exception:
+        members = []
+    try:
+        groups = sharing_store.list_groups(org_id) if org_id else []
+    except Exception:
+        groups = []
+    return jsonify({
+        "ok": True,
+        "grants": conversation_sharing_store.list_project_grants(project_id),
+        "groups": [{"id": g['id'], "name": g['name'], "member_count": g.get('member_count', 0)}
+                   for g in groups],
+        "members": [{"id": m.get('id'), "name": m.get('name'), "email": m.get('email')}
+                    for m in members],
+    })
+
+
+@conversations_bp.route('/projects/<project_id>/shares', methods=['POST'], strict_slashes=False)
+def grant_project_share(project_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _project_owner_meta_or_404(project_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    org_id = (session.get('user') or {}).get('org_id')
+    if not org_id:
+        return jsonify({"error": "You are not part of an organization."}), 400
+    data = request.get_json(silent=True) or {}
+    grantee_type, grantee_id, role, err = _validate_share_request(data, org_id)
+    if err:
+        return err
+    # Folders are not agent-bound (they can hold conversations with
+    # different or no agents), so there is nothing to block here — access
+    # to each conversation inside is still enforced live, per-conversation,
+    # when it's actually opened or continued.
+    conversation_sharing_store.set_project_grant(project_id, grantee_type, grantee_id, role, org_id, user_id)
+    db.append_compliance_log(org_id, 'project_shared', f"user:{user_id}",
+                             {"project_id": project_id, "grantee_type": grantee_type,
+                              "grantee": grantee_id, "role": role})
+    return jsonify({"ok": True})
+
+
+@conversations_bp.route('/projects/<project_id>/shares/<grantee_type>/<path:grantee_id>',
+                        methods=['DELETE'], strict_slashes=False)
+def revoke_project_share(project_id, grantee_type, grantee_id):
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    if not _project_owner_meta_or_404(project_id, user_id):
+        return jsonify({"error": "Not found"}), 404
+    if grantee_type not in ('user', 'group'):
+        return jsonify({"error": "'grantee_type' must be user or group."}), 400
+    removed = conversation_sharing_store.revoke_project_grant(project_id, grantee_type, grantee_id)
+    if removed:
+        org_id = (session.get('user') or {}).get('org_id')
+        db.append_compliance_log(org_id, 'project_unshared', f"user:{user_id}",
+                                 {"project_id": project_id,
+                                  "grantee_type": grantee_type, "grantee": grantee_id})
+    return jsonify({"ok": True, "removed": removed})
+
+
+@conversations_bp.route('/projects/shared-with-me', methods=['GET'], strict_slashes=False)
+def list_projects_shared_with_me():
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    org_id = (session.get('user') or {}).get('org_id')
+    return jsonify(conversation_sharing_store.list_projects_shared_with_me(user_id, org_id))
+
 
 # --- Saved content (snapshots of individual AI responses) ---
 
@@ -1144,6 +1411,25 @@ def clear_agent_memory(agent_id):
     _memory_edit_evidence('agent_memory_cleared', user_id, agent_id, {})
     return jsonify({"status": "success"})
 
+def _readable_conversation_or_none(user_id, conversation_id):
+    """None when the conversation doesn't exist. Otherwise the owner's own
+    user_id if the caller may read it (self, or a viewer/contributor grant —
+    backlog 56), or False if the caller may not. The owner's user_id is what
+    the caller must hand to db.fetch_chat_history_for_conversation, since
+    that function's ownership JOIN checks against the conversation's OWNER,
+    not the requester."""
+    meta = db.get_conversation_meta(conversation_id)
+    if meta is None:
+        return None
+    owner_id = meta.get('user_id')
+    if owner_id == user_id:
+        return owner_id
+    user = session.get('user') or {}
+    role = conversation_sharing_store.get_conversation_role(
+        user_id, user.get('org_id'), conversation_id, owner_id, meta.get('project_id'))
+    return owner_id if role else False
+
+
 @conversations_bp.route('/conversations/<conversation_id>/history', methods=['GET'])
 def get_chat_history(conversation_id):
     user_id = get_user_id()
@@ -1151,10 +1437,15 @@ def get_chat_history(conversation_id):
         return jsonify({"error": "Authentication required."}), 401
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
-    
-    # SECURITY: Pass user_id to enforce ownership check
-    history = db.fetch_chat_history_for_conversation(conversation_id, limit=limit, offset=offset, user_id=user_id)
-    
+
+    owner_id = _readable_conversation_or_none(user_id, conversation_id)
+    if owner_id is None:
+        return jsonify({"error": "Conversation not found."}), 404
+    if owner_id is False:
+        return jsonify({"error": "You do not have permission to access this conversation."}), 403
+
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=limit, offset=offset, user_id=owner_id)
+
     return jsonify(history)
 
 @conversations_bp.route('/conversations/<conversation_id>/export', methods=['GET'])
@@ -1162,14 +1453,20 @@ def export_chat_history(conversation_id):
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    
-    # SECURITY: Pass user_id
-    history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0, user_id=user_id)
-    
-    # We also check user_convos to get the title, which implicitly checks ownership if logic is consistent
-    convos = db.fetch_user_conversations(user_id)
-    convo_title = next((c['title'] for c in convos if c['id'] == conversation_id), "Untitled")
-    
+
+    owner_id = _readable_conversation_or_none(user_id, conversation_id)
+    if owner_id is None:
+        return jsonify({"error": "Conversation not found."}), 404
+    if owner_id is False:
+        return jsonify({"error": "You do not have permission to access this conversation."}), 403
+
+    history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0, user_id=owner_id)
+
+    # get_conversation_title is unscoped by design (see its docstring), so a
+    # shared conversation's real title comes through rather than "Untitled" —
+    # access to the title itself was already decided above.
+    convo_title = db.get_conversation_title(conversation_id) or "Untitled"
+
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()
     export_data = {
         "title": convo_title,

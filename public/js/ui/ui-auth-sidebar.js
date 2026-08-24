@@ -328,6 +328,7 @@ const iconFolderMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="curre
 const iconChevronRightSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>`;
 const iconChevronLeftSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>`;
 const iconRemoveCircle = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14L21 3m-1 7v8a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1h8"></path></svg>`;
+const iconShareMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684a3 3 0 100 2.684m0-2.684l6.632 3.316m0-9L8.684 10.658M18 6a3 3 0 11-6 0 3 3 0 016 0zm0 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>`;
 
 function buildMenuContainer(menuId) {
   const menu = document.createElement('div');
@@ -417,6 +418,18 @@ function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) 
       label: 'Move to',
       trailing: iconChevronRightSmall,
       onClick: () => renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers),
+    }));
+  }
+
+  if (typeof handlers.shareHandler === 'function') {
+    menu.appendChild(menuItem({
+      icon: iconShareMenu,
+      label: 'Share',
+      onClick: () => {
+        ui.closeAllConvoMenus();
+        const titleEl = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
+        handlers.shareHandler(convoId, titleEl ? titleEl.textContent : '');
+      },
     }));
   }
 
@@ -511,6 +524,13 @@ function createProjectMenu(project, projectHandlers) {
     label: 'Rename',
     onClick: () => { ui.closeAllConvoMenus(); projectHandlers.renameHandler(project.id, project.name); },
   }));
+  if (typeof projectHandlers.shareHandler === 'function') {
+    menu.appendChild(menuItem({
+      icon: iconShareMenu,
+      label: 'Share',
+      onClick: () => { ui.closeAllConvoMenus(); projectHandlers.shareHandler(project.id, project.name); },
+    }));
+  }
   menu.appendChild(menuDivider());
   menu.appendChild(menuItem({
     icon: iconTrashMenu,

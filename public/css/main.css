@@ -4403,6 +4403,10 @@ video {
     max-height: 85vh;
   }
 
+  .sm\:w-40 {
+    width: 10rem;
+  }
+
   .sm\:w-5 {
     width: 1.25rem;
   }

@@ -4,6 +4,7 @@ import * as api from './api.js';
 import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
+import { openConversationShareDialog, openProjectShareDialog } from '../ui/ui-share-dialog.js';
 import * as cache from './cache.js'; // Use cache for optimistic updates
 // CHANGE: Import the utility function
 
@@ -18,6 +19,10 @@ let convoToDelete = null;
 // newly-created chat will be filed under (null = loose / no project).
 let projects = [];
 let currentProjectId = null;
+// Conversations shared with this user by another org member (backlog 56).
+// Best-effort, org members only: an unauthenticated or org-less session
+// just sees an empty section, never an error.
+let sharedConversations = [];
 const EXPANDED_PROJECTS_KEY = 'safi_expanded_projects';
 
 function getExpandedProjects() {
@@ -379,9 +384,10 @@ export async function loadConversations(activeProfileData, user, promptClickHand
 
     try {
         // 2. Fetch fresh data (uses offlineManager/cache)
-        const [response, projectResponse] = await Promise.all([
+        const [response, projectResponse, sharedResponse] = await Promise.all([
             api.fetchConversations(),
             api.fetchProjects().catch(() => []),
+            api.fetchConversationsSharedWithMe().catch(() => []),
         ]);
 
         const conversations = Array.isArray(response) ? response
@@ -389,6 +395,7 @@ export async function loadConversations(activeProfileData, user, promptClickHand
                 : [];
 
         projects = Array.isArray(projectResponse) ? projectResponse : [];
+        sharedConversations = Array.isArray(sharedResponse) ? sharedResponse : [];
 
         // 3. Save new list and render if different
         await cache.saveConvoList(conversations);
@@ -459,6 +466,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         deleteHandler: handleDelete,
         pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user), // Pass all args
         moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
+        shareHandler: (id, title) => openConversationShareDialog(id, title),
         projects: projects,
     };
 
@@ -493,6 +501,7 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         newChatHandler: (pid) => handleNewChatInProject(pid, activeProfileData, user),
         renameHandler: (pid, name) => handleRenameProject(pid, name, activeProfileData, user),
         deleteHandler: (pid, name) => handleDeleteProject(pid, name, activeProfileData, user),
+        shareHandler: (pid, name) => openProjectShareDialog(pid, name),
     };
 
     projects.forEach(project => {
@@ -590,6 +599,31 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         convoList.appendChild(headerContainer);
     }
     // --- END NEW: Sorting Logic ---
+
+    // --- SHARED WITH ME (backlog 56) ---
+    // Pin/rename/delete/move/share stay owner-only, so this section reuses
+    // renderConversationLink with handlers that just explain that instead of
+    // throwing — switching into the conversation is the only action a
+    // viewer or contributor gets from here.
+    if (sharedConversations.length > 0) {
+        const sharedHeader = document.createElement('h3');
+        sharedHeader.className = 'px-3 mt-4 mb-1 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
+        sharedHeader.textContent = 'Shared with me';
+        convoList.appendChild(sharedHeader);
+
+        const notOwner = (verb) => () => ui.showToast(`Only the owner can ${verb} this conversation.`, 'info');
+        const sharedHandlers = {
+            switchHandler: handlers.switchHandler,
+            pinHandler: notOwner('pin'),
+            renameHandler: notOwner('rename'),
+            deleteHandler: notOwner('delete'),
+        };
+        sortConvos(sharedConversations).forEach(convo => {
+            const link = uiAuthSidebar.renderConversationLink(convo, sharedHandlers);
+            link.title = convo.owner_name ? `Shared by ${convo.owner_name}` : 'Shared with you';
+            convoList.appendChild(link);
+        });
+    }
 
     // Ensure the currently active link is highlighted after rendering
     if (currentConversationId) {

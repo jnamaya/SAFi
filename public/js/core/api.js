@@ -374,6 +374,36 @@ export async function revokeAgentShare(key, granteeType, granteeId) {
     return httpJSON(`${urls.AGENTS}/${key}/share/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
 }
 
+// --- Conversation & folder sharing (backlog 56): viewer/contributor grants ---
+
+export async function getConversationShares(id) {
+    return httpGet(`${urls.CONVERSATION(id)}/shares`);
+}
+export async function grantConversationShare(id, granteeType, granteeId, role) {
+    return httpJSON(`${urls.CONVERSATION(id)}/shares`, 'POST',
+        { grantee_type: granteeType, grantee_id: granteeId, role });
+}
+export async function revokeConversationShare(id, granteeType, granteeId) {
+    return httpJSON(`${urls.CONVERSATION(id)}/shares/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
+}
+export async function fetchConversationsSharedWithMe() {
+    return httpGet(`${urls.CONVERSATIONS}/shared-with-me`);
+}
+
+export async function getProjectShares(id) {
+    return httpGet(`${urls.PROJECT(id)}/shares`);
+}
+export async function grantProjectShare(id, granteeType, granteeId, role) {
+    return httpJSON(`${urls.PROJECT(id)}/shares`, 'POST',
+        { grantee_type: granteeType, grantee_id: granteeId, role });
+}
+export async function revokeProjectShare(id, granteeType, granteeId) {
+    return httpJSON(`${urls.PROJECT(id)}/shares/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
+}
+export async function fetchProjectsSharedWithMe() {
+    return httpGet(`${urls.PROJECTS}/shared-with-me`);
+}
+
 // --- Custom groups (org admin) ---
 
 export async function listGroups() {

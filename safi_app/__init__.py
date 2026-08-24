@@ -121,6 +121,14 @@ def create_app():
             sharing_store.init_schema()
         except Exception as e:
             app.logger.error("Sharing table init failed, agent sharing disabled: %s", e)
+        # Conversation/folder sharing (backlog 56). Same tier as sharing_store
+        # above: who may see or continue someone else's conversation, not the
+        # audit ledger itself.
+        try:
+            from .persistence import conversation_sharing_store
+            conversation_sharing_store.init_schema()
+        except Exception as e:
+            app.logger.error("Conversation sharing table init failed, disabled: %s", e)
         # Tool-grant approvals (backlog 57b): workflow state, not audit ledger.
         try:
             from .persistence import tool_approval_store

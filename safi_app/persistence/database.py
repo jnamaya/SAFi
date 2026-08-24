@@ -1576,6 +1576,41 @@ def ensure_conversation_access(user_id, cid):
         cursor.close()
         conn.close()
 
+def get_conversation_meta(cid):
+    """{'user_id':..., 'project_id':...} for one conversation, or None if it
+    doesn't exist. No ownership scoping — this is raw metadata for a caller
+    (backlog 56's sharing resolver) that decides access itself; it does not
+    decide access on its own."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT user_id, project_id FROM conversations WHERE id=%s", (cid,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_conversation_agent_profile(cid):
+    """The agent (profile_name) of a conversation's most recent audited
+    turn, or None if it has none yet. Same lookup fetch_user_conversations
+    uses for the sidebar's per-chat agent label; pulled out here (backlog 56)
+    so a contributor continuing a shared conversation can be governed by
+    the SAME agent the conversation has used throughout, not whichever
+    profile they personally have active."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT profile_name FROM chat_history "
+            "WHERE conversation_id=%s AND profile_name IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1", (cid,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
 def upsert_user(user_info: Dict[str, Any]):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1755,6 +1790,20 @@ def fetch_user_projects(user_id):
     try:
         cursor.execute("SELECT id, name, created_at FROM projects WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
         return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_project_meta(pid):
+    """{'user_id':..., 'name':...} for one project, or None. No ownership
+    scoping — raw metadata for a caller (backlog 56's sharing resolver,
+    and the owner-only share-management endpoints) that decides access
+    itself."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT user_id, name FROM projects WHERE id=%s", (pid,))
+        return cursor.fetchone()
     finally:
         cursor.close()
         conn.close()

@@ -11,6 +11,7 @@ from flask import Blueprint, request, jsonify, session, current_app
 
 from ..persistence import database as db
 from ..persistence import sharing_store
+from ..persistence import conversation_sharing_store
 from ..core.rbac import require_role, get_current_org_id
 
 groups_bp = Blueprint('groups_api', __name__)
@@ -69,6 +70,7 @@ def delete_group(group_id):
     if not group:
         return jsonify({"error": "Not found"}), 404
     sharing_store.delete_group(group_id)
+    conversation_sharing_store.delete_grants_for_group(group_id)
     db.append_compliance_log(get_current_org_id(), 'group_deleted', f"user:{_actor()}",
                              {"group_id": group_id, "name": group.get('name')})
     return jsonify({"ok": True})
