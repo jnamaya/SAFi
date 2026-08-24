@@ -431,7 +431,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                          <option value="false">Off</option>
                          <option value="true">Required</option>
                      </select>
-                     <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app. Microsoft sign-ins must present MFA evidence (amr) from Entra. Google MFA is enforced at Workspace.</span>
+                     <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app. Microsoft sign-ins must present MFA evidence (amr) from Entra, which most app registrations do not send by default: add amr as an optional ID token claim in the app's Manifest first (not the Token configuration wizard, which doesn't list it), or every Microsoft sign-in will be blocked, not just unenrolled ones. Google MFA is enforced at Workspace, not checked here.</span>
                  </label>
                  <label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Microsoft tenant ID</span>

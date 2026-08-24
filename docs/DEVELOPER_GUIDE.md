@@ -437,10 +437,39 @@ Two things worth knowing before touching this code:
   Google or Microsoft account can sign in. Configuring the tenant/domain
   is what turns on rejection, not a platform default.
 - **`require_mfa` only checks Microsoft's `amr` claim, not Google's.**
-  There's no equivalent MFA-evidence check in the Google branch — Google
+  There's no equivalent MFA-evidence check in the Google branch. Google
   MFA is treated as attested by Workspace policy, not verified in code.
   An org relying on `require_mfa` to cover Google logins specifically is
-  relying on something the code doesn't check.
+  relying on something the code doesn't check. Adding an `amr` claim
+  anywhere on the Google side does nothing for this: the Google branch of
+  `_org_claim_gate` never reads it.
+- **Entra does not send `amr` until the app registration is told to ask
+  for it, and turning on `require_mfa` before that is done locks out
+  every Microsoft sign-in, not just unenrolled ones.** Confirmed live
+  2026-08-24 against a real tenant (`safinstitute.org`): `tid` matched
+  correctly, `amr` was `null` on every attempt, and every login failed
+  with `mfa_evidence_missing` regardless of whether the signing-in user
+  had actually completed MFA at Microsoft's side. The app registration's
+  **Token configuration → Add optional claim** wizard does not list
+  `amr` as a selectable claim at all, searching for it there finds
+  nothing, and that is not a bug in that search box: the wizard only
+  offers a fixed, curated claim list and `amr` isn't on it for this
+  scenario. Set it through the **Manifest** blade (a plain JSON editor,
+  not the wizard) or an equivalent Graph API call instead:
+  ```
+  PATCH https://graph.microsoft.com/v1.0/applications/{object-id}
+  Content-Type: application/json
+
+  { "optionalClaims": { "idToken": [
+      { "name": "amr", "source": null, "essential": false, "additionalProperties": [] }
+  ] } }
+  ```
+  Use the application object's Graph `id`, not its `appId` (the
+  `MICROSOFT_CLIENT_ID`). A token issued before this change will not
+  retroactively carry the claim, so sign out and back in to test it.
+  Before turning `require_mfa` on for an org whose members sign in with
+  Microsoft, confirm `optionalClaims.idToken` already includes `amr` on
+  that org's app registration, or do this first.
 - **`join_policy` defaults to `domain_auto_join`, silently, for every
   org.** `_resolve_membership()` (`auth.py`) auto-adds a user as
   `member` — no invite, no admin approval — when the org's `join_policy`
