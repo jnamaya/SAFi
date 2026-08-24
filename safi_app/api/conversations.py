@@ -1022,6 +1022,37 @@ def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
                              "so it cannot be shared with them."}), 400
 
 
+def _agent_warning_for_project(project_id, grantee_type, grantee_id):
+    """None, or a warning string to surface alongside a successful folder
+    share. A folder is never BLOCKED over this (see _agent_block_for_conversation's
+    docstring: a folder isn't agent-bound) — but silently letting the owner
+    believe a contributor grant is fully functional when it plainly is not
+    for one or more conversations inside is its own bug, so this warns
+    instead. Same 'user grant only' scope as the block check, same reason:
+    a group's access can drift after the grant, so it is judged live
+    instead, per-conversation, at continue-time."""
+    if grantee_type != 'user':
+        return None
+    target = db.get_user_details(grantee_id)
+    if not target:
+        return None
+    blocked = 0
+    total_custom = 0
+    for profile_name in db.get_project_agent_profiles(project_id):
+        raw_agent = db.get_agent(profile_name)
+        if not raw_agent:
+            continue  # built-in: platform-wide, never blocked
+        total_custom += 1
+        if not sharing_store.can_use_agent(grantee_id, target.get('role'), target.get('org_id'), raw_agent):
+            blocked += 1
+    if not blocked:
+        return None
+    noun = "agent" if blocked == 1 else "agents"
+    return (f"Heads up: {blocked} of {total_custom} custom {noun} used by conversations in "
+            f"this folder cannot be used by that person. They'll be able to see those "
+            f"conversations but not continue them.")
+
+
 @conversations_bp.route('/conversations/<conversation_id>/shares', methods=['GET'], strict_slashes=False)
 def list_conversation_shares(conversation_id):
     user_id = get_user_id()
@@ -1144,12 +1175,17 @@ def grant_project_share(project_id):
     # Folders are not agent-bound (they can hold conversations with
     # different or no agents), so there is nothing to block here — access
     # to each conversation inside is still enforced live, per-conversation,
-    # when it's actually opened or continued.
+    # when it's actually opened or continued. The owner still gets told
+    # up front when that will bite, via a non-blocking warning.
+    warning = _agent_warning_for_project(project_id, grantee_type, grantee_id)
     conversation_sharing_store.set_project_grant(project_id, grantee_type, grantee_id, role, org_id, user_id)
     db.append_compliance_log(org_id, 'project_shared', f"user:{user_id}",
                              {"project_id": project_id, "grantee_type": grantee_type,
                               "grantee": grantee_id, "role": role})
-    return jsonify({"ok": True})
+    resp = {"ok": True}
+    if warning:
+        resp["warning"] = warning
+    return jsonify(resp)
 
 
 @conversations_bp.route('/projects/<project_id>/shares/<grantee_type>/<path:grantee_id>',

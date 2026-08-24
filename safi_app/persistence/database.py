@@ -1591,6 +1591,25 @@ def get_conversation_meta(cid):
         cursor.close()
         conn.close()
 
+def get_project_agent_profiles(pid):
+    """Distinct agents (profile_name) used by any conversation currently
+    filed in this project, newest-audited-turn first. A folder isn't
+    agent-bound the way a single conversation is (backlog 56: it can hold
+    conversations from several agents, or none), so sharing it never blocks
+    on this — it exists so the share endpoint can WARN the owner when a
+    grantee can't use one or more of the agents actually inside."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT DISTINCT ch.profile_name FROM chat_history ch "
+            "JOIN conversations c ON c.id = ch.conversation_id "
+            "WHERE c.project_id=%s AND ch.profile_name IS NOT NULL", (pid,))
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_conversation_agent_profile(cid):
     """The agent (profile_name) of a conversation's most recent audited
     turn, or None if it has none yet. Same lookup fetch_user_conversations

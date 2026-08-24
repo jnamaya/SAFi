@@ -34,7 +34,21 @@ function openDialog(kind, id, name) {
             </div>
         </div>`;
     document.body.appendChild(modal);
-    const close = () => modal.remove();
+    const close = () => {
+        document.removeEventListener('mousedown', onOutsideClick, true);
+        modal.remove();
+    };
+    // One listener for the life of the dialog (renderBody reruns and rebuilds
+    // the dropdown/input on every share/revoke, so this looks them up fresh
+    // each time rather than closing over elements that no longer exist).
+    const onOutsideClick = (e) => {
+        const dropdown = modal.querySelector('#share-grantee-dropdown');
+        const input = modal.querySelector('#share-grantee-input');
+        if (dropdown && !dropdown.classList.contains('hidden') && e.target !== input && !dropdown.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    };
+    document.addEventListener('mousedown', onOutsideClick, true);
     modal.addEventListener('click', e => { if (e.target === modal) close(); });
     modal.querySelector('#share-dialog-close').addEventListener('click', close);
     renderBody(modal, kind, id);
@@ -71,38 +85,110 @@ async function renderBody(modal, kind, id) {
         </div>`).join('')
         : `<p class="text-sm text-gray-500 py-2">Not shared with anyone yet. Only you can see it.</p>`;
 
-    const groupOpts = groups.map(g =>
-        `<option value="group:${esc(g.id)}">${esc(g.name)} (${g.member_count} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
-    const memberOpts = members.map(m =>
-        `<option value="user:${esc(m.id)}">${esc(m.name || m.email || m.id)}</option>`).join('');
+    // Flat candidate list for the search box below — groups first, since
+    // sharing with a group is the more common "whole team" case.
+    const candidates = [
+        ...groups.map(g => ({ type: 'group', id: g.id,
+            label: g.name || 'Untitled group',
+            sub: `${g.member_count} member${g.member_count === 1 ? '' : 's'}` })),
+        ...members.map(m => ({ type: 'user', id: m.id,
+            label: m.name || m.email || m.id, sub: m.email || '' })),
+    ];
 
     body.innerHTML = `
         <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">People and groups you share with can see this ${kind === 'project' ? 'folder' : 'conversation'}${kind === 'project' ? ' and everything inside it' : ''}. A contributor can continue it in their own name; a viewer can only read it.</p>
+        <div class="relative mb-2">
+            <input id="share-grantee-input" type="text" autocomplete="off"
+                   placeholder="${candidates.length ? 'Search people or groups...' : 'No one else to share with yet.'}"
+                   ${candidates.length ? '' : 'disabled'}
+                   class="settings-modal-select w-full" style="background-image:none;padding-right:0.75rem;">
+            <div id="share-grantee-dropdown" class="hidden absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto custom-scrollbar rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg"></div>
+        </div>
         <div class="flex flex-col sm:flex-row gap-2 mb-5">
-            <select id="share-grantee-select" class="settings-modal-select flex-1">
-                <option value="">Select a person or group...</option>
-                ${groupOpts ? `<optgroup label="Groups">${groupOpts}</optgroup>` : ''}
-                ${memberOpts ? `<optgroup label="People">${memberOpts}</optgroup>` : ''}
+            <select id="share-role-select" class="settings-modal-select flex-1">
+                <option value="viewer">Viewer &mdash; can view</option>
+                <option value="contributor">Contributor &mdash; can view and continue</option>
             </select>
-            <select id="share-role-select" class="settings-modal-select sm:w-40">
-                <option value="viewer">Viewer</option>
-                <option value="contributor">Contributor</option>
-            </select>
-            <button id="share-grant-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">Share</button>
+            <button id="share-grant-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">Share</button>
         </div>
         <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Who has access</h4>
         <div>${grantRows}</div>`;
 
-    body.querySelector('#share-grant-btn').addEventListener('click', async () => {
-        const sel = body.querySelector('#share-grantee-select');
+    // --- Searchable grantee picker ---
+    // A plain <select> doesn't scale past a handful of names and gives no
+    // feedback about who got picked once the list is long; this is a small
+    // filter-as-you-type combobox instead. `selected` is the source of truth
+    // for the grant button — the input's text is just a label for it, and
+    // any edit to that text (without picking a fresh suggestion) invalidates
+    // the selection rather than silently sharing with the wrong person.
+    let selected = null;
+    const input = body.querySelector('#share-grantee-input');
+    const dropdown = body.querySelector('#share-grantee-dropdown');
+    const grantBtn = body.querySelector('#share-grant-btn');
+    grantBtn.disabled = true;
+
+    const showMatches = (text) => {
+        const q = text.trim().toLowerCase();
+        const matches = q
+            ? candidates.filter(c => c.label.toLowerCase().includes(q) || (c.sub || '').toLowerCase().includes(q))
+            : candidates;
+        dropdown._matches = matches;
+        if (!candidates.length) { dropdown.classList.add('hidden'); return; }
+        dropdown.innerHTML = matches.length ? matches.map((c, i) => `
+            <button type="button" data-idx="${i}" class="share-grantee-option w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-neutral-800 flex items-center justify-between gap-2">
+                <span class="truncate text-gray-800 dark:text-gray-200">${esc(c.label)}</span>
+                <span class="text-xs text-gray-400 truncate shrink-0">${c.type === 'group' ? 'Group' : esc(c.sub)}</span>
+            </button>`).join('')
+            : `<p class="px-3 py-2 text-xs text-gray-400 italic">No matches</p>`;
+        dropdown.querySelectorAll('.share-grantee-option').forEach((btn, i) => {
+            // mousedown, not click: fires before the input's blur would close this.
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                selected = matches[i];
+                input.value = selected.label;
+                grantBtn.disabled = false;
+                dropdown.classList.add('hidden');
+            });
+        });
+        dropdown.classList.remove('hidden');
+    };
+
+    input.addEventListener('focus', () => showMatches(input.value));
+    input.addEventListener('input', () => {
+        selected = null;
+        grantBtn.disabled = true;
+        showMatches(input.value);
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { dropdown.classList.add('hidden'); input.blur(); }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const matches = dropdown._matches || [];
+            if (matches.length === 1) {
+                selected = matches[0];
+                input.value = selected.label;
+                grantBtn.disabled = false;
+                dropdown.classList.add('hidden');
+            }
+        }
+    });
+
+    grantBtn.addEventListener('click', async () => {
+        if (!selected) return;
         const roleSel = body.querySelector('#share-role-select');
-        if (!sel.value) return;
-        const sep = sel.value.indexOf(':');
-        const granteeType = sel.value.slice(0, sep);
-        const granteeId = sel.value.slice(sep + 1);
+        const granteeType = selected.type;
+        const granteeId = selected.id;
         try {
-            await calls.grant(id, granteeType, granteeId, roleSel.value);
-            ui.showToast('Shared.', 'success');
+            const res = await calls.grant(id, granteeType, granteeId, roleSel.value);
+            // A folder share is never blocked over agent access (a folder can
+            // hold conversations from several agents, or none) — but the owner
+            // still needs to know when the grant won't fully work, so this is a
+            // warning toast instead of the usual quiet success one.
+            if (res && res.warning) {
+                ui.showToast(res.warning, 'warning');
+            } else {
+                ui.showToast('Shared.', 'success');
+            }
             await renderBody(modal, kind, id);
         } catch (err) {
             ui.showToast(err.message || 'Share failed', 'error');

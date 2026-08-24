@@ -71,6 +71,22 @@ function headersToObject(headers) {
   return out;
 }
 
+// Every API error handler below threw the raw response body as the Error
+// message, so a Flask `jsonify({"error": "..."})` 4xx landed in a toast as
+// the literal JSON text — readable to nobody. Every endpoint in this app
+// uses that same {"error": "..."} shape, so unwrapping it once here fixes
+// every catch-block toast that does `err.message || 'X failed'`, not just
+// the caller that happened to notice.
+function apiErrorMessage(rawText, fallback) {
+  if (rawText) {
+    try {
+      const parsed = JSON.parse(rawText);
+      if (parsed && typeof parsed.error === 'string' && parsed.error) return parsed.error;
+    } catch { /* not JSON (e.g. an HTML error page) — fall through to raw text */ }
+  }
+  return rawText || fallback;
+}
+
 async function loadQueue() {
   return (await storage.get(QUEUE_KEY)) || [];
 }
@@ -127,11 +143,11 @@ async function fetchWithCache(request) {
 
     if (status === 401) {
       // Throw a specific error that checkLoginStatus can handle.
-      throw new Error(`UNAUTHORIZED: ${msg || 'Authentication required'}`);
+      throw new Error(`UNAUTHORIZED: ${apiErrorMessage(msg, 'Authentication required')}`);
     }
 
-    // For other non-2xx statuses, throw the raw server message or generic status error
-    const err = new Error(msg || `Request failed with status ${status}`);
+    // For other non-2xx statuses, throw the server's error message or a generic status error
+    const err = new Error(apiErrorMessage(msg, `Request failed with status ${status}`));
     err.status = status;
     throw err;
   }
@@ -208,7 +224,7 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
       if (!res.ok) {
         if (res.status >= 400 && res.status < 500) {
           const msg = await res.text();
-          const err = new Error(msg || res.statusText);
+          const err = new Error(apiErrorMessage(msg, res.statusText));
           err.status = res.status; // Attach status code!
           throw err;
         }
@@ -216,7 +232,7 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
         // Queue on 5xx errors or network failures (unless offline is forbidden)
         if (!offlineAllowed) {
           const msg = await res.text().catch(() => '');
-          const err = new Error(msg || res.statusText);
+          const err = new Error(apiErrorMessage(msg, res.statusText));
           err.status = res.status;
           throw err;
         }

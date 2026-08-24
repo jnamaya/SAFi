@@ -544,8 +544,12 @@ function createProjectMenu(project, projectHandlers) {
 
 /**
  * Renders a collapsible project folder containing its conversation links.
+ * opts.readOnly (backlog 56): a folder shared with this user, not owned —
+ * no new-conversation button, no folder menu (rename/delete/share are all
+ * owner-only, and re-sharing a grant is never allowed), just expand/collapse
+ * and its conversations. opts.ownerName renders as a small hint.
  */
-export function renderProjectFolder(project, convos, isExpanded, projectHandlers, convoHandlers) {
+export function renderProjectFolder(project, convos, isExpanded, projectHandlers, convoHandlers, opts = {}) {
   ui._ensureElements();
 
   const wrap = document.createElement('div');
@@ -566,48 +570,55 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     <span class="shrink-0 text-xs text-neutral-400">${convos.length || ''}</span>
   `;
   // User-controlled name: set as text to avoid HTML injection.
-  toggle.querySelector('.project-folder-name').textContent = project.name || 'Untitled';
+  const nameSpan = toggle.querySelector('.project-folder-name');
+  nameSpan.textContent = project.name || 'Untitled';
+  if (opts.readOnly) {
+    toggle.title = opts.ownerName ? `Shared by ${opts.ownerName}` : 'Shared with you';
+  }
   toggle.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     projectHandlers.toggleHandler(project.id);
   });
 
-  const actions = document.createElement('div');
-  actions.className = 'flex items-center gap-0.5 shrink-0';
-
-  const newChatBtn = document.createElement('button');
-  newChatBtn.type = 'button';
-  newChatBtn.title = 'New conversation in folder';
-  newChatBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
-  newChatBtn.innerHTML = iconPlusSmall;
-  newChatBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    projectHandlers.newChatHandler(project.id);
-  });
-
-  const menuBtn = document.createElement('button');
-  menuBtn.type = 'button';
-  menuBtn.title = 'Folder options';
-  menuBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
-  menuBtn.innerHTML = iconMenuDots;
-  menuBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (document.querySelector('.convo-menu-dropdown')) {
-      ui.closeAllConvoMenus();
-      return;
-    }
-    const menu = createProjectMenu(project, projectHandlers);
-    positionDropdown(menu, menuBtn);
-    ui.setOpenDropdown(menu);
-  });
-
-  actions.appendChild(newChatBtn);
-  actions.appendChild(menuBtn);
   header.appendChild(toggle);
-  header.appendChild(actions);
+
+  if (!opts.readOnly) {
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-0.5 shrink-0';
+
+    const newChatBtn = document.createElement('button');
+    newChatBtn.type = 'button';
+    newChatBtn.title = 'New conversation in folder';
+    newChatBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
+    newChatBtn.innerHTML = iconPlusSmall;
+    newChatBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      projectHandlers.newChatHandler(project.id);
+    });
+
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.title = 'Folder options';
+    menuBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
+    menuBtn.innerHTML = iconMenuDots;
+    menuBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (document.querySelector('.convo-menu-dropdown')) {
+        ui.closeAllConvoMenus();
+        return;
+      }
+      const menu = createProjectMenu(project, projectHandlers);
+      positionDropdown(menu, menuBtn);
+      ui.setOpenDropdown(menu);
+    });
+
+    actions.appendChild(newChatBtn);
+    actions.appendChild(menuBtn);
+    header.appendChild(actions);
+  }
   wrap.appendChild(header);
 
   if (isExpanded) {
