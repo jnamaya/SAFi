@@ -650,9 +650,10 @@ export async function getAppConfig() {
 }
 
 /**
- * Uploads a recorded audio blob and returns the transcript. Same shape as
- * extractDocumentText: the returned text is put into the composer and sent
- * through the normal governed pipeline. Raw audio is not stored server-side.
+ * Uploads a recorded audio blob and returns the transcript. The returned text
+ * is put into the composer for the user to review before sending, the same as
+ * a typed prompt; it does not get sent automatically. Raw audio is not stored
+ * server-side.
  * @returns {Promise<{text: string, sha256: string, chars: number}>}
  */
 export async function transcribeAudio(blob) {

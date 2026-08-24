@@ -6,10 +6,12 @@
  * exactly like a typed prompt. Raw audio never reaches a model.
  *
  * UX: when voice is enabled and the composer is empty, the mic occupies the send
- * button's slot. Hold it to record, release to transcribe and auto-send. The
- * moment the user types anything, the send button takes the slot back, so typing
- * always beats voice. When the deployment has voice off, none of this runs and
- * the send button behaves exactly as before.
+ * button's slot. Hold it to record, release to transcribe. The transcript lands
+ * in the composer for review, not sent automatically — a misheard word should be
+ * fixable before it becomes a governed turn, not after. The moment the user types
+ * anything (including editing a transcript), the send button takes the slot back,
+ * so typing always beats voice. When the deployment has voice off, none of this
+ * runs and the send button behaves exactly as before.
  */
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
@@ -61,7 +63,7 @@ function _setMicState(state) {
     mic.classList.remove('is-recording', 'is-working');
     if (state === 'recording') {
         mic.classList.add('is-recording');
-        mic.title = 'Release to send';
+        mic.title = 'Release to transcribe';
     } else if (state === 'working') {
         mic.classList.add('is-working');
         mic.title = 'Transcribing...';
@@ -137,7 +139,7 @@ async function _onStop() {
         if (!text) {
             ui.showToast('No speech was detected.', 'warning');
         } else {
-            _fillAndSend(text);
+            _fillComposer(text);
         }
     } catch (err) {
         ui.showToast(err.message || 'Transcription failed.', 'error');
@@ -148,21 +150,17 @@ async function _onStop() {
     }
 }
 
-/** Put the transcript into the composer and send it. The send button owns the
- * actual send path (agent + user context), so we surface it and click it rather
- * than duplicate that logic here. */
-function _fillAndSend(text) {
+/** Put the transcript into the composer for review — never sends it. The
+ * dispatched 'input' event runs the same listener a keystroke would (registered
+ * in initVoiceInput below), which enables the composer and swaps the mic for
+ * the send button; nothing here needs to duplicate that swap or the send path
+ * itself. The user reviews, edits if needed, and sends the same way they
+ * always would. */
+function _fillComposer(text) {
     const el = input();
     if (!el) return;
     el.value = text;
-    el.dispatchEvent(new Event('input', { bubbles: true }));   // enable + reveal send
-    const send = sendBtn();
-    const mic = micBtn();
-    if (mic) _hide(mic);
-    if (send) _show(send);
-    send?.click();
-    // After the send flow clears the input, restore the mic for the next turn.
-    setTimeout(updateComposerButtons, 120);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // Track hold state across the async getUserMedia gap.
