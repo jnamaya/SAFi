@@ -60,6 +60,18 @@ class TheManifestIsInstallable(unittest.TestCase):
         self.assertIn('href="manifest.json"', INDEX)
 
 
+def _chunk_offsets(raw, kind):
+    """Byte offsets of every chunk of `kind` in a PNG, for reading raw pixels
+    without pulling in an image library the test environment need not have."""
+    from struct import unpack
+    i = 8
+    while i < len(raw) - 8:
+        length = unpack(">I", raw[i:i + 4])[0]
+        if raw[i + 4:i + 8] == kind:
+            yield i
+        i += 12 + length
+
+
 class EveryIconItNamesExists(unittest.TestCase):
     """A manifest naming a missing icon fails silently in the browser — the
     install simply offers a blank tile, with nothing in the console."""
@@ -126,9 +138,35 @@ class EveryIconItNamesExists(unittest.TestCase):
         self.assertNotEqual(head[25], 6, "the icon must not have alpha")
 
     def test_the_splash_matches_the_mark(self):
-        """background_color paints the launch screen behind the icon; the
-        mark is dark (#333), so a white splash flashes white first."""
-        self.assertEqual(MANIFEST["background_color"].lower(), "#333333")
+        """background_color paints the launch screen behind the icon, so a
+        mismatch flashes the wrong colour before the icon appears.
+
+        Read out of the icon itself rather than hard-coded. The literal used
+        to be "#333333" for the dark tile, went stale the moment the mark
+        changed to the four-petal wordmark on white (2026-08-25), and failed
+        as a stale assertion rather than as the real defect. Deriving it means
+        the next mark cannot drift from its own splash.
+        """
+        import zlib
+        from struct import unpack
+        raw = (PUBLIC / MANIFEST["icons"][0]["src"].lstrip("/")).read_bytes()
+        w, h = unpack(">II", raw[16:24])
+        # Decode enough of the PNG to read pixel (0, 0): the icon is full-bleed,
+        # so its corner IS the field colour the splash has to match.
+        idat = b"".join(
+            raw[i + 8:i + 8 + unpack(">I", raw[i:i + 4])[0]]
+            for i in _chunk_offsets(raw, b"IDAT")
+        )
+        line = zlib.decompress(idat)[:4]
+        # line[0] is the row's filter type, and it does not matter here: for
+        # the very FIRST pixel every PNG filter (None/Sub/Up/Average/Paeth)
+        # has no left or upper neighbour, so each predicts zero and the stored
+        # bytes are the raw colour. Reading them is valid whatever the encoder
+        # chose. This icon ships as filter type 1.
+        corner = "#%02x%02x%02x" % (line[1], line[2], line[3])
+        self.assertEqual(MANIFEST["background_color"].lower(), corner,
+                         f"splash {MANIFEST['background_color']} does not match "
+                         f"the icon's own field {corner}")
 
 
 class NothingIsCached(unittest.TestCase):
