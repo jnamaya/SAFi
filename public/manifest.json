@@ -1,5 +1,5 @@
 {
-  "name": "SAFi — Runtime governance for AI agents",
+  "name": "SAFi",
   "short_name": "SAFi",
   "description": "Govern AI agents at runtime: values in control, every decision auditable, independent of model providers.",
   "id": "/",

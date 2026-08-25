@@ -10,7 +10,7 @@
     content="Every AI response is checked against a declared policy before it reaches the user, and every decision is recorded in a tamper-evident audit trail." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>SAFi — Runtime governance for AI agents</title>
+  <title>SAFi</title>
 
   <!-- Installable web app. The manifest gives a dock icon, a standalone window
        and a jump list; there is deliberately NO service worker, so nothing is
@@ -35,20 +35,27 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SAFi">
 
-  <script src="js/lib/marked.min.js"></script>
-  <script src="js/lib/purify.min.js"></script>
+  <!-- All four are `defer`: none is needed to paint, and as plain synchronous
+       scripts they blocked the parser for ~53KB gzipped on every load. Deferred
+       classic scripts still execute in document order and still run before the
+       module script below, so marked/purify/hljs/QRCode are defined by the time
+       app.js evaluates. qrcode.js is MFA setup only and highlight.min.js only
+       fires on a response containing a code block; both are candidates for
+       loading on demand if the head ever needs trimming again. -->
+  <script defer src="js/lib/marked.min.js"></script>
+  <script defer src="js/lib/purify.min.js"></script>
   <!-- MIT licensed, vendored verbatim from
-       github.com/kazuhikoarase/qrcode-generator (js/dist/qrcode.js) — renders
+       github.com/kazuhikoarase/qrcode-generator (js/dist/qrcode.js). Renders
        the MFA setup otpauth:// URI as a scannable QR code (backlog 51/MFA). -->
-  <script src="js/lib/qrcode.js"></script>
+  <script defer src="js/lib/qrcode.js"></script>
   <link rel="stylesheet" href="css/highlight-theme.css">
   <!-- Inter is self-hosted (see @font-face in css/styles.css) — no
        fonts.googleapis.com callout; the app loads zero external resources. -->
   <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
-  <script src="js/lib/highlight.min.js"></script>
+  <script defer src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260722.4" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=20260727.1">
+  <link href="css/main.css?v=20260825.1" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=20260825.1">
   <script>
     const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -62,12 +69,6 @@
     }
   </script>
 
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-    gtag('config', 'G-NBYEV6VJGX');
-  </script>
 
   <style>
     .no-scrollbar::-webkit-scrollbar {
