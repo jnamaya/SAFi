@@ -394,6 +394,57 @@ def _resolve_membership(user_details, idp):
                           detail={"reason": "join_policy", "idp": idp, "domain": domain})
         current_app.logger.info(f"User {user_id} not auto-joined to {org['name']}: join_policy={policy}")
 
+def _found_org_if_unaffiliated(user_details, idp):
+    """"Founder Flow": a genuinely unaffiliated user gets a personal org and is
+    its admin. Runs on every login path, after membership resolution.
+
+    NOT when their email domain already belongs to an organization (backlog 78).
+    That combination reaches here only under invite_only, since domain_auto_join
+    would have placed them already, and handing them their own org would
+    recreate the shadow IT that verifying the domain exists to eliminate: a new
+    account on a claimed corporate domain, admin of its own ungoverned tenant.
+    They stay unaffiliated until the domain's admin invites them, which is what
+    invite_only means. Free to check: the domain owner was already looked up
+    during membership resolution.
+
+    Lived in callback() alone until 2026-08-25, which meant Google web login
+    founded orgs and Microsoft and mobile did not. An unaffiliated Microsoft
+    user finished login with org_id NULL, showing the users.role column default
+    of 'member', and had no route back: POST /api/organizations never promotes
+    the caller, no front end calls it, and domain verification needs admin.
+
+    Single-tenant mode never reaches the body: _resolve_single_tenant_membership
+    always sets org_id, and it journals its own org_founded event.
+
+    Returns True when an org was founded. Swallows its own failures, the same
+    as the inlined version: a founder-flow error must not turn an otherwise
+    valid login into an auth failure.
+    """
+    if user_details.get('org_id') or user_details.get('_domain_owned_by'):
+        return False
+
+    user_id = user_details['id']
+    org_name = f"{user_details.get('name', 'My')} Organization"
+    try:
+        new_org = db.create_organization_atomic(org_name, user_id)
+        # create_organization_atomic sets organizations.owner_id and touches no
+        # user row, so the promotion has to be persisted separately or the
+        # founder is left outside the org they just founded.
+        db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
+        user_details['org_id'] = new_org['org_id']
+        user_details['role'] = 'admin'
+        db.log_auth_event('org_founded', f"user:{user_id}",
+                          org_id=new_org['org_id'], user_id=user_id,
+                          detail={"join_method": "founder", "idp": idp,
+                                  "org_name": org_name})
+        current_app.logger.info(
+            f"Created Personal Org '{org_name}' for new user {user_id} (idp={idp})")
+        return True
+    except Exception as e:
+        current_app.logger.error(f"Failed to auto-create org for {user_id}: {e}")
+        return False
+
+
 # =================================================================
 # PUBLIC APP CONFIG (non-sensitive feature flags for the frontend)
 # =================================================================
@@ -479,31 +530,7 @@ def callback():
             except Exception as e:
                 current_app.logger.error(f"Error enforcing domain ownership: {e}")
 
-        if not user_details.get('org_id') and not user_details.get('_domain_owned_by'):
-            # "Founder Flow": a genuinely unaffiliated user gets a personal org
-            # and is its admin.
-            #
-            # NOT when their email domain already belongs to an organization
-            # (backlog 78). That combination reaches here only under
-            # invite_only, since domain_auto_join would have placed them above,
-            # and handing them their own org would recreate the shadow IT that
-            # verifying the domain exists to eliminate: a new account on a
-            # claimed corporate domain, admin of its own ungoverned tenant.
-            # They stay unaffiliated until the domain's admin invites them,
-            # which is what invite_only means. Free to check: the domain owner
-            # was already looked up during membership resolution.
-            org_name = f"{user_details.get('name', 'My')} Organization"
-            try:
-                new_org = db.create_organization_atomic(org_name, user_id)
-                user_details['org_id'] = new_org['org_id']
-                user_details['role'] = 'admin'
-                
-                # CRITICAL FIX: Persist the role promotion to DB!
-                db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
-                
-                current_app.logger.info(f"Created Personal Org '{org_name}' for new user {user_id}")
-            except Exception as e:
-                current_app.logger.error(f"Failed to auto-create org: {e}")
+        _found_org_if_unaffiliated(user_details, idp='google')
 
         # Per-tenant claim enforcement + directory/MFA evidence (Phase 2)
         denied = _org_claim_gate(user_details, 'google', id_claims)
@@ -612,6 +639,8 @@ def login_mobile():
                 _enforce_domain_ownership(user_details, idp='google_mobile')
             except Exception as e:
                 current_app.logger.error(f"Error enforcing domain ownership (mobile): {e}")
+
+        _found_org_if_unaffiliated(user_details, idp='google_mobile')
 
         # Per-tenant claim enforcement — the verified Google ID token IS the
         # claims dict here (includes hd for Workspace accounts).
@@ -955,6 +984,8 @@ def callback_microsoft():
                 _enforce_domain_ownership(user_details, idp='microsoft')
             except Exception as e:
                 current_app.logger.warning(f"Domain ownership enforcement failed for {user_id}: {e}")
+
+        _found_org_if_unaffiliated(user_details, idp='microsoft')
 
         # Per-tenant claim enforcement + directory/MFA evidence (Phase 2).
         # tid/amr come from the id_token minted by the token endpoint.
