@@ -275,6 +275,14 @@ Setup:
    `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
 4. Members press Sign in on its card in Settings, Tools Catalog.
 
+**Adding a scope later costs every connected member a reconnect.** Consent is
+bound to the scope set that was granted, so a stored refresh token never
+widens on its own. When mail and calendar were added on 2026-08-25, members
+already connected kept working file tools while the new ones answered 403
+until each person signed in again. The catalog count does not move either: it
+is served from the discovery cache, which only refreshes on a sign-in. Plan
+the announcement with the deploy, because the symptom reads like a bug.
+
 ### The Graph gateway: per-user Microsoft 365, same architecture
 
 `scripts/graph_gateway.py` is the same architecture for Microsoft Graph.
@@ -284,18 +292,35 @@ as a dependency for its own tools. The two gateways share one implementation
 of the OAuth machinery (`scripts/gateway_core.py`); each provider file is
 only the endpoints, scopes, identity mapping and tools.
 
-v1 tools, read-only by doctrine: `microsoft_whoami`, `files_list`,
-`files_search`, `file_get_contents`, `sites_search`, `site_files_search`.
-OneDrive and SharePoint, nothing writable.
+Tools, read-only by doctrine: `microsoft_whoami`, `files_list`,
+`files_search`, `file_get_contents`, `sites_search`, `site_files_search`,
+`mail_search`, `microsoft_calendar_events`. OneDrive, SharePoint, Outlook mail
+and calendar, nothing writable.
+
+Mail and calendar return less than they could, on purpose, matching what the
+Workspace gateway returns for Google. `mail_search` gives subject, sender and
+date, never a body: the scope is `Mail.ReadBasic`, which does not grant bodies,
+so Entra holds that line rather than the tool code choosing not to ask.
+`microsoft_calendar_events` gives titles and start times, never attendees,
+location or body. A mailbox holds third parties who never agreed to be read by
+this system, an attendee list discloses a relationship, and a tool result
+becomes evidence in the governance record and inherits its retention.
+
+It is `microsoft_calendar_events`, not `calendar_list_events`: the Workspace
+gateway already owns that name, and two servers claiming one name collide in
+the connector registry, where the first registration wins and the loser is
+skipped without an error.
 
 Setup:
 
 1. Create an Entra app registration (Web platform) with
    `{GATEWAY_BASE_URL}/microsoft/callback` as a redirect URI, a client
    secret, and the delegated Graph permissions `User.Read`,
-   `Files.Read.All`, `Sites.Read.All`. Set `ENTRA_TENANT` to your tenant id
-   to pin sign-in to one tenant, or leave the default `organizations` to
-   accept any work or school account.
+   `Files.Read.All`, `Sites.Read.All`, `Mail.ReadBasic`, `Calendars.Read`.
+   Use `Mail.ReadBasic`, not `Mail.Read`: the wider scope grants message
+   bodies that no tool here reads. Set `ENTRA_TENANT` to your tenant id to pin
+   sign-in to one tenant, or leave the default `organizations` to accept any
+   work or school account.
 2. Run the gateway (see `deploy/systemd/safi-graph-gateway.service` for bare
    metal; default port 8403). TLS in front, https base URL in production.
 3. Install it in SAFi from the host:
