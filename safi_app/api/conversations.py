@@ -1132,6 +1132,18 @@ def list_conversations_shared_with_me():
     return jsonify(conversation_sharing_store.list_shared_with_me(user_id, org_id))
 
 
+@conversations_bp.route('/conversations/my-shares', methods=['GET'], strict_slashes=False)
+def list_my_shares():
+    """Which of the caller's OWN conversations and folders carry a grant, so
+    the sidebar can mark them. Ids only: the grantees themselves come from
+    the per-resource /shares endpoint when the owner opens the dialog."""
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    org_id = (session.get('user') or {}).get('org_id')
+    return jsonify(conversation_sharing_store.list_shared_by_me(user_id, org_id))
+
+
 @conversations_bp.route('/projects/<project_id>/shares', methods=['GET'], strict_slashes=False)
 def list_project_shares(project_id):
     user_id = get_user_id()

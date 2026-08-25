@@ -506,6 +506,11 @@ function positionDropdown(menu, button) {
 const iconChevronRight = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
 const iconChevronDown = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
 const iconFolder = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path></svg>`;
+// Other people's things, not a folder of the user's own.
+const iconPeople = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>`;
+// The mark on the owner's own rows that already carry a grant. Same glyph as
+// the Share menu item, so the mark and the way to manage it read as one thing.
+const iconSharedMark = `<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684a3 3 0 100 2.684m0-2.684l6.632 3.316m0-9L8.684 10.658M18 6a3 3 0 11-6 0 3 3 0 016 0zm0 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>`;
 const iconPlusSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>`;
 
 /**
@@ -543,11 +548,60 @@ function createProjectMenu(project, projectHandlers) {
 }
 
 /**
+ * A collapsible sidebar section that looks like a folder but is not one.
+ * "Shared with me" holds other people's folders and conversations: nothing
+ * can be moved into it, it has no owner actions, and it is not a project,
+ * so it gets this instead of renderProjectFolder. Returns { wrap, body };
+ * the caller appends the section's contents into `body`, which is only
+ * present when expanded. Collapsed by default, so what other people share
+ * never pushes the user's own history down the list.
+ */
+export function renderSidebarSection(label, count, isExpanded, onToggle, opts = {}) {
+  ui._ensureElements();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mb-0.5';
+
+  const header = document.createElement('div');
+  header.className = 'group relative flex items-center px-2 py-1.5 rounded-md hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'flex items-center gap-2 min-w-0 flex-1 text-left text-neutral-700 dark:text-neutral-300';
+  toggle.innerHTML = `
+    <span class="shrink-0 text-neutral-500">${isExpanded ? iconChevronDown : iconChevronRight}</span>
+    <span class="shrink-0 text-neutral-500">${opts.icon || iconPeople}</span>
+    <span class="sidebar-section-name truncate text-sm font-medium"></span>
+    <span class="shrink-0 text-xs text-neutral-400">${count || ''}</span>
+  `;
+  toggle.querySelector('.sidebar-section-name').textContent = label;
+  if (opts.title) toggle.title = opts.title;
+  toggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onToggle();
+  });
+  header.appendChild(toggle);
+  wrap.appendChild(header);
+
+  let body = null;
+  if (isExpanded) {
+    body = document.createElement('div');
+    body.className = 'pl-3 ml-2 border-l border-neutral-200 dark:border-neutral-800';
+    wrap.appendChild(body);
+  }
+
+  return { wrap, body };
+}
+
+/**
  * Renders a collapsible project folder containing its conversation links.
  * opts.readOnly (backlog 56): a folder shared with this user, not owned —
  * no new-conversation button, no folder menu (rename/delete/share are all
  * owner-only, and re-sharing a grant is never allowed), just expand/collapse
  * and its conversations. opts.ownerName renders as a small hint.
+ * opts.shared is the other direction: a folder the owner has shared with
+ * someone else, marked so they can see what they are sharing.
  */
 export function renderProjectFolder(project, convos, isExpanded, projectHandlers, convoHandlers, opts = {}) {
   ui._ensureElements();
@@ -567,6 +621,7 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     <span class="shrink-0 text-neutral-500">${isExpanded ? iconChevronDown : iconChevronRight}</span>
     <span class="shrink-0 text-neutral-500">${iconFolder}</span>
     <span class="project-folder-name truncate text-sm font-medium"></span>
+    ${opts.shared ? `<span class="shrink-0 text-neutral-400" title="Shared with others">${iconSharedMark}</span>` : ''}
     <span class="shrink-0 text-xs text-neutral-400">${convos.length || ''}</span>
   `;
   // User-controlled name: set as text to avoid HTML injection.
@@ -644,6 +699,11 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
 export function renderConversationLink(convo, handlers) {
   ui._ensureElements();
   const { switchHandler, renameHandler, deleteHandler, pinHandler } = handlers;
+  // Owner-side sharing mark. handlers.sharedConvoIds carries the ids the
+  // owner has granted on, so the mark reaches conversations rendered loose
+  // and conversations rendered inside a folder by the same route. A grantee
+  // never gets this set, so a shared item is never marked in their sidebar.
+  const isShared = !!(handlers.sharedConvoIds && handlers.sharedConvoIds.has(convo.id));
 
   const link = document.createElement('a');
   link.href = '#';
@@ -674,6 +734,7 @@ export function renderConversationLink(convo, handlers) {
         <div class="flex-1 min-w-0">
             <span class="convo-title truncate block text-sm font-medium" title="${(convo.title || 'Untitled').replace(/"/g, '&quot;')}">${convo.title || 'Untitled'}</span>
         </div>
+        ${isShared ? `<span class="shrink-0 ml-1 text-neutral-400" title="Shared with others">${iconSharedMark}</span>` : ''}
     </div>
     <button data-action="menu" class="convo-menu-button opacity-0 focus:opacity-100 menu-icon-hidden
                    absolute right-2 top-1/2 -translate-y-1/2 

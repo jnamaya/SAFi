@@ -386,6 +386,9 @@ export async function grantConversationShare(id, granteeType, granteeId, role) {
 export async function revokeConversationShare(id, granteeType, granteeId) {
     return httpJSON(`${urls.CONVERSATION(id)}/shares/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
 }
+export async function fetchMySharedIds() {
+    return httpGet(`${urls.CONVERSATIONS}/my-shares`);
+}
 export async function fetchConversationsSharedWithMe() {
     return httpGet(`${urls.CONVERSATIONS}/shared-with-me`);
 }

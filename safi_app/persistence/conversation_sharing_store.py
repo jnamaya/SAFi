@@ -454,6 +454,60 @@ def _list_projects_shared_with_me_query(user_id, org_id):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Shared-by-me indicator
+# ---------------------------------------------------------------------------
+# Not a "Shared by me" listing: everything the owner shared already appears
+# in their own folders and history, so a second copy would put one
+# conversation in the sidebar twice. This returns only the ids that carry a
+# grant, so the sidebar can mark the row where it already lives. Fail EMPTY
+# for the same reason as the listings above, and more so — a missing mark is
+# a missing decoration, never a missing access check.
+
+def list_shared_by_me(user_id, org_id):
+    """Ids of conversations and folders THIS user owns that have at least one
+    grant on them. {'conversations': [...], 'projects': [...]}."""
+    empty = {"conversations": [], "projects": []}
+    if not user_id or not org_id:
+        return empty
+    try:
+        return _list_shared_by_me_query(user_id, org_id)
+    except Exception as e:
+        log.error("shared-by-me lookup failed for user %s: %s "
+                  "— returning empty lists", user_id, e)
+        return empty
+
+
+def _list_shared_by_me_query(user_id, org_id):
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT DISTINCT g.conversation_id
+            FROM conversation_visibility_grants g
+            JOIN conversations c ON c.id = g.conversation_id
+            WHERE g.org_id = %s AND c.user_id = %s
+            """,
+            (org_id, user_id),
+        )
+        conversations = [r[0] for r in cursor.fetchall()]
+        cursor.execute(
+            """
+            SELECT DISTINCT g.project_id
+            FROM project_visibility_grants g
+            JOIN projects p ON p.id = g.project_id
+            WHERE g.org_id = %s AND p.user_id = %s
+            """,
+            (org_id, user_id),
+        )
+        projects = [r[0] for r in cursor.fetchall()]
+        return {"conversations": conversations, "projects": projects}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def remove_user_from_org_sharing(user_id, org_id) -> None:
     """Off-boarding: drop this user's direct grants (both tables) in this
     org. Mirrors sharing_store.remove_user_from_org_sharing; group

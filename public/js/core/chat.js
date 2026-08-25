@@ -24,7 +24,19 @@ let currentProjectId = null;
 // org-less session just sees an empty section, never an error.
 let sharedConversations = [];
 let sharedProjects = [];
+// The other direction: ids of this user's OWN conversations and folders that
+// carry a grant, so the sidebar can mark what they are sharing. Ids only —
+// who it is shared with comes from the share dialog, which is also where it
+// is revoked. There is deliberately no "Shared by me" section: these items
+// already live in the user's own folders and history, and a section would
+// list every one of them a second time.
+let mySharedConvoIds = new Set();
+let mySharedProjectIds = new Set();
 const EXPANDED_PROJECTS_KEY = 'safi_expanded_projects';
+// The collapsed "Shared with me" row rides on the same expanded-state store
+// as real folders; this sentinel is not a project id, so it can never
+// collide with one.
+const SHARED_SECTION_KEY = '__shared_with_me__';
 
 function getExpandedProjects() {
     try {
@@ -385,11 +397,12 @@ export async function loadConversations(activeProfileData, user, promptClickHand
 
     try {
         // 2. Fetch fresh data (uses offlineManager/cache)
-        const [response, projectResponse, sharedConvoResponse, sharedProjectResponse] = await Promise.all([
+        const [response, projectResponse, sharedConvoResponse, sharedProjectResponse, mySharesResponse] = await Promise.all([
             api.fetchConversations(),
             api.fetchProjects().catch(() => []),
             api.fetchConversationsSharedWithMe().catch(() => []),
             api.fetchProjectsSharedWithMe().catch(() => []),
+            api.fetchMySharedIds().catch(() => ({})),
         ]);
 
         const conversations = Array.isArray(response) ? response
@@ -399,6 +412,8 @@ export async function loadConversations(activeProfileData, user, promptClickHand
         projects = Array.isArray(projectResponse) ? projectResponse : [];
         sharedConversations = Array.isArray(sharedConvoResponse) ? sharedConvoResponse : [];
         sharedProjects = Array.isArray(sharedProjectResponse) ? sharedProjectResponse : [];
+        mySharedConvoIds = new Set(Array.isArray(mySharesResponse?.conversations) ? mySharesResponse.conversations : []);
+        mySharedProjectIds = new Set(Array.isArray(mySharesResponse?.projects) ? mySharesResponse.projects : []);
 
         // 3. Save new list and render if different
         await cache.saveConvoList(conversations);
@@ -469,7 +484,9 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         deleteHandler: handleDelete,
         pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user), // Pass all args
         moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
-        shareHandler: (id, title) => openConversationShareDialog(id, title),
+        shareHandler: (id, title) => openConversationShareDialog(
+            id, title, () => refreshConvoListOnly(activeProfileData, user, showModal)),
+        sharedConvoIds: mySharedConvoIds,
         projects: projects,
     };
 
@@ -504,29 +521,20 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         newChatHandler: (pid) => handleNewChatInProject(pid, activeProfileData, user),
         renameHandler: (pid, name) => handleRenameProject(pid, name, activeProfileData, user),
         deleteHandler: (pid, name) => handleDeleteProject(pid, name, activeProfileData, user),
-        shareHandler: (pid, name) => openProjectShareDialog(pid, name),
+        shareHandler: (pid, name) => openProjectShareDialog(
+            pid, name, () => refreshConvoListOnly(activeProfileData, user, showModal)),
     };
 
-    projects.forEach(project => {
-        const projConvos = sortConvos(convosByProject[project.id] || []);
-        const folder = uiAuthSidebar.renderProjectFolder(
-            project, projConvos, expanded.has(project.id), projectHandlers, handlers
-        );
-        convoList.appendChild(folder);
-    });
-
-    // --- SHARED WITH ME (backlog 56) ---
-    // Sits below the user's own folders and above their own Pinned/History,
-    // so "what's mine" and "what's shared with me" don't interleave.
+    // --- SHARED WITH ME (backlog 56, collapsed at the top by 56c) ---
+    // One collapsed row above the user's own folders. It used to render
+    // inline below them, which meant a member of three shared folders had
+    // their own Pinned/History pushed down by a dozen rows they did not
+    // create. Collapsed, it costs one row, and the top is where incoming
+    // work is discoverable. Mine and not-mine still never interleave.
     // Pin/rename/delete/move/share stay owner-only, so both the folder and
     // loose-conversation handlers here just explain that instead of hitting
     // an endpoint that would 404 for a non-owner.
     if (sharedProjects.length > 0 || sharedConversations.length > 0) {
-        const sharedHeader = document.createElement('h3');
-        sharedHeader.className = 'px-3 mt-2 mb-1 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider';
-        sharedHeader.textContent = 'Shared with me';
-        convoList.appendChild(sharedHeader);
-
         const notOwner = (verb) => () => ui.showToast(`Only the owner can ${verb} this conversation.`, 'info');
         const sharedConvoHandlers = {
             switchHandler: handlers.switchHandler,
@@ -554,21 +562,42 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             }
         });
 
-        sharedProjects.forEach(project => {
-            const projConvos = sortConvos(sharedConvosByProject[project.id] || []);
-            const folder = uiAuthSidebar.renderProjectFolder(
-                project, projConvos, expanded.has(project.id), sharedProjectHandlers, sharedConvoHandlers,
-                { readOnly: true, ownerName: project.owner_name }
-            );
-            convoList.appendChild(folder);
-        });
+        // Count what the row actually opens onto: folders plus the loose
+        // conversations, not every conversation inside every folder.
+        const sectionCount = sharedProjects.length + looseSharedConversations.length;
+        const { wrap, body } = uiAuthSidebar.renderSidebarSection(
+            'Shared with me', sectionCount, expanded.has(SHARED_SECTION_KEY),
+            () => handleToggleProject(SHARED_SECTION_KEY, activeProfileData, user),
+            { title: 'Conversations and folders other people shared with you' }
+        );
+        convoList.appendChild(wrap);
 
-        sortConvos(looseSharedConversations).forEach(convo => {
-            const link = uiAuthSidebar.renderConversationLink(convo, sharedConvoHandlers);
-            link.title = convo.owner_name ? `Shared by ${convo.owner_name}` : 'Shared with you';
-            convoList.appendChild(link);
-        });
+        if (body) {
+            sharedProjects.forEach(project => {
+                const projConvos = sortConvos(sharedConvosByProject[project.id] || []);
+                const folder = uiAuthSidebar.renderProjectFolder(
+                    project, projConvos, expanded.has(project.id), sharedProjectHandlers, sharedConvoHandlers,
+                    { readOnly: true, ownerName: project.owner_name }
+                );
+                body.appendChild(folder);
+            });
+
+            sortConvos(looseSharedConversations).forEach(convo => {
+                const link = uiAuthSidebar.renderConversationLink(convo, sharedConvoHandlers);
+                link.title = convo.owner_name ? `Shared by ${convo.owner_name}` : 'Shared with you';
+                body.appendChild(link);
+            });
+        }
     }
+
+    projects.forEach(project => {
+        const projConvos = sortConvos(convosByProject[project.id] || []);
+        const folder = uiAuthSidebar.renderProjectFolder(
+            project, projConvos, expanded.has(project.id), projectHandlers, handlers,
+            { shared: mySharedProjectIds.has(project.id) }
+        );
+        convoList.appendChild(folder);
+    });
 
     // Loose conversations (no project) keep the original Pinned / History layout.
     const looseConversations = conversations.filter(c => !c.project_id || !projectIds.has(c.project_id));

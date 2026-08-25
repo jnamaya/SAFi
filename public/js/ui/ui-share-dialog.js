@@ -15,7 +15,10 @@ function esc(s) {
     return div.innerHTML;
 }
 
-function openDialog(kind, id, name) {
+// onChange fires once, on close, when this dialog actually granted or
+// revoked something. The sidebar uses it to refresh the mark on the owner's
+// own rows, so a share taken away stops showing as shared without a reload.
+function openDialog(kind, id, name, onChange) {
     document.getElementById('share-dialog-modal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'share-dialog-modal';
@@ -37,6 +40,7 @@ function openDialog(kind, id, name) {
     const close = () => {
         document.removeEventListener('mousedown', onOutsideClick, true);
         modal.remove();
+        if (modal.dataset.changed === '1' && typeof onChange === 'function') onChange();
     };
     // One listener for the life of the dialog (renderBody reruns and rebuilds
     // the dropdown/input on every share/revoke, so this looks them up fresh
@@ -189,6 +193,7 @@ async function renderBody(modal, kind, id) {
             } else {
                 ui.showToast('Shared.', 'success');
             }
+            modal.dataset.changed = '1';
             await renderBody(modal, kind, id);
         } catch (err) {
             ui.showToast(err.message || 'Share failed', 'error');
@@ -200,6 +205,7 @@ async function renderBody(modal, kind, id) {
             try {
                 await calls.revoke(id, btn.dataset.type, btn.dataset.id);
                 ui.showToast('Access removed.', 'success');
+                modal.dataset.changed = '1';
                 await renderBody(modal, kind, id);
             } catch (err) {
                 ui.showToast(err.message || 'Remove failed', 'error');
@@ -208,10 +214,10 @@ async function renderBody(modal, kind, id) {
     });
 }
 
-export function openConversationShareDialog(conversationId, title) {
-    openDialog('conversation', conversationId, title || 'Untitled');
+export function openConversationShareDialog(conversationId, title, onChange) {
+    openDialog('conversation', conversationId, title || 'Untitled', onChange);
 }
 
-export function openProjectShareDialog(projectId, name) {
-    openDialog('project', projectId, name || 'Untitled');
+export function openProjectShareDialog(projectId, name, onChange) {
+    openDialog('project', projectId, name || 'Untitled', onChange);
 }
