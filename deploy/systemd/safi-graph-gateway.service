@@ -15,7 +15,17 @@
 #
 # The app registration must list {GATEWAY_BASE_URL}/microsoft/callback as a
 # Web redirect URI and hold the delegated Graph permissions User.Read,
-# Files.Read.All, Sites.Read.All.
+# Files.Read.All, Sites.Read.All, Mail.ReadBasic, Calendars.Read.
+#
+# Mail.ReadBasic is the envelope without the body, deliberately: mail_search
+# reports subject, sender and date only. Do not substitute Mail.Read to "make
+# it work"; nothing in the gateway reads a body, and the wider scope would
+# grant one anyway.
+#
+# Adding a permission here means every already-connected member must sign in
+# again. Consent is bound to the scope set that was granted, so their stored
+# refresh token will not widen: file tools keep working while the new ones
+# answer 403 until they reconnect from Settings.
 #
 # ONE process, deliberately: the gateway is its own small authorization server
 # and its state lives in one sqlite file. Do not add workers, and put TLS in

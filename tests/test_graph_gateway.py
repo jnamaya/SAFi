@@ -51,6 +51,7 @@ class _StubMicrosoft(BaseHTTPRequestHandler):
     forwarded whatever it was given"."""
 
     api_auth_headers = []
+    api_paths = []
     token_posts = []
 
     def log_message(self, *args):
@@ -85,6 +86,9 @@ class _StubMicrosoft(BaseHTTPRequestHandler):
 
     def do_GET(self):
         _StubMicrosoft.api_auth_headers.append(self.headers.get("Authorization", ""))
+        # The full path, query string included: the mail and calendar tests
+        # assert on what was NOT asked for, and $select is the only evidence.
+        _StubMicrosoft.api_paths.append(self.path)
         # Specific routes before their generic prefixes, or the generic one
         # answers for both (the f123 lesson from the workspace suite).
         if self.path.startswith("/me/drive/items/f123/content"):
@@ -121,6 +125,39 @@ class _StubMicrosoft(BaseHTTPRequestHandler):
             return self._json({"value": [
                 {"displayName": "Finance", "id": "site-1",
                  "webUrl": "https://contoso.example/sites/finance"},
+            ]})
+        if self.path.startswith("/me/messages"):
+            # Graph answers 400 when $search and $orderby arrive together, so
+            # the stub does too. Without this the tool could ship that bug and
+            # the suite would never notice.
+            query = parse_qs(urlparse(self.path).query)
+            if "$search" in query and "$orderby" in query:
+                return self._json(
+                    {"error": {"code": "InefficientFilter",
+                               "message": "$orderby with $search is not supported"}},
+                    400)
+            return self._json({"value": [
+                {"subject": "Q3 budget review",
+                 "from": {"emailAddress": {"name": "Anna",
+                                           "address": "anna@contoso.com"}},
+                 "receivedDateTime": "2026-08-24T09:15:00Z"},
+                {"subject": None,
+                 "from": {"emailAddress": {"name": "Legal"}},
+                 "receivedDateTime": "2026-08-23T17:02:00Z"},
+            ]})
+        if self.path.startswith("/me/calendarView"):
+            return self._json({"value": [
+                {"subject": "Q3 planning",
+                 "start": {"dateTime": "2026-08-26T14:00:00.0000000"}},
+                {"subject": "Q3 planning",
+                 "start": {"dateTime": "2026-09-02T14:00:00.0000000"}},
+            ]})
+        if self.path.startswith("/me/events"):
+            return self._json({"value": [
+                {"subject": "Q3 planning",
+                 "start": {"dateTime": "2026-08-26T14:00:00.0000000"}},
+                {"subject": None,
+                 "start": {"dateTime": "2026-08-27T10:00:00.0000000"}},
             ]})
         return self._json({"error": "not found"}, 404)
 
@@ -234,6 +271,18 @@ class GraphGatewayTests(unittest.TestCase):
         self.assertIn("offline_access", ms_q["scope"])
         self.assertIn("Files.Read.All", ms_q["scope"])
         self.assertNotIn("ReadWrite", ms_q["scope"])
+        # Backlog 79. Mail.ReadBasic is the envelope WITHOUT the body, and it
+        # is the reason mail_search can promise never to return one. Asking
+        # for Mail.Read here would hand every member's message bodies to a
+        # deployment whose tools do not even read them.
+        granted = ms_q["scope"].split()
+        self.assertIn("Mail.ReadBasic", granted)
+        self.assertIn("Calendars.Read", granted)
+        # Compare whole tokens: "Mail.Read" is a prefix of "Mail.ReadBasic",
+        # so a substring check here would pass while the body scope was live.
+        self.assertNotIn("Mail.Read", granted)
+        self.assertNotIn("Mail.Send", granted)
+        self.assertNotIn("Calendars.ReadWrite", granted)
 
         hop2 = requests.get(
             f"{self.base}/microsoft/callback?code=mcode&state={ms_q['state']}",
@@ -316,6 +365,108 @@ class GraphGatewayTests(unittest.TestCase):
             self.resource_uri, "files_list", {"folder_id": "dir1"},
             body["access_token"]))
         self.assertIn("Q3.xlsx", inside)
+
+    def test_mail_search_reports_the_envelope_and_asks_for_nothing_more(self):
+        """Backlog 79. The governance line for mail is that the body never
+        leaves Microsoft, so the assertion that matters is on the REQUEST: no
+        body in $select, and Mail.ReadBasic rather than Mail.Read in the
+        scopes, which is what makes the limit Entra's to enforce."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        body, _, _ = self._token()
+        _StubMicrosoft.api_paths.clear()
+
+        out = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "mail_search", {"query": "budget"},
+            body["access_token"]))
+        self.assertIn("Q3 budget review", out)
+        self.assertIn("anna@contoso.com", out)
+        self.assertIn("2026-08-24T09:15:00Z", out)
+        self.assertIn("(no subject)", out)   # a null subject must not blow up
+
+        asked = [p for p in _StubMicrosoft.api_paths if p.startswith("/me/messages")]
+        self.assertTrue(asked, "the tool never called Graph")
+        select = parse_qs(urlparse(asked[0]).query).get("$select", [""])[0]
+        self.assertEqual(sorted(select.split(",")),
+                         ["from", "receivedDateTime", "subject"])
+        for forbidden in ("body", "bodyPreview", "toRecipients", "ccRecipients"):
+            self.assertNotIn(forbidden, select)
+
+    def test_mail_search_never_sends_orderby_with_search(self):
+        """Graph 400s on that combination. The stub reproduces the 400, so
+        this test fails loudly if the guard in mail_search is ever removed."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        body, _, _ = self._token()
+        _StubMicrosoft.api_paths.clear()
+
+        searched = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "mail_search", {"query": "budget"},
+            body["access_token"]))
+        self.assertNotIn("ERROR", searched)
+        query = parse_qs(urlparse(
+            [p for p in _StubMicrosoft.api_paths
+             if p.startswith("/me/messages")][0]).query)
+        self.assertIn("$search", query)
+        self.assertNotIn("$orderby", query)
+
+        # The bare listing is the other half: no $search, so it may and must
+        # ask for newest-first.
+        _StubMicrosoft.api_paths.clear()
+        listed = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "mail_search", {}, body["access_token"]))
+        self.assertNotIn("ERROR", listed)
+        query = parse_qs(urlparse(
+            [p for p in _StubMicrosoft.api_paths
+             if p.startswith("/me/messages")][0]).query)
+        self.assertNotIn("$search", query)
+        self.assertEqual(query.get("$orderby"), ["receivedDateTime desc"])
+
+    def test_calendar_expands_recurrences_only_when_given_a_window(self):
+        """calendarView is the only endpoint that expands a recurring event,
+        and it requires both bounds; /me/events returns the series master."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        body, _, _ = self._token()
+
+        _StubMicrosoft.api_paths.clear()
+        windowed = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "microsoft_calendar_events",
+            {"time_min": "2026-08-25T00:00:00Z", "time_max": "2026-09-05T00:00:00Z"},
+            body["access_token"]))
+        self.assertIn("Q3 planning", windowed)
+        self.assertIn("2026-08-26T14:00:00", windowed)
+        self.assertIn("2026-09-02T14:00:00", windowed)   # the second occurrence
+        self.assertTrue(any(p.startswith("/me/calendarView")
+                            for p in _StubMicrosoft.api_paths))
+
+        _StubMicrosoft.api_paths.clear()
+        bare = asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "microsoft_calendar_events", {},
+            body["access_token"]))
+        self.assertIn("Q3 planning", bare)
+        self.assertIn("(no title)", bare)
+        self.assertTrue(any(p.startswith("/me/events")
+                            for p in _StubMicrosoft.api_paths))
+        self.assertFalse(any(p.startswith("/me/calendarView")
+                             for p in _StubMicrosoft.api_paths))
+
+    def test_calendar_never_requests_attendees_or_location(self):
+        """Backlog 79: an attendee list discloses a relationship, so the tool
+        declines to fetch one. Same shape as the mail assertion."""
+        import asyncio
+        from safi_app.core import mcp_runtime
+        body, _, _ = self._token()
+        _StubMicrosoft.api_paths.clear()
+
+        asyncio.run(mcp_runtime.call_with_token(
+            self.resource_uri, "microsoft_calendar_events", {},
+            body["access_token"]))
+        asked = [p for p in _StubMicrosoft.api_paths if p.startswith("/me/events")]
+        select = parse_qs(urlparse(asked[0]).query).get("$select", [""])[0]
+        self.assertEqual(sorted(select.split(",")), ["end", "start", "subject"])
+        for forbidden in ("attendees", "location", "body", "organizer"):
+            self.assertNotIn(forbidden, select)
 
     def test_refresh_grant_mints_a_working_token(self):
         import asyncio

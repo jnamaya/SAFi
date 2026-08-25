@@ -19,7 +19,19 @@ WHAT IS DELIBERATELY ABSENT
 ---------------------------
 Write tools, same doctrine as the Workspace gateway: nothing that sends,
 moves, uploads or deletes until SAFi can hold a call for human review. The
-scopes match: User.Read, Files.Read.All, Sites.Read.All, nothing writable.
+scopes match: User.Read, Files.Read.All, Sites.Read.All, Mail.ReadBasic,
+Calendars.Read, nothing writable.
+
+Mail bodies, too. `mail_search` returns subject, sender and date and stops
+there, which is why the scope is Mail.ReadBasic rather than Mail.Read: Entra
+does not grant the body under ReadBasic, so the limit is held by the consent
+screen and not by our own restraint. Calendar results carry the title and the
+times, never the attendees, the location or the body. Both match what
+gmail_search and calendar_list_events already return on the Google side. A
+mailbox holds third parties who never agreed to be read by this system, and an
+attendee list discloses a relationship. A tool result becomes evidence in the
+governance record and inherits its retention, so what these two tools decline
+to fetch is the cheapest control available.
 
 RUNNING IT
 ----------
@@ -34,10 +46,17 @@ RUNNING IT
 
 The Entra app registration must list {GATEWAY_BASE_URL}/microsoft/callback as
 a Web redirect URI, hold a client secret, and have the delegated Graph
-permissions User.Read, Files.Read.All and Sites.Read.All (admin consent not
-required for these, members consent individually). Install in SAFi with:
+permissions User.Read, Files.Read.All, Sites.Read.All, Mail.ReadBasic and
+Calendars.Read (admin consent not required for these, members consent
+individually). Install in SAFi with:
 
     scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth
+
+ADDING A SCOPE MEANS EVERY MEMBER RECONNECTS. Consent is bound to the scope
+set that was granted, so a stored refresh token never widens on its own. After
+Mail.ReadBasic and Calendars.Read were added, an already-connected member kept
+working file tools and got a Graph 403 on the new ones until they signed in
+again from Settings. Say so in the release note; the symptom reads like a bug.
 
 Run it as ONE process, single-worker, same reasoning as the Workspace gateway.
 
@@ -93,10 +112,16 @@ GRAPH_API_BASE = os.environ.get("GRAPH_API_BASE", "https://graph.microsoft.com/v
 
 # Delegated read-only scopes, matching the read-only tool set. offline_access
 # is what makes Entra return a refresh token. Widening this list is a
-# governance decision, not a convenience.
+# governance decision, not a convenience, and it costs every connected member
+# a reconnect: consent is bound to the granted scope set.
+#
+# Mail.ReadBasic, not Mail.Read. ReadBasic covers the envelope and withholds
+# the body, which is exactly the line mail_search draws, so the consent screen
+# enforces it instead of the tool code.
 GRAPH_SCOPES = (
     "openid email offline_access "
-    "User.Read Files.Read.All Sites.Read.All"
+    "User.Read Files.Read.All Sites.Read.All "
+    "Mail.ReadBasic Calendars.Read"
 )
 
 
@@ -147,6 +172,13 @@ def _graph_get(store: Store, path: str, params: Optional[Dict[str, Any]] = None)
 def _quote_odata(text: str) -> str:
     # OData string literals escape a single quote by doubling it.
     return (text or "").replace("'", "''")
+
+
+def _quote_search(text: str) -> str:
+    # $search wraps the term in double quotes and Graph documents no escape for
+    # an embedded one, so a quote in the query would end the literal early and
+    # produce a 400. Dropping it is the only safe handling.
+    return (text or "").replace('"', " ").strip()
 
 
 def _format_drive_items(data: Any) -> str:
@@ -260,6 +292,70 @@ def build_app(store: Optional[Store] = None):
             {"$top": min(int(max_results or 10), 50),
              "$select": "id,name,lastModifiedDateTime,size,webUrl"})
         return _format_drive_items(data)
+
+    @server.tool()
+    def mail_search(query: str = "", max_results: int = 10) -> str:
+        """Search the member's Microsoft 365 mailbox; returns subject, sender
+        and date. Leave query empty for the most recent messages. Message
+        bodies are never returned and cannot be: the gateway holds
+        Mail.ReadBasic, which does not grant them. Read-only."""
+        params: Dict[str, Any] = {
+            "$top": min(int(max_results or 10), 25),
+            "$select": "subject,from,receivedDateTime",
+        }
+        term = _quote_search(query)
+        if term:
+            # Graph refuses $orderby together with $search on /me/messages, so
+            # a keyword search takes relevance order and only a bare listing
+            # can ask for newest-first.
+            params["$search"] = f'"{term}"'
+        else:
+            params["$orderby"] = "receivedDateTime desc"
+        data = _graph_get(store, "/me/messages", params)
+        if "error" in data:
+            return f"ERROR: {data['error']}"
+        rows = []
+        for msg in data.get("value", []):
+            sender = (msg.get("from") or {}).get("emailAddress") or {}
+            who = sender.get("address") or sender.get("name") or "?"
+            rows.append(f"- {msg.get('subject') or '(no subject)'} | {who} | "
+                        f"{msg.get('receivedDateTime', '?')}")
+        return "\n".join(rows) or "No messages matched."
+
+    @server.tool()
+    def microsoft_calendar_events(time_min: str = "", time_max: str = "",
+                                  max_results: int = 10) -> str:
+        """List events on the member's Microsoft 365 calendar. Times are ISO
+        8601 (e.g. 2026-08-15T00:00:00Z). Pass BOTH for a window with recurring
+        events expanded into their occurrences; pass neither for the calendar's
+        next entries, where a recurring event appears once as its series
+        master. Titles and start times only: attendees, location and body are
+        deliberately not requested. Read-only."""
+        # Not `calendar_list_events`: the Workspace gateway owns that name, and
+        # two servers claiming one name collide in mcp_manager's registry,
+        # where the first registration wins and the loser is skipped silently.
+        top = min(int(max_results or 10), 50)
+        select = "subject,start,end"
+        if time_min and time_max:
+            # calendarView is the only endpoint that expands a recurrence, and
+            # it requires both bounds. /me/events cannot do it at all.
+            path = "/me/calendarView"
+            params: Dict[str, Any] = {
+                "startDateTime": time_min, "endDateTime": time_max,
+                "$top": top, "$select": select, "$orderby": "start/dateTime"}
+        else:
+            path = "/me/events"
+            params = {"$top": top, "$select": select,
+                      "$orderby": "start/dateTime"}
+        data = _graph_get(store, path, params)
+        if "error" in data:
+            return f"ERROR: {data['error']}"
+        rows = [
+            f"- {ev.get('subject') or '(no title)'} "
+            f"[{(ev.get('start') or {}).get('dateTime') or '?'}]"
+            for ev in data.get("value", [])
+        ]
+        return "\n".join(rows) or "No events in that window."
 
     return core.build_gateway_app(
         base_url=BASE_URL, store=store, provider=PROVIDER,
