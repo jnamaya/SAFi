@@ -143,7 +143,74 @@ services:
       - vector_store:/app/vector_store
     restart: unless-stopped
 
+  # ── OAuth tool gateways (optional) ───────────────────────────────────────────
+  # Per-user Google and Microsoft 365 tools. Both are their own small
+  # authorization servers, not part of the app, which is why each gets its own
+  # env file rather than sharing SAFi's .env: an Entra client secret has no
+  # business in the app's environment.
+  #
+  # OFF BY DEFAULT, and that is the point. `profiles:` keeps them out of a
+  # plain `docker compose up`, so the majority who configure neither provider
+  # are unaffected. Start them with:
+  #
+  #     docker compose --profile gateways up -d
+  #
+  # `required: false` on the env file matters just as much: without it compose
+  # refuses to parse this file at all when the env is absent, which would break
+  # `up` for every deployment that never wanted a gateway.
+  #
+  # TLS IS YOURS TO PROVIDE. GATEWAY_BASE_URL must be https, and these services
+  # publish plain HTTP. Point your existing terminator (the demo uses Apache)
+  # at the published port and set GATEWAY_BASE_URL to that public hostname.
+  # Compose deliberately has no proxy service; ingress stays the operator's.
+  workspace-gateway:
+    build: .
+    pull_policy: build
+    image: safi:latest
+    profiles: ["gateways"]
+    env_file:
+      - path: ./gateways/workspace-gateway.env
+        required: false
+    environment:
+      SERVICE: workspace-gateway
+      # Forced here, NOT left to the env file. The store holds the signing key,
+      # registered clients and every member's Google tokens; anywhere but this
+      # volume and `up --build` silently signs everyone out and sends them back
+      # through consent. Same lesson as the ./mcp mount above.
+      GATEWAY_DB: /app/gateway-data/workspace-gateway.db
+      PORT: "8402"
+    ports:
+      - "${WORKSPACE_GATEWAY_PORT:-8402}:8402"
+    volumes:
+      - workspace_gateway_data:/app/gateway-data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  graph-gateway:
+    build: .
+    pull_policy: build
+    image: safi:latest
+    profiles: ["gateways"]
+    env_file:
+      - path: ./gateways/graph-gateway.env
+        required: false
+    environment:
+      SERVICE: graph-gateway
+      GATEWAY_DB: /app/gateway-data/graph-gateway.db
+      PORT: "8403"
+    ports:
+      - "${GRAPH_GATEWAY_PORT:-8403}:8403"
+    volumes:
+      - graph_gateway_data:/app/gateway-data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
 volumes:
   db_data:
   vector_store:
   npm_cache:
+  # One per gateway, never shared: each holds a DIFFERENT provider's tokens
+  # under its own signing key, and the two sqlite files would otherwise sit in
+  # one directory for no reason.
+  workspace_gateway_data:
+  graph_gateway_data:

@@ -62,6 +62,11 @@ xhtml2pdf>=0.2.16
 
 # ── MCP Protocol ──────────────────────────────────────────────────────────────
 mcp>=1.0.0
+# The ASGI server the two OAuth gateways run under (scripts/*_gateway.py).
+# It already arrived transitively via mcp; named explicitly because a compose
+# service now depends on it and an upstream extra change must not be able to
+# break sign-in for per-user tools.
+uvicorn>=0.30.0
 
 # ── MCP Servers / Plugins ─────────────────────────────────────────────────────
 ddgs>=9.0.0                        # web_search MCP server

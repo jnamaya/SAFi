@@ -16,6 +16,11 @@ safi_memory.db
 .env.*
 !.env.example
 
+# Gateway env files hold a Google/Entra client secret and the Fernet key over
+# every member's stored upstream tokens. The .example templates are tracked.
+gateways/*.env
+!gateways/*.env.example
+
 # Python
 __pycache__/
 *.py[cod]

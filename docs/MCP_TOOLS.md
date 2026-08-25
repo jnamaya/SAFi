@@ -275,6 +275,42 @@ Setup:
    `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
 4. Members press Sign in on its card in Settings, Tools Catalog.
 
+### Running a gateway under Docker
+
+Both gateways are compose services, off by default behind a profile, sharing
+the `safi:latest` image the way `purge` and `scheduler` already do:
+
+```bash
+cp gateways/graph-gateway.env.example gateways/graph-gateway.env   # fill it in
+docker compose --profile gateways up -d
+```
+
+A plain `docker compose up` is unchanged and starts no gateway, so a
+deployment that wants neither provider never has to think about this. The env
+files are gitignored; the `.example` templates are not.
+
+Three things compose decides for you, each because leaving it to the operator
+has a failure mode worth naming:
+
+- **`GATEWAY_DB` points at a named volume**, one per gateway, and the compose
+  `environment:` block overrides whatever the env file says. The store holds
+  the signing key, the registered clients and every member's upstream tokens.
+  Anywhere inside the image, `docker compose up --build` silently signs
+  everyone out and sends them back through consent at Google or Microsoft.
+- **`PORT` is fixed** at 8402 and 8403 inside the container. Map them
+  elsewhere on the host with `WORKSPACE_GATEWAY_PORT` / `GRAPH_GATEWAY_PORT`.
+- **Neither gateway depends on the database**, and neither sets `DB_HOST`, so
+  they skip the entrypoint's MySQL wait. A gateway that refused to start
+  because the app's database was down would take sign-in with it for a service
+  that never touches MySQL.
+
+**TLS is still yours.** `GATEWAY_BASE_URL` must be https and these containers
+speak plain HTTP, so put your existing terminator in front of the published
+port and set `GATEWAY_BASE_URL` to that public hostname. Compose has no proxy
+service on purpose: SAFi does not own your ingress. `GATEWAY_BASE_URL` is also
+the exact origin you register as the redirect URI and pass to
+`safi_mcp.py add --url`, so it can never be a compose service name.
+
 **Adding a scope later costs every connected member a reconnect.** Consent is
 bound to the scope set that was granted, so a stored refresh token never
 widens on its own. When mail and calendar were added on 2026-08-25, members

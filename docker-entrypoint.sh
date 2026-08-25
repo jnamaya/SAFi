@@ -51,6 +51,23 @@ fi
 
 # SERVICE env var selects which process to start.
 # docker-compose sets SERVICE=purge for the retention-purge scheduler.
+# The OAuth gateways. Deliberately BEFORE the MySQL wait would matter: neither
+# touches MySQL, and their compose services set no DB_HOST, so the wait above
+# is skipped for them. They must not be coupled to the database — a gateway
+# that refuses to start because the app's db is down would take out sign-in
+# for a service that has nothing to do with it.
+if [ "${SERVICE}" = "workspace-gateway" ]; then
+    mkdir -p "$(dirname "${GATEWAY_DB:-/app/gateway-data/workspace-gateway.db}")"
+    echo "Workspace gateway (per-user Google tools) on :${PORT:-8402}"
+    exec python scripts/workspace_gateway.py
+fi
+
+if [ "${SERVICE}" = "graph-gateway" ]; then
+    mkdir -p "$(dirname "${GATEWAY_DB:-/app/gateway-data/graph-gateway.db}")"
+    echo "Graph gateway (per-user Microsoft 365 tools) on :${PORT:-8403}"
+    exec python scripts/graph_gateway.py
+fi
+
 if [ "${SERVICE}" = "purge" ]; then
     echo "Retention purge scheduler: first run in 5 minutes, then every 24h."
     sleep 300   # let the app finish first-boot schema migrations
