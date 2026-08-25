@@ -1838,7 +1838,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # first message that got blocked still deserves a real title, and the
         # user prompt alone carries the topic (the redirect text does not).
         if new_title:
-            self._submit_bg(self._run_title_thread, conversation_id, user_prompt, "", new_title)
+            self._submit_bg(self._run_title_thread, conversation_id, original_prompt, "", new_title)
 
         self._append_log(governance_record)
 
