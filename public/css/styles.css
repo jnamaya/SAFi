@@ -197,8 +197,16 @@ html {
   padding: 0 16px;
   max-width: 48rem !important; /* tighter, centered reading column (~768px) */
 
-  /* Modern slide-and-fade entrance */
-  animation: fade-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Modern slide-and-fade entrance.
+     NO `both`. The 100% keyframe is translateY(0), i.e. the element's normal
+     position, so `forwards` gained nothing visually and cost real quality: a
+     retained transform (even an identity one) keeps the element on its own
+     compositing layer, and browsers drop subpixel text antialiasing on a
+     composited layer. Every message stayed on a layer forever, so all chat
+     text rendered grayscale-AA and looked thinner and rougher than the rest
+     of the page. Dropping the fill mode releases the layer when the animation
+     ends. There is no animation-delay here, so `backwards` was inert too. */
+  animation: fade-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes fade-slide-up {
@@ -2605,6 +2613,13 @@ html {
    destructive. The icon badge is what makes intent readable at a glance, so
    the colour is doing meaning, not decoration. */
 
+/* The modals below KEEP `both`, unlike the menu and message animations. Their
+   100% keyframe is translate(-50%, -50%) scale(1), and that translate is the
+   centring, not a leftover: these rules carry no transform of their own, so
+   dropping the fill mode would drop the dialog off centre. The composited
+   layer, and the grayscale text antialiasing that comes with it, is the price
+   of centring this way. Moving to a flex-centred wrapper would remove the
+   transform and win back subpixel AA inside dialogs; not done here. */
 .safi-dialog {
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -2995,7 +3010,12 @@ html {
 /* --- Sidebar dropdown menu (conversation + project actions) --- */
 .convo-menu-dropdown {
   transform-origin: bottom right;
-  animation: menu-pop 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* NO `both`, same reason as .message-container above: menu-pop ends on
+     scale(1) translateY(0), which is the element's resting state, so holding
+     it only pinned the popup to a compositing layer and cost it subpixel text
+     antialiasing. That is why the three-dots menu's labels looked rough next
+     to identical text in the sidebar behind it. */
+  animation: menu-pop 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes menu-pop {
