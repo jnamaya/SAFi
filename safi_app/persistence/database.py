@@ -2656,10 +2656,48 @@ def _erase_personal_governance_records(cursor, conversation_where_sql, params):
         params,
     )
 
+class LegalHoldActive(Exception):
+    """Raised when a destructive operation is attempted under an active hold.
+
+    A hold is not advisory. `DATA_ERASURE_AND_RETENTION.md` §4 and
+    `HIPAA_READINESS.md` both state that it "suspends all destruction", and the
+    retention purge has always honoured that. User-initiated deletion did not:
+    a member could clear their own conversations mid-hold, which is precisely
+    the spoliation a hold exists to prevent, and it is the first thing an
+    opposing expert would test. GOVERNANCE_BACKLOG 2.
+
+    Raised rather than returned so it cannot be mistaken for "nothing matched".
+    """
+
+
+def _assert_no_legal_hold(cursor, user_id):
+    """Fail closed if this user's org has a hold in force.
+
+    Fails closed on error too: if the hold state cannot be read, destruction
+    does not proceed. Deleting because a lookup failed is the one outcome a
+    hold must never allow.
+    """
+    org_id = _org_id_for_user(cursor, user_id)
+    if not org_id:
+        return                      # no org, no org-level hold to honour
+    try:
+        if get_org_retention_config(org_id)["legal_hold"]["active"]:
+            raise LegalHoldActive(org_id)
+    except LegalHoldActive:
+        raise
+    except Exception as e:
+        logging.error("legal hold state unreadable for org %s, refusing delete: %s", org_id, e)
+        raise LegalHoldActive(org_id) from e
+
+
 def delete_conversation(cid, user_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # A hold outranks the user's own delete. Checked before the trail
+        # snapshot so a held conversation leaves no half-written journal.
+        if user_id is not None:
+            _assert_no_legal_hold(cursor, user_id)
         # SECURITY: scope the delete to the owning user (see rename_conversation).
         if user_id is not None:
             _chat_trail_snapshot_delete(
@@ -2690,6 +2728,7 @@ def delete_all_conversations(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        _assert_no_legal_hold(cursor, user_id)
         _chat_trail_snapshot_delete(
             cursor,
             "JOIN conversations c ON ch.conversation_id = c.id "

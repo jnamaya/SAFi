@@ -85,6 +85,21 @@ def legal_hold_active(org_id):
     return db.get_org_retention_config(org_id)["legal_hold"]["active"]
 
 
+def hold_stopped(org_id, phase):
+    """True if a hold is active, meaning this phase must stop NOW.
+
+    Phase A has always re-checked between batches; B, B2 and C never did, so a
+    hold placed mid-run only stopped the phase that happened to be running.
+    `DATA_ERASURE_AND_RETENTION.md` §4 and `HIPAA_READINESS.md` both state that
+    a hold "suspends all destruction", so every loop that deletes has to ask,
+    not just the first one. GOVERNANCE_BACKLOG 2.
+    """
+    if not legal_hold_active(org_id):
+        return False
+    print(f"  legal hold set mid-run — stopping {phase}")
+    return True
+
+
 def any_legal_hold(orgs):
     return any(db.get_org_retention_config(o["id"])["legal_hold"]["active"] for o in orgs)
 
@@ -255,6 +270,8 @@ def purge_trail_chains(conn, org_id, cutoff, batch_size, max_batches):
     )
     skipped_recent = cur.fetchone()[0]
     while max_batches is None or batches < max_batches:
+        if hold_stopped(org_id, "Phase B (trail chains)"):
+            break
         cur.execute(
             "SELECT t.message_pk FROM chat_audit_trail t "
             "LEFT JOIN chat_history ch ON ch.id = t.message_pk "
@@ -285,6 +302,8 @@ def purge_governance_orphans(conn, org_id, cutoff, batch_size):
     total = 0
     cur = conn.cursor()
     while True:
+        if hold_stopped(org_id, "Phase B2 (governance orphans)"):
+            break
         cur.execute(
             "SELECT g.id FROM governance_records g "
             "LEFT JOIN conversations c ON c.id = g.conversation_id "
@@ -307,6 +326,8 @@ def purge_aged_table(conn, org_id, cutoff, table, ts_col, batch_size, pk="id"):
     total = 0
     cur = conn.cursor()
     while True:
+        if hold_stopped(org_id, f"Phase C ({table})"):
+            break
         cur.execute(
             f"SELECT s.{pk} FROM {table} s JOIN users u ON u.id = s.user_id "
             f"WHERE u.org_id = %s AND u.id NOT LIKE 'demo\\_%' AND s.{ts_col} < %s LIMIT %s",

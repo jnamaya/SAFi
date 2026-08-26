@@ -875,12 +875,22 @@ def handle_pin_conversation(conversation_id):
         return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success", "is_pinned": is_pinned})
 
+# 409, not 403: the request is authorised, the resource state forbids it. The
+# wording says WHY, because a delete that silently succeeds-but-doesn't is how
+# a member ends up believing content is gone when a hold has preserved it.
+HOLD_MESSAGE = ("A legal hold is in force for your organization. Conversations "
+                "cannot be deleted until it is lifted.")
+
+
 @conversations_bp.route('/conversations', methods=['DELETE'])
 def handle_clear_all_conversations():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    db.delete_all_conversations(user_id)
+    try:
+        db.delete_all_conversations(user_id)
+    except db.LegalHoldActive:
+        return jsonify({"error": HOLD_MESSAGE}), 409
     return jsonify({"status": "success"})
 
 @conversations_bp.route('/conversations/<conversation_id>', methods=['DELETE'])
@@ -890,7 +900,11 @@ def handle_delete_conversation(conversation_id):
         return jsonify({"error": "Authentication required."}), 401
     
     # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
-    if not db.delete_conversation(conversation_id, user_id=user_id):
+    try:
+        deleted = db.delete_conversation(conversation_id, user_id=user_id)
+    except db.LegalHoldActive:
+        return jsonify({"error": HOLD_MESSAGE}), 409
+    if not deleted:
         return jsonify({"error": "Conversation not found."}), 404
     # Grants must not outlive the conversation (no FKs, so cleanup is explicit).
     conversation_sharing_store.delete_grants_for_conversation(conversation_id)
