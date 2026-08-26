@@ -7132,6 +7132,85 @@ def get_connected_providers(user_id):
         cursor.close()
         conn.close()
 
+def init_demo_usage_schema():
+    """The demo signup counter, and a one-time backfill of what came before it.
+
+    WHY THIS EXISTS AT ALL. Demo accounts are destroyed after 24 hours, so the
+    only surviving evidence that anyone ever used the demo was the rows the
+    purge happened to MISS: orphaned `auth_events` and `sessions` still naming
+    a `demo_%` user whose row was long gone. Counting those distinct ids was
+    how we learned the demo had served 153 accounts in 40 days while the
+    `organizations` table only ever showed the ~10 alive at that instant.
+
+    That is evidence by accident, and it has already been lost once: both
+    `auth_events` and `sessions` begin at exactly 2026-07-16, the moment those
+    tables were added, so demo usage from 2026-05-25 to 2026-07-15 is gone for
+    good. Widening the purge without this counter would repeat that, silently.
+    Count deliberately, then destroy freely.
+
+    Backfill is idempotent and additive-only: it fills days the table does not
+    already have, so re-running it cannot double-count, and a day recorded live
+    is never overwritten by an estimate.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS demo_usage_daily (
+                day DATE PRIMARY KEY,
+                accounts INT NOT NULL DEFAULT 0
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        cursor.execute("SELECT COUNT(*) FROM demo_usage_daily")
+        if (cursor.fetchone() or [0])[0]:
+            conn.commit()
+            return 0
+        # First run only. Reconstruct history from the orphans BEFORE any
+        # widened purge removes them.
+        cursor.execute("""
+            INSERT INTO demo_usage_daily (day, accounts)
+            SELECT DATE(ts) d, COUNT(DISTINCT user_id) FROM (
+                SELECT user_id, created_at AS ts FROM sessions    WHERE user_id LIKE 'demo\\_%'
+                UNION ALL
+                SELECT user_id, ts          AS ts FROM auth_events WHERE user_id LIKE 'demo\\_%'
+            ) x
+            GROUP BY d
+            ON DUPLICATE KEY UPDATE accounts = GREATEST(accounts, VALUES(accounts))
+        """)
+        filled = cursor.rowcount
+        conn.commit()
+        logging.info("demo_usage_daily backfilled from orphaned audit rows: %d day(s).", filled)
+        return filled
+    except Exception as e:
+        logging.error("demo usage schema/backfill failed: %s", e)
+        return 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def record_demo_signup():
+    """Count one demo account at CREATION time.
+
+    Deliberately not counted at purge time: a count taken while deleting is a
+    count that disappears if the delete path ever changes. Recorded here, the
+    number is independent of whatever the purge does later.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO demo_usage_daily (day, accounts) VALUES (CURDATE(), 1) "
+            "ON DUPLICATE KEY UPDATE accounts = accounts + 1")
+        conn.commit()
+    except Exception as e:
+        # Never break a demo login over a counter.
+        logging.warning("demo signup not counted: %s", e)
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def cleanup_orphaned_public_users():
     """Removes `public_*` user rows that no longer have a conversation.
 
@@ -7211,6 +7290,22 @@ def cleanup_old_demo_users():
                 f"DELETE FROM governance_records WHERE user_id IN ({format_strings})",
                 tuple_ids)
 
+            # A1. Chat audit trail — same ruling as governance_records above,
+            # and the same one this module already states at the trail helpers:
+            # "demo chats are disposable fixtures, not business records"
+            # (Nelson, 2026-08-25). Safe for chain integrity because the hash
+            # chain is scoped PER message_pk (see append_chat_audit's tip
+            # query), so removing a demo message's chain cannot invalidate any
+            # other org's. Deleted by conversation, which takes whole chains;
+            # deleting by org_id alone would leave partial chains behind for
+            # any row written before org_id was populated.
+            # MUST run before the conversations delete on the next line, or the
+            # conversation ids it selects are already gone.
+            cursor.execute(
+                f"DELETE FROM chat_audit_trail WHERE conversation_id IN "
+                f"(SELECT id FROM conversations WHERE user_id IN ({format_strings}))",
+                tuple_ids)
+
             # A. Conversations (Cascades to chat_history usually, but good to be sure)
             cursor.execute(f"DELETE FROM conversations WHERE user_id IN ({format_strings})", tuple_ids)
             
@@ -7241,6 +7336,38 @@ def cleanup_old_demo_users():
             cursor.execute(
                 f"DELETE FROM governance_records WHERE org_id IN ({format_strings})",
                 tuple(expired_org_ids))
+            cursor.execute(
+                f"DELETE FROM chat_audit_trail WHERE org_id IN ({format_strings})",
+                tuple(expired_org_ids))
+
+            # Everything else that names this org. Two different treatments,
+            # and the difference is the point:
+            #
+            #   NULLED  authentication evidence. auth_events and sessions
+            #           record logins, MFA outcomes and revocations. Those are
+            #           security records about a person, not demo content, and
+            #           they outlive the sandbox on purpose — the same call
+            #           Nelson made for the Local Admin orgs on 2026-08-25.
+            #           Nulling keeps the row and removes the dangling pointer.
+            #
+            #   DELETED demo-only working data with no evidentiary role.
+            #
+            # This list existed as a hand-maintained set of table names and
+            # silently fell six tables behind the schema, which is what left
+            # 1,576 rows pointing at orgs that no longer existed. Anything not
+            # named here is a table that did not exist when this was written:
+            # see GOVERNANCE_BACKLOG 82 for the schema-derived version.
+            for table in ("auth_events", "sessions"):
+                cursor.execute(
+                    f"UPDATE {table} SET org_id=NULL WHERE org_id IN ({format_strings})",
+                    tuple(expired_org_ids))
+            for table in ("llm_usage", "org_compliance_log", "knowledge_bases",
+                          "agents", "policies", "org_charter", "org_ai_standards",
+                          "org_invitations", "custom_groups", "approval_settings"):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE org_id IN ({format_strings})",
+                    tuple(expired_org_ids))
+
             delete_orgs_sql = f"DELETE FROM organizations WHERE id IN ({format_strings})"
             cursor.execute(delete_orgs_sql, tuple(expired_org_ids))
             logging.info(f"Cleaned up {cursor.rowcount} expired demo organizations.")

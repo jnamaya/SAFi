@@ -861,7 +861,13 @@ def login_demo():
                 'org_id': org_id
             }
             db.upsert_user(user_info)
-            
+
+            # Count it now, while the account exists. In 24 hours this row and
+            # its org are gone, and without this the only trace that anyone
+            # used the demo is whatever the purge forgets to delete
+            # (GOVERNANCE_BACKLOG 82). Never fatal to a login.
+            db.record_demo_signup()
+
             # Initialize Profile
             default_profile = Config.DEFAULT_PROFILE
             db.update_user_profile(demo_id, default_profile)

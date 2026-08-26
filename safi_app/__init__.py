@@ -106,6 +106,14 @@ def create_app():
     # Initialize the database connection pool within the app context
     with app.app_context():
         db.init_db()
+        # Demo signup counter, and a ONE-TIME backfill from orphaned audit rows.
+        # Ordering matters: this must run at boot, before the widened demo purge
+        # in cleanup_old_demo_users() can remove the orphans it reconstructs
+        # history from (GOVERNANCE_BACKLOG 82). Idempotent after the first run.
+        try:
+            db.init_demo_usage_schema()
+        except Exception as e:
+            app.logger.error("demo usage counter init failed: %s", e)
         # The MCP reload counter (backlog 48b). Its own module, deliberately
         # outside the manifest-covered database.py: a scheduling signal is not a
         # record of what the system decided.
