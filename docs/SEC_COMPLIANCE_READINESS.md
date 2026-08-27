@@ -184,14 +184,12 @@ where an examiner would encounter them in exported records.
 
 Planned or demand-triggered work, in priority order:
 
-1. **Security artifacts.** A third-party penetration test, an SBOM and
-   dependency posture, secure-SDLC evidence (CI supplies the start of this),
-   and a published vulnerability disclosure policy with a patch SLA.
-2. **SAML SSO and SCIM provisioning** — available on enterprise demand,
+1. **SAML SSO and SCIM provisioning** — available on enterprise demand,
    building on the shipped OIDC per-tenant enforcement (Microsoft Entra
    tenant and Google Workspace domain pinning).
-3. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
-   amended paragraph (i) hosting-undertaking question for hosted deployments.
+2. **Regulatory tracking** — the pending 17a-4 clarification on whether AI
+   prompts and responses are themselves required records. The answer changes
+   what SAFi must retain, so it is tracked here.
 
 ## 4. Key sources
 

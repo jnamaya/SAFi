@@ -96,42 +96,22 @@ reference Annex A control groups by theme.
   is continuous, quantitative clause 9 input rather than a periodic manual
   exercise.
 
-## 3. What remains the organization's
+## 3. What SAFi does not do
 
-A management system is mostly management. SAFi supplies controls and
-evidence for the operational clauses; the following are the deploying
-organization's own work, and no tool substitutes for them.
-
-- **AI impact assessments (A.5).** SAFi produces the data an assessment
-  draws on (audit records, alignment trends, violation history) but has no
-  impact-assessment module. The assessment process, its documentation, and
-  its review cadence are organizational.
-- **Context, leadership, and planning (clauses 4 to 6).** Identifying
-  interested parties and applicable regulation, leadership commitment, the
-  AI policy document itself (SAFi enforces policy; the organization still
-  authors and owns it), risk assessment and treatment, and the statement of
-  applicability.
-- **Support and competence (clause 7).** Training, awareness, and competence
-  records for the people who operate and supervise the system.
-- **Internal audit and management review (clauses 9.2, 9.3, 10).** The
-  audit program, management review meetings, nonconformity handling, and
-  continual improvement. SAFi's exports and metrics are designed to feed
-  these processes, not to perform them.
-- **Certification itself.** Engaging an accredited certification body,
-  scoping the AIMS, and maintaining it between surveillance audits.
+SAFi supplies operational controls and the evidence they produce. It is not a
+management system and does not attempt to be one. It has no impact-assessment
+module, no audit-programme tooling, and no certification pathway. Clauses 4
+through 7, the internal audit programme, management review, and certification
+itself sit outside the product entirely.
 
 ## 4. Deployer notes
 
-- If you are building a statement of applicability, this document's §2 is
-  organized to map onto it: for each selected Annex A control, cite the
-  SAFi mechanism and name the evidence artifact your auditor will see
-  (audit records, governance-record exports, review dispositions, integrity
-  fingerprints, Audit Hub metrics).
-- The integrity check is part of your evidence chain. Run
-  `scripts/verify_integrity.py` on your deployment and keep the reported
-  fingerprint with your audit records; every governance record you produce
-  already carries it.
-- If your AIMS scope includes obligations under specific regimes (EU AI
-  Act, SEC/FINRA, HIPAA), use the matching readiness document in this
-  series for the per-regime detail; this document deliberately stays at the
+- §2 is organized by Annex A control: for each one it names the SAFi
+  mechanism and the evidence artifact that mechanism produces (audit records,
+  governance-record exports, review dispositions, integrity fingerprints,
+  Audit Hub metrics).
+- `scripts/verify_integrity.py` reports the deployment's integrity
+  fingerprint. Every governance record SAFi writes carries the same value.
+- Per-regime detail (EU AI Act, SEC/FINRA, HIPAA) is in the matching
+  readiness document in this series. This one stays at the
   management-system level.

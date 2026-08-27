@@ -89,20 +89,10 @@ Everything in this section is shipped and running, not planned.
   allow-list gives deployers the lever (restrict to EU-hostable providers),
   but residency itself depends on the deployer's provider contracts and
   hosting choice. Self-hosting in the EU is fully supported.
-- **High-risk (Annex III) conformity track — demand-triggered, due
-  December 2027 only if a high-risk use case appears:** Annex IV technical
-  documentation (the published mathematical specification and this
-  readiness series cover a substantial part), Art. 9 risk-management
-  system, Art. 17 quality-management system, Annex VI internal-control
-  conformity assessment, CE marking, EU database registration, and an
-  Art. 22 authorized representative for non-EU providers. None of this is
-  required for limited-risk deployments.
 
 ## 4. Deployer notes
 
 - If you deploy SAFi's outputs through your own interface (including via
   the `/evaluate` gateway), the Art. 50(1) disclosure duty to your end
   users is yours; SAFi repeats this in every gateway response.
-- Whether your use case is Annex III high-risk is a legal determination
-  about *your* use, not about the platform — make it with counsel before
-  the December 2027 deadline becomes relevant to you.
+

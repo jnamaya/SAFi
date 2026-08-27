@@ -84,9 +84,6 @@ Everything in this section is shipped and running, not planned.
   outside the provider-governance registry. Healthcare deployments should
   disable TTS or route it to a governed provider (OpenAI/Gemini TTS are
   enforced through the allow-list); cached audio is TTL-bounded either way.
-- **Security artifacts.** A third-party penetration test, an SBOM and
-  dependency posture, and a published vulnerability disclosure policy with a
-  patch SLA.
 - **Security Rule NPRM watch.** If the update finalizes as proposed, SAFi's
   MFA and encryption posture already matches it; this line item is
   tracking, not build work.
@@ -100,9 +97,3 @@ Everything in this section is shipped and running, not planned.
 - Self-hosted deployments own the physical/infrastructure safeguards
   (§164.310) — server access, backups, and disposal are outside the
   application's boundary.
-- **Administrative safeguards are not software.** Before any PHI flows you
-  need the written §164.308(a)(1) risk analysis (OCR's most-cited enforcement
-  item), executed BAAs across the chain, a designated security officer,
-  workforce training records, and a contingency plan. SAFi does not provide,
-  generate or substitute for any of them. They are listed here so the boundary
-  is explicit, not because they are on a roadmap.
