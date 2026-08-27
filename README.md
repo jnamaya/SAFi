@@ -25,6 +25,7 @@
 - [Regulatory Readiness](#regulatory-readiness)
 - [For Developers](#for-developers)
 - [Knowledge Bases & Tools](#knowledge-bases--tools)
+- [Sensitive Data Controls](#sensitive-data-controls)
 - [Roles & Permissions](#roles--permissions)
 - [SAFi Technology Stack and Supported Deployment](#safi-technology-stack-and-supported-deployment)
 - [Releases](#releases)
@@ -436,6 +437,39 @@ them at the moment of need.
 - **[MCP tools, the operator manual](docs/MCP_TOOLS.md)**: installing servers
   with the CLI, per-user OAuth, credentials and scopes, and worked examples
   including GitHub's official server.
+
+## Sensitive Data Controls
+
+SAFi can block sensitive personal and financial identifiers before they reach a
+model, and before a response containing one is delivered. Detection is
+deterministic code, not a model judgement: three of the four checks are
+confirmed by a real checksum, so the verdict is arithmetic and anyone holding
+the audit record can recompute it.
+
+| Check | Validation | Example detected |
+| :--- | :--- | :--- |
+| Payment card numbers | Luhn (mod 10) | `4111 1111 1111 1111` |
+| IBAN | ISO 13616 mod-97 | `GB82WEST12345698765432` |
+| Bank routing numbers (ABA) | 3-7-1 weighted checksum | `021000021` |
+| US social security numbers | SSA allocation rules, formatted only | `123-45-6789` |
+
+Every check is **off by default**. An organization enables them one identifier
+at a time under **AI Standards**, and what it enables is a floor: a policy may
+add further checks and cannot remove one the organization set. There is no field
+for entering a custom pattern, deliberately.
+
+When a turn is blocked the identifier is removed from the governance record as
+well, replaced in full rather than masked. The record still shows which check
+fired and at which stage, so it explains itself without storing the value.
+
+The limits are stated as plainly as the capabilities: unformatted social
+security numbers are not matched, the routing-number check is the loosest of the
+four, only these four identifier types are covered, and the value still existed
+in the stored message row before the check ran.
+
+**[Read the sensitive data controls documentation](docs/SENSITIVE_DATA_CONTROLS.md)**
+
+---
 
 ## Roles & Permissions
 
