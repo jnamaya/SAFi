@@ -1553,6 +1553,48 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return None
         return f"{text.rstrip()}\n\n{repair_text}"
 
+    # Phrases that mean "your subject is off-limits". A PII block is never
+    # about the subject: the request was in scope and the identifier was the
+    # problem, so any of these in a pii_detected redirect is a false refusal.
+    _SCOPE_CLAIM_MARKERS = (
+        "outside my", "outside the scope", "outside your scope", "out of scope",
+        "not within my", "area of focus", "i can only", "i can provide information and analysis on",
+        "my role is limited", "i'm not able to help with topics", "stick to",
+    )
+
+    _PII_REFUSAL = (
+        "Your message was not processed because it appeared to contain sensitive "
+        "personal or financial information. This is an organizational policy. "
+        "Please resend your request with that information removed or replaced "
+        "with a placeholder."
+    )
+
+    def _repair_pii_redirect(self, safe_output: str, violation_type: str) -> str:
+        """Replace a PII refusal that blames the wrong cause.
+
+        The Intellect is given an explicit directive for `pii_detected` telling
+        it to say the message contained sensitive data and invite a resend. A
+        model may ignore that and fall back to the agent's house refusal, which
+        for a scoped agent means "I only cover financial topics". Observed
+        2026-08-27 on a 20B model: a card number in "how is Tesla doing today"
+        produced a scope refusal, and the user was told to change the subject
+        when the subject was fine.
+
+        That is the false-refusal bug CLAUDE.md names, and correctness here must
+        not depend on model compliance. So the wording is repaired in code, the
+        same way a missing disclaimer already is: deterministic, terminal, no
+        second model call.
+        """
+        if violation_type != "pii_detected" or not safe_output:
+            return safe_output
+        low = safe_output.lower()
+        if not any(m in low for m in self._SCOPE_CLAIM_MARKERS):
+            return safe_output
+        self.log.warning(
+            "[Governance | Redirect] PII refusal claimed a scope limit; replacing "
+            "with the deterministic wording.")
+        return self._PII_REFUSAL
+
     def _enforce_redirect_structure(self, safe_output: str) -> str:
         """Deterministically repair a redirect that fails the Will's structural
         gate. The redirect is terminal (it cannot recurse into another
@@ -1843,6 +1885,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # deterministically instead. Most important for regulated agents whose
         # refusal must still carry the mandatory disclaimer; the model is
         # instructed to add it via the worldview, but that is not enforced.
+        safe_output = self._repair_pii_redirect(safe_output, violation_type)
         safe_output = self._enforce_redirect_structure(safe_output)
 
         # --- AUDITING AND MEMORY INTEGRATION FOR SPOKESPERSON RESPONSE ---
