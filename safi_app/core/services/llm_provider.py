@@ -11,6 +11,7 @@ import json
 import logging
 import asyncio
 from typing import List, Dict, Any, Tuple, Optional
+from contextvars import ContextVar
 
 # External provider libraries
 from openai import AsyncOpenAI
@@ -41,6 +42,52 @@ from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exp
 # Kept comfortably under 300s so even a turn's two calls (intellect + conscience)
 # stay inside the request budget, and tunable for slow self-hosted providers.
 LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "120"))
+
+
+# Output-token ceiling for the Intellect. Was a hardcoded 8192 until 2026-08-27
+# (GOVERNANCE_BACKLOG 85), when three turns in one session stopped at exactly
+# that number and the answers reached the user cut off mid-sentence.
+#
+# The budget covers a thinking model's hidden reasoning as well as the visible
+# answer, so the answer can be far shorter than this number suggests: one of
+# those turns spent the whole 8192 to emit about 2,700 tokens of text.
+#
+# Raising it lengthens generations, so check SAFI_GUNICORN_TIMEOUT and the web
+# server's own Timeout before going much higher. LLM_TIMEOUT_SECONDS above is
+# the per-call ceiling that actually cuts a slow generation off.
+MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
+
+
+# Set when a provider reports that it stopped because the output budget ran out,
+# rather than because the model finished. A ContextVar, not an attribute: one
+# LLMProvider instance is shared by every concurrent request against the same
+# profile, so an attribute would let one request read another's flag.
+_TRUNCATED: ContextVar[bool] = ContextVar("safi_generation_truncated", default=False)
+
+
+# Appended to an answer the provider cut short. Added to the DRAFT, before the
+# Will and the Conscience see it, so the governance record shows the answer was
+# incomplete rather than storing a partial answer as a whole one.
+#
+# Deliberately plain text: an org can ban markdown syntaxes through
+# `structural_requirements`, and a notice that trips its own deployment's style
+# gate would turn a truncated answer into a blocked one.
+TRUNCATION_NOTICE = (
+    "\n\n(This answer is incomplete. It reached the output limit for a single "
+    "turn and stopped here. Ask to continue and it will pick up from this point.)"
+)
+
+
+def generation_was_truncated() -> bool:
+    """True if the most recent provider call in this context hit its output cap.
+
+    Must be read from the same task that made the call. A ContextVar set inside
+    a coroutine propagates to its awaiting caller, which is how `run_intellect`
+    sees it, but `asyncio.run`, `create_task` and `gather` each run their child
+    in a COPY of the context, so a read on the far side of one of those returns
+    the default and not the flag.
+    """
+    return _TRUNCATED.get()
 
 
 class LLMProvider:
@@ -123,6 +170,23 @@ class LLMProvider:
         self._org_clients[cache_key] = client
         return client
 
+    def _note_truncation(self, route, provider_name, model_name, marker):
+        """Record that the provider stopped because the output budget ran out.
+
+        Every provider signals this differently and two of the three branches
+        used to ignore it, so a truncated answer reached the user with nothing
+        in the log and nothing in the record (GOVERNANCE_BACKLOG 85). Detection
+        is per branch; what happens next is here, once.
+        """
+        _TRUNCATED.set(True)
+        self.log.warning(
+            "Generation truncated: route=%s provider=%s model=%s stopped at the "
+            "output cap (%s). The answer is cut off mid-output. Raise "
+            "SAFI_MAX_INTELLECT_TOKENS (currently %d) if this recurs; on a "
+            "thinking model the hidden reasoning draws from the same budget.",
+            route, provider_name, model_name, marker, MAX_INTELLECT_TOKENS,
+        )
+
     def _capture_usage(self, route, provider_name, model_name, provider_type, resp):
         """Record the call's token counts for the Usage & Cost tab (backlog 61).
         Attribution (org, agent) comes from context vars; failures are logged
@@ -172,6 +236,9 @@ class LLMProvider:
              raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
 
         provider_type = provider_details["type"]
+        # Cleared per call: the agent loop makes several, and only the one that
+        # produced the text the user sees should be able to flag it.
+        _TRUNCATED.set(False)
         # The active org's own key wins over the deployment client (backlog
         # 64) — and makes a provider usable that has no .env key at all.
         client = self._org_override_client(provider_name, provider_details) \
@@ -280,6 +347,15 @@ class LLMProvider:
             resp = await client.chat.completions.create(**params)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
+            # finish_reason "length" means the response hit max_tokens. Standard
+            # across OpenAI-compatible providers; zhipu reports it too, and its
+            # reasoning tokens count toward the same budget.
+            try:
+                if resp.choices and getattr(resp.choices[0], "finish_reason", None) == "length":
+                    self._note_truncation(route, provider_name, model_name, "finish_reason=length")
+            except Exception:
+                pass
+
             # OpenAI Tool Use Handling
             msg = resp.choices[0].message
             if msg.tool_calls:
@@ -343,6 +419,12 @@ class LLMProvider:
                     "(stop_reason=refusal); this model may be incompatible with the "
                     "governance prompt format"
                 )
+
+            # stop_reason "max_tokens" means the budget ran out mid-answer. The
+            # content blocks still hold the partial text, so without this check
+            # it reaches the user mid-sentence and looks like a finished answer.
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                self._note_truncation(route, provider_name, model_name, "stop_reason=max_tokens")
 
             # Check for text content
             text_content = ""
@@ -439,21 +521,16 @@ class LLMProvider:
                         
                     return json.dumps(payload, default=safe_serialize)
 
-                # Surface a truncated generation. Gemini stops with
-                # finish_reason=MAX_TOKENS when the output (including thinking
-                # tokens) exhausts max_output_tokens; resp.text still holds the
-                # partial answer, so without this check it would silently reach
-                # the user mid-sentence. Compare on the name to stay robust
-                # across SDK enum/string representations.
+                # Gemini stops with finish_reason=MAX_TOKENS when the output
+                # (including thinking tokens) exhausts max_output_tokens;
+                # resp.text still holds the partial answer. Compare on the name
+                # to stay robust across SDK enum/string representations.
                 try:
                     if resp.candidates:
                         finish_reason = getattr(resp.candidates[0], "finish_reason", None)
                         if finish_reason is not None and "MAX_TOKENS" in str(finish_reason):
-                            self.log.warning(
-                                "Gemini Intellect response truncated (finish_reason=MAX_TOKENS); "
-                                "answer was cut off mid-output. Consider raising max_output_tokens "
-                                "or capping the thinking budget."
-                            )
+                            self._note_truncation(
+                                route, provider_name, model_name, "finish_reason=MAX_TOKENS")
                 except Exception:
                     pass
 
@@ -560,11 +637,9 @@ class LLMProvider:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=1.0,
-                    # 8192 (up from 4096): the Intellect produces long, structured
-                    # answers and runs on thinking models (e.g. gemini-3.6-flash)
-                    # whose reasoning tokens also draw from this budget. 4096 was
-                    # too tight and silently truncated answers mid-output.
-                    max_tokens=8192,
+                    # See MAX_INTELLECT_TOKENS at the top of this module for what
+                    # the budget covers and what raising it costs.
+                    max_tokens=MAX_INTELLECT_TOKENS,
                     tools=tools
                 )
                 raw_content_stripped = raw_content.strip() if raw_content else ""
@@ -595,6 +670,9 @@ class LLMProvider:
                         "(attempt %d/%d); retrying.", attempt, self._INTELLECT_MAX_ATTEMPTS
                     )
                     continue
+
+                if _TRUNCATED.get() and answer:
+                    answer = answer.rstrip() + TRUNCATION_NOTICE
 
                 return answer, reflection, context_for_audit, raw_turn
             except Exception as e:
