@@ -80,13 +80,6 @@ Everything in this section is shipped and running, not planned.
 
 ## 3. Pending / roadmap
 
-- **Executed paperwork (demand-triggered, required before any PHI):**
-  the written §164.308(a)(1) risk analysis — OCR's most-cited enforcement
-  item; a BAA template and executed BAAs across the chain (customer ↔
-  operator ↔ LLM providers); security-officer designation; workforce
-  training records; and a contingency/disaster-recovery plan with verified
-  database backup procedures. Templates are prepared when a healthcare
-  deployment is real; none of this is product code.
 - **Voice synthesis residual.** The default TTS engine (edge-tts) sits
   outside the provider-governance registry. Healthcare deployments should
   disable TTS or route it to a governed provider (OpenAI/Gemini TTS are
@@ -107,3 +100,9 @@ Everything in this section is shipped and running, not planned.
 - Self-hosted deployments own the physical/infrastructure safeguards
   (§164.310) — server access, backups, and disposal are outside the
   application's boundary.
+- **Administrative safeguards are not software.** Before any PHI flows you
+  need the written §164.308(a)(1) risk analysis (OCR's most-cited enforcement
+  item), executed BAAs across the chain, a designated security officer,
+  workforce training records, and a contingency plan. SAFi does not provide,
+  generate or substitute for any of them. They are listed here so the boundary
+  is explicit, not because they are on a roadmap.

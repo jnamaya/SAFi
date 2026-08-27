@@ -192,10 +192,6 @@ Planned or demand-triggered work, in priority order:
    tenant and Google Workspace domain pinning).
 3. **Regulatory tracking** — the pending 17a-4 AI-records clarification and the
    amended paragraph (i) hosting-undertaking question for hosted deployments.
-4. **Deployment operations** — items that live with the deployment rather
-   than the product: verified database backup/disaster-recovery procedures
-   sized to the firm's retention obligations, and the firm's own written
-   supervisory procedures referencing the review queue and Audit Hub.
 
 ## 4. Key sources
 
