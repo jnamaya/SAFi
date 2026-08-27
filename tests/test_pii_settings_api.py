@@ -105,6 +105,21 @@ class TheUiSendsOnlyCheckboxes(unittest.TestCase):
         i = ORG_UI.index("const piiOn")
         self.assertIn("[]", ORG_UI[i:i + 400])
 
+    def test_the_copy_does_not_over_promise_coverage(self):
+        """GOVERNANCE_BACKLOG 84. Org AI Standards reach agents in the org; the
+        five agents SAFi ships have no org and are not covered. The label said
+        "before it reaches a model", which reads as the whole deployment, and a
+        compliance officer's first question about a PII control is which agents
+        it covers. Until the floor is scoped to the acting user's org, the copy
+        has to say so."""
+        start = ORG_UI.index('charter-block-pii')
+        card = ORG_UI[start:start + 2200]
+        self.assertNotIn("Block sensitive data before it reaches a model", card,
+                         "the old label over-promised deployment-wide coverage")
+        self.assertIn("this organization", card)
+        self.assertIn("not covered", card,
+                      "the built-in exemption must be stated, not implied")
+
     def test_the_panel_renders_the_precision_note(self):
         """An admin should see that the routing-number check is the loosest one
         before enabling it, not after."""
