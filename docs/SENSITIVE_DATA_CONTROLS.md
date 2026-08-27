@@ -187,7 +187,7 @@ person, or whether the context is legitimate.
 The behaviour is directly observable and worth confirming rather than taking on
 trust.
 
-1. Enable one check in **AI Standards**.
+1. Enable one check in **Settings → Organization → AI Standards**.
 2. Send a message containing an identifier of that type.
 3. The turn is refused before the model is called, and the response explains why.
 4. Open the governance record for that turn in the **Audit Hub**. The decision,

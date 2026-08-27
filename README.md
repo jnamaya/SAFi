@@ -454,7 +454,7 @@ the audit record can recompute it.
 | US social security numbers | SSA allocation rules, formatted only | `123-45-6789` |
 
 Every check is **off by default**. An organization enables them one identifier
-at a time under **AI Standards**, and what it enables is a floor: a policy may
+at a time under **Settings → Organization → AI Standards**, and what it enables is a floor: a policy may
 add further checks and cannot remove one the organization set. There is no field
 for entering a custom pattern, deliberately.
 
