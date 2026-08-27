@@ -15,6 +15,7 @@ import logging
 from functools import lru_cache
 from typing import List, Tuple, Optional
 
+from .. import pii_validators
 from ..threat_intel import (
     INJECTION_SIGNATURES,
     INTERNALS_PROXIMITY_CHARS,
@@ -43,6 +44,7 @@ class PhaseZeroGate:
     Decision flow:
       1. Global signature scan  — known injection patterns from threat_intel.py
       2. Agent blacklist scan — per-agent blocked phrases (early_prompt_blacklist)
+      2b. Sensitive identifiers — enabled PII/financial validators (backlog 83)
       3. Internals probe        — a sensitive noun co-occurring with a disclosure cue
       4. Embedded instruction heuristic — high-entropy payload + instruction markers
 
@@ -57,6 +59,7 @@ class PhaseZeroGate:
         self,
         user_prompt: str,
         agent_blacklist: Optional[List[str]] = None,
+        pii_validators_enabled: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
         """
         Evaluates the raw user prompt before Intellect runs.
@@ -81,6 +84,27 @@ class PhaseZeroGate:
                     f"PhaseZeroGate: Agent blacklist match | pattern='{pattern}'"
                 )
                 return False, "scope_violation"
+
+        # --- 2b. Sensitive identifiers (GOVERNANCE_BACKLOG 83) ---
+        # Deterministic: a regex plus a checksum, no model. Empty config is the
+        # default and short-circuits in pii_validators.scan, so an org that
+        # never enables a validator pays one empty-list check per turn.
+        #
+        # Runs HERE, before the Intellect is ever called, because the
+        # requirement is not "the model must not obey it" (that is what the
+        # injection signatures above are for) but "the data must not reach the
+        # model at all". The orchestrator's redirect path never passes the
+        # prompt to generate_forced_response, so a block here means the
+        # identifier is not seen by the drafting model.
+        if pii_validators_enabled:
+            findings = pii_validators.scan(user_prompt, pii_validators_enabled)
+            if findings:
+                # The reason carries TYPES AND COUNTS, never the matched value:
+                # it is written to the governance record and the log.
+                self.log.warning(
+                    "PhaseZeroGate: sensitive identifier in prompt | %s",
+                    pii_validators.summarize(findings))
+                return False, "pii_detected"
 
         # --- 3. Internals probing: sensitive noun AND a disclosure cue ---
         # A co-occurrence rule, not a substring match. The nouns alone are

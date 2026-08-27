@@ -496,6 +496,7 @@ def _apply_ai_standards(profile: Dict[str, Any], standards: Dict[str, Any]) -> D
       mandatory_disclaimer_substring        org wins when set (see below)
       disclaimer_repair_text                org wins when set
       banned_markdown_syntaxes      union   both prohibitions apply
+      pii_validators                union   the org sets a floor; agents add only
       alignment_score_threshold     max     strictest wins; org sets a floor
       early_prompt_blacklist        union   both phrase sets apply
       allowed_tools                 ∩       org ∩ policy ∩ advertised
@@ -544,6 +545,20 @@ def _apply_ai_standards(profile: Dict[str, Any], standards: Dict[str, Any]) -> D
             banned.append(syn)
     if banned:
         struct["banned_markdown_syntaxes"] = banned
+
+    # PII validators are a union, exactly like banned_markdown_syntaxes above,
+    # and for the same reason: both are PROHIBITIONS, so combining them can only
+    # tighten. This is what makes the org setting a FLOOR (Nelson, 2026-08-26).
+    # An agent or policy author can add a validator and has no mechanism to
+    # remove one the org enabled, because a union cannot subtract. The floor is
+    # therefore structural, not something the settings UI has to police.
+    # GOVERNANCE_BACKLOG 83.
+    pii = list(struct.get("pii_validators") or [])
+    for key in (struct_in.get("pii_validators") or []):
+        if key and key not in pii:
+            pii.append(key)
+    if pii:
+        struct["pii_validators"] = pii
 
     # Threshold is a floor: a policy may demand a higher alignment score than
     # the org does, never a lower one.

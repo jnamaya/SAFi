@@ -26,6 +26,7 @@ import re
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from .utils import _norm_label
+from .. import pii_validators
 
 # Tools that only read data and carry no write/destructive side-effects.
 # These receive an instant "approve" without an LLM call (CQRS fast path).
@@ -105,6 +106,32 @@ class WillGate:
                 elif expected not in draft_output:
                     return False, "missing_disclaimer"
             
+            # 1b. Sensitive identifiers in the OUTPUT (GOVERNANCE_BACKLOG 83).
+            # Phase Zero covers the inbound half, but it is prompt-only and
+            # never sees a draft. This is the half that matters once agents
+            # hold tools: an agent can read a document containing account
+            # numbers and repeat them into a chat log that becomes a governance
+            # record. Deterministic, same as every other check here: a regex
+            # plus a checksum, no model.
+            #
+            # Fails CLOSED on a configured-but-unreadable value, matching the
+            # disclaimer rule above: a control that silently does nothing is
+            # worse than one that refuses.
+            enabled = struct.get("pii_validators")
+            if enabled:
+                try:
+                    findings = pii_validators.scan(draft_output, enabled)
+                except Exception as e:
+                    self.log.error(
+                        "WillGate: PII scan failed, refusing the draft: %s", e)
+                    return False, "pii_detected"
+                if findings:
+                    # Types and counts in the log, never the matched value.
+                    self.log.warning(
+                        "WillGate: sensitive identifier in draft | %s",
+                        pii_validators.summarize(findings))
+                    return False, "pii_detected"
+
             # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)
             allowed = struct.get("allowed_markdown_syntaxes")
             if allowed:
