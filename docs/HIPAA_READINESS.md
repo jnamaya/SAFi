@@ -91,8 +91,15 @@ Everything in this section is shipped and running, not planned.
   outside the provider-governance registry. Healthcare deployments should
   disable TTS or route it to a governed provider (OpenAI/Gemini TTS are
   enforced through the allow-list); cached audio is TTL-bounded either way.
-- **SOC 2 Type II** — the commercial artifact most healthcare customer
-  security reviews ask for alongside the HIPAA questionnaire.
+- **Security artifacts for self-hosted review.** A third-party penetration
+  test, an SBOM and dependency posture, a published vulnerability disclosure
+  policy with a patch SLA, and a license review. *SOC 2 Type II is not on this
+  list and is not on SAFi's roadmap:* it attests a **service organization's**
+  controls over data it processes for customers, and a self-hosted deployment
+  means SAFi receives no customer data, so there is nothing to attest.
+  Healthcare questionnaires will ask for it anyway; the answer is a scoping
+  reply plus these artifacts. Where a deployment is operated by a third party,
+  SOC 2 attaches to that operator.
 - **Security Rule NPRM watch.** If the update finalizes as proposed, SAFi's
   MFA and encryption posture already matches it; this line item is
   tracking, not build work.
