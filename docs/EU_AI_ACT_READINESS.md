@@ -50,7 +50,10 @@ Everything in this section is shipped and running, not planned.
 - **Art. 12 — record-keeping.** Every governed turn produces a hash-chained,
   tamper-evident audit trail entry and an encrypted per-turn governance
   record (the full evaluation evidence), with per-message integrity
-  verification.
+  verification. Tool calls enter the same chain with the tool, the decision,
+  the reason and capped parameters, so the log covers what the system did and
+  not only what it said. Each record also carries the deployment's code
+  integrity fingerprint.
 - **Art. 13 — transparency of operation.** Each response carries an
   itemized, human-readable evaluation against the governing policy's values
   (per-value scores, confidence, and written justifications), visible to the
@@ -61,6 +64,11 @@ Everything in this section is shipped and running, not planned.
   Reviewers approve or override with a mandatory written reason; each
   disposition is appended to the same tamper-evident trail as the record it
   supervises.
+- **Art. 14 — oversight that does not depend on a human being present.**
+  Every tool call the model proposes is checked before execution against a
+  fixed allow-list and parameter constraints, in deterministic code. The model
+  can propose an action; it cannot take one. The supervisory review queue above
+  is the human half, and both write to the same trail.
 - **Art. 72 — post-market monitoring.** Threshold alerting on rolling
   alignment degradation, per-turn consistency drops, and review backlog,
   journaled append-only, surfaced in-app, and optionally delivered to a
@@ -76,7 +84,15 @@ Everything in this section is shipped and running, not planned.
   every dispatch point); encryption at rest covers content and governance
   evidence; the retention engine, right-of-access export, and the written
   erasure position (`docs/DATA_ERASURE_AND_RETENTION.md`) cover the GDPR
-  boundary.
+  boundary. Access to source systems is delegated per member rather than
+  pooled into a service account, and integrations request the narrowest scope
+  that does the job: the Microsoft 365 integration holds mail envelope access
+  only, so message bodies are withheld by the identity provider and never
+  reach a model. Deterministic checks can also block payment card numbers,
+  IBANs, bank routing numbers and formatted social security numbers before a
+  model sees them, off by default and enabled per identifier
+  (`docs/SENSITIVE_DATA_CONTROLS.md`). Both serve the Art. 10 data-governance
+  duty and the GDPR minimisation principle at the same point.
 
 ## 3. Pending / roadmap
 

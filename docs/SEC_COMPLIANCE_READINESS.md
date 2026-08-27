@@ -106,6 +106,19 @@ where an examiner would encounter them in exported records.
 - **Immutable policy versioning** — policy snapshots survive policy deletion, so
   an auditor can always retrieve the exact policy version that governed a given
   turn.
+- **Tool calls are journaled too.** The audit-trail alternative covers "both
+  human-initiated and automated actions". Every tool call an agent proposes is
+  checked against a fixed allow-list and parameter constraints before it runs,
+  and the tool, the decision, the reason and capped parameters enter the same
+  hash-chained trail. A blocked call is recorded as blocked.
+- **Deployment integrity fingerprint.** The code that makes every governance
+  decision is covered by a manifest; `verify_integrity` recomputes a root hash
+  over it and reports INTACT or names what changed. Every governance record
+  carries the fingerprint, so a record can be tied to the exact code that
+  produced it.
+- **Verified backups.** A weekly job restores the most recent backup and
+  re-verifies the hash chains inside the restored copy, reporting the table and
+  chain counts checked. Restorability is demonstrated, not assumed.
 - **SCIM 2.0 provisioning** at `/scim/v2`, so joiner and leaver events come
   from the identity provider rather than a manual process. Setting
   `active=false`, or a DELETE, performs the full off-boarding: MCP tool tokens

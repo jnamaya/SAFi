@@ -80,6 +80,13 @@ deliberate: spoliation exposure outranks storage hygiene, and a data
 subject's erasure interest is preserved, not extinguished — it resumes the
 moment the hold clears.
 
+Precedence is enforced in three places, not one. The scheduled purge
+re-checks the hold between every batch of every phase, so a hold placed while a
+run is in progress stops that run. Member-initiated deletion is refused while a
+hold is active, and the interface says why rather than reporting a success that
+did not happen. If the hold state cannot be read at all, destruction does not
+proceed: an unreadable hold is treated as an active one.
+
 ## 5. Who answers a data-subject request
 
 For organizational deployments, the organization is the data controller and
