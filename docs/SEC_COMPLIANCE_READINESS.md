@@ -184,21 +184,9 @@ where an examiner would encounter them in exported records.
 
 Planned or demand-triggered work, in priority order:
 
-1. **Security artifacts for self-hosted review.** A third-party penetration
-   test, an SBOM and dependency posture, secure-SDLC evidence (CI supplies the
-   start of this), a published vulnerability disclosure policy with a patch
-   SLA, and a license review. These are what a firm's security team can act on
-   for software it runs on its own infrastructure.
-
-   *On SOC 2 Type II:* not applicable to the self-hosted product, and not on
-   SAFi's roadmap. SOC 2 attests a **service organization's** controls over
-   data it processes for customers. A self-hosted deployment means SAFi
-   receives no customer data, so there is nothing to attest. Security
-   questionnaires ask for it regardless of deployment model; the answer is a
-   scoping reply plus the artifacts above. Where a deployment is operated by a
-   third party, SOC 2 attaches to that operator rather than to this software.
-   AGPL source availability also gives you code escrow by default, which is
-   the continuity question SOC 2 is often asked to cover.
+1. **Security artifacts.** A third-party penetration test, an SBOM and
+   dependency posture, secure-SDLC evidence (CI supplies the start of this),
+   and a published vulnerability disclosure policy with a patch SLA.
 2. **SAML SSO and SCIM provisioning** — available on enterprise demand,
    building on the shipped OIDC per-tenant enforcement (Microsoft Entra
    tenant and Google Workspace domain pinning).

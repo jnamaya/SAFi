@@ -399,7 +399,7 @@ SAFi's governance architecture was designed for auditability first, which is why
 | **Data protection (GDPR)** | Self-service Art. 15 access export and a written position reconciling Art. 17 erasure with retention obligations, including the legal-obligation carve-out and legal-hold precedence. | [Data Erasure & Retention](docs/DATA_ERASURE_AND_RETENTION.md) |
 | **AI management systems (ISO/IEC 42001)** | The operational layer of a certifiable AI management system: machine-enforced versioned policy, role accountability with journaled sign-off, per-turn operation logs stamped with a deployment integrity fingerprint, continuous drift monitoring as clause 9 input, and evidence exports organized for a statement of applicability. Certification belongs to organizations; SAFi supplies the controls and the evidence. | [ISO/IEC 42001 Readiness](docs/ISO_42001_READINESS.md) |
 
-> **The honest fine print:** these are platform capabilities designed to *support* a compliance program, not substitutes for one. Contractual items such as BAAs and zero-data-retention agreements with model providers remain the deploying organization's to execute, and each readiness document says so explicitly. SOC 2 is a separate case rather than a roadmap item: it attests a *service organization's* controls over customer data, so it does not apply to software you run yourself, and where a deployment is operated by a third party it attaches to that operator.
+> **The honest fine print:** these are platform capabilities designed to *support* a compliance program, not substitutes for one. Contractual items such as BAAs and zero-data-retention agreements with model providers remain the deploying organization's to execute, and each readiness document says so explicitly.
 
 ---
 
