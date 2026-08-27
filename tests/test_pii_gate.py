@@ -132,6 +132,52 @@ class TheOrgListIsAFloor(unittest.TestCase):
             out["will_rules"]["structural_requirements"]["pii_validators"], ["ssn"])
 
 
+class TheFloorFollowsTheActingUser(unittest.TestCase):
+    """GOVERNANCE_BACKLOG 84. _pii_enabled unions the compiled profile with the
+    ACTING USER'S org standards, so the five agents SAFi ships stop being exempt.
+
+    Source-level: the union itself is exercised by TheOrgListIsAFloor above, and
+    constructing a real SAFi instance needs a database, four model clients and a
+    vector store. What can regress here is the wiring — a call site that forgets
+    to pass org_id silently reverts every built-in agent to uncovered, which is
+    exactly the failure this item was opened for.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.src = (Path(__file__).resolve().parent.parent / "safi_app" / "core"
+                   / "orchestrator.py").read_text(encoding="utf-8")
+
+    def test_the_helper_accepts_the_acting_org(self):
+        self.assertIn("def _pii_enabled(self, org_id=None)", self.src)
+        self.assertIn("def _redact_pii(self, text, org_id=None)", self.src)
+
+    def test_it_reads_the_org_standards_not_only_the_profile(self):
+        i = self.src.index("def _pii_enabled")
+        body = self.src[i:i + 3000]
+        self.assertIn("db.get_ai_standards(org_id)", body,
+                      "the acting user's org floor must be looked up per turn")
+
+    def test_every_call_site_passes_org_id(self):
+        """A bare _pii_enabled() or _redact_pii(x) is the regression: it compiles,
+        it passes every other test, and it quietly un-covers the built-ins."""
+        self.assertNotIn("self._pii_enabled()", self.src)
+        self.assertNotIn("self._redact_pii(original_prompt)", self.src)
+        self.assertNotIn('self._redact_pii(blocked_draft or "")', self.src)
+        self.assertGreaterEqual(self.src.count("self._pii_enabled(org_id)"), 2)
+
+    def test_a_failed_lookup_does_not_take_down_the_turn(self):
+        """Opposite of the Will's outbound check, deliberately. There a control
+        IS configured and cannot be evaluated, so it fails closed. Here we are
+        still asking whether one is configured, and an unreachable org row must
+        not block every request."""
+        i = self.src.index("def _pii_enabled")
+        body = self.src[i:i + 3000]
+        self.assertIn("except Exception", body)
+        self.assertIn("self.log.warning", body,
+                      "a skipped floor must be visible, not silent")
+
+
 class TheDeterministicTierStaysDeterministic(unittest.TestCase):
     """CLAUDE.md's load-bearing invariant. This feature adds enforcement, and
     enforcement may never acquire a model call."""

@@ -4035,11 +4035,6 @@ video {
   color: rgb(251 191 36 / var(--tw-text-opacity, 1));
 }
 
-.dark\:text-amber-500:is(.dark *) {
-  --tw-text-opacity: 1;
-  color: rgb(245 158 11 / var(--tw-text-opacity, 1));
-}
-
 .dark\:text-gray-100:is(.dark *) {
   --tw-text-opacity: 1;
   color: rgb(243 244 246 / var(--tw-text-opacity, 1));

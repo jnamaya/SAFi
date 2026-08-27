@@ -755,7 +755,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             if isinstance(_will_rules, dict) else []
         )
         is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, agent_blacklist,
-                                                       self._pii_enabled())
+                                                       self._pii_enabled(org_id))
         if not is_safe:
             self.log.warning(f"[Governance | Phase 0 | Injection Gate] BLOCKED — {gate_reason}")
             return await self.trigger_agent_redirect(
@@ -1503,7 +1503,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             if isinstance(_will_rules, dict) else []
         )
         is_safe, gate_reason = self.phase_zero.evaluate_prompt(user_prompt, agent_blacklist,
-                                                       self._pii_enabled())
+                                                       self._pii_enabled(org_id))
         if not is_safe:
             self.log.warning(f"[Governance | Gateway | Phase 0] BLOCKED — {gate_reason}")
             return _commit_and_report("violation", "phase_zero", gate_reason,
@@ -1642,7 +1642,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": int(_sm_readonly.get("turn", 0)),
             "t_sequence": "agent_baseline_shared",
-            "userPrompt": self._redact_pii(original_prompt),
+            "userPrompt": self._redact_pii(original_prompt, org_id),
             "intellectDraft": notice,
             "intellectReflection": "",
             "finalOutput": notice,
@@ -1650,7 +1650,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "willReason": violation_type,
             "isRedirect": True,
             "originalLedger": failing_ledger or [],
-            "blockedDraft": self._redact_pii(blocked_draft or ""),
+            "blockedDraft": self._redact_pii(blocked_draft or "", org_id),
             "conscienceLedger": [],
             "spiritScore": None,
             "spiritNote": note,
@@ -1692,21 +1692,59 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "audit_status": "complete"
         }
 
-    def _pii_enabled(self):
-        """Which PII validators this agent runs, after the Synderesis merge.
+    def _pii_enabled(self, org_id=None):
+        """Which PII validators apply to this turn.
 
-        Reads defensively and returns [] on anything unexpected: an agent with
-        no configuration must behave exactly as it did before this feature
-        existed (GOVERNANCE_BACKLOG 83, Nelson: SAFi blocks nothing by default).
+        The union of two sources, and the second is the point
+        (GOVERNANCE_BACKLOG 84):
+
+          1. the COMPILED PROFILE, i.e. what the agent's own org and policy
+             asked for, merged by Synderesis;
+          2. the ACTING USER'S organization, looked up per turn.
+
+        Why the acting user and not just the agent. A PII floor is not a
+        property of the agent, it is a property of WHOSE DATA IS AT RISK, and
+        the data arrives from the person typing it. Scoping it to the agent
+        left the five agents SAFi ships exempt — they have no org, so
+        _apply_ai_standards never runs for them — which meant an admin who
+        ticked "block sensitive data" was not covered on the Fiduciary, the
+        one agent where an account number is most likely to be pasted. Found
+        exactly that way on 2026-08-27.
+
+        A union, so it can only tighten: neither source can switch the other
+        off, and the org floor stays a floor. Guests have no org and so get
+        source 1 only, which for a built-in agent means nothing at all.
+
+        Returns [] on anything unexpected, including a failed lookup. An org
+        that has enabled nothing must behave exactly as it did before this
+        feature existed (Nelson: SAFi blocks nothing by default). Note this is
+        the opposite of the Will's outbound check, which fails CLOSED: there,
+        a control is configured and cannot be evaluated; here we are still
+        asking whether one is configured at all.
         """
+        keys = []
         try:
             rules = (self.profile or {}).get("will_rules") or {}
             struct = rules.get("structural_requirements") or {}
-            return pii_validators.normalize(struct.get("pii_validators"))
+            keys.extend(pii_validators.normalize(struct.get("pii_validators")))
         except Exception:
-            return []
+            pass
 
-    def _redact_pii(self, text):
+        if org_id:
+            try:
+                standards = db.get_ai_standards(org_id) or {}
+                struct = standards.get("structural_requirements") or {}
+                for k in pii_validators.normalize(struct.get("pii_validators")):
+                    if k not in keys:
+                        keys.append(k)
+            except Exception as e:
+                # Deliberately not fatal. A standards lookup that fails must not
+                # take down the turn; it means this org's floor is not applied
+                # for this request, which is logged and visible.
+                self.log.warning("PII: org standards lookup failed for %s: %s", org_id, e)
+        return pii_validators.normalize(keys)
+
+    def _redact_pii(self, text, org_id=None):
         """Strip detected identifiers before anything is persisted.
 
         The governance record is retained for years under the org's retention
@@ -1716,7 +1754,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         Returns the text unchanged when nothing is enabled, which is the
         default.
         """
-        enabled = self._pii_enabled()
+        enabled = self._pii_enabled(org_id)
         if not enabled or not isinstance(text, str) or not text:
             return text
         return pii_validators.redact(text, enabled)
@@ -1822,7 +1860,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             # for PII, where the goal is "the data must not leave".
             ledger = await self.conscience.evaluate_redirect(
                 redirect_output=safe_output,
-                user_prompt=self._redact_pii(original_prompt),
+                user_prompt=self._redact_pii(original_prompt, org_id),
                 violation_type=violation_type,
             )
         except Exception as e:
@@ -1848,7 +1886,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": redirect_turn,
             "t_sequence": "agent_baseline_shared",
-            "userPrompt": self._redact_pii(original_prompt),
+            "userPrompt": self._redact_pii(original_prompt, org_id),
             "intellectDraft": safe_output,
             "intellectReflection": "",
             "finalOutput": safe_output,
@@ -1859,7 +1897,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             # goes in conscienceLedger; this preserves WHY the original draft failed
             # so the dashboard can show the judge's justification.
             "originalLedger": failing_ledger or [],
-            "blockedDraft": self._redact_pii(blocked_draft or ""),
+            "blockedDraft": self._redact_pii(blocked_draft or "", org_id),
             "conscienceLedger": ledger,
             "spiritScore": S_t,
             "spiritNote": note,

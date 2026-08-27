@@ -105,20 +105,24 @@ class TheUiSendsOnlyCheckboxes(unittest.TestCase):
         i = ORG_UI.index("const piiOn")
         self.assertIn("[]", ORG_UI[i:i + 400])
 
-    def test_the_copy_does_not_over_promise_coverage(self):
-        """GOVERNANCE_BACKLOG 84. Org AI Standards reach agents in the org; the
-        five agents SAFi ships have no org and are not covered. The label said
-        "before it reaches a model", which reads as the whole deployment, and a
-        compliance officer's first question about a PII control is which agents
-        it covers. Until the floor is scoped to the acting user's org, the copy
-        has to say so."""
+    def test_the_copy_states_the_real_coverage(self):
+        """GOVERNANCE_BACKLOG 84, both halves.
+
+        The label briefly read "in this organization's agents" with a warning
+        that the shipped agents were exempt, because they were: org AI
+        Standards only merged into agents belonging to the org. Once the floor
+        was scoped to the ACTING USER's org instead, the exemption went away
+        and that warning became the inaccurate one. Coverage claims have been
+        wrong in both directions here, so this pins the current truth: it does
+        cover every agent, and the copy says WHY, because "it follows the
+        person typing" is the sentence that makes it predictable."""
         start = ORG_UI.index('charter-block-pii')
         card = ORG_UI[start:start + 2200]
-        self.assertNotIn("Block sensitive data before it reaches a model", card,
-                         "the old label over-promised deployment-wide coverage")
-        self.assertIn("this organization", card)
-        self.assertIn("not covered", card,
-                      "the built-in exemption must be stated, not implied")
+        self.assertIn("including the ones SAFi ships with", card)
+        self.assertIn("follow the person typing", card,
+                      "the reason has to be stated or the scope is a surprise")
+        self.assertNotIn("are not covered", card,
+                         "the exemption warning is now false")
 
     def test_the_panel_renders_the_precision_note(self):
         """An admin should see that the routing-number check is the loosest one

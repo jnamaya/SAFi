@@ -334,10 +334,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                             <label class="flex items-center gap-2 cursor-pointer select-none">
                                 <input type="checkbox" id="charter-block-pii" class="accent-green-600 w-4 h-4"
                                     ${(structuralData.pii_validators || []).length ? 'checked' : ''}>
-                                <span class="text-sm font-semibold text-green-800 dark:text-green-200">Block sensitive data in this organization's agents</span>
+                                <span class="text-sm font-semibold text-green-800 dark:text-green-200">Block sensitive data before it reaches a model</span>
                             </label>
                             <p class="text-xs text-gray-500 mt-1.5">Off means nothing is blocked. On means a message containing a ticked identifier is refused <strong>before</strong> the model sees it, and a response containing one is refused before it is sent. Checked in code, never by a model. A policy can add more checks but cannot remove one ticked here.</p>
-                            <p class="text-xs text-amber-700 dark:text-amber-500 mt-1.5">Applies to agents belonging to this organization. The agents SAFi ships with, such as the Fiduciary and the SAFi Steward, run under their own policies and are not covered.</p>
+                            <p class="text-xs text-gray-500 mt-1.5">Applies to every agent your members use, including the ones SAFi ships with: the checks follow the person typing, not the agent.</p>
                             <div id="charter-pii-panel" class="mt-3 ${(structuralData.pii_validators || []).length ? '' : 'hidden'}">
                                 <p id="charter-pii-loading" class="text-xs text-gray-500">Loading checks...</p>
                                 <div id="charter-pii-grid" class="hidden space-y-2"></div>
