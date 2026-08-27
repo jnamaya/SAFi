@@ -10,6 +10,7 @@ import dns.exception
 from ..persistence import database as db
 from ..timeutil import utc_isoformat
 from ..config import Config
+from ..core import pii_validators
 from ..core.rbac import require_role, check_permission, get_current_org_id
 # Same check the governance compiler uses, applied at save time: what would
 # raise at chat time is rejected while the admin is still looking at the form.
@@ -1000,6 +1001,21 @@ def delete_charter(org_id):
 # standards say how its AI must behave and are optional. Adopting or dropping
 # them must not touch the charter, which is why this is not another field on it.
 
+@organizations_bp.route('/organizations/<org_id>/pii-checks', methods=['GET'])
+@require_role('admin')
+def list_pii_checks(org_id):
+    """[GET] The fixed catalogue of sensitive-data checks the UI renders.
+
+    Served rather than hardcoded in JS so the labels, and in particular each
+    check's honest precision note, come from the same place the detectors do.
+    An admin ticking a box should be able to see that the routing-number check
+    is the loosest one BEFORE enabling it, not discover it in production.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    return jsonify({"checks": pii_validators.catalogue()})
+
+
 @organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['GET'])
 def get_ai_standards(org_id):
     """[GET] Returns the org's AI standards, or null if none are set."""
@@ -1039,6 +1055,31 @@ def upsert_ai_standards(org_id):
     # enforcing nothing — reject it here instead.
     if structural.get('require_disclaimer') and not str(structural.get('mandatory_disclaimer_substring') or '').strip():
         return jsonify({"error": "A required disclaimer needs the exact text to check for."}), 400
+
+    # PII validators (GOVERNANCE_BACKLOG 83). The settings UI offers a fixed
+    # menu, so ANY key outside the catalogue is either a bug or an attempt to
+    # smuggle in a pattern. Rejected loudly at save time rather than dropped
+    # silently: an admin who thinks they enabled something must not find out at
+    # audit time that they did not.
+    #
+    # There is deliberately no free-text field anywhere in this path. A caller
+    # supplied regex would run on every turn inside the deterministic tier,
+    # where there is no timeout and no model to blame.
+    pii = structural.get('pii_validators')
+    if pii is not None:
+        if not isinstance(pii, list):
+            return jsonify({"error": "pii_validators must be an array"}), 400
+        known = set(pii_validators.VALIDATOR_KEYS)
+        unknown = [str(k) for k in pii if str(k).strip().lower() not in known]
+        if unknown:
+            return jsonify({"error": (
+                "Unknown sensitive-data check(s): %s. Valid options are: %s."
+                % (", ".join(unknown[:5]), ", ".join(pii_validators.VALIDATOR_KEYS))
+            )}), 400
+        # Normalized so storage order is stable and duplicates cannot accumulate
+        # across saves. An empty list is a legitimate value: it means the org
+        # turned every check off, which is the default state.
+        structural['pii_validators'] = pii_validators.normalize(pii)
 
     threshold = structural.get('alignment_score_threshold')
     if threshold is not None:

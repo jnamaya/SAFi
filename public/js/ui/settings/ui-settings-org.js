@@ -326,6 +326,22 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                                 <div id="charter-tools-grid" class="hidden"></div>
                             </div>
                         </div>
+
+                        <!-- Sensitive data (backlog 83). Same shape as the tools card
+                             above, and the same direction of travel: what is ticked here
+                             is a FLOOR every policy inherits. Off by default. -->
+                        <div class="p-4 rounded-xl border border-green-200 dark:border-green-900/40 bg-green-50/50 dark:bg-green-900/10">
+                            <label class="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox" id="charter-block-pii" class="accent-green-600 w-4 h-4"
+                                    ${(structuralData.pii_validators || []).length ? 'checked' : ''}>
+                                <span class="text-sm font-semibold text-green-800 dark:text-green-200">Block sensitive data before it reaches a model</span>
+                            </label>
+                            <p class="text-xs text-gray-500 mt-1.5">Off means nothing is blocked. On means a message containing a ticked identifier is refused <strong>before</strong> the model sees it, and a response containing one is refused before it is sent. Checked in code, never by a model. A policy can add more checks but cannot remove one ticked here.</p>
+                            <div id="charter-pii-panel" class="mt-3 ${(structuralData.pii_validators || []).length ? '' : 'hidden'}">
+                                <p id="charter-pii-loading" class="text-xs text-gray-500">Loading checks...</p>
+                                <div id="charter-pii-grid" class="hidden space-y-2"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -605,6 +621,57 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     });
 
     // --- Org-wide rules: tool cap ---
+    // --- Sensitive-data checks (backlog 83) ---
+    // Mirrors the tools loader below: lazy, retryable, and it renders from the
+    // server catalogue rather than a hardcoded list so each check's precision
+    // note comes from the same file as its detector.
+    const piiToggle = document.getElementById('charter-block-pii');
+    const piiPanel = document.getElementById('charter-pii-panel');
+    let piiLoaded = false;
+
+    const loadPiiChecks = async () => {
+        if (piiLoaded) return;
+        piiLoaded = true;
+        const loading = document.getElementById('charter-pii-loading');
+        const grid = document.getElementById('charter-pii-grid');
+        if (!grid) return;                        // tab navigated away mid-load
+        let checks = null;
+        try {
+            const res = await api.getPiiChecks(org.id);
+            checks = res && res.checks;
+        } catch (e) { checks = null; }
+        if (!checks) {
+            if (loading) loading.textContent = 'Failed to load checks.';
+            piiLoaded = false;                    // let a reopen retry
+            return;
+        }
+        const enabled = new Set(structuralData.pii_validators || []);
+        grid.innerHTML = checks.map(c => `
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+                <input type="checkbox" class="pii-check accent-green-600 w-4 h-4 mt-0.5"
+                       value="${c.key}" ${enabled.has(c.key) ? 'checked' : ''}>
+                <span class="text-sm">
+                    <span class="font-medium">${c.label}</span>
+                    <span class="block text-xs text-gray-500">${c.note}</span>
+                </span>
+            </label>`).join('');
+        if (loading) loading.classList.add('hidden');
+        grid.classList.remove('hidden');
+    };
+
+    if (piiToggle) {
+        piiToggle.addEventListener('change', () => {
+            if (piiToggle.checked) {
+                piiPanel?.classList.remove('hidden');
+                loadPiiChecks();
+            } else {
+                piiPanel?.classList.add('hidden');
+            }
+        });
+        // Already on when the tab opened: populate without waiting for a click.
+        if (piiToggle.checked) loadPiiChecks();
+    }
+
     const toolsToggle = document.getElementById('charter-restrict-tools');
     const toolsPanel = document.getElementById('charter-tools-panel');
     let toolsLoaded = false;
@@ -724,6 +791,15 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             structural.require_disclaimer = true;
             structural.mandatory_disclaimer_substring = disclaimerText;
         }
+        // Only send the key when the master switch is on. Sending [] when it is
+        // off is also correct (it means "block nothing") but sending nothing at
+        // all leaves any existing value untouched, which would be wrong here:
+        // unticking the box must actually turn the checks off.
+        const piiOn = document.getElementById('charter-block-pii')?.checked;
+        structural.pii_validators = piiOn
+            ? Array.from(document.querySelectorAll('.pii-check:checked')).map(c => c.value)
+            : [];
+
         if (thresholdRaw !== '') {
             const t = Number(thresholdRaw);
             if (Number.isNaN(t) || t < 0 || t > 1) {

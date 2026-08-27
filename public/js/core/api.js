@@ -650,6 +650,10 @@ export async function deleteCharter(orgId) {
 // it: a charter is who the organization is and every org has one, while AI
 // conduct rules are optional. Adopting or dropping them must not touch the
 // charter, which is only true if they are saved and deleted independently.
+export async function getPiiChecks(orgId) {
+    return httpGet(`/api/organizations/${orgId}/pii-checks`);
+}
+
 export async function getAiStandards(orgId) {
     return httpGet(`/api/organizations/${orgId}/ai-standards`);
 }
