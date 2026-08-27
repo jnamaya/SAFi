@@ -131,6 +131,19 @@ agent's authorized list, and if a model names one of those tools anyway the Will
 blocks the call. There is no state in which a tool runs without having been
 granted.
 
+**"Connected" means discovery succeeded, not that the credential works.** A
+ready server has started and answered SAFi's request for its tool list. That
+exchange is between SAFi and the server process; for a stdio server it never
+leaves the host, and for a hosted one it proves only that the endpoint answers.
+Nothing has authenticated against the vendor behind it.
+
+So a server with a missing, wrong or expired API token still reports ready and
+still shows its full tool list in the catalogue. The failure surfaces on the
+first real call, as an error from the vendor rather than as a connection
+problem, and it surfaces to whoever is using the agent rather than to the
+operator who installed it. `check` has the same limit. Confirm a credential by
+making one call, not by reading a status.
+
 ---
 
 ## 4. Granting it
@@ -435,6 +448,48 @@ Two more things worth knowing before you install something you did not write:
   restarted until SAFi restarts; its tools then fail their calls with an error
   the agent sees, and the Will's gating is unaffected.
 - A tool call has a 60 second ceiling.
+- **On bare metal, installing a launcher is not enough: the service's PATH is
+  not your shell's.** A stdio server is started by the SAFi process, so the
+  launcher has to be on *that* process's PATH. A systemd unit with no
+  `Environment=PATH=` gets systemd's default, which is
+  `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` and does not
+  include the virtualenv. So `pip install uv` inside the venv puts `uvx` on your
+  PATH, the CLI's launcher check passes in your activated shell, and the server
+  then fails at connect time with
+  `FileNotFoundError: [Errno 2] No such file or directory: 'uvx'`. Same host,
+  two different PATHs, and the check cannot see the difference because it runs
+  where you are, not where SAFi is.
+
+  Two fixes, and doing both is reasonable. Give the definition an absolute path,
+  which depends on nothing:
+
+  ```
+  scripts/safi_mcp.py add --command /path/to/venv/bin/uvx --args "package==1.0.0" ...
+  ```
+
+  Or put the venv on the service's PATH, which covers every future server:
+
+  ```
+  systemctl edit safi.service
+  #   [Service]
+  #   Environment=PATH=/path/to/venv/bin:/usr/local/bin:/usr/bin:/bin
+  systemctl daemon-reload && systemctl restart safi
+  ```
+
+  Also pre-warm the launcher's cache **as the service user**, because a cold
+  `uvx` or `npx` downloads the package on first connect and can exceed the 20
+  second `connect_timeout`, which reads as a flaky server that works after a
+  restart:
+
+  ```
+  sudo -u safi /path/to/venv/bin/uvx package==1.0.0 --help
+  ```
+
+  Docker does not have this problem for `npx`, since the image carries Node and
+  compose mounts an npm cache. It ships no `uv`, so a pypi server needs
+  `RUN pip install uv` added to the image. Installing it inside a running
+  container works until the next `up --build` and then stops, for a reason that
+  looks unrelated.
 - **A write through `scripts/safi_mcp.py` needs no restart. A hand edit does.**
   The CLI bumps a generation counter, and workers re-read the file on their next
   request when it moves. Editing the file directly leaves the counter where it
