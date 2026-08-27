@@ -23,12 +23,11 @@ One pipeline, five steps, and each one is a different person's decision:
 5. **Assign** (agent). An agent gets the tools its policy allows, and the Will
    checks every call against that list by exact name before it runs.
 
-**The browser installs nothing.** An earlier version let an admin browse the
-official registry and install a hosted server from Settings; it was removed.
-Installation belongs on the host, where the person doing it already holds the
-rights that running someone's code implies, and keeping it there removed a
-per-organization install table, an approval workflow and a tenancy problem that
-existed only to make a browser safe for a job that was never the browser's.
+**Installation happens on the host, in step 1, and nowhere else.** There is no
+API route and no admin screen for it. It belongs where the person doing it
+already holds the rights that running someone else's code implies. Settings,
+Tools Catalog is where an installed server is seen, signed in to and granted,
+which is steps 3 and 4.
 
 ## 2. Installing a server
 
@@ -398,23 +397,22 @@ gateway, and the Graph gateway. Same credential model, no in-process code.)
 
 ## 7. Trust: who can install what
 
-The line runs between servers that execute code here and servers that do not.
-
-**A local (stdio/package) server can only be installed by whoever controls the
+**Any server, of either transport, can only be installed by whoever controls the
 deployment**, through the file on disk. No API route, no admin screen and no
 organization setting can add one, and that is deliberate rather than unfinished.
-Such a server is an arbitrary command the SAFi process executes with arbitrary
-arguments, so installing one is the same level of trust as installing SAFi
-itself, the rule the developer guide already states for `SAFI_EXTENSIONS_DIR`.
-In a deployment serving several organizations, an admin who could add one could
-run code on a host everyone shares.
 
-**A hosted (http/sse) server can be installed by an organization admin** from
-Settings, because nothing of the publisher's runs here. It is not free of risk
-and the checks in section 8 exist for that: a URL your infrastructure fetches is
-a way into your own network unless it is validated, and every argument a model
-sends to that server leaves your deployment. An operator who wants none of this
-sets `SAFI_MCP_INSTALL_MODE=off`.
+For a local (stdio/package) server the reason is direct: it is an arbitrary
+command the SAFi process executes with arbitrary arguments, so installing one is
+the same level of trust as installing SAFi itself, the rule the developer guide
+already states for `SAFI_EXTENSIONS_DIR`. In a deployment serving several
+organizations, an admin who could add one could run code on a host everyone
+shares.
+
+A hosted (http/sse) server runs nothing of the publisher's here, but it is not
+free of risk either, and the checks in section 8 exist for that: a URL your
+infrastructure fetches is a way into your own network unless it is validated,
+and every argument a model sends to that server leaves your deployment. Both
+decisions belong to the same person for the same reason.
 
 Two more things worth knowing before you install something you did not write:
 
@@ -455,10 +453,9 @@ Two more things worth knowing before you install something you did not write:
 ## 9. The operator CLI
 
 `scripts/safi_mcp.py` manages the servers in `MCP_SERVERS_JSON` from a shell. It
-exists because the browser can only install hosted servers, which leaves the npm
-and pypi majority of the ecosystem unreachable there by design. Whoever runs
-this CLI already has shell on the host, so installing a package server adds no
-privilege they did not already hold. That is the whole difference.
+is how servers are installed, and the only way. Whoever runs this CLI already
+has shell on the host, so installing a server adds no privilege they did not
+already hold. That is the whole point.
 
 ```
 scripts/safi_mcp.py list                     # what is configured, and where from
