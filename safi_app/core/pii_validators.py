@@ -1,39 +1,29 @@
-"""Deterministic detectors for sensitive identifiers. No model, ever.
+"""Deterministic detectors for sensitive personal and financial identifiers.
 
-GOVERNANCE_BACKLOG 83. Lives OUTSIDE the faculties for the same reason
-`threat_intel.py` does: this is data and pure functions, and keeping it here
-means adding a detector never edits a faculty.
+No model is called here. A regular expression finds the shape of an identifier,
+and a checksum or a set of allocation rules confirms it.
 
-WHY THIS IS THE DETERMINISTIC TIER'S JOB, not the Conscience's. Three of the
-four identifiers below carry a CHECKSUM, so "is this a card number" is decidable
-arithmetic rather than a judgement. A model cannot compute Luhn reliably, has no
-stable threshold, and its verdict is not reproducible from the audit record.
-CLAUDE.md's design pressure applies directly: when a control can be expressed
-either way, put it on the deterministic side.
+Lives outside `faculties/` for the same reason `threat_intel.py` does: this is
+data and pure functions, so adding a detector does not mean editing a faculty.
 
-WHY THERE IS NO USER-SUPPLIED REGEX, and never will be through this module.
-The catalogue below is a fixed menu an admin ticks. A pattern typed into a
-settings box would run on every turn in the deterministic tier, where there is
-no timeout and no model to blame, which makes ReDoS an availability bug in the
-one part of the system that is supposed to be boring. A subtly wrong pattern
-that matches nothing is also indistinguishable from a control that is working.
-If custom patterns are ever wanted, that is a separate item with its own threat
-model.
+Detectors are inert unless a caller passes an enabled set. `scan` reports
+matches, `redact` replaces them, `normalize` filters a caller's list down to
+known keys, and `catalogue` describes the available checks for a settings UI.
 
-FALSE POSITIVES ARE THE REAL DESIGN CONSTRAINT. Every detector here is
-off by default, and each pairs a shape with a check:
+Precision differs per identifier, and `catalogue` reports it so a UI can show
+it before a check is enabled:
 
-  credit_card  Luhn (mod 10)      ~1 in 10 random digit runs pass, so length
-                                  and an issuer prefix carry the rest
+  credit_card  Luhn (mod 10)
   iban         mod-97 == 1        effectively no false positives
-  aba          weighted checksum  ~1 in 10 random 9-digit runs pass. The
-                                  loosest detector here. Documented, not hidden.
-  ssn          NO CHECKSUM        structure only, so FORMATTED ONLY:
-                                  ddd-dd-dddd with the SSA allocation rules.
-                                  A bare 9-digit run is deliberately NOT
-                                  matched; it collides with order numbers,
-                                  part numbers and phone digits, and a refusal
-                                  the user cannot explain is worse than a miss.
+  aba          weighted mod-10    the loosest here: roughly 1 in 10 random
+                                  9-digit runs pass by chance
+  ssn          no checksum        formatted ddd-dd-dddd only, plus the SSA
+                                  allocation rules. A bare 9-digit run is not
+                                  matched, because it collides with order
+                                  numbers, part numbers and phone digits.
+
+Only keys present in the catalogue are accepted. `normalize` silently drops
+anything else, so a caller cannot introduce a new pattern through this module.
 """
 from __future__ import annotations
 
