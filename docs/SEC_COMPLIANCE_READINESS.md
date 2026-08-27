@@ -106,6 +106,12 @@ where an examiner would encounter them in exported records.
 - **Immutable policy versioning** — policy snapshots survive policy deletion, so
   an auditor can always retrieve the exact policy version that governed a given
   turn.
+- **SCIM 2.0 provisioning** at `/scim/v2`, so joiner and leaver events come
+  from the identity provider rather than a manual process. Setting
+  `active=false`, or a DELETE, performs the full off-boarding: MCP tool tokens
+  revoked, OAuth tokens dropped, membership removed, sharing stripped, any
+  pending invitation revoked, and evidence appended to the compliance log. The
+  last remaining admin cannot be deprovisioned.
 - **Encryption at rest** — user content, OAuth tokens, and the full per-turn
   governance record (drafts, evaluations, context snapshots) are encrypted at
   the application layer with key-rotation support. Governance detail is
@@ -184,9 +190,9 @@ where an examiner would encounter them in exported records.
 
 Planned or demand-triggered work, in priority order:
 
-1. **SAML SSO and SCIM provisioning** — available on enterprise demand,
-   building on the shipped OIDC per-tenant enforcement (Microsoft Entra
-   tenant and Google Workspace domain pinning).
+1. **SAML SSO** — available on enterprise demand, building on the shipped
+   OIDC per-tenant enforcement (Microsoft Entra tenant and Google Workspace
+   domain pinning). See `SAML_SSO_PLAN.md`.
 2. **Regulatory tracking** — the pending 17a-4 clarification on whether AI
    prompts and responses are themselves required records. The answer changes
    what SAFi must retain, so it is tracked here.

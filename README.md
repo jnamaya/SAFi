@@ -608,9 +608,10 @@ Stated plainly, because knowing the edges matters more than the summary:
 - **Policy-authorship separation of duties is incomplete.** A reviewer cannot
   dispose of a turn from their own conversation, but an admin may author a policy
   and then review turns governed by it.
-- **No SCIM or automated deprovisioning.** Off-boarding is manual today;
-  `remove_member_from_org` revokes sessions correctly, but nothing is driven from
-  an identity provider. See [`docs/SAML_SSO_PLAN.md`](docs/SAML_SSO_PLAN.md).
+- **No SAML.** SCIM 2.0 provisioning and deprovisioning ship at `/scim/v2`, and
+  per-tenant OIDC enforcement is available for Microsoft Entra and Google
+  Workspace, but SAML itself is not implemented. See
+  [`docs/SAML_SSO_PLAN.md`](docs/SAML_SSO_PLAN.md).
 
 Enforcement lives in [`safi_app/core/rbac.py`](safi_app/core/rbac.py) (roles and
 `check_permission`), with per-surface role sets in `audit_api.py`
