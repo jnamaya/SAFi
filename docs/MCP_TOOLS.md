@@ -437,8 +437,18 @@ Two more things worth knowing before you install something you did not write:
   restarted until SAFi restarts; its tools then fail their calls with an error
   the agent sees, and the Will's gating is unaffected.
 - A tool call has a 60 second ceiling.
-- Changing the server file requires a restart. In Docker, rebuild or restart the
-  `app` service; the file is copied into the image.
+- **A write through `scripts/safi_mcp.py` needs no restart. A hand edit does.**
+  The CLI bumps a generation counter, and workers re-read the file on their next
+  request when it moves. Editing the file directly leaves the counter where it
+  was, so running workers keep the server list they already have until SAFi
+  restarts. Prefer the CLI, and restart the `app` service if you edit by hand.
+- **Under Docker the file is on a mount, not in the image.** `docker-compose.yml`
+  points `MCP_SERVERS_JSON` at `/app/mcp/servers.json` and mounts `./mcp` there,
+  so installed servers survive `up --build` and no rebuild is needed to add one.
+  The mount exists precisely because the file used to be copied in, where every
+  rebuild replaced an operator's server list with the empty one from the repo.
+  See `mcp/README.md`. Anything a definition points at has to live on that same
+  mount for the same reason.
 
 ---
 
@@ -465,9 +475,11 @@ Three things it does that matter:
 
 - **It checks before it saves.** A server that does not answer is not written to
   the file unless you pass `--force`, so a typo does not become a mystery later.
-- **It refuses a launcher that is not installed.** The app image ships Python
-  and no Node, so an `npx` server would never start. The CLI says so and names
-  the missing binary rather than writing a definition that fails silently.
+- **It refuses a launcher that is not installed.** Most of the registry is npm
+  packages, and a host without Node could never start one. The CLI checks for
+  the launcher and names the missing binary rather than writing a definition
+  that fails silently. The Docker image carries Node and `npx`, so package
+  servers work there; a bare-metal host is where this check earns its keep.
 - **No restart.** Every write bumps the same counter the GUI uses, so running
   workers re-read the file on their next request.
 

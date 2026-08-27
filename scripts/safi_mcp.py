@@ -138,11 +138,17 @@ def unique_key(base: str, servers: dict) -> str:
 def check_runtime_available(params: dict) -> None:
     """Refuse a stdio server whose launcher is not installed here.
 
-    The app image ships Python and nothing else: no node, no npx, no uv. Most
-    registry packages are npm, so without this check the CLI would happily write
-    a definition that can never start, and the failure would surface later as a
-    server that is simply absent. Say it now, name the missing binary, and let
-    the operator decide whether to extend the image.
+    Most registry packages are npm, and a host with no Node could never start
+    one. Without this check the CLI would happily write a definition that can
+    never start, and the failure would surface later as a server that is simply
+    absent. Say it now, name the missing binary, and let the operator decide
+    whether to install the runtime.
+
+    `shutil.which` decides, so this adapts to wherever it runs rather than
+    assuming: the Docker image carries node, npm and npx (see the Dockerfile's
+    copy from `node:22-slim`), while a bare-metal host or a venv outside the
+    container may carry none of them. That is the case this exists for, and the
+    hints below are worded for it.
     """
     import shutil
 
