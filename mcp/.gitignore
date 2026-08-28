@@ -1,2 +1,9 @@
 servers.json
-workspace/
+
+# Cloned MCP server checkouts: workspace, wpmcp, and anything else installed
+# with --cwd. They are separate projects with their own git history, their own
+# dependencies and, in some cases, their own plaintext credentials. They live
+# on this mount so they survive a rebuild; they are never part of SAFi's tree.
+# This replaces the single `workspace/` line, which only covered the one
+# checkout the docs happened to name.
+*/
