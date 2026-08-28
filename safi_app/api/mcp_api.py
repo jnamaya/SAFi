@@ -91,13 +91,28 @@ def list_servers():
     Admin-only because it names the deployment's infrastructure and its
     connection errors, which is operational detail a member has no use for.
     """
+    from ..core.services.mcp_manager import is_guest, server_allows_org
+
     user = session.get('user') or {}
-    policy_use, agent_use = _usage(user.get('id'), user.get('org_id'))
+    org_id = user.get('org_id')
+    # A guest is made ADMIN of a throwaway organization by the public demo
+    # login, so @require_role('admin') admits one. Every other MCP path refuses
+    # guests outright; this one must too.
+    guest = is_guest(user.get('id') or '', user.get('email') or '')
+    policy_use, agent_use = _usage(user.get('id'), org_id)
 
     summary = mcp_runtime.summary()
     discovered = mcp_runtime.tools()
     servers = []
     for key, entry in summary["servers"].items():
+        # The same org gate every other path applies. Without it this screen
+        # reported the label, the tool names and descriptions, and any
+        # connection error of EVERY installed server to an admin of any
+        # organization on the deployment. 'admin' is the top of the ladder in
+        # rbac.py and is scoped to one organization, so there is no role for
+        # which the unfiltered view is the right answer.
+        if guest or not server_allows_org(key, org_id):
+            continue
         tools = []
         for name in entry.get("tools") or []:
             tools.append({
@@ -128,7 +143,9 @@ def list_servers():
     return jsonify({
         "ok": True,
         "servers": servers,
-        "tool_count": summary["tool_count"],
+        # Counted from what was returned, not from the deployment-wide summary,
+        # which would leak the same fact one integer at a time.
+        "tool_count": sum(len(s["tools"]) for s in servers),
     })
 
 
