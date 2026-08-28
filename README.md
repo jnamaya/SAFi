@@ -129,6 +129,10 @@ See what a governed turn produces before evaluating the architecture.
 **[Read the governance documentation](docs/DEVELOPER_GUIDE.md)**
 Review how SAFi represents policies, evaluates responses, governs tool calls, and records decisions.
 
+**[Read the enterprise features summary](docs/ENTERPRISE_FEATURES.md)**
+One page covering identity and access, compliance and records, data and
+provider controls, and what does not ship yet.
+
 **[Review the readiness material](#regulatory-readiness)**
 Examine the documentation discussing SEC, FINRA, the EU AI Act, HIPAA, and GDPR. The material distinguishes current functionality from planned work and makes no certification claims.
 
