@@ -335,11 +335,46 @@ def one_pass() -> int:
     return len(due)
 
 
+def boot_mcp() -> None:
+    """Connect the MCP servers for THIS process.
+
+    `start_servers()` has one other caller, `create_app()`, so until this was
+    added the scheduler ran with an empty `mcp_runtime`: no servers, no tools,
+    nothing advertised to the Intellect, whatever the agent's policy granted.
+    A scheduled turn therefore behaved as if the agent had been granted
+    nothing, and the docstring at the top of this file promising "tools under
+    the agent's policy" was untrue for every scheduled run (backlog 88).
+
+    It failed invisibly. Given no tools, a model says it cannot reach the data
+    and offers to work from figures you paste in, which reads as a weak model
+    rather than as a missing capability.
+
+    Once per process, before the loop: MCP sessions are held open for the life
+    of the process, so this must not be per task.
+    """
+    try:
+        # Imported here, not at module scope: this file defers safi_app imports
+        # so that --help and argument errors do not need a database.
+        from safi_app.config import Config
+        from safi_app.core.services.mcp_manager import start_servers
+        summary = start_servers(Config)
+        count = summary.get("tool_count", 0)
+        names = ", ".join(sorted(summary.get("servers", {}))) or "none"
+        print(f"scheduler: MCP ready, {count} tool(s) from [{names}]")
+    except Exception as e:
+        # A scheduler that cannot reach a tool server must still deliver the
+        # turns that need no tools, exactly as the web app does.
+        print(f"scheduler: MCP unavailable, continuing without tools: {e}",
+              file=sys.stderr)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="SAFi Scheduled Updates runner")
     ap.add_argument("--loop", action="store_true", help="run forever (the service mode)")
     ap.add_argument("--once", action="store_true", help="one pass, then exit")
     args = ap.parse_args()
+
+    boot_mcp()
 
     if args.loop:
         while True:
