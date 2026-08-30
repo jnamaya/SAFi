@@ -72,11 +72,33 @@ server; each server becomes one connector.
 | `url` | http, sse | The server endpoint. |
 | `enabled` | all | Set `false` to keep a definition without connecting it. |
 | `connect_timeout` | all | Seconds to wait at boot. Default 20. |
+| `call_timeout` | all | Seconds a single tool call may run. Defaults to `SAFI_MCP_CALL_TIMEOUT`, itself 60. |
 | `orgs` | all | Organization ids allowed to use this server. Absent means all of them. |
 
 `${VAR}` anywhere in `env`, `args` or `url` is replaced from the SAFi process
 environment. Put secrets in your `.env` and reference them here, so the server
 file stays safe to copy and commit.
+
+### When a tool needs longer than 60 seconds
+
+A tool that waits on something slow, such as generating an image before
+uploading it, can run past the default ceiling and come back as
+`ERROR: tool '<name>' timed out after 60s`. Two ways to give it room:
+
+```json
+{ "wordpress": { "...": "...", "call_timeout": 180 } }
+```
+
+or `SAFI_MCP_CALL_TIMEOUT` to move the default for every server at once.
+
+Prefer the per-server field. The ceiling exists so a hung tool releases the
+worker thread it is holding, and raising it globally makes every tool slower to
+give up, not just the one that needed the time. Raise the global only when a
+whole deployment's tools are slow.
+
+A tool call also has to finish inside the request, so this number is only real
+if the web server and gunicorn will wait that long. Check `SAFI_GUNICORN_TIMEOUT`
+and the proxy's own timeout before setting a large value here.
 
 ### On a shared deployment, restrict the server
 

@@ -57,11 +57,42 @@ log = logging.getLogger(__name__)
 
 # How long to wait for a server to connect and answer tools/list at boot, and
 # how long a single tool call may run. Both are per server and overridable in
-# the server definition.
+# the server definition, via `connect_timeout` and `call_timeout`.
+#
+# The call ceiling was a hardcoded 60s until 2026-08-30. It was raised to an
+# env var because a real tool sat on the cliff: the WordPress image tool takes
+# 49-53s on every observed call (it waits on an image generation, then uploads
+# the result), so an ordinarily slow run died at 60s with no way to tune it
+# short of editing this file. Raise the global for a deployment whose tools are
+# all slow; prefer `call_timeout` on the one slow server otherwise, because a
+# high global also lets a genuinely hung tool hold a worker thread that much
+# longer.
 DEFAULT_CONNECT_TIMEOUT = 20.0
-DEFAULT_CALL_TIMEOUT = 60.0
+DEFAULT_CALL_TIMEOUT = float(os.environ.get("SAFI_MCP_CALL_TIMEOUT", "60"))
 
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _positive_float(raw: Any, fallback: float, server_name: str) -> float:
+    """Read an optional positive timeout from a server definition.
+
+    Falls back rather than raising. A typo in one server's timeout should cost
+    that server its override, not stop the whole runtime from connecting the
+    other servers alongside it.
+    """
+    if raw is None or raw == "":
+        return fallback
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        log.error("MCP server '%s': call_timeout %r is not a number; using %.0fs.",
+                  server_name, raw, fallback)
+        return fallback
+    if value <= 0:
+        log.error("MCP server '%s': call_timeout %r is not positive; using %.0fs.",
+                  server_name, raw, fallback)
+        return fallback
+    return value
 
 
 def _expand(value: Any) -> Any:
@@ -521,6 +552,13 @@ class _Runtime:
             # Optional org restriction from the definition. Kept here so the
             # dispatch check reads the same source as the catalogue.
             "orgs": [str(o) for o in (params.get("orgs") or []) if o],
+            # Per-server call ceiling, resolved once here rather than on every
+            # call so a malformed value fails at connect time, where the log
+            # says which server, instead of mid-turn on a tool the user is
+            # waiting for.
+            "call_timeout": _positive_float(
+                params.get("call_timeout"), DEFAULT_CALL_TIMEOUT, name
+            ),
         }
         self._servers[name] = entry
         try:
@@ -727,16 +765,20 @@ class _Runtime:
                 "is not connected."
             )
 
+        timeout = float(
+            (self._servers.get(spec["server"]) or {}).get("call_timeout")
+            or DEFAULT_CALL_TIMEOUT
+        )
         future = asyncio.run_coroutine_threadsafe(
             session.call_tool(tool_name, arguments or {}), loop
         )
         try:
             result = await asyncio.wait_for(
-                asyncio.wrap_future(future), timeout=DEFAULT_CALL_TIMEOUT
+                asyncio.wrap_future(future), timeout=timeout
             )
         except asyncio.TimeoutError:
             future.cancel()
-            return f"ERROR: tool '{tool_name}' timed out after {DEFAULT_CALL_TIMEOUT:.0f}s."
+            return f"ERROR: tool '{tool_name}' timed out after {timeout:.0f}s."
         except BaseException as e:
             return f"ERROR: tool '{tool_name}' failed: {describe_exception(e)}"
         return _render_result(result)
