@@ -110,6 +110,7 @@ function _createOverflowControl({ getText, getAgent, messageId, onRedo }) {
     });
     menu.appendChild(exportAs('Export as PDF', 'pdf'));
     menu.appendChild(exportAs('Export as Word (.docx)', 'docx'));
+    menu.appendChild(exportAs('Export as Excel (.xlsx)', 'xlsx'));
     menu.appendChild(exportAs('Export as Markdown', 'md'));
 
     btn.onclick = (e) => {

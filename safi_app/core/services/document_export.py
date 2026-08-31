@@ -9,12 +9,16 @@ the TCB, and the load-bearing rule (CLAUDE.md invariant, and the vision item
 32z) is respected because formatting invents nothing that the Conscience did
 not score.
 
-Two formats:
+Three formats:
 - DOCX: a focused markdown -> python-docx builder covering what agents emit
   (headings, paragraphs, bold/italic/inline-code, bullet/numbered lists, code
   blocks, blockquotes, tables, rules, links).
 - PDF: markdown -> HTML (the `markdown` lib) -> PDF (`xhtml2pdf`), both pure
   Python so the image needs no system libraries.
+- XLSX: markdown -> a workbook via openpyxl (already a dependency, used by
+  document_processor). A markdown table becomes a real grid with a frozen,
+  bold header row; remaining prose and list lines become one row each on a
+  single "Answer" sheet, so nothing is lost. Deterministic like the other two.
 """
 from __future__ import annotations
 
@@ -265,6 +269,75 @@ def _md_to_pdf(text: str, title: str, attribution: Optional[str]) -> bytes:
     return out.getvalue()
 
 
+# --- markdown -> xlsx ----------------------------------------------------------
+
+def _md_to_xlsx(text: str, attribution: Optional[str]) -> bytes:
+    """Render governed markdown to a workbook.
+
+    A markdown table (pipe row followed by a separator row) becomes a real
+    spreadsheet grid with a frozen, bold header. All other lines become one
+    row each in a single "Answer" sheet so no content is dropped. The
+    transparency footer is appended as a final row, matching DOCX/PDF.
+    """
+    import openpyxl
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Answer"
+    ws.freeze_panes = "A2"
+
+    header_font = Font(bold=True)
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    i = 0
+    n = len(lines)
+    row = 1
+
+    def emit(cells):
+        nonlocal row
+        for col, val in enumerate(cells, start=1):
+            ws.cell(row=row, column=col, value="".join(str(val)))
+        row += 1
+
+    while i < n:
+        line = lines[i]
+        if "|" in line and i + 1 < n and _TABLE_SEP_RE.match(lines[i + 1]):
+            header = _split_row(line)
+            i += 2
+            rows = []
+            while i < n and "|" in lines[i] and lines[i].strip():
+                rows.append(_split_row(lines[i]))
+                i += 1
+            for col, cell_text in enumerate(header, start=1):
+                ws.cell(row=row, column=col, value=cell_text).font = header_font
+            row += 1
+            for r in rows:
+                emit(r)
+            row += 1  # blank spacer after the table
+            continue
+        stripped = line.strip()
+        if not stripped:
+            i += 1
+            continue
+        emit([stripped])
+        i += 1
+
+    emit([_footer_text(attribution)])
+
+    widths = {}
+    for col in range(1, ws.max_column + 1):
+        widths[col] = min(max(
+            (len(str(ws.cell(row=r, column=col).value or "")) for r in range(1, ws.max_row + 1)),
+            default=0) + 2, 60)
+        ws.column_dimensions[get_column_letter(col)].width = widths[col]
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 # --- public entry point -------------------------------------------------------
 
 def render(text: str, title: str, fmt: str,
@@ -289,6 +362,12 @@ def render(text: str, title: str, fmt: str,
         )
     if fmt == "pdf":
         return (_md_to_pdf(text, title, attribution), "application/pdf", "pdf")
+    if fmt in ("xlsx", "excel"):
+        return (
+            _md_to_xlsx(text, attribution),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        )
     if fmt in ("md", "markdown"):
         # The faithful source: the answer's own markdown, with the same
         # transparency footer appended as a plain markdown block. No render.
