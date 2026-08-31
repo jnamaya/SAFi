@@ -1242,7 +1242,7 @@ The files that governance claims depend on are enumerated in
 `scripts/core_integrity_manifest.json`: the orchestrator and its mixins,
 the five faculties, the audit schema, the enforcement content (threat
 signatures, faculty prompts), RBAC, the plugin registry, and the
-attestation module — 17 files. The License & Governance Agreement calls
+attestation module — 19 files. The License & Governance Agreement calls
 this set the Core Loop; in security-engineering terms it is the Trusted
 Computing Base (TCB). A defect inside the set can violate the governance
 policy. A defect outside it cannot. Everything outside it is User Space,
