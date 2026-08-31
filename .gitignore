@@ -67,9 +67,10 @@ chat/package-lock.json
 chat/tailwind.config.js
 chat/tailwindcss/
 
-# Claude Code — local config and instructions (not for version control)
+# Agent instructions — local, not for version control
 .claude/
 CLAUDE.md
+AGENTS.md
 
 # Local utility / dev scripts (not for version control)
 driver.py
