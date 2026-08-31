@@ -1344,6 +1344,11 @@ video {
   width: 100%;
 }
 
+.w-max {
+  width: -moz-max-content;
+  width: max-content;
+}
+
 .w-screen {
   width: 100vw;
 }
@@ -1422,6 +1427,10 @@ video {
 
 .max-w-\[360px\] {
   max-width: 360px;
+}
+
+.max-w-\[min\(85vw\2c 280px\)\] {
+  max-width: min(85vw,280px);
 }
 
 .max-w-lg {

@@ -64,13 +64,18 @@ function _createOverflowControl({ getText, getAgent, messageId, onRedo }) {
     const menu = document.createElement('div');
     // right-0: the button sits near the right of the bar, so the menu opens
     // toward the left edge rather than off-screen.
-    menu.className = 'msg-action-menu hidden absolute z-50 bottom-full mb-1 right-0 min-w-[180px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
+    // w-max sizes the menu to its longest item so export labels never get cut
+    // off; max-w-[min(85vw,280px)] keeps it from spilling past the viewport on
+    // narrow phones. right-0 anchors to the button's right edge and grows left.
+    menu.className = 'msg-action-menu hidden absolute z-50 bottom-full mb-1 right-0 w-max min-w-[200px] max-w-[min(85vw,280px)] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg py-1';
 
     const item = (label, icon, onClick) => {
         const b = document.createElement('button');
         b.className = 'flex items-center gap-2.5 w-full text-left px-3 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700';
-        // icon inherits a muted currentColor; label carries the text.
-        b.innerHTML = `<span class="shrink-0 text-neutral-500 dark:text-neutral-400">${icon}</span><span>${label}</span>`;
+        // icon inherits a muted currentColor; label carries the text. nowrap
+        // keeps a long export label on one line; the menu's w-max+max-w handle
+        // the resulting width (and the max-w viewport guard for mobile).
+        b.innerHTML = `<span class="shrink-0 text-neutral-500 dark:text-neutral-400">${icon}</span><span class="whitespace-nowrap">${label}</span>`;
         b.onclick = (e) => {
             e.stopPropagation();
             menu.classList.add('hidden');
