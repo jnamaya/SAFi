@@ -1,5 +1,8 @@
 servers.json
 
+# Private operator MCP server (not part of SAFi's tree; personal use)
+smartermail_alias_server.py
+
 # Cloned MCP server checkouts: workspace, wpmcp, and anything else installed
 # with --cwd. They are separate projects with their own git history, their own
 # dependencies and, in some cases, their own plaintext credentials. They live
