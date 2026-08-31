@@ -7,6 +7,12 @@ export function renderSafetyStep(container, agentData) {
     const maxTurns = agentData.max_agent_turns || '';
     // Default ON for custom agents unless explicitly disabled.
     const trackWork = agentData.track_work_context !== false;
+    // History window: blank means "use the platform default". 0 means "all",
+    // which the backend treats as unlimited (bounded by chars).
+    const historyTurnsValue = (agentData.history_turns === null || agentData.history_turns === undefined)
+        ? '' : String(agentData.history_turns);
+    const historyMaxCharsValue = (agentData.history_max_chars === null || agentData.history_max_chars === undefined)
+        ? '' : String(agentData.history_max_chars);
 
     container.innerHTML = `
         <h2 class="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Operational Settings</h2>
@@ -47,10 +53,27 @@ export function renderSafetyStep(container, agentData) {
                         <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${trackWork ? 'translate-x-6' : 'translate-x-1'}"></span>
                     </button>
                 </div>
-            </div>
-
         </div>
-    `;
+
+        <div class="border border-gray-200 dark:border-neutral-700 rounded-lg p-5">
+            <h4 class="font-semibold text-gray-800 dark:text-white mb-1">Conversation History Window</h4>
+            <p class="text-xs text-gray-500 mb-3">How many recent USER/ASSISTANT exchanges are replayed verbatim to the agent each turn. Older turns are condensed into the conversation summary rather than replayed word-for-word. Leave blank to use the platform default.</p>
+            <div class="flex items-center gap-3">
+                <input type="number" id="history-turns-input" min="0" max="50" step="1"
+                    class="w-28 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                    placeholder="Platform default" value="${historyTurnsValue}">
+                <span class="text-xs text-gray-400">Turns to replay. 0 (or "All") keeps every prior turn, bounded by the character cap.</span>
+            </div>
+            <div class="flex items-center gap-3 mt-3">
+                <input type="number" id="history-max-chars-input" min="1000" max="200000" step="500"
+                    class="w-32 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                    placeholder="Platform default" value="${historyMaxCharsValue}">
+                <span class="text-xs text-gray-400">Character cap for the replay window. Blank uses the platform default.</span>
+            </div>
+        </div>
+
+    </div>
+`;
 
     const maxTurnsInput = container.querySelector('#max-agent-turns-input');
     if (maxTurnsInput) {
@@ -79,6 +102,34 @@ export function renderSafetyStep(container, agentData) {
             if (knob) {
                 knob.classList.toggle('translate-x-6', next);
                 knob.classList.toggle('translate-x-1', !next);
+            }
+        });
+    }
+
+    const historyTurnsInput = container.querySelector('#history-turns-input');
+    if (historyTurnsInput) {
+        historyTurnsInput.addEventListener('input', function() {
+            if (historyTurnsInput.value === '') {
+                agentData.history_turns = null;
+                return;
+            }
+            const val = parseInt(historyTurnsInput.value);
+            if (!isNaN(val) && val >= 0 && val <= 50) {
+                agentData.history_turns = val;
+            }
+        });
+    }
+
+    const historyMaxCharsInput = container.querySelector('#history-max-chars-input');
+    if (historyMaxCharsInput) {
+        historyMaxCharsInput.addEventListener('input', function() {
+            if (historyMaxCharsInput.value === '') {
+                agentData.history_max_chars = null;
+                return;
+            }
+            const val = parseInt(historyMaxCharsInput.value);
+            if (!isNaN(val) && val >= 1000) {
+                agentData.history_max_chars = val;
             }
         });
     }

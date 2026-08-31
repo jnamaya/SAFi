@@ -479,6 +479,18 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN track_work_context BOOLEAN DEFAULT TRUE")
 
+        # Per-agent conversational history window: how many USER/ASSISTANT pairs
+        # are replayed verbatim each turn (0 = all, bounded by chars), and the
+        # character cap. Backend (orchestrator._resolve_history_window) reads
+        # these from the agent profile; a value here overrides the deployment
+        # default (SAFI_HISTORY_TURNS / SAFI_HISTORY_MAX_CHARS).
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'history_turns'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN history_turns INT DEFAULT NULL")
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'history_max_chars'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE agents ADD COLUMN history_max_chars INT DEFAULT NULL")
+
         # --- Knowledge Bases (user-created RAG corpora) ---
         # `id` is a server-generated UUID and is ALSO the on-disk index
         # filename. That is deliberate and load-bearing: Retriever builds its
@@ -3002,19 +3014,22 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
 
 def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private',
                  intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None,
-                 track_work_context=True):
+                 track_work_context=True, history_turns=None, history_max_chars=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         if not policy_id: policy_id = 'standalone'
         sql = """INSERT INTO agents (
             agent_key, name, description, avatar, worldview, style, values_json, will_rules_json, policy_id, created_by, org_id, visibility,
-            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement, max_agent_turns, track_work_context
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, tools_json, scope_statement, max_agent_turns, track_work_context,
+            history_turns, history_max_chars
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.execute(sql, (
             key, name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, created_by, org_id, visibility,
             intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
-            int(max_agent_turns) if max_agent_turns else None, bool(track_work_context)
+            int(max_agent_turns) if max_agent_turns else None, bool(track_work_context),
+            int(history_turns) if history_turns is not None else None,
+            int(history_max_chars) if history_max_chars is not None else None
         ))
         conn.commit()
     finally:
@@ -3023,7 +3038,7 @@ def create_agent(key, name, description, avatar, worldview, style, values, rules
 
 def update_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, visibility='private',
                  intellect_model=None, will_model=None, conscience_model=None, rag_knowledge_base=None, rag_format_string=None, tools=None, scope_statement=None, max_agent_turns=None,
-                 track_work_context=True):
+                 track_work_context=True, history_turns=None, history_max_chars=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -3031,12 +3046,14 @@ def update_agent(key, name, description, avatar, worldview, style, values, rules
         sql = """UPDATE agents SET
             name=%s, description=%s, avatar=%s, worldview=%s, style=%s, values_json=%s, will_rules_json=%s, policy_id=%s, visibility=%s,
             intellect_model=%s, will_model=%s, conscience_model=%s, rag_knowledge_base=%s, rag_format_string=%s, tools_json=%s, scope_statement=%s,
-            max_agent_turns=%s, track_work_context=%s
+            max_agent_turns=%s, track_work_context=%s, history_turns=%s, history_max_chars=%s
             WHERE agent_key=%s"""
         cursor.execute(sql, (
             name, description, avatar, worldview, style, json.dumps(values), json.dumps(rules), policy_id, visibility,
             intellect_model, will_model, conscience_model, rag_knowledge_base, rag_format_string, json.dumps(tools or []), scope_statement or '',
             int(max_agent_turns) if max_agent_turns else None, bool(track_work_context),
+            int(history_turns) if history_turns is not None else None,
+            int(history_max_chars) if history_max_chars is not None else None,
             key
         ))
         conn.commit()

@@ -240,7 +240,9 @@ def save_agent():
                 tools=tools_to_save,
                 scope_statement=str(data.get('scope_statement') or ''),
                 max_agent_turns=data.get('max_agent_turns'),
-                track_work_context=bool(data.get('track_work_context', True))
+                track_work_context=bool(data.get('track_work_context', True)),
+                history_turns=data.get('history_turns'),
+                history_max_chars=data.get('history_max_chars')
             )
         elif request.method == 'PUT':
             exist = existing
@@ -278,7 +280,9 @@ def save_agent():
                 tools=tools_to_save,
                 scope_statement=str(data.get('scope_statement') or ''),
                 max_agent_turns=data.get('max_agent_turns'),
-                track_work_context=bool(data.get('track_work_context', True))
+                track_work_context=bool(data.get('track_work_context', True)),
+                history_turns=data.get('history_turns'),
+                history_max_chars=data.get('history_max_chars')
             )
 
         # File the pending widening (57b) now that the row write succeeded.
@@ -412,6 +416,9 @@ def get_agent(key):
              agent['tools'] = raw.get('tools', [])
              agent['scope_statement'] = raw.get('scope_statement', '')
              agent['track_work_context'] = raw.get('track_work_context', True)
+             agent['max_agent_turns'] = raw.get('max_agent_turns')
+             agent['history_turns'] = raw.get('history_turns')
+             agent['history_max_chars'] = raw.get('history_max_chars')
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:

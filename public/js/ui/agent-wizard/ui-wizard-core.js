@@ -44,7 +44,9 @@ export let agentData = {
     rag_knowledge_base: "",
     rag_format_string: "",
     tools: [],
-    will_rules: DEFAULT_WILL_RULES()
+    will_rules: DEFAULT_WILL_RULES(),
+    history_turns: null,
+    history_max_chars: null
 };
 
 // --- MAIN ENTRANCE ---
@@ -74,7 +76,9 @@ export function openAgentWizard(existingAgent = null) {
                 ? existingAgent.will_rules
                 : DEFAULT_WILL_RULES(),
             max_agent_turns: existingAgent.max_agent_turns || null,
-            track_work_context: existingAgent.track_work_context !== false
+            track_work_context: existingAgent.track_work_context !== false,
+            history_turns: existingAgent.history_turns || null,
+            history_max_chars: existingAgent.history_max_chars || null
         };
         if (existingAgent.worldview && !agentData.instructions) {
             agentData.instructions = existingAgent.worldview;
@@ -97,7 +101,9 @@ export function openAgentWizard(existingAgent = null) {
             scope_statement: "",
             will_rules: DEFAULT_WILL_RULES(),
             max_agent_turns: null,
-            track_work_context: true
+            track_work_context: true,
+            history_turns: null,
+            history_max_chars: null
         };
     }
 
