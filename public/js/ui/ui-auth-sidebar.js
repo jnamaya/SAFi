@@ -896,6 +896,23 @@ export function updateChatTitle(title) {
   if (desktopTitle) {
     desktopTitle.textContent = newTitle;
   }
+  setBrowserTabTitle(newTitle);
+}
+
+/**
+ * Mirrors the conversation title into the browser tab (and the PWA app
+ * switcher). Plain string assignment: no injection path. Control characters
+ * are stripped and the result capped, so a crafted message cannot garble the
+ * tab; the text shown is the same conversation title already visible in the
+ * sidebar, and never message content beyond it.
+ */
+function setBrowserTabTitle(title) {
+  const clean = String(title || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
+  if (!clean || clean === 'Untitled' || clean === 'SAFi') {
+    document.title = 'SAFi';
+    return;
+  }
+  document.title = ('SAFi \u00B7 ' + clean).slice(0, 120);
 }
 
 /**
