@@ -361,6 +361,12 @@ export async function fetchAttention() {
     return httpGet('/api/attention');
 }
 
+// The actionable subset of the inbox: pending approvals with their IDs, so an
+// inbox row can approve/reject without first deep-linking to the target tab.
+export async function fetchAttentionActions() {
+    return httpGet('/api/attention/actions');
+}
+
 // --- Agent sharing: per-agent can_use grants to users and groups ---
 
 export async function getAgentShares(key) {

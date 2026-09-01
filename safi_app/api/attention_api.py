@@ -132,3 +132,58 @@ def get_attention():
 
     return jsonify({"ok": True, "items": items,
                     "total": sum(i["count"] for i in items)})
+
+
+@attention_bp.route('/attention/actions', methods=['GET'], strict_slashes=False)
+def get_attention_actions():
+    """The actionable subset of the inbox, with the item IDs the generic
+    /api/attention deliberately omits. People approve from the inbox, not only
+    from the deep-linked tab. The rollup endpoint stays count-only (its stated
+    invariant); this one carries the labels plus the IDs needed to call the
+    existing approve/reject endpoints for the two approval categories.
+
+    Like /api/attention, this is role-shaped and org-scoped: only a current
+    reviewer for each kind sees that kind, and only within their own org. No
+    content bodies are returned (no policy payloads, no added-tool internals),
+    only identities and the short change/tool labels the tabs already show.
+    """
+    user = session.get('user')
+    if not user:
+        return jsonify({"error": "Authentication required."}), 401
+    user_id = user.get('id') or user.get('sub')
+    org_id = user.get('org_id')
+
+    policy_changes = []
+    tool_requests = []
+
+    if org_id:
+        try:
+            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role'),
+                                               kind='policy'):
+                for r in tool_approval_store.list_policy_changes(org_id, 'pending'):
+                    policy_changes.append({
+                        "id": r["id"],
+                        "policy_name": r.get("policy_name") or r.get("policy_id"),
+                        "requester_name": r.get("requester_name") or r.get("requested_by"),
+                        "changed": r.get("changed") or [],
+                        "created_at": r["created_at"].isoformat() if getattr(r.get("created_at"), "isoformat", None) else r.get("created_at"),
+                    })
+        except Exception:
+            pass
+        try:
+            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role')):
+                for r in tool_approval_store.list_requests(org_id, 'pending'):
+                    tool_requests.append({
+                        "id": r["id"],
+                        "request_type": r.get("request_type") or "agent",
+                        "agent_name": r.get("agent_name") or r.get("agent_key"),
+                        "policy_name": r.get("policy_name") or r.get("policy_id"),
+                        "requester_name": r.get("requester_name") or r.get("requested_by"),
+                        "added": r.get("added") or [],
+                        "created_at": r["created_at"].isoformat() if getattr(r.get("created_at"), "isoformat", None) else r.get("created_at"),
+                    })
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "policy_changes": policy_changes,
+                    "tool_requests": tool_requests})

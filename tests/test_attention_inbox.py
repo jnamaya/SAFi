@@ -38,6 +38,8 @@ class AttentionTestBase(unittest.TestCase):
     def setUpClass(cls):
         cls.app = create_app()
         cls.app.config['TESTING'] = True
+        from safi_app.persistence import tool_approval_store
+        tool_approval_store.init_schema()
 
     def setUp(self):
         suffix = uuid.uuid4().hex[:8]
@@ -85,6 +87,10 @@ class AttentionTestBase(unittest.TestCase):
         _exec("DELETE FROM security_incidents WHERE id=%s", (self.inc_id,))
         _exec("DELETE FROM scheduled_tasks WHERE id=%s", (self.sched_id,))
         _exec("DELETE FROM org_compliance_log WHERE org_id IN (%s,%s)",
+              (self.org, self.other_org))
+        _exec("DELETE FROM agent_tool_requests WHERE org_id IN (%s,%s)",
+              (self.org, self.other_org))
+        _exec("DELETE FROM policy_change_requests WHERE org_id IN (%s,%s)",
               (self.org, self.other_org))
         for uid in self.users:
             _exec("DELETE FROM sessions WHERE user_id=%s", (uid,))
@@ -196,6 +202,80 @@ class ToolChangeEvidence(AttentionTestBase):
                 "an unchanged tool list must not spam the evidence log")
         finally:
             _exec("DELETE FROM agents WHERE agent_key=%s", (agent_key,))
+
+
+class AttentionActions(AttentionTestBase):
+    """The actionable inbox: /api/attention/actions carries the item IDs the
+    rollup omits, so a reviewer can approve from the inbox. Same org scoping
+    and role shaping as the rollup, plus item identities."""
+
+    def setUp(self):
+        super().setUp()
+        # One pending tool request and one pending policy change in org A,
+        # requested by the member; one pending tool request in org B.
+        self.tool_req_a = str(uuid.uuid4())
+        self.pol_req_a = str(uuid.uuid4())
+        self.tool_req_b = str(uuid.uuid4())
+        _exec(
+            "INSERT INTO agent_tool_requests (id, agent_key, org_id, requested_by, "
+            "added, status, request_type) VALUES (%s, NULL, %s, %s, %s, 'pending', 'agent')",
+            (self.tool_req_a, self.org, self.member, '["send_email"]'))
+        _exec(
+            "INSERT INTO policy_change_requests (id, policy_id, org_id, requested_by, "
+            "payload, changed, status) VALUES (%s, 'p_act', %s, %s, %s, %s, 'pending')",
+            (self.pol_req_a, self.org, self.member,
+             '{"name":"P"}', '["worldview"]'))
+        _exec(
+            "INSERT INTO agent_tool_requests (id, agent_key, org_id, requested_by, "
+            "added, status, request_type) VALUES (%s, NULL, %s, %s, %s, 'pending', 'agent')",
+            (self.tool_req_b, self.other_org, self.other_admin, '["calendar"]'))
+
+    def tearDown(self):
+        super().tearDown()  # base tearDown clears both request tables by org
+
+    def _actions(self, user_id, role):
+        client = self.app.test_client()
+        org = self.other_org if user_id == self.other_admin else self.org
+        login_as(client, user_id, role, org_id=org)
+        r = client.get('/api/attention/actions')
+        self.assertEqual(r.status_code, 200)
+        return r.get_json()
+
+    def test_unauthenticated_is_401(self):
+        r = self.app.test_client().get('/api/attention/actions')
+        self.assertEqual(r.status_code, 401)
+
+    def test_member_is_not_a_reviewer(self):
+        payload = self._actions(self.member, 'member')
+        self.assertEqual(payload['policy_changes'], [])
+        self.assertEqual(payload['tool_requests'], [])
+
+    def test_admin_sees_both_kinds_with_ids(self):
+        payload = self._actions(self.admin, 'admin')
+        self.assertEqual([r['id'] for r in payload['policy_changes']], [self.pol_req_a])
+        ids = [r['id'] for r in payload['tool_requests']]
+        self.assertEqual(ids, [self.tool_req_a])
+        item = payload['tool_requests'][0]
+        self.assertIn('send_email', item['added'])
+        self.assertTrue(item['id'])
+
+    def test_auditor_is_a_reviewer_too(self):
+        payload = self._actions(self.auditor, 'auditor')
+        self.assertEqual(len(payload['policy_changes']), 1)
+        self.assertEqual(len(payload['tool_requests']), 1)
+
+    def test_nothing_crosses_the_org_boundary(self):
+        payload = self._actions(self.other_admin, 'admin')
+        self.assertEqual([r['id'] for r in payload['tool_requests']], [self.tool_req_b])
+        self.assertEqual(payload['policy_changes'], [],
+                         "org B admin must not see org A's pending policy change")
+
+    def test_decided_work_leaves_the_actions(self):
+        _exec("UPDATE agent_tool_requests SET status='approved' WHERE id=%s", (self.tool_req_a,))
+        _exec("UPDATE policy_change_requests SET status='approved' WHERE id=%s", (self.pol_req_a,))
+        payload = self._actions(self.admin, 'admin')
+        self.assertEqual(payload['tool_requests'], [])
+        self.assertEqual(payload['policy_changes'], [])
 
 
 if __name__ == "__main__":
