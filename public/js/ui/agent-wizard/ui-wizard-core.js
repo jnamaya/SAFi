@@ -77,8 +77,8 @@ export function openAgentWizard(existingAgent = null) {
                 : DEFAULT_WILL_RULES(),
             max_agent_turns: existingAgent.max_agent_turns || null,
             track_work_context: existingAgent.track_work_context !== false,
-            history_turns: existingAgent.history_turns || null,
-            history_max_chars: existingAgent.history_max_chars || null
+            history_turns: existingAgent.history_turns ?? null,
+            history_max_chars: existingAgent.history_max_chars ?? null
         };
         if (existingAgent.worldview && !agentData.instructions) {
             agentData.instructions = existingAgent.worldview;

@@ -7,8 +7,10 @@ export function renderSafetyStep(container, agentData) {
     const maxTurns = agentData.max_agent_turns || '';
     // Default ON for custom agents unless explicitly disabled.
     const trackWork = agentData.track_work_context !== false;
-    // History window: blank means "use the platform default". 0 means "all",
-    // which the backend treats as unlimited (bounded by chars).
+    // History window: blank means "use the platform default". 0 means keep
+    // every turn, which the backend treats as unlimited (bounded by chars).
+    // Both reads below must be nullish, not truthy: 0 is the meaningful
+    // value here, and || would render it as blank.
     const historyTurnsValue = (agentData.history_turns === null || agentData.history_turns === undefined)
         ? '' : String(agentData.history_turns);
     const historyMaxCharsValue = (agentData.history_max_chars === null || agentData.history_max_chars === undefined)
@@ -62,7 +64,7 @@ export function renderSafetyStep(container, agentData) {
                 <input type="number" id="history-turns-input" min="0" max="50" step="1"
                     class="w-28 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                     placeholder="Platform default" value="${historyTurnsValue}">
-                <span class="text-xs text-gray-400">Turns to replay. 0 (or "All") keeps every prior turn, bounded by the character cap.</span>
+                <span class="text-xs text-gray-400">Turns to replay. Enter 0 to keep every prior turn, bounded by the character cap below.</span>
             </div>
             <div class="flex items-center gap-3 mt-3">
                 <input type="number" id="history-max-chars-input" min="1000" max="200000" step="500"
