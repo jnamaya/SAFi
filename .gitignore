@@ -98,3 +98,7 @@ docs/building-and-managing-agents-post.md
 
 # Internal-only docs (gap analyses, security posture — never publish)
 docs/internal/
+
+# Static marketing site and retired venv. Host-local, never synced up
+/static_site/
+/venv.old/
