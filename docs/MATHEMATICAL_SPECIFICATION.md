@@ -31,6 +31,9 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 | $A_t \in [0, 1]$ | Aggregate alignment score (gating quantity consumed by Will Pass 3) |
 | $S_t \in [1, 10]$ | Spirit coherence score (display/audit quantity) |
 | $M_t$ | Memory state (prior audits, profiles, aggregates) |
+| $P$ | Persona given to the Intellect: worldview and style. Carries no value, weight, rubric or score |
+| $R$ | Rubric set compiled by Synderesis, one scoring guide per value. Given to the Conscience, withheld from the Intellect |
+| $f_t$ | Coaching note from the Spirit, read by turn $t+1$'s Intellect. Qualitative, and at most one value *name* |
 
 ---
 
@@ -149,11 +152,19 @@ than $\tau_{\text{len}}$ (the tail of the prompt) are not scored.
 
 The Intellect generates the initial response and internal reflection:
 
-$$a_t, r_t = I(x_t, V, M_t)$$
+$$a_t, r_t = I(x_t, P, M_t, f_{t-1})$$
 
 Where:
 - $a_t$ is the draft response
 - $r_t$ is a short internal reflection (used for audit logging)
+
+**$V$ is absent, and that is deliberate.** The Intellect receives the persona
+$P$, meaning worldview and style. It never receives the value set, the weights,
+the rubrics or any score. A drafter able to read the rubric it will be graded
+against would optimise toward it, and the audit would become circular
+(Goodhart). The one channel back from the audit is $f_{t-1}$, the previous
+turn's coaching note, which is built to carry a qualitative signal and at most
+one value's *name*, never a score, weight or rubric.
 
 **Code Reference:** [`intellect.py#generate()`](../safi_app/core/faculties/intellect.py)
 
@@ -441,9 +452,9 @@ non-content scores.
 |---------|-----------|
 | Synderesis (compile-time) | $\Sigma: \text{policy} \rightarrow (V, R, \text{scope})$ — normalized value set $V$, rubric set $R$, scope bounds |
 | Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
-| Intellect | $I: (x_t, V, M_t) \rightarrow (a_t, r_t)$ |
+| Intellect | $I: (x_t, P, M_t, f_{t-1}) \rightarrow (a_t, r_t)$. Persona only: $V$ and $R$ are withheld |
 | Will — Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
-| Conscience | $C: (a_t, x_t, V) \rightarrow L_t$ |
+| Conscience | $C: (a_t, x_t, R) \rightarrow L_t$. Rubrics and value names: the weights are withheld, and applied later by Spirit |
 | Will — Pass 2 | $W_2: (L_t, V) \rightarrow (D^2_t, E^2_t)$ |
 | Will — Tool Gate (agentic) | $`W_{\text{tool}}: (\tau, \pi, T_{\text{allow}}) \rightarrow (D_t, E_t)`$ |
 | Spirit (integrate) | $`\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)`$ |
