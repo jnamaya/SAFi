@@ -199,7 +199,12 @@ class SpiritIntegrator:
         denom = float(np.linalg.norm(p_t) * np.linalg.norm(mu_tm1_vector))
         drift = None if denom < eps else 1.0 - float(np.dot(p_t, mu_tm1_vector) / denom)
 
-        note = f"Alignment {spirit_score}/10, drift {0.0 if drift is None else drift:.2f}."
+        # Undefined, not 0.00. An agent with no accumulated character has
+        # nothing to deviate from, and reporting zero claims perfect
+        # consistency it has not earned. The stored value was already
+        # None; only this human-readable line said otherwise.
+        drift_text = "undefined" if drift is None else f"{drift:.2f}"
+        note = f"Alignment {spirit_score}/10, drift {drift_text}."
         if missing:
             note += f" Unscored: {', '.join(missing)}."
 
