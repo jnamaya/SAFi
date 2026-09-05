@@ -22,7 +22,9 @@ Requires the disposable stack (MySQL, real session auth):
     docker compose -f docker-compose.test.yml run --rm --build tests -k tcb_remote
 """
 import json
+import os
 import sys
+import tempfile
 import uuid
 import unittest
 from unittest.mock import Mock, patch
@@ -87,6 +89,17 @@ class StubIntegrity:
         return self.disk if root is not None else self.boot
 
 
+class BrokenIntegrity:
+    """Models the only realistic failure of the local check: get_status and
+    _ROOT both raising or the files being unreadable. Returns a 500 with the
+    error body, not a verdict."""
+
+    _ROOT = "/safi/root"
+
+    def get_status(self, root=None):
+        raise RuntimeError("integrity check could not run")
+
+
 class TestTcbVerify(unittest.TestCase):
 
     @classmethod
@@ -120,8 +133,6 @@ class TestTcbVerify(unittest.TestCase):
         return _get
 
     def _post(self, body=None):
-        return self.client.post(f"/api/organizations/{self.org_id}/tcb-verify",
-                                json=body or {})
         return self.client.post(f"/api/organizations/{self.org_id}/tcb-verify",
                                 json=body or {})
 
@@ -264,6 +275,95 @@ class TestTcbVerify(unittest.TestCase):
             self._post()
             self._post()
             self.assertEqual(mocked.call_count, 1)
+
+    def test_branch_is_reported_when_git_metadata_present(self):
+        """The dev/demo compose binds .git read-only, so the button can say
+        which tree this instance is on. A hint, never part of the verdict."""
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations, "_detect_git_branch",
+                          return_value={"branch": "dev", "revision": "82c7caf"}):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertEqual(data["local"]["branch"], "dev")
+        self.assertEqual(data["local"]["revision"], "82c7caf")
+
+    def test_branch_is_absent_without_git_metadata(self):
+        """A stock image has no .git (the Dockerfile never copies it), so the
+        field is null and the UI falls back to the snapshot/fork wording."""
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations, "_detect_git_branch",
+                          return_value={"branch": None, "revision": None}):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertIsNone(data["local"]["branch"])
+        self.assertIsNone(data["local"]["revision"])
+
+    def test_error_response_carries_the_branch(self):
+        """When the local check itself fails, the 500 body still names the
+        tree, so the UI can say "this instance is on the dev tree"."""
+        with patch.object(organizations, "integrity", BrokenIntegrity()), \
+             patch.object(organizations, "_detect_git_branch",
+                          return_value={"branch": "dev", "revision": None}):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            r = self._post()
+        self.assertEqual(r.status_code, 500)
+        self.assertEqual(r.get_json()["branch"], "dev")
+
+
+class TestDetectGitBranch(unittest.TestCase):
+    """The helper walks up from the module directory reading .git/HEAD as a
+    plain text file, so it works without a git binary and never raises."""
+
+    def _make(self, head_contents=None, head_missing=False):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        git = os.path.join(tmp.name, ".git")
+        if not head_missing:
+            os.makedirs(git, exist_ok=True)
+            if head_contents is not None:
+                with open(os.path.join(git, "HEAD"), "w") as f:
+                    f.write(head_contents)
+        return tmp.name
+
+    def test_finds_the_branch_ref(self):
+        self.assertEqual(
+            organizations._detect_git_branch(start=self._make("ref: refs/heads/dev\n")),
+            {"branch": "dev", "revision": None})
+
+    def test_detached_head_reports_revision(self):
+        self.assertEqual(
+            organizations._detect_git_branch(
+                start=self._make("82c7cafdeadbeef000011112222333344445555\n")),
+            {"branch": None, "revision": "82c7cafdeadb"})
+
+    def test_walks_up_by_max_parents(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        nested = os.path.join(tmp.name, "a", "b", "c")
+        os.makedirs(nested)
+        git = os.path.join(tmp.name, ".git")
+        os.makedirs(git)
+        with open(os.path.join(git, "HEAD"), "w") as f:
+            f.write("ref: refs/heads/main\n")
+        self.assertEqual(
+            organizations._detect_git_branch(start=nested, max_parents=4),
+            {"branch": "main", "revision": None})
+
+    def test_no_git_returns_nothing(self):
+        self.assertEqual(
+            organizations._detect_git_branch(start=self._make(head_missing=True)),
+            {"branch": None, "revision": None})
+
+    def test_inaccessible_head_never_raises(self):
+        self.assertEqual(
+            organizations._detect_git_branch(start=self._make(head_contents=None)),
+            {"branch": None, "revision": None})
 
 
 if __name__ == "__main__":

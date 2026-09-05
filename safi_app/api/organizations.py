@@ -1229,6 +1229,32 @@ def _fetch_tcb_releases():
     return releases is not None, releases, error
 
 
+def _detect_git_branch(start=None, max_parents=4):
+    """Best-effort git branch of the running tree, read from .git/HEAD (a
+    plain text file; no git binary needed). The Dockerfile deliberately does
+    not copy .git, so a stock image has no answer; deployments that bind the
+    checkout (the local compose) report their branch. A hint for the
+    operator, never part of the verdict: a tamperer can edit .git, but not
+    the fingerprint check. Never raises."""
+    try:
+        here = os.path.abspath(start or os.path.dirname(__file__))
+        for _ in range(max_parents):
+            head_file = os.path.join(here, ".git", "HEAD")
+            if os.path.isfile(head_file):
+                with open(head_file, encoding="utf-8") as f:
+                    head = f.read().strip()
+                if head.startswith("ref: refs/heads/"):
+                    return {"branch": head.rsplit("/", 1)[-1], "revision": None}
+                return {"branch": None, "revision": head[:12] or None}
+            parent = os.path.dirname(here)
+            if parent == here:
+                break
+            here = parent
+    except Exception:
+        pass
+    return {"branch": None, "revision": None}
+
+
 @organizations_bp.route('/organizations/<org_id>/tcb-verify', methods=['POST'])
 @require_role('admin')
 def tcb_verify(org_id):
@@ -1248,7 +1274,10 @@ def tcb_verify(org_id):
         boot = integrity.get_status()
     except Exception as e:
         current_app.logger.error(f"tcb_verify: local check failed: {e}")
-        return jsonify({"error": "The local integrity check could not run."}), 500
+        return jsonify({
+            "error": "The local integrity check could not run.",
+            "branch": _detect_git_branch()["branch"],
+        }), 500
 
     reachable, releases, error = _fetch_tcb_releases()
     official = None
@@ -1275,6 +1304,8 @@ def tcb_verify(org_id):
     if pin_configured and disk.get("fingerprint"):
         pin_matches = pin == disk["fingerprint"]
 
+    git = _detect_git_branch()
+
     result = {
         "checked_at": utc_isoformat(datetime.now(timezone.utc)),
         "verdict": verdict,
@@ -1286,6 +1317,8 @@ def tcb_verify(org_id):
             "manifest_fingerprint": disk.get("expected_fingerprint"),
             "boot_state": boot["state"],
             "boot_intact": boot["intact"],
+            "branch": git["branch"],
+            "revision": git["revision"],
             "modified_files": list(disk.get("modified") or [])[:50],
             "missing_files": list(disk.get("missing") or [])[:50],
         },
@@ -1308,6 +1341,7 @@ def tcb_verify(org_id):
             "manifest_fingerprint": disk.get("expected_fingerprint"),
             "disk_state": disk["state"],
             "boot_state": boot["state"],
+            "branch": git["branch"],
             "official_release": official,
             "remote_reachable": reachable,
             "pin_configured": pin_configured,

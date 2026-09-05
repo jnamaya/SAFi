@@ -1096,11 +1096,14 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             authentic: r.remote.official_release
                 ? `Matches official release <strong>${escapeHtml(r.remote.official_release.tag)}</strong> (${escapeHtml(r.remote.official_release.date)}).`
                 : 'Matches an official release.',
-            unreleased: 'The installed files match this deployment\'s own manifest, but its fingerprint is not in the official release list. This is a development snapshot or a fork, not a pinned official release.',
+            unreleased: 'The installed files match this deployment\'s own manifest, but its fingerprint is not in the official release list.',
             modified: 'The installed files do not match the release manifest. Running modified Core Loop code is permitted by AGPL; only calling it official SAFi is conditional (License &amp; Governance Agreement, Section IV).',
             unverifiable: 'The local integrity check could not run, so no verdict is possible.',
             offline: 'This installation is intact, but the official fingerprint list could not be fetched, so authenticity could not be confirmed.',
         };
+        const branchLine = (r.local && r.local.branch)
+            ? ` This instance is on the <strong>${escapeHtml(r.local.branch)}</strong> tree${r.local.revision ? ` at <code class="font-mono">${escapeHtml(r.local.revision)}</code>` : ''}.`
+            : ' This is a development snapshot or a fork, not a pinned official release.';
         const pinLine = r.pin && r.pin.configured
             ? `<p class="text-xs ${r.pin.matches ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
                 Operator pin (SAFI_EXPECTED_FINGERPRINT) ${r.pin.matches ? 'matches.' : `does NOT match. Pinned ${escapeHtml(r.pin.configured_prefix)}, this install measures a different fingerprint.`}
@@ -1109,7 +1112,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         return `
             <div class="border rounded-lg p-4 ${banners[r.verdict] || banners.offline}">
                 <p class="font-semibold">${titles[r.verdict] || 'Check incomplete'}</p>
-                <p class="text-sm mt-1">${notes[r.verdict] || ''}</p>
+                <p class="text-sm mt-1">${(notes[r.verdict] || '') + (r.verdict === 'unreleased' ? branchLine : '')}</p>
                 ${pinLine}
             </div>
             <dl class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
@@ -1117,6 +1120,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd>${short(r.local && r.local.manifest_fingerprint)}</dd></div>
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd>${r.local ? escapeHtml(r.local.state) : 'unavailable'}${r.local && r.local.modified_files.length ? ` &middot; ${escapeHtml(r.local.modified_files.join(', '))}` : ''}</dd></div>
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd>${r.local ? escapeHtml(r.local.boot_state) : 'unavailable'}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Git branch</dt><dd>${r.local && r.local.branch ? `${escapeHtml(r.local.branch)}${r.local.revision ? ` @ <code class="font-mono">${escapeHtml(r.local.revision)}</code>` : ''}` : 'unavailable (no git metadata in this deployment)'}</dd></div>
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd>${r.remote && r.remote.reachable ? 'reachable' : 'unreachable'}${r.remote && r.remote.error ? ` &middot; ${escapeHtml(r.remote.error)}` : ''}</dd></div>
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Checked</dt><dd>${escapeHtml(r.checked_at || '')}</dd></div>
             </dl>`;
@@ -1133,10 +1137,16 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             btn.textContent = 'Verifying...';
             try {
                 const res = await api.tcbVerify(btn.dataset.orgId);
-                if (!res.ok) throw new Error(res.error || 'Verification failed.');
+                if (!res.ok) {
+                    const tail = res.branch
+                        ? `, this instance is on the ${escapeHtml(res.branch)} tree.`
+                        : '';
+                    resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(res.error || 'Verification failed.')}${tail}</p>`;
+                    return;
+                }
                 resultEl.innerHTML = renderTcbResult(res);
             } catch (err) {
-                resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(err.message)}</p>`;
+                resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(err.message || 'Verification failed.')}</p>`;
             } finally {
                 btn.disabled = false;
                 btn.textContent = original;

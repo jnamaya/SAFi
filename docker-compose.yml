@@ -59,6 +59,10 @@ services:
       # RAG indexes persist across rebuilds; the entrypoint auto-builds the
       # small `safi` knowledge base here on first boot if it's missing.
       - vector_store:/app/vector_store
+      # The host git checkout, read-only, so the TCB verify button can report
+      # which branch this deployment is on. The Dockerfile deliberately never
+      # copies .git, so release images stay clean and report no branch.
+      - ./.git:/app/.git:ro
     restart: unless-stopped
 
   # ── Retention purge (daily) ──────────────────────────────────────────────────
