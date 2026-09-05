@@ -1,10 +1,10 @@
 # SAFi Developer Guide
 
-**Last updated:** August 2026. This is the orientation document for anyone
-working on SAFi's code — the front-end, back-end, and mobile layouts, how
-to run it locally, the five-faculty architecture and the math behind it,
-multi-agent design, and how to authenticate against and extend the API.
-For the product overview see the [README](../README.md).
+**Last updated:** September 2026. This is the orientation document for anyone
+working on SAFi's code: the front-end, back-end, how to run it locally, the
+five-faculty architecture and the math behind it, multi-agent design, and how
+to authenticate against and extend the API. For the product overview see the
+[README](../README.md).
 
 ## A note from the author
 
@@ -25,11 +25,11 @@ without breaking the TCB core loop.
 
 If it helps, think of the TCB and the USB as the Linux kernel and a
 desktop environment. You can develop whatever desktop environment you
-want, and keep those changes to yourself if you want to. But if you need
-to expand or add anything in the TCB, commit those changes to the
-upstream project; they will be reviewed and accepted if they help the
-system in any way ([section 19](#19-the-tcb-user-space-and-how-they-talk)).
-The idea is to keep the TCB generic and universal.
+want, and keep those changes to yourself. But if you need to expand or
+add anything in the TCB, commit those changes to the upstream project;
+they will be reviewed and accepted if they help the system in any way
+([section 19](#19-the-tcb-user-space-and-how-they-talk)). The idea is to
+keep the TCB generic and universal.
 
 If you modify the TCB and never commit the changes upstream, SAFi keeps
 working without any limitations, but you cannot claim authenticity and
@@ -42,13 +42,13 @@ capabilities, and you are welcome to use it if it fits your needs. But
 you can build any GUI you want, on whatever tech stack, as long as you
 adhere to the specifications:
 
-- **[Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md)** —
+- **[Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md)**:
   the contract for everything you hand the TCB (agents, policies, values,
   rubrics, enforcement rules)
-- **[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)**
-  — the contract for everything the TCB produces (records, ledgers, the
+- **[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)**:
+  the contract for everything the TCB produces (records, ledgers, the
   hash chain, the integrity stamp)
-- **[Mathematical Specification](MATHEMATICAL_SPECIFICATION.md)** — the
+- **[Mathematical Specification](MATHEMATICAL_SPECIFICATION.md)**: the
   formal model of the five-faculty pipeline
 
 If you are interested in the philosophy side of SAFi, the best resource
@@ -56,38 +56,37 @@ is the article section of the main project website:
 [selfalignmentframework.com](https://selfalignmentframework.com).
 
 Thank you!
+
 Nelson
 
 ## How to read this guide
 
 Most of this guide documents the **reference implementation**: the USB
 that ships with SAFi (the vanilla-JS front end, installable as a PWA, the
-wizards, the settings screens). It exists so you can evaluate
-SAFi in one command and so contributors can improve it. **None of it
-binds you.** Your own client, GUI, or integration replaces any of it,
-and owes conformance only to the contract.
+wizards, the settings screens). It exists so you can evaluate SAFi in one
+command and so contributors can improve it. **None of it binds you.** Your
+own client, GUI, or integration replaces any of it, and owes conformance
+only to the contract.
 
 Read by what you are building:
 
 - **Building your own interface or integration on SAFi** (your stack,
-  your framework): you need the contract only — section 5 (what the
+  your framework): you need the contract only. Section 5 (what the
   pipeline does), sections 9 and 10 (the API and its RBAC), section 19
   (the boundary), and the two specifications: the
   [Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md) for
   what you hand in, the
   [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
   for what you read back. You can skip every section that describes the
-  shipped interface (1, 3, and the wizard walkthroughs) without missing
+  shipped interface (3, and the wizard walkthroughs) without missing
   anything that constrains you.
 - **Working on the shipped implementation itself** (fixing or extending
-  what SAFi ships): the whole guide applies, including the build steps
-  and layout sections, plus the contribution rules in section 19 for
+  what SAFi ships): the whole guide applies, including the setup and
+  layout sections, plus the contribution rules in section 19 for
   anything that touches the TCB.
 
 ## Table of Contents
 
-1. [Front-end structure](#1-front-end-structure)
-2. [Back-end structure](#2-back-end-structure)
 3. [Device clients and mobile apps](#3-device-clients-and-mobile-apps)
 4. [Setting up SAFi on your local machine](#4-setting-up-safi-on-your-local-machine)
 5. [Understanding SAFi](#5-understanding-safi)
@@ -107,106 +106,6 @@ Read by what you are building:
 19. [The TCB, User Space, and how they talk](#19-the-tcb-user-space-and-how-they-talk)
 20. [Adding models and providers](#20-adding-models-and-providers)
 
-## 1. Front-end structure
-
-*Reference implementation. This describes the shipped interface; your own
-client owes it nothing.*
-
-The front-end is plain HTML, JavaScript, and CSS — no framework. A
-deliberate choice: a governance product benefits from fewer dependencies
-to keep the security surface small. You're welcome to port it to a
-framework of your choice, or replace it entirely; nothing about the
-backend assumes vanilla JS.
-
-```
-public/
-├── index.html            # single-page app shell
-├── package.json, package-lock.json, tailwind.config.js   # Tailwind build only
-├── css/
-│   ├── input.css          # Tailwind source
-│   ├── main.css            # built output — regenerate after class changes (§4)
-│   ├── styles.css          # hand-written styles outside Tailwind
-│   └── highlight-theme.css
-├── assets/                # images, SVG icons, static reference/marketing pages
-└── js/
-    ├── core/               # bootstrap, API client, chat engine, cache, utils
-    │   ├── app.js
-    │   ├── api.js
-    │   ├── chat.js
-    │   ├── cache.js
-    │   └── utils.js
-    ├── services/           # offline-manager.js, tts-audio.js
-    ├── lib/                # vendored third-party (marked, purify, highlight.js)
-    └── ui/
-        ├── ui.js, ui-messages.js, ui-composer-menu.js, ...   # chat UI
-        ├── agent-wizard/    # multi-step agent creation flow
-        ├── policy-wizard/   # multi-step policy authoring flow
-        ├── settings/        # Control Panel tabs, one module per tab
-        └── shared/          # shared widgets (tool-picker.js)
-```
-
-## 2. Back-end structure
-
-The backend is pure Python — it's the core of the system. SAFi uses MySQL
-as its database. Unlike the front-end, this one isn't a free swap — the
-persistence layer (`persistence/database.py`) leans on MySQL-specific SQL
-and runs its own ad hoc schema-migration guards at startup rather than
-using a migration tool, so moving to Postgres or another database would
-mean a real rewrite, not a drop-in change.
-
-SAFi's backend is headless: you can connect to it from any API-based
-client — Teams, Telegram, or anything else that can make API calls.
-
-```
-safi_app/
-├── __init__.py            # create_app() factory; calls init_db() at boot
-├── config.py               # env-driven Config class
-├── models.py
-├── extensions.py
-├── persistence/
-│   ├── database.py          # ~5k lines — all SQL, schema guards, init_db()
-│   └── crypto.py             # Fernet encrypt/decrypt, key rotation
-├── api/                    # Flask blueprints, one per surface
-│   ├── auth.py               # OIDC/SSO, sessions, local login
-│   ├── conversations.py      # chat turn endpoint (process_prompt_endpoint)
-│   ├── evaluate_api.py        # /evaluate gateway for external callers
-│   └── organizations.py, audit_api.py, review_api.py, incidents_api.py, ...
-└── core/
-    ├── orchestrator.py        # SAFi.process_prompt — the §5 phase pipeline
-    ├── orchestrator_mixins/   # suggestions, tasks, tts
-    ├── faculties/             # intellect, will, conscience, spirit, synderesis
-    ├── policies/              # per-org policy definitions (safi/, demo/)
-    ├── agents/                # built-in agent definitions and system prompts
-    ├── plugins/, mcp_servers/ # tool/plugin integrations
-    ├── services/              # llm_provider, model_routing, provider_governance, rag_service, ...
-    └── rbac.py, permissions.py, provenance.py, totp.py, threat_intel.py, ...
-```
-
-Supporting top-level directories:
-
-```
-run.py, wsgi.py, asgi.py   # entry points — dev server, WSGI, ASGI
-scripts/                    # retention_purge.py, backfill_encryption.py, backup_verify.py, ...
-tests/                       # integration tests against live MySQL (§17)
-rag/                          # index builder + doc sources for agent retrieval
-deploy/systemd/                # example units for production
-teams_bot.py, telegram_bot.py   # bot-channel integrations
-```
-
-**The one mental model to carry through this whole guide: the code is two
-spaces, not one.** A small, enumerated set of files is the Trusted
-Computing Base (TCB): the governance pipeline, the five faculties, the
-audit schema, the enforcement content, RBAC, the plugin mechanism, and the
-attestation module. Everything else — every API blueprint, the whole front
-end, the agents, the policies, the plugins' content, the bots, the scripts
-— is User Space (the USB, User Space Base): it configures what the TCB
-enforces and reads what the TCB records, but a defect in it cannot
-violate the governance policy. You
-will work in User Space almost all of the time, and User Space talks to
-the TCB through a handful of stable, data-shaped interfaces rather than by
-reaching into it. Section 19 draws the full boundary and catalogs those
-interfaces; internalize it before your first change.
-
 ## 3. Device clients and mobile apps
 
 *Reference implementation. SAFi's official client is the web app in
@@ -218,17 +117,16 @@ devices. It is the vanilla-JS front end in `public/`, served over HTTP with
 a web app manifest (`public/manifest.json`) and responsive layouts, so a
 browser can install it to the home screen or the desktop and run it like an
 installed app. There is no separate mobile codebase: the same `public/` tree
-serves every device, so there is nothing extra to build or keep in sync. See
-[§1](#1-front-end-structure) for what's in `public/`.
+serves every device, so there is nothing extra to build or keep in sync.
 
 Full native mobile apps are possible, and the mobile APIs are open to anyone
 who wants to build them. Everything a client needs is the HTTP API
 (authentication in §8, the governed-turn gateway in §9, the internal API
 endpoints in §10): login, conversations, governed chat turns, and the rest
-are all reachable the same way the web app reaches them. Any organization that wants a full
-iOS or Android app can build one against that API on whatever stack it
-prefers. That is the organization's decision, not something the platform
-requires or provides.
+are all reachable the same way the web app reaches them. Any organization
+that wants a full iOS or Android app can build one against that API on
+whatever stack it prefers. That is the organization's decision, not
+something the platform requires or provides.
 
 A Capacitor Android shell used to ship here as a reference client. It was
 retired on 2026-08-19 in favor of the PWA, and the `mobile/` directory was
@@ -236,8 +134,8 @@ removed.
 
 ## 4. Setting up SAFi on your local machine
 
-Setting up SAFi is easy — just make sure you have Git, Docker, and
-Python 3 installed first.
+Setting up SAFi is easy; just make sure you have Git, Docker, and Python 3
+installed first.
 
 ```bash
 git clone https://github.com/jnamaya/SAFi.git
@@ -250,61 +148,61 @@ The setup wizard needs nothing beyond Python 3, verifies your provider
 API key before writing it, prints the admin password once at the end,
 and refuses to overwrite an existing `.env` unless you pass `--force`
 (`--defaults` runs it non-interactively). Prefer configuring by hand?
-`cp .env.example .env` and follow the comments — set at least one AI
+`cp .env.example .env` and follow the comments. Set at least one AI
 provider key, the MySQL passwords, and the local admin credentials.
 
-Visit `http://localhost:5000` once it's up.
+Visit `http://localhost:5000` once it is up.
 
 Two ways to get past the login page without configuring SSO (§8):
 
-- **Local admin** — set `SAFI_LOCAL_ADMIN_EMAIL` and
+- **Local admin**: set `SAFI_LOCAL_ADMIN_EMAIL` and
   `SAFI_LOCAL_ADMIN_PASSWORD` in `.env`; a permanent admin account is
   auto-created (or updated) on startup. This is the account you'll use
   for the Control Panel, policy authoring, and org setup.
-- **Demo login** — enabled by `SAFI_DEPLOYMENT_MODE=trial` (or `showcase`),
+- **Demo login**: enabled by `SAFI_DEPLOYMENT_MODE=trial` (or `showcase`),
   which shows a "Try Demo (Admin)" button on the login page. It mints a
-  fresh, isolated, 24h-expiring sandbox org per visitor — good for a quick
+  fresh, isolated, 24h-expiring sandbox org per visitor: good for a quick
   look, wrong for real work. `SAFI_ENABLE_DEMO=true` still forces it on
   independently of the mode.
-- **Deployment mode** — `SAFI_DEPLOYMENT_MODE` is `production` (default),
+- **Deployment mode**: `SAFI_DEPLOYMENT_MODE` is `production` (default),
   `trial`, or `showcase`. It declares what the instance *is* rather than
-  making you set several demo switches consistently: `production` turns demo
-  login and the showcase UI framing off, `trial` enables demo login only, and
-  `showcase` additionally shows the framing that names the running model and
-  explains SAFi is the governance layer rather than the intelligence. That
-  framing is aimed at people evaluating SAFi, so only the public demo should
-  use `showcase`. An unrecognised value falls back to `production` and logs a
-  warning, and `SAFI_ENABLE_DEMO` / `SAFI_PUBLIC_DEMO_UI` still override the
-  mode individually.
+  making you set several demo switches consistently: `production` turns
+  demo login and the showcase UI framing off, `trial` enables demo login
+  only, and `showcase` additionally shows the framing that names the
+  running model and explains SAFi is the governance layer rather than the
+  intelligence. That framing is aimed at people evaluating SAFi, so only
+  the public demo should use `showcase`. An unrecognised value falls back
+  to `production` and logs a warning, and `SAFI_ENABLE_DEMO` /
+  `SAFI_PUBLIC_DEMO_UI` still override the mode individually.
 
 ## 5. Understanding SAFi
 
 SAFi is a governance layer, not a chatbot framework. It wraps whatever LLM
 you point it at in a deterministic **enforcement** pipeline that decides what
-actually reaches the user — and produces a verifiable record of that decision.
+actually reaches the user, and produces a verifiable record of that decision.
 The model is a component it governs, not the thing it is.
 
 Read "deterministic" precisely, because it is the load-bearing claim. The
 *evaluation* is a model: the Conscience is an LLM scoring the draft against your
 policy's rubrics. The *enforcement* is not. Every block, retry and threshold
-decision is a fixed rule applied to that score — no model in the loop — so
+decision is a fixed rule applied to that score, no model in the loop, so
 anyone holding the audit record can recompute the outcome and get the same
 answer. The Conscience is sampled at temperature 0 to make the ledger as
 reproducible as the provider allows, but the guarantee SAFi offers is about the
 rule, not the score.
 
 The architecture is a separation of powers across five faculties. The
-names come from classical philosophy — background at
+names come from classical philosophy (background at
 [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/)
-if you're curious — but nothing below requires it; each name is defined
+if you're curious), but nothing below requires it; each name is defined
 here by what the component does:
 
-- **Synderesis** compiles the immutable baseline before any turn runs —
+- **Synderesis** compiles the immutable baseline before any turn runs:
   the governing policy, scope boundaries, and value weights for the
   agent.
 - **Intellect** is the LLM itself. It drafts a response or proposes a
   tool call, nothing more. It operates inside an **Air Gap**: it can
-  produce *intents*, never execute them — whatever the model outputs, it
+  produce *intents*, never execute them. Whatever the model outputs, it
   cannot itself take an action.
 - **Will** approves or vetoes the Intellect's proposal, checking
   structural rules and the Conscience's ledger.
@@ -315,19 +213,19 @@ here by what the component does:
   a rolling per-agent EMA, detecting behavioral drift over time and
   feeding coaching back into future turns.
 
-Every turn runs this as a synchronous, seven-phase loop — Phase 0's
+Every turn runs this as a synchronous, seven-phase loop: Phase 0's
 pre-generation gate through Phase 6's commit (the phase-by-phase
 mechanics get their own section later in this doc). The loop doesn't
-just produce a response: it produces a governance record — the draft,
-the ledger, the enforcement decision, and the exact policy version in
-force — written to a hash-chained, tamper-evident audit trail. That
+just produce a response; it produces a governance record, the draft, the
+ledger, the enforcement decision, and the exact policy version in
+force, written to a hash-chained, tamper-evident audit trail. That
 record, not the chat reply, is what an auditor or examiner actually
 relies on afterward.
 
 ## 6. The math, briefly
 
-The full formal model — every stage's signature, the reflexion-retry
-mechanics, and the worked equations — lives in
+The full formal model, every stage's signature, the reflexion-retry
+mechanics, and the worked equations, lives in
 [MATHEMATICAL_SPECIFICATION.md](MATHEMATICAL_SPECIFICATION.md). This is
 just enough notation to read that document without starting cold.
 
@@ -337,65 +235,68 @@ just enough notation to read that document without starting cold.
 |---|---|
 | $x_t$ | Input context (prompt + metadata) |
 | $V = \{(v_i, w_i)\}$ | The agent's value set, weights summing to 1 |
+| $P$ | The persona given to the Intellect (worldview and style), withheld from the Conscience |
+| $R$ | The rubric set compiled by Synderesis, given to the Conscience, withheld from the Intellect |
 | $a_t$ | The Intellect's draft response |
-| $L_t = \{(v_i, s_{i,t}, c_{i,t})\}$ | Conscience's ledger: a continuous score $s_{i,t} \in [-1, 1]$ and confidence $c_{i,t} \in [0, 1]$ per value — **not** a discrete $\{-1, 0, +1\}$; the anchors are reference points, not buckets |
-| $A_t \in [0, 1]$ | Spirit's *gating* alignment (confidence-free) — what Will's third pass checks against the threshold |
-| $S_t \in [1, 10]$ | Spirit's *display* coherence score (confidence-weighted) — what the Audit Hub shows as "Alignment." **Not the same number as $A_t$** — the spec is explicit that conflating them is a bug class |
+| $f_t$ | Spirit's coaching note, read by turn $t+1$'s Intellect |
+| $L_t = \{(v_i, s_{i,t}, c_{i,t})\}$ | Conscience's ledger: a continuous score $s_{i,t} \in [-1, 1]$ and confidence $c_{i,t} \in [0, 1]$ per value. **Not** a discrete $\{-1, 0, +1\}$; the anchors are reference points, not buckets |
+| $A_t \in [0, 1]$ | Spirit's *gating* alignment (confidence-free), what Will's third pass checks against the threshold |
+| $S_t \in [1, 10]$ | Spirit's *display* coherence score (confidence-weighted), what the Audit Hub shows as "Alignment." **Not the same number as $A_t$**. The spec is explicit that conflating them is a bug class |
 | $M_t$ | Memory state carried into the next turn |
 
-**Faculties as functions:**
+**Faculties as functions (v1.9.3 signatures):**
 
-$$a_t = I(x_t, V, M_t) \quad\quad L_t = C(a_t, x_t, V) \quad\quad S_t, d_t, \mu_t = \text{Spirit}(L_t, V, M_t)$$
+$$a_t, r_t = I(x_t, P, M_t, f_{t-1}) \quad\quad L_t = C(a_t, x_t, R) \quad\quad S_t, d_t, \mu_t = \text{Spirit}(L_t, V, M_t)$$
 
-Will isn't a single decision — it's three separate deterministic passes
-(structural, hard-gate, alignment), each able to redirect independently;
-only the third can trigger a single reflexion retry. See §5 above for why
+Will isn't a single decision; it is three separate deterministic passes
+(structural, hard-gate, alignment), each able to redirect independently.
+Only the third can trigger a single reflexion retry. See §5 above for why
 the faculties are shaped this way, and the full spec for exactly how each
 pass gates the next.
 
 ## 7. Multi-agent architecture
 
-SAFi isn't single-agent — an org runs as many agents side by side as it
+SAFi is not single-agent; an org runs as many agents side by side as it
 wants. Each is a row in the `agents` table (`persistence/database.py`):
 identity (name, avatar, worldview, style), a `policy_id`, its own model
 per faculty (`intellect_model`/`will_model`/`conscience_model`), a scope
 statement, a tool allow-list, and a `visibility` level (private / member /
 auditor / editor / admin) gating who in the org can see it. `list_agents()`
-(`database.py`) always returns the caller's own agents plus
-org-mates' agents whose visibility clears the caller's role; built-in
-demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
+(`database.py`) always returns the caller's own agents plus org-mates'
+agents whose visibility clears the caller's role; built-in demo agents are
+seeded conditionally via `SAFI_BUILTIN_AGENTS`.
 
 - **Agent and policy are two tiers, not one binding.** `core/agents/*.py`
   (bible_scholar, fiduciary, health_navigator, safi_steward,
-  socratic_tutor) are default templates — each ships a fallback `policy_id`,
-  but that's just a default an agent row can override. Policies are their
+  socratic_tutor) are default templates; each ships a fallback `policy_id`,
+  but that is just a default an agent row can override. Policies are their
   own versioned entity (`policies` / `policy_versions`), so the same
   agent can run under different policies across agents, or be
   reattached to a new one without touching its identity. See
   `core/policies/demo/policies.py` for the two-tier model spelled out.
 - **Synderesis compiles fresh every turn, not once at agent creation.**
-  `Synderesis.get_profile()` (`faculties/synderesis.py`) — "the
-  sole governance compiler" — resolves agent → policy → org Charter into
+  `Synderesis.get_profile()` (`faculties/synderesis.py`), "the sole
+  governance compiler", resolves agent → policy → org Charter into
   the normalized value set, rubric set, and scope hard-gate that feed the
   rest of the pipeline (§5, §6). It runs per message from
   `api/conversations.py`, through a caching wrapper keyed on a governance
-  fingerprint (`SAFiInstanceCache.get_or_create`, `database.py`) —
-  not once at creation and cached forever. Practical consequence: editing
-  a policy's values takes effect on the very next turn, for every agent
-  attached to it, with no redeploy or per-agent rebuild step.
+  fingerprint (`SAFiInstanceCache.get_or_create`, `database.py`), not once
+  at creation and cached forever. Practical consequence: editing a policy's
+  values takes effect on the very next turn, for every agent attached to
+  it, with no redeploy or per-agent rebuild step.
 - **Selecting an agent is per-user, not per-conversation.** Agent choice
   lives on the user (`users.active_profile`, `database.py`), read on
   every send (`conversations.py`). Switching (`PUT /api/me/profile`,
   `auth.py`) forces a full page reload and starts a new conversation
-  (`app.js`) — there's no live, mid-thread agent switcher.
+  (`app.js`); there is no live, mid-thread agent switcher.
   `ui-model-selector.js` is a separate concern: it only picks the LLM
   model per faculty, not the agent itself.
 - **The agent-wizard creates real agents, not just cosmetic variants.**
-  `public/js/ui/agent-wizard/` is five steps — identity + policy attach,
-  tools, model, safety, review — and produces a genuine new agent row
+  `public/js/ui/agent-wizard/` is five steps (identity + policy attach,
+  tools, model, safety, review) and produces a genuine new agent row
   (new `agent_key`, custom name/avatar/scope/model). Step 1 lets an admin
   attach an existing org policy or fall back to "Charter only." What it
-  doesn't do is let an admin author values/rubrics inline: scored values
+  does not do is let an admin author values/rubrics inline: scored values
   always come from the attached policy (or the Charter as a floor), never
   from the wizard itself. Custom agents are real; custom scoring criteria
   still route through the policy system.
@@ -403,44 +304,44 @@ demo agents are seeded conditionally via `SAFI_BUILTIN_AGENTS`.
 ## 8. SSO authentication
 
 Two OIDC providers are supported today: **Google Workspace** and
-**Microsoft Entra ID (Azure AD)**. **SAML is not implemented yet** — it's
-scoped as future work in
-[SAML_SSO_PLAN.md](SAML_SSO_PLAN.md); don't point a customer at SAML
-support until that plan is actually built. GitHub OAuth also exists in
-`auth.py`, but it's a tool-connection flow (like Google Drive/SharePoint),
-not a login method — don't confuse the two when reading the auth code.
+**Microsoft Entra ID (Azure AD)**. **SAML is not implemented yet**; it is
+scoped as future work in [SAML_SSO_PLAN.md](SAML_SSO_PLAN.md). Do not
+point a customer at SAML support until that plan is actually built. GitHub
+OAuth also exists in `auth.py`, but it is a tool-connection flow (like
+Google Drive/SharePoint), not a login method. Do not confuse the two when
+reading the auth code.
 
 **Local setup:** register an app with each provider and set the client
 credentials in `.env`:
 
 ```bash
-# Google — console.cloud.google.com/apis/credentials
+# Google: console.cloud.google.com/apis/credentials
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 # redirect URI must include: {WEB_BASE_URL}/api/callback/google
 
-# Microsoft — portal.azure.com/#view/Microsoft_AAD_RegisteredApps
+# Microsoft: portal.azure.com/#view/Microsoft_AAD_RegisteredApps
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
 ```
 
 **Per-org enforcement** lives in `_org_claim_gate()`
-(`safi_app/api/auth.py`), called from the Google web/mobile flows
-and the Microsoft flow (all in `auth.py`).
-Two things worth knowing before touching this code:
+(`safi_app/api/auth.py`), called from the Google web/mobile flows and the
+Microsoft flow (all in `auth.py`). Two things worth knowing before touching
+this code:
 
 - **Pinning is opt-in, fail-open by default.** Until an org sets
-  `google_hd` (Workspace domain) or `ms_tenant_id` (Entra tenant) — via
-  `get_org_identity_config`/`set_org_identity_config`
-  (`database.py`), surfaced in the Control Panel's Organization
-  tab under "Identity & Sessions" (`ui-settings-org.js`) — *any*
-  Google or Microsoft account can sign in. Configuring the tenant/domain
-  is what turns on rejection, not a platform default.
+  `google_hd` (Workspace domain) or `ms_tenant_id` (Entra tenant), via
+  `get_org_identity_config`/`set_org_identity_config` (`database.py`),
+  surfaced in the Control Panel's Organization tab under "Identity &
+  Sessions" (`ui-settings-org.js`), *any* Google or Microsoft account can
+  sign in. Configuring the tenant/domain is what turns on rejection, not a
+  platform default.
 - **`require_mfa` only checks Microsoft's `amr` claim, not Google's.**
-  There's no equivalent MFA-evidence check in the Google branch. Google
+  There is no equivalent MFA-evidence check in the Google branch. Google
   MFA is treated as attested by Workspace policy, not verified in code.
   An org relying on `require_mfa` to cover Google logins specifically is
-  relying on something the code doesn't check. Adding an `amr` claim
+  relying on something the code does not check. Adding an `amr` claim
   anywhere on the Google side does nothing for this: the Google branch of
   `_org_claim_gate` never reads it.
 - **Entra does not send `amr` until the app registration is told to ask
@@ -453,7 +354,7 @@ Two things worth knowing before touching this code:
   **Token configuration → Add optional claim** wizard does not list
   `amr` as a selectable claim at all, searching for it there finds
   nothing, and that is not a bug in that search box: the wizard only
-  offers a fixed, curated claim list and `amr` isn't on it for this
+  offers a fixed, curated claim list and `amr` is not on it for this
   scenario. Set it through the **Manifest** blade (a plain JSON editor,
   not the wizard) or an equivalent Graph API call instead:
   ```
@@ -472,39 +373,37 @@ Two things worth knowing before touching this code:
   that org's app registration, or do this first.
 - **`join_policy` defaults to `domain_auto_join`, silently, for every
   org.** `_resolve_membership()` (`auth.py`) auto-adds a user as
-  `member` — no invite, no admin approval — when the org's `join_policy`
+  `member` (no invite, no admin approval) when the org's `join_policy`
   is `domain_auto_join`/`both` (the three values live in
   `JOIN_POLICIES`, `database.py`) and their email domain matches an
-  org via `get_organization_by_domain()` (`database.py`). That
-  lookup only ever matches orgs with `domain_verified=TRUE`, a flag set
-  exclusively through a deliberate DNS TXT-record proof flow
-  (`organizations.py`) — so a fresh, unverified org is inert to
-  this path, not silently walk-in-able. But once an admin *does* verify
-  their domain (a natural thing to do while setting up SSO), auto-join
-  is live by default unless they've explicitly switched `join_policy` to
-  `invite_only` in the Organization tab. Worth calling out to anyone
-  configuring SSO for an org that doesn't want unapproved joins.
-  Separately: the live demo (`/api/login/demo`, gated by
-  `SAFI_DEPLOYMENT_MODE` / `SAFI_ENABLE_DEMO`) is unrelated to any of this — it never touches
-  `_resolve_membership`, and mints a fresh, isolated, 24h-expiring
-  sandbox org per visitor instead.
+  org via `get_organization_by_domain()` (`database.py`). That lookup only
+  ever matches orgs with `domain_verified=TRUE`, a flag set exclusively
+  through a deliberate DNS TXT-record proof flow (`organizations.py`), so
+  a fresh, unverified org is inert to this path, not silently
+  walk-in-able. But once an admin *does* verify their domain (a natural
+  thing to do while setting up SSO), auto-join is live by default unless
+  they have explicitly switched `join_policy` to `invite_only` in the
+  Organization tab. Worth calling out to anyone configuring SSO for an org
+  that does not want unapproved joins. Separately: the live demo
+  (`/api/login/demo`, gated by `SAFI_DEPLOYMENT_MODE` / `SAFI_ENABLE_DEMO`)
+  is unrelated to any of this; it never touches `_resolve_membership`, and
+  mints a fresh, isolated, 24h-expiring sandbox org per visitor instead.
 
 ## 9. The `/evaluate` gateway
 
-`POST /api/evaluate` (`safi_app/api/evaluate_api.py`) is how an
-external system — your own agent, a Teams/Telegram bot, anything —
-routes its output through SAFi's governance pipeline. **The critical
-thing to get right: this endpoint doesn't generate a response, it
-evaluates one you already have.** You send the prompt *and* your
-agent's already-generated output; SAFi audits and enforces against it.
-There is no Intellect call here — SAFi is the evaluator, never the
-author, and the response reflects that (`aiProvenance.generator` is
-`"external-agent"`, not SAFi).
+`POST /api/evaluate` (`safi_app/api/evaluate_api.py`) is how an external
+system, your own agent, a Teams/Telegram bot, anything, routes its output
+through SAFi's governance pipeline. **The critical thing to get right: this
+endpoint does not generate a response; it evaluates one you already have.**
+You send the prompt *and* your agent's already-generated output; SAFi audits
+and enforces against it. There is no Intellect call here; SAFi is the
+evaluator, never the author, and the response reflects that
+(`aiProvenance.generator` is `"external-agent"`, not SAFi).
 
 **Auth:** an `X-API-KEY` header or `Authorization: Bearer <key>`,
 checked against the `api_keys` table (SHA-256 hash, never the raw key)
 via `get_policy_id_by_api_key` (`database.py`). Keys are scoped to
-a **policy**, not an org — mint one with
+a **policy**, not an org. Mint one with
 `POST /api/policies/<policy_id>/keys`, rotate with
 `.../rotate_key` (`policy_api_routes.py`). The raw key is shown
 exactly once at creation; only its hash persists after that.
@@ -521,12 +420,12 @@ exactly once at creation; only its hash persists after that.
 }
 ```
 
-`agent_id`, `input`, and `output` are required — a `400` lists whichever
+`agent_id`, `input`, and `output` are required; a `400` lists whichever
 are missing. `agent` defaults to `"safi"`; `session_id` defaults to
-`agent_id` and gets a `gw_` prefix if you don't supply one.
+`agent_id` and gets a `gw_` prefix if you do not supply one.
 
-**Response** (built in `orchestrator.py`, then two fields
-added by the route handler):
+**Response** (built in `orchestrator.py`, then two fields added by the
+route handler):
 
 ```json
 {
@@ -558,54 +457,53 @@ added by the route handler):
 The `X-AI-Generated: true` header is set alongside the body
 (`provenance.mark_json_response`). `caller_obligations` exists because
 the Art. 50(1) disclosure duty follows whoever actually faces the end
-user — that's your app, not SAFi, so the gateway reminds you of it on
-every call rather than assuming you've read the compliance docs.
+user: that is your app, not SAFi, so the gateway reminds you of it on
+every call rather than assuming you have read the compliance docs.
 
 A few things worth knowing before integrating against this:
 
 - **A governed rejection is still `200 OK`.** Blocked or violating
   output comes back as `"decision": "violation"` with a normal success
-  status — check the `decision` field, not the HTTP status code, to
+  status. Check the `decision` field, not the HTTP status code, to
   know whether your output was approved.
 - **It's a reduced pipeline, not the full five faculties.** No
-  Intellect (nothing to generate), no Will redirect/reflexion machinery
-  — just Phase 0's injection gate on the input, then Conscience → hard
+  Intellect (nothing to generate), no Will redirect/reflexion machinery.
+  Just Phase 0's injection gate on the input, then Conscience → hard
   gates → Spirit's alignment threshold, the same `_finalize_draft` path
   native chat turns use. It still writes a full governance record and a
-  hash-chained audit trail entry (mode `evaluate_gateway`) — evaluated
+  hash-chained audit trail entry (mode `evaluate_gateway`); evaluated
   turns are audited exactly like native ones.
 - **Provider governance still applies fail-closed.** The Conscience
   call respects the org's LLM allow-list the same way native turns do.
 - **There's no rate limiting or request-size cap today.** Nothing in
-  `create_app()` enforces one — worth knowing if you're integrating a
+  `create_app()` enforces one, worth knowing if you are integrating a
   high-volume caller, and worth adding before this becomes a
   production bottleneck.
 
 ## 10. Internal API architecture
 
 13 Flask blueprints live under `safi_app/api/`, all registered in
-`create_app()` (`safi_app/__init__.py`) with the same
-`url_prefix='/api'` — there's no per-blueprint prefix; each route's own
-path carries the resource nesting (e.g.
-`/organizations/<org_id>/audit/filters`).
+`create_app()` (`safi_app/__init__.py`) with the same `url_prefix='/api'`;
+there is no per-blueprint prefix. Each route's own path carries the
+resource nesting (e.g. `/organizations/<org_id>/audit/filters`).
 
-**RBAC is two separate checks, not one — this is the thing to
+**RBAC is two separate checks, not one; this is the thing to
 internalize.** `safi_app/core/rbac.py` (deliberately tiny) provides:
 
-- `require_role(role)` — hierarchical: `ROLES = {admin: 4, editor: 3,
+- `require_role(role)`: hierarchical. `ROLES = {admin: 4, editor: 3,
   auditor: 2, member: 1}`, passes if the caller's role outranks the
   required one.
-- `require_any_role(*roles)` — set membership, for rules the hierarchy
-  can't express (e.g. the audit/review reviewer set is `admin|auditor`
-  — editors outrank auditors but aren't reviewers).
+- `require_any_role(*roles)`: set membership, for rules the hierarchy
+  cannot express (e.g. the audit/review reviewer set is `admin|auditor`;
+  editors outrank auditors but are not reviewers).
 
 Both read `session['user']['role']` and return
 `{"error": "Forbidden: ..."}`, `403` on failure. **Neither one looks at
 `org_id` at all.** A `member` at Org A satisfies `require_role('member')`
-regardless of whose URL they're hitting — the role decorator only
-answers "is this user privileged enough," never "privileged enough *for
-this org's data*." That second question is a separate, mandatory check
-every org-scoped route has to add itself:
+regardless of whose URL they are hitting. The role decorator only answers
+"is this user privileged enough", never "privileged enough *for this
+org's data*". That second question is a separate, mandatory check every
+org-scoped route has to add itself:
 
 ```python
 # safi_app/api/audit_api.py
@@ -623,9 +521,9 @@ def audit_filters(org_id):
     ...
 ```
 
-**Recipe: adding a new API surface.** Copy the shape above —
+**Recipe: adding a new API surface.** Copy the shape above,
 `_org_forbidden` (or import the one from `audit_api.py`) plus the role
-decorator on every route touching a specific org's data — then register
+decorator on every route touching a specific org's data, then register
 the blueprint next to the others in `create_app()`:
 
 ```python
@@ -634,22 +532,22 @@ app.register_blueprint(my_bp, url_prefix='/api')
 ```
 
 Skipping the org-match check because the role decorator "already passed"
-is exactly the mistake this pattern exists to prevent — it repeats
-verbatim across `records_api.py`, `incidents_api.py`, `organizations.py`,
-and `review_api.py` (each with its own `_org_forbidden`), because there's
-no shared middleware enforcing it; it's a convention every route owner
-has to apply by hand.
+is exactly the mistake this pattern exists to prevent. It repeats verbatim
+across `records_api.py`, `incidents_api.py`, `organizations.py`, and
+`review_api.py` (each with its own `_org_forbidden`), because there is no
+shared middleware enforcing it; it is a convention every route owner has
+to apply by hand.
 
 **Exceptions, not bugs:** `auth.py` runs pre-session (login itself), so
-RBAC doesn't apply. `evaluate_api.py` authenticates via a policy-scoped
-API key (§9), not session RBAC, by design. A few files —
+RBAC does not apply. `evaluate_api.py` authenticates via a policy-scoped
+API key (§9), not session RBAC, by design. A few files,
 `conversations.py`, `agent_api_routes.py`, `model_api_routes.py`,
-`profile_api_routes.py`, `documents.py` — don't show the same
+`profile_api_routes.py`, `documents.py`, do not show the same
 `_org_forbidden` grep hits; that likely means they scope by the
 authenticated user (e.g. a conversation the session user owns) rather
-than an `org_id` path parameter, but verify the specific route you're
-touching rather than assuming — don't take "no org-match check visible"
-as license to skip adding one where it's actually needed.
+than an `org_id` path parameter, but verify the specific route you are
+touching rather than assuming. Do not take "no org-match check visible"
+as license to skip adding one where it is actually needed.
 
 ## 11. Setting up a policy
 
@@ -657,7 +555,7 @@ as license to skip adding one where it's actually needed.
 [Agent & Policy Specification](AGENT_AND_POLICY_SPECIFICATION.md); this
 section explains the semantics and how the shipped wizard exercises them.*
 
-Policies are plain dicts/JSON, not classes — no schema migration to
+Policies are plain dicts/JSON, not classes, no schema migration to
 worry about when you add a value. A single value entry looks like this
 (the shape every policy in `core/policies/demo/policies.py` uses):
 
@@ -678,141 +576,136 @@ worry about when you add a value. A single value entry looks like this
 ```
 
 `weight` is a float; add `"hard_gate": true` to make it a pass/fail gate
-instead of a scored value — hard-gate values are pinned to `weight=0.0`
+instead of a scored value. Hard-gate values are pinned to `weight=0.0`
 and excluded from the Spirit EMA (§6, §16), and a score of `-1` on one
 trips Will's Pass 2 regardless of the alignment average. A gate may also
-carry `"gate_reason"` — one of `scope_violation`, `grounding_violation`,
-`ethical_violation` — which routes the redirect when it fails
+carry `"gate_reason"`, one of `scope_violation`, `grounding_violation`,
+`ethical_violation`, which routes the redirect when it fails
 (`ethical_violation` gates take the reflexion retry; the others redirect
 outright). The reason is data on the value, stamped into the compiled
 profile by Synderesis; the Will never derives routing from a value's
 name. Anything missing or invalid collapses to a generic
-`hard_gate_violation`. `rubric` needs
-either a `description` or a non-empty `scoring_guide` — `_has_usable_rubric()`
-(`synderesis.py`) rejects anything with neither, both at save
-time and at compile time.
+`hard_gate_violation`. `rubric` needs either a `description` or a
+non-empty `scoring_guide`; `_has_usable_rubric()` (`synderesis.py`)
+rejects anything with neither, both at save time and at compile time.
 
-**The Charter isn't a fallback — it always applies alongside a policy.**
+**The Charter is not a fallback; it always applies alongside a policy.**
 It lives in `org_charter` (`mission` text + `core_values` JSON,
-`database.py`). `Synderesis.apply_charter()`
-(`synderesis.py`) blends Charter and policy values by weight, per
-the org's `governance_split` setting (default 0.40): Charter@0.40 +
-policy@0.60 when both exist, Charter@1.0 if the agent has no policy,
-policy@1.0 if the org has no Charter. Hard gates from either tier are
-deduped by name and always kept at weight 0 — you can't dilute a hard
-gate by having it appear in both.
+`database.py`). `Synderesis.apply_charter()` (`synderesis.py`) blends
+Charter and policy values by weight, per the org's `governance_split`
+setting (default 0.40): Charter@0.40 + policy@0.60 when both exist,
+Charter@1.0 if the agent has no policy, policy@1.0 if the org has no
+Charter. Hard gates from either tier are deduped by name and always kept
+at weight 0; you cannot dilute a hard gate by having it appear in both.
 
 **Scope is enforced as an injected hard gate, not a separate mechanism.**
-A policy's `scope_statement` (or a agent's, if the policy doesn't set
-one — policy always wins when both are present) gets turned into a
+A policy's `scope_statement` (or an agent's, if the policy does not set
+one; policy always wins when both are present) gets turned into a
 `weight=0, hard_gate=true` "Scope Compliance" value by
 `_inject_scope_compliance()` (`synderesis.py`), then evaluated by
 Conscience and gated by Will like any other hard gate.
 
-**Every edit is a new version — there's no separate publish step.**
+**Every edit is a new version; there is no separate publish step.**
 `policies` is the live row; `policy_versions` is append-only history with
-**no foreign key back to `policies`** (dropped on purpose,
-`database.py`) so history survives even if the policy row itself
-is deleted — that's the whole point, for audit. `update_policy()`
-increments `version` and snapshots the full policy on *any* field change
-(`database.py`); restoring an old version just calls
-`update_policy()` with the old content, which — deliberately — creates a
-new version rather than rewinding to the old one.
+**no foreign key back to `policies`** (dropped on purpose, `database.py`)
+so history survives even if the policy row itself is deleted; that is the
+whole point, for audit. `update_policy()` increments `version` and
+snapshots the full policy on *any* field change (`database.py`). Restoring
+an old version just calls `update_policy()` with the old content, which,
+deliberately, creates a new version rather than rewinding to the old one.
 
-**Two ways to create a policy — only one of them is the real runtime
+**Two ways to create a policy; only one of them is the real runtime
 path.** `POST /policies`/`PUT /policies/<id>` (`policy_api_routes.py`)
 is what actually creates or edits a policy in the database. The Python
-modules under `core/policies/{safi,demo}/` are **seed data, not
-live policies** — they're inserted into the `policies` table once, at
-first startup, by an idempotent seeder
-(`_ensure_demo_agent_policies_exist()`, `database.py`, which
-checks `get_policy(pid)` first). After that seeding, the database row is
-authoritative — editing the Python file does nothing on an existing
-deployment, only on a fresh one.
+modules under `core/policies/{safi,demo}/` are **seed data, not live
+policies**; they are inserted into the `policies` table once, at first
+startup, by an idempotent seeder (`_ensure_demo_agent_policies_exist()`,
+`database.py`, which checks `get_policy(pid)` first). After that seeding,
+the database row is authoritative; editing the Python file does nothing
+on an existing deployment, only on a fresh one.
 
 **The policy-wizard is a first-class way to build one, not just a thin
 form over the API.** Unlike the agent-wizard (§7), which can only attach
 an *existing* policy, the policy-wizard (`public/js/ui/policy-wizard/`,
 six steps: identity → worldview → scope → values/standards → tools &
-guardrails → review) lets an admin author a genuinely custom policy —
+guardrails → review) lets an admin author a genuinely custom policy:
 name, worldview, scope statement, and fully custom values with a weight
-slider, a hard-gate checkbox, and a rubric builder — then submits to the
-same `POST`/`PUT /policies` endpoint above (`api.js`). One real
-gap worth knowing: **the wizard's rubric builder is fixed to exactly
-three score points** (+1 / 0 / -1, `ui-policy-wizard-step4.js`).
-The schema and scoring engine support an arbitrary `scoring_guide` array
-with intermediate points — there's just no UI for adding one. If a
-policy needs finer-grained scoring criteria, that's an API/direct-edit
-case, not something you can build through the wizard.
+slider, a hard-gate checkbox, and a rubric builder, then submits to the
+same `POST`/`PUT /policies` endpoint above (`api.js`). One real gap worth
+knowing: **the wizard's rubric builder is fixed to exactly three score
+points** (+1 / 0 / -1, `ui-policy-wizard-step4.js`). The schema and
+scoring engine support an arbitrary `scoring_guide` array with intermediate
+points; there is just no UI for adding one. If a policy needs
+finer-grained scoring criteria, that is an API/direct-edit case, not
+something you can build through the wizard.
 
 ## 12. The audit trail & hash chain
 
 > Building a custom interface on this data? The
 > [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
-> is the field-by-field contract for every artifact the TCB produces —
+> is the field-by-field contract for every artifact the TCB produces:
 > records, ledgers, tool entries, chain entries, the attestation stamp.
 
-`chat_audit_trail` (`database.py`) journals every create, update,
-and delete on a `chat_history` row: `id, message_pk, message_id,
+`chat_audit_trail` (`database.py`) journals every create, update, and
+delete on a `chat_history` row: `id, message_pk, message_id,
 conversation_id, action, actor, state, event_at, prev_hash, entry_hash,
-org_id, created_at`. **No foreign key to `chat_history`** — deliberate
-(see the comment above the DDL): entries must survive a cascade delete of the live
-message so a deleted record can still be reconstructed for its retention
-period. `org_id` is a later migration-added column, and it's excluded
-from the hash on purpose (`"UNAUTHENTICATED routing metadata"`).
+org_id, created_at`. **No foreign key to `chat_history`**, deliberate (see
+the comment above the DDL): entries must survive a cascade delete of the
+live message so a deleted record can still be reconstructed for its
+retention period. `org_id` is a later migration-added column, and it is
+excluded from the hash on purpose (`"UNAUTHENTICATED routing metadata"`).
 
-**How a chain entry is built** — `_chat_trail_append`
-(`database.py`): `entry_hash = sha256(json({message_pk,
-message_id, conversation_id, action, actor, state, event_at, prev_hash},
-sort_keys=True))`. Two details worth knowing:
+**How a chain entry is built** (`_chat_trail_append`, `database.py`):
+`entry_hash = sha256(json({message_pk, message_id, conversation_id,
+action, actor, state, event_at, prev_hash}, sort_keys=True))`. Two details
+worth knowing:
 
 - **`state` is stored as `LONGTEXT`, not native `JSON`.** MySQL's `JSON`
-  type normalizes documents on write — reorders keys, reformats numbers
-  — which would silently change the bytes being hashed. Storing it as a
+  type normalizes documents on write (reorders keys, reformats numbers),
+  which would silently change the bytes being hashed. Storing it as a
   plain string keeps the hash byte-exact and reproducible.
 - **The previous-hash lookup takes a row lock**:
   `SELECT entry_hash ... ORDER BY id DESC LIMIT 1 FOR UPDATE`.
-  This is what prevents two concurrent writers on the
-  same message from both reading the same `prev_hash` and forking the
-  chain — the lock serializes them.
+  This is what prevents two concurrent writers on the same message from
+  both reading the same `prev_hash` and forking the chain; the lock
+  serializes them.
 
 **Verification is real, but scoped per-message, not per-ledger.**
-`verify_message_audit_trail` (`database.py`) walks every entry
-for one `message_pk`, recomputes each hash, and checks the `prev_hash`
-linkage — a genuine chain-walk, not a bare per-row check. The gap:
-**zero rows returns `{"valid": true}`.** If a message's entire chain
-were ever deleted outside the sanctioned path, live verification has
-nothing to notice — it isn't missing a record, from its point of view
-there was never a record. The only thing that walks the *whole* table
-across all messages is `scripts/backup_verify.py`, and it only runs
-weekly against a **restored backup**, not live data.
+`verify_message_audit_trail` (`database.py`) walks every entry for one
+`message_pk`, recomputes each hash, and checks the `prev_hash` linkage, a
+genuine chain-walk, not a bare per-row check. The gap: **zero rows returns
+`{"valid": true}`.** If a message's entire chain were ever deleted outside
+the sanctioned path, live verification has nothing to notice; it is not
+missing a record, from its point of view there was never a record. The only
+thing that walks the *whole* table across all messages is
+`scripts/backup_verify.py`, and it only runs weekly against a **restored
+backup**, not live data.
 
 **Eight call sites** trigger an append (`grep _chat_trail_append(`):
-message creation (`insert_turn_atomic`), the governance pipeline's
-commit (`update_audit_results`, actor `system:pipeline` — this is where
-every turn's ledger/decision gets journaled), cancellation, content and
-reasoning edits, suggested-prompt updates, and a supervisory review
-disposition (`apply_review_action`). Deletion has its own path:
-`_chat_trail_snapshot_delete` (`database.py`) reads the full
-prior `chat_history` row and journals it (`action="delete"`) **on the
-same cursor, before the actual delete runs** — snapshot and destruction
-commit or roll back together, never one without the other.
+message creation (`insert_turn_atomic`), the governance pipeline's commit
+(`update_audit_results`, actor `system:pipeline`; this is where every
+turn's ledger/decision gets journaled), cancellation, content and reasoning
+edits, suggested-prompt updates, and a supervisory review disposition
+(`apply_review_action`). Deletion has its own path:
+`_chat_trail_snapshot_delete` (`database.py`) reads the full prior
+`chat_history` row and journals it (`action="delete"`) **on the same
+cursor, before the actual delete runs**; snapshot and destruction commit
+or roll back together, never one without the other.
 
-**Retention purge is a designed exception, not a hole — but it's
-under-evidenced.** The purge script deletes whole expired chains
-directly via SQL, bypassing `_chat_trail_append` entirely, which is
-correct (a lawful purge shouldn't itself be an audit event forever
-retained). But it means a chain's disappearance from the live table can
-mean either "lawfully purged" or "tampered," and the only thing
-distinguishing them is the retention/compliance log's row count — there
-is no cryptographic manifest of what was purged. Keep this in mind if
-you're ever asked to prove a specific purge was legitimate after the
-fact.
+**Retention purge is a designed exception, not a hole, but it is
+under-evidenced.** The purge script deletes whole expired chains directly
+via SQL, bypassing `_chat_trail_append` entirely, which is correct (a
+lawful purge should not itself be an audit event forever retained). But it
+means a chain's disappearance from the live table can mean either "lawfully
+purged" or "tampered", and the only thing distinguishing them is the
+retention/compliance log's row count; there is no cryptographic manifest
+of what was purged. Keep this in mind if you are ever asked to prove a
+specific purge was legitimate after the fact.
 
 **Agent work-context memory is audited context, like retrieval.** For
 task-oriented agents (`track_work_context`, default on for org/custom
-agents), a background note-taker extracts durable work facts — projects,
-tasks, decisions, people, milestones, vendors, notes — into
+agents), a background note-taker extracts durable work facts (projects,
+tasks, decisions, people, milestones, vendors, notes) into
 `agent_context_memory` (one encrypted row per user + agent). The model
 emits only a delta; the merge is deterministic Python
 (`orchestrator_mixins/tasks.py: merge_agent_context`) with an anti-shrink
@@ -823,10 +716,10 @@ injection time the memory is bounded by `SAFI_AGENT_MEMORY_MAX_CHARS`
 snapshotted into the turn's governance record as `agentWorkContext`, on
 approve and redirect paths alike, so an auditor can see exactly what
 memory shaped a draft. Users see and delete their own memory under My
-Profile → Agent Memory (`/api/memory/*`, view + delete only, no edit —
-a user-typed fact would have no audited origin); deletions run through
-the same deterministic removal machinery, are logged as compliance
-evidence, and are forward-looking — past records keep their snapshots.
+Profile → Agent Memory (`/api/memory/*`, view + delete only, no edit; a
+user-typed fact would have no audited origin). Deletions run through the
+same deterministic removal machinery, are logged as compliance evidence,
+and are forward-looking; past records keep their snapshots.
 
 ## 13. Encryption at rest
 
@@ -838,33 +731,33 @@ keys = [k.strip() for k in Config.ENCRYPTION_KEY.split(",") if k.strip()]
 _fernet = MultiFernet([Fernet(k) for k in keys])
 ```
 
-`MultiFernet` semantics do the work: **the first key encrypts new
-writes; every key is tried on decrypt.** Rotation is exactly what the
-module docstring says it is — prepend a new key to the list, then
-re-run `scripts/backfill_encryption.py` to re-encrypt existing rows
-under it. No custom rotation logic to maintain.
+`MultiFernet` semantics do the work: **the first key encrypts new writes;
+every key is tried on decrypt.** Rotation is exactly what the module
+docstring says it is: prepend a new key to the list, then re-run
+`scripts/backfill_encryption.py` to re-encrypt existing rows under it. No
+custom rotation logic to maintain.
 
-**`encrypt_value`/`decrypt_value`** (`crypto.py`) are the accessor
-layer — `None`/empty/already-encrypted values pass through
-`encrypt_value` unchanged; `decrypt_value` passes through anything that
-doesn't look like ciphertext. Two deliberate choices worth knowing:
+**`encrypt_value`/`decrypt_value`** (`crypto.py`) are the accessor layer;
+`None`/empty/already-encrypted values pass through `encrypt_value`
+unchanged; `decrypt_value` passes through anything that does not look like
+ciphertext. Two deliberate choices worth knowing:
 
-- **`is_token()`** (`crypto.py`) — the encrypted/plaintext test is
-  a literal prefix check, `value.startswith("gAAAA")` (Fernet's own
-  token prefix). The module's own docstring admits the limitation: a
-  plaintext value that happens to start with `gAAAA` would be
-  misclassified as already-encrypted. That's not a hole nobody noticed —
-  it's the reason decrypt falls back gracefully instead of raising (next
-  point), and `backfill_encryption.py` has a JSON-aware check that
-  catches this exact case for at least one field type (see below).
-- **If a value fails to decrypt under every key**, `decrypt_value`
-  logs a warning and **returns the ciphertext as-is rather than raising**
-  (`crypto.py`). The rationale in the docstring: serving ciphertext
-  back is recoverable once the right key is available again; a hard
-  failure on one bad row would take down the whole read path for
-  everyone else's data too.
+- **`is_token()`** (`crypto.py`): the encrypted/plaintext test is a
+  literal prefix check, `value.startswith("gAAAA")` (Fernet's own token
+  prefix). The module's own docstring admits the limitation: a plaintext
+  value that happens to start with `gAAAA` would be misclassified as
+  already-encrypted. That is not a hole nobody noticed; it is the reason
+  decrypt falls back gracefully instead of raising (next point), and
+  `backfill_encryption.py` has a JSON-aware check that catches this exact
+  case for at least one field type (see below).
+- **If a value fails to decrypt under every key**, `decrypt_value` logs a
+  warning and **returns the ciphertext as-is rather than raising**
+  (`crypto.py`). The rationale in the docstring: serving ciphertext back
+  is recoverable once the right key is available again; a hard failure on
+  one bad row would take down the whole read path for everyone else's data
+  too.
 
-**What's actually covered** — every one of these goes through
+**What's actually covered**: every one of these goes through
 `encrypt_value`/`decrypt_fields` in `database.py`, not ad hoc: chat
 content, spirit notes, the Conscience ledger, and reasoning logs on
 `chat_history`; conversation titles and memory summaries; saved-content
@@ -873,20 +766,20 @@ bodies; the encrypted `governance_records` fields (`record_enc`,
 and OAuth access/refresh tokens.
 
 **`scripts/backfill_encryption.py` is safe to interrupt and re-run.**
-`needs_encryption()` is the idempotency check — a plain
-string that isn't already a token needs encrypting, skip otherwise (with
-a JSON-aware variant for `suggested_prompts`). It processes
-in batches with `FOR UPDATE` and commits per batch (not all-or-nothing),
-tracking a `last_pk` cursor — a crash mid-run just means re-running picks
-up from the uncommitted batch, and already-encrypted rows are skipped
-rather than double-encrypted. `chat_history` rows are journaled into
-`chat_audit_trail` (§12) as the transform happens — recording only which
-*fields* were touched, never the plaintext itself.
+`needs_encryption()` is the idempotency check: a plain string that is not
+already a token needs encrypting, skip otherwise (with a JSON-aware variant
+for `suggested_prompts`). It processes in batches with `FOR UPDATE` and
+commits per batch (not all-or-nothing), tracking a `last_pk` cursor; a
+crash mid-run just means re-running picks up from the uncommitted batch,
+and already-encrypted rows are skipped rather than double-encrypted.
+`chat_history` rows are journaled into `chat_audit_trail` (§12) as the
+transform happens, recording only which *fields* were touched, never the
+plaintext itself.
 
 **Test coverage is the real thing, not a mock.**
 `tests/test_encryption_at_rest.py`'s `test_lifecycle` queries MySQL
 directly (bypassing the app entirely) and asserts `crypto.is_token(...)`
-on the raw bytes in `chat_history`, `saved_content`, and `oauth_tokens` —
+on the raw bytes in `chat_history`, `saved_content`, and `oauth_tokens`,
 proving the data is actually encrypted at rest, not just that the
 encrypt/decrypt functions round-trip in isolation.
 
@@ -895,109 +788,102 @@ encrypt/decrypt functions round-trip in isolation.
 `scripts/retention_purge.py` runs as a daily job (`deploy/systemd/safi-retention-purge.timer`)
 in four phases per org, orchestrated by `purge_org`:
 
-- **Phase A** — the conversation-delete loop (`purge_conversation_batch`):
-  deletes expired conversations + their governance records,
-  one commit per batch.
-- **Phase B** (`purge_trail_chains`) — reclaims whole orphaned
+- **Phase A**: the conversation-delete loop (`purge_conversation_batch`),
+  deletes expired conversations + their governance records, one commit
+  per batch.
+- **Phase B** (`purge_trail_chains`): reclaims whole orphaned
   `chat_audit_trail` chains (§12) past the retention cutoff.
-- **Phase B2** (`purge_governance_orphans`) — governance
-  records orphaned by a member deleting their own conversation (the
-  org's copy survives that; retention still governs when it's actually
-  destroyed).
-- **Phase C** (`purge_aged_table`) — generic aged-row cleanup
-  for `saved_content`, `prompt_usage`, `audit_snapshots`.
-- **Phase D** (`purge_log_files`) — a separate global sweep of
-  JSONL log files by filename date, run once for the whole instance,
-  not per org.
+- **Phase B2** (`purge_governance_orphans`): governance records orphaned
+  by a member deleting their own conversation (the org's copy survives
+  that; retention still governs when it is actually destroyed).
+- **Phase C** (`purge_aged_table`): generic aged-row cleanup for
+  `saved_content`, `prompt_usage`, `audit_snapshots`.
+- **Phase D** (`purge_log_files`): a separate global sweep of JSONL log
+  files by filename date, run once for the whole instance, not per org.
 
 **Safety rails are real, not just documented.** A single-runner
-`GET_LOCK('safi_retention_purge')` stops overlapping runs; a
-blast-radius guard (`BLAST_PCT=0.25`, `BLAST_ROWS=100_000`)
-`sys.exit(2)`s rather than deleting more than a
-quarter of an org's conversations or 100K rows unless you pass
-`--force`; dry-run mode prints counts and writes nothing.
+`GET_LOCK('safi_retention_purge')` stops overlapping runs; a blast-radius
+guard (`BLAST_PCT=0.25`, `BLAST_ROWS=100_000`) `sys.exit(2)`s rather
+than deleting more than a quarter of an org's conversations or 100K rows
+unless you pass `--force`; dry-run mode prints counts and writes nothing.
 
-**Legal hold is checked per-batch in Phase A, but only once for the
-whole run everywhere else.** `purge_org` checks
-`cfg["legal_hold"]["active"]` a single time before any phase starts
-and bails if set. Phase A *additionally* re-checks
-`legal_hold_active(org_id)` inside its own loop, every batch
-— so a hold placed mid-run stops Phase A immediately. **Phases B, B2,
-and C have no equivalent internal check** — they only inherit the
-once-at-start gate. On an org large enough for a purge run to take a
-while, a hold placed after that initial check but before B/B2/C execute
-won't stop them. Worth knowing if you're ever asked whether a hold is
-airtight against mid-run timing, and worth fixing if you're touching
-this code for another reason.
+**Legal hold is checked per-batch in Phase A, but only once for the whole
+run everywhere else.** `purge_org` checks `cfg["legal_hold"]["active"]` a
+single time before any phase starts and bails if set. Phase A
+*additionally* re-checks `legal_hold_active(org_id)` inside its own loop,
+every batch, so a hold placed mid-run stops Phase A immediately.
+**Phases B, B2, and C have no equivalent internal check**; they only
+inherit the once-at-start gate. On an org large enough for a purge run to
+take a while, a hold placed after that initial check but before B/B2/C
+execute will not stop them. Worth knowing if you are ever asked whether a
+hold is airtight against mid-run timing, and worth fixing if you are
+touching this code for another reason.
 
-**User-initiated deletion doesn't check legal hold at all.**
-`delete_conversation`/`delete_all_conversations` (`database.py`)
-— confirmed by grep, no `legal_hold_active` reference in either function.
-A member can delete their own conversation during an active hold; only
-the org's separate governance-record copy is protected (by Phase B2's
+**User-initiated deletion does not check legal hold at all.**
+`delete_conversation`/`delete_all_conversations` (`database.py`):
+confirmed by grep, no `legal_hold_active` reference in either function.
+A member can delete their own conversation during an active hold; only the
+org's separate governance-record copy is protected (by Phase B2's
 purge-timing, not by any hold check on the user's own delete path). What
-*is* solid: both functions are properly atomic — the audit-trail
-snapshot (§12) and the actual `DELETE` share one cursor and commit
-together, so there's no window where a delete
-succeeds without leaving a trail entry.
+*is* solid: both functions are properly atomic; the audit-trail snapshot
+(§12) and the actual `DELETE` share one cursor and commit together, so
+there is no window where a delete succeeds without leaving a trail entry.
 
-**Legal hold itself** lives as JSON under `organizations.settings`, not
-a dedicated table — read via `get_org_retention_config`,
-written via `set_org_retention_config`. Activating a hold
-**requires a non-empty reason** (raises otherwise) and both
-`legal_hold_set`/`legal_hold_cleared` are evidence-logged.
+**Legal hold itself** lives as JSON under `organizations.settings`, not a
+dedicated table; read via `get_org_retention_config`, written via
+`set_org_retention_config`. Activating a hold **requires a non-empty
+reason** (raises otherwise) and both `legal_hold_set`/`legal_hold_cleared`
+are evidence-logged.
 
 **Test coverage matches the code, not the docs' claims.**
 `tests/test_retention_purge.py::test_legal_hold_blocks_everything`
-genuinely asserts Phase A does nothing under a hold. There's no test
-for the B/B2/C mid-run gap or for user-initiated delete respecting a
-hold — because neither path enforces it, so there's nothing correct to
-assert.
+genuinely asserts Phase A does nothing under a hold. There is no test for
+the B/B2/C mid-run gap or for user-initiated delete respecting a hold,
+because neither path enforces it, so there is nothing correct to assert.
 
 ## 15. RAG & tool/"MCP" integrations
 
-Two separate systems live under `core/`, and they don't share a
-mechanism — knowing which is which matters before you touch either.
+Two separate systems live under `core/`, and they do not share a
+mechanism; knowing which is which matters before you touch either.
 
-**RAG is real vector search, not a wrapper you'd guess at from the
-name.** `retriever.py` does FAISS similarity search (`IndexFlatIP`) over
+**RAG is real vector search, not a wrapper you'd guess at from the name.**
+`retriever.py` does FAISS similarity search (`IndexFlatIP`) over
 `sentence-transformers` embeddings (`all-MiniLM-L6-v2` by default,
-env-overridable). One hybrid carve-out: if the knowledge-base name
-starts with `"bible"` and the query matches a scripture-citation regex
-(`John 3`), it does exact keyword/metadata matching instead of vector
-search — otherwise it's pure semantic search. An agent's KB binding
-lives on the `agents` row (`rag_knowledge_base`, `rag_format_string`),
-and it's the **Intellect** faculty that consumes it directly
-(`intellect.py` — instantiates a `Retriever`, searches, formats
-each hit with `rag_format_string.format(**doc)`). There's a separate
+env-overridable). One hybrid carve-out: if the knowledge-base name starts
+with `"bible"` and the query matches a scripture-citation regex (`John 3`),
+it does exact keyword/metadata matching instead of vector search;
+otherwise it is pure semantic search. An agent's KB binding lives on the
+`agents` row (`rag_knowledge_base`, `rag_format_string`), and it is the
+**Intellect** faculty that consumes it directly (`intellect.py`:
+instantiates a `Retriever`, searches, formats each hit with
+`rag_format_string.format(**doc)`). There is a separate
 `RAGService`/`rag_service.py` class that looks like the real integration
-point but isn't — the orchestrator wires `intellect_engine.retriever`
-directly (`orchestrator.py`), making `RAGService` dead-code
-adjacent to the real path, not a layer in front of it.
+point but is not; the orchestrator wires `intellect_engine.retriever`
+directly (`orchestrator.py`), making `RAGService` dead-code adjacent to
+the real path, not a layer in front of it.
 
 Each knowledge base is its own `.index`/`_metadata.pkl` pair in
-`vector_store/` (e.g. `bible_bsb_v1`, `safi`). **There's no
-self-service ingestion API** — `documents.py`'s `/documents/extract`
-only pulls text out of an uploaded file for the user to paste into a
-prompt; it never touches a vector store. Adding org documents to RAG
-means running `rag/build_index_v2.py` yourself; there's no incremental
-update either — it's a full re-embed that overwrites the index files,
-and a running process needs a restart to pick up the new one (each
-`Retriever` loads its index once, at construction). One thing worth a
-security note: the metadata side of each index is a Python `pickle`
-file, and `retriever.py`'s own comment flags `pickle.load` as an
-RCE-shaped risk if that file ever came from an untrusted source — it
-doesn't today, since index-building is a local, admin-run script, but
-it's a reason not to make index generation self-service later without
-addressing this first.
+`vector_store/` (e.g. `bible_bsb_v1`, `safi`). **There is no self-service
+ingestion API**; `documents.py`'s `/documents/extract` only pulls text out
+of an uploaded file for the user to paste into a prompt; it never touches
+a vector store. Adding org documents to RAG means running
+`rag/build_index_v2.py` yourself; there is no incremental update either.
+It is a full re-embed that overwrites the index files, and a running
+process needs a restart to pick up the new one (each `Retriever` loads its
+index once, at construction). One thing worth a security note: the
+metadata side of each index is a Python `pickle` file, and
+`retriever.py`'s own comment flags `pickle.load` as an RCE-shaped risk if
+that file ever came from an untrusted source. It does not today, since
+index-building is a local, admin-run script, but it is a reason not to
+make index generation self-service later without addressing this first.
 
 **Two kinds of tool run here, and only one of them speaks MCP.**
 
-*Built-in connectors* are the `core/mcp_servers/*.py` modules. Despite
-the folder name they are not MCP servers at all: they are plain
-in-process async functions, with hand-written schemas, dispatched by
-`execute_tool`'s if/elif chain. Several act on a member's behalf using
-delegated per-user OAuth, which is why `execute_tool` takes `user_id`.
+*Built-in connectors* are the `core/mcp_servers/*.py` modules. Despite the
+folder name they are not MCP servers at all: they are plain in-process
+async functions, with hand-written schemas, dispatched by `execute_tool`'s
+if/elif chain. Several act on a member's behalf using delegated per-user
+OAuth, which is why `execute_tool` takes `user_id`.
 
 *Installed MCP servers* are real. `core/mcp_runtime.py` connects over
 stdio, HTTP or SSE using the genuine SDK, calls `tools/list`, and holds
@@ -1018,84 +904,82 @@ cached (agent, models, policy) combination and lazily per request, so
 sessions owned by the manager would mean a duplicate set of subprocesses
 per cached agent. `mcp_runtime` runs one daemon thread with one event
 loop for the whole process and bridges to each request's own loop with
-`run_coroutine_threadsafe` plus `wrap_future`, because Flask[async]
-gives every request a fresh loop and an MCP session cannot cross one.
+`run_coroutine_threadsafe` plus `wrap_future`, because Flask[async] gives
+every request a fresh loop and an MCP session cannot cross one.
 
 **`plugins/` and `mcp_servers/` are different mechanisms, not two names
 for the same thing.** `core/plugins/*` (e.g. `bible_scholar_readings.py`)
-are always-run context injectors — called concurrently *before* the
+are always-run context injectors, called concurrently *before* the
 Intellect prompt is even built, feeding a `preformatted_context_string`
 the same way RAG results do. `core/mcp_servers/*` are on-demand: the LLM
 has to propose calling one as a tool-call intent, and it only runs if
 approved.
 
 **Sequencing, and why it matters for the Air Gap principle (§5):**
-Intellect proposes a tool call → Will's `evaluate_tool_intent` gates it
-→ only if approved does `mcp_manager.execute_tool` actually run, looping
-the result back to Intellect (up to `MAX_AGENT_TURNS`). Conscience and
-Spirit only ever see the final text output, after tool results are
-already in hand — they score the finished response, not the tool-use
-process.
+Intellect proposes a tool call → Will's `evaluate_tool_intent` gates it →
+only if approved does `mcp_manager.execute_tool` actually run, looping the
+result back to Intellect (up to `MAX_AGENT_TURNS`). Conscience and Spirit
+only ever see the final text output, after tool results are already in
+hand; they score the finished response, not the tool-use process.
 
-**Tool access is two layers — advertisement and enforcement — and both
-are wired.** `agents.tools_json` (→ `profile["tools"]`) controls which
-tool *schemas* get advertised to the LLM. Separately, Synderesis stamps
-`profile["allowed_tools"]` at compile time
-(`_stamp_tool_authorization()`, `synderesis.py`): the advertised list is
-the baseline, and a policy's `will_rules.allowed_tools` can *narrow* it
-(never grant tools the agent wasn't given). `WillGate.evaluate_tool_intent`
-(`will.py`) then blocks any tool intent whose name isn't on that list —
-before the read-only fast pass, so it catches hallucinated or injected
-tool names even for read-only tools. **An empty list is deny-all**, not
-skip: an agent with no tools has no legitimate tool intents. The only
-profile that skips the check is one with no `allowed_tools` key at all,
-i.e. not built by the governance compiler. The same compile step hoists
-a policy's `will_rules.tool_parameter_constraints` to the top-level key
-the Will's Step-3 parameter gate reads.
+**Tool access is two layers, advertisement and enforcement, and both are
+wired.** `agents.tools_json` (→ `profile["tools"]`) controls which tool
+*schemas* get advertised to the LLM. Separately, Synderesis stamps
+`profile["allowed_tools"]` at compile time (`_stamp_tool_authorization()`,
+`synderesis.py`): the advertised list is the baseline, and a policy's
+`will_rules.allowed_tools` can *narrow* it (never grant tools the agent
+was not given). `WillGate.evaluate_tool_intent` (`will.py`) then blocks
+any tool intent whose name is not on that list, before the read-only fast
+pass, so it catches hallucinated or injected tool names even for read-only
+tools. **An empty list is deny-all, not skip**: an agent with no tools has
+no legitimate tool intents. The only profile that skips the check is one
+with no `allowed_tools` key at all, i.e. not built by the governance
+compiler. The same compile step hoists a policy's
+`will_rules.tool_parameter_constraints` to the top-level key the Will's
+Step-3 parameter gate reads.
 
-**Adding a tool: install an MCP server, don't write a connector.** For
+**Adding a tool: install an MCP server, do not write a connector.** For
 anything that is not a member-delegated OAuth integration, the answer is
 now a server in the file `MCP_SERVERS_JSON` names, which needs no code
 and no redeploy. See `docs/MCP_TOOLS.md`, and note the credential rule:
-an MCP server authenticates as the deployment (a service principal), so
-it fits shared and system resources, while a member's own drive or
-mailbox belongs on a delegated-OAuth connector or you lose attribution
-and offboarding.
+an MCP server authenticates as the deployment (a service principal), so it
+fits shared and system resources, while a member's own drive or mailbox
+belongs on a delegated-OAuth connector or you lose attribution and
+offboarding.
 
 **Adding a built-in connector** is still the six-step in-code pattern,
 and is only the right choice for delegated per-user OAuth:
+
 1. Add `core/mcp_servers/your_tool.py` with plain `async def` functions
    (model it on `google_maps.py` or `web_search.py`).
 2. Register its schema in `MCPManager.get_tools_for_agent` and
-   `list_all_tools` (`mcp_manager.py`). **This step alone makes it
-   show up in the UI** — `GET /api/agents/tools`
-   (`agent_api_routes.py`) returns `list_all_tools()` directly,
-   and the shared `tool-picker.js` (used by both the agent-wizard's
-   Tools step and the policy-wizard's Tools & Controls step) renders
-   whatever that endpoint returns. Neither wizard has its own hardcoded
-   tool list, so there's no separate front-end file to touch.
+   `list_all_tools` (`mcp_manager.py`). **This step alone makes it show up
+   in the UI**: `GET /api/agents/tools` (`agent_api_routes.py`) returns
+   `list_all_tools()` directly, and the shared `tool-picker.js` (used by
+   both the agent-wizard's Tools step and the policy-wizard's Tools &
+   Controls step) renders whatever that endpoint returns. Neither wizard
+   has its own hardcoded tool list, so there is no separate front-end file
+   to touch.
 3. Add a dispatch branch in `execute_tool` (`mcp_manager.py`).
-4. Add the tool name to the agent's `tools_json`
-   (`agent_api_routes.py`).
-5. Add it to `READ_ONLY_TOOLS` (`will.py`) if it's read-only, or it
-   gets routed through the deterministic write-tool approval path
-   instead.
-6. Add the connector to `CONNECTOR_TOOLS` (`tool_connectors.py`) if it
-   has more than one function. Synderesis expands connector names into
+4. Add the tool name to the agent's `tools_json` (`agent_api_routes.py`).
+5. Add it to `READ_ONLY_TOOLS` (`will.py`) if it is read-only, or it gets
+   routed through the deterministic write-tool approval path instead.
+6. Add the connector to `CONNECTOR_TOOLS` (`tool_connectors.py`) if it has
+   more than one function. Synderesis expands connector names into
    function names through that table, and the Will matches exactly, so a
    multi-function connector missing from it is authorized for nothing.
-   `tests/test_tool_connector_expansion.py` fails if you forget, which
-   is the only reason this step was survivable while undocumented.
+   `tests/test_tool_connector_expansion.py` fails if you forget, which is
+   the only reason this step was survivable while undocumented.
 
 Tools discovered from an installed MCP server need none of these: they
 register themselves through the same table at boot, in a separate
 namespace that built-ins take precedence over.
+
 ## 16. The Audit Hub metrics
 
 *The Audit Hub is the reference audit interface. The metric definitions
-below matter beyond it: every number derives from governance-record
-fields the
-[Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
+below matter beyond it: every number derives from governance-record fields
+the [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
 documents, so a custom dashboard can recompute all of them.*
 
 The Audit Hub (Control Panel → Audit tab,
@@ -1103,7 +987,7 @@ The Audit Hub (Control Panel → Audit tab,
 vocabulary on top of the math in §6. The mapping:
 
 - **Alignment (`x.x / 10`)** is Spirit's *display* coherence score
-  $S_t$ — the confidence-weighted one, not the gating $A_t$ (§6 already
+  $S_t$, the confidence-weighted one, not the gating $A_t$ (§6 already
   warns about conflating them). The dashboard's "Avg. Alignment" tile
   averages **approved turns only**; redirected turns are scored on a
   separate redirect-quality rubric and surface in the Interventions
@@ -1113,12 +997,12 @@ vocabulary on top of the math in §6. The mapping:
   the agent's own historical EMA $\mu_{t-1}$ (§6, math spec "Drift
   Calculation"). 100% means the agent behaved as it usually does; a low
   value flags an out-of-character turn even if that turn scored well on
-  its own. It renders **N/A on an agent's first turns** — $\mu_0$ is the
+  its own. It renders **N/A on an agent's first turns**: $\mu_0$ is the
   zero vector, and the epsilon guard returns `null` rather than divide
   by zero.
 - **Beta** (the "Ethical Memory (Retention)" slider in the Organization
   tab, `ui-settings-org.js`) is the EMA retention factor $\beta$ in
-  $\mu_t = \beta\mu_{t-1} + (1-\beta)p_t$. Default 0.9 — instance-wide
+  $\mu_t = \beta\mu_{t-1} + (1-\beta)p_t$. Default 0.9, instance-wide
   via `SPIRIT_BETA`, per-org via the `spirit_beta` setting. High values
   mean long memory: drift flags slow-forming deviations but takes longer
   to accept a genuine change in behavior. Low values adapt fast and
@@ -1129,40 +1013,43 @@ vocabulary on top of the math in §6. The mapping:
 
 **Expect both scores to be unstable while a policy is still being
 tested.** Every policy edit changes the value set being scored (and
-compiles in on the very next turn, §7), and the EMA starts from zero —
-so early Consistency numbers compare against a history that barely
-exists, and Alignment jumps as rubrics are tuned. Once enough turns are
-recorded against a *finished* policy, the scores stabilize. The
-practical rule: test a policy through to stable scores before putting
-it in production, and treat a score swing right after a policy edit as
-expected convergence, not a regression. (The Alignment/Consistency
-tooltips in the dashboard say the same thing to end users.)
+compiles in on the very next turn, §7), and the EMA starts from zero, so
+early Consistency numbers compare against a history that barely exists,
+and Alignment jumps as rubrics are tuned. Once enough turns are recorded
+against a *finished* policy, the scores stabilize. The practical rule: test
+a policy through to stable scores before putting it in production, and
+treat a score swing right after a policy edit as expected convergence, not
+a regression. (The Alignment/Consistency tooltips in the dashboard say the
+same thing to end users.)
 
 ## 17. Running the tests
 
-`tests/` is ~30 files of stdlib `unittest` — **no pytest config, no
-conftest, no mocked database.** They are integration tests that connect
-to whatever MySQL your `.env` points at (they import
-`safi_app.persistence.database` directly), so point `.env` at a
-disposable database before running them — not at anything you care
-about.
-
-Each file is designed to run standalone, and its docstring says so:
+`tests/` is 119 files of stdlib `unittest`: **no pytest config, no
+conftest, no mocked database.** They are integration tests against a live
+MySQL. Run them only against the disposable stack, never against a database
+you care about. The disposable stack builds the image, starts its own MySQL
+on a tmpfs, creates the schema, and runs a file (or a subset) in its own
+process:
 
 ```bash
-venv/bin/python tests/test_retention_purge.py
-venv/bin/python tests/test_encryption_at_rest.py
+docker compose -f docker-compose.test.yml run --rm --build tests   # full suite
+docker compose -f docker-compose.test.yml run --rm tests -k review # subset
+docker compose -f docker-compose.test.yml down                     # drop the db
 ```
 
-What they do to the database: tests seed synthetic orgs/users/rows
-under fresh UUIDs in `setUp` and delete them in `tearDown`, so a
-passing run cleans up after itself — but a crashed run can leave
-orphaned test rows behind, which is one more reason to use a throwaway
-schema. A few are worth knowing by name because the compliance docs
-lean on them: `test_encryption_at_rest.py` asserts on raw MySQL bytes
-(§13), `test_retention_purge.py` covers the purge phases and legal
-hold (§14), and `test_will_tool_gate.py` covers the `allowed_tools`
-gate and its compile-time stamping (§15) — it's also the one file in
+Each file is designed to run standalone, and its docstring says so. The
+test stack deliberately sets no `env_file` and mounts only `./tests`, never
+the repo root, so a `.env` in the working directory cannot silently point
+the suite at the dev database. Pass/fail comes from each file's **exit
+code**, never from grepping output for `OK`.
+
+What they do to the database: tests seed synthetic orgs/users/rows under
+fresh UUIDs in `setUp` and delete them in `tearDown`, so a passing run
+cleans up after itself. A few are worth knowing by name because the
+compliance docs lean on them: `test_encryption_at_rest.py` asserts on raw
+MySQL bytes (§13), `test_retention_purge.py` covers the purge phases and
+legal hold (§14), and `test_will_tool_gate.py` covers the `allowed_tools`
+gate and its compile-time stamping (§15); it is also the one file in
 `tests/` that runs without a database.
 
 ## 18. Extending SAFi: agents and plugins without core changes
@@ -1176,10 +1063,10 @@ values, rubrics, will rules, worldview, knowledge base, tool allow-list,
 model choice, and memory depth are all configuration compiled by
 `get_profile()` at runtime.
 
-**Extension agents** are for the rare case where an agent must be defined in
-code (computed worldviews, shared constants). Set `SAFI_EXTENSIONS_DIR` in
-`.env` to a directory you control. Each `*.py` file in it must define two
-module attributes:
+**Extension agents** are for the rare case where an agent must be defined
+in code (computed worldviews, shared constants). Set `SAFI_EXTENSIONS_DIR`
+in `.env` to a directory you control. Each `*.py` file in it must define
+two module attributes:
 
 ```python
 # /opt/safi-extensions/night_auditor.py
@@ -1196,8 +1083,8 @@ AGENT = {
 Installing the file is the enablement. Extension agents compile through
 `get_profile()` like every other agent: same scope gate, same charter
 layering, same Will. The shipped built-ins use the same `KEY`/`AGENT`
-contract — `synderesis.py` discovers them from the agents package instead
-of importing any by name — so this is the one agent-definition interface,
+contract; `synderesis.py` discovers them from the agents package instead
+of importing any by name, so this is the one agent-definition interface,
 not a side door. Two caveats. A broken file is skipped with an error and
 never takes the app down. Loading executes the file, so the directory is
 equivalent in trust to installing the package itself; the feature is off
@@ -1223,18 +1110,19 @@ enters the Intellect as grounding and is not scanned by Phase Zero, so a
 custom plugin is your deployment's own risk, exactly like a custom tool.
 The Conscience still audits whatever the draft became.
 
-**Tools** are configured, not coded: `MCP_SERVERS_JSON` points at a file of
-MCP server definitions, each server becomes a connector an organization can
-allow and a policy can grant, and every call still passes the Will's
+**Tools** are configured, not coded: `MCP_SERVERS_JSON` points at a file
+of MCP server definitions, each server becomes a connector an organization
+can allow and a policy can grant, and every call still passes the Will's
 allow-list gate. Full guide: `docs/MCP_TOOLS.md`.
 
 Two properties to know before installing one. A server is
-**operator-installed only** (the definition is a file on disk that no request
-path can reach), because a stdio server is an arbitrary command this process
-runs, which is the same trust level as the extensions directory above. And a
-server authenticates with the **deployment's** credential rather than a
-member's, so it suits shared and system resources; a member's own drive or
-mailbox belongs on a delegated-OAuth connector instead.
+**operator-installed only** (the definition is a file on disk that no
+request path can reach), because a stdio server is an arbitrary command
+this process runs, which is the same trust level as the extensions
+directory above. And a server authenticates with the **deployment's**
+credential rather than a member's, so it suits shared and system
+resources; a member's own drive or mailbox belongs on a delegated-OAuth
+connector instead.
 
 ## 19. The TCB, User Space, and how they talk
 
@@ -1242,7 +1130,7 @@ The files that governance claims depend on are enumerated in
 `scripts/core_integrity_manifest.json`: the orchestrator and its mixins,
 the five faculties, the audit schema, the enforcement content (threat
 signatures, faculty prompts), RBAC, the plugin registry, and the
-attestation module — 19 files. The License & Governance Agreement calls
+attestation module, 19 files. The License & Governance Agreement calls
 this set the Core Loop; in security-engineering terms it is the Trusted
 Computing Base (TCB). A defect inside the set can violate the governance
 policy. A defect outside it cannot. Everything outside it is User Space,
@@ -1255,7 +1143,7 @@ may call a model, and the Will may consume discernment's output but never
 produce it. Second: the TCB is mechanism, never content. No agent's name,
 value, corpus or plugin appears in TCB code; agents, policies, plugins and
 tools are all User Space data that the TCB compiles and enforces. Both
-laws are what make the audit story true — anyone holding the compiled
+laws are what make the audit story true: anyone holding the compiled
 profile and the record can recompute the enforcement outcome.
 
 **How User Space talks to the TCB.** You do not import faculty internals
@@ -1263,9 +1151,9 @@ or call the Will; you hand data in through stable seams and read evidence
 out. The catalog:
 
 - **The compiled profile** is the master interface. Everything an agent
-  is — values with weights and `gate_reason` (§11), `allowed_tools`
+  is, values with weights and `gate_reason` (§11), `allowed_tools`
   (expanded from connector names at compile time), scope, knowledge
-  authorization, worldview layers — is configuration that
+  authorization, worldview layers, is configuration that
   `get_profile()` (`synderesis.py`) compiles into one inspectable dict.
   You configure what the Will enforces; you never invoke it.
 - **Running a turn**: `POST /api/process_prompt` for interactive chat,
@@ -1286,7 +1174,7 @@ out. The catalog:
   work memory, tool calls), so nothing you change in User Space rewrites
   what a past turn saw. The
   [Governance Artifact Specification](GOVERNANCE_ARTIFACT_SPECIFICATION.md)
-  is the formal contract for these shapes — build custom interfaces
+  is the formal contract for these shapes; build custom interfaces
   against it, not against `orchestrator.py`.
 
 **If you genuinely must change a TCB file**, the bar is different: the
@@ -1321,15 +1209,15 @@ Three runtime behaviors build on it:
   anything but verified-intact. Off by default: the AGPL permits running
   modified code; representing the deployment as SAFi is what requires an
   intact TCB or upstream review (agreement, Section IV).
-- **The operator's pin**: `SAFI_EXPECTED_FINGERPRINT` holds the fingerprint
-  the operator copied from an official release's published `TCB Fingerprint:`
-  line at install time. The manifest ships inside the tree it guards, so a
-  local tamper can regenerate it; the pin lives in config provisioned apart
-  from the code, and every boot is held to the value a human verified out
-  of band. A mismatch logs loudly, and refuses startup under strict mode.
-  It protects honest deployments from drift and tampering; it claims
-  nothing about authenticity, and does nothing against a fork that simply
-  leaves it unset.
+- **The operator's pin**: `SAFI_EXPECTED_FINGERPRINT` holds the
+  fingerprint the operator copied from an official release's published
+  `TCB Fingerprint:` line at install time. The manifest ships inside the
+  tree it guards, so a local tamper can regenerate it; the pin lives in
+  config provisioned apart from the code, and every boot is held to the
+  value a human verified out of band. A mismatch logs loudly, and refuses
+  startup under strict mode. It protects honest deployments from drift and
+  tampering; it claims nothing about authenticity, and does nothing
+  against a fork that simply leaves it unset.
 
 If you modify a TCB file on purpose, regenerate the manifest in the same
 commit or CI fails on the staleness guard:
@@ -1338,7 +1226,7 @@ commit or CI fails on the staleness guard:
 python scripts/verify_integrity.py --update
 ```
 
-Then submit the change upstream — commit the TCB edit and the regenerated
+Then submit the change upstream: commit the TCB edit and the regenerated
 manifest together and open a pull request against the
 [official repo](https://github.com/jnamaya/SAFi).
 
@@ -1350,7 +1238,7 @@ changes that. Please submit your changes for review and acceptance in the
 upstream official SAFi repo (agreement, Section IV). A fork that keeps its
 Core Loop changes private cannot use the SAFi brand or claim authenticity.
 
-You have no restrictions from the software — a fork runs fully, governs
+You have no restrictions from the software: a fork runs fully, governs
 fully, and its own records still attest to its own verified build. What it
 loses is the certification: the right to the SAFi name and to the
 authenticity claim.
