@@ -1335,21 +1335,41 @@ def tcb_verify(org_id):
     }
 
     try:
-        db.append_compliance_log(org_id, 'tcb_verify', f"user:{_actor()}", {
-            "verdict": verdict,
-            "fingerprint": disk.get("fingerprint"),
-            "manifest_fingerprint": disk.get("expected_fingerprint"),
-            "disk_state": disk["state"],
-            "boot_state": boot["state"],
-            "branch": git["branch"],
-            "official_release": official,
-            "remote_reachable": reachable,
-            "pin_configured": pin_configured,
-            "pin_matches": pin_matches,
-        })
+        # The full result is the evidence record: verdict, fingerprints, the
+        # branch, and the remote state. Storing it whole is what lets the
+        # settings card and the compliance tab re-render the last check from
+        # the log alone, without re-verifying on every page load.
+        db.append_compliance_log(org_id, 'tcb_verify', f"user:{_actor()}", result)
     except Exception as e:
         # The verification answer must not be lost because the audit write
         # failed; log loudly and still return the result.
         current_app.logger.error(f"tcb_verify: compliance log write failed: {e}")
 
     return jsonify(result)
+
+
+@organizations_bp.route('/organizations/<org_id>/tcb-verify/last', methods=['GET'])
+@require_role('admin')
+def last_tcb_verify(org_id):
+    """[GET /api/organizations/<org_id>/tcb-verify/last]
+    The most recent verification stored in the compliance log, so the
+    settings card can persist its last verdict across page loads without
+    re-running the check. `found` is false when nothing has been recorded.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        rows = db.list_compliance_log(org_id, limit=100)
+        last = next(
+            (r for r in rows
+             if r.get("event_type") == "tcb_verify"
+             and isinstance(r.get("detail"), dict)
+             and "verdict" in r["detail"]),
+            None,
+        )
+        if last is None:
+            return jsonify({"found": False, "verdict": None, "checked_at": None})
+        return jsonify({"found": True, **last["detail"]})
+    except Exception as e:
+        current_app.logger.error(f"tcb_verify last: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500

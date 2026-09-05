@@ -273,7 +273,19 @@ async function loadComplianceLog(orgId) {
                 ? ` — ${e.detail.counts.conversations ?? 0} conversations, ${e.detail.counts.chat_history ?? 0} messages destroyed`
                 : e.event_type === 'examiner_export' && e.detail?.counts
                     ? ` — ${e.detail.counts.messages} messages produced`
-                    : '';
+                    : e.event_type === 'tcb_verify' && e.detail?.verdict
+                        ? (() => {
+                            const v = e.detail.verdict;
+                            const branch = e.detail.local?.branch || e.detail.branch || '';
+                            const vCls = {
+                                authentic: 'text-green-600 dark:text-green-400',
+                                unreleased: 'text-amber-600 dark:text-amber-400',
+                                modified: 'text-red-600 dark:text-red-400',
+                                unverifiable: 'text-red-600 dark:text-red-400',
+                            }[v] || 'text-gray-500';
+                            return ` — <span class="font-mono text-[11px] ${vCls}">${v}</span>${branch ? ` <span class="text-gray-500">&middot; ${branch} tree</span>` : ''}`;
+                        })()
+                        : '';
             return `<div class="py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
                 <span class="font-mono text-xs text-gray-400">${when}</span>
                 <span class="ml-2 font-medium">${e.event_type.replace(/_/g, ' ')}</span>

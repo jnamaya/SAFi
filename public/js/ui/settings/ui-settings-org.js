@@ -1077,6 +1077,11 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     // Compares this deployment's TCB fingerprint against the official release
     // list. The server writes the result to the compliance log.
     function renderTcbResult(r) {
+        // A stored entry from the compliance log may predate the full-result
+        // shape; default the sections so either renders identically.
+        const local = r.local || {};
+        const remote = r.remote || {};
+        const pin = r.pin || {};
         const short = (fp) => (fp ? `<code class="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono break-all">${escapeHtml(fp.slice(0, 16))}…${escapeHtml(fp.slice(-6))}</code>` : '<span class="text-gray-400">unavailable</span>');
         const banners = {
             authentic: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200',
@@ -1093,20 +1098,20 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             offline: 'Official fingerprint list unreachable',
         };
         const notes = {
-            authentic: r.remote.official_release
-                ? `Matches official release <strong>${escapeHtml(r.remote.official_release.tag)}</strong> (${escapeHtml(r.remote.official_release.date)}).`
+            authentic: remote.official_release
+                ? `Matches official release <strong>${escapeHtml(remote.official_release.tag)}</strong> (${escapeHtml(remote.official_release.date)}).`
                 : 'Matches an official release.',
             unreleased: 'The installed files match this deployment\'s own manifest, but its fingerprint is not in the official release list.',
             modified: 'The installed files do not match the release manifest. Running modified Core Loop code is permitted by AGPL; only calling it official SAFi is conditional (License &amp; Governance Agreement, Section IV).',
             unverifiable: 'The local integrity check could not run, so no verdict is possible.',
             offline: 'This installation is intact, but the official fingerprint list could not be fetched, so authenticity could not be confirmed.',
         };
-        const branchLine = (r.local && r.local.branch)
-            ? ` This instance is on the <strong>${escapeHtml(r.local.branch)}</strong> tree${r.local.revision ? ` at <code class="font-mono">${escapeHtml(r.local.revision)}</code>` : ''}.`
+        const branchLine = local.branch
+            ? ` This instance is on the <strong>${escapeHtml(local.branch)}</strong> tree${local.revision ? ` at <code class="font-mono">${escapeHtml(local.revision)}</code>` : ''}.`
             : ' This is a development snapshot or a fork, not a pinned official release.';
-        const pinLine = r.pin && r.pin.configured
-            ? `<p class="text-xs ${r.pin.matches ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
-                Operator pin (SAFI_EXPECTED_FINGERPRINT) ${r.pin.matches ? 'matches.' : `does NOT match. Pinned ${escapeHtml(r.pin.configured_prefix)}, this install measures a different fingerprint.`}
+        const pinLine = pin.configured
+            ? `<p class="text-xs ${pin.matches ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                Operator pin (SAFI_EXPECTED_FINGERPRINT) ${pin.matches ? 'matches.' : `does NOT match. Pinned ${escapeHtml(pin.configured_prefix || 'unknown')}, this install measures a different fingerprint.`}
               </p>`
             : '';
         return `
@@ -1116,12 +1121,12 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 ${pinLine}
             </div>
             <dl class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Fingerprint</dt><dd>${short(r.local && r.local.fingerprint)}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd>${short(r.local && r.local.manifest_fingerprint)}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd>${r.local ? escapeHtml(r.local.state) : 'unavailable'}${r.local && r.local.modified_files.length ? ` &middot; ${escapeHtml(r.local.modified_files.join(', '))}` : ''}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd>${r.local ? escapeHtml(r.local.boot_state) : 'unavailable'}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Git branch</dt><dd>${r.local && r.local.branch ? `${escapeHtml(r.local.branch)}${r.local.revision ? ` @ <code class="font-mono">${escapeHtml(r.local.revision)}</code>` : ''}` : 'unavailable (no git metadata in this deployment)'}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd>${r.remote && r.remote.reachable ? 'reachable' : 'unreachable'}${r.remote && r.remote.error ? ` &middot; ${escapeHtml(r.remote.error)}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Fingerprint</dt><dd>${short(local.fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd>${short(local.manifest_fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd>${escapeHtml(local.state || 'unavailable')}${local.modified_files && local.modified_files.length ? ` &middot; ${escapeHtml(local.modified_files.join(', '))}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd>${escapeHtml(local.boot_state || 'unavailable')}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Git branch</dt><dd>${local.branch ? `${escapeHtml(local.branch)}${local.revision ? ` @ <code class="font-mono">${escapeHtml(local.revision)}</code>` : ''}` : 'unavailable (no git metadata in this deployment)'}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd>${remote.reachable ? 'reachable' : 'unreachable'}${remote.error ? ` &middot; ${escapeHtml(remote.error)}` : ''}</dd></div>
                 <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Checked</dt><dd>${escapeHtml(r.checked_at || '')}</dd></div>
             </dl>`;
     }
@@ -1158,6 +1163,20 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 btn.textContent = original;
             }
         });
+    }
+
+    // Persisted last verdict: the compliance log stores the full result of
+    // every run, so the card shows the stored one on load and only moves when
+    // the button is pressed again. A failed fetch leaves the placeholder.
+    const persistedTcbEl = document.getElementById('tcb-verify-result');
+    if (persistedTcbEl) {
+        api.getLastTcbVerify(org.id)
+            .then(r => {
+                if (r && r.found && r.verdict) {
+                    persistedTcbEl.innerHTML = renderTcbResult(r);
+                }
+            })
+            .catch(() => {});
     }
 
     // --- Identity & Sessions ---

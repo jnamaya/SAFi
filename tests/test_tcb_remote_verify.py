@@ -315,6 +315,54 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(r.status_code, 500)
         self.assertEqual(r.get_json()["branch"], "dev")
 
+    def test_last_returns_the_stored_verdict(self):
+        """The settings card persists: the last run's full result is stored
+        in the compliance log and replayed by GET /tcb-verify/last, so a
+        reload shows the stored verdict without re-verifying."""
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(resp=_Resp(payload=RELEASES))):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            r = self._post()
+            self.assertEqual(r.status_code, 200)
+            stored = r.get_json()
+            last = self.client.get(
+                f"/api/organizations/{self.org_id}/tcb-verify/last").get_json()
+        self.assertTrue(last["found"])
+        self.assertEqual(last["verdict"], stored["verdict"])
+        # The full result is the evidence record, not just a verdict string.
+        self.assertEqual(last["local"]["fingerprint"], stored["local"]["fingerprint"])
+        self.assertEqual(last["remote"]["reachable"], stored["remote"]["reachable"])
+        self.assertEqual(last["checked_at"], stored["checked_at"])
+
+    def test_last_is_empty_before_any_run(self):
+        org = str(uuid.uuid4())
+        uid = f"tcbfresh_{uuid.uuid4().hex[:8]}"
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Fresh Org')", (org,))
+        _exec("INSERT INTO users (id, email, name, org_id, role) "
+              "VALUES (%s, %s, 'Fresh Admin', %s, 'admin')",
+              (uid, f"{uid}@example.test", org))
+        with patch.object(organizations, "integrity",
+                          StubIntegrity(INTACT, INTACT)):
+            login_as(self.client, uid, "admin", org_id=org)
+            last = self.client.get(
+                f"/api/organizations/{org}/tcb-verify/last").get_json()
+        self.assertFalse(last["found"])
+        self.assertIsNone(last["verdict"])
+
+    def test_last_is_org_scoped_and_admin_only(self):
+        other = str(uuid.uuid4())
+        _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Other Org')", (other,))
+        login_as(self.client, self.uid, "admin", org_id=self.org_id)
+        cross = self.client.get(
+            f"/api/organizations/{other}/tcb-verify/last")
+        self.assertEqual(cross.status_code, 403)
+        login_as(self.client, self.member_uid, "member", org_id=self.org_id)
+        member = self.client.get(
+            f"/api/organizations/{self.org_id}/tcb-verify/last")
+        self.assertEqual(member.status_code, 403)
+
 
 class TestDetectGitBranch(unittest.TestCase):
     """The helper walks up from the module directory reading .git/HEAD as a
