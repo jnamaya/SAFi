@@ -6,13 +6,22 @@ advisory evidence:
 
   * authentic   -- files match the in-tree manifest AND the manifest's
                   fingerprint is in the official release list published on
-                  selfalignmentframework.com
+                  selfalignmentframework.com AND that list's signature
+                  authenticated against the pinned registry key
   * unreleased  -- intact against the local manifest, but that fingerprint is
                   not an official release (dev snapshot / fork)
   * modified    -- files do not match the in-tree manifest
-  * unverifiable -- the local check itself could not run
+  * unverifiable -- no verdict is possible: the local check failed, OR the
+                  official list was reachable but did not authenticate
+                  (bad/missing signature, unusable pubkey, empty list)
   * offline     -- intact, but the official list could not be fetched; never
                   a pass, and distinct from the local states
+
+The list is only trusted after a minisign (legacy, raw-message) ed25519 check
+over the exact published bytes, using the key pinned in this image. Tests
+generate an in-memory keypair, write a minisign-format public key to a temp
+file, sign the payload exactly as `scripts/tcb_sign.py` does, and the fake
+transport serves it per URL.
 
 The boot integrity machinery is consumed, never edited: the endpoint reads
 get_status(), and nothing in core/integrity.py changes here, so the TCB
@@ -21,6 +30,7 @@ fingerprint of the shipped tree is untouched (backlog: remote TCB verify).
 Requires the disposable stack (MySQL, real session auth):
     docker compose -f docker-compose.test.yml run --rm --build tests -k tcb_remote
 """
+import base64
 import json
 import os
 import sys
@@ -32,6 +42,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from safi_app import create_app
 from safi_app.api import organizations
 from safi_app.persistence import database as db
@@ -67,13 +79,42 @@ def _exec(sql, params=()):
     conn.close()
 
 
-class _Resp:
-    def __init__(self, status_code=200, payload=None):
-        self.status_code = status_code
-        self._payload = payload
+def _ed25519_keypair():
+    """An in-memory minisign-compatible keypair: (keynum8, pub32, priv32)."""
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub = priv.public_key().public_bytes(
+        serialization.Encoding.Raw,
+        serialization.PublicFormat.Raw,
+    )
+    keynum = pub[:8]  # a stable binding, like minisign's key number
+    return keynum, pub, priv
 
-    def json(self):
-        return self._payload
+
+def _minisign_pubkey_file(keynum, pub):
+    """The public key file layout minisign 0.12 reads: a comment line, then
+    base64(b"Ed" + keynum(8) + pub(32))."""
+    return ("untrusted comment: minisign public key test\n"
+            + base64.b64encode(b"Ed" + keynum + pub).decode() + "\n")
+
+
+def _minisig(payload, keynum, priv):
+    """Sign the exact payload bytes the way scripts/tcb_sign.py does: raw
+    ed25519 over the message, wrapped in minisign's signature layout
+    base64(b"Ed" + keynum(8) + sig(64))."""
+    sig = priv.sign(payload)
+    return ("untrusted comment: test signature\n"
+            + base64.b64encode(b"Ed" + keynum + sig).decode() + "\n")
+
+
+class _BytesResp:
+    """A requests.Response stand-in exposing .status_code and .content; the
+    endpoint no longer calls .json() on the wire payload, it reads bytes."""
+
+    def __init__(self, status_code=200, content=b""):
+        self.status_code = status_code
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        self.content = content
 
 
 class StubIntegrity:
@@ -117,20 +158,53 @@ class TestTcbVerify(unittest.TestCase):
         _exec("INSERT INTO users (id, email, name, org_id, role) "
               "VALUES (%s, %s, 'TCB Member', %s, 'member')",
               (cls.member_uid, f"{cls.member_uid}@example.test", cls.org_id))
+        cls.keynum, cls.pub, cls.priv = _ed25519_keypair()
+        cls.pubkey_dir = tempfile.TemporaryDirectory()
+        cls.pubkey_path = os.path.join(cls.pubkey_dir.name, "TCB_KEY.pub")
+        with open(cls.pubkey_path, "w") as f:
+            f.write(_minisign_pubkey_file(cls.keynum, cls.pub))
+        # The exact bytes the endpoint will fetch and verify, and the matching
+        # signature, mirroring how the real site serves releases.json.
+        cls.payload = json.dumps(RELEASES).encode()
+        cls.valid_sig = _minisig(cls.payload, cls.keynum, cls.priv)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.pubkey_dir.cleanup()
 
     def setUp(self):
         # A fresh module cache every test: the TTL is 300s and sharing state
         # across tests would let a stale list leak into a later one.
         organizations._tcb_cache.update(at=0.0, releases=None)
+        self._old_pubkey_path = organizations._TCB_PUBKEY_PATH
+        organizations._TCB_PUBKEY_PATH = self.pubkey_path
         self.client = self.app.test_client()
 
+    def tearDown(self):
+        organizations._TCB_PUBKEY_PATH = self._old_pubkey_path
+
     @staticmethod
-    def _fake_get(resp=None, exc=None):
+    def _fake_get(payload=None, sig=None, exc=None, release_status=200,
+                  sig_status=200, sig_exc=None):
+        """URL-aware transport fake: the releases URL serves `payload`
+        (bytes), the signature URL serves `sig`. Raise `exc` for any URL when
+        given, or `sig_exc` for the signature URL only."""
         def _get(url, timeout):
             if exc is not None:
                 raise exc
-            return resp
+            if url.endswith(".minisig"):
+                if sig_exc is not None:
+                    raise sig_exc
+                if sig_status != 200:
+                    return _BytesResp(status_code=sig_status)
+                return _BytesResp(status_code=200, content=sig)
+            if release_status != 200:
+                return _BytesResp(status_code=release_status)
+            return _BytesResp(status_code=200, content=payload)
         return _get
+
+    def _signed_get(self):
+        return self._fake_get(payload=self.payload, sig=self.valid_sig)
 
     def _post(self, body=None):
         return self.client.post(f"/api/organizations/{self.org_id}/tcb-verify",
@@ -156,13 +230,13 @@ class TestTcbVerify(unittest.TestCase):
     def test_authentic_official_release(self):
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))):
+             patch.object(organizations.requests, "get", self._signed_get()):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             r = self._post()
         self.assertEqual(r.status_code, 200)
         data = r.get_json()
         self.assertEqual(data["verdict"], "authentic")
+        self.assertTrue(data["remote"]["verified"])
         self.assertEqual(data["remote"]["official_release"]["tag"], "v1.4.1")
         self.assertEqual(data["local"]["state"], "intact")
         self.assertTrue(data["local"]["intact"])
@@ -179,19 +253,18 @@ class TestTcbVerify(unittest.TestCase):
         state = {**INTACT, "expected_fingerprint": F64_A}
         stub = StubIntegrity(disk=state, boot=state)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))):
+             patch.object(organizations.requests, "get", self._signed_get()):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
         self.assertEqual(data["verdict"], "unreleased")
+        self.assertTrue(data["remote"]["verified"])
         self.assertIsNone(data["remote"]["official_release"])
         self.assertTrue(data["local"]["intact"])
 
     def test_modified_tree_is_modified_even_when_in_the_list(self):
         stub = StubIntegrity(disk=MODIFIED, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))):
+             patch.object(organizations.requests, "get", self._signed_get()):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
         self.assertEqual(data["verdict"], "modified")
@@ -201,8 +274,7 @@ class TestTcbVerify(unittest.TestCase):
     def test_unverifiable_is_a_third_local_answer(self):
         stub = StubIntegrity(disk=UNVERIFIABLE, boot=UNVERIFIABLE)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))):
+             patch.object(organizations.requests, "get", self._signed_get()):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
         self.assertEqual(data["verdict"], "unverifiable")
@@ -220,21 +292,75 @@ class TestTcbVerify(unittest.TestCase):
         self.assertFalse(data["remote"]["reachable"])
         self.assertTrue(data["local"]["intact"])
 
-    def test_malformed_list_is_offline_too(self):
+    def test_signed_list_with_no_releases_is_unverifiable(self):
+        """A valid signature over an empty registry proves nothing; membership
+        cannot be established, so it must not fall through to 'unreleased'."""
+        empty = json.dumps({"releases": []}).encode()
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload={"releases": []}))):
+                          self._fake_get(payload=empty,
+                                         sig=_minisig(empty, self.keynum, self.priv))):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
-        self.assertEqual(data["verdict"], "offline")
-        self.assertIn("malformed", data["remote"]["error"])
+        self.assertEqual(data["verdict"], "unverifiable")
+        self.assertIn("no releases", data["remote"]["error"])
+
+    def test_tampered_list_is_unverifiable_never_authentic(self):
+        """The whole point of signing: a modified list that still carries the
+        old signature must not authenticate, no matter how official it looks."""
+        tampered = self.payload + b"\n"
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(payload=tampered, sig=self.valid_sig)):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertEqual(data["verdict"], "unverifiable")
+        self.assertFalse(data["remote"]["verified"])
+        self.assertIn("signature", data["remote"]["error"])
+
+    def test_missing_signature_is_unverifiable(self):
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(payload=self.payload, sig=None,
+                                         sig_status=404)):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertEqual(data["verdict"], "unverifiable")
+        self.assertTrue(data["remote"]["reachable"])
+        self.assertFalse(data["remote"]["verified"])
+        self.assertIn("signature missing", data["remote"]["error"])
+
+    def test_signature_by_another_key_is_unverifiable(self):
+        other_keynum, other_pub, other_priv = _ed25519_keypair()
+        other_sig = _minisig(self.payload, other_keynum, other_priv)
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations.requests, "get",
+                          self._fake_get(payload=self.payload, sig=other_sig)):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertEqual(data["verdict"], "unverifiable")
+        self.assertIn("different key", data["remote"]["error"])
+
+    def test_missing_pinned_key_fails_closed(self):
+        stub = StubIntegrity(disk=INTACT, boot=INTACT)
+        with patch.object(organizations, "integrity", stub), \
+             patch.object(organizations, "_TCB_PUBKEY_PATH",
+                          "/nonexistent/TCB_KEY.pub"), \
+             patch.object(organizations.requests, "get", self._signed_get()):
+            login_as(self.client, self.uid, "admin", org_id=self.org_id)
+            data = self._post().get_json()
+        self.assertEqual(data["verdict"], "unverifiable")
+        self.assertFalse(data["remote"]["verified"])
+        self.assertIn("pinned registry key is unavailable", data["remote"]["error"])
 
     def test_pin_mismatch_is_reported_never_withheld(self):
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations.requests, "get", self._signed_get()), \
              patch.dict("os.environ", {"SAFI_EXPECTED_FINGERPRINT": F64_C}):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
@@ -245,8 +371,7 @@ class TestTcbVerify(unittest.TestCase):
     def test_pin_match_identical(self):
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations.requests, "get", self._signed_get()), \
              patch.dict("os.environ", {"SAFI_EXPECTED_FINGERPRINT": F64_A}):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             data = self._post().get_json()
@@ -266,23 +391,24 @@ class TestTcbVerify(unittest.TestCase):
 
     def test_fetch_is_cached_inside_the_ttl(self):
         """Two clicks in a row hit the site once, not twice: every org admin
-        gets the same deployment verdict and the site is not hammered."""
+        gets the same deployment verdict and the site is not hammered. The
+        signed deployment now costs two requests (list + signature) on the
+        first click, then zero while the TTL holds."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get",
-                          Mock(return_value=_Resp(payload=RELEASES))) as mocked:
+                          Mock(side_effect=self._signed_get())) as mocked:
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             self._post()
             self._post()
-            self.assertEqual(mocked.call_count, 1)
+            self.assertEqual(mocked.call_count, 2)
 
     def test_branch_is_reported_when_git_metadata_present(self):
         """The dev/demo compose binds .git read-only, so the button can say
         which tree this instance is on. A hint, never part of the verdict."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations.requests, "get", self._signed_get()), \
              patch.object(organizations, "_detect_git_branch",
                           return_value={"branch": "dev", "revision": "82c7caf"}):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
@@ -295,8 +421,7 @@ class TestTcbVerify(unittest.TestCase):
         field is null and the UI falls back to the snapshot/fork wording."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))), \
+             patch.object(organizations.requests, "get", self._signed_get()), \
              patch.object(organizations, "_detect_git_branch",
                           return_value={"branch": None, "revision": None}):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
@@ -321,8 +446,7 @@ class TestTcbVerify(unittest.TestCase):
         reload shows the stored verdict without re-verifying."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
-             patch.object(organizations.requests, "get",
-                          self._fake_get(resp=_Resp(payload=RELEASES))):
+             patch.object(organizations.requests, "get", self._signed_get()):
             login_as(self.client, self.uid, "admin", org_id=self.org_id)
             r = self._post()
             self.assertEqual(r.status_code, 200)

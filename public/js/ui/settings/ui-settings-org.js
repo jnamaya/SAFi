@@ -1103,7 +1103,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 : 'Matches an official release.',
             unreleased: 'The installed files match this deployment\'s own manifest, but its fingerprint is not in the official release list.',
             modified: 'The installed files do not match the release manifest. Running modified Core Loop code is permitted by AGPL; only calling it official SAFi is conditional (License &amp; Governance Agreement, Section IV).',
-            unverifiable: 'The local integrity check could not run, so no verdict is possible.',
+            unverifiable: 'No verdict is possible: the local integrity check could not run, or the official release list could not be authenticated against the pinned key.',
             offline: 'This installation is intact, but the official fingerprint list could not be fetched, so authenticity could not be confirmed.',
         };
         const branchLine = local.branch

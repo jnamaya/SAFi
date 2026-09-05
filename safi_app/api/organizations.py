@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app, session
 import uuid
+import base64
 import json
 import os
 import re
@@ -10,6 +11,8 @@ from email.message import EmailMessage
 import requests
 import dns.resolver
 import dns.exception
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from ..persistence import database as db
 from ..timeutil import utc_isoformat
 from ..config import Config
@@ -1187,19 +1190,83 @@ _TCB_RELEASES_URL = os.environ.get(
     "SAFI_TCB_RELEASES_URL",
     "https://selfalignmentframework.com/tcb/releases.json",
 )
+# The signature is always the message file plus ".minisig", published next to
+# the list, so it follows any SAFI_TCB_RELEASES_URL override.
+_TCB_SIG_URL = _TCB_RELEASES_URL + ".minisig"
+# The pinned public half of the release-registry signing key. Shipped in the
+# image (Dockerfile COPYs safi_app/) and published at /tcb/TCB_KEY.pub; the two
+# copies must be byte-identical, and the git history is the anchor outside the
+# website. This is what "the key on the website" points at: a deployment that
+# holds a different key rejects the list instead of accepting it.
+_TCB_PUBKEY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tcb_key.pub")
 _TCB_CACHE_TTL_SECONDS = 300
 _tcb_cache = {"at": 0.0, "releases": None}
 
 
+def _parse_minisign_pubkey(text):
+    """Parse a minisign public key file into (keynum, 32-byte ed25519 key).
+    File layout (minisign >= 0.5): an untrusted comment line, then base64 of
+    b"Ed" + keynum(8) + public_key(32). Returns None on any malformation, so
+    a bad pinned key fails closed instead of being skipped."""
+    try:
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
+            return None
+        raw = base64.b64decode(lines[1], validate=True)
+        if len(raw) != 42 or raw[:2] != b"Ed":
+            return None
+        return raw[2:10], raw[10:42]
+    except Exception:
+        return None
+
+
+def _verify_minisig(payload, sig_text, keynum, public_key):
+    """Verify a minisign (legacy, raw-message) ed25519 signature over the exact
+    payload bytes. Signature layout: base64 of b"Ed" + keynum(8) + sig(64).
+    Returns (ok, reason). The keynum in the signature must equal the pinned
+    one; a signature made by a different key fails both checks."""
+    try:
+        lines = [ln.strip() for ln in sig_text.splitlines() if ln.strip()]
+        if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
+            return False, "signature file is malformed"
+        raw = base64.b64decode(lines[1], validate=True)
+        if len(raw) != 74 or raw[:2] != b"Ed":
+            return False, "signature format is not supported"
+        if raw[2:10] != keynum:
+            return False, "signature was made with a different key"
+        Ed25519PublicKey.from_public_bytes(public_key).verify(raw[10:74], payload)
+        return True, None
+    except InvalidSignature:
+        return False, "signature does not match the published list"
+    except Exception:
+        return False, "signature could not be checked"
+
+
+def _load_tcb_pubkey():
+    """The pinned registry key from this image. None means the deployment has
+    no key at all, which must NOT fall through to "list trusted"."""
+    try:
+        with open(_TCB_PUBKEY_PATH, encoding="utf-8") as f:
+            return _parse_minisign_pubkey(f.read())
+    except Exception:
+        return None
+
+
 def _fetch_tcb_releases():
-    """Fetch the official release fingerprint list. Returns
-    (reachable, releases, error). `releases` is a list of dicts with
-    tag/date/fingerprint, or None when the list is unreachable or malformed.
-    Cached for a short TTL so every org admin clicking the button does not
-    hammer the site."""
+    """Fetch and authenticate the official release fingerprint list. Returns
+    (reachable, verified, releases, error).
+
+    `reachable` means the site answered with a list body. `verified` means
+    that body's signature matched the pinned key. A reachable site serving an
+    unauthenticated list is a threat, not an outage, so the verdict caller
+    treats verified=False as unverifiable; only transport/read failures are
+    offline. `releases` is a list of dicts or None. Cached for a short TTL so
+    every org admin clicking the button does not hammer the site."""
     now = time.time()
     if _tcb_cache["releases"] is not None and now - _tcb_cache["at"] < _TCB_CACHE_TTL_SECONDS:
-        return True, _tcb_cache["releases"], None
+        return True, True, _tcb_cache["releases"], None
+    reachable = False
+    verified = False
     releases = None
     error = None
     try:
@@ -1207,26 +1274,47 @@ def _fetch_tcb_releases():
         if resp.status_code != 200:
             error = f"HTTP {resp.status_code}"
         else:
-            data = resp.json()
-            parsed = []
-            for r in data.get("releases") or []:
-                fp = str(r.get("fingerprint") or "").strip().lower()
-                if re.fullmatch(r"[0-9a-f]{64}", fp):
-                    parsed.append({
-                        "tag": str(r.get("tag") or ""),
-                        "date": str(r.get("date") or ""),
-                        "fingerprint": fp,
-                    })
-            if parsed:
-                releases = parsed
-                _tcb_cache.update(at=now, releases=releases)
+            payload = resp.content
+            reachable = True
+            sig_resp = requests.get(_TCB_SIG_URL, timeout=10)
+            if sig_resp.status_code != 200:
+                error = f"signature missing: HTTP {sig_resp.status_code}"
             else:
-                error = "published list is empty or malformed"
+                key = _load_tcb_pubkey()
+                if key is None:
+                    error = "pinned registry key is unavailable on this deployment"
+                else:
+                    ok, reason = _verify_minisig(
+                        payload, sig_resp.content.decode("utf-8"), *key)
+                    if not ok:
+                        error = f"list failed to authenticate: {reason}"
+                    else:
+                        verified = True
+                        try:
+                            data = json.loads(payload.decode("utf-8"))
+                        except (ValueError, UnicodeDecodeError):
+                            error = "published list is not valid JSON"
+                        else:
+                            parsed = []
+                            for r in data.get("releases") or []:
+                                fp = str(r.get("fingerprint") or "").strip().lower()
+                                if re.fullmatch(r"[0-9a-f]{64}", fp):
+                                    parsed.append({
+                                        "tag": str(r.get("tag") or ""),
+                                        "date": str(r.get("date") or ""),
+                                        "fingerprint": fp,
+                                    })
+                            if parsed:
+                                releases = parsed
+                                _tcb_cache.update(at=now, releases=releases)
+                            else:
+                                # A signed list with no usable releases cannot
+                                # establish membership; that is unverifiable,
+                                # not a clean "not on the list".
+                                error = "published list contains no releases"
     except requests.RequestException as e:
         error = f"unreachable: {e}"[:200]
-    except ValueError:
-        error = "published list is not valid JSON"
-    return releases is not None, releases, error
+    return reachable, verified and releases is not None, releases, error
 
 
 def _detect_git_branch(start=None, max_parents=4):
@@ -1279,9 +1367,9 @@ def tcb_verify(org_id):
             "branch": _detect_git_branch()["branch"],
         }), 500
 
-    reachable, releases, error = _fetch_tcb_releases()
+    reachable, verified, releases, error = _fetch_tcb_releases()
     official = None
-    if reachable and disk.get("expected_fingerprint"):
+    if reachable and verified and disk.get("expected_fingerprint"):
         official = next(
             (r for r in releases if r["fingerprint"] == disk["expected_fingerprint"]),
             None,
@@ -1293,6 +1381,11 @@ def tcb_verify(org_id):
         verdict = "modified"
     elif not reachable:
         verdict = "offline"
+    elif not verified:
+        # The site answered but the list did not authenticate against the
+        # pinned key. That is a trust failure, never a pass and never an
+        # outage: it means a registry this deployment cannot account for.
+        verdict = "unverifiable"
     elif official:
         verdict = "authentic"
     else:
@@ -1324,6 +1417,7 @@ def tcb_verify(org_id):
         },
         "remote": {
             "reachable": reachable,
+            "verified": verified,
             "error": error,
             "official_release": official,
         },

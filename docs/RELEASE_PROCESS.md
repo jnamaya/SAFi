@@ -91,16 +91,54 @@ append-only list of official release fingerprints. Each new release adds
 one entry; no entry is ever removed, so an old install remains
 recognisable as authentic for as long as it runs.
 
+The list is signed. The whole file is signed with the project's registry
+signing key (minisign, legacy raw-message format), and the signature is
+published next to it as `releases.json.minisig`. The public half of the key
+is published on the site as `TCB_KEY.pub` and committed to the repository
+at `safi_app/api/tcb_key.pub`; the two copies are byte-identical (compare
+SHA-256). The git history is the anchor outside the website: someone who
+controls only the site cannot mint a new list, because they do not hold the
+secret key, and a deployment whose pinned key differs from the publisher's
+rejects the list instead of trusting it.
+
 The product's **Verify this Install** button (Org settings, org admin role)
 reads this registry directly. It hashes the deployment's Core Loop, fetches
-the list, and reports one of five verdicts: `authentic` (fingerprint is in
-the list), `unreleased` (intact but not in the list, i.e. a dev snapshot or
-a fork), `modified`, `unverifiable`, or `offline`. Every check is written
-to the compliance log.
+the list, and checks the signature against the pinned key before trusting a
+single fingerprint. It then reports one of five verdicts: `authentic`
+(signature verified and fingerprint in the list), `unreleased` (intact but
+not in the list, i.e. a dev snapshot or a fork), `modified`,
+`unverifiable` (no verdict is possible: the local check failed, or the list
+was reachable but did not authenticate), or `offline` (the list could not
+be fetched; never a pass). Every check is written to the compliance log.
+A reachable site serving a list that does not authenticate is always
+`unverifiable`, never `offline` and never a pass.
 
-Adding the entry is part of the release, not a follow-up: on the site
-repository, append `{"tag", "date", "fingerprint"}` to
-`static_site/tcb/releases.json`, then rebuild and deploy the static site.
+Adding the entry is part of the release, not a follow-up. On the site
+repository:
+
+1. Append `{"tag", "date", "fingerprint"}` to `static_site/tcb/releases.json`.
+2. Sign the result with the owner's secret key:
+   `python scripts/tcb_sign.py static_site/tcb/releases.json \
+   ~/.safi/tcb-sign.key ~/.safi/TCB_KEY.pub`
+   The script bumps the `sequence` field, signs, and verifies before
+   finishing. A release is a new sequence, never an edit of an old entry.
+3. Publish `releases.json` and `releases.json.minisig` together, then
+   rebuild and deploy the static site.
+
+The secret signing key lives offline (default `~/.safi/tcb-sign.key`,
+`chmod 600`), never in the repository and never on the web host.
+
+Anyone can re-verify a published list without the product:
+
+```bash
+curl -O https://selfalignmentframework.com/tcb/releases.json \
+     -O https://selfalignmentframework.com/tcb/releases.json.minisig \
+     -O https://selfalignmentframework.com/tcb/TCB_KEY.pub
+minisign -Vm releases.json -p TCB_KEY.pub
+```
+
+That performs the same authenticity check the button performs locally:
+file bytes, not a view of them.
 
 ## Modified deployments and forks
 
