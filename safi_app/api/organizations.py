@@ -1,8 +1,11 @@
 from flask import Blueprint, jsonify, request, current_app, session
 import uuid
 import json
+import os
 import re
 import smtplib
+import time
+from datetime import datetime, timezone
 from email.message import EmailMessage
 import requests
 import dns.resolver
@@ -12,6 +15,7 @@ from ..timeutil import utc_isoformat
 from ..config import Config
 from ..core import pii_validators
 from ..core.rbac import require_role, check_permission, get_current_org_id
+from ..core import integrity
 # Same check the governance compiler uses, applied at save time: what would
 # raise at chat time is rejected while the admin is still looking at the form.
 from ..core.faculties.synderesis import _has_usable_rubric
@@ -1167,3 +1171,151 @@ def delete_ai_standards(org_id):
     except Exception as e:
         current_app.logger.error(f"Error deleting AI standards: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
+
+
+# --- TCB remote verification (org settings "Verify this Install") ---------
+# The boot integrity check (`safi_app/core/integrity.py`) compares the files
+# against the in-tree manifest. It cannot answer the authenticity question:
+# a local tamper can regenerate that manifest. This endpoint answers it by
+# comparing the manifest's fingerprint against the official release list
+# published on the project website, which is append-only. "Unreachable" is its
+# own answer and never a pass. The logic lives in the API layer on purpose:
+# `core/integrity.py` is a Core Loop file, and touching it would move the TCB
+# fingerprint for every install.
+
+_TCB_RELEASES_URL = os.environ.get(
+    "SAFI_TCB_RELEASES_URL",
+    "https://selfalignmentframework.com/tcb/releases.json",
+)
+_TCB_CACHE_TTL_SECONDS = 300
+_tcb_cache = {"at": 0.0, "releases": None}
+
+
+def _fetch_tcb_releases():
+    """Fetch the official release fingerprint list. Returns
+    (reachable, releases, error). `releases` is a list of dicts with
+    tag/date/fingerprint, or None when the list is unreachable or malformed.
+    Cached for a short TTL so every org admin clicking the button does not
+    hammer the site."""
+    now = time.time()
+    if _tcb_cache["releases"] is not None and now - _tcb_cache["at"] < _TCB_CACHE_TTL_SECONDS:
+        return True, _tcb_cache["releases"], None
+    releases = None
+    error = None
+    try:
+        resp = requests.get(_TCB_RELEASES_URL, timeout=10)
+        if resp.status_code != 200:
+            error = f"HTTP {resp.status_code}"
+        else:
+            data = resp.json()
+            parsed = []
+            for r in data.get("releases") or []:
+                fp = str(r.get("fingerprint") or "").strip().lower()
+                if re.fullmatch(r"[0-9a-f]{64}", fp):
+                    parsed.append({
+                        "tag": str(r.get("tag") or ""),
+                        "date": str(r.get("date") or ""),
+                        "fingerprint": fp,
+                    })
+            if parsed:
+                releases = parsed
+                _tcb_cache.update(at=now, releases=releases)
+            else:
+                error = "published list is empty or malformed"
+    except requests.RequestException as e:
+        error = f"unreachable: {e}"[:200]
+    except ValueError:
+        error = "published list is not valid JSON"
+    return releases is not None, releases, error
+
+
+@organizations_bp.route('/organizations/<org_id>/tcb-verify', methods=['POST'])
+@require_role('admin')
+def tcb_verify(org_id):
+    """
+    [POST /api/organizations/<org_id>/tcb-verify]
+    Verifies this deployment's TCB against the official release fingerprint
+    list published on the project website, and writes the result to the
+    compliance log. The on-disk view is computed fresh so the answer reflects
+    the files right now; the boot view is what this process imported at
+    startup and stamps into governance records.
+    """
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    try:
+        disk = integrity.get_status(root=integrity._ROOT)
+        boot = integrity.get_status()
+    except Exception as e:
+        current_app.logger.error(f"tcb_verify: local check failed: {e}")
+        return jsonify({"error": "The local integrity check could not run."}), 500
+
+    reachable, releases, error = _fetch_tcb_releases()
+    official = None
+    if reachable and disk.get("expected_fingerprint"):
+        official = next(
+            (r for r in releases if r["fingerprint"] == disk["expected_fingerprint"]),
+            None,
+        )
+
+    if disk["state"] == "unverifiable":
+        verdict = "unverifiable"
+    elif not disk["intact"]:
+        verdict = "modified"
+    elif not reachable:
+        verdict = "offline"
+    elif official:
+        verdict = "authentic"
+    else:
+        verdict = "unreleased"
+
+    pin = os.environ.get("SAFI_EXPECTED_FINGERPRINT", "").strip().lower()
+    pin_configured = bool(pin)
+    pin_matches = None
+    if pin_configured and disk.get("fingerprint"):
+        pin_matches = pin == disk["fingerprint"]
+
+    result = {
+        "checked_at": utc_isoformat(datetime.now(timezone.utc)),
+        "verdict": verdict,
+        "release_url": _TCB_RELEASES_URL,
+        "local": {
+            "state": disk["state"],
+            "intact": disk["intact"],
+            "fingerprint": disk.get("fingerprint"),
+            "manifest_fingerprint": disk.get("expected_fingerprint"),
+            "boot_state": boot["state"],
+            "boot_intact": boot["intact"],
+            "modified_files": list(disk.get("modified") or [])[:50],
+            "missing_files": list(disk.get("missing") or [])[:50],
+        },
+        "remote": {
+            "reachable": reachable,
+            "error": error,
+            "official_release": official,
+        },
+        "pin": {
+            "configured": pin_configured,
+            "matches": pin_matches,
+            "configured_prefix": (pin[:16] + "…") if pin_configured else None,
+        },
+    }
+
+    try:
+        db.append_compliance_log(org_id, 'tcb_verify', f"user:{_actor()}", {
+            "verdict": verdict,
+            "fingerprint": disk.get("fingerprint"),
+            "manifest_fingerprint": disk.get("expected_fingerprint"),
+            "disk_state": disk["state"],
+            "boot_state": boot["state"],
+            "official_release": official,
+            "remote_reachable": reachable,
+            "pin_configured": pin_configured,
+            "pin_matches": pin_matches,
+        })
+    except Exception as e:
+        # The verification answer must not be lost because the audit write
+        # failed; log loudly and still return the result.
+        current_app.logger.error(f"tcb_verify: compliance log write failed: {e}")
+
+    return jsonify(result)

@@ -406,6 +406,24 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                  </div>
              </div>
         </div>
+
+        <div class="settings-card">
+            <div class="flex items-start justify-between gap-4 mb-1">
+                <div>
+                    <h4 class="text-lg font-semibold">TCB Verification</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Confirms this installation is an unmodified official SAFi release, by comparing its Trusted Computing Base fingerprint against the official list published on selfalignmentframework.com. Each check is written to the compliance log.</p>
+                </div>
+            </div>
+            <div id="tcb-verify-result" class="space-y-3 mt-4">
+                <p class="text-sm text-gray-500 dark:text-gray-400">Not checked yet. Run a verification to compare this install against the official release list.</p>
+            </div>
+            <div class="flex items-center gap-3 mt-3">
+                <button id="btn-tcb-verify" data-org-id="${org.id}"
+                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                    Verify this Install
+                </button>
+            </div>
+        </div>
     `;
 
     // --- Identity & Access tab: everything about who is in the org ---
@@ -1051,6 +1069,77 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             } finally {
                 btnSaveGov.disabled = false;
                 btnSaveGov.textContent = "Save Configuration";
+            }
+        });
+    }
+
+    // --- TCB Verification ---
+    // Compares this deployment's TCB fingerprint against the official release
+    // list. The server writes the result to the compliance log.
+    function renderTcbResult(r) {
+        const short = (fp) => (fp ? `<code class="text-xs bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono break-all">${escapeHtml(fp.slice(0, 16))}…${escapeHtml(fp.slice(-6))}</code>` : '<span class="text-gray-400">unavailable</span>');
+        const banners = {
+            authentic: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200',
+            unreleased: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200',
+            modified: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
+            unverifiable: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300',
+            offline: 'bg-gray-100 dark:bg-neutral-800 border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-300',
+        };
+        const titles = {
+            authentic: 'Authentic official SAFi release',
+            unreleased: 'Intact, but not an official release',
+            modified: 'Modified installation',
+            unverifiable: 'Installation could not be verified',
+            offline: 'Official fingerprint list unreachable',
+        };
+        const notes = {
+            authentic: r.remote.official_release
+                ? `Matches official release <strong>${escapeHtml(r.remote.official_release.tag)}</strong> (${escapeHtml(r.remote.official_release.date)}).`
+                : 'Matches an official release.',
+            unreleased: 'The installed files match this deployment\'s own manifest, but its fingerprint is not in the official release list. This is a development snapshot or a fork, not a pinned official release.',
+            modified: 'The installed files do not match the release manifest. Running modified Core Loop code is permitted by AGPL; only calling it official SAFi is conditional (License &amp; Governance Agreement, Section IV).',
+            unverifiable: 'The local integrity check could not run, so no verdict is possible.',
+            offline: 'This installation is intact, but the official fingerprint list could not be fetched, so authenticity could not be confirmed.',
+        };
+        const pinLine = r.pin && r.pin.configured
+            ? `<p class="text-xs ${r.pin.matches ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                Operator pin (SAFI_EXPECTED_FINGERPRINT) ${r.pin.matches ? 'matches.' : `does NOT match. Pinned ${escapeHtml(r.pin.configured_prefix)}, this install measures a different fingerprint.`}
+              </p>`
+            : '';
+        return `
+            <div class="border rounded-lg p-4 ${banners[r.verdict] || banners.offline}">
+                <p class="font-semibold">${titles[r.verdict] || 'Check incomplete'}</p>
+                <p class="text-sm mt-1">${notes[r.verdict] || ''}</p>
+                ${pinLine}
+            </div>
+            <dl class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Fingerprint</dt><dd>${short(r.local && r.local.fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd>${short(r.local && r.local.manifest_fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd>${r.local ? escapeHtml(r.local.state) : 'unavailable'}${r.local && r.local.modified_files.length ? ` &middot; ${escapeHtml(r.local.modified_files.join(', '))}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd>${r.local ? escapeHtml(r.local.boot_state) : 'unavailable'}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd>${r.remote && r.remote.reachable ? 'reachable' : 'unreachable'}${r.remote && r.remote.error ? ` &middot; ${escapeHtml(r.remote.error)}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Checked</dt><dd>${escapeHtml(r.checked_at || '')}</dd></div>
+            </dl>`;
+    }
+
+    const btnTcbVerify = document.getElementById('btn-tcb-verify');
+    if (btnTcbVerify) {
+        btnTcbVerify.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const resultEl = document.getElementById('tcb-verify-result');
+            if (!resultEl) return;
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Verifying...';
+            try {
+                const res = await api.tcbVerify(btn.dataset.orgId);
+                if (!res.ok) throw new Error(res.error || 'Verification failed.');
+                resultEl.innerHTML = renderTcbResult(res);
+            } catch (err) {
+                resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(err.message)}</p>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = original;
             }
         });
     }

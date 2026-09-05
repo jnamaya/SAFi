@@ -58,6 +58,7 @@ export const urls = {
     ORG_VERIFY_START: j('/api/organizations/domain/start'),
     ORG_VERIFY_CHECK: j('/api/organizations/domain/verify'),
     ORG_VERIFY_CANCEL: j('/api/organizations/domain/cancel'),
+    TCB_VERIFY: (id) => j(`/api/organizations/${id}/tcb-verify`),
 
     // Document Upload
     DOCUMENTS_EXTRACT: j('/api/documents/extract'),
@@ -671,6 +672,9 @@ export async function saveAiStandards(orgId, data) {
 export async function deleteAiStandards(orgId) {
     return httpJSON(`/api/organizations/${orgId}/ai-standards`, 'DELETE', {});
 }
+
+export const tcbVerify = (orgId) =>
+    httpJSON(`/api/organizations/${orgId}/tcb-verify`, 'POST', {});
 
 // --- Document Upload ---
 

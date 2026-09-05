@@ -1,6 +1,6 @@
 # SAFi Release Process
 
-> **Last updated:** 2026-08-16
+> **Last updated:** 2026-09-05
 
 How SAFi's code moves from development to something a production deployment
 can verify. This is the operator- and contributor-facing description of the
@@ -55,6 +55,9 @@ Releases before this convention used two-part versions (`v1.4`); from
   Loop files (the Trusted Computing Base), computed from the tagged tree's
   own integrity manifest. This value is what makes the release the
   production tier.
+- A registry entry: the same fingerprint appended to the official release
+  list at `https://selfalignmentframework.com/tcb/releases.json`, the
+  machine-readable source of truth for the "Verify this Install" button.
 
 ## Verifying and pinning a deployment
 
@@ -80,6 +83,24 @@ the value you verified, a mismatch is logged loudly, and
 `SAFI_ENFORCE_INTEGRITY=strict` refuses to start on one. Update the pin
 when you upgrade; that update is you re-performing the check against the
 new release's published value.
+
+## The official release registry
+
+The site at <https://selfalignmentframework.com/tcb/> publishes the
+append-only list of official release fingerprints. Each new release adds
+one entry; no entry is ever removed, so an old install remains
+recognisable as authentic for as long as it runs.
+
+The product's **Verify this Install** button (Org settings, org admin role)
+reads this registry directly. It hashes the deployment's Core Loop, fetches
+the list, and reports one of five verdicts: `authentic` (fingerprint is in
+the list), `unreleased` (intact but not in the list, i.e. a dev snapshot or
+a fork), `modified`, `unverifiable`, or `offline`. Every check is written
+to the compliance log.
+
+Adding the entry is part of the release, not a follow-up: on the site
+repository, append `{"tag", "date", "fingerprint"}` to
+`static_site/tcb/releases.json`, then rebuild and deploy the static site.
 
 ## Modified deployments and forks
 
