@@ -1137,11 +1137,17 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             btn.textContent = 'Verifying...';
             try {
                 const res = await api.tcbVerify(btn.dataset.orgId);
-                if (!res.ok) {
+                if (res === 'QUEUED') {
+                    resultEl.innerHTML = '<p class="text-sm text-gray-500">Offline: the verification was queued and will run later.</p>';
+                    return;
+                }
+                // postWithQueue returns the raw JSON body on success, with no
+                // `ok` field, so presence of `error` is the failure test here.
+                if (res && res.error) {
                     const tail = res.branch
                         ? `, this instance is on the ${escapeHtml(res.branch)} tree.`
                         : '';
-                    resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(res.error || 'Verification failed.')}${tail}</p>`;
+                    resultEl.innerHTML = `<p class="text-sm text-red-500">${escapeHtml(res.error)}${tail}</p>`;
                     return;
                 }
                 resultEl.innerHTML = renderTcbResult(res);
