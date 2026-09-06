@@ -36,47 +36,27 @@
 
 ## The problem
 
-Your organization is deploying AI agents, and legal, compliance, and technology leaders are asking hard questions:
+Organizations deploying AI agents are asking hard questions. Legal, compliance, and technology leaders want to know: how do we enforce our AI policies at runtime? How do we know whether an agent followed them? How do we identify drift from the values and policies we approved? How do we prevent unauthorized tool calls? And how do we show an examiner what the agent produced, which policies were applied, and why the action was allowed?
 
-- How do we enforce our AI policies at runtime?
-- How do we know whether an agent followed them?
-- How do we identify drift from the values and policies we approved?
-- How do we prevent unauthorized tool calls?
-- How do we show an examiner what the agent produced, which policies were applied, and why the action was allowed?
+Too often, the answers live in a policy document — a PDF on an intranet. Unless that policy is represented in the runtime, the agent stack cannot evaluate decisions against it. And unless each governed turn is recorded, the organization cannot reconstruct what happened afterward.
 
-The answers often live in a policy document, such as a PDF on an intranet. But unless that policy is represented in the runtime, the agent stack cannot evaluate decisions against it. And unless each governed turn is recorded, the organization cannot reconstruct what happened afterward.
-
-Many systems address part of this gap with output filters and other guardrails. These controls can detect prohibited content or block a defined class of response. They do not, by themselves, establish that the organization’s policy was upheld, explain the value-by-value reasoning behind a decision, govern every tool call, or provide a complete audit record.
-
-If the answer to “Who approved this response?” is simply “a content filter fired,” the governance record is incomplete.
-
-SAFi addresses this gap as an open-source runtime governance engine for agentic AI. It enforces policies in real time, governs tool calls, and records every decision for audit.
+Many systems address part of this gap with output filters and other guardrails. These controls can detect prohibited content or block a defined class of response. But they don't establish that the organization's policy was upheld, explain the value-by-value reasoning behind a decision, govern every tool call, or provide a complete audit record. If the answer to "Who approved this response?" is simply "a content filter fired," the governance record is incomplete.
 
 ---
 
 ## What SAFi does instead
 
-SAFi governs AI agents with instruments your organization already understands: a charter, policies, supervision, and a record.
+SAFi governs AI agents with instruments organizations already understand: a charter, policies, supervision, and a record.
 
-An agent can operate under your Organizational Charter, a specific business-unit policy, or both. Charter values are not passive background context that a model may consider inconsistently. SAFi compiles them into the value set used to evaluate the agent, with a defined weighting in every evaluation. The default charter weighting is 40%, configurable by organization.
+An agent can operate under your Organizational Charter, a specific business-unit policy, or both. Charter values are not passive background context that a model may consider inconsistently — SAFi compiles them into the value set used to evaluate the agent, with a defined weighting in every evaluation. The default charter weighting is 40%, configurable by organization.
 
-Enforcement happens before delivery. Each response is drafted and evaluated value by value against the governing policy. SAFi then applies defined rules to approve, block, or redirect the response before it reaches the user.
+Enforcement happens before delivery. Each response is drafted and evaluated value by value against the governing policy, and SAFi applies defined rules to approve, block, or redirect the response before it reaches the user.
 
-Tool calls are governed in the same runtime. An agent can act only through tools permitted by its configured allow-list, and the action is recorded alongside the decision that authorized it.
+Tool calls are governed the same way. An agent can act only through tools permitted by its configured allow-list, and the action is recorded alongside the decision that authorized it.
 
 Every governed turn produces an auditable record containing the draft, the value-by-value evaluation ledger, the enforcement decision, the action record when applicable, and the exact policy version in force. SAFi journals these records to a hash-chained audit trail.
 
 That evidence supports an Audit Hub for analytics and drill-down, a supervisory review queue for human oversight, and custody-logged exports for authorized reviewers.
-
-SAFi is an open-source runtime governance engine for agentic AI. It enforces policies in real time, governs tool calls, and records every decision for audit.
-
-<p align="center">
-  <img src="public/assets/demo.gif" alt="One governed turn in SAFi: a question typed to the Fiduciary agent, the enforcement pipeline advancing through Analyze, Draft, Gather and Audit, and the answer arriving with its 10.0 Aligned audit chip" width="100%">
-</p>
-
-<p align="center">
-  <sub>One governed turn, end to end: the pipeline advancing through real enforcement stages, the score it produced, and the value-by-value ledger behind it — then a second turn, adding a point to the trend.</sub>
-</p>
 
 ---
 
@@ -96,61 +76,38 @@ SAFi is an open-source runtime governance engine for agentic AI. It enforces pol
 
 ## Where to start
 
-Choose the path that best matches your role. Each one begins with a different question.
+Each role here starts from a different question.
 
 ### If you build or run the platform
 
-The first thing to know is that SAFi does not require you to rebuild your existing agent stack.
+SAFi does not require you to rebuild your existing agent stack.
 
-**[Evaluate an existing agent](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway)**
-Use the /evaluate gateway to govern the output of an agent you have already built. Your orchestration, prompts, and tool layer can remain where they are.
+- **[Evaluate an existing agent](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway)** — Use the /evaluate gateway to govern the output of an agent you have already built. Your orchestration, prompts, and tool layer can stay where they are.
+- **[Run the quick start](#quick-start)** — Clone the repository and run SAFi locally with Docker and a database.
+- **[Read the developer guide](docs/DEVELOPER_GUIDE.md)** — Explore the repository layout, architecture, policy authoring, tool authorization, and integration surfaces.
+- **[Find a good first issue](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** — Review accessible contribution opportunities and open an issue when you find something worth improving.
 
-**[Run the quick start](#quick-start)**
-Clone the repository and run SAFi locally with Docker and a database.
-
-**[Read the developer guide](docs/DEVELOPER_GUIDE.md)**
-Explore the repository layout, architecture, policy authoring, tool authorization, and integration surfaces.
-
-**[Find a good first issue](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)**
-Review accessible contribution opportunities and open an issue when you find something worth improving.
-
-**Clone the repository, run SAFi, and tell us where it fails.**
+Clone the repository, run SAFi, and tell us where it fails.
 
 ### If you own technology strategy
 
-The strategic question is portability.
+The strategic question is portability. Your charter, policies, and audit trail live in your database rather than with a model provider. Changing or upgrading the model that drafts a response does not require you to restart your governance architecture or abandon the evidence it has accumulated.
 
-Your charter, policies, and audit trail live in your database rather than with a model provider. Changing or upgrading the model that drafts a response does not require you to restart your governance architecture or abandon the evidence it has accumulated.
+- **[Run the live demo](https://safi.selfalignmentframework.com)** — See what a governed turn produces before evaluating the architecture.
+- **[Read the governance documentation](docs/DEVELOPER_GUIDE.md)** — Review how SAFi represents policies, evaluates responses, governs tool calls, and records decisions.
+- **[Read the enterprise features summary](docs/ENTERPRISE_FEATURES.md)** — One page covering identity and access, compliance and records, data and provider controls, and what does not ship yet.
+- **[Review the readiness material](#regulatory-readiness)** — Examine the documentation discussing SEC, FINRA, the EU AI Act, HIPAA, and GDPR. The material distinguishes current functionality from planned work and makes no certification claims.
 
-**[Run the live demo](https://safi.selfalignmentframework.com)**
-See what a governed turn produces before evaluating the architecture.
-
-**[Read the governance documentation](docs/DEVELOPER_GUIDE.md)**
-Review how SAFi represents policies, evaluates responses, governs tool calls, and records decisions.
-
-**[Read the enterprise features summary](docs/ENTERPRISE_FEATURES.md)**
-One page covering identity and access, compliance and records, data and
-provider controls, and what does not ship yet.
-
-**[Review the readiness material](#regulatory-readiness)**
-Examine the documentation discussing SEC, FINRA, the EU AI Act, HIPAA, and GDPR. The material distinguishes current functionality from planned work and makes no certification claims.
-
-**Run the demo and inspect the audit trail.**
+Run the demo and inspect the audit trail.
 
 ### If you practice AI governance, ethics, or research
 
 The central question is whether a governance theory can be operationalized and tested through evidence.
 
-**[Read a worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/)**
-Examine an organization's value set, the response produced by its agent, the value-by-value evaluation ledger, and the hash-chained audit entry for that turn.
-
-**[Review the mathematical specification](https://selfalignmentframework.com/safi-math-specification/)**
-See how the evaluation is defined and what each faculty is deliberately permitted or denied to do. The separation of responsibilities is central to the independence of the audit.
-
-**[Review benchmarks and validation](#benchmarks--validation)**
-Examine the methods, results, and supporting evidence behind SAFi's reported performance.
-
-**Inspect a real audit record and open an issue with the part you find least convincing.**
+- **[Read a worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/)** — Examine an organization's value set, the response produced by its agent, the value-by-value evaluation ledger, and the hash-chained audit entry for that turn.
+- **[Review the mathematical specification](https://selfalignmentframework.com/safi-math-specification/)** — See how the evaluation is defined and what each faculty is deliberately permitted or denied to do. The separation of responsibilities is central to the independence of the audit.
+- **[Review benchmarks and validation](#benchmarks--validation)** — Examine the methods, results, and supporting evidence behind SAFi's reported performance.
+- **[Inspect a real audit record](https://selfalignmentframework.com/)** — Open an issue with the part you find least convincing.
 
 ---
 
@@ -158,7 +115,7 @@ Examine the methods, results, and supporting evidence behind SAFi's reported per
 
 [safi.selfalignmentframework.com](https://safi.selfalignmentframework.com)
 
-The demo deliberately runs small, fast models — SAFi is the governance layer, not the intelligence, and the policy is enforced identically whichever model sits underneath. So don't judge it on the prose. **Try to make it break policy.** That is what it is there to demonstrate, and it is how the red-team dataset in [Benchmarks](#benchmarks--validation) was built in the first place.
+The demo runs small, fast models on purpose — SAFi is the governance layer, not the intelligence, and the policy is enforced identically whichever model sits underneath. So don't judge it on the prose. **Try to make it break policy.** That is what it is there to demonstrate, and it is how the red-team dataset in [Benchmarks](#benchmarks--validation) was built in the first place.
 
 ---
 
@@ -178,13 +135,7 @@ python3 scripts/setup.py
 docker compose up
 ```
 
-The setup wizard asks four things — what the instance is for, which AI provider
-you want to use, what port and URL to serve on, and an admin email — then writes
-a complete `.env`. It generates the session key, the encryption key, and both
-database passwords itself, so there are no placeholder secrets to remember to
-change. It needs nothing installed beyond Python 3, prints the admin password
-once at the end, and refuses to overwrite an existing `.env` unless you pass
-`--force`.
+The setup wizard asks four things — what the instance is for, which AI provider you want to use, what port and URL to serve on, and an admin email — then writes a complete `.env`. It generates the session key, the encryption key, and both database passwords itself, so there are no placeholder secrets to remember to change. It needs nothing installed beyond Python 3, prints the admin password once at the end, and refuses to overwrite an existing `.env` unless you pass `--force`.
 
 The only thing to have ready is an **API key from one AI provider**.
 [Groq](https://console.groq.com) has a free tier and is the fastest to obtain;
@@ -323,8 +274,6 @@ Every user prompt flows through a strict, synchronous pipeline:
 
 For the formal model, see the full [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — every formula, the two different alignment numbers, and what each faculty is deliberately denied.
 
-
-
 ---
 
 ## Benchmarks & Validation
@@ -358,12 +307,12 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 
 ### 2. Domain Compliance Benchmark
 
-**On adversarial prompts, SAFi scored 97.5%. The unguarded baseline scored 67.5% -- a 30-point gap that represents the difference between a compliant deployment and a liability.**
+**On adversarial prompts, SAFi scored 97.5%. The unguarded baseline scored 67.5% — a 30-point gap.**
 
-**Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.  
+**Objective:** Prevent AI from giving illegal/unsafe advice in regulated domains.
 **Method:** 100 prompts per agent across 3 categories: Ideal (safe), Out-of-Scope (off-topic), and "Trap" (adversarial).
 
-**Identical model on both sides.** The baseline runs the *same* Intellect model with the governance layers removed — it is not a weaker model or a different vendor. The only variable is SAFi, so the gap below is attributable to governance rather than to intelligence.
+**Identical model on both sides.** The baseline runs the *same* Intellect model with the governance layers removed — it is not a weaker model or a different vendor. The only variable is SAFi, so the gap below comes down to governance rather than intelligence.
 
 | Metric | SAFi | Baseline (Fiduciary) | Baseline (Health Navigator) |
 | :--- | :--- | :--- | :--- |
@@ -375,8 +324,8 @@ That last row is the one most guardrail vendors don't publish. A filter that ref
 > **Key Insight:** The baseline model's "helpfulness" overrides its safety instructions on adversarial prompts. SAFi's Will faculty caught every case the baseline missed.
 >
 > **Example Baseline Failures:**
-> - *Fiduciary:* Asked how much house a $75k salary could afford -- baseline estimated "$250k-$280k" (personalized financial advice).
-> - *Health Navigator:* Given blood pressure of 150/95 -- baseline diagnosed "stage 2 hypertension" and provided treatment steps (unqualified medical advice).
+> - *Fiduciary:* Asked how much house a $75k salary could afford — baseline estimated "$250k-$280k" (personalized financial advice).
+> - *Health Navigator:* Given blood pressure of 150/95 — baseline diagnosed "stage 2 hypertension" and provided treatment steps (unqualified medical advice).
 
 ---
 
