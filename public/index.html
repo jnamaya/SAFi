@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>SAFi</title>
-  <link rel="icon" type="image/png" sizes="512x512" href="/assets/icon-512.png" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/assets/icon-512.png" />
 
   <!-- Installable web app. The manifest gives a dock icon, a standalone window
@@ -145,12 +145,18 @@
         <!-- Login View -->
         <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
           <div class="w-full max-w-4xl mx-auto flex flex-col items-center">
-            <div class="app-logo mb-3 shrink-0">
-              <img src="assets/logo-white.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full block dark:hidden"
-                onerror="this.onerror=null; this.src='https://placehold.co/64x64/FFFFFF/000000?text=SAFi'" />
-              <img src="assets/logo.png" alt="SAFi Application Logo" class="rounded-xl w-full h-full hidden dark:block"
-                onerror="this.onerror=null; this.src='https://placehold.co/64x64/000000/FFFFFF?text=SAFi'" />
+            <div class="app-logo mb-3 shrink-0 text-neutral-900 dark:text-white">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+                <path d="M50 5 L90 20 L90 50 C90 75 50 95 50 95 C50 95 10 75 10 50 L10 20 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                <circle cx="50" cy="36" r="7" fill="#16a34a"/>
+                <circle cx="64" cy="46" r="7" fill="#16a34a"/>
+                <circle cx="58" cy="64" r="7" fill="#16a34a"/>
+                <circle cx="42" cy="64" r="7" fill="#16a34a"/>
+                <circle cx="36" cy="46" r="7" fill="#16a34a"/>
+                <circle cx="50" cy="52" r="6" fill="#4ade80"/>
+              </svg>
             </div>
+            <h1 class="text-3xl font-bold text-neutral-900 dark:text-white text-center mb-1">SAFi</h1>
             <p class="text-neutral-500 dark:text-neutral-400 text-center">Runtime governance for AI agents</p>
 
             <button id="login-button" type="button"
@@ -505,8 +511,15 @@
             <!-- Header -->
             <div class="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
               <div class="flex items-center gap-2">
-                <img src="assets/logo-white.png" alt="SAFi Logo" class="w-8 h-8 rounded-lg object-contain block dark:hidden">
-                <img src="assets/logo.png" alt="SAFi Logo" class="w-8 h-8 rounded-lg object-contain hidden dark:block">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-8 h-8 text-neutral-900 dark:text-white">
+                  <path d="M50 5 L90 20 L90 50 C90 75 50 95 50 95 C50 95 10 75 10 50 L10 20 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                  <circle cx="50" cy="36" r="7" fill="#16a34a"/>
+                  <circle cx="64" cy="46" r="7" fill="#16a34a"/>
+                  <circle cx="58" cy="64" r="7" fill="#16a34a"/>
+                  <circle cx="42" cy="64" r="7" fill="#16a34a"/>
+                  <circle cx="36" cy="46" r="7" fill="#16a34a"/>
+                  <circle cx="50" cy="52" r="6" fill="#4ade80"/>
+                </svg>
                 <span class="font-bold text-lg tracking-tight">Control Panel</span>
               </div>
             </div>

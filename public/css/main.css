@@ -2315,11 +2315,6 @@ video {
   stroke: #fff;
 }
 
-.object-contain {
-  -o-object-fit: contain;
-     object-fit: contain;
-}
-
 .object-cover {
   -o-object-fit: cover;
      object-fit: cover;
@@ -3659,14 +3654,6 @@ video {
 .peer:focus ~ .peer-focus\:ring-green-500 {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(34 197 94 / var(--tw-ring-opacity, 1));
-}
-
-.dark\:block:is(.dark *) {
-  display: block;
-}
-
-.dark\:hidden:is(.dark *) {
-  display: none;
 }
 
 .dark\:divide-neutral-700:is(.dark *) > :not([hidden]) ~ :not([hidden]) {
