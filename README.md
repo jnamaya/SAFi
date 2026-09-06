@@ -20,7 +20,6 @@
 - [Live Demo](#live-demo)
 - [Quick Start](#quick-start)
 - [How Does It Work?](#how-does-it-work)
-- [The Framework Behind It](#the-framework-behind-it)
 - [Benchmarks & Validation](#benchmarks--validation)
 - [Regulatory Readiness](#regulatory-readiness)
 - [For Developers](#for-developers)
@@ -324,17 +323,7 @@ Every user prompt flows through a strict, synchronous pipeline:
 
 For the formal model, see the full [Math Specification](https://selfalignmentframework.com/safi-math-specification/) — every formula, the two different alignment numbers, and what each faculty is deliberately denied.
 
----
 
-## The Framework Behind It
-
-SAFi implements **SAF** — a philosophical framework that predates the software and is not about AI at all. This README covers how SAFi works; the reasoning behind the design lives on the project site.
-
-- [How SAF Was Born](https://selfalignmentframework.com/the-birth-of-the-self-alignment-framework/) — where the framework came from, and the five functions describing how anyone, a person or an institution, moves from what they believe to what they actually do
-- The faculties in depth — [Values](https://selfalignmentframework.com/safi-values/) · [Intellect](https://selfalignmentframework.com/safi-intellect/) · [Will](https://selfalignmentframework.com/will/) · [Conscience](https://selfalignmentframework.com/safi-conscience/) · [Spirit](https://selfalignmentframework.com/safi-explained-the-spirit/)
-- [The Separation of Powers](https://selfalignmentframework.com/the-separation-of-powers-in-saf/) — why this is a separation of powers rather than a division of labour
-- [Why SAF and SAFi Are Open](https://selfalignmentframework.com/why-saf-will-always-be-open/) — why AGPL-3.0 specifically, and what its network provision prevents
-- [The SAF License](https://selfalignmentframework.com/license/) — SAF itself, the framework, is licensed separately from this software: free to use with attribution
 
 ---
 
