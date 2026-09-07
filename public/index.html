@@ -83,10 +83,12 @@
     }
 
     @keyframes rosetta-spin {
-      to { transform: rotate(360deg); }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(1440deg); }
     }
     .rosetta-spin {
-      animation: rosetta-spin 10s linear infinite;
+      /* once on load: fast start, long ease to a stop — "Run SAFi" */
+      animation: rosetta-spin 3.5s cubic-bezier(0.15, 0.8, 0.15, 1) 1;
       transform-origin: center;
     }
 
