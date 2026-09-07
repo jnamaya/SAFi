@@ -17,9 +17,8 @@ const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" vie
 // --- NEW: Search Icon ---
 const iconSearch = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
 
-// --- App logo mark (inline SVG so currentColor follows the theme) ---
-const iconLogo = (cls) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="${cls}">
-  <path d="M50 5 L90 20 L90 50 C90 75 50 95 50 95 C50 95 10 75 10 50 L10 20 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+// --- App logo mark: rosetta dots (no shield; matches the login view) ---
+const iconLogo = (cls) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="29 29 42 42" class="${cls}">
   <circle cx="50" cy="36" r="7" fill="#16a34a"/>
   <circle cx="64" cy="46" r="7" fill="#16a34a"/>
   <circle cx="58" cy="64" r="7" fill="#16a34a"/>
@@ -139,7 +138,7 @@ export function updateUIForAuthState(user) {
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-              <div class="app-logo h-10 w-10 text-neutral-900 dark:text-white">
+              <div class="app-logo h-7 w-7 text-neutral-900 dark:text-white">
                 ${iconLogo('w-full h-full')}
               </div>
               <span class="font-semibold text-lg tracking-tight">SAFi</span>
@@ -220,7 +219,7 @@ export function updateUIForAuthState(user) {
                and light/dark swap as the expanded header. -->
           <button data-sidebar-toggle type="button" aria-label="Expand sidebar" title="Expand sidebar"
             class="group relative h-9 w-9 mb-2 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
-            <span class="app-logo h-9 w-9 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0 text-neutral-900 dark:text-white">
+            <span class="app-logo h-7 w-7 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0 text-neutral-900 dark:text-white">
               ${iconLogo('w-full h-full')}
             </span>
             <svg class="absolute inset-0 m-auto w-5 h-5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
