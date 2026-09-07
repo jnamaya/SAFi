@@ -263,9 +263,9 @@
               </form>
             </div>
 
-            <a href="https://github.com/jnamaya/SAFi" target="_blank" rel="noopener noreferrer"
+            <a href="https://runsafi.com" target="_blank" rel="noopener noreferrer"
               class="mt-6 text-sm text-neutral-500 dark:text-neutral-400 hover:text-green-600 dark:hover:text-green-500 hover:underline transition-colors shrink-0">
-              Learn More About SAFi
+              Need help running SAFi?
             </a>
           </div>
         </div>
@@ -1323,17 +1323,16 @@
     }
   </script>
 
-  <!-- Login rosetta: spin fast on load, wind down, keep idling slow forever —
-       the same rhythm as the RunSAFi brand. -->
+  <!-- Login rosetta: keep a slow, continuous idle spin, matching the RunSAFi brand. -->
   <script>
     (function () {
       var mark = document.querySelector('.rosetta-spin');
       if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
       var ang = 0;
-      var vel = 1500;   /* deg/s on load: ~0.24s per revolution */
-      var floor = 45;   /* deg/s idle: ~8s per revolution, still running */
-      var decel = 750;  /* deg/s^2 wind-down rate */
+      var vel = 45;     /* deg/s: ~8s per revolution, slow and continuous */
+      var floor = 45;
+      var decel = 0;
       var last = null;
 
       mark.style.animation = 'none';
