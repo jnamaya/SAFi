@@ -138,7 +138,7 @@ export function updateUIForAuthState(user) {
           <!-- Header Area -->
           <div class="px-3 py-3 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-              <div class="app-logo h-7 w-7 text-neutral-900 dark:text-white">
+              <div class="app-logo h-6 w-6 text-neutral-900 dark:text-white">
                 ${iconLogo('w-full h-full')}
               </div>
               <span class="font-semibold text-lg tracking-tight">SAFi</span>
@@ -219,7 +219,7 @@ export function updateUIForAuthState(user) {
                and light/dark swap as the expanded header. -->
           <button data-sidebar-toggle type="button" aria-label="Expand sidebar" title="Expand sidebar"
             class="group relative h-9 w-9 mb-2 flex items-center justify-center rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors">
-            <span class="app-logo h-7 w-7 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0 text-neutral-900 dark:text-white">
+            <span class="app-logo h-6 w-6 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0 text-neutral-900 dark:text-white">
               ${iconLogo('w-full h-full')}
             </span>
             <svg class="absolute inset-0 m-auto w-5 h-5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path stroke-linecap="round" stroke-linejoin="round" d="M9 4v16"></path></svg>
