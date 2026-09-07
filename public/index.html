@@ -84,11 +84,12 @@
 
     @keyframes rosetta-spin {
       from { transform: rotate(0deg); }
-      to { transform: rotate(1440deg); }
+      to { transform: rotate(360deg); }
     }
     .rosetta-spin {
-      /* once on load: fast start, long ease to a stop — "Run SAFi" */
-      animation: rosetta-spin 3.5s cubic-bezier(0.15, 0.8, 0.15, 1) 1;
+      /* CSS fallback (keeps turning); the driver below takes over on load and
+         winds down to a slow perpetual idle, like the RunSAFi brand. */
+      animation: rosetta-spin 8s linear infinite;
       transform-origin: center;
     }
 
@@ -1320,6 +1321,35 @@
         }
       };
     }
+  </script>
+
+  <!-- Login rosetta: spin fast on load, wind down, keep idling slow forever —
+       the same rhythm as the RunSAFi brand. -->
+  <script>
+    (function () {
+      var mark = document.querySelector('.rosetta-spin');
+      if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      var ang = 0;
+      var vel = 1500;   /* deg/s on load: ~0.24s per revolution */
+      var floor = 45;   /* deg/s idle: ~8s per revolution, still running */
+      var decel = 750;  /* deg/s^2 wind-down rate */
+      var last = null;
+
+      mark.style.animation = 'none';
+
+      function frame(ts) {
+        if (!mark.isConnected) return;
+        if (last === null) last = ts;
+        var dt = Math.min((ts - last) / 1000, 0.05);
+        last = ts;
+        if (vel > floor) vel = Math.max(floor, vel - decel * dt);
+        ang += vel * dt;
+        mark.style.transform = 'rotate(' + ang + 'deg)';
+        window.requestAnimationFrame(frame);
+      }
+      window.requestAnimationFrame(frame);
+    })();
   </script>
 </body>
 
