@@ -90,25 +90,29 @@ class EveryIconItNamesExists(unittest.TestCase):
                 declared = icon["sizes"].split("x")[0]
                 self.assertEqual((w, h), (int(declared), int(declared)))
 
-    def test_one_icon_file_serves_every_purpose(self):
-        """Deliberately one file, not four (2026-08-11). It is padded into the
-        inner 80% safe zone, so the same PNG is safe under a launcher mask,
-        opaque enough for iOS, and legible unmasked. Fewer assets to
-        regenerate when the brand changes, which is the whole reason.
+    def test_any_and_maskable_are_separate_files(self):
+        """Deprecates the single any+maskable PNG (2026-08-11) deliberately
+        (2026-09-06). Chrome splashes the highest-resolution `any` icon
+        UNMASKED, so a maskable-safe PNG declared "any maskable" blooms its
+        safe-zone padding on the launch card and the mark looks small — the
+        complaint that started this. web.dev says the same thing inverted:
+        reusing the maskable file as the `any` icon "adds unnecessary
+        padding, making the core icon content smaller". So three files, one
+        source art:
 
-        Removing icons ALTOGETHER was considered and rejected: the sidebar
-        logo lives inside the page and can never reach the dock, and there is
-        no favicon to fall back on, so an installed app would show a blank
-        tile — the dock icon is the only visible artefact the manifest
-        produces."""
-        self.assertEqual(len(MANIFEST["icons"]), 1)
-        self.assertEqual(MANIFEST["icons"][0]["sizes"], "512x512")
-
-    def test_the_single_icon_declares_both_purposes(self):
-        """`purpose` is a space-separated list; one file can be both."""
-        purpose = MANIFEST["icons"][0]["purpose"].split()
-        self.assertIn("any", purpose)
-        self.assertIn("maskable", purpose)
+          icon-192.png       any        small contexts / older launchers
+          icon-512-any.png   any        splash screen (full-bleed mark)
+          icon-512.png       maskable   launcher mask + iOS composite
+        """
+        self.assertEqual(len(MANIFEST["icons"]), 3)
+        purposes = [icon["purpose"].split() for icon in MANIFEST["icons"]]
+        self.assertEqual(sum("any" in p for p in purposes), 2)
+        self.assertEqual(sum("maskable" in p for p in purposes), 1)
+        self.assertEqual([p for p in purposes if len(p) > 1], [],
+                         "no icon may double as any+maskable")
+        self.assertEqual(MANIFEST["icons"][0]["src"], "/assets/icon-192.png")
+        self.assertEqual(MANIFEST["icons"][1]["src"], "/assets/icon-512-any.png")
+        self.assertEqual(MANIFEST["icons"][2]["src"], "/assets/icon-512.png")
 
     def test_ios_gets_its_own_link(self):
         """iOS ignores the manifest's icons for Add to Home Screen."""
@@ -117,25 +121,29 @@ class EveryIconItNamesExists(unittest.TestCase):
     def test_the_ios_icon_is_opaque(self):
         """iOS composites apple-touch-icon onto WHITE and applies its own
         rounding. The transparent circle would show white corners inside the
-        rounded tile, so iOS gets the full-bleed square."""
+        rounded tile, so iOS gets the padded opaque square — the maskable
+        file, same as before."""
         import re as _re
         m = _re.search(r'rel="apple-touch-icon"\s+href="([^"]+)"', INDEX)
         self.assertIsNotNone(m)
         path = PUBLIC / m.group(1).lstrip("/")
         self.assertTrue(path.exists(), f"{m.group(1)} is missing")
-        self.assertEqual(path.name, MANIFEST["icons"][0]["src"].split("/")[-1],
-                         "iOS should reuse the one icon, not a second file")
+        self.assertEqual(path.name, "icon-512.png",
+                         "iOS composites the padded maskable square, not the "
+                         "full-bleed splash mark")
         from struct import unpack
         head = path.read_bytes()[:26]
         # PNG colour type is byte 25; 6 = RGBA (has alpha), 2 = RGB.
         self.assertNotEqual(head[25], 6, "apple-touch-icon must not have alpha")
 
-    def test_the_icon_is_opaque(self):
+    def test_every_icon_is_opaque(self):
         """A mask crops to a shape, and iOS composites onto white; transparent
         corners lose under both."""
-        icon = MANIFEST["icons"][0]
-        head = (PUBLIC / icon["src"].lstrip("/")).read_bytes()[:26]
-        self.assertNotEqual(head[25], 6, "the icon must not have alpha")
+        for icon in MANIFEST["icons"]:
+            with self.subTest(icon=icon["src"]):
+                head = (PUBLIC / icon["src"].lstrip("/")).read_bytes()[:26]
+                self.assertNotEqual(head[25], 6,
+                                    f"{icon['src']} must not have alpha")
 
     def test_the_splash_matches_the_mark(self):
         """background_color paints the launch screen behind the icon, so a
@@ -145,11 +153,15 @@ class EveryIconItNamesExists(unittest.TestCase):
         to be "#333333" for the dark tile, went stale the moment the mark
         changed to the four-petal wordmark on white (2026-08-25), and failed
         as a stale assertion rather than as the real defect. Deriving it means
-        the next mark cannot drift from its own splash.
+        the next mark cannot drift from its own splash. The corner is read
+        from the full-bleed `any` icon, because that is the file Chrome
+        splashes with.
         """
         import zlib
         from struct import unpack
-        raw = (PUBLIC / MANIFEST["icons"][0]["src"].lstrip("/")).read_bytes()
+        splash = next(i for i in MANIFEST["icons"]
+                      if i["sizes"] == "512x512" and "any" in i["purpose"].split())
+        raw = (PUBLIC / splash["src"].lstrip("/")).read_bytes()
         w, h = unpack(">II", raw[16:24])
         # Decode enough of the PNG to read pixel (0, 0): the icon is full-bleed,
         # so its corner IS the field colour the splash has to match.
