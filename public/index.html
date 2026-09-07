@@ -92,6 +92,15 @@
       transform-origin: center;
     }
 
+    @keyframes rosetta-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .rosetta-spin circle:last-child {
+      /* idle heartbeat on the center dot, kicks in as the spin settles */
+      animation: rosetta-pulse 2.8s ease-in-out 3.5s infinite;
+    }
+
     /* FIX: Force hide the Exit button on Desktop (md breakpoint approx 768px) */
     @media (min-width: 768px) {
       #control-panel-back-btn {
