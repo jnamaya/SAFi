@@ -12,7 +12,7 @@
 
   <title>SAFi</title>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
-  <link rel="apple-touch-icon" href="/assets/icon-512.png" />
+  <link rel="apple-touch-icon" href="/assets/icon-512.png?v=20260908.1" />
 
   <!-- Installable web app. The manifest gives a dock icon, a standalone window
        and a jump list; there is deliberately NO service worker, so nothing is
@@ -30,7 +30,7 @@
        icon it is pointed at must be opaque. That is the same padded square
        the manifest uses, which is why there is one icon file here and not
        four: it is safe under a mask, opaque for iOS, and legible unmasked. -->
-  <link rel="apple-touch-icon" href="assets/icon-512.png">
+  <link rel="apple-touch-icon" href="assets/icon-512.png?v=20260908.1">
   <!-- Both: Chrome deprecated the apple- prefixed one and warns in console,
        but iOS below 17.4 still reads only that spelling. -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -56,7 +56,7 @@
   <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <script defer src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260908.2" rel="stylesheet">
+  <link href="css/main.css?v=20260908.4" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=20260825.2">
   <script>
     const theme = localStorage.theme;
