@@ -89,6 +89,15 @@ def init_db():
                 role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'
             )
         ''')
+
+        # Agent keys may be up to 100 characters, so the user's selected agent
+        # must have the same capacity. Older databases were created with 50.
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'active_profile'")
+        active_profile_column = cursor.fetchone()
+        if active_profile_column:
+            match = re.search(r'varchar\((\d+)\)', str(active_profile_column[1]).lower())
+            if match and int(match.group(1)) < 100:
+                cursor.execute("ALTER TABLE users MODIFY COLUMN active_profile VARCHAR(100)")
         
         # Check if new columns exist (for migration of existing dev DBs)
         cursor.execute("SHOW COLUMNS FROM users LIKE 'org_id'")
@@ -1144,6 +1153,20 @@ def init_db():
             if _needed:
                 cursor.execute(f"ALTER TABLE {_tbl} " + ", ".join(_needed))
                 logging.info(f"Encryption migration: ALTER TABLE {_tbl} — {', '.join(_needed)}")
+
+        # Agent keys may be up to 100 characters. Widen all historical tables
+        # that persist the selected agent, not just users.active_profile.
+        for _tbl in ("chat_history", "review_queue", "saved_content"):
+            cursor.execute(
+                "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s "
+                "AND COLUMN_NAME = 'profile_name'",
+                (_tbl,),
+            )
+            _profile_len = cursor.fetchone()
+            if _profile_len and _profile_len[0] and _profile_len[0] < 100:
+                cursor.execute(f"ALTER TABLE {_tbl} MODIFY profile_name VARCHAR(100)")
+                logging.info(f"Agent key migration: ALTER TABLE {_tbl}.profile_name -> VARCHAR(100)")
 
         conn.commit()
         logging.info("Database initialized.")
