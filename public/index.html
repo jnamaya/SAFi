@@ -56,7 +56,7 @@
   <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <script defer src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260908.4" rel="stylesheet">
+  <link href="css/main.css?v=20260909.1" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=20260825.2">
   <script>
     const theme = localStorage.theme;
@@ -80,26 +80,6 @@
     .no-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
-    }
-
-    @keyframes rosetta-spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    .rosetta-spin {
-      /* CSS fallback (keeps turning); the driver below takes over on load and
-         winds down to a slow perpetual idle, like the RunSAFi brand. */
-      animation: rosetta-spin 8s linear infinite;
-      transform-origin: center;
-    }
-
-    @keyframes rosetta-pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.45; }
-    }
-    .rosetta-spin circle:last-child {
-      /* idle heartbeat on the center dot, kicks in as the spin settles */
-      animation: rosetta-pulse 2.8s ease-in-out 3.5s infinite;
     }
 
     /* FIX: Force hide the Exit button on Desktop (md breakpoint approx 768px) */
@@ -166,17 +146,17 @@
         <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
           <div class="w-full max-w-4xl mx-auto flex flex-col items-center">
             <div class="flex items-center justify-center gap-2 mb-1 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="29 29 42 42" class="w-7 h-7 shrink-0 rosetta-spin">
-                <circle cx="50" cy="36" r="7" fill="#16a34a"><animateTransform attributeName="transform" type="translate" values="0 0; 0 -8; 0 0" keyTimes="0;0.42;1" keySplines="0.25 0.6 0.2 0.85;0.25 0.6 0.2 0.85" calcMode="spline" dur="1s" begin="2s"/></circle>
-                <circle cx="64" cy="46" r="7" fill="#16a34a"><animateTransform attributeName="transform" type="translate" values="0 0; 7 -3; 0 0" keyTimes="0;0.42;1" keySplines="0.25 0.6 0.2 0.85;0.25 0.6 0.2 0.85" calcMode="spline" dur="1s" begin="2s"/></circle>
-                <circle cx="58" cy="64" r="7" fill="#16a34a"><animateTransform attributeName="transform" type="translate" values="0 0; 4.5 6.7; 0 0" keyTimes="0;0.42;1" keySplines="0.25 0.6 0.2 0.85;0.25 0.6 0.2 0.85" calcMode="spline" dur="1s" begin="2s"/></circle>
-                <circle cx="42" cy="64" r="7" fill="#16a34a"><animateTransform attributeName="transform" type="translate" values="0 0; -4.5 6.7; 0 0" keyTimes="0;0.42;1" keySplines="0.25 0.6 0.2 0.85;0.25 0.6 0.2 0.85" calcMode="spline" dur="1s" begin="2s"/></circle>
-                <circle cx="36" cy="46" r="7" fill="#16a34a"><animateTransform attributeName="transform" type="translate" values="0 0; -7 -3; 0 0" keyTimes="0;0.42;1" keySplines="0.25 0.6 0.2 0.85;0.25 0.6 0.2 0.85" calcMode="spline" dur="1s" begin="2s"/></circle>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="29 29 42 42" class="w-7 h-7 shrink-0">
+                <circle cx="50" cy="36" r="7" fill="#16a34a"/>
+                <circle cx="64" cy="46" r="7" fill="#16a34a"/>
+                <circle cx="58" cy="64" r="7" fill="#16a34a"/>
+                <circle cx="42" cy="64" r="7" fill="#16a34a"/>
+                <circle cx="36" cy="46" r="7" fill="#16a34a"/>
                 <circle cx="50" cy="52" r="6" fill="#4ade80"/>
               </svg>
               <h1 class="text-3xl font-bold text-neutral-900 dark:text-white text-center">SAFi</h1>
             </div>
-            <p class="text-neutral-500 dark:text-neutral-400 text-center">Runtime governance for AI agents</p>
+            <p class="text-neutral-500 dark:text-neutral-400 text-center">The reasoning engine for AI agents</p>
 
             <button id="login-button" type="button"
               class="mt-8 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0">
@@ -1321,34 +1301,6 @@
         }
       };
     }
-  </script>
-
-  <!-- Login rosetta: keep a slow, continuous idle spin, matching the RunSAFi brand. -->
-  <script>
-    (function () {
-      var mark = document.querySelector('.rosetta-spin');
-      if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-      var ang = 0;
-      var vel = 45;     /* deg/s: ~8s per revolution, slow and continuous */
-      var floor = 45;
-      var decel = 0;
-      var last = null;
-
-      mark.style.animation = 'none';
-
-      function frame(ts) {
-        if (!mark.isConnected) return;
-        if (last === null) last = ts;
-        var dt = Math.min((ts - last) / 1000, 0.05);
-        last = ts;
-        if (vel > floor) vel = Math.max(floor, vel - decel * dt);
-        ang += vel * dt;
-        mark.style.transform = 'rotate(' + ang + 'deg)';
-        window.requestAnimationFrame(frame);
-      }
-      window.requestAnimationFrame(frame);
-    })();
   </script>
 </body>
 
