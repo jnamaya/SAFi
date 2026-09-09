@@ -9,7 +9,7 @@
 
 # SAFi: Self-Alignment Framework Interface
 
-> SAFi is a reasoning operating system for AI agents. It lets institutions enforce their policies in real time, govern tool calls, and maintain an auditable record of every governed decision.
+> SAFi is an open source reasoning engine for AI agents. It lets institutions enforce their policies in real time, govern tool calls, and maintain an auditable record of every governed decision.
 
 ## Table of Contents
 

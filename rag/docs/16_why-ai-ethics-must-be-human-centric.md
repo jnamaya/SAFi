@@ -14,7 +14,7 @@ AI ethics is often discussed as though a sufficiently capable model might eventu
 
 This is what human-centric AI ethics means here. It does not claim that every future question about artificial agency has been settled. It means that an AI system should not be treated as the author of the moral and policy framework governing its deployment.
 
-SAFi is a reasoning operating system for AI agents. It makes this principle operational by separating the governing standard from the processes that propose, select, evaluate, and integrate an agent’s responses and actions.
+SAFi is an open source reasoning engine for AI agents. It makes this principle operational by separating the governing standard from the processes that propose, select, evaluate, and integrate an agent’s responses and actions.
 
 ## Morality is connected to human life
 

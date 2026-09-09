@@ -1,6 +1,6 @@
 # Contributing to SAFi
 
-Thank you for your interest in SAFi, a reasoning operating system for AI agents.
+Thank you for your interest in SAFi, an open source reasoning engine for AI agents.
 
 Contributions of all kinds are welcome, including bug reports, documentation improvements, faculty-module improvements, MCP tool integrations, policy examples, tests, and governance documentation.
 

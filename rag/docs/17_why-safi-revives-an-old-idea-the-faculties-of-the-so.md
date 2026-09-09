@@ -16,7 +16,7 @@ SAFi uses the language of faculties to give that problem clear boundaries. Value
 
 These are not claims that a machine has a soul. They are architectural roles. Each role has a defined responsibility, restricted inputs, and an observable place in the governance process.
 
-The result is a reasoning operating system for AI agents, not another agent framework or prompt wrapper.
+The result is an open source reasoning engine for AI agents, not another agent framework or prompt wrapper.
 
 ## From SAF to SAFi
 
