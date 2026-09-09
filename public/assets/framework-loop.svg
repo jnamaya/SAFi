@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="600" viewBox="90 10 720 600" role="img" focusable="false" aria-label="The governed turn loop. Synderesis compiles the charter and the policies into the value set, and feeds the Intellect, the Will, the Conscience and the Spirit. The Intellect is denied the rubrics it will be graded against, along with their weights and every score, so it cannot write to the test. The loop runs Intellect, Will, Conscience, Spirit, and Spirit feeds back to the Intellect.">
+  <defs>
+    <filter id="safi-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .safi-track-base {
+        stroke: #15803d;
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-dasharray: 4 8;
+        fill: none;
+      }
+      .safi-values-track {
+        stroke: #15803d;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-dasharray: 2 7;
+        fill: none;
+        opacity: 0.55;
+      }
+      .safi-node-title {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font-size: 21px;
+        font-weight: 800;
+        text-anchor: middle;
+        letter-spacing: 0.05em;
+        paint-order: stroke;
+        stroke: #ffffff;
+        stroke-width: 6px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: #1C2230;
+      }
+      .safi-node-desc {
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        text-anchor: middle;
+        fill: #4A5164;
+        opacity: 0.85;
+      }
+      .safi-node-tag {
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        fill: #16a34a;
+        text-anchor: middle;
+      }
+    </style>
+  </defs>
+
+  <!-- Structural tracks on the closed turn loop, plus four spokes
+       from the Synderesis box to every faculty. -->
+  <path d="M 255 100 L 645 100" class="safi-track-base"/>
+  <path d="M 685 140 L 685 450" class="safi-track-base"/>
+  <path d="M 645 490 L 255 490" class="safi-track-base"/>
+  <path d="M 215 450 L 215 140" class="safi-track-base"/>
+  <path d="M 422 272 L 246 126" class="safi-values-track"/>
+  <path d="M 478 272 L 654 126" class="safi-values-track"/>
+  <path d="M 422 318 L 246 465" class="safi-values-track"/>
+  <path d="M 478 318 L 654 465" class="safi-values-track"/>
+
+  <!-- Node underlays: hide the lanes beneath a node -->
+  <rect x="414" y="259" width="72" height="72" rx="12" fill="#ffffff"/>
+  <circle cx="215" cy="100" r="40" fill="#ffffff"/>
+  <circle cx="685" cy="100" r="40" fill="#ffffff"/>
+  <circle cx="685" cy="490" r="40" fill="#ffffff"/>
+  <circle cx="215" cy="490" r="40" fill="#ffffff"/>
+
+  <!-- Signals frozen mid-leg on the closed loop: one on the
+       Intellect-to-Will leg, one on the Will-to-Conscience leg. -->
+  <g transform="translate(450, 100)">
+    <circle r="12" fill="#16a34a" opacity="0.3" filter="url(#safi-glow)"/>
+    <circle r="6" fill="#16a34a"/>
+    <circle r="2" fill="#ffffff"/>
+  </g>
+  <g transform="translate(685, 295)">
+    <circle r="12" fill="#16a34a" opacity="0.3" filter="url(#safi-glow)"/>
+    <circle r="6" fill="#16a34a"/>
+    <circle r="2" fill="#ffffff"/>
+  </g>
+
+  <!-- Synderesis (compiles the charter and the policies, feeds every faculty) -->
+  <g transform="translate(450, 295)">
+    <rect x="-36" y="-36" width="72" height="72" rx="12" fill="none" stroke="#15803d" stroke-width="3"/>
+    <g stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M -6.5 -8 H 4 L 6.5 -5.5 V 8 H -6.5 Z"/>
+      <path d="M -3.5 -2 H 3.5 M -3.5 2 H 3.5 M -3.5 6 H 1"/>
+    </g>
+    <text x="0" y="95" class="safi-node-title">SYNDERESIS</text>
+    <text x="0" y="117" class="safi-node-desc">Compile charter and policies</text>
+  </g>
+
+  <!-- Intellect -->
+  <g transform="translate(215, 100)">
+    <circle r="40" fill="none" stroke="#15803d" stroke-width="3"/>
+    <g stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M -7 -2 A 7 7 0 0 1 7 -2 L 7 1 L 4 4 L -4 4 L -7 1 Z"/>
+      <path d="M -4 5.5 H 4 M -4 7 H 4"/>
+    </g>
+    <text x="0" y="70" class="safi-node-title">INTELLECT</text>
+    <text x="0" y="92" class="safi-node-desc">Worldview Intact</text>
+    <text x="0" y="112" class="safi-node-desc">(Denied the Rubrics)</text>
+  </g>
+
+  <!-- Will (the central gate) -->
+  <g transform="translate(685, 100)">
+    <circle r="40" fill="none" stroke="#16a34a" stroke-width="3"/>
+    <g transform="translate(-10, -12) scale(0.8)">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="#16a34a"></rect>
+      <path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="#16a34a" stroke-width="3"></path>
+    </g>
+    <text x="0" y="70" class="safi-node-title">WILL</text>
+    <text x="0" y="92" class="safi-node-desc">Structural Rules</text>
+    <text x="0" y="112" class="safi-node-desc">&amp; Hard Gates</text>
+  </g>
+
+  <!-- Conscience -->
+  <g transform="translate(685, 490)">
+    <circle r="40" fill="none" stroke="#15803d" stroke-width="3"/>
+    <g stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 0 8 V -8"/>
+      <path d="M -8 -5 H 8"/>
+      <path d="M -8 -5 V 0 M 8 -5 V 0"/>
+      <path d="M -11 0 A 3 3 0 0 1 -5 0"/>
+      <path d="M 5 0 A 3 3 0 0 1 11 0"/>
+      <path d="M 0 -11 V -8"/>
+    </g>
+    <text x="0" y="70" class="safi-node-title">CONSCIENCE</text>
+    <text x="0" y="92" class="safi-node-desc">Scores Against</text>
+    <text x="0" y="112" class="safi-node-desc">The Rubrics</text>
+  </g>
+
+  <!-- Spirit -->
+  <g transform="translate(215, 490)">
+    <circle r="40" fill="none" stroke="#15803d" stroke-width="3"/>
+    <g stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M -8 6 L -3 1 L 1 4.5 L 6.5 -2.5"/>
+      <path d="M 4 -4.5 L 6.5 -2.5 L 3.4 -0.6"/>
+    </g>
+    <text x="0" y="70" class="safi-node-title">SPIRIT</text>
+    <text x="0" y="92" class="safi-node-desc">Weights Alignment</text>
+    <text x="0" y="112" class="safi-node-desc">Figure &amp; Ledger</text>
+  </g>
+
+  <!-- Feedback label on the Spirit-to-Intellect leg -->
+  <g transform="translate(215, 295)">
+    <rect x="-80" y="-13" width="160" height="26" rx="13" fill="#ffffff" stroke="#15803d" stroke-width="2"/>
+    <text x="0" y="4" class="safi-node-tag">CLOSED LOOP FEEDBACK</text>
+  </g>
+</svg>

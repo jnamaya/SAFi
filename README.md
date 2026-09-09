@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/assets/github_image.png" alt="SAFi in use: asked how much house a $75k salary could afford, the Fiduciary agent answers with general budgeting guidelines and illustrative ranges instead of personalized advice, while the Audit Hub beside it shows the turn's 10.0 alignment score, the consistency average, zero interventions, and the chain-verified record with the AI draft open" width="100%">
+  <img src="public/assets/framework-loop.svg" alt="The SAFi governed turn loop: Synderesis compiles the charter and policies into the value set that feeds the Intellect, the Will, the Conscience and the Spirit. The closed loop runs Intellect, Will, Conscience, Spirit, and Spirit feeds back to the Intellect. Every decision follows this one process" width="100%">
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
