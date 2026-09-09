@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="600" viewBox="90 10 720 600" role="img" focusable="false" aria-label="The governed turn loop. Synderesis compiles the charter and the policies into the value set, and feeds the Intellect, the Will, the Conscience and the Spirit. The Intellect is denied the rubrics it will be graded against, along with their weights and every score, so it cannot write to the test. The loop runs Intellect, Will, Conscience, Spirit, and Spirit feeds back to the Intellect.">
   <defs>
-    <filter id="safi-glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <style>
       .safi-track-base {
         stroke: #15803d;
@@ -68,19 +64,6 @@
   <circle cx="685" cy="100" r="40" fill="#ffffff"/>
   <circle cx="685" cy="490" r="40" fill="#ffffff"/>
   <circle cx="215" cy="490" r="40" fill="#ffffff"/>
-
-  <!-- Signals frozen mid-leg on the closed loop: one on the
-       Intellect-to-Will leg, one on the Will-to-Conscience leg. -->
-  <g transform="translate(450, 100)">
-    <circle r="12" fill="#16a34a" opacity="0.3" filter="url(#safi-glow)"/>
-    <circle r="6" fill="#16a34a"/>
-    <circle r="2" fill="#ffffff"/>
-  </g>
-  <g transform="translate(685, 295)">
-    <circle r="12" fill="#16a34a" opacity="0.3" filter="url(#safi-glow)"/>
-    <circle r="6" fill="#16a34a"/>
-    <circle r="2" fill="#ffffff"/>
-  </g>
 
   <!-- Synderesis (compiles the charter and the policies, feeds every faculty) -->
   <g transform="translate(450, 295)">
