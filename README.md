@@ -104,7 +104,6 @@ Run the demo and inspect the audit trail.
 
 The central question is whether a governance theory can be operationalized and tested through evidence.
 
-- **[Read a worked example](https://selfalignmentframework.com/building-a-mission-aligned-agent-with-safi/)** — Examine an organization's value set, the response produced by its agent, the value-by-value evaluation ledger, and the hash-chained audit entry for that turn.
 - **[Review the mathematical specification](https://selfalignmentframework.com/safi-math-specification/)** — See how the evaluation is defined and what each faculty is deliberately permitted or denied to do. The separation of responsibilities is central to the independence of the audit.
 - **[Review benchmarks and validation](#benchmarks--validation)** — Examine the methods, results, and supporting evidence behind SAFi's reported performance.
 - **[Inspect a real audit record](https://selfalignmentframework.com/)** — Open an issue with the part you find least convincing.
@@ -244,8 +243,6 @@ SAFi will create the account automatically on first startup. The login form appe
 
 SAFi's architecture is a closed loop of five interlocking faculties — Values → Intellect → Will → Conscience → Spirit — rooted in two thousand years of thinking about human cognition, from Aquinas to modern cognitive science. The structure is a separation of powers: the Intellect proposes, the Will decides, the Conscience evaluates, and the Spirit integrates.
 
-> **Curious where the five faculties come from?** Read the origin story: [How SAF Was Born](https://selfalignmentframework.com/the-birth-of-the-self-alignment-framework/).
-
 ### The Five Faculties
 
 | Faculty | Module | Role |
@@ -255,8 +252,6 @@ SAFi's architecture is a closed loop of five interlocking faculties — Values �
 | **Will** | `will.py` | Approves or vetoes the Intellect's proposals based on structural checks and the Conscience's mathematical ledger. |
 | **Conscience** | `conscience.py` | The evaluator. It evaluates the Intellect's proposal against the agent's rubrics, generating a precise compliance ledger (−1.0 to +1.0 per value). |
 | **Spirit** | `spirit.py` | The long-term memory. Integrates Conscience scores into a rolling alignment vector using an EMA, detecting behavioral drift over time and generating coaching for future turns. |
-
-**Why these five?** See [The Faculties of the Soul](https://selfalignmentframework.com/why-safi-revives-an-old-idea-the-faculties-of-the-soul/) for what is inherited from the tradition, what is not, and why the vocabulary earns its place.
 
 ### The Seven-Phase Execution Loop
 
