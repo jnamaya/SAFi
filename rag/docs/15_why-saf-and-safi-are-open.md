@@ -32,7 +32,7 @@ SAF and SAFi are closely related, but they are not the same thing.
 
 SAF, the Self-Alignment Framework, is the conceptual framework. It describes a way of thinking about understanding, choice, judgment, and coherence. It is the philosophical and cognitive foundation.
 
-SAFi is the software implementation. It is an open source reasoning engine for AI agents. SAFi applies policies while an agent is operating, records governed decisions, and provides an audit trail that can be inspected afterward.
+SAFi is the software implementation. It is an open source governance engine for AI agents. SAFi applies policies while an agent is operating, records governed decisions, and provides an audit trail that can be inspected afterward.
 
 In simple terms:
 
