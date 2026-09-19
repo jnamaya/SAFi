@@ -26,6 +26,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -34,6 +35,11 @@ PUBLIC = ROOT / "public"
 MANIFEST_PATH = PUBLIC / "manifest.json"
 MANIFEST = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 INDEX = (PUBLIC / "index.html").read_text(encoding="utf-8")
+
+
+def _resolve(src):
+    """Resolve a (possibly cache-busted) icon URL to the file it names."""
+    return PUBLIC / urlsplit(src).path.lstrip("/")
 
 
 class TheManifestIsInstallable(unittest.TestCase):
@@ -72,6 +78,64 @@ def _chunk_offsets(raw, kind):
         i += 12 + length
 
 
+def _unfiltered_rows(path):
+    """Decode the IDAT scanlines of an 8-bit grayscale/RGB/RGBA PNG, undoing
+    each row's filter byte. Pure stdlib, like the rest of this module. Returns
+    (width, height, color_type, rows) where each row is bytes of raw pixels."""
+    import zlib
+    from struct import unpack as _unpack
+    raw = path.read_bytes()
+    w, h = _unpack(">II", raw[16:24])
+    color_type = raw[25]
+    bpp = {2: 1, 6: 4}.get(color_type, 3)
+    idat = b"".join(
+        raw[i + 8:i + 8 + _unpack(">I", raw[i:i + 4])[0]]
+        for i in _chunk_offsets(raw, b"IDAT")
+    )
+    decoded = zlib.decompress(idat)
+    stride = 1 + w * bpp
+    prev = bytearray(w * bpp)
+    rows = []
+    for y in range(h):
+        f = decoded[y * stride]
+        raw_row = bytearray(decoded[y * stride + 1:(y + 1) * stride])
+        out = bytearray(w * bpp)
+        for x in range(w * bpp):
+            a = raw_row[x]
+            left = out[x - bpp] if x >= bpp else 0
+            up = prev[x]
+            ul = prev[x - bpp] if x >= bpp else 0
+            if f == 0:
+                p = a
+            elif f == 1:
+                p = (a + left) & 0xFF
+            elif f == 2:
+                p = (a + up) & 0xFF
+            elif f == 3:
+                p = (a + ((left + up) >> 1)) & 0xFF
+            else:  # 4 = Paeth: closest of left/up/upper-left to left+up-ul
+                pred = left + up - ul
+                pa, pb, pc = abs(pred - left), abs(pred - up), abs(pred - ul)
+                pr = left if pa <= pb and pa <= pc else (up if pb <= pc else ul)
+                p = (a + pr) & 0xFF
+            out[x] = p
+        prev = out
+        rows.append(bytes(out))
+    return w, h, color_type, rows
+
+
+def _transparent_pixel_count(path):
+    w, h, color_type, rows = _unfiltered_rows(path)
+    if color_type != 6:
+        return 0
+    count = 0
+    for row in rows:
+        for x in range(3, len(row), 4):
+            if row[x] != 255:
+                count += 1
+    return count
+
+
 class EveryIconItNamesExists(unittest.TestCase):
     """A manifest naming a missing icon fails silently in the browser — the
     install simply offers a blank tile, with nothing in the console."""
@@ -79,7 +143,7 @@ class EveryIconItNamesExists(unittest.TestCase):
     def test_icon_files_are_present_and_the_right_size(self):
         from struct import unpack
         for icon in MANIFEST["icons"]:
-            rel = icon["src"].lstrip("/")
+            rel = urlsplit(icon["src"]).path.lstrip("/")
             path = PUBLIC / rel
             with self.subTest(icon=rel):
                 self.assertTrue(path.exists(), f"{rel} is declared but missing")
@@ -110,9 +174,20 @@ class EveryIconItNamesExists(unittest.TestCase):
         self.assertEqual(sum("maskable" in p for p in purposes), 1)
         self.assertEqual([p for p in purposes if len(p) > 1], [],
                          "no icon may double as any+maskable")
-        self.assertEqual(MANIFEST["icons"][0]["src"], "/assets/icon-192.png")
-        self.assertEqual(MANIFEST["icons"][1]["src"], "/assets/icon-512-any.png")
-        self.assertEqual(MANIFEST["icons"][2]["src"], "/assets/icon-512.png")
+        self.assertEqual(urlsplit(MANIFEST["icons"][0]["src"]).path,
+                         "/assets/icon-192.png")
+        self.assertEqual(urlsplit(MANIFEST["icons"][1]["src"]).path,
+                         "/assets/icon-512-any.png")
+        self.assertEqual(urlsplit(MANIFEST["icons"][2]["src"]).path,
+                         "/assets/icon-512.png")
+
+    def test_icon_urls_are_cache_busted(self):
+        """The srcs carry a version query so a changed mark is fetched, not
+        served stale from the browser's cache (CLAUDE.md bumps it on every
+        asset change)."""
+        for icon in MANIFEST["icons"]:
+            with self.subTest(icon=icon["src"]):
+                self.assertIn("v=", urlsplit(icon["src"]).query)
 
     def test_ios_gets_its_own_link(self):
         """iOS ignores the manifest's icons for Add to Home Screen."""
@@ -126,24 +201,27 @@ class EveryIconItNamesExists(unittest.TestCase):
         import re as _re
         m = _re.search(r'rel="apple-touch-icon"\s+href="([^"]+)"', INDEX)
         self.assertIsNotNone(m)
-        path = PUBLIC / m.group(1).lstrip("/")
+        path = PUBLIC / urlsplit(m.group(1)).path.lstrip("/")
         self.assertTrue(path.exists(), f"{m.group(1)} is missing")
         self.assertEqual(path.name, "icon-512.png",
                          "iOS composites the padded maskable square, not the "
                          "full-bleed splash mark")
-        from struct import unpack
-        head = path.read_bytes()[:26]
-        # PNG colour type is byte 25; 6 = RGBA (has alpha), 2 = RGB.
-        self.assertNotEqual(head[25], 6, "apple-touch-icon must not have alpha")
+        self.assertEqual(_transparent_pixel_count(path), 0,
+                         "apple-touch-icon must have no transparent pixels")
 
-    def test_every_icon_is_opaque(self):
-        """A mask crops to a shape, and iOS composites onto white; transparent
-        corners lose under both."""
+    def test_the_maskable_icon_is_opaque(self):
+        """A mask crops the maskable icon to a shape, and iOS composites the
+        same file onto white, so every pixel of it must be opaque. The `any`
+        icons are favicon-derived and keep their transparency (2026-09-06) —
+        the launcher shows the mark through the splash — but the padded
+        maskable square cannot have a see-through corner."""
         for icon in MANIFEST["icons"]:
+            if "maskable" not in icon["purpose"].split():
+                continue
+            path = PUBLIC / urlsplit(icon["src"]).path.lstrip("/")
             with self.subTest(icon=icon["src"]):
-                head = (PUBLIC / icon["src"].lstrip("/")).read_bytes()[:26]
-                self.assertNotEqual(head[25], 6,
-                                    f"{icon['src']} must not have alpha")
+                self.assertEqual(_transparent_pixel_count(path), 0,
+                                 f"{icon['src']} must have no transparent pixels")
 
     def test_the_splash_matches_the_mark(self):
         """background_color paints the launch screen behind the icon, so a
@@ -153,28 +231,29 @@ class EveryIconItNamesExists(unittest.TestCase):
         to be "#333333" for the dark tile, went stale the moment the mark
         changed to the four-petal wordmark on white (2026-08-25), and failed
         as a stale assertion rather than as the real defect. Deriving it means
-        the next mark cannot drift from its own splash. The corner is read
-        from the full-bleed `any` icon, because that is the file Chrome
-        splashes with.
+        the next mark cannot drift from its own splash.
+
+        The corner is read from the maskable icon. With the transparent
+        favicon-derived `any` icons (2026-09-06) the splash field colour is
+        carried by the opaque padded square the maskable file ships, and every
+        launcher composites it over background_color.
         """
         import zlib
         from struct import unpack
-        splash = next(i for i in MANIFEST["icons"]
-                      if i["sizes"] == "512x512" and "any" in i["purpose"].split())
-        raw = (PUBLIC / splash["src"].lstrip("/")).read_bytes()
+        field = next(i for i in MANIFEST["icons"]
+                     if i["sizes"] == "512x512" and "maskable" in i["purpose"].split())
+        raw = (PUBLIC / urlsplit(field["src"]).path.lstrip("/")).read_bytes()
         w, h = unpack(">II", raw[16:24])
-        # Decode enough of the PNG to read pixel (0, 0): the icon is full-bleed,
-        # so its corner IS the field colour the splash has to match.
+        # Decode enough of the PNG to read pixel (0, 0): the maskable icon is a
+        # padded opaque square, so its corner IS the field colour the splash
+        # has to match. For the very FIRST pixel every PNG filter
+        # (None/Sub/Up/Average/Paeth) has no left or upper neighbour, so each
+        # predicts zero and the stored bytes are the raw colour.
         idat = b"".join(
             raw[i + 8:i + 8 + unpack(">I", raw[i:i + 4])[0]]
             for i in _chunk_offsets(raw, b"IDAT")
         )
         line = zlib.decompress(idat)[:4]
-        # line[0] is the row's filter type, and it does not matter here: for
-        # the very FIRST pixel every PNG filter (None/Sub/Up/Average/Paeth)
-        # has no left or upper neighbour, so each predicts zero and the stored
-        # bytes are the raw colour. Reading them is valid whatever the encoder
-        # chose. This icon ships as filter type 1.
         corner = "#%02x%02x%02x" % (line[1], line[2], line[3])
         self.assertEqual(MANIFEST["background_color"].lower(), corner,
                          f"splash {MANIFEST['background_color']} does not match "
