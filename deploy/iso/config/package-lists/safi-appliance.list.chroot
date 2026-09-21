@@ -1,0 +1,41 @@
+# SAFi Appliance — packages baked into the live rootfs.
+#
+# ONLY daemon-free packages live here. Anything whose postinst starts a daemon
+# (mysql-server, apache2, openssh-server) is installed by
+# config/hooks/normal/010-* AFTER a policy-rc.d that blocks service starts —
+# otherwise the build chroot tries to run systemd daemons it has no boot for.
+#
+# Everything SAFi actually needs at runtime:
+#   python3-venv         → virtualenv (DEPLOY_BAREMETAL.md step 4)
+#   gcc g++              → a few Python wheels build from source
+#   tesseract-ocr-eng    → OCR for image/PDF attachments (Dockerfile ships it)
+#   nodejs npm           → npx MCP tool servers (Dockerfile ships Node 22)
+#   git                  → waters the repo during PHP-style upgrades (step 10)
+#   openssh-server       → operator console access (installed in 010-hook)
+# Plus the live system needs a kernel/init and tools; live-build supplies the
+# base. These are the additions:
+apt-utils
+bash
+ca-certificates
+curl
+debconf-utils
+dnsutils
+g++
+gcc
+git
+hostname
+ifupdown
+less
+live-tools
+login
+mawk
+nano
+nodejs
+npm
+passwd
+procps
+psmisc
+python3-venv
+sudo
+tesseract-ocr
+tesseract-ocr-eng

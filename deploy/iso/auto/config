@@ -1,0 +1,48 @@
+#!/bin/sh
+# SAFi Appliance — live-build automation config.
+#
+# live-build sources this file from `auto/config` whenever `lb config` runs
+# (its "automation" feature), so the build vectors (distribution, arch,
+# debian-installer mode) all live here in one place and `build.sh` can stay a
+# three-line wrapper.
+#
+# The `noauto` first argument is what stops an infinite loop: plain `lb config`
+# re-executes auto/config via Maybe_auto_redirect (init.sh:65) once its own
+# processing finishes; `lb config noauto …` instructs it not to.
+#
+# The release we ship SHIPS AS THE ISO, so SAFI_REF is a *release tag*, not a
+# branch: production installs must pin a release (docs/RELEASE_PROCESS.md). The
+# build pins it in two places — here (for the ISO label) and in
+# config/includes.chroot/var/lib/safi-firstboot/build.env (consumed by the
+# chroot bootstrap hook). Keep them in step; `build.sh` prints the value it is
+# using so the mismatch is visible at build time.
+set -e
+
+ARCH="${SAFI_ARCH:-amd64}"
+DIST="${SAFI_DIST:-bookworm}"           # bookworm = Python 3.11, matches Dockerfile's default
+SAFI_REF="${SAFI_REF:-v1.4.1}"
+SAFI_GIT_URL="${SAFI_GIT_URL:-https://github.com/jnamaya/SAFi.git}"
+
+export SAFI_REF SAFI_GIT_URL
+
+lb config noauto \
+    --architecture "$ARCH" \
+    --distribution "$DIST" \
+    --debian-installer-distribution "$DIST" \
+    --archive-areas "main contrib" \
+    --debian-installer netinst \
+    --debian-installer-preseedfile file:///cdrom/preseed.cfg \
+    --debian-installer-gui false \
+    --bootloaders "syslinux grub-efi" \
+    --memtest none \
+    --iso-application "SAFi Appliance" \
+    --iso-volume "SAFi Appliance" \
+    --iso-publisher "SAFi <https://github.com/jnamaya/SAFi>" \
+    --iso-preparer "SAFi build" \
+    --bootappend-live "quiet" \
+    --bootappend-install "priority=high" \
+    --debootstrap-options "--variant=minbase" \
+    --apt-recommends false \
+    --apt-secure true
+
+echo "[auto/config] building SAFi appliance from $SAFI_GIT_URL @ $SAFI_REF"

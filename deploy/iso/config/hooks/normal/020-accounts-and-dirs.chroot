@@ -1,0 +1,27 @@
+#!/bin/sh
+# 020 — Accounts and directory skeleton that must exist before the 030
+# bootstrap clone. Mirrors DEPLOY_BAREMETAL.md step 3 (service user) plus the
+# appliance's operator account.
+set -eu
+
+# Service account, exactly as deploy/systemd/*.service expect:
+#   User=safi  Group=www-data  WorkingDirectory=/var/www/safi
+# shell nologin: it runs services, nobody logs in as it.
+id safi >/dev/null 2>&1 || \
+    useradd --system --user-group --create-home \
+            --home-dir /home/safi --shell /usr/sbin/nologin safi
+chown -R safi:safi /home/safi
+
+# Operator account (console + SSH), password LOCKED until the first-boot wizard
+# sets it, so the shipped ISO has no known credentials.
+if ! id admin >/dev/null 2>&1; then
+    useradd --create-home --shell /bin/bash --groups sudo admin
+fi
+passwd -l admin >/dev/null 2>&1 || true
+
+# App tree + runtime dirs the Dockerfile creates, so the clone below can chown
+# them in one go. /var/lib/safi-firstboot is the wizard's state dir.
+mkdir -p /var/www/safi
+mkdir -p /var/www/safi/logs /var/www/safi/cache /var/www/safi/vector_store /var/www/safi/mcp
+mkdir -p /var/lib/safi-firstboot
+chown -R safi:safi /var/www/safi

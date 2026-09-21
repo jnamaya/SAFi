@@ -1,0 +1,45 @@
+# live-build artifacts — the ISO and everything lb generates must never be
+# committed (they're huge and reproducible via build.sh). Only the *authored*
+# appliance source tree (config/, auto/, hooks, preseed, includes) is tracked.
+# NOTE: git cannot re-include a path whose parent dir is ignored, so we must
+# un-ignore each directory level explicitly before whitelisting its children.
+
+# --- bottom line: ignore the generated tree -----------------------------------
+/*
+!/.gitignore
+!/build.sh
+!/README.md
+!/build.log
+
+# --- authored auto/ helpers ---------------------------------------------------
+!/auto/
+!/auto/*
+
+# --- authored config/ tree ----------------------------------------------------
+# re-open the directory, then re-ignore its generated subdirs
+!/config/
+!/config/*
+/config/binary/
+/config/chroot/
+/config/cache/
+/config/source/
+/config/_debian-installer/
+!/config/preseed/
+!/config/hooks/
+!/config/package-lists/
+!/config/includes.chroot/
+!/config/includes.binary/
+!/config/includes.installer/
+!/config/includes.archives/
+!/config/lb_chroot_includes/
+!/config/templates/
+!/config/archives/
+!/config/bootstrap/
+!/config/rootfs/
+!/config/debian-installer/
+
+# --- generated ISO / squashfs (anywhere) ---------------------------------------
+*.iso
+*.iso.zsync
+live-image-*.*
+safi-appliance-*.*

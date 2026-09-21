@@ -1,0 +1,31 @@
+#!/bin/sh
+# 040 — Final appliance surface: reverse proxy, branding, and cleanup.
+# Runs last. Leaves the chroot + installed system in a known, bootable state.
+set -eu
+
+# Reverse proxy (DEPLOY_BAREMETAL.md step 8), served on :80.
+a2enmod proxy proxy_http headers >/dev/null
+a2dissite 000-default >/dev/null 2>&1 || true
+a2ensite safi >/dev/null 2>&1 || true
+
+# MySQL data dir must be owned by the mysql user before first boot; the
+# package's own postinst couldn't promise it under policy-rc.d.
+if [ -d /var/lib/mysql ]; then chown -R mysql:mysql /var/lib/mysql || true; fi
+
+# Brand the console. /etc/issue shows pre-login; /etc/motd after.
+cat >/etc/motd <<'EOF'
+
+  SAFi Appliance
+  Self-Alignment Framework Interface — governance engine for AI agents
+  Management: /usr/local/sbin/safi-firstboot   Logs: journalctl -u safi
+  Docs: /var/www/safi/docs/
+
+EOF
+cat >/etc/issue <<'EOF'
+SAFi Appliance \r (\l)
+
+EOF
+
+# Undo the build barrier: installed services may now be started normally.
+rm -f /usr/sbin/policy-rc.d
+rm -f /etc/dpkg/dpkg.cfg.d/01-policy-rc-d 2>/dev/null || true

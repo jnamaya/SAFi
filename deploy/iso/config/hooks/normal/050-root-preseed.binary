@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+# d-i (auto=true) auto-loads /preseed.cfg from the medium root when booting from CD.
+# Config hooks run with cwd inside binary/ (the to-be-squashed ISO tree).
+cp -a ../config/preseed/safi.cfg ./preseed.cfg

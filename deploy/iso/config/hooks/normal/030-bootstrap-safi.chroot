@@ -1,0 +1,68 @@
+#!/bin/sh
+# 030 — Bootstrap SAFi into the ISO rootfs (the "status: exists" part).
+#
+# Clones the pinned release, builds the virtualenv, pre-warms the embedding
+# model, and stages every systemd unit from deploy/systemd/ so the installed
+# system boots straight into the appliance. This is the long step: the venv is
+# ~800 MB–1 GB and needs the build host online.
+#
+# Because the live-installer copies this rootfs verbatim to disk, none of this
+# has to happen at first boot — the ISO is self-contained.
+set -eu
+
+. /var/lib/safi-firstboot/build.env
+
+cd /var/www/safi
+
+# Release tag, not branch — /var/lib/safi-firstboot/build.env (kept in step
+# with auto/config). --depth 1 keeps the image small; .git is retained so the
+# in-app TCB "branch/release" control reports a value.
+#
+# 020 created /var/www/safi with its runtime subdirs (logs/cache/mcp/
+# vector_store), so git refuses to clone straight into it — and /var/www is
+# root-owned, so the safi user could not create a sibling clone target. Clone
+# and merge as root, then chown the whole tree before the venv steps run as
+# safi. dotglob moves .git along with everything else.
+git clone --depth 1 --branch "${SAFI_REF}" "${SAFI_GIT_URL}" /var/www/safi.repo
+bash -c 'shopt -s dotglob; mv /var/www/safi.repo/* /var/www/safi/ && rmdir /var/www/safi.repo'
+chown -R safi:safi /var/www/safi
+
+cd /var/www/safi
+
+# Virtualenv (DEPLOY_BAREMETAL.md step 4). uid is a system user so it gets no
+# HOME prompts; pip cache stays under /home/safi, which 020 owned.
+su -s /bin/sh safi -c "
+    python3 -m venv venv && \
+    ./venv/bin/pip install --upgrade pip && \
+    ./venv/bin/pip install -r requirements.txt"
+
+# Pre-warm the embedding model so the first KB-backed query doesn't stall a
+# live request for ~90 MB (DEPLOY_BAREMETAL.md step 6; docker-entrypoint does
+# this for containers, systemd never does).
+su -s /bin/sh safi -c \
+    "./venv/bin/python -c \
+     'from safi_app.core.services.retriever import get_shared_embedding_model as g; g(); print(\"embedding model warmed\")'" \
+    || echo "warm skipped (offline build?) — first boot will warm it"
+
+# Everything the app may write at runtime must be writable by the service user.
+chown -R safi:safi /var/www/safi
+
+# Stage the appliance's systemd units (they ship inside the repo tree).
+install -m 644 -o root -g root \
+    deploy/systemd/safi.service \
+    deploy/systemd/safi-retention-purge.service deploy/systemd/safi-retention-purge.timer \
+    deploy/systemd/safi-backup.service deploy/systemd/safi-backup.timer \
+    deploy/systemd/safi-backup-verify.service deploy/systemd/safi-backup-verify.timer \
+    deploy/systemd/safi-kb-indexer.service \
+    /etc/systemd/system/
+
+# Enable the first-boot wizard in the installed system. It runs BEFORE safi.service
+# starts because nothing enables the app units until the wizard has produced .env.
+#
+# mysql/apache/ssh are intentionally NOT enabled here: `systemctl enable` (as
+# opposed to a raw symlink) is what materialises the MariaDB `mysql.service`
+# Alias= entry, and that needs a booted system — so the wizard does it on the
+# installed machine (safi-firstboot: `systemctl enable --now mysql apache2 ssh`).
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/safi-firstboot.service \
+       /etc/systemd/system/multi-user.target.wants/safi-firstboot.service

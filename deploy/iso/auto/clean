@@ -1,0 +1,5 @@
+#!/bin/sh
+# live-build automation hook: run `lb clean` instead of a manual one.
+# `noauto` prevents Maybe_auto_redirect from re-entering this very script.
+set -e
+lb clean noauto --purge
