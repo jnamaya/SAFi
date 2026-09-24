@@ -22,7 +22,7 @@ umask 077
 ENV_FILE=/var/www/safi/.env
 BACKUP_DIR=/var/backups/safi
 RETAIN_DAYS=14
-MIN_BYTES=100000  # a real safi dump is multi-MB; smaller means it is broken
+MIN_BYTES=5000  # a fresh-empty schema gzips to ~12 KB; much smaller means broken
 
 env_get() { sed -n "s/^$1=//p" "$ENV_FILE" | tail -1; }
 
@@ -60,6 +60,13 @@ gzip -t "$OUT"
 BYTES=$(stat -c%s "$OUT")
 if [ "$BYTES" -lt "$MIN_BYTES" ]; then
     echo "ERROR: dump $OUT is only $BYTES bytes — refusing to trust it" >&2
+    exit 1
+fi
+# Cheap structural guard on top of size: a valid safi dump always carries table
+# DDL, even when the fresh-empty schema is small and the old multi-MB floor no
+# longer applies. Catches a failed dump that still produced a plausible size.
+if ! zgrep -Eqm1 'CREATE TABLE' "$OUT"; then
+    echo "ERROR: dump $OUT contains no table DDL — refusing to trust it" >&2
     exit 1
 fi
 
