@@ -73,22 +73,22 @@ def newest_dump(backup_dir):
     return dumps[-1] if dumps else None
 
 
-def reset_scratch(cursor):
-    """Empty the scratch schema without dropping it.
+def reset_scratch(cursor, schema=SCRATCH_DB):
+    """Empty a schema without dropping it.
 
     The `safi` DB account is deliberately granted only per-table privileges
-    (ALL on safi_verify.*, no database-level CREATE/DROP), so re-creating the
+    (ALL on the schema, no database-level CREATE/DROP), so re-creating the
     schema each run would need privileges the minimal account should not hold.
     The schema exists from first boot; drop its tables and let the restore
     rebuild them."""
     cursor.execute("SET FOREIGN_KEY_CHECKS=0")
-    for table in base_tables(cursor, SCRATCH_DB):
-        cursor.execute(f"DROP TABLE IF EXISTS `{SCRATCH_DB}`.`{table}`")
+    for table in base_tables(cursor, schema):
+        cursor.execute(f"DROP TABLE IF EXISTS `{schema}`.`{table}`")
     cursor.execute("SET FOREIGN_KEY_CHECKS=1")
 
 
-def restore_into_scratch(dump_path):
-    """gunzip -c dump | mysql safi_verify, without a shell in between."""
+def restore_into_scratch(dump_path, schema=SCRATCH_DB):
+    """gunzip -c dump | mysql <schema>, without a shell in between."""
     with tempfile.NamedTemporaryFile("w", suffix=".cnf", delete=False) as cnf:
         os.chmod(cnf.name, 0o600)
         cnf.write(f'[client]\nuser={Config.DB_USER}\npassword="{Config.DB_PASSWORD}"\n'
@@ -96,7 +96,7 @@ def restore_into_scratch(dump_path):
     try:
         gunzip = subprocess.Popen(["gunzip", "-c", dump_path], stdout=subprocess.PIPE)
         restore = subprocess.run(
-            ["mysql", f"--defaults-extra-file={cnf.name}", SCRATCH_DB],
+            ["mysql", f"--defaults-extra-file={cnf.name}", schema],
             stdin=gunzip.stdout, capture_output=True, text=True,
         )
         gunzip.stdout.close()
@@ -126,13 +126,13 @@ def row_count(cursor, schema, table):
     return cursor.fetchone()[0]
 
 
-def verify_audit_chains(cursor):
+def verify_audit_chains(cursor, schema=SCRATCH_DB):
     """Recompute every entry_hash and every prev_hash link in the restored
     chat_audit_trail. Returns (chains, entries); raises on the first break."""
     cursor.execute(
         "SELECT message_pk, message_id, conversation_id, action, actor, state, "
         "event_at, prev_hash, entry_hash, id FROM `%s`.chat_audit_trail "
-        "ORDER BY message_pk, id" % SCRATCH_DB)
+        "ORDER BY message_pk, id" % schema)
     chains, entries, tip = 0, 0, {}
     for row in cursor.fetchall():
         (message_pk, message_id, conversation_id, action, actor, state,

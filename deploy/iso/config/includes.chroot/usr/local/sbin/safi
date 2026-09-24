@@ -38,6 +38,7 @@ usage() {
    safi backup                run a backup now
    safi backups               list backups on disk
    safi backup verify         restore-test the latest backup
+   safi restore [file]        restore a backup into the LIVE database
    safi backup remote         show/set/clear the off-box rsync target
 
  Integrations
@@ -257,6 +258,43 @@ cmd_backup_verify() {
     [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
     echo "Restore-testing the latest backup (this takes a minute)..."
     sudo -u safi -H "$VENV_PY" "$SCRIPTS/backup_verify.py" "$@"
+}
+
+cmd_restore() {
+    local req=${1:-}
+    local script=$SCRIPTS/restore_live.py
+    [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
+    [ -f "$script" ] || { echo "restore script missing ($script)" >&2; return 1; }
+    compgen -G '/var/backups/safi/safi-*.sql.gz' >/dev/null || { echo "no backups yet." >&2; return 1; }
+
+    local file
+    if [ -n "$req" ]; then
+        if [ -f "$req" ] && [[ "$req" == *.sql.gz ]]; then
+            file=$req
+        elif [ -f "/var/backups/safi/$req" ]; then
+            file="/var/backups/safi/$req"
+        elif [ -f "/var/backups/safi/$req.sql.gz" ]; then
+            file="/var/backups/safi/$req.sql.gz"
+        else
+            echo "no such backup: $req — available:" >&2
+            cmd_backups >&2
+            return 1
+        fi
+    else
+        file=$(ls -1t /var/backups/safi/safi-2026*.sql.gz /var/backups/safi/safi-*.sql.gz 2>/dev/null | head -1)
+        [ -n "$file" ] || { echo "no backups yet." >&2; return 1; }
+    fi
+
+    echo "restore: ${file##*/}  (from $(stat -c '%s' "$file") bytes)"
+    confirm "replace the live database with this backup" || return 1
+    echo "stopping safi + safi-kb-indexer..."
+    sudo systemctl stop safi safi-kb-indexer 2>/dev/null || true
+    local rc=0
+    sudo -u safi -H "$VENV_PY" "$script" "$file" || rc=$?
+    echo "restarting safi + safi-kb-indexer..."
+    sudo systemctl start safi safi-kb-indexer 2>/dev/null || true
+    [ "$rc" -eq 0 ] || return "$rc"
+    echo "done. Verify the app: safi status / safi health"
 }
 
 cmd_backup_remote() {
@@ -685,6 +723,7 @@ case "$cmd" in
         esac
         ;;
     backups) cmd_backups;;
+    restore) cmd_restore "${2:-}";;
     mcp)      cmd_mcp "${@:2}";;
     cert)     cmd_cert "${2:-show}";;
     passwd)   cmd_passwd;;
