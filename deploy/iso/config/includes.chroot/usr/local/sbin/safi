@@ -616,7 +616,9 @@ domain_add() {
         certargs=(--register-unsafely-without-email)
     fi
     if ! sudo certbot certonly --webroot -w /var/www/certbot -d "$fqdn" \
-        --non-interactive --agree-tos --keep "${certargs[@]}"; then
+        --non-interactive --agree-tos --keep \
+        --deploy-hook "chmod 0755 /etc/letsencrypt/live/$fqdn /etc/letsencrypt/archive/$fqdn; chmod 0644 /etc/letsencrypt/live/$fqdn/*.pem /etc/letsencrypt/archive/$fqdn/*.pem; systemctl reload apache2" \
+        "${certargs[@]}"; then
         echo "certificate failed — restoring self-signed config." >&2
         sudo sed -i "s/ServerName [^ ]*/ServerName safi.local/" /etc/apache2/sites-available/safi.conf
         sudo systemctl reload apache2
