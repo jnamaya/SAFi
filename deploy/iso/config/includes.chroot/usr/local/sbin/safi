@@ -599,7 +599,7 @@ domain_add() {
     getent ahosts "$fqdn" >/dev/null 2>&1 \
         || { echo "dns: '$fqdn' does not resolve. Point an A/AAAA record at this appliance first." >&2; return 1; }
     command -v certbot >/dev/null 2>&1 \
-        || { echo "certbot is not installed on this appliance (python3-certbot-apache)." >&2; return 1; }
+        || { echo "certbot is not installed on this appliance (python3-certbot)." >&2; return 1; }
     [ -f /etc/apache2/sites-available/safi.conf ] || { echo "safi.conf vhost missing" >&2; return 1; }
 
     echo "configuring Apache vhost for $fqdn ..."
@@ -615,8 +615,8 @@ domain_add() {
     else
         certargs=(--register-unsafely-without-email)
     fi
-    if ! sudo certbot certonly --apache -d "$fqdn" --non-interactive --agree-tos \
-        --keep "${certargs[@]}"; then
+    if ! sudo certbot certonly --webroot -w /var/www/certbot -d "$fqdn" \
+        --non-interactive --agree-tos --keep "${certargs[@]}"; then
         echo "certificate failed — restoring self-signed config." >&2
         sudo sed -i "s/ServerName [^ ]*/ServerName safi.local/" /etc/apache2/sites-available/safi.conf
         sudo systemctl reload apache2
