@@ -18,10 +18,12 @@ from fastembed import TextEmbedding
 from typing import List, Dict, Any
 
 # --- CONFIGURATION ---
-# FIX: Use environment variables to allow production config overrides.
-# Default to relative paths for dev, but allow absolute paths for prod.
-VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", "./vector_store")
-CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", "./cache")
+# Use environment variables to allow production config overrides; default to
+# paths anchored to the app root so imports work no matter what the caller's
+# CWD is (systemd, the safi CLI run from $HOME, cron, tests).
+_APP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), *([".."] * 3)))
+VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_APP_DIR, "vector_store"))
+CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_APP_DIR, "cache"))
 EMBEDDING_MODEL = os.environ.get("SAFI_EMBEDDING_MODEL", 'all-MiniLM-L6-v2')
 
 

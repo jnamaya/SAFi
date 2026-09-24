@@ -299,7 +299,7 @@ run_mcp() {
         /*) : ;;
         *) json="$APP/$json" ;;
     esac
-    sudo -u safi -H env MCP_SERVERS_JSON="$json" "$VENV_PY" "$SCRIPTS/safi_mcp.py" "$@"
+    ( cd "$APP" && exec sudo -u safi -H env MCP_SERVERS_JSON="$json" "$VENV_PY" "$SCRIPTS/safi_mcp.py" "$@" )
 }
 
 cmd_mcp() {

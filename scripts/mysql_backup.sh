@@ -14,6 +14,10 @@
 # Runs as the `safi` user via safi-backup.timer. Exits non-zero on any
 # failure so the systemd unit lands in a failed state.
 set -euo pipefail
+# Dumps are full plaintext DB snapshots; never expose them wider than the
+# backup group. The timer and `safi backup` both run as the `safi` user, so
+# files land 0600 safi:safi instead of 0644.
+umask 077
 
 ENV_FILE=/var/www/safi/.env
 BACKUP_DIR=/var/backups/safi
