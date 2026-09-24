@@ -50,7 +50,10 @@ if mysqldump --help 2>/dev/null | grep -q 'set-gtid-purged'; then
     GTID_ARGS=(--set-gtid-purged=OFF)
 fi
 
-install -d "$BACKUP_DIR"  # the timer might be the first thing that ever runs
+[ -d "$BACKUP_DIR" ] && [ -w "$BACKUP_DIR" ] || {
+    echo "ERROR: backup spool $BACKUP_DIR missing or not writable by $(id -un). It is provisioned at boot by /usr/lib/tmpfiles.d/safi.conf; if it is absent, that file did not make it into the image." >&2
+    exit 1
+}
 mysqldump --defaults-extra-file="$CNF" \
     --single-transaction --quick --triggers \
     --no-tablespaces "${GTID_ARGS[@]}" \
