@@ -24,7 +24,6 @@
 /config/cache/
 /config/source/
 /config/_debian-installer/
-!/config/preseed/
 !/config/hooks/
 !/config/package-lists/
 !/config/includes.chroot/

@@ -20,7 +20,7 @@ set -e
 
 ARCH="${SAFI_ARCH:-amd64}"
 DIST="${SAFI_DIST:-bookworm}"           # bookworm = Python 3.11, matches Dockerfile's default
-SAFI_REF="${SAFI_REF:-v1.4.1}"
+SAFI_REF="${SAFI_REF:-v1.4.2}"
 SAFI_GIT_URL="${SAFI_GIT_URL:-https://github.com/jnamaya/SAFi.git}"
 
 export SAFI_REF SAFI_GIT_URL

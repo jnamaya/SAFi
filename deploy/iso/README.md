@@ -88,9 +88,14 @@ needed later if the operator chooses an online SAFi update.
 
 ## Installer flavor
 
-`auto/config` embeds the **live** flavor of debian-installer and embeds the
-preseed directly into the installer initrd as `/preseed.cfg`; the boot entry
-passes `preseed/file=/preseed.cfg` explicitly. The preseed also
+`auto/config` embeds the **live** flavor of debian-installer. The installer
+preseed ships as `config/includes.binary/preseed.cfg`, so it lands at the ISO
+root (`/preseed.cfg`); 055-installer-initrd-preseed.binary additionally bakes
+the same file into the installer initrd, and the boot entry passes
+`preseed/file=/preseed.cfg` explicitly. The preseed lives in `includes.binary`
+(not `config/preseed/`) on purpose: `lb chroot_preseed` feeds `config/preseed/`
+through `debconf-set-selections` inside the build chroot, where d-i's netcfg
+templates don't exist and `d-i … seen true` lines fail the build. The preseed also
 enables `live-installer`, so the SAFi root filesystem assembled by live-build is
 copied onto the target disk. A plain `netinst` image would install Debian but
 omit the appliance payload.
@@ -112,7 +117,7 @@ to the preseeded default, historically used for debugging).
 |---|---|
 | `build.sh` | entry point: `lb config` → `lb build`, renames the ISO |
 | `auto/config` | live-build automation — distribution, arch, d-i mode, ISO labels |
-| `config/preseed/safi.cfg` | unattended debian-installer preseed (whole-disk install, no d-i user) |
+| `config/includes.binary/preseed.cfg` | unattended debian-installer preseed (whole-disk install, no d-i user; shipped at ISO root) |
 | `config/package-lists/` | daemon-free packages baked into the rootfs |
 | `config/hooks/normal/01x` | installs mysql/apache/ssh behind a blocked-start policy |
 | `config/hooks/normal/02x` | service user `safi`, operator `admin` (locked), dirs |

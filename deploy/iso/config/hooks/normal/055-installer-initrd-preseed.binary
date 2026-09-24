@@ -9,7 +9,7 @@ trap cleanup EXIT
 
 mkdir "$work/root"
 gzip -dc install/initrd.gz | (cd "$work/root" && cpio -idm --quiet --no-absolute-filenames)
-cp ../config/preseed/safi.cfg "$work/root/preseed.cfg"
+cp ../config/includes.binary/preseed.cfg "$work/root/preseed.cfg"
 
 # Keep Debian Installer's native frontend and real progress messages, but use
 # SAFi's dark/green palette instead of the default Debian blue palette.
