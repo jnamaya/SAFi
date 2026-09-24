@@ -70,6 +70,9 @@ def connect(database=None):
 
 def newest_dump(backup_dir):
     dumps = sorted(glob.glob(os.path.join(backup_dir, "safi-*.sql.gz")))
+    # Safety snapshots (safi-pre-restore-*) are rollback aids, not backups;
+    # they must never be picked as "the newest" by verify or an auto restore.
+    dumps = [d for d in dumps if not os.path.basename(d).startswith("safi-pre-restore-")]
     return dumps[-1] if dumps else None
 
 
@@ -165,10 +168,13 @@ def journal_result(status, detail):
             id BIGINT PRIMARY KEY AUTO_INCREMENT,
             verified_at VARCHAR(40) NOT NULL,
             dump_file VARCHAR(255),
-            status VARCHAR(8) NOT NULL,
+            status VARCHAR(16) NOT NULL,
             detail TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""")
+    # Older tables on already-deployed appliances have status VARCHAR(8), which
+    # cannot hold 'restore-fail'; widen idempotently.
+    cur.execute("ALTER TABLE backup_verify_log MODIFY status VARCHAR(16) NOT NULL")
     cur.execute(
         "INSERT INTO backup_verify_log (verified_at, dump_file, status, detail) "
         "VALUES (%s, %s, %s, %s)",

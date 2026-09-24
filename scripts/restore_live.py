@@ -22,6 +22,7 @@ Usage:
 """
 import argparse
 import glob
+import gzip
 import os
 import subprocess
 import sys
@@ -51,6 +52,7 @@ def _client_cnf():
 
 def newest_dump():
     dumps = sorted(glob.glob(os.path.join(BACKUP_DIR, "safi-*.sql.gz")))
+    dumps = [d for d in dumps if not os.path.basename(d).startswith("safi-pre-restore-")]
     return dumps[-1] if dumps else None
 
 
@@ -77,11 +79,19 @@ def _safety_dump(cnf):
     if "set-gtid-purged" in subprocess.run(["mysqldump", "--help"],
                                            capture_output=True, text=True).stdout:
         gtid = ["--set-gtid-purged=OFF"]
-    with open(out, "wb") as fh:
-        subprocess.run(
-            ["mysqldump", f"--defaults-extra-file={cnf}", "--single-transaction",
-             "--quick", "--triggers", "--no-tablespaces", *gtid, Config.DB_NAME],
-            stdout=fh, check=True)
+    cmd = ["mysqldump", f"--defaults-extra-file={cnf}", "--single-transaction",
+           "--quick", "--triggers", "--no-tablespaces", *gtid, Config.DB_NAME]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    with gzip.open(out, "wb") as gz:
+        while True:
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            gz.write(chunk)
+    proc.stdout.close()
+    if proc.wait() != 0:
+        os.unlink(out)
+        raise RuntimeError("mysqldump for the safety copy failed")
     subprocess.run(["gzip", "-t", out], check=True)
     return out
 
