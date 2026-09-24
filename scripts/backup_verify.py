@@ -97,10 +97,16 @@ def restore_into_scratch(dump_path):
             stdin=gunzip.stdout, capture_output=True, text=True,
         )
         gunzip.stdout.close()
-        if gunzip.wait() != 0:
-            raise RuntimeError(f"gunzip failed on {dump_path}")
+        # Check mysql FIRST: the dump is piped into it, so when the restore
+        # fails (e.g. access denied on the scratch schema), gunzip dies of
+        # SIGPIPE (141/-13) and its exit code would otherwise mask the real
+        # cause. Only a gunzip failure while mysql itself succeeded is a real
+        # corruption report.
         if restore.returncode != 0:
             raise RuntimeError(f"mysql restore failed: {restore.stderr.strip()[:500]}")
+        gunzip_rc = gunzip.wait()
+        if gunzip_rc != 0 and gunzip_rc not in (-13, 141):
+            raise RuntimeError(f"gunzip failed on {dump_path} (exit {gunzip_rc})")
     finally:
         os.unlink(cnf.name)
 
