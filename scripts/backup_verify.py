@@ -19,8 +19,11 @@ on:
 
 The verdict is journaled to backup_verify_log in the LIVE database (append
 only), so "how do you know your backups work" is answerable with dated rows.
-On failure the scratch schema is kept for forensics (the next run drops it)
-and the exit code is non-zero so safi-backup-verify.service lands failed.
+The scratch schema is provisioned once at first boot and emptied per run by
+dropping its tables; on failure its contents are kept for forensics (the next
+run resets it). This uses only the per-table privileges the app's minimal
+`safi` DB account holds (ALL on safi_verify.*, no database-level CREATE/DROP).
+The exit code is non-zero on failure so safi-backup-verify.service lands failed.
 
 Usage: venv/bin/python scripts/backup_verify.py [--backup-dir DIR] [--keep]
 """
@@ -65,6 +68,20 @@ def connect(database=None):
 def newest_dump(backup_dir):
     dumps = sorted(glob.glob(os.path.join(backup_dir, "safi-*.sql.gz")))
     return dumps[-1] if dumps else None
+
+
+def reset_scratch(cursor):
+    """Empty the scratch schema without dropping it.
+
+    The `safi` DB account is deliberately granted only per-table privileges
+    (ALL on safi_verify.*, no database-level CREATE/DROP), so re-creating the
+    schema each run would need privileges the minimal account should not hold.
+    The schema exists from first boot; drop its tables and let the restore
+    rebuild them."""
+    cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+    for table in base_tables(cursor, SCRATCH_DB):
+        cursor.execute(f"DROP TABLE IF EXISTS `{SCRATCH_DB}`.`{table}`")
+    cursor.execute("SET FOREIGN_KEY_CHECKS=1")
 
 
 def restore_into_scratch(dump_path):
@@ -177,8 +194,7 @@ def main():
 
         admin = connect()
         cur = admin.cursor()
-        cur.execute(f"DROP DATABASE IF EXISTS `{SCRATCH_DB}`")
-        cur.execute(f"CREATE DATABASE `{SCRATCH_DB}` CHARACTER SET utf8mb4")
+        reset_scratch(cur)
         admin.commit()
 
         restore_into_scratch(dump)
@@ -211,7 +227,7 @@ def main():
         detail["audit_entries_verified"] = entries
 
         if not args.keep:
-            cur.execute(f"DROP DATABASE `{SCRATCH_DB}`")
+            reset_scratch(cur)
             admin.commit()
         cur.close()
         admin.close()

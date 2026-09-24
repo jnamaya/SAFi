@@ -136,10 +136,15 @@ def initialize(fields: dict[str, str], setup) -> None:
     root_password = values["MYSQL_ROOT_PASSWORD"].replace("'", "''")
     sql = (
         "CREATE DATABASE IF NOT EXISTS `safi` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; "
+        # Scratch schema for backup restore-verification (backup_verify.py). It
+        # is provisioned up-front so the minimal `safi` DB account never needs
+        # database-level CREATE; the verifier wipes it by dropping its tables.
+        "CREATE DATABASE IF NOT EXISTS `safi_verify` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; "
         f"ALTER USER 'root'@'localhost' IDENTIFIED BY '{root_password}'; "
         f"CREATE USER IF NOT EXISTS 'safi'@'localhost' IDENTIFIED BY '{db_password}'; "
         f"ALTER USER 'safi'@'localhost' IDENTIFIED BY '{db_password}'; "
-        "GRANT ALL PRIVILEGES ON `safi`.* TO 'safi'@'localhost'; FLUSH PRIVILEGES;"
+        "GRANT ALL PRIVILEGES ON `safi`.* TO 'safi'@'localhost'; "
+        "GRANT ALL PRIVILEGES ON `safi_verify`.* TO 'safi'@'localhost'; FLUSH PRIVILEGES;"
     )
     subprocess.run(["mysql", "--protocol=socket", "-u", "root", "-e", sql], check=True)
     # Operator account (console + SSH): the appliance admin password unlocks
