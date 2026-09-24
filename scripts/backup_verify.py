@@ -11,7 +11,10 @@ on:
   2. It restores cleanly into the scratch schema `safi_verify`.
   3. Every base table in the live database exists in the restore.
   4. Key tables are non-empty and their row counts are within tolerance of
-     live (catches dumps that silently skipped rows).
+     live (live keeps moving between dump time and verify time; both the
+     empty-table and the count checks compare against the same noise floor,
+     so a table that was empty at dump time and gained a few rows since does
+     not fail the run — a dump that dropped a whole table's rows still does).
   5. The chat_audit_trail hash chains verify inside the RESTORED copy —
      every entry_hash recomputes from its payload and every chain links
      prev_hash -> entry_hash with a NULL-rooted head. This is what makes the
@@ -219,7 +222,12 @@ def main():
             live_n = row_count(cur, Config.DB_NAME, table)
             rest_n = row_count(cur, SCRATCH_DB, table)
             counts[table] = {"live": live_n, "restored": rest_n}
-            if rest_n == 0 and live_n > 0:
+            # A restored-but-empty key table is only suspicious when live has
+            # grown past the noise floor: the dump is a snapshot and the live
+            # database keeps moving between dump time and verify time, so a
+            # table that was empty at dump time and gained its first few rows
+            # since must not fail the verification.
+            if rest_n == 0 and live_n > COUNT_TOLERANCE_ABS:
                 raise RuntimeError(f"{table}: restored copy is empty (live has {live_n})")
             tolerance = max(COUNT_TOLERANCE_ABS, int(live_n * COUNT_TOLERANCE_PCT))
             if abs(live_n - rest_n) > tolerance:
