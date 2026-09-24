@@ -11,12 +11,19 @@ from ..persistence import database as db
 from ..persistence import sharing_store
 from ..persistence import conversation_sharing_store
 from ..core.orchestrator import SAFi
-from ..core.faculties.synderesis import get_profile, list_profiles
+from ..core.faculties.synderesis import get_profile, list_profiles, AGENTS
 from ..core.services import provider_governance as pg
 from ..core import provenance
 from ..config import Config
 
 conversations_bp = Blueprint('conversations', __name__)
+
+# Which agents the unauthenticated /api/public/process_prompt chatbot may use.
+# Browser-facing, so this is a hardcoded whitelist — a visitor can pick among
+# these and nothing else, however the agents table changes. Default is the SAFi
+# Guide (key 'safi'); the RunSAFi marketing widget sends 'runsafi'.
+PUBLIC_CHATBOT_AGENTS = ("safi", "runsafi")
+DEFAULT_PUBLIC_CHATBOT_AGENT = "safi"
 
 def _tts_stream_generator(text: str, voice: str, cache_path):
     """
@@ -460,6 +467,24 @@ async def public_process_prompt_endpoint():
 
     incoming_convo_id = data['conversation_id']
 
+    # Optional agent selector for the embedded chatbot. The caller is an
+    # anonymous visitor, so the value is checked against a whitelist before it
+    # ever reaches get_profile — an unknown or unrequested agent is a 400, not
+    # a 500, and a fetch of an arbitrary agent (e.g. one pointed at a customer's
+    # knowledge base) is impossible.
+    agent_key = (data.get('agent') or DEFAULT_PUBLIC_CHATBOT_AGENT).strip().lower()
+    if agent_key not in PUBLIC_CHATBOT_AGENTS:
+        return jsonify({
+            "error": f"Unknown chatbot agent '{agent_key}'. Available: "
+                     f"{', '.join(PUBLIC_CHATBOT_AGENTS)}.",
+            "code": "UNKNOWN_AGENT",
+        }), 400
+    if agent_key not in AGENTS:
+        return jsonify({
+            "error": f"Chatbot agent '{agent_key}' is not enabled on this deployment.",
+            "code": "AGENT_DISABLED",
+        }), 400
+
     # Reject an id the schema cannot store, rather than letting it reach
     # `INSERT INTO conversations` and come back as an HTTP 500. Every
     # conversation-id column is char(36); see db.CONVERSATION_ID_MAX_LEN for
@@ -525,7 +550,7 @@ async def public_process_prompt_endpoint():
     db.record_prompt_usage(ip_key)
 
     saf_system = global_safi_cache.get_or_create(
-        "safi",
+        agent_key,
         Config.PUBLIC_INTELLECT_MODEL,   # isolated from the main app's model selection
         None,
         Config.PUBLIC_CONSCIENCE_MODEL

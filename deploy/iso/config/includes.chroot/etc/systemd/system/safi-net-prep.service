@@ -1,0 +1,15 @@
+[Unit]
+Description=SAFi network + SSH first-boot preparation
+Before=safi-browser-setup.service ssh.service network-online.target
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/safi-net-prep.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

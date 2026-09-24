@@ -30,8 +30,9 @@ lb config noauto \
     --distribution "$DIST" \
     --debian-installer-distribution "$DIST" \
     --archive-areas "main contrib" \
-    --debian-installer netinst \
-    --debian-installer-preseedfile file:///cdrom/preseed.cfg \
+    --security false \
+    --updates false \
+    --debian-installer live \
     --debian-installer-gui false \
     --bootloaders "syslinux grub-efi" \
     --memtest none \
@@ -39,8 +40,8 @@ lb config noauto \
     --iso-volume "SAFi Appliance" \
     --iso-publisher "SAFi <https://github.com/jnamaya/SAFi>" \
     --iso-preparer "SAFi build" \
-    --bootappend-live "quiet" \
-    --bootappend-install "priority=high" \
+    --bootappend-live "quiet splash" \
+    --bootappend-install "auto=true priority=critical preseed/file=/preseed.cfg quiet splash" \
     --debootstrap-options "--variant=minbase" \
     --apt-recommends false \
     --apt-secure true

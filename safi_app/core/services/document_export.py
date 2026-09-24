@@ -23,6 +23,7 @@ Three formats:
 from __future__ import annotations
 
 import io
+import csv
 import re
 from typing import Optional, Tuple
 
@@ -289,10 +290,6 @@ def _md_to_xlsx(text: str, attribution: Optional[str]) -> bytes:
     ws.freeze_panes = "A2"
 
     header_font = Font(bold=True)
-
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    i = 0
-    n = len(lines)
     row = 1
 
     def emit(cells):
@@ -300,6 +297,35 @@ def _md_to_xlsx(text: str, attribution: Optional[str]) -> bytes:
         for col, val in enumerate(cells, start=1):
             ws.cell(row=row, column=col, value="".join(str(val)))
         row += 1
+
+    # Crawler responses are CSV text, not Markdown. Parse them into real cells
+    # so spreadsheet auto-linking cannot attach the URL to adjacent CSV text.
+    csv_rows = list(csv.reader(io.StringIO(text)))
+    if csv_rows and csv_rows[0] == ["Name", "Title", "URL", "Reachout"]:
+        for col, cell_text in enumerate(csv_rows[0], start=1):
+            ws.cell(row=row, column=col, value=cell_text).font = header_font
+        row += 1
+        for cells in csv_rows[1:]:
+            if not any(cells):
+                continue
+            cells = (cells + [""] * 4)[:4]
+            for col, cell_text in enumerate(cells, start=1):
+                cell = ws.cell(row=row, column=col, value=cell_text)
+                if col == 3 and re.match(r"^https://www\.linkedin\.com/in/[^\s]+$", cell_text):
+                    cell.hyperlink = cell_text
+                    cell.font = Font(color="0563C1", underline="single")
+            row += 1
+        emit([_footer_text(attribution)])
+        for col in range(1, ws.max_column + 1):
+            widths = [len(str(ws.cell(row=r, column=col).value or "")) for r in range(1, ws.max_row + 1)]
+            ws.column_dimensions[get_column_letter(col)].width = min(max(widths, default=0) + 2, 60)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    i = 0
+    n = len(lines)
 
     while i < n:
         line = lines[i]

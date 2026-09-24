@@ -1,0 +1,21 @@
+[Unit]
+Description=SAFi browser-first appliance setup
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/safi-firstboot/done
+Before=safi.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/safi-browser-setup.py
+Restart=no
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=no
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -102,3 +102,7 @@ docs/internal/
 # Static marketing site and retired venv. Host-local, never synced up
 /static_site/
 /venv.old/
+
+# Staged local-release source snapshot (populated by stage-local-release.sh,
+# consumed by hooks/normal/030-bootstrap-safi.chroot, never committed)
+/deploy/iso/config/includes.chroot/var/cache/

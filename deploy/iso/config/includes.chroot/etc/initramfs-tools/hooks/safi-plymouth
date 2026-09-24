@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+PREREQ=""
+
+prereqs() {
+    printf '%s\n' "$PREREQ"
+}
+
+case "${1:-}" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+theme_dir="/usr/share/plymouth/themes/safi"
+target_dir="${DESTDIR}${theme_dir}"
+mkdir -p "$target_dir"
+for file in safi.plymouth safi.script safi-rosetta.png; do
+    cp "$theme_dir/$file" "$target_dir/$file"
+done

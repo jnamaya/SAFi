@@ -1,0 +1,699 @@
+#!/usr/bin/env bash
+# safi — SAFi Appliance operator CLI (menu v2).
+#
+# Single entry point for everything an operator does on the box, grouped by
+# intent: overview, logs & services, data protection, integrations (MCP),
+# security, lifecycle. Wraps the scripts/units the repo already ships so the
+# appliance has a small, discoverable command surface.
+#
+# The menu ships with the ISO; operators type `safi` (or `safi help`) to see it.
+set -u
+
+APP=/var/www/safi
+ENV_FILE=$APP/.env
+CERT_DIR=/etc/ssl/runsafi
+SCRIPTS=$APP/scripts
+VENV_PY=$APP/venv/bin/python
+BUILD_ENV=/var/lib/safi-firstboot/build.env
+UNITS=(safi safi-kb-indexer mariadb apache2 ssh)
+TIMERS=(safi-backup.timer safi-backup-verify.timer safi-retention-purge.timer)
+
+RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+
+usage() {
+    cat <<'EOF'
+ SAFi Appliance — operator commands
+
+ Overview
+   safi status                appliance + services + URL + release + backup age
+   safi health                quick probe: API, DB, last successful backup
+   safi doctor                full diagnostic checklist
+
+ Logs & services
+   safi logs [unit] [-f]      tail journald (default: safi; -f follow)
+   safi services              list all serviced units with state
+   safi restart [unit]        restart a service (default: backend)
+
+ Data protection
+   safi backup                run a backup now
+   safi backups               list backups on disk
+   safi backup verify         restore-test the latest backup
+   safi backup remote         show/set/clear the off-box rsync target
+
+ Integrations
+   safi mcp                   list installed MCP servers
+   safi mcp add <name>        install a server (registry, --url, or --command)
+   safi mcp search <term>     search the MCP registry
+   safi mcp check             probe connectivity and advertised tools
+   safi mcp remove <key>      uninstall a server
+   safi mcp enable|disable    stop/start connecting to a server
+
+ Security
+   safi cert show|renew       appliance TLS certificate
+   safi passwd                rotate the operator (admin) password
+   safi tcb                   TCB fingerprint: state, verify, pin, enforce
+   safi domain                add/remove a public domain with auto HTTPS
+
+ Lifecycle
+   safi update [tag]          check & apply a release tag
+   safi version               build release info
+   safi reboot                restart the appliance
+   safi shutdown              power off the appliance
+
+ Type "safi <command>" for details. Some commands ask for sudo.
+EOF
+}
+
+# --- small helpers -----------------------------------------------------------
+
+env_get() {
+    local v
+    v=$(sed -n "s/^$1=//p" "$ENV_FILE" 2>/dev/null | tail -1)
+    [ -n "$v" ] && { printf '%s' "$v"; return; }
+    sudo -u safi sed -n "s/^$1=//p" "$ENV_FILE" 2>/dev/null | tail -1
+}
+
+env_set_key() { # KEY VALUE  (owns .env as the safi user)
+    local key=$1 value=$2
+    sudo -u safi env KEY="$key" VALUE="$value" ENV_FILE="$ENV_FILE" bash -c '
+        if grep -q "^${KEY}=" "$ENV_FILE"; then
+            sed -i "s|^${KEY}=.*|${KEY}=${VALUE}|" "$ENV_FILE"
+        else
+            printf "%s=%s\n" "$KEY" "$VALUE" >> "$ENV_FILE"
+        fi'
+}
+
+env_unset_key() { # KEY
+    local key=$1
+    sudo -u safi env KEY="$key" ENV_FILE="$ENV_FILE" bash -c '
+        grep -q "^${KEY}=" "$ENV_FILE" && sed -i "/^${KEY}=/d" "$ENV_FILE" || true'
+}
+
+app_url() {
+    local url
+    url=$(env_get WEB_BASE_URL)
+    [ -n "${url:-}" ] && { printf '%s' "${url%/}"; return; }
+    local ip; ip=$(ip -4 -o addr show scope global 2>/dev/null | awk '!/ lo /{print $4}' | grep -oE '^[0-9.]+' | head -1)
+    printf 'https://%s' "${ip:-<appliance-ip>}"
+}
+
+state() { systemctl is-active --quiet "$1" 2>/dev/null && echo active || echo inactive; }
+
+pmark() { # color by word
+    case "$1" in
+        active|ok|OK|on)      printf '%s%s %s%s' "$GREEN" "✓" "$1" "$RESET";;
+        failed|err|off)       printf '%s%s %s%s' "$RED" "✗" "$1" "$RESET";;
+        *)                    printf '%s%s %s%s' "$YELLOW" "?" "$1" "$RESET";;
+    esac
+}
+
+latest_backup() { ls -1t /var/backups/safi/*.gz 2>/dev/null | head -1; }
+
+confirm() { # "action phrase" — interactive y/N gate for destructive ops
+    [ -t 0 ] || { echo "aborted: not an interactive terminal."; return 1; }
+    read -r -p "Are you sure you want to $1? [y/N] " ans
+    case "$ans" in
+        y|Y|yes|YES) return 0;;
+        *) echo "aborted."; return 1;;
+    esac
+}
+
+# --- overview ----------------------------------------------------------------
+
+cmd_status() {
+    local url; url=$(app_url)
+    printf '%s%s%s  %s\n' "$BOLD" "SAFi Appliance" "$RESET" \
+        "(release $(sed -n 's/^SAFI_REF=//p' "$BUILD_ENV" 2>/dev/null))"
+    printf 'Management: %s\n\n' "$url"
+    printf '%-22s %s\n' Service State
+    for u in "${UNITS[@]}"; do
+        printf '%-22s %s\n' "$u" "$(pmark "$(state "$u")")"
+    done
+    local last; last=$(latest_backup)
+    if [ -n "$last" ]; then
+        printf '\nLast backup: %s  (%s)\n' "$(stat -c '%y' "$last" | cut -d. -f1)" "${last##*/}"
+    else
+        printf '\nLast backup: %s\n' "$(pmark none)"
+    fi
+    if [ -f "$CERT_DIR/appliance.crt" ]; then
+        local d; d=$(openssl x509 -enddate -noout -in "$CERT_DIR/appliance.crt" 2>/dev/null | cut -d= -f2)
+        printf 'TLS certificate: %s\n' "${d:-unknown}"
+    fi
+}
+
+cmd_health() {
+    local url; url=$(app_url)
+    printf 'API    : '
+    curl -sk --max-time 8 "${url}/api/health" | grep -q '"ok"' \
+        && echo "$(pmark ok)" || echo "$(pmark err)"
+    printf 'DB     : '
+    systemctl is-active --quiet mariadb && echo "$(pmark on)" || echo "$(pmark off)"
+    local last; last=$(latest_backup)
+    printf 'Backup : '
+    if [ -n "$last" ]; then
+        echo "$(pmark ok) $(stat -c '%y' "$last" | cut -d. -f1)"
+    else
+        echo "$(pmark err) none yet — run: safi backup"
+    fi
+}
+
+cmd_doctor() {
+    local url; url=$(app_url)
+    local ok=0 fail=0
+    check() { printf '%-46s %s\n' "$1" "$(pmark "$2")"; }
+
+    check "management URL"                     ok
+    printf '%-46s %s\n' '  ' "$url"
+    check ".env exists"                        "$([ -f "$ENV_FILE" ] && echo ok || echo err)"
+    if [ -f "$ENV_FILE" ]; then
+        local ownperms; ownperms=$(stat -c '%U:%G %a' "$ENV_FILE")
+        printf '%-46s %s\n' "  owner/perms" "${ownperms} (expect safi:www-data 600)"
+        [ "$(stat -c '%a' "$ENV_FILE")" = "600" ] && [ "$(stat -c '%U:%G' "$ENV_FILE")" = "safi:www-data" ] \
+            && ok=$((ok+1)) || fail=$((fail+1))
+    else
+        fail=$((fail+1))
+    fi
+    check "api health"                         "$(curl -sk --max-time 8 ${url}/api/health | grep -q '"ok"' && echo ok || echo err)"
+    for u in "${UNITS[@]}"; do
+        check "service $u"                     "$(state "$u")"
+        [[ "$(state "$u")" == active ]] && ok=$((ok+1)) || fail=$((fail+1))
+    done
+    local last; last=$(latest_backup)
+    check "latest backup"                      "$([ -n "$last" ] && echo ok || echo err)"
+    if [ -n "$last" ]; then
+        printf '%-46s %s\n' '  ' "${last##*/}"
+    fi
+    check "disk on /var/backups"               OK
+    df -h /var/backups 2>/dev/null | awk 'NR==2{printf "  %-44s %s\n", "", $1" "$2" avail "$4}'
+    check "journal readable by admin"          "$([ -r /var/log/journal ] && echo ok || echo err)"
+    echo
+    printf "%-46s %s\n" "result" "$(pmark "$([ "$fail" -eq 0 ] && echo OK || echo "$fail problem(s)")")"
+}
+
+# --- logs & services ---------------------------------------------------------
+
+cmd_logs() {
+    local unit=safi follow=""
+    for arg in "$@"; do
+        case "$arg" in
+            -f|--follow) follow="-f";;
+            *) unit="$arg";;
+        esac
+    done
+    if [ "$follow" = "-f" ]; then
+        exec journalctl -u "$unit" -f
+    else
+        exec journalctl -u "$unit" -n 200 --no-pager
+    fi
+}
+
+cmd_services() {
+    printf '%-26s %-10s %s\n' Unit State Enabled
+    for u in "${UNITS[@]}" "${TIMERS[@]}"; do
+        local en
+        en=$(systemctl is-enabled "$u" 2>/dev/null)
+        [ -n "$en" ] || en=n/a
+        printf '%-26s %-10s %s\n' "$u" "$(pmark "$(state "$u")")" "$en"
+    done
+}
+
+cmd_restart() {
+    local target=${1:-backend}
+    case "$target" in
+        backend)
+            echo "Restarting SAFi backend..."
+            sudo systemctl restart safi safi-kb-indexer
+            echo "done."
+            ;;
+        *)
+            echo "Restarting $target..."
+            sudo systemctl restart "$target"
+            echo "done."
+            ;;
+    esac
+}
+
+# --- data protection ---------------------------------------------------------
+
+cmd_backup() {
+    [ -f "$SCRIPTS/mysql_backup.sh" ] || { echo "backup script missing" >&2; return 1; }
+    sudo -u safi -H bash "$SCRIPTS/mysql_backup.sh"
+    local rc=$?
+    [ "$rc" -ne 0 ] && { echo "backup failed — see output above." >&2; return "$rc"; }
+    local latest; latest=$(latest_backup)
+    echo "backup written: ${latest:-?}"
+}
+
+cmd_backups() {
+    if ! compgen -G '/var/backups/safi/*.gz' >/dev/null; then
+        echo "No backups yet."
+        return 0
+    fi
+    ls -lht /var/backups/safi/*.gz | awk '{printf "%-8s %-12s %s\n", $5, $6" "$7, $9}'
+}
+
+cmd_backup_verify() {
+    [ -f "$SCRIPTS/backup_verify.py" ] || { echo "backup verify script missing" >&2; return 1; }
+    [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
+    echo "Restore-testing the latest backup (this takes a minute)..."
+    sudo -u safi -H "$VENV_PY" "$SCRIPTS/backup_verify.py" "$@"
+}
+
+cmd_backup_remote() {
+    local action=${1:-show}
+    case "$action" in
+        show)
+            local r; r=$(env_get SAFI_BACKUP_REMOTE)
+            if [ -n "$r" ]; then
+                echo "off-box target: $r"
+            else
+                echo "off-box target: not configured"
+                echo "set one so backups survive this host: safi backup remote set user@host:/path"
+            fi
+            ;;
+        set)
+            local dest=${2:-}
+            [ -n "$dest" ] || { echo "usage: safi backup remote set <user@host:/path>" >&2; return 1; }
+            env_set_key SAFI_BACKUP_REMOTE "$dest"
+            echo "off-box target set. The next backup will rsync there."
+            ;;
+        unset|clear)
+            env_unset_key SAFI_BACKUP_REMOTE
+            echo "off-box target cleared."
+            ;;
+        *)
+            echo "usage: safi backup remote [show|set <target>|unset]" >&2
+            return 1
+            ;;
+    esac
+}
+
+# --- integrations (MCP) ------------------------------------------------------
+
+run_mcp() {
+    [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
+    [ -f "$SCRIPTS/safi_mcp.py" ] || { echo "mcp script missing" >&2; return 1; }
+    local json; json=$(env_get MCP_SERVERS_JSON)
+    [ -n "$json" ] || json="$APP/safi_app/core/mcp_servers/mcp_servers.json"
+    case "$json" in
+        /*) : ;;
+        *) json="$APP/$json" ;;
+    esac
+    sudo -u safi -H env MCP_SERVERS_JSON="$json" "$VENV_PY" "$SCRIPTS/safi_mcp.py" "$@"
+}
+
+cmd_mcp() {
+    if [ "$#" -eq 0 ]; then
+        run_mcp list
+        return
+    fi
+    local sub=$1
+    case "$sub" in
+        list|add|search|check|remove|enable|disable)
+            shift
+            run_mcp "$sub" "$@"
+            ;;
+        *)
+            echo "usage: safi mcp [list|add <name>|search <term>|check|remove <key>|enable <key>|disable <key>]" >&2
+            echo "       add takes the same flags as scripts/safi_mcp.py (--url, --command, --auth ...)" >&2
+            return 1
+            ;;
+    esac
+}
+
+# --- security ----------------------------------------------------------------
+
+cmd_cert() {
+    local cert=$CERT_DIR/appliance.crt action=${1:-show}
+    case "$action" in
+        show)
+            [ -f "$cert" ] || { echo "no certificate generated yet" >&2; return 1; }
+            openssl x509 -in "$cert" -noout -subject -dates -serial
+            ;;
+        renew)
+            echo "Regenerating appliance TLS certificate..."
+            sudo openssl req -x509 -new -nodes -newkey rsa:3072 -days 3650 \
+                -keyout "$CERT_DIR/appliance.key" -out "$cert" \
+                -subj "/CN=SAFi Appliance" 2>/dev/null
+            sudo chmod 600 "$CERT_DIR/appliance.key"; sudo chmod 644 "$cert"
+            sudo systemctl reload apache2
+            echo "done. Browsers will warn until you re-accept the cert."
+            ;;
+        *) usage; return 1;;
+    esac
+}
+
+cmd_passwd() {
+    echo "Changing the operator (admin) password."
+    passwd admin
+    echo "done."
+}
+
+tcb_json() { sudo -u safi -H "$VENV_PY" "$SCRIPTS/verify_integrity.py" --json 2>&1; }
+
+tcb_actual_fp() {
+    tcb_json | "$VENV_PY" -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get("root_fingerprint_actual", ""))
+except Exception:
+    pass' 2>/dev/null
+}
+
+# Compare the local TCB fingerprint against the official signed release
+# registry hosted on the SAFi site. Replicates the app's exactly-one check
+# (same pinned key file, same signature rules, same URL — respecting any
+# SAFI_TCB_RELEASES_URL in the appliance .env), so the CLI and the browser
+# "Verify this Install" button give the same verdict. A failure to reach or
+# authenticate the list is reported as such — never treated as a match.
+tcb_registry() {
+    [ -x "$VENV_PY" ] || { echo "  official registry: check unavailable (app venv missing)" >&2; return 0; }
+    sudo -u safi -H env SAFI_APP_DIR="$APP" "$VENV_PY" -c '
+import os, sys, json, base64
+import requests
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+app = os.environ.get("SAFI_APP_DIR", "/var/www/safi")
+url = "https://selfalignmentframework.com/tcb/releases.json"
+try:
+    with open(os.path.join(app, ".env"), encoding="utf-8") as f:
+        for ln in f:
+            if ln.strip().startswith("SAFI_TCB_RELEASES_URL="):
+                v = ln.split("=", 1)[1].strip().strip(chr(34)).strip(chr(39))
+                if v:
+                    url = v
+except Exception:
+    pass
+local_fp = (sys.argv[1] if len(sys.argv) > 1 else "").lower()
+print("  official registry: %s" % url)
+
+def parse_pubkey(text):
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
+        return None
+    raw = base64.b64decode(lines[1], validate=True)
+    if len(raw) != 42 or raw[:2] != b"Ed":
+        return None
+    return raw[2:10], raw[10:42]
+
+def verify(payload, sig_text, keynum, pubkey):
+    lines = [ln.strip() for ln in sig_text.splitlines() if ln.strip()]
+    if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
+        return False, "signature file is malformed"
+    raw = base64.b64decode(lines[1], validate=True)
+    if len(raw) != 74 or raw[:2] != b"Ed":
+        return False, "signature format is not supported"
+    if raw[2:10] != keynum:
+        return False, "signature was made with a different key"
+    Ed25519PublicKey.from_public_bytes(pubkey).verify(raw[10:74], payload)
+    return True, None
+
+try:
+    r = requests.get(url, timeout=10)
+    if r.status_code != 200:
+        raise RuntimeError("HTTP %s" % r.status_code)
+    payload = r.content
+    s = requests.get(url + ".minisig", timeout=10)
+    if s.status_code != 200:
+        raise RuntimeError("signature missing: HTTP %s" % s.status_code)
+    with open(os.path.join(app, "safi_app", "api", "tcb_key.pub"), encoding="utf-8") as f:
+        key = parse_pubkey(f.read())
+    if key is None:
+        raise RuntimeError("pinned registry key is unavailable on this deployment")
+    ok, reason = verify(payload, s.content.decode("utf-8"), *key)
+    if not ok:
+        print("    REACHED BUT NOT AUTHENTICATED (%s)" % reason)
+        print("    do not trust the online list while the signature fails.")
+        sys.exit(0)
+    releases = []
+    for e in (json.loads(payload.decode("utf-8")).get("releases") or []):
+        fp = str(e.get("fingerprint") or "").strip().lower()
+        if len(fp) == 64 and all(c in "0123456789abcdef" for c in fp):
+            releases.append((str(e.get("tag") or ""), str(e.get("date") or ""), fp))
+    if not releases:
+        print("    registry reachable but contains no usable releases.")
+        sys.exit(0)
+    matched = [t for (t, d, fp) in releases if fp == local_fp]
+    if matched:
+        print("    MATCH — this install is on the official registry (release %s)." % matched[0])
+    else:
+        print("    this fingerprint is NOT on the official registry.")
+        print("    either an unreleased build or a modified tree — pin only after out-of-band verification.")
+    print("    registry releases: %s" % ", ".join(t for (t, d, fp) in releases))
+except requests.exceptions.RequestException as e:
+    print("    unreachable (%s) — online attestation unavailable; rely on the pin and out-of-band checks." % e)
+except InvalidSignature:
+    print("    REACHED BUT NOT AUTHENTICATED (signature does not match the published list).")
+    print("    do not trust the online list while the signature fails.")
+except Exception as e:
+    print("    check unavailable (%s)" % e)
+' "$1"
+}
+
+cmd_tcb() {
+    [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
+    local action=${1:-status}
+    case "$action" in
+        status)
+            tcb_json | "$VENV_PY" -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("  unverifiable: manifest missing or unreadable"); raise SystemExit(0)
+print("  state:    " + ("INTACT" if d["intact"] else "MODIFIED"))
+print("  expected: " + d["root_fingerprint_expected"])
+print("  actual:   " + d["root_fingerprint_actual"])'
+            local pin enf
+            pin=$(env_get SAFI_EXPECTED_FINGERPRINT)
+            [ -n "$pin" ] && echo "  pinned:   $pin" || echo "  pinned:   (none — set with: safi tcb pin <fingerprint>)"
+            enf=$(env_get SAFI_ENFORCE_INTEGRITY)
+            echo "  enforce:  ${enf:-off (warn-and-run)}"
+            ;;
+        verify)
+            local actual pin
+            actual=$(tcb_actual_fp)
+            printf 'recomputed fingerprint: %s\n' "${actual:-unverifiable}"
+            pin=$(env_get SAFI_EXPECTED_FINGERPRINT)
+            if [ -n "$actual" ] && [ -n "$pin" ]; then
+                if [ "$pin" = "$actual" ]; then
+                    echo "$(pmark ok) PIN MATCH — this tree is the official release you pinned."
+                else
+                    echo "$(pmark err) measured fingerprint differs from the pinned value."
+                    echo "Re-pin only after you have verified the new release out of band."
+                fi
+            elif [ -n "$actual" ]; then
+                echo "no pin set. Compare the fingerprint against the official release page,"
+                echo "then record it: safi tcb pin <fingerprint>"
+            fi
+            echo
+            tcb_registry "$actual"
+            ;;
+        pin)
+            local fp=${2:-}
+            if [ -z "$fp" ]; then
+                local p; p=$(env_get SAFI_EXPECTED_FINGERPRINT)
+                [ -n "$p" ] && echo "$p" || echo "no pin set."
+                return
+            fi
+            case "$fp" in
+                clear|remove|--clear)
+                    env_unset_key SAFI_EXPECTED_FINGERPRINT
+                    echo "pin cleared."
+                    ;;
+                *)
+                    if [ "${#fp}" -ne 64 ]; then
+                        echo "a TCB fingerprint is a 64-character hex SHA-256 — this does not look right" >&2
+                        return 1
+                    fi
+                    env_set_key SAFI_EXPECTED_FINGERPRINT "$fp"
+                    echo "pin set. Every boot now compares the measured fingerprint against it."
+                    ;;
+            esac
+            ;;
+        enforce)
+            local mode=${2:-}
+            case "$mode" in
+                on|strict)
+                    env_set_key SAFI_ENFORCE_INTEGRITY strict
+                    echo "SAFI_ENFORCE_INTEGRITY=strict — the app will refuse to boot on a modified tree."
+                    ;;
+                off)
+                    env_unset_key SAFI_ENFORCE_INTEGRITY
+                    echo "SAFI_ENFORCE_INTEGRITY cleared — warn-and-run (default)."
+                    ;;
+                *)
+                    echo "usage: safi tcb enforce [on|off]" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            echo "usage: safi tcb [status|verify|pin <fingerprint>|enforce on|off]" >&2
+            return 1
+            ;;
+    esac
+}
+
+cmd_domain() {
+    local action=${1:-add}
+    case "$action" in
+        add)
+            local fqdn=${2:-}
+            local email=${3:-}
+            [ -n "$fqdn" ] || { echo "usage: safi domain add <your.domain.com> [cert-email]" >&2; return 1; }
+            domain_add "$fqdn" "$email"
+            ;;
+        remove|off)
+            domain_remove
+            ;;
+        *)
+            echo "usage: safi domain add <your.domain.com> [email] | safi domain remove" >&2
+            return 1
+            ;;
+    esac
+}
+
+domain_add() {
+    local fqdn=$1 email=${2:-}
+    echo "$fqdn" | grep -qE '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' \
+        || { echo "that does not look like a domain name: $fqdn" >&2; return 1; }
+    getent ahosts "$fqdn" >/dev/null 2>&1 \
+        || { echo "dns: '$fqdn' does not resolve. Point an A/AAAA record at this appliance first." >&2; return 1; }
+    command -v certbot >/dev/null 2>&1 \
+        || { echo "certbot is not installed on this appliance (python3-certbot-apache)." >&2; return 1; }
+    [ -f /etc/apache2/sites-available/safi.conf ] || { echo "safi.conf vhost missing" >&2; return 1; }
+
+    echo "configuring Apache vhost for $fqdn ..."
+    sudo sed -i "s/ServerName [^ ]*/ServerName $fqdn/" /etc/apache2/sites-available/safi.conf
+    sudo a2ensite safi >/dev/null 2>&1 || true
+    sudo systemctl reload apache2
+
+    echo "requesting a Let's Encrypt certificate for $fqdn ..."
+    local certargs
+    if [ -n "$email" ]; then
+        certargs=(-m "$email")
+    else
+        certargs=(--register-unsafely-without-email)
+    fi
+    if ! sudo certbot certonly --apache -d "$fqdn" --non-interactive --agree-tos \
+        --keep "${certargs[@]}"; then
+        echo "certificate failed — restoring self-signed config." >&2
+        sudo sed -i "s/ServerName [^ ]*/ServerName safi.local/" /etc/apache2/sites-available/safi.conf
+        sudo systemctl reload apache2
+        return 1
+    fi
+
+    sudo sed -i "s|SSLCertificateFile .*|SSLCertificateFile /etc/letsencrypt/live/$fqdn/fullchain.pem|" /etc/apache2/sites-available/safi.conf
+    sudo sed -i "s|SSLCertificateKeyFile .*|SSLCertificateKeyFile /etc/letsencrypt/live/$fqdn/privkey.pem|" /etc/apache2/sites-available/safi.conf
+    sudo systemctl reload apache2
+    sudo systemctl enable --now certbot.timer >/dev/null 2>&1 || true
+    env_set_key WEB_BASE_URL "https://$fqdn"
+    sudo systemctl restart safi
+    echo
+    echo "done. Management URL is now https://$fqdn"
+    echo "renewal is automatic (certbot.timer; apache reloads on each renewal)."
+}
+
+domain_remove() {
+    local fqdn
+    fqdn=$(sudo sed -n 's/^[[:space:]]*ServerName[[:space:]]*//p' /etc/apache2/sites-available/safi.conf | head -1)
+    [ -n "$fqdn" ] && [ "$fqdn" != "safi.local" ] \
+        && sudo certbot delete --cert-name "$fqdn" --non-interactive >/dev/null 2>&1 || true
+    sudo sed -i "s/ServerName [^ ]*/ServerName safi.local/" /etc/apache2/sites-available/safi.conf
+    sudo sed -i "s|SSLCertificateFile .*|SSLCertificateFile $CERT_DIR/appliance.crt|" /etc/apache2/sites-available/safi.conf
+    sudo sed -i "s|SSLCertificateKeyFile .*|SSLCertificateKeyFile $CERT_DIR/appliance.key|" /etc/apache2/sites-available/safi.conf
+    sudo systemctl reload apache2
+    local ip url
+    ip=$(ip -4 -o addr show scope global 2>/dev/null | awk '!/ lo /{print $4}' | grep -oE '^[0-9.]+' | head -1)
+    url="https://${ip:-<appliance-ip>}"
+    env_set_key WEB_BASE_URL "$url"
+    sudo systemctl restart safi
+    echo "done. Back on the self-signed certificate at $url"
+}
+
+# --- lifecycle ---------------------------------------------------------------
+
+cmd_update() {
+    sudo -u safi -H git -C "$APP" rev-parse --git-dir >/dev/null 2>&1 \
+        || { echo "$APP is not a git checkout — nothing to update" >&2; return 1; }
+    sudo -u safi -H git -C "$APP" fetch --tags --prune origin >/dev/null 2>&1 || true
+    local current latest tag req_before
+    current=$(sudo -u safi -H git -C "$APP" describe --tags --abbrev=0 2>/dev/null || echo untagged)
+    latest=$(sudo -u safi -H git -C "$APP" tag --sort=-version:refname 2>/dev/null | head -1)
+    tag=${1:-}
+    if [ -z "$tag" ]; then
+        echo "current release: $current"
+        echo "latest tag:      ${latest:-none}"
+        echo "apply:           safi update <tag>"
+        return
+    fi
+    sudo -u safi -H git -C "$APP" rev-parse -q --verify "$tag^{tag}" >/dev/null 2>&1 \
+        || sudo -u safi -H git -C "$APP" rev-parse -q --verify "$tag" >/dev/null 2>&1 \
+        || { echo "no such tag: $tag" >&2; return 1; }
+
+    req_before=$(sudo -u safi -H md5sum "$APP/requirements.txt" 2>/dev/null | cut -d' ' -f1)
+    sudo -u safi -H cp "$ENV_FILE" "${ENV_FILE}.bak-$(date +%F)"
+    sudo -u safi -H git -C "$APP" checkout "$tag"
+
+    local req_after
+    req_after=$(sudo -u safi -H md5sum "$APP/requirements.txt" 2>/dev/null | cut -d' ' -f1)
+    if [ "$req_before" != "$req_after" ]; then
+        echo "requirements changed — rebuilding the venv..."
+        if ! sudo -u safi -H bash -c "cd '$APP' && rm -rf venv.old && mv venv venv.old && python3 -m venv venv && ./venv/bin/pip install -q -r requirements.txt"; then
+            echo "venv rebuild failed. Rollback: sudo -u safi sh -c 'rm -rf venv && mv venv.old venv' && safi restart" >&2
+            return 1
+        fi
+    fi
+    sudo systemctl restart safi
+    echo "updated to $tag. Verify with: safi status  and  safi tcb verify"
+}
+
+cmd_version() {
+    local ref ver
+    ref=$(sed -n 's/^SAFI_REF=//p' "$BUILD_ENV" 2>/dev/null)
+    ver=$(sudo -u safi -H git -C "$APP" describe --tags --abbrev=0 2>/dev/null || echo "not a git checkout")
+    printf '%s  (deploy ref %s)\n' "$ver" "${ref:-unknown}"
+}
+
+cmd_reboot() {
+    confirm "reboot the appliance" || return 1
+    sudo systemctl reboot
+}
+
+cmd_poweroff() {
+    confirm "power off the appliance" || return 1
+    sudo systemctl poweroff
+}
+
+# --- dispatch ----------------------------------------------------------------
+
+cmd="${1:-help}"
+case "$cmd" in
+    status)  cmd_status;;
+    health)  cmd_health;;
+    doctor)  cmd_doctor;;
+    logs)    cmd_logs "${@:2}";;
+    services) cmd_services;;
+    restart) cmd_restart "${2:-}";;
+    backup)
+        case "${2:-}" in
+            verify) cmd_backup_verify "${@:3}";;
+            remote) cmd_backup_remote "${3:-}" "${4:-}";;
+            "")    cmd_backup;;
+            *)     echo "usage: safi backup | safi backup verify | safi backup remote ..." >&2; exit 1;;
+        esac
+        ;;
+    backups) cmd_backups;;
+    mcp)      cmd_mcp "${@:2}";;
+    cert)     cmd_cert "${2:-show}";;
+    passwd)   cmd_passwd;;
+    tcb)      cmd_tcb "${2:-status}" "${3:-}" "${4:-}";;
+    domain)   cmd_domain "${2:-add}" "${3:-}" "${4:-}";;
+    update)   cmd_update "${2:-}";;
+    version)  cmd_version;;
+    reboot)   cmd_reboot;;
+    shutdown) cmd_poweroff;;
+    help|-h|--help) usage;;
+    *)        echo "unknown command: $cmd" >&2; usage; exit 1;;
+esac

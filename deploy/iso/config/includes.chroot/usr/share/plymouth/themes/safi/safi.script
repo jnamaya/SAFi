@@ -1,0 +1,62 @@
+screen_width = Window.GetXResolution();
+screen_height = Window.GetYResolution();
+
+Window.SetBackgroundTopColor(0.058, 0.090, 0.153);
+Window.SetBackgroundBottomColor(0.058, 0.090, 0.153);
+
+logo = Image("safi-rosetta.png");
+logo = logo.Scale(176, 176);
+logo_sprite = Sprite();
+logo_sprite.SetImage(logo);
+logo_sprite.SetPosition((screen_width - 176) / 2, 74, 10);
+
+title = Label("SAFi Appliance");
+title_sprite = Sprite();
+title_sprite.SetImage(title);
+title_sprite.SetPosition((screen_width - title.GetWidth()) / 2, 270, 10);
+
+subtitle = Label("Secure AI Governance");
+subtitle_sprite = Sprite();
+subtitle_sprite.SetImage(subtitle);
+subtitle_sprite.SetPosition((screen_width - subtitle.GetWidth()) / 2, 310, 10);
+
+status = Label("Starting appliance services...");
+status_sprite = Sprite();
+status_sprite.SetImage(status);
+status_sprite.SetPosition((screen_width - status.GetWidth()) / 2, screen_height - 112, 10);
+
+bar_width = screen_width * 0.62;
+bar_height = 8;
+bar_x = (screen_width - bar_width) / 2;
+bar_y = screen_height - 66;
+
+bar_track = Sprite();
+bar_track.SetImage(ImageSolid(0.12, 0.18, 0.23, bar_width, bar_height));
+bar_track.SetPosition(bar_x, bar_y, 10);
+
+bar_fill = Sprite();
+bar_fill.SetImage(ImageSolid(0.13, 0.77, 0.36, 1, bar_height));
+bar_fill.SetPosition(bar_x, bar_y, 11);
+
+fun refresh_callback() {
+    if (progress_fraction < 0.02) {
+        progress_fraction = 0.02;
+    }
+    bar_fill.SetImage(ImageSolid(0.13, 0.77, 0.36, bar_width * progress_fraction, bar_height));
+}
+
+fun boot_progress_callback(duration, progress) {
+    progress_fraction = progress;
+    refresh_callback();
+}
+
+fun message_callback(text) {
+    status.SetText(text);
+    status_sprite.SetImage(status);
+    status_sprite.SetPosition((screen_width - status.GetWidth()) / 2, screen_height - 112, 10);
+}
+
+progress_fraction = 0.02;
+Plymouth.SetRefreshFunction(refresh_callback);
+Plymouth.SetBootProgressFunction(boot_progress_callback);
+Plymouth.SetMessageFunction(message_callback);

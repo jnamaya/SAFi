@@ -45,6 +45,67 @@ function _deriveDocTitle(raw) {
     return 'SAFi Document';
 }
 
+function _parseCsvLine(line) {
+    const cells = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' && quoted && line[i + 1] === '"') {
+            cell += '"';
+            i++;
+        } else if (char === '"') {
+            quoted = !quoted;
+        } else if (char === ',' && !quoted) {
+            cells.push(cell);
+            cell = '';
+        } else {
+            cell += char;
+        }
+    }
+    cells.push(cell);
+    return cells;
+}
+
+function _csvResultHtml(raw) {
+    const lines = String(raw || '').trim().split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) return null;
+    const headers = _parseCsvLine(lines[0]).map(value => value.trim());
+    if (headers.join(',') !== 'Name,Title,URL,Reachout') return null;
+
+    const rows = lines.slice(1).map(_parseCsvLine).filter(row => row.some(Boolean));
+    const body = rows.map(row => {
+        const [name = '', title = '', url = '', reachout = ''] = row;
+        const safeUrl = /^https:\/\/www\.linkedin\.com\/in\/[A-Za-z0-9._%~-]+\/?$/i.test(url.trim())
+            ? url.trim()
+            : '';
+        const urlCell = safeUrl
+            ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" class="csv-profile-link">Open LinkedIn</a>`
+            : escapeHtml(url);
+        const copyButton = reachout
+            ? `<button type="button" class="csv-copy-reachout" data-message="${escapeHtml(reachout)}">Copy message</button>`
+            : '';
+        return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(title)}</td><td>${urlCell}</td><td><span>${escapeHtml(reachout)}</span>${copyButton}</td></tr>`;
+    }).join('');
+
+    return `<div class="csv-results-wrap"><table class="csv-results"><thead><tr>${headers.map(escapeHtml).map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function _wireCsvActions(container) {
+    container.querySelectorAll('.csv-copy-reachout').forEach(button => {
+        button.addEventListener('click', async event => {
+            event.stopPropagation();
+            try {
+                await navigator.clipboard.writeText(button.dataset.message || '');
+                button.textContent = 'Copied';
+                setTimeout(() => { button.textContent = 'Copy message'; }, 1500);
+            } catch {
+                ui.showToast('Could not copy message', 'error');
+            }
+        });
+    });
+}
+
 // The overflow (⋯) control: keeps the action bar to copy + audio and tucks
 // the rest (retry, save, exports) behind one button. Retry lives here rather
 // than as an icon so it can't be misclicked for Listen — an accidental retry
@@ -586,7 +647,10 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         final_text_raw = String(text ?? '[Sorry, the model returned an empty response.]');
     }
 
-    const final_html = DOMPurify.sanitize(marked.parse(final_text_raw));
+    const csvHtml = sender === 'ai' ? _csvResultHtml(final_text_raw) : null;
+    const final_html = csvHtml
+        ? DOMPurify.sanitize(csvHtml)
+        : DOMPurify.sanitize(marked.parse(final_text_raw));
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}`;
@@ -771,6 +835,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
 
             typeWriterEffect(chatBubble, final_html, () => {
                 if (!chatBubble.contains(metaDiv)) chatBubble.appendChild(metaDiv);
+                if (csvHtml) _wireCsvActions(chatBubble);
                 ui.scrollToBottom();
                 chatBubble.removeEventListener('click', clickHandler);
                 chatBubble.classList.remove('cursor-pointer');
@@ -778,6 +843,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         } else {
             // Standard instant render
             chatBubble.insertAdjacentHTML('afterbegin', final_html);
+            if (csvHtml) _wireCsvActions(chatBubble);
             chatBubble.classList.remove('cursor-pointer');
         }
     }

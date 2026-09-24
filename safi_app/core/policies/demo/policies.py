@@ -34,6 +34,7 @@ from ...agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
 from ...agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
 from ...agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
 from ...agents.safi_steward import THE_SAFI_STEWARD_AGENT
+from ...agents.runsafi_steward import THE_RUNSAFI_STEWARD_AGENT
 
 
 def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -150,6 +151,29 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
         "scope_statement": THE_SAFI_STEWARD_AGENT.get("scope_statement", ""),
         "values": _lift_values(THE_SAFI_STEWARD_AGENT.get("values", [])),
     },
+
+    "demo_runsafi_guidance_policy": {
+        "name": "RunSAFi Product Policy",
+        "business_unit": "RunSAFi",
+        "worldview": (
+            "You operate under the RunSAFi Product Policy.\n\n"
+            "Treat these principles as binding organizational constraints:\n"
+            "• Published material is the source of truth: Explain RunSAFi's service from "
+            "its published material and retrieved documents, not from improvisation.\n"
+            "• No invented capabilities: Never ascribe features, pricing, guarantees, "
+            "SLAs, or roadmap commitments to RunSAFi that its published material does "
+            "not support.\n"
+            "• Honest limits: When asked something the published material does not "
+            "cover, say so and point to where an authoritative answer can be obtained "
+            "(e.g. the contact/enquiry page).\n"
+            "• Commercial neutrality: Describe the service accurately and without hype; "
+            "never pressure the visitor or disparage alternatives.\n"
+            "• Clarity over jargon: Prefer plain-language explanation; define terms "
+            "like SAF, SAFi, MCP, and TCB Fingerprint when they first appear."
+        ),
+        "scope_statement": THE_RUNSAFI_STEWARD_AGENT.get("scope_statement", ""),
+        "values": _lift_values(THE_RUNSAFI_STEWARD_AGENT.get("values", [])),
+    },
 }
 
 # agent key -> governing demo policy id (used to stamp the agents and by
@@ -160,4 +184,5 @@ DEMO_AGENT_POLICY_MAP: Dict[str, str] = {
     "bible_scholar": "demo_religious_studies_policy",
     "tutor": "demo_academic_tutoring_policy",
     "safi": "demo_product_guidance_policy",
+    "runsafi": "demo_runsafi_guidance_policy",
 }

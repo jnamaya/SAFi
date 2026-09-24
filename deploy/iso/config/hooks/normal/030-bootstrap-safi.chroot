@@ -18,12 +18,25 @@ cd /var/www/safi
 # with auto/config). --depth 1 keeps the image small; .git is retained so the
 # in-app TCB "branch/release" control reports a value.
 #
+# Source selection: production builds clone ${SAFI_GIT_URL} at ${SAFI_REF}.
+# Private ISO builds pre-stage a shallow local clone at
+# /var/cache/safi-src (see deploy/iso/stage-local-release.sh) so the appliance
+# can be packaged with code that is not yet published as a tag — the stage is
+# preferred when present and removed right after the clone so it never lands
+# on the installed system.
+#
 # 020 created /var/www/safi with its runtime subdirs (logs/cache/mcp/
 # vector_store), so git refuses to clone straight into it — and /var/www is
 # root-owned, so the safi user could not create a sibling clone target. Clone
 # and merge as root, then chown the whole tree before the venv steps run as
 # safi. dotglob moves .git along with everything else.
-git clone --depth 1 --branch "${SAFI_REF}" "${SAFI_GIT_URL}" /var/www/safi.repo
+if [ -d /var/cache/safi-src/.git ]; then
+    SAFI_CLONE_SRC=/var/cache/safi-src
+else
+    SAFI_CLONE_SRC="${SAFI_GIT_URL}"
+fi
+git clone --depth 1 --branch "${SAFI_REF}" "${SAFI_CLONE_SRC}" /var/www/safi.repo
+rm -rf /var/cache/safi-src
 bash -c 'shopt -s dotglob; mv /var/www/safi.repo/* /var/www/safi/ && rmdir /var/www/safi.repo'
 chown -R safi:safi /var/www/safi
 
@@ -56,13 +69,38 @@ install -m 644 -o root -g root \
     deploy/systemd/safi-kb-indexer.service \
     /etc/systemd/system/
 
-# Enable the first-boot wizard in the installed system. It runs BEFORE safi.service
-# starts because nothing enables the app units until the wizard has produced .env.
+ # Enable the browser-first setup service in the installed system. It runs BEFORE
+# safi.service because nothing enables the app units until the browser has
+# produced .env.
 #
-# mysql/apache/ssh are intentionally NOT enabled here: `systemctl enable` (as
-# opposed to a raw symlink) is what materialises the MariaDB `mysql.service`
-# Alias= entry, and that needs a booted system — so the wizard does it on the
-# installed machine (safi-firstboot: `systemctl enable --now mysql apache2 ssh`).
+# mysql/apache/ssh are intentionally NOT enabled here: the browser setup service
+# starts MySQL and Apache after the machine has booted and the setup certificate
+# exists.
 mkdir -p /etc/systemd/system/multi-user.target.wants
-ln -sf /etc/systemd/system/safi-firstboot.service \
-       /etc/systemd/system/multi-user.target.wants/safi-firstboot.service
+ln -sf /etc/systemd/system/safi-browser-setup.service \
+       /etc/systemd/system/multi-user.target.wants/safi-browser-setup.service
+ln -sf /etc/systemd/system/safi-net-prep.service \
+       /etc/systemd/system/multi-user.target.wants/safi-net-prep.service
+
+# Keep the post-setup status dashboard on tty1. It never accepts local login;
+# SSH is the only operator shell access path.
+ln -sf /etc/systemd/system/safi-console.service \
+       /etc/systemd/system/multi-user.target.wants/safi-console.service
+# The setup + net-prep scripts must be executable; include.chroot sometimes
+# loses the +x bit through git/live-build copies, and a 203/EXEC kills the
+# whole first-boot path silently.
+chmod 0755 /usr/local/sbin/safi-browser-setup.py
+chmod 0755 /usr/local/sbin/safi-net-prep.py
+chmod 0755 /usr/local/sbin/safi-console.py
+chmod 0755 /usr/local/sbin/safi
+
+# The browser-setup service owns tty1 (TTYPath=/dev/tty1) and prints the
+# one-time PIN banner there. Mask every getty so no virtual console offers a
+# local login. The dashboard itself is informational and never hands off to
+# login; SSH is the operator shell access path.
+mkdir -p /etc/systemd/system/getty.target.wants
+for n in 1 2 3 4 5 6; do
+    ln -sf /dev/null /etc/systemd/system/getty@tty${n}.service
+done
+ln -sf /dev/null /etc/systemd/system/serial-getty@ttyS0.service
+ln -sf /dev/null /etc/systemd/system/getty-static.service

@@ -1,9 +1,19 @@
 # SAFi Appliance — packages baked into the live rootfs.
 #
-# ONLY daemon-free packages live here. Anything whose postinst starts a daemon
-# (mysql-server, apache2, openssh-server) is installed by
-# config/hooks/normal/010-* AFTER a policy-rc.d that blocks service starts —
-# otherwise the build chroot tries to run systemd daemons it has no boot for.
+# EVERY package here is part of the "install" set: live-build snapshots
+# chroot.packages.install right after the install pass, diffs it against the
+# full chroot package set, and writes the extras to
+# binary/live/filesystem.packages-remove. d-i's 14remove-live-packages then
+# PURGES every listed package from /target. A package installed only by a
+# config/hooks/normal/*.chroot file (after the install pass snapshot) is
+# therefore always stripped from the installed disk.
+#
+# So daemon packages MUST be listed here, even though their postinsts try to
+# start services. Service starts are blocked during the build by
+# config/includes.chroot_before_packages/usr/sbin/policy-rc.d (copied into the
+# chroot before the install pass; removed again by 040-appliance-surface
+# before the squashfs is produced), so the build chroot never boots a daemon
+# and the installed system gets them intact.
 #
 # Everything SAFi actually needs at runtime:
 #   python3-venv         → virtualenv (DEPLOY_BAREMETAL.md step 4)
@@ -11,31 +21,60 @@
 #   tesseract-ocr-eng    → OCR for image/PDF attachments (Dockerfile ships it)
 #   nodejs npm           → npx MCP tool servers (Dockerfile ships Node 22)
 #   git                  → waters the repo during PHP-style upgrades (step 10)
-#   openssh-server       → operator console access (installed in 010-hook)
+#   default-mysql-server → appliance DB (datadir init on first start)
+#   mariadb-client       → CLI for that DB
+#   apache2              → :443 TLS reverse proxy → browser-setup server
+#   certbot              → `safi domain add`: Let's Encrypt certonly via the
+#                          Apache plugin (needs DNS + inbound port 80)
+#   openssh-server       → operator console access
+#   grub-pc              → CRITICAL: the live rootfs becomes /target via the
+#                          live-installer. Without grub-install baked in, d-i's
+#                          grub-installer falls back to `in-target apt-get
+#                          install grub-pc`, which cannot resolve offline and
+#                          aborts with "grub-pc failed to install into /target".
+#                          grub-pc must therefore be in the rootfs itself.
 # Plus the live system needs a kernel/init and tools; live-build supplies the
 # base. These are the additions:
 apt-utils
+apache2
 bash
 ca-certificates
+certbot
+cron
 curl
+dbus
 debconf-utils
+default-mysql-server
 dnsutils
 g++
 gcc
 git
+grub-pc
+grub-pc-bin
 hostname
 ifupdown
+isc-dhcp-client
 less
 live-tools
+locales
 login
+mariadb-client
 mawk
 nano
 nodejs
 npm
+openssh-server
+openssl
 passwd
 procps
+plymouth
+plymouth-label
+plymouth-themes
 psmisc
+python3-certbot-apache
 python3-venv
+rsyslog
 sudo
 tesseract-ocr
 tesseract-ocr-eng
+wget

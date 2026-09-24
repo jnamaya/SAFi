@@ -423,12 +423,13 @@ class MCPManager:
                 "description": "Search the internet for general information and up-to-date facts.",
                 "input_schema": {
                     "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The search query (e.g. 'symptoms of flu')."}
-                    },
-                    "required": ["query"]
-                }
-            })
+                     "properties": {
+                        "query": {"type": "string", "description": "One search query (e.g. 'symptoms of flu')."},
+                        "queries": {"type": "array", "items": {"type": "string"},
+                                    "description": "Multiple search queries; results are merged and deduplicated."}
+                     }
+                 }
+             })
             tools.append({
                 "name": "web_news",
                 "description": "Search the internet specifically for the latest news articles.",
@@ -634,7 +635,7 @@ class MCPManager:
         if tool_name in ["web_search", "web_news"]:
             from ..mcp_servers.web_search import search_web, get_news
             if tool_name == "web_search":
-                return await search_web(arguments["query"])
+                return await search_web(arguments.get("queries", arguments.get("query", "")))
             if tool_name == "web_news":
                 return await get_news(arguments["query"])
 

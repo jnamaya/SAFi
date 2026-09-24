@@ -26,8 +26,8 @@ is tracked, runs in CI, and survives a fresh clone.
 
 Two specific regressions this exists to stop, both real:
 
-  * Reviving the LLM-judged Will. `system_prompts.json` still carries a
-    "will_gate" prompt and `llm_provider.run_will` still exists; both are dead
+  * Reviving the LLM-judged Will. The old "will_gate" prompt was removed from
+    `system_prompts.json` and `llm_provider.run_will` still exists; both are dead
     and must stay dead. Reintroducing that call was proposed on 2026-08-09 and
     rejected — it would put non-determinism back into the one component whose
     value is that it has none.
@@ -133,8 +133,8 @@ class DeterministicFacultiesCallNoModel(unittest.TestCase):
                 )
 
     def test_05_the_llm_will_stays_dead(self):
-        """`run_will` and the "will_gate" prompt are vestigial. Wiring either back
-        in is the exact regression this file exists to catch."""
+        """`run_will` and the removed "will_gate" prompt must never come back.
+        Wiring either back in is the exact regression this file exists to catch."""
         hits = []
         for path in (REPO / "safi_app").rglob("*.py"):
             if "__pycache__" in str(path) or path.name == "llm_provider.py":

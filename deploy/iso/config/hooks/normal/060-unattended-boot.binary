@@ -1,0 +1,84 @@
+#!/bin/sh
+# 060 — Replace live-build's generic boot menu with one appliance action.
+# The appliance is an installer, not a general-purpose live desktop or rescue
+# medium. Keep both BIOS/ISOLINUX and UEFI/GRUB paths identical.
+set -eu
+
+# Branded boot splash: dark slate background, SAFi green accent bar, tagline.
+# 640x480, 8-bit RGB PNG — safe for both syslinux (vesamenu) and GRUB.
+convert -size 640x480 xc:"#0f172a" \
+    -fill "#22c55e" -draw "rectangle 0,0 640,6" \
+    -font DejaVu-Sans-Bold -pointsize 46 -fill "#f8fafc" -gravity North \
+    -annotate +0+80 "SAFi Appliance" \
+    -font DejaVu-Sans -pointsize 17 -fill "#94a3b8" \
+    -annotate +0+145 "Secure AI Governance" \
+    -pointsize 13 -annotate +0+180 "Unattended installation - press ENTER to begin" \
+    -font DejaVu-Sans -pointsize 12 -fill "#16a34a" \
+    -annotate +0+420 "safi.local" \
+    isolinux/splash.png
+convert isolinux/splash.png -depth 8 PNG24:isolinux/splash8.png
+mv -f isolinux/splash8.png isolinux/splash.png
+cp -f isolinux/splash.png boot/grub/grub-splash.png
+
+cat >isolinux/stdmenu.cfg <<'EOF'
+menu color title       * #ff22c55eff #111827ff *
+menu color border      * #00000000 #111827ff none
+menu color screen      * #ffffffff #111827ff none
+menu color sel         * #ffffffff #166534ff *
+menu color unsel       * #d1d5dbff #111827ff none
+menu color hotkey      * #22c55eff #111827ff *
+menu color hotsel      * #ffffffff #16a34aff *
+menu color tabmsg      * #9ca3afff #111827ff none
+menu color help        * #9ca3afff #111827ff none
+menu hshift 0
+menu vshift 6
+menu width 82
+menu rows 4
+menu title SAFi Appliance | Secure AI Governance
+menu tabmsg Press ENTER to begin the unattended installation
+EOF
+
+cat >isolinux/install.cfg <<'EOF'
+label unattended
+    menu label ^SAFi Appliance - unattended install
+    menu default
+    linux /install/vmlinuz
+    initrd /install/initrd.gz
+    append auto=true priority=critical preseed/file=/preseed.cfg --- quiet
+EOF
+
+cat >isolinux/live.cfg <<'EOF'
+# The live boot path is intentionally disabled for the appliance ISO.
+EOF
+
+cat >isolinux/menu.cfg <<'EOF'
+menu hshift 0
+menu width 82
+menu title SAFi Appliance
+include stdmenu.cfg
+include install.cfg
+menu clear
+EOF
+
+cat >isolinux/isolinux.cfg <<'EOF'
+menu background splash.png
+include menu.cfg
+default vesamenu.c32
+prompt 0
+timeout 50
+EOF
+
+cat >boot/grub/grub.cfg <<'EOF'
+set default=0
+set timeout=5
+insmod iso9660
+insmod png
+search --no-floppy --set=root --file /install/vmlinuz
+
+background_image /boot/grub/grub-splash.png
+
+menuentry "SAFi Appliance - Secure AI Governance - unattended install" {
+    linux /install/vmlinuz auto=true priority=critical preseed/file=/preseed.cfg --- quiet
+    initrd /install/initrd.gz
+}
+EOF

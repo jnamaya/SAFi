@@ -38,10 +38,18 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$BACKUP_DIR/safi-$STAMP.sql.gz"
 
 # --no-tablespaces: the safi DB user has no PROCESS privilege (MySQL 8).
-# --set-gtid-purged=OFF: keep the dump restorable into a scratch schema.
+# --set-gtid-purged=OFF is a MySQL-8-only option; the MariaDB mysqldump the
+# appliance ships rejects it, so it is only added when the dump tool supports
+# it. Both keep the dump restorable into the scratch verify schema.
+GTID_ARGS=()
+if mysqldump --help 2>/dev/null | grep -q 'set-gtid-purged'; then
+    GTID_ARGS=(--set-gtid-purged=OFF)
+fi
+
+install -d "$BACKUP_DIR"  # the timer might be the first thing that ever runs
 mysqldump --defaults-extra-file="$CNF" \
     --single-transaction --quick --triggers \
-    --no-tablespaces --set-gtid-purged=OFF \
+    --no-tablespaces "${GTID_ARGS[@]}" \
     "$DB_NAME" | gzip > "$OUT"
 
 gzip -t "$OUT"

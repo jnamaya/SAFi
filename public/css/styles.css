@@ -998,6 +998,41 @@ html {
   background-color: rgba(0, 0, 0, 0.15);
 }
 
+.csv-results-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-bubble .csv-results {
+  min-width: 900px;
+}
+
+.chat-bubble .csv-results td:nth-child(4) {
+  min-width: 420px;
+}
+
+.csv-profile-link {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.csv-copy-reachout {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(22, 163, 74, 0.45);
+  border-radius: 0.375rem;
+  color: #15803d;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.dark .csv-copy-reachout {
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.45);
+}
+
 .chat-bubble hr {
   border: none;
   height: 2px;

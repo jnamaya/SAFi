@@ -14,13 +14,15 @@ chown -R safi:safi /home/safi
 
 # Operator account (console + SSH), password LOCKED until the first-boot wizard
 # sets it, so the shipped ISO has no known credentials.
+# Groups: sudo (root access), adm + systemd-journal (read journalctl without
+# sudo — `admin@safi:~$ journalctl -u safi` must Just Work).
 if ! id admin >/dev/null 2>&1; then
-    useradd --create-home --shell /bin/bash --groups sudo admin
+    useradd --create-home --shell /bin/bash --groups sudo,adm,systemd-journal admin
 fi
 passwd -l admin >/dev/null 2>&1 || true
 
 # App tree + runtime dirs the Dockerfile creates, so the clone below can chown
-# them in one go. /var/lib/safi-firstboot is the wizard's state dir.
+# them in one go. /var/lib/safi-firstboot stores browser-setup state.
 mkdir -p /var/www/safi
 mkdir -p /var/www/safi/logs /var/www/safi/cache /var/www/safi/vector_store /var/www/safi/mcp
 mkdir -p /var/lib/safi-firstboot

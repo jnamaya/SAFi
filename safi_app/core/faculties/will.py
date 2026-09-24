@@ -74,8 +74,8 @@ class WillGate:
     ):
         # llm_provider is retained for interface compatibility with the other
         # faculties and is deliberately unused: every gate below is decided in
-        # Python. There was once an LLM-judged Will (its prompt still sits in
-        # system_prompts.json under "will_gate"); the `prompt_config` parameter
+        # Python. There was once an LLM-judged Will; its "will_gate" prompt was
+        # removed from system_prompts.json and the `prompt_config` parameter
         # that fed it was removed once it was confirmed nothing read it. Do not
         # reintroduce an LLM call here without revisiting that decision — the
         # gate's value is that it is not a judgement call.

@@ -1,0 +1,47 @@
+#!/bin/sh
+# Embed the preseed in the d-i initrd. This avoids early boot races where the
+# installer has not mounted /cdrom yet and cannot retrieve preseed/file=.
+set -eu
+
+work=$(mktemp -d)
+cleanup() { rm -rf "$work"; }
+trap cleanup EXIT
+
+mkdir "$work/root"
+gzip -dc install/initrd.gz | (cd "$work/root" && cpio -idm --quiet --no-absolute-filenames)
+cp ../config/preseed/safi.cfg "$work/root/preseed.cfg"
+
+# Keep Debian Installer's native frontend and real progress messages, but use
+# SAFi's dark/green palette instead of the default Debian blue palette.
+#
+# NEWT_COLORS does NOT work: cdebconf's newt frontend (newt.so) replaces the
+# palette itself via newtSetColors(), so the env override is discarded. What it
+# DOES honor is FRONTEND_BACKGROUND (newt.c: if it is not "dark", cdebconf
+# installs the classic blue newtDefaultColorPalette; if it is "dark", it keeps
+# its own dark table). S65theme sets FRONTEND_BACKGROUND from the debconf
+# question debian-installer/theme, which the preseed pins to "dark". We also
+# export it here (S66 runs after S65theme, before S70menu execs the frontend)
+# so the theme is correct even if preseed application is ever skipped.
+#
+# The dark table's accents are yellow; we binary-patch the single "yellow"
+# color literal in newt.so to "green" so titles / active rows / root text
+# render in SAFi green. Each color literal appears exactly once in the .rodata,
+# and "green\0" (6 bytes) fits inside "yellow\0" (7 bytes), so it is an
+# in-place, relabel-safe patch with no ELF section surgery.
+mkdir -p "$work/root/lib/debian-installer.d"
+cat >"$work/root/lib/debian-installer.d/S66safi-theme" <<'EOF'
+#! /bin/sh
+export FRONTEND_BACKGROUND=dark
+EOF
+
+newt_so="$work/root/usr/lib/cdebconf/frontend/newt.so"
+if [ -e "$newt_so" ]; then
+    yoff=$(grep -aob 'yellow' "$newt_so" | cut -d: -f1)
+    if [ -n "$yoff" ] && [ "$(grep -aoc 'yellow' "$newt_so")" = "1" ]; then
+        { printf 'green\0'; } | dd of="$newt_so" bs=1 seek="$yoff" conv=notrunc status=none
+    fi
+fi
+(
+    cd "$work/root"
+    find . -print0 | cpio -o --quiet -H newc --null | gzip -9
+) >install/initrd.gz

@@ -10,10 +10,10 @@ LB_BINARY_FILESYSTEM="fat32"
 LB_APT_INDICES="true"
 
 # Set boot parameters
-LB_BOOTAPPEND_LIVE="quiet"
+LB_BOOTAPPEND_LIVE="quiet splash"
 
 # Set boot parameters
-LB_BOOTAPPEND_INSTALL="priority=high"
+LB_BOOTAPPEND_INSTALL="auto=true priority=critical preseed/file=/preseed.cfg quiet splash file=/cdrom/install/file:///cdrom/preseed.cfg"
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE_FAILSAFE="boot=live components memtest noapic noapm nodma nomce nolapic nosmp nosplash vga=788"
@@ -56,7 +56,7 @@ LB_DEBIAN_INSTALLER="live"
 LB_DEBIAN_INSTALLER_DISTRIBUTION="bookworm"
 
 # Set debian-installer preseed filename/url
-LB_DEBIAN_INSTALLER_PRESEEDFILE=""
+LB_DEBIAN_INSTALLER_PRESEEDFILE="file:///cdrom/preseed.cfg"
 
 # Toggle use of GUI debian-installer
 LB_DEBIAN_INSTALLER_GUI="false"

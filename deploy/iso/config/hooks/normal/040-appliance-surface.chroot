@@ -4,9 +4,18 @@
 set -eu
 
 # Reverse proxy (DEPLOY_BAREMETAL.md step 8), served on :80.
-a2enmod proxy proxy_http headers >/dev/null
+a2enmod proxy proxy_http headers ssl rewrite >/dev/null
 a2dissite 000-default >/dev/null 2>&1 || true
 a2ensite safi >/dev/null 2>&1 || true
+
+# apache2 must NOT start at boot before safi-browser-setup has generated the
+# per-device appliance certificate (/etc/ssl/runsafi/appliance.crt): a plain
+# boot-time start fails on the missing SSLCertificateFile and flashes a FAILED
+# on the console. The package postinst enables apache2, so undo that here; the
+# browser-first setup service runs `systemctl enable --now apache2` after the
+# cert exists (per-device, generated on first boot).
+rm -f /etc/systemd/system/multi-user.target.wants/apache2.service
+rm -f /etc/systemd/system/sockets.target.wants/apache2.socket
 
 # MySQL data dir must be owned by the mysql user before first boot; the
 # package's own postinst couldn't promise it under policy-rc.d.
@@ -15,10 +24,11 @@ if [ -d /var/lib/mysql ]; then chown -R mysql:mysql /var/lib/mysql || true; fi
 # Brand the console. /etc/issue shows pre-login; /etc/motd after.
 cat >/etc/motd <<'EOF'
 
-  SAFi Appliance
-  Self-Alignment Framework Interface — governance engine for AI agents
-  Management: /usr/local/sbin/safi-firstboot   Logs: journalctl -u safi
-  Docs: /var/www/safi/docs/
+   SAFi Appliance
+   Self-Alignment Framework Interface — governance engine for AI agents
+   Run `safi help` for all operator commands (status, health, logs,
+   restart, backup, cert, update, doctor).
+   Docs: /var/www/safi/docs/
 
 EOF
 cat >/etc/issue <<'EOF'
@@ -29,3 +39,25 @@ EOF
 # Undo the build barrier: installed services may now be started normally.
 rm -f /usr/sbin/policy-rc.d
 rm -f /etc/dpkg/dpkg.cfg.d/01-policy-rc-d 2>/dev/null || true
+
+# The operator CLI must be on a normal user's PATH. /usr/local/sbin is only on
+# root's PATH (Debian default for regular users is /usr/local/bin:...), so
+# expose `safi` via /usr/local/bin. systemd units / console still call the
+# /usr/local/sbin path directly.
+ln -sf /usr/local/sbin/safi /usr/local/bin/safi
+
+# The installer boot arguments only affect the ISO session. Set the same
+# quiet/splash arguments on the installed appliance so GRUB actually starts
+# Plymouth on every subsequent boot.
+if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub
+else
+    printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"' >>/etc/default/grub
+fi
+# Use the SAFi Plymouth theme in the installed system and include it in the
+# generated initramfs, so the branded splash is available from the first boot.
+chmod 0755 /etc/initramfs-tools/hooks/safi-plymouth
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme -R safi
+fi
+update-initramfs -u -k all

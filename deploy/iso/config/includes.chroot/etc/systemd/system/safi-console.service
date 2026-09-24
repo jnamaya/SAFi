@@ -1,0 +1,22 @@
+[Unit]
+Description=SAFi console dashboard (tty1)
+After=safi-browser-setup.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/safi-firstboot/done
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/safi-console.py
+Restart=always
+RestartSec=2
+StandardOutput=tty
+StandardError=journal
+StandardInput=null
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=no
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
