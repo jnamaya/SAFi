@@ -603,6 +603,7 @@ domain_add() {
     [ -f /etc/apache2/sites-available/safi.conf ] || { echo "safi.conf vhost missing" >&2; return 1; }
 
     echo "configuring Apache vhost for $fqdn ..."
+    sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
     sudo sed -i "s/ServerName [^ ]*/ServerName $fqdn/" /etc/apache2/sites-available/safi.conf
     sudo a2ensite safi >/dev/null 2>&1 || true
     sudo systemctl reload apache2
