@@ -10,16 +10,16 @@
 #   ./build.sh                      # SAFI_LOCAL_SRC=1 keeps the stage
 #
 # Requires live-build on a Debian host (or in a VM/container):
-#   apt install live-build debootstrap
+#   apt install live-build debootstrap xz-utils git
 #
 # Run from this directory. Produces safi-appliance-<ref>-<arch>.iso in ./.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-for cmd in lb git; do
+for cmd in lb git xz; do
     command -v "$cmd" >/dev/null 2>&1 || {
-        echo "missing '$cmd' — install live-build and friends: apt install live-build debootstrap git" >&2
+        echo "missing '$cmd' — install live-build and friends: apt install live-build debootstrap xz-utils git" >&2
         exit 1
     }
 done
