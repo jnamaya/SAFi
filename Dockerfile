@@ -1,9 +1,9 @@
-# The interpreter version, in one place. Defaults to the version the image has
-# always shipped, so nothing changes unless a build overrides it:
-#   docker build --build-arg PYTHON_VERSION=3.13 .
+# The interpreter version, in one place. Defaults to the version the appliance
+# image ships (trixie → 3.13), so nothing changes unless a build overrides it:
+#   docker build --build-arg PYTHON_VERSION=3.11 .
 # The override exists so the test suite can be run against other interpreters
 # (a supported-range check) without editing this file.
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.13
 
 # ── Stage 1: dependency layer ──────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim AS deps
@@ -48,9 +48,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # refuse them, which left the reliable majority of servers unusable.
 #
 # Copied from the official image rather than installed with apt. Debian's
-# `nodejs` is 18.x and pulls a long recommends chain, while node:22-slim is
-# built on the same bookworm base as python:3.11-slim, so the binary and its
-# glibc match and this is a file copy with no package manager involved. npm
+# `nodejs` is a conservative LTS and pulls a long recommends chain, while
+# node:22-slim is built on the same trixie base as python:3.13-slim, so the
+# binary and its glibc match and this is a file copy with no package manager
+# involved. npm
 # itself is plain JavaScript under node_modules; the two shims are the entry
 # points npm's own installer would create.
 COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node

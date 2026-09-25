@@ -41,6 +41,9 @@ usage() {
    safi restore [file]        restore a backup into the LIVE database
    safi backup remote         show/set/clear the off-box rsync target
 
+System maintenance
+   safi update os [--yes]     apply Debian OS package updates (apt)
+
  Integrations
    safi mcp                   list installed MCP servers
    safi mcp add <name>        install a server (registry, --url, or --command)
@@ -56,7 +59,8 @@ usage() {
    safi domain                add/remove a public domain with auto HTTPS
 
  Lifecycle
-   safi update [tag]          check & apply a release tag
+   safi update [tag]          check & apply a release tag (SAFi app)
+   safi update os             Debian OS package updates (apt) — see System maintenance
    safi version               build release info
    safi reboot                restart the appliance
    safi shutdown              power off the appliance
@@ -656,6 +660,30 @@ domain_remove() {
 # --- lifecycle ---------------------------------------------------------------
 
 cmd_update() {
+    if [ "${1:-}" = "os" ]; then
+        local yes=${2:-}
+        echo "[safi] refreshing Debian package indices (apt-get update)..."
+        [ -f /etc/apt/sources.list.d/debian.sources ] \
+            || echo "warning: no /etc/apt/sources.list.d/debian.sources — OS updates are not configured on this build." >&2
+        sudo apt-get update || { echo "apt-get update failed — check network (safi doctor)" >&2; return 1; }
+        local n
+        n=$(sudo apt-get -s upgrade 2>/dev/null | grep -c '^Conf ')
+        echo "$n package(s) to upgrade."
+        if [ "$n" -eq 0 ]; then
+            echo "up to date."
+            return 0
+        fi
+        if [ "$yes" != "--yes" ]; then
+            confirm "apply the $n OS package upgrades" || return 0
+        fi
+        sudo apt-get upgrade -y
+        if [ -f /var/run/reboot-required ]; then
+            echo "done — a reboot is required to finish the upgrade: safi reboot"
+        else
+            echo "done."
+        fi
+        return 0
+    fi
     sudo -u safi -H git -C "$APP" rev-parse --git-dir >/dev/null 2>&1 \
         || { echo "$APP is not a git checkout — nothing to update" >&2; return 1; }
     sudo -u safi -H git -C "$APP" fetch --tags --prune origin >/dev/null 2>&1 || true

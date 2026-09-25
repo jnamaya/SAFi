@@ -19,7 +19,7 @@
 set -e
 
 ARCH="${SAFI_ARCH:-amd64}"
-DIST="${SAFI_DIST:-bookworm}"           # bookworm = Python 3.11, matches Dockerfile's default
+DIST="${SAFI_DIST:-trixie}"             # trixie = Python 3.13, matches Dockerfile's default
 SAFI_REF="${SAFI_REF:-v1.4.2}"
 SAFI_GIT_URL="${SAFI_GIT_URL:-https://github.com/jnamaya/SAFi.git}"
 
@@ -44,6 +44,7 @@ lb config noauto \
     --bootappend-install "auto=true priority=critical preseed/file=/preseed.cfg quiet splash" \
     --debootstrap-options "--variant=minbase" \
     --apt-recommends false \
-    --apt-secure true
+    --apt-secure true \
+    --compression zstd
 
 echo "[auto/config] building SAFi appliance from $SAFI_GIT_URL @ $SAFI_REF"

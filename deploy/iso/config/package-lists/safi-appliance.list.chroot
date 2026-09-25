@@ -24,8 +24,9 @@
 #   default-mysql-server → appliance DB (datadir init on first start)
 #   mariadb-client       → CLI for that DB
 #   apache2              → :443 TLS reverse proxy → browser-setup server
-#   certbot              → `safi domain add`: Let's Encrypt certonly via the
-#                          Apache plugin (needs DNS + inbound port 80)
+#   certbot             → `safi domain add`: Let's Encrypt certonly --webroot
+#                         (writes the token into /var/www/certbot; needs DNS
+#                         inbound port 80). certonly, so no --apache plugin.
 #   openssh-server       → operator console access
 #   grub-pc              → CRITICAL: the live rootfs becomes /target via the
 #                          live-installer. Without grub-install baked in, d-i's
@@ -71,7 +72,6 @@ plymouth
 plymouth-label
 plymouth-themes
 psmisc
-python3-certbot-apache
 python3-venv
 rsyslog
 sudo

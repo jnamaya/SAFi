@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the SAFi Appliance ISO.
 #
-#   ./build.sh                 # bookworm, amd64, SAFI_REF=v1.4.1
+#   ./build.sh                 # trixie, amd64, SAFI_REF=v1.4.2
 #   SAFI_REF=v1.4 ./build.sh   # build another release
 #   SAFI_DIST=trixie ./build.sh
 #
@@ -33,7 +33,7 @@ SAFI_ARCH="${SAFI_ARCH:-amd64}"
 echo "==> SAFi Appliance build"
 echo "    ref:    $SAFI_REF"
 echo "    arch:   $SAFI_ARCH"
-echo "    dist:   ${SAFI_DIST:-bookworm}"
+echo "    dist:   ${SAFI_DIST:-trixie}"
 
 if ! lb clean --all; then
     echo "live-build cleanup failed; refusing to reuse stale installer artifacts" >&2
