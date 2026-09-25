@@ -35,6 +35,19 @@ echo "    ref:    $SAFI_REF"
 echo "    arch:   $SAFI_ARCH"
 echo "    dist:   ${SAFI_DIST:-trixie}"
 
+# live-build's clean --all does NOT drop the chroot or package cache, and lb's
+# reuse heuristics let stale artifacts of another distribution survive into a
+# rebuild (bookworm -> trixie produced an ISO mixing the 6.1 and 6.12 kernels).
+# Stamp the build inputs; when the distribution changes, purge all reusable
+# state so leftover kernels/installer components cannot leak into the ISO.
+STAMP_FILE=".build-stamp"
+STAMP="dist=${SAFI_DIST:-trixie}"
+if [ -s "$STAMP_FILE" ] && [ "$(cat "$STAMP_FILE")" != "$STAMP" ]; then
+    echo "==> build inputs changed (was $(cat "$STAMP_FILE"), now $STAMP); dropping chroot/cache/binary state"
+    rm -rf chroot cache binary
+fi
+printf '%s\n' "$STAMP" > "$STAMP_FILE"
+
 if ! lb clean --all; then
     echo "live-build cleanup failed; refusing to reuse stale installer artifacts" >&2
     exit 1
