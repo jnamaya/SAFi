@@ -45,6 +45,6 @@ lb config noauto \
     --debootstrap-options "--variant=minbase" \
     --apt-recommends false \
     --apt-secure true \
-    --compression zstd
+    --compression xz
 
 echo "[auto/config] building SAFi appliance from $SAFI_GIT_URL @ $SAFI_REF"
