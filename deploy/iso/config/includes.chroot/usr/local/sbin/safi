@@ -41,7 +41,18 @@ usage() {
    safi restore [file]        restore a backup into the LIVE database
    safi backup remote         show/set/clear the off-box rsync target
 
-System maintenance
+ Network
+   safi network show          configured + live addresses, default route
+   safi network diff          review staged changes before committing
+   safi network set ...       stage: dhcp <iface> | static <iface> <cidr> [gw] [dns]
+                             also: manual <iface> | remove <iface>
+   safi network apply         validate + commit + reload (--yes to skip prompt)
+   safi network discard       drop staged changes
+   # Fresh installs come up on DHCP. For a static site, e.g.:
+   #   safi network set static enp0s3 10.0.0.5/24 10.0.0.1 10.0.0.1
+   #   safi network diff && safi network apply
+
+ System maintenance
    safi update os [--yes]     apply Debian OS package updates (apt)
 
  Integrations
@@ -242,7 +253,11 @@ cmd_restart() {
 
 cmd_backup() {
     [ -f "$SCRIPTS/mysql_backup.sh" ] || { echo "backup script missing" >&2; return 1; }
-    sudo -u safi -H bash "$SCRIPTS/mysql_backup.sh"
+    # sudo changes the user but preserves the caller's cwd. An admin running
+    # from /home/admin leaves the safi user inside a directory it cannot
+    # traverse, making find fail while restoring its initial cwd. Start from
+    # / so backup scripts never inherit a private operator directory.
+    sudo -u safi -H bash -c 'cd / && exec bash "$1"' _ "$SCRIPTS/mysql_backup.sh"
     local rc=$?
     [ "$rc" -ne 0 ] && { echo "backup failed — see output above." >&2; return "$rc"; }
     local latest; latest=$(latest_backup)
@@ -261,7 +276,7 @@ cmd_backup_verify() {
     [ -f "$SCRIPTS/backup_verify.py" ] || { echo "backup verify script missing" >&2; return 1; }
     [ -x "$VENV_PY" ] || { echo "app venv missing ($VENV_PY)" >&2; return 1; }
     echo "Restore-testing the latest backup (this takes a minute)..."
-    sudo -u safi -H "$VENV_PY" "$SCRIPTS/backup_verify.py" "$@"
+    (cd / && sudo -u safi -H "$VENV_PY" "$SCRIPTS/backup_verify.py" "$@")
 }
 
 cmd_restore() {
@@ -663,6 +678,21 @@ cmd_update() {
     if [ "${1:-}" = "os" ]; then
         local yes=${2:-}
         echo "[safi] refreshing Debian package indices (apt-get update)..."
+        # The image ships the install-time offline cap (apt.conf.d/95-safi-
+        # offline: Acquire::http/https false) and the network mirror parked as
+        # *.disabled, so the unattended install never phones home. An actual OS
+        # update is exactly when we DO want the network — lift the cap and
+        # enable the mirror here, once.
+        if [ -f /etc/apt/apt.conf.d/95-safi-offline ]; then
+            echo "[safi] enabling network apt for OS updates (was install-offline)..."
+            sudo rm -f /etc/apt/apt.conf.d/95-safi-offline
+        fi
+        if [ ! -f /etc/apt/sources.list.d/debian.sources ] \
+           && [ -f /etc/apt/sources.list.d/debian.sources.disabled ]; then
+            echo "[safi] enabling Debian network sources for OS updates..."
+            sudo cp /etc/apt/sources.list.d/debian.sources.disabled \
+                    /etc/apt/sources.list.d/debian.sources
+        fi
         [ -f /etc/apt/sources.list.d/debian.sources ] \
             || echo "warning: no /etc/apt/sources.list.d/debian.sources — OS updates are not configured on this build." >&2
         sudo apt-get update || { echo "apt-get update failed — check network (safi doctor)" >&2; return 1; }
@@ -735,6 +765,18 @@ cmd_poweroff() {
     sudo systemctl poweroff
 }
 
+# --- network -----------------------------------------------------------------
+# Network configuration is deliberately NOT automated. /etc/network/interfaces
+# belongs to the operator; `safi network` only stages, validates and diffs
+# changes, and commits them when you say so. See safi-network.py.
+
+NET_HELPER=/usr/local/sbin/safi-network.py
+
+cmd_network() {
+    [ -x "$NET_HELPER" ] || { echo "network helper missing ($NET_HELPER)" >&2; return 1; }
+    "$NET_HELPER" "$@"
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 cmd="${1:-help}"
@@ -756,6 +798,7 @@ case "$cmd" in
     backups) cmd_backups;;
     restore) cmd_restore "${2:-}";;
     mcp)      cmd_mcp "${@:2}";;
+    network)  cmd_network "${@:2}";;
     cert)     cmd_cert "${2:-show}";;
     passwd)   cmd_passwd;;
     tcb)      cmd_tcb "${2:-status}" "${3:-}" "${4:-}";;

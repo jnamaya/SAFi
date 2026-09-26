@@ -56,7 +56,7 @@
   <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <script defer src="js/lib/highlight.min.js"></script>
   <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20260909.1" rel="stylesheet">
+  <link href="css/main.css?v=20260926.1" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=20260917.1">
   <script>
     const theme = localStorage.theme;
@@ -208,7 +208,7 @@
                 <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
               </div>
               <form id="local-login-form" class="flex flex-col gap-2 w-full">
-                <input id="local-email" type="email" placeholder="Email" required autocomplete="email"
+                <input id="local-identifier" type="text" placeholder="Username or email" required autocomplete="username"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <input id="local-password" type="password" placeholder="Password" required autocomplete="current-password"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
@@ -1136,6 +1136,15 @@
           const btn = document.getElementById('login-demo-button');
           if (btn) btn.remove();
         }
+        // SAFI_SSO_ENABLED=false (the appliance): drop both federated sign-in
+        // buttons entirely rather than leaving dead ends. The endpoints 404 as
+        // well (see sso_required in api/auth.py) — this only keeps the page
+        // from offering something that cannot work.
+        if (cfg.sso_login_enabled === false) {
+          ['login-button', 'login-microsoft-button'].forEach(id => {
+            document.getElementById(id)?.remove();
+          });
+        }
         if (cfg.local_login_enabled && !_inviteToken) {
           const section = document.getElementById('local-login-section');
           if (section) section.classList.remove('hidden');
@@ -1200,7 +1209,7 @@
     // Local admin login form submission
     document.getElementById('local-login-form')?.addEventListener('submit', async function(e) {
       e.preventDefault();
-      const email    = document.getElementById('local-email').value.trim();
+      const identifier = document.getElementById('local-identifier').value.trim();
       const password = document.getElementById('local-password').value;
       const errorEl  = document.getElementById('local-login-error');
       const submitBtn = this.querySelector('button[type="submit"]');
@@ -1214,7 +1223,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: _isNative ? 'include' : 'same-origin',
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ identifier, password })
         });
 
         if (res.ok) {

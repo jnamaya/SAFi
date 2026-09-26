@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import importlib.util
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -89,12 +90,14 @@ button{{margin-top:24px;width:100%;border:0;border-radius:8px;padding:13px;backg
 button:hover{{background:var(--bright);color:#052e16}}.error{{margin:16px 0;padding:12px;border:1px solid #ef4444;color:#fecaca;border-radius:8px}}small{{color:var(--muted)}}
 </style></head><body><main><div class="mark">SAFi</div><h1>Appliance setup</h1>
 <p>Configure this appliance from the local network. Setup initializes the database and starts the governance engine.</p>
+<p>This appliance includes a small local AI model so you can try SAFi without an API key or Internet connection. For more capable models, configure an external provider below.</p>
 {message}<form method="post" action="/setup">
 <label for="pin">One-time setup PIN</label><input id="pin" name="pin" required inputmode="numeric" autocomplete="one-time-code">
 <label for="provider">AI provider</label><select id="provider" name="provider">
-<option value="GROQ_API_KEY">Groq</option><option value="OPENAI_API_KEY">OpenAI</option><option value="ANTHROPIC_API_KEY">Anthropic</option><option value="GEMINI_API_KEY">Google Gemini</option><option value="MISTRAL_API_KEY">Mistral</option><option value="DEEPSEEK_API_KEY">DeepSeek</option><option value="CEREBRAS_API_KEY">Cerebras</option><option value="ZHIPU_API_KEY">Zhipu / GLM</option></select>
-<label for="api_key">Provider API key</label><input id="api_key" name="api_key" type="password" required autocomplete="off">
-<label for="email">Administrator email</label><input id="email" name="email" type="email" value="admin@localhost" required>
+<option value="SAFI_LOCAL_MODEL_API_KEY">SAFi Demo Model (built-in)</option><option value="GROQ_API_KEY">Groq</option><option value="OPENAI_API_KEY">OpenAI</option><option value="ANTHROPIC_API_KEY">Anthropic</option><option value="GEMINI_API_KEY">Google Gemini</option><option value="MISTRAL_API_KEY">Mistral</option><option value="DEEPSEEK_API_KEY">DeepSeek</option><option value="CEREBRAS_API_KEY">Cerebras</option><option value="ZHIPU_API_KEY">Zhipu / GLM</option></select>
+<label for="api_key">Provider API key <small>(not required for SAFi Demo Model)</small></label><input id="api_key" name="api_key" type="password" autocomplete="off">
+<label for="username">Administrator username</label><input id="username" name="username" value="admin" required autocomplete="username" pattern="[A-Za-z0-9._-]{3,64}" title="3-64 letters, digits, dot, underscore or hyphen">
+<label for="email">Administrator email <small>(optional)</small></label><input id="email" name="email" type="email" autocomplete="email" placeholder="Leave blank on an offline appliance">
 <label for="password">Administrator password</label><input id="password" name="password" type="password" minlength="12" required autocomplete="new-password">
 <label for="password_confirm">Confirm administrator password</label><input id="password_confirm" name="password_confirm" type="password" minlength="12" required autocomplete="new-password">
 <button type="submit">Initialize SAFi</button></form><p><small>Open https://{html.escape(local_ip())}/. The certificate is generated locally; replace it with your enterprise certificate after setup.</small></p>
@@ -106,8 +109,21 @@ def initialize(fields: dict[str, str], setup) -> None:
         raise ValueError("Administrator passwords do not match")
     if len(fields["password"]) < 12:
         raise ValueError("Administrator password must be at least 12 characters")
-    if not fields["api_key"].strip():
+    provider_key = fields.get("provider", "").strip()
+    api_key = fields.get("api_key", "").strip()
+    local_provider = provider_key == "SAFI_LOCAL_MODEL_API_KEY"
+    if not local_provider and not api_key:
         raise ValueError("Provider API key is required")
+    if local_provider:
+        api_key = "local"
+
+    username = fields.get("username", "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9._-]{3,64}", username):
+        raise ValueError("Administrator username must be 3-64 letters, digits, dot, underscore or hyphen")
+    # An air-gapped appliance has no mail domain, so an email is genuinely
+    # optional. One of the two identifiers must exist or there is no way to
+    # sign in at all, and Config.validate() would refuse to start.
+    email = fields.get("email", "").strip()
 
     lines, index = setup.parse_template(APP_DIR / ".env.example")
     base_url = f"https://{local_ip()}"
@@ -116,10 +132,26 @@ def initialize(fields: dict[str, str], setup) -> None:
         "APP_PORT": str(PORT), "WEB_BASE_URL": base_url,
         "ALLOWED_ORIGINS": base_url, "SESSION_COOKIE_SECURE": "True",
         "DB_HOST": "localhost", "DB_USER": "safi", "DB_NAME": "safi",
-        "SAFI_LOCAL_ADMIN_EMAIL": fields["email"].strip(),
+        "SAFI_LOCAL_ADMIN_USERNAME": username,
+        "SAFI_LOCAL_ADMIN_EMAIL": email,
         "SAFI_LOCAL_ADMIN_PASSWORD": fields["password"],
-        fields["provider"]: fields["api_key"].strip(),
+        # An air-gapped appliance can reach neither Google nor Microsoft, so
+        # both sign-in buttons are dead ends here. Off in the appliance only —
+        # hosted deployments keep the .env.example default of true.
+        "SAFI_SSO_ENABLED": "false",
+        provider_key: api_key,
     }
+    if local_provider:
+        # The bundled server is the first-run provider. All faculty defaults
+        # are explicit so the local model also handles Conscience and the
+        # background governed calls without changing prompt or routing code.
+        values.update({
+            "SAFI_INTELLECT_MODEL": "safi-demo",
+            "SAFI_CONSCIENCE_MODEL": "safi-demo",
+            "SAFI_BACKEND_MODEL": "safi-demo",
+            "SAFI_NOTETAKER_MODEL": "safi-demo",
+            "SAFI_SUMMARIZER_MODEL": "safi-demo",
+        })
     values.update(setup.generated_secrets())
     tmp = ENV_FILE.with_suffix(".env.tmp")
     tmp.write_text(setup.render(lines, index, values), encoding="utf-8")
@@ -203,7 +235,19 @@ def main() -> int:
     # DHCP can finish just after network-online.target on appliances with more
     # than one NIC. Wait briefly so the console shows a usable URL, not a
     # permanent <appliance-ip> placeholder.
-    print(f"SAFi Appliance is Active. Complete configuration at: https://{local_ip(60)}/", flush=True)
+    address = local_ip(60)
+    print(f"SAFi Appliance is Active. Complete configuration at: https://{address}/", flush=True)
+    if address == "<appliance-ip>":
+        # No DHCP lease (isolated lab, or a static site that has not been
+        # configured yet). The install is still fully usable over the console;
+        # be explicit about the commands that give it an address rather than
+        # leaving a bare placeholder on the screen.
+        print("", flush=True)
+        print("No network address yet - this appliance has no IP configured.", flush=True)
+        print("Inspect:   safi network show", flush=True)
+        print("Configure: safi network set dhcp <iface>", flush=True)
+        print("           safi network diff && safi network apply", flush=True)
+        print("Or static: safi network set static <iface> <cidr> <gateway> <dns>", flush=True)
     print(f"One-time setup PIN: {pin}", flush=True)
     try:
         subprocess.run(["systemctl", "enable", "--now", "apache2"], check=True)

@@ -13,7 +13,7 @@ LB_APT_INDICES="true"
 LB_BOOTAPPEND_LIVE="quiet splash"
 
 # Set boot parameters
-LB_BOOTAPPEND_INSTALL="auto=true priority=critical preseed/file=/preseed.cfg quiet splash file=/cdrom/install/file:///cdrom/preseed.cfg"
+LB_BOOTAPPEND_INSTALL="auto=true priority=critical preseed/file=/preseed.cfg quiet splash"
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE_FAILSAFE="boot=live components memtest noapic noapm nodma nomce nolapic nosmp nosplash vga=788"
@@ -31,7 +31,7 @@ LB_BOOTLOADERS="syslinux grub-efi"
 LB_CHECKSUMS="sha256 md5"
 
 # Set compression
-LB_COMPRESSION="none"
+LB_COMPRESSION="xz"
 
 # Support dm-verity on rootfs
 LB_DM_VERITY=""
@@ -53,10 +53,10 @@ LB_BUILD_WITH_CHROOT="true"
 LB_DEBIAN_INSTALLER="live"
 
 # Set debian-installer suite
-LB_DEBIAN_INSTALLER_DISTRIBUTION="bookworm"
+LB_DEBIAN_INSTALLER_DISTRIBUTION="trixie"
 
 # Set debian-installer preseed filename/url
-LB_DEBIAN_INSTALLER_PRESEEDFILE="file:///cdrom/preseed.cfg"
+LB_DEBIAN_INSTALLER_PRESEEDFILE=""
 
 # Toggle use of GUI debian-installer
 LB_DEBIAN_INSTALLER_GUI="false"

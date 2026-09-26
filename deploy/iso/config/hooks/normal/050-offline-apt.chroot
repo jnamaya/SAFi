@@ -1,0 +1,56 @@
+#!/bin/sh
+# 050-offline-apt.chroot — make the INSTALLED appliance offline by default.
+#
+# Problem: live-build bakes the Debian mirror into the rootfs
+# (/etc/apt/sources.list: `deb http://deb.debian.org/debian/ ...`, plus
+# deb-src and the live-media `file:` line; and our authored
+# sources.list.d/debian.sources). live-installer copies this rootfs verbatim
+# into /target, the installer runs `apt-get update` against those http URIs,
+# and on an air-gapped appliance — where netcfg's DHCP fails and the static
+# fallback has no egress/DNS — that update hangs at "updating the list of
+# available packages", after which the GRUB boot-loader step fails.
+#
+# Fix: ship the media as the only *enabled* apt source and park the network
+# mirror as a disabled deb822 file. The local media line is a file: URI, so if
+# it is ever absent apt fails instantly instead of hanging. `safi update os`
+# re-enables the network mirror on a real update (it copies
+# debian.sources.disabled -> debian.sources before `apt-get update`), so OS
+# updates still work exactly as before — nothing phones home until an operator
+# asks for it.
+set -eu
+
+SRC=/etc/apt/sources.list
+SRC_D=/etc/apt/sources.list.d
+
+# 1. sources.list: comment out EVERY deb/deb-src entry (http mirror AND the
+#    live-media file: line). A copied live rootfs needs no apt source to be
+#    installed — the package set is already inside it — and a dangling file:
+#    line would only error the installer. Zero enabled sources = offline.
+if [ -f "$SRC" ]; then
+    sed -i -E 's/^([[:space:]]*)(deb(-src)?[[:space:]].*)$/\1# \2/' "$SRC" || true
+fi
+
+# 2. deb822 network mirror -> parked as *.disabled (apt ignores any extension
+#    that is not .sources/.list, so this is inactive but present for `safi
+#    update os` to enable).
+if [ -f "$SRC_D/debian.sources" ]; then
+    mv -f "$SRC_D/debian.sources" "$SRC_D/debian.sources.disabled"
+fi
+
+# 3. any leftover generated .sources/.list pointing at the mirror -> disable too.
+for f in "$SRC_D"/*.sources "$SRC_D"/*.list; do
+    [ -e "$f" ] || continue
+    if grep -qE 'https?://' "$f" 2>/dev/null; then
+        mv -f "$f" "$f.disabled"
+    fi
+done
+
+# Verify: the install must end with NO enabled http source.
+enabled_http=$( { grep -hE '^[[:space:]]*deb(-src)?[[:space:]]+https?://' "$SRC" 2>/dev/null || true; \
+                  grep -lE 'URIs:[[:space:]]*https?://' "$SRC_D"/*.sources 2>/dev/null || true; } )
+if [ -n "$enabled_http" ]; then
+    echo "050-offline-apt: ERROR — enabled http source survived:" >&2
+    echo "$enabled_http" >&2
+    exit 1
+fi
+echo "050-offline-apt: installed target is offline by default (media-only)."

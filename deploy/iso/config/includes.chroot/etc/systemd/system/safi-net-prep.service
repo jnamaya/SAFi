@@ -1,5 +1,5 @@
 [Unit]
-Description=SAFi network + SSH first-boot preparation
+Description=SAFi network sanity check + SSH host keys
 Before=safi-browser-setup.service ssh.service network-online.target
 After=systemd-udevd.service
 Wants=systemd-udevd.service

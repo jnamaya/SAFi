@@ -49,10 +49,18 @@ ln -sf /usr/local/sbin/safi /usr/local/bin/safi
 # The installer boot arguments only affect the ISO session. Set the same
 # quiet/splash arguments on the installed appliance so GRUB actually starts
 # Plymouth on every subsequent boot.
+#
+# net.naming-scheme pins systemd's predictable interface naming to one version.
+# /etc/network/interfaces refers to interfaces BY NAME, so a kernel or systemd
+# upgrade that renames enp0s3 to something else silently invalidates the
+# appliance's network config. Pinning the scheme is the cheap half of the fix;
+# `safi network show` also reports a configured interface that has gone missing
+# and names the MAC that moved. (Proxmox additionally ships a .link pinning
+# tool for per-MAC names; that is the natural follow-up if we ever need it.)
 if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252"/' /etc/default/grub
 else
-    printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"' >>/etc/default/grub
+    printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252"' >>/etc/default/grub
 fi
 # Use the SAFi Plymouth theme in the installed system and include it in the
 # generated initramfs, so the branded splash is available from the first boot.

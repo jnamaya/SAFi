@@ -1,0 +1,91 @@
+#!/bin/sh
+# 070 — Bundle the local OpenAI-compatible demo model and llama-server.
+#
+# Downloads happen during the ISO build, never on first boot. The appliance
+# therefore remains usable with no Internet connection after installation.
+# The URLs and digests are pinned so a rebuild cannot silently ship a different
+# inference binary or model.
+set -eu
+
+LLAMA_URL="https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-x64.tar.gz"
+LLAMA_SHA256="730ea8e54b97735abb46e46747999249719251f29753fcda97b5e2f2f3ea6912"
+MODEL_URL="https://huggingface.co/second-state/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
+MODEL_SHA256="dd6df9d5627007fa6e29cf2fff3464b1ab01a789fa8220c61ff5f3cf4989ce0e"
+
+BIN_DIR=/opt/safi/bin
+MODEL_DIR=/opt/safi/models
+TMP_DIR=/tmp/safi-local-model
+mkdir -p "$BIN_DIR" "$MODEL_DIR" /etc/safi "$TMP_DIR"
+
+download_checked() {
+    url=$1
+    destination=$2
+    expected=$3
+    curl --fail --location --retry 3 --retry-delay 2 --silent --show-error \
+        "$url" -o "$destination"
+    actual=$(sha256sum "$destination" | cut -d' ' -f1)
+    if [ "$actual" != "$expected" ]; then
+        echo "local model: checksum mismatch for $destination" >&2
+        echo "  expected: $expected" >&2
+        echo "  actual:   $actual" >&2
+        exit 1
+    fi
+}
+
+download_checked "$LLAMA_URL" "$TMP_DIR/llama.tar.gz" "$LLAMA_SHA256"
+tar -xzf "$TMP_DIR/llama.tar.gz" -C "$BIN_DIR"
+
+# Release archives may contain a top-level directory. Flatten only the binary
+# location; retain adjacent shared libraries in BIN_DIR for the service's
+# LD_LIBRARY_PATH.
+server=$(find "$BIN_DIR" -type f -name llama-server -print -quit)
+if [ -z "$server" ]; then
+    echo "local model: llama-server missing from pinned archive" >&2
+    exit 1
+fi
+if [ "$server" != "$BIN_DIR/llama-server" ]; then
+    mv "$server" "$BIN_DIR/llama-server"
+fi
+chmod 0755 "$BIN_DIR/llama-server"
+
+download_checked "$MODEL_URL" "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf" "$MODEL_SHA256"
+chmod 0644 "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf"
+
+cat > /etc/safi/llama-server.env <<'EOF'
+# Local Qwen3 demo server. Operators may tune these without changing SAFi's
+# provider configuration; the server remains loopback-only.
+SAFI_LOCAL_MODEL_CONTEXT=32768
+SAFI_LOCAL_MODEL_THREADS=0
+EOF
+chmod 0644 /etc/safi/llama-server.env
+
+cat > /etc/systemd/system/safi-llama-server.service <<'EOF'
+[Unit]
+Description=SAFi local Qwen3 OpenAI-compatible model server
+After=network.target local-fs.target
+Before=safi.service safi-browser-setup.service
+
+[Service]
+Type=simple
+User=safi
+Group=safi
+EnvironmentFile=/etc/safi/llama-server.env
+Environment=LD_LIBRARY_PATH=/opt/safi/bin
+ExecStart=/opt/safi/bin/llama-server --model /opt/safi/models/qwen3-0.6b-q4_k_m.gguf --host 127.0.0.1 --port 8081 --alias safi-demo --ctx-size ${SAFI_LOCAL_MODEL_CONTEXT} --threads ${SAFI_LOCAL_MODEL_THREADS} --reasoning off
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=300
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+chown -R root:root /opt/safi /etc/safi
+chmod 0755 /opt/safi "$BIN_DIR" "$MODEL_DIR"
+chmod 0644 "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf"
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/safi-llama-server.service \
+    /etc/systemd/system/multi-user.target.wants/safi-llama-server.service
+rm -rf "$TMP_DIR"

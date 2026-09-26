@@ -1,0 +1,64 @@
+#!/bin/sh
+# 065 — Force the installer to use the full `netcfg` udeb.
+#
+# `netcfg`, `netcfg-static` and `ppp-udeb` all declare
+# "Provides: configured-network". d-i resolves that virtual package to one of
+# the alternatives, and on this image it was picking `netcfg-static` — which
+# only knows how to ask for a manually entered address. It has no DHCP
+# autoconfiguration and no `netcfg/dhcp_options` question at all, so every
+# `netcfg/*` line in preseed.cfg was silently discarded and the install always
+# parked on:
+#
+#     [!!] Configure a network using static addressing
+#
+# Removing the alternatives leaves `netcfg` as the only provider, which gives
+# the documented netcfg 1.197 flow: DHCP autoconfiguration first, and only on
+# failure the `netcfg/dhcp_failed` note plus the `netcfg/dhcp_options` answer
+# that preseed.cfg supplies.
+#
+# `netcfg` is installable here: its `ethernet-card-detection` and
+# `crypto-modules` dependencies are satisfied through Provides by `ethdetect`
+# and `crypto-modules-<kernel>-di`, both present in the pool.
+set -eu
+
+UD_INDEX="dists/trixie/main/debian-installer/binary-amd64/Packages"
+
+# Alternatives that must not win the `configured-network` virtual package.
+ALTERNATIVES="netcfg-static ppp-udeb"
+
+for pkg in $ALTERNATIVES; do
+	for f in $(find pool-udeb -name "${pkg}_*.udeb" 2>/dev/null); do
+		rm -f "$f"
+		echo "065: removed $f"
+	done
+
+	if [ -f "$UD_INDEX" ] && grep -q "^Package: ${pkg}\$" "$UD_INDEX"; then
+		awk -v pkg="$pkg" '
+			/^Package: / { skip = ($2 == pkg) }
+			skip { next }
+			{ print }
+		' "$UD_INDEX" >"${UD_INDEX}.tmp"
+		mv -f "${UD_INDEX}.tmp" "$UD_INDEX"
+		echo "065: dropped ${pkg} from $UD_INDEX"
+	fi
+done
+
+if [ -f "$UD_INDEX" ]; then
+	gzip -9 -c "$UD_INDEX" >"${UD_INDEX}.gz"
+	echo "065: refreshed ${UD_INDEX}.gz"
+fi
+
+# The ISO ships a self-test manifest; keep it consistent with the pruned pool.
+if [ -f md5sum.txt ]; then
+	find . -type f \
+		! -name md5sum.txt \
+		! -name md5sum.README \
+		-print0 | xargs -0 md5sum >md5sum.txt
+	echo "065: regenerated md5sum.txt"
+fi
+
+# Fail loudly if the intended provider ever disappears from the pool.
+if ! find pool-udeb -name 'netcfg_[0-9]*_amd64.udeb' | grep -q .; then
+	echo "065: ERROR - netcfg udeb is missing from the pool" >&2
+	exit 1
+fi

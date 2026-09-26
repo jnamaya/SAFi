@@ -17,6 +17,7 @@ load_dotenv(dotenv_path=dotenv_path, override=True)
 # once you know which ones you want.
 # "light" covers the background roles: summarizer, backend, and note-taker.
 _FACULTY_DEFAULTS_BY_PROVIDER = {
+    "local":     {"intellect": "safi-demo",             "conscience": "safi-demo",             "light": "safi-demo"},
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
     "gemini":    {"intellect": "gemini-3.7-flash",          "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
@@ -34,6 +35,7 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
 
 # Groq first preserves the historical default when several keys are present.
 _PROVIDER_KEY_ENV_ORDER = [
+    ("local", "SAFI_LOCAL_MODEL_API_KEY"),
     ("groq", "GROQ_API_KEY"),
     ("gemini", "GEMINI_API_KEY"),
     ("anthropic", "ANTHROPIC_API_KEY"),
@@ -256,6 +258,14 @@ class Config:
     MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID")
     MICROSOFT_CLIENT_SECRET = os.environ.get("MICROSOFT_CLIENT_SECRET")
 
+    # Whether Google/Microsoft sign-in is offered at all. Defaults to True so
+    # hosted deployments are untouched. The appliance sets this false: it is
+    # air-gapped, so neither IdP is reachable and the buttons can only fail.
+    # Enforced in auth.py by refusing the endpoints themselves, not just by
+    # hiding the buttons -- an unauthenticated /api/login/google would
+    # otherwise remain a working (if unreachable) entry point.
+    SSO_LOGIN_ENABLED = _env_bool("SAFI_SSO_ENABLED", True)
+
     # OAuth credentials for GitHub login
     GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
@@ -270,6 +280,10 @@ class Config:
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
     ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
     CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
+    # The appliance uses the harmless value "local". It remains an
+    # API-key-shaped setting because the existing OpenAI client uses the same
+    # initialization path for every OpenAI-compatible endpoint.
+    LOCAL_MODEL_API_KEY = os.environ.get("SAFI_LOCAL_MODEL_API_KEY", "").strip()
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
     # MySQL connection details
@@ -379,7 +393,17 @@ class Config:
     # When both vars are set, a persistent admin account is auto-created on startup.
     LOCAL_ADMIN_EMAIL    = os.environ.get("SAFI_LOCAL_ADMIN_EMAIL", "").strip()
     LOCAL_ADMIN_PASSWORD = os.environ.get("SAFI_LOCAL_ADMIN_PASSWORD", "").strip()
-    ENABLE_LOCAL_LOGIN   = bool(LOCAL_ADMIN_EMAIL and LOCAL_ADMIN_PASSWORD)
+    # Username alternative to an email address. An air-gapped appliance has no
+    # mail domain and no third-party identity to borrow an address from, so the
+    # local admin is identified by a name it chose. Optional: a deployment that
+    # still sets only SAFI_LOCAL_ADMIN_EMAIL keeps working exactly as before,
+    # which is why the flag below accepts either one.
+    LOCAL_ADMIN_USERNAME = os.environ.get("SAFI_LOCAL_ADMIN_USERNAME", "").strip().lower()
+    # Password is the only hard requirement; either identifier is enough. Note
+    # this must not require a username specifically, or every existing
+    # email-based deployment would silently lose local login on upgrade.
+    ENABLE_LOCAL_LOGIN   = bool(LOCAL_ADMIN_PASSWORD
+                                and (LOCAL_ADMIN_USERNAME or LOCAL_ADMIN_EMAIL))
 
     # Maximum number of sequential tool-call turns the orchestrator will take
     # before forcing a final synthesis response. Raise this if your tools
@@ -556,6 +580,9 @@ class Config:
 
     # This list is sent to the frontend.
     AVAILABLE_MODELS = [
+        # Bundled appliance model (OpenAI-compatible llama-server on loopback)
+        {"id": "safi-demo", "label": "SAFi Demo Model"},
+
         # Groq Models
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
@@ -665,7 +692,7 @@ class Config:
                     bool(cls.GOOGLE_CLIENT_ID and cls.GOOGLE_CLIENT_SECRET),
                 "Microsoft (MICROSOFT_CLIENT_ID + MICROSOFT_CLIENT_SECRET)":
                     bool(cls.MICROSOFT_CLIENT_ID and cls.MICROSOFT_CLIENT_SECRET),
-                "Local admin (SAFI_LOCAL_ADMIN_EMAIL + SAFI_LOCAL_ADMIN_PASSWORD)":
+                "Local admin (SAFI_LOCAL_ADMIN_USERNAME or _EMAIL + _PASSWORD)":
                     cls.ENABLE_LOCAL_LOGIN,
             }
             if not any(_logins.values()):
@@ -683,14 +710,14 @@ class Config:
         llm_keys = [
             cls.GROQ_API_KEY, cls.OPENAI_API_KEY, cls.ANTHROPIC_API_KEY,
             cls.GEMINI_API_KEY, cls.MISTRAL_API_KEY, cls.DEEPSEEK_API_KEY,
-            cls.ZHIPU_API_KEY, cls.CEREBRAS_API_KEY,
+            cls.ZHIPU_API_KEY, cls.CEREBRAS_API_KEY, cls.LOCAL_MODEL_API_KEY,
         ]
         if not any(llm_keys):
             errors.append(
                 "No LLM API key is configured — set at least one of: "
                 "GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, "
                 "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, "
-                "ZHIPU_API_KEY, CEREBRAS_API_KEY"
+                "ZHIPU_API_KEY, CEREBRAS_API_KEY, SAFI_LOCAL_MODEL_API_KEY"
             )
 
         if errors:

@@ -44,7 +44,7 @@ label unattended
     menu default
     linux /install/vmlinuz
     initrd /install/initrd.gz
-    append auto=true priority=critical preseed/file=/preseed.cfg --- quiet
+    append auto=true auto-install/enable=true priority=critical preseed/file=/preseed.cfg --- quiet
 EOF
 
 cat >isolinux/live.cfg <<'EOF'
@@ -78,7 +78,7 @@ search --no-floppy --set=root --file /install/vmlinuz
 background_image /boot/grub/grub-splash.png
 
 menuentry "SAFi Appliance - Secure AI Governance - unattended install" {
-    linux /install/vmlinuz auto=true priority=critical preseed/file=/preseed.cfg --- quiet
+    linux /install/vmlinuz auto=true auto-install/enable=true priority=critical preseed/file=/preseed.cfg --- quiet
     initrd /install/initrd.gz
 }
 EOF

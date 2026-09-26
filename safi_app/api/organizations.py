@@ -601,7 +601,10 @@ def update_organization_policy(org_id):
 @organizations_bp.route('/organizations/me', methods=['GET'])
 def get_my_organization():
     user = session.get('user')
-    if not user or not user.get('email'): return jsonify({"organization": None})
+    # Local appliance accounts may intentionally have no email. Membership is
+    # already represented by org_id, so an email requirement incorrectly hid
+    # a valid organization from username-only admins.
+    if not user: return jsonify({"organization": None})
     
     # FIX: Prefer DB org_id over email domain if available
     if user.get('org_id'):

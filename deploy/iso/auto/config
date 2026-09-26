@@ -28,6 +28,12 @@ export SAFI_REF SAFI_GIT_URL
 lb config noauto \
     --architecture "$ARCH" \
     --distribution "$DIST" \
+    --parent-distribution "$DIST" \
+    --distribution-chroot "$DIST" \
+    --parent-distribution-chroot "$DIST" \
+    --distribution-binary "$DIST" \
+    --parent-distribution-binary "$DIST" \
+    --parent-debian-installer-distribution "$DIST" \
     --debian-installer-distribution "$DIST" \
     --archive-areas "main contrib" \
     --security false \

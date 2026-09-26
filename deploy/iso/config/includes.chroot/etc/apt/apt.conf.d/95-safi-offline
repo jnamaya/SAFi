@@ -1,0 +1,17 @@
+// 95-safi-offline — force an offline package acquisition for the unattended
+// install. live-build's archive setup (chroot_archives) always leaves a
+// deb.debian.org mirror line in /etc/apt/sources.list at squash time (it
+// rewrites that file AFTER the chroot hooks, so stripping it there never
+// wins). Instead we cap network acquisition here: any http/https source fails
+// in ~1s and is skipped, so the installer relies on the local media/cdrom and
+// never hangs at "updating the list of available packages" on an air-gapped
+// appliance — after which the GRUB step used to fail.
+//
+// This is INSTALL-time behaviour only. `safi update os` removes this file (and
+// enables the parked network mirror) when an operator actually wants Debian
+// network updates, so runtime OS updates are unaffected.
+Acquire::Retries "0";
+Acquire::http "false";
+Acquire::https "false";
+Acquire::cdrom "true";
+Acquire::file "true";

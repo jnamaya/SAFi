@@ -26,6 +26,9 @@ from __future__ import annotations
 # /models endpoint, and the org-settings UI badges. Keys MUST match
 # build_providers_config below.
 PROVIDER_METADATA = {
+    "local":     {"label": "SAFi Demo Model", "baa_capable": False, "eu_hostable": False,
+                   "zdr": "default",
+                   "zdr_note": "Runs locally on this appliance; prompts are not sent to a third-party model provider."},
     "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True,
                   "zdr": "available",
                   "zdr_note": "Abuse-monitoring logs up to 30 days by default; zero data retention requires OpenAI approval."},
@@ -115,6 +118,8 @@ def detect_provider(model_name: str) -> str:
         return "mistral"
     if m.startswith("glm-"):
         return "zhipu"
+    if m == "safi-demo":
+        return "local"
     return "groq"
 
 
@@ -163,6 +168,11 @@ def build_providers_config(config) -> dict:
             "type": "openai",
             "api_key": getattr(config, "CEREBRAS_API_KEY", ""),
             "base_url": "https://api.cerebras.ai/v1",
+        },
+        "local": {
+            "type": "openai",
+            "api_key": getattr(config, "LOCAL_MODEL_API_KEY", ""),
+            "base_url": "http://127.0.0.1:8081/v1",
         },
     }
 

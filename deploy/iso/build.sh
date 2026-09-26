@@ -81,10 +81,25 @@ if ! grep -qx 'live-installer' binary/.disk/udeb_include \
     exit 1
 fi
 
+# Every `select` value in the preseed must be a real choice of its debconf
+# template. debconf silently drops an unknown value and falls back to the
+# template Default, which for netcfg/dhcp_options is "Configure network
+# manually" -- so a typo here does not fail the build, it makes an unattended
+# install stop at a blank static-address prompt. Validate against the udeb
+# templates actually shipped on this ISO.
+if ! python3 tests/check-preseed-selects.py config/includes.binary/preseed.cfg binary; then
+    echo "preseed contains a select value that is not a valid debconf choice" >&2
+    exit 1
+fi
+
 # The d-i kernel MUST match the live-system kernel or the live install produces
 # an unbootable target. Fail loudly rather than ship a mixed-kernel ISO.
+# Kernel name matching must tolerate both bookworm-style releases
+# (6.1.0-50-amd64) and trixie-style ones (6.12.107+deb13-amd64) — the
+# "+debNN" suffix breaks any "-NN-amd64" pattern, so match the whole
+# "lib/modules/<ver>" directory name instead.
 DI_K="$(gzip -dc binary/install/initrd.gz 2>/dev/null | cpio -t 2>/dev/null \
-        | grep -oE 'lib/modules/6\.[0-9]+\.[0-9]+-[0-9]+-amd64' | sort -u | sed -E 's#lib/modules/##')"
+        | grep -oE 'lib/modules/[^/]+' | sed -E 's#lib/modules/##' | sort -u)"
 LIVE_K="$(ls binary/live/vmlinuz-* 2>/dev/null | sed -E 's#.*/vmlinuz-##' | sort -u)"
 if [ -z "$DI_K" ] || [ "$DI_K" != "$LIVE_K" ]; then
     echo "installer kernel ($DI_K) does not match live-system kernel ($LIVE_K)" >&2

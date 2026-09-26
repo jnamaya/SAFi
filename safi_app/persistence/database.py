@@ -77,6 +77,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
                 email VARCHAR(255) UNIQUE,
+                username VARCHAR(64) UNIQUE DEFAULT NULL,
                 name VARCHAR(255),
                 picture TEXT,
                 active_profile VARCHAR(50),
@@ -110,6 +111,17 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL")
+
+        # Local accounts may sign in with a username instead of an email, so an
+        # air-gapped appliance needs no mail domain and no third-party account.
+        # Nullable and UNIQUE: every pre-existing OAuth/SCIM user keeps a NULL
+        # here (MySQL permits many NULLs under UNIQUE, which is exactly the
+        # intent), and get_user_by_identifier() falls back to email so nothing
+        # that authenticates by email changes behaviour.
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'username'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE users ADD COLUMN username VARCHAR(64) UNIQUE DEFAULT NULL")
+            logging.info("Username migration: added users.username")
 
         # TOTP MFA for local accounts (enterprise identity Phase 2).
         # totp_secret holds Fernet ciphertext; enabled only once the user has
@@ -1291,7 +1303,12 @@ def _seed_local_admin():
     """
     Creates or updates the persistent local admin account from env config.
     Called once at startup. Safe to call repeatedly — always converges to
-    the current SAFI_LOCAL_ADMIN_EMAIL / SAFI_LOCAL_ADMIN_PASSWORD values.
+    the current SAFI_LOCAL_ADMIN_USERNAME / _EMAIL / _PASSWORD values.
+
+    The account is identified by EITHER a username or an email. An appliance
+    sets only the username, so `email` is left NULL there; a deployment that
+    still sets only the email is unaffected and keeps its NULL username.
+    Either way `name` is populated so the account renders normally in the UI.
     """
     if not Config.ENABLE_LOCAL_LOGIN:
         return
@@ -1299,6 +1316,12 @@ def _seed_local_admin():
     from werkzeug.security import generate_password_hash
 
     email    = Config.LOCAL_ADMIN_EMAIL
+    username = Config.LOCAL_ADMIN_USERNAME
+    # `name` is what every display path already renders (header, avatar initial,
+    # first-name greeting in chat.js), so seeding it from the username is what
+    # lets a username-only account look normal everywhere without touching a
+    # single one of those call sites.
+    display_name = username or email or "Local Admin"
     password = Config.LOCAL_ADMIN_PASSWORD
 
     conn   = get_db_connection()
@@ -1311,10 +1334,12 @@ def _seed_local_admin():
         existing = cursor.fetchone()
 
         if existing:
-            # Sync email and password in case env vars changed
+            # Sync identity + password in case env vars changed. The display
+            # name follows whichever identifier is configured, so renaming the
+            # admin account in .env relabels it in the UI on next boot.
             cursor.execute(
-                "UPDATE users SET email=%s, name='Local Admin', password_hash=%s WHERE id='local_admin'",
-                (email, password_hash)
+                "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s WHERE id='local_admin'",
+                (email or None, username or None, display_name, password_hash)
             )
             logging.info("Local admin account updated.")
         else:
@@ -1345,11 +1370,12 @@ def _seed_local_admin():
                     (org_id, "Local Admin Organization")
                 )
             cursor.execute(
-                """INSERT INTO users (id, email, name, picture, role, org_id, password_hash, active_profile)
-                   VALUES ('local_admin', %s, 'Local Admin', '', 'admin', %s, %s, %s)""",
-                (email, org_id, password_hash, Config.DEFAULT_PROFILE)
+                """INSERT INTO users (id, email, username, name, picture, role, org_id, password_hash, active_profile)
+                   VALUES ('local_admin', %s, %s, %s, '', 'admin', %s, %s, %s)""",
+                (email or None, username or None, display_name, org_id,
+                 password_hash, Config.DEFAULT_PROFILE)
             )
-            logging.info("Local admin account created.")
+            logging.info("Local admin account created (username=%s).", username or "-")
 
         conn.commit()
     except Exception as e:
@@ -1693,6 +1719,34 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_user_by_identifier(identifier: str) -> Optional[Dict[str, Any]]:
+    """Look a user up by EITHER username or email.
+
+    The single entry point for password login. A local appliance account has a
+    username and usually no email at all, while every federated (OAuth/SCIM)
+    user has an email and no username — so one lookup has to accept both, or
+    login needs two code paths that can drift.
+
+    The OR is intentional and safe because `username` and `email` are UNIQUE
+    independently: at most one row can match. Both identifiers are folded to
+    lower case because login identifiers are case-insensitive; setup stores
+    local usernames in that normalized form as well.
+    """
+    if not identifier:
+        return None
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        normalized = identifier.strip().lower()
+        cursor.execute(
+            "SELECT * FROM users WHERE username = %s OR email = %s LIMIT 1",
+            (normalized, normalized),
+        )
         return cursor.fetchone()
     finally:
         cursor.close()

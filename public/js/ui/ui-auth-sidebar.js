@@ -122,6 +122,7 @@ export function updateUIForAuthState(user) {
 
   const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
   const name = user?.name || 'Guest';
+  const identity = user?.email || user?.username || user?.name || 'Local account';
 
   if (user) {
     ui.elements.loginView.classList.add('hidden');
@@ -191,7 +192,7 @@ export function updateUIForAuthState(user) {
                   <img src="${pic}" alt="User Avatar" class="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 shrink-0">
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium truncate text-neutral-900 dark:text-white leading-tight" title="${name}">${name}</p>
-                    <p class="text-[11px] text-neutral-500 truncate mt-0.5" title="${user.email}">${user.email}</p>
+                    <p class="text-[11px] text-neutral-500 truncate mt-0.5" title="${identity}">${identity}</p>
                   </div>
                 </div>
                 <!-- Gear: this row opens the Control Panel, and three dots said

@@ -37,7 +37,14 @@ REPORT_DEFAULT_WINDOW_DAYS = 30
 
 def _actor():
     user = session.get('user') or {}
-    return user.get('id'), user.get('email')
+    # Prefer email, but never return an empty actor: a local appliance account
+    # is created with a username and no email, and this value is written into
+    # the compliance log and into CSV exports (the "exported_by" column), where
+    # a blank would otherwise be recorded as the literal string "unknown" —
+    # an unattributable audit record, which is the one thing an audit trail
+    # must never contain. Falls back to username, then to the immutable id.
+    label = (user.get('email') or user.get('username') or user.get('id') or '')
+    return user.get('id'), label
 
 
 def _org_forbidden(org_id):

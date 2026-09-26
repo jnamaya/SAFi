@@ -69,12 +69,12 @@ class TemplateContract(unittest.TestCase):
 
     def test_commented_examples_are_not_settable(self):
         """
-        The template ships #SAFI_INTELLECT_MODEL=... as documentation. Treating a
-        commented line as an assignment would uncomment it and pin a model the
-        user never chose.
+        Built-in agent selection remains documentation-only. Model assignments
+        are deliberately explicit template keys now because the appliance setup
+        must be able to select its bundled local model without an API key.
         """
-        self.assertNotIn("SAFI_INTELLECT_MODEL", self.index)
         self.assertNotIn("SAFI_BUILTIN_AGENTS", self.index)
+        self.assertIn("SAFI_INTELLECT_MODEL", self.index)
 
     def test_provider_keys_are_the_ones_config_checks(self):
         """
@@ -188,6 +188,20 @@ class ValidateAgainstRealConfig(unittest.TestCase):
             "SAFI_DEPLOYMENT_MODE": "trial",
             "SAFI_LOCAL_ADMIN_EMAIL": "admin@localhost",
             "SAFI_LOCAL_ADMIN_PASSWORD": setup.gen_password(),
+            "GROQ_API_KEY": "gsk_test",
+        })
+        self._validate(parse_env(render_from(values)))
+
+    def test_username_only_local_admin_satisfies_validate(self):
+        """An appliance admin must not need an email address to boot."""
+        values = setup.generated_secrets()
+        values.update({
+            "FLASK_ENV": "production",
+            "SAFI_DEPLOYMENT_MODE": "production",
+            "SAFI_LOCAL_ADMIN_USERNAME": "admin",
+            "SAFI_LOCAL_ADMIN_EMAIL": "",
+            "SAFI_LOCAL_ADMIN_PASSWORD": setup.gen_password(),
+            "WEB_BASE_URL": "https://safi.example.org",
             "GROQ_API_KEY": "gsk_test",
         })
         self._validate(parse_env(render_from(values)))

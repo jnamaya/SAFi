@@ -130,6 +130,10 @@ def resolve_session():
         shim = {
             "id": user["id"],
             "email": user.get("email"),
+            # Local appliance accounts have a username and no email. Carried in
+            # the shim so anything attributing an action to a human (audit
+            # logs, CSV exports) has something to show instead of blank.
+            "username": user.get("username"),
             "name": user.get("name"),
             "active_profile": user.get("active_profile"),
             "role": user.get("role", "member"),

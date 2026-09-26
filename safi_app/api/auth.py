@@ -8,7 +8,8 @@ This blueprint handles all user-facing authentication logic, including:
 - User profile and model preference management.
 - Account deletion.
 """
-from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app
+from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort
+from functools import wraps
 import secrets
 import traceback
 import requests
@@ -446,8 +447,30 @@ def _found_org_if_unaffiliated(user_details, idp):
 
 
 # =================================================================
-# PUBLIC APP CONFIG (non-sensitive feature flags for the frontend)
+# MAIN APP AUTHENTICATION (OpenID Connect for Login)
 # =================================================================
+
+def sso_required(fn):
+    """Refuse an SSO endpoint when this deployment has SSO turned off.
+
+    Hiding the login buttons is cosmetic -- /api/login/google would still be a
+    live, unauthenticated entry point. Gating the routes is what actually
+    enforces SAFI_SSO_ENABLED.
+
+    404 rather than 403: a provider that is switched off should be
+    indistinguishable from one that was never configured, so the API cannot be
+    used to enumerate which identity providers a deployment talks to.
+
+    Read from Config at call time rather than at import time, so tests (and an
+    appliance .env written after import) both see the current value.
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not Config.SSO_LOGIN_ENABLED:
+            abort(404)
+        return fn(*args, **kwargs)
+    return wrapper
+
 
 @auth_bp.route('/app-config', methods=['GET'])
 def app_config():
@@ -464,6 +487,10 @@ def app_config():
         # its claim link in the first place.
         "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
+        # Drives the Google/Microsoft buttons. The endpoints are gated
+        # separately (see sso_required) -- this is only so the page does not
+        # offer buttons that would 404.
+        "sso_login_enabled":   Config.SSO_LOGIN_ENABLED,
     })
 
 # =================================================================
@@ -471,6 +498,7 @@ def app_config():
 # =================================================================
 
 @auth_bp.route('/login')
+@sso_required
 def login():
     """
     [GET /api/login]
@@ -484,6 +512,7 @@ def login():
 
 
 @auth_bp.route('/callback')
+@sso_required
 def callback():
     """
     [GET /api/callback]
@@ -549,6 +578,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 @auth_bp.route('/auth/google/mobile', methods=['POST'])
+@sso_required
 def login_mobile():
     """
     [POST /api/auth/google/mobile]
@@ -666,24 +696,29 @@ def login_mobile():
 def login_local():
     """
     [POST /api/login/local]
-    Checks any password-login account by email: the persistent local admin
-    (SAFI_LOCAL_ADMIN_EMAIL/PASSWORD), or an invite-claimed account (backlog
-    51). Available whenever either could exist — see
-    Config.password_login_available().
+    Checks any password-login account by USERNAME or EMAIL: the persistent
+    local admin (SAFI_LOCAL_ADMIN_USERNAME / _EMAIL + _PASSWORD), or an
+    invite-claimed account (backlog 51). Available whenever either could
+    exist — see Config.password_login_available().
+
+    A local appliance account has a username and normally no email at all, so
+    the field cannot stay email-only. `identifier` is the current name;
+    `email` is still accepted so the native app and any older cached client
+    keep working unchanged.
     """
     from werkzeug.security import check_password_hash
 
     if not Config.password_login_available():
         return jsonify({"error": "Local login is not enabled on this instance."}), 404
 
-    data     = request.get_json(silent=True) or {}
-    email    = (data.get('email') or '').strip().lower()
-    password = data.get('password') or ''
+    data       = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or data.get('email') or '').strip()
+    password   = data.get('password') or ''
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required."}), 400
+    if not identifier or not password:
+        return jsonify({"error": "Username (or email) and password are required."}), 400
 
-    user = db.get_user_by_email(email)
+    user = db.get_user_by_identifier(identifier)
     if not user or not user.get('password_hash'):
         return jsonify({"error": "Invalid credentials."}), 401
 
@@ -706,12 +741,12 @@ def login_local():
         # nothing else is.
         _establish_session(user, idp='local', extra_context={
             "amr": ["pwd"], "mfa": False, "mfa_pending_enrollment": True})
-        current_app.logger.info(f"Local login (MFA enrollment required): {email}")
+        current_app.logger.info(f"Local login (MFA enrollment required): {identifier}")
         return jsonify({"ok": True, "mfa_setup_required": True})
 
     _establish_session(user, idp='local', extra_context={"amr": ["pwd"], "mfa": False})
 
-    current_app.logger.info(f"Local admin login: {email}")
+    current_app.logger.info(f"Local admin login: {identifier}")
     return jsonify({"ok": True})
 
 
@@ -915,6 +950,7 @@ def login_demo():
 # =================================================================
 
 @auth_bp.route('/login/microsoft')
+@sso_required
 def login_microsoft():
     """
     [GET /api/login/microsoft]
@@ -930,6 +966,7 @@ def login_microsoft():
 
 
 @auth_bp.route('/callback/microsoft')
+@sso_required
 def callback_microsoft():
     """
     [GET /api/callback/microsoft]
