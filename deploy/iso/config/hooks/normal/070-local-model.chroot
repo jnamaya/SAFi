@@ -35,16 +35,18 @@ download_checked() {
 download_checked "$LLAMA_URL" "$TMP_DIR/llama.tar.gz" "$LLAMA_SHA256"
 tar -xzf "$TMP_DIR/llama.tar.gz" -C "$BIN_DIR"
 
-# Release archives may contain a top-level directory. Flatten only the binary
-# location; retain adjacent shared libraries in BIN_DIR for the service's
-# LD_LIBRARY_PATH.
+# Release archives may contain a top-level directory. Flatten the whole
+# release directory so llama-server and every adjacent shared library land in
+# one directory; the systemd unit can then use one deterministic library path.
 server=$(find "$BIN_DIR" -type f -name llama-server -print -quit)
 if [ -z "$server" ]; then
     echo "local model: llama-server missing from pinned archive" >&2
     exit 1
 fi
 if [ "$server" != "$BIN_DIR/llama-server" ]; then
-    mv "$server" "$BIN_DIR/llama-server"
+    release_dir=$(dirname "$server")
+    cp -a "$release_dir"/. "$BIN_DIR"/
+    rm -rf "$release_dir"
 fi
 chmod 0755 "$BIN_DIR/llama-server"
 
