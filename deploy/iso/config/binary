@@ -7,7 +7,7 @@ LB_IMAGE_TYPE="iso-hybrid"
 LB_BINARY_FILESYSTEM="fat32"
 
 # Set apt/aptitude generic indices
-LB_APT_INDICES="true"
+LB_APT_INDICES="false"
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE="quiet splash"
@@ -104,10 +104,10 @@ LB_ONIE="false"
 LB_ONIE_KERNEL_CMDLINE=""
 
 # Set inclusion of firmware packages in debian-installer
-LB_FIRMWARE_BINARY="true"
+LB_FIRMWARE_BINARY="false"
 
 # Set inclusion of firmware packages in the live image
-LB_FIRMWARE_CHROOT="true"
+LB_FIRMWARE_CHROOT="false"
 
 # Set swap file path
 LB_SWAP_FILE_PATH=""

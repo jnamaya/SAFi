@@ -21,13 +21,16 @@ COPY requirements.txt .
 # No torch pre-install step any more: embeddings run through ONNX Runtime via
 # fastembed, so nothing pulls PyTorch and the CPU-wheel workaround that existed
 # to avoid the CUDA build is unnecessary.
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 
 # ── Stage 2: runtime image ─────────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
+
+ENV PATH="/opt/venv/bin:${PATH}"
 
 # OCR for image attachments and scanned PDFs. Must be in the RUNTIME stage, not
 # the deps stage: pytesseract is only a wrapper that shells out to the tesseract
@@ -73,9 +76,10 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # docker-compose persists as a named volume. Without that volume every container
 # start re-downloads every npm tool server before it can answer.
 
-# Copy installed packages from the deps stage
-COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=deps /usr/local/bin /usr/local/bin
+# Copy the version-independent virtualenv from the deps stage. This avoids
+# depending on the patch-level directory chosen by the base image (for example
+# python3.13.15 rather than python3.13).
+COPY --from=deps /opt/venv /opt/venv
 
 # Copy application code
 COPY safi_app/ ./safi_app/
