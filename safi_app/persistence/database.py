@@ -950,6 +950,25 @@ def init_db():
             )
         ''')
 
+        # --- Deployment-wide provider API keys ---
+        # The layer *underneath* .env: org keys override these, these override
+        # .env. An appliance has no organization, so without this the only way
+        # to give it a cloud provider was to edit .env over SSH — the key
+        # management UI was org-scoped and therefore unreachable. Same
+        # guarantees as org_provider_keys: Fernet at rest, last4 so the UI can
+        # show a suffix without ever reading the key back, and the plaintext
+        # leaves only via get_deployment_provider_keys_decrypted.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS deployment_provider_keys (
+                provider VARCHAR(40) NOT NULL,
+                key_enc TEXT NOT NULL,
+                last4 VARCHAR(8) NOT NULL,
+                updated_by VARCHAR(255) NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (provider)
+            )
+        ''')
+
         # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
         # Workflow state only — the regulatory evidence for each disposition is
         # the 'review' entry appended to chat_audit_trail in the same
@@ -3978,6 +3997,20 @@ def get_organization_by_domain(domain):
         cursor.close()
         conn.close()
 
+def count_organizations():
+    """How many organizations exist. Used to tell a single-tenant appliance
+    (where the admin IS the deployment) from a multi-tenant install (where a
+    deployment-wide setting must be limited to a named operator)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM organizations")
+        row = cursor.fetchone()
+        return int(row[0] if not isinstance(row, dict) else list(row.values())[0])
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_oldest_organization():
     """The deployment's founding org, for single-tenant mode: whichever
     organization was created first. Same ORDER BY stability guarantee as
@@ -4847,7 +4880,71 @@ def get_org_provider_keys_decrypted(org_id):
         cursor.close()
         conn.close()
 
-def validate_retention_years(value):
+def set_deployment_provider_key(provider, key, updated_by=None):
+    """Stores (or replaces) a deployment-wide provider key, encrypted.
+
+    The layer beneath .env, so this is what an org-less appliance uses when an
+    operator sets a cloud provider from the UI instead of editing .env. The
+    plaintext never persists and is never logged."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO deployment_provider_keys (provider, key_enc, last4, updated_by) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE key_enc=VALUES(key_enc), last4=VALUES(last4), "
+            "updated_by=VALUES(updated_by)",
+            (provider, crypto.encrypt_value(key), key[-4:], updated_by))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_deployment_provider_key(provider):
+    """Returns True when a row was removed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM deployment_provider_keys WHERE provider=%s", (provider,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+def list_deployment_provider_keys():
+    """Display shape only: provider, last4, updated_at. The key itself is
+    write-only from the UI's point of view — never returned here."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT provider, last4, updated_at FROM deployment_provider_keys "
+            "ORDER BY provider")
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_deployment_provider_keys_decrypted():
+    """{provider: plaintext key} for dispatch (deployment_keys.deployment_key_map).
+    The one read path that decrypts."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT provider, key_enc FROM deployment_provider_keys")
+        out = {}
+        for r in cursor.fetchall():
+            key = crypto.decrypt_value(r["key_enc"])
+            if key:
+                out[r["provider"]] = key
+        return out
+    finally:
+        cursor.close()
+        conn.close()
+
+
     """Returns (ok, normalized). None means keep-forever (no purge)."""
     if value is None:
         return True, None

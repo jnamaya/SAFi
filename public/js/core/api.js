@@ -560,6 +560,20 @@ export async function deleteOrgProviderKey(orgId, provider) {
     return httpJSON(`/api/organizations/${orgId}/provider-keys?provider=${encodeURIComponent(provider)}`, 'DELETE', {});
 }
 
+// Deployment-wide provider keys. The layer under .env, and the only way to add
+// a cloud provider on an appliance, which has no organization to scope a key to.
+export async function getDeploymentProviderKeys() {
+    return httpGet('/api/providers/keys');
+}
+
+export async function setDeploymentProviderKey(provider, key) {
+    return httpJSON('/api/providers/keys', 'PUT', { provider, key });
+}
+
+export async function deleteDeploymentProviderKey(provider) {
+    return httpJSON(`/api/providers/keys?provider=${encodeURIComponent(provider)}`, 'DELETE', {});
+}
+
 export async function getCustomModels() {
     return httpGet('/api/models/custom');
 }

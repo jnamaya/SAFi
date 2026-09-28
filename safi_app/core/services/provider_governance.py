@@ -25,7 +25,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import FrozenSet, List, Optional
 
-from .model_routing import PROVIDER_METADATA, configured_providers, detect_provider
+from .model_routing import (PROVIDER_METADATA, configured_providers, detect_provider,
+                            effective_configured_providers)
 
 # The appliance catalogue, installed by the ISO's 070 hook. It is the only place
 # that knows which local models this build can offer, so the model list is read
@@ -232,11 +233,14 @@ def list_models_for_org(org_id) -> List[dict]:
     actually be dispatched is never offered."""
     from ...config import Config
     from .model_routing import custom_models
-    from .org_keys import org_key_providers
     allow = get_org_allowlist(org_id)
-    # A provider is usable with a deployment .env key OR the org's own key
-    # (backlog 64) — either way its models can actually dispatch for this org.
-    configured = configured_providers(Config) | org_key_providers(org_id)
+    # A provider is usable with a deployment .env key, a deployment key stored
+    # from the UI, OR the org's own key (backlog 64) — any of them can actually
+    # dispatch for this org, so the catalog must offer its models. Reading this
+    # from the .env-only set here is what made a deployment-key-only provider
+    # show up in the add-model form while its models were missing from the list
+    # the form writes into.
+    configured = effective_configured_providers(Config, org_id)
     # Built-ins first, then the appliance's installed local models, then
     # operator-added rows (backlog 63) marked custom so the catalog UI knows
     # which entries are deletable. All pass the same configured-provider and

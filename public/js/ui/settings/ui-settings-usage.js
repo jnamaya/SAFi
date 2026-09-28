@@ -432,9 +432,18 @@ async function renderCloudPane(host, orgId) {
     if (!host) return;
 
     let keys = null, catalog = null;
+    // With an org, the table manages THIS org's own keys. Without one — the
+    // normal case on an appliance — there is no org to scope a key to, so it
+    // manages the deployment's keys instead. Previously the no-org case rendered
+    // no table at all, which left "add a cloud model" with an empty provider
+    // list and no way to fix it from the UI.
     if (orgId) {
         try {
             keys = await api.getOrgProviderKeys(orgId);
+        } catch (e) { /* rendered as empty below */ }
+    } else {
+        try {
+            keys = await api.getDeploymentProviderKeys();
         } catch (e) { /* rendered as empty below */ }
     }
     try {
@@ -444,11 +453,19 @@ async function renderCloudPane(host, orgId) {
     const providers = (keys && keys.ok && keys.providers) || [];
     const own = new Map(((keys && keys.keys) || []).map(k => [k.provider, k]));
     const custom = (catalog && catalog.ok && catalog.models) || [];
+    // The two endpoints flag the underlying .env key differently, and the copy
+    // below has to describe the right fallback for the scope being edited.
+    const hasEnvKey = orgId ? 'deployment_configured' : 'env_configured';
+    const scopeWord = orgId ? "your org's" : "this appliance's";
+    const fallbackWord = orgId ? 'the deployment default' : 'the .env key';
 
     host.innerHTML = `
-        ${orgId ? `<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Bring your organization's own provider keys. A stored key replaces the deployment default
-            for this org's calls only (including background work), so your usage bills to your account.
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            ${orgId ? `Bring your organization's own provider keys. A stored key replaces the deployment default
+            for this org's calls only (including background work), so your usage bills to your account.`
+                : `This appliance is not connected to an organization, so these are deployment-wide provider keys.
+            A stored key is used for every call that has no organization key of its own. You can also leave
+            ${escapeHtml(fallbackWord)} to supply one.`}
             Keys are stored encrypted, are never displayed after saving, and changes apply within a minute.
         </p>
         <div class="overflow-x-auto mb-6"><table class="w-full text-sm">
@@ -458,9 +475,9 @@ async function renderCloudPane(host, orgId) {
             <tbody>${providers.map(p => {
                 const mine = own.get(p.id);
                 const status = mine
-                    ? `<span class="text-green-600 dark:text-green-400 font-medium">Your org's key, ends in …${escapeHtml(mine.last4)}</span>`
-                    : (p.deployment_configured
-                        ? '<span class="text-gray-500">Using deployment default</span>'
+                    ? `<span class="text-green-600 dark:text-green-400 font-medium">${orgId ? "Your org's key" : 'Stored'}, ends in …${escapeHtml(mine.last4)}</span>`
+                    : (p[hasEnvKey]
+                        ? `<span class="text-gray-500">Using ${escapeHtml(fallbackWord)}</span>`
                         : '<span class="text-gray-400">Not configured</span>');
                 return `
                 <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
@@ -477,10 +494,7 @@ async function renderCloudPane(host, orgId) {
                     </td>
                 </tr>`;
             }).join('')}
-            </tbody></table></div>` : `<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            This appliance is not connected to an organization. Add deployment-wide cloud models
-            using the provider keys configured for the appliance.
-        </p>`}
+            </tbody></table></div>
 
         <h5 class="text-base font-semibold mb-1">Add a cloud model</h5>
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
@@ -530,7 +544,9 @@ async function renderCloudPane(host, orgId) {
             const key = (input?.value || '').trim();
             if (!key) return ui.showToast('Paste the key first.', 'error');
             try {
-                const r = await api.setOrgProviderKey(orgId, provider, key);
+                const r = orgId
+                    ? await api.setOrgProviderKey(orgId, provider, key)
+                    : await api.setDeploymentProviderKey(provider, key);
                 if (r && r.ok) {
                     ui.showToast(`Key stored for ${provider}. Applies within a minute.`, 'success');
                     renderCloudPane(host, orgId);
@@ -546,9 +562,11 @@ async function renderCloudPane(host, orgId) {
     host.querySelectorAll('.provider-key-del').forEach(btn => {
         btn.addEventListener('click', async () => {
             const provider = btn.dataset.provider;
-            if (!confirm(`Remove your org's ${provider} key? Calls fall back to the deployment default.`)) return;
+            if (!confirm(`Remove ${scopeWord} ${provider} key? Calls fall back to ${fallbackWord}.`)) return;
             try {
-                const r = await api.deleteOrgProviderKey(orgId, provider);
+                const r = orgId
+                    ? await api.deleteOrgProviderKey(orgId, provider)
+                    : await api.deleteDeploymentProviderKey(provider);
                 if (r && r.ok) {
                     ui.showToast('Key removed.', 'success');
                     renderCloudPane(host, orgId);

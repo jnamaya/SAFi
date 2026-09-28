@@ -41,7 +41,7 @@ from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exp
 # with it (docker-entrypoint.sh) — one stuck call becomes a host-wide outage.
 # Kept comfortably under 300s so even a turn's two calls (intellect + conscience)
 # stay inside the request budget, and tunable for slow self-hosted providers.
-LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "120"))
+LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
 
 
 # Output-token ceiling for the Intellect. Was a hardcoded 8192 until 2026-08-27
@@ -112,11 +112,11 @@ class LLMProvider:
     def _initialize_clients(self):
         """Initializes API clients based on the provider config."""
         providers = self.config.get("providers", {})
-        
+
         for name, details in providers.items():
             p_type = details.get("type")
             api_key = details.get("api_key")
-            
+
             # Allow skipping provider if key is empty/None
             if not api_key:
                 self.log.debug(f"Skipping provider '{name}': No API key provided.")
@@ -142,13 +142,22 @@ class LLMProvider:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
     def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):
-        """A client bound to the active org's own key for this provider
-        (backlog 64), or None = use the deployment client. Mirrors
-        _initialize_clients per provider type; construction failures fall
-        back to the deployment client rather than breaking the turn."""
-        from .org_keys import active_org_key
-        key = active_org_key(provider_name)
-        if not key:
+        """A client bound to a DB-stored key for this provider — the active org's
+        own key, else the deployment key — or None = use the .env deployment
+        client. Mirrors _initialize_clients per provider type; construction
+        failures fall back to the deployment client rather than breaking the
+        turn.
+
+        Keyed on the resolved key, not the org, so the org layer and the
+        deployment layer share one cache: a provider with only a deployment key
+        costs the same as one with only a .env key.
+        """
+        from .deployment_keys import resolve_provider_key
+        env_key = (provider_details or {}).get("api_key")
+        key = resolve_provider_key(provider_name, env_key)
+        # No DB layer for this provider: the cached .env client is already
+        # correct, so don't build a second one.
+        if not key or key == env_key:
             return None
         cache_key = (provider_name, key)
         client = self._org_clients.get(cache_key)
@@ -165,7 +174,7 @@ class LLMProvider:
             else:
                 return None
         except Exception as e:
-            self.log.error(f"Org key client init failed for '{provider_name}': {e}")
+            self.log.error(f"Stored-key client init failed for '{provider_name}': {e}")
             return None
         self._org_clients[cache_key] = client
         return client
@@ -256,7 +265,7 @@ class LLMProvider:
             user_prompt_str = "\n\n".join(str_parts)
 
         # --- Dispatch based on Type ---
-        
+
         # 1. OpenAI / DeepSeek / Groq / Mistral
         if provider_type == "openai":
             params = {
@@ -392,7 +401,17 @@ class LLMProvider:
                     })
                 kwargs["tools"] = anthropic_tools
 
-            resp = await client.messages.create(**kwargs)
+            try:
+                resp = await client.messages.create(**kwargs)
+            except TypeError as exc:
+                # Anthropic SDK releases have not all exposed the same keyword
+                # set on AsyncMessages.create. A local signature mismatch is
+                # safe to retry once without temperature; the first call fails
+                # before any network request is made.
+                if "unexpected keyword argument 'temperature'" not in str(exc):
+                    raise
+                kwargs.pop("temperature", None)
+                resp = await client.messages.create(**kwargs)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
             # Check for tool use
@@ -443,11 +462,11 @@ class LLMProvider:
                 properties = {}
                 for k, v in schema_dict.get("properties", {}).items():
                     properties[k] = convert_schema(v)
-                
+
                 items = None
                 if "items" in schema_dict:
                     items = convert_schema(schema_dict["items"])
-                    
+
                 return types.Schema(
                     type=schema_type,
                     description=schema_dict.get("description"),
@@ -479,8 +498,8 @@ class LLMProvider:
             try:
                 # user_prompt can be a string or list of types.Content (history array)
                 resp = await client.aio.models.generate_content(
-                    model=model_name, 
-                    contents=user_prompt, 
+                    model=model_name,
+                    contents=user_prompt,
                     config=config
                 )
             except Exception as e:
@@ -494,7 +513,7 @@ class LLMProvider:
                     fc = resp.function_calls[0]
                     # args is a dict or mapping depending on SDK
                     args = fc.args if isinstance(fc.args, dict) else (dict(fc.args) if fc.args else {})
-                    
+
                     payload = {
                         "tool_calls": [{
                             "id": "gemini_call",
@@ -504,7 +523,7 @@ class LLMProvider:
                     }
                     if resp.candidates and resp.candidates[0].content:
                         raw_content = resp.candidates[0].content
-                        
+
                         # Try to use mode='json' if available (Pydantic v2)
                         if hasattr(raw_content, "model_dump"):
                             try:
@@ -513,12 +532,12 @@ class LLMProvider:
                                 payload["_gemini_raw_turn"] = raw_content.model_dump()
                         else:
                             payload["_gemini_raw_turn"] = dict(raw_content)
-                    
+
                     def safe_serialize(obj):
                         if isinstance(obj, bytes):
                             return obj.decode('utf-8', errors='ignore')
                         return str(obj)
-                        
+
                     return json.dumps(payload, default=safe_serialize)
 
                 # Gemini stops with finish_reason=MAX_TOKENS when the output
@@ -570,6 +589,12 @@ class LLMProvider:
         'refusal'). Like a timeout, retrying is pointless: the same model given
         the same prompt refuses again. Fail fast rather than burn the retries."""
         return "refus" in f"{exc}".lower()
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """True when retrying would immediately amplify provider throttling."""
+        text = f"{type(exc).__name__}: {exc}".lower()
+        return "429" in text or "rate limit" in text or "ratelimit" in text
 
     @staticmethod
     def explain_provider_error(exc: Exception) -> str:
@@ -690,6 +715,9 @@ class LLMProvider:
                 if self._is_refusal_error(e):
                     self.log.warning("Intellect call was refused by the model; failing fast without retry.")
                     break
+                if self._is_rate_limit_error(e):
+                    self.log.warning("Intellect provider rate-limited the call; failing fast without retry.")
+                    break
                 continue
 
         # All attempts failed. On a hard error, preserve the legacy failure
@@ -762,6 +790,9 @@ class LLMProvider:
                 # closed), which is the safe outcome when the model is unreachable.
                 if self._is_timeout_error(e):
                     self.log.warning("Conscience call timed out; failing fast without retry.")
+                    raise
+                if self._is_rate_limit_error(e):
+                    self.log.warning("Conscience provider rate-limited the call; failing fast without retry.")
                     raise
                 # A provider that merely rejects json_mode would otherwise fail BOTH
                 # audit attempts and brick the agent into permanent fail-closed.

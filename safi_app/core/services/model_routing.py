@@ -26,7 +26,7 @@ from __future__ import annotations
 # /models endpoint, and the org-settings UI badges. Keys MUST match
 # build_providers_config below.
 PROVIDER_METADATA = {
-    "local":     {"label": "SAFi Demo Model", "baa_capable": False, "eu_hostable": False,
+    "local":     {"label": "Local model (this appliance)", "baa_capable": False, "eu_hostable": False,
                    "zdr": "default",
                    "zdr_note": "Runs locally on this appliance; prompts are not sent to a third-party model provider."},
     "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True,
@@ -118,7 +118,12 @@ def detect_provider(model_name: str) -> str:
         return "mistral"
     if m.startswith("glm-"):
         return "zhipu"
-    if m == "safi-demo":
+    # Appliance-selected local models all carry a "safi-" alias
+    # (safi-qwen3-8b, safi-qwen3-32b, ...), so match the reserved prefix rather
+    # than one literal name. An unmatched alias would otherwise fall through to
+    # groq below and send the prompt to Groq with a placeholder key, which
+    # surfaces as an unreachable-provider error rather than a routing fault.
+    if m.startswith("safi-"):
         return "local"
     return "groq"
 
@@ -190,11 +195,33 @@ def configured_providers(config) -> frozenset:
     )
 
 
-def model_provider_configured(model_name: str, config) -> bool:
-    """True when this install holds an API key for the model's provider.
+def effective_configured_providers(config, org_id=None) -> frozenset:
+    """Providers that can actually dispatch a call right now.
+
+    The .env keys are only the *default* layer. A deployment key stored from
+    the UI, and an org's own key, both make a provider usable without any .env
+    entry — which is the whole point on an appliance, where there is no org and
+    the .env is not editable from the UI. Returns the union so a model picker
+    never hides a model that would work.
+    """
+    from .deployment_keys import deployment_key_providers
+    from .org_keys import org_key_providers
+    try:
+        return frozenset(
+            configured_providers(config)
+            | deployment_key_providers()
+            | org_key_providers(org_id)
+        )
+    except Exception:
+        # Never let a DB hiccup hide every provider; .env alone is a safe floor.
+        return configured_providers(config)
+
+
+def model_provider_configured(model_name: str, config, org_id=None) -> bool:
+    """True when this install holds a usable API key for the model's provider.
 
     Guards places that would STORE a model selection on a user's behalf
     (demo/guest defaults): a stored model whose provider has no key fails
     every turn with an unreachable-client error, so refuse the write instead.
     """
-    return detect_provider(model_name) in configured_providers(config)
+    return detect_provider(model_name) in effective_configured_providers(config, org_id)

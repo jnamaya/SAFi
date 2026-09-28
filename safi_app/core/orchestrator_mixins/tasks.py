@@ -317,9 +317,11 @@ class BackgroundTasksMixin:
             cache = self._backend_sync_clients = {}
 
         from ..services.model_routing import build_providers_config
-        from ..services.org_keys import active_org_key
+        from ..services.deployment_keys import resolve_provider_key
         details = build_providers_config(self.config).get(provider)
-        api_key = active_org_key(provider) or (details or {}).get("api_key")
+        # Same precedence as the faculty path (org key > deployment key > .env),
+        # so background work is billed to the same key the turn was.
+        api_key = resolve_provider_key(provider, (details or {}).get("api_key"))
         cache_key = (provider, api_key)
         if cache_key in cache:
             return cache[cache_key]
@@ -370,11 +372,15 @@ class BackgroundTasksMixin:
         try:
             if provider == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")
-                # Org key overlay (backlog 64): same layering as the faculty
-                # path. Cached alongside the sync clients, keyed by the key.
-                from ..services.org_keys import active_org_key
-                org_key = active_org_key("gemini")
-                if org_key:
+                # Stored-key overlay: same layering as the faculty path
+                # (org key > deployment key > .env). Cached alongside the sync
+                # clients, keyed by the key.
+                from ..services.deployment_keys import resolve_provider_key
+                from ..services.model_routing import build_providers_config
+                env_gemini_key = (build_providers_config(self.config)
+                                  .get("gemini") or {}).get("api_key")
+                org_key = resolve_provider_key("gemini", env_gemini_key)
+                if org_key and org_key != env_gemini_key:
                     cache = getattr(self, "_backend_sync_clients", None)
                     if cache is None:
                         cache = self._backend_sync_clients = {}

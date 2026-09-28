@@ -331,9 +331,14 @@ def list_provider_keys(org_id):
     forbidden = _provider_keys_forbidden(org_id)
     if forbidden:
         return forbidden
+    from ..core.services.deployment_keys import deployment_key_providers
     from ..core.services.model_routing import PROVIDER_METADATA, configured_providers
     from ..config import Config
-    deployment = configured_providers(Config)
+    # A DB deployment key is as much a deployment-level fallback as a .env one:
+    # it is what calls resolve to when this org has no key of its own. Excluding
+    # it here showed an org "no deployment key" for a provider that was actually
+    # working, which reads as a broken setup rather than an inherited default.
+    deployment = configured_providers(Config) | deployment_key_providers()
     try:
         return jsonify({
             "ok": True,
