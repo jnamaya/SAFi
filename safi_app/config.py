@@ -412,8 +412,19 @@ class Config:
     # Show or hide the "Try Demo (Admin)" button on the login page.
     # Derived from the mode; SAFI_ENABLE_DEMO still wins if set explicitly, so
     # existing .env files keep working unchanged.
-    ENABLE_DEMO_LOGIN = _env_bool(
-        "SAFI_ENABLE_DEMO", DEPLOYMENT_MODE in ("trial", "showcase")
+    #
+    # ...except on a single-tenant deployment, where guest login is refused
+    # whatever SAFI_ENABLE_DEMO says. A guest does not join the deployment's one
+    # organization: /api/login/demo calls db.create_organization() and mints a
+    # second one named "SAFi Demo (xxxx)" (api/auth.py). That contradicts the
+    # contract of single mode — one organization, served as a whole — and it has
+    # a live side effect beyond the button: a second org row makes the
+    # deployment-key guard see a multi-tenant install and lock the ordinary
+    # admin out of the provider-key pane. SAFI_ENABLE_DEMO is therefore NOT an
+    # override here, unlike every other flag in this file.
+    ENABLE_DEMO_LOGIN = (
+        False if TENANCY_MODE == 'single'
+        else _env_bool("SAFI_ENABLE_DEMO", DEPLOYMENT_MODE in ("trial", "showcase"))
     )
 
     # Showcase framing in the chat UI — naming the running model and explaining
