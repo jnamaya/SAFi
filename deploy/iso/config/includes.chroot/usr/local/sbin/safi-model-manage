@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+"""Privileged bridge from the admin model catalog to safi-model-fetch."""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import subprocess
+from pathlib import Path
+
+CATALOGUE = Path("/etc/safi/local-models.json")
+CHOICE = Path("/var/lib/safi-firstboot/model-choice.json")
+STATUS = Path("/var/lib/safi/model-fetch.json")
+
+
+def load_helper():
+    spec = importlib.util.spec_from_file_location("safi_local", "/usr/local/lib/safi_local.py")
+    if not spec or not spec.loader:
+        raise RuntimeError("appliance helper is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("model")
+    parser.add_argument("--backend")
+    parser.add_argument("--activate", action="store_true")
+    args = parser.parse_args()
+    helper = load_helper()
+    catalogue = helper.load_catalogue(CATALOGUE)
+    model = helper.model_by_id(catalogue, args.model)
+    if model is None:
+        raise RuntimeError("unknown local model")
+    try:
+        status = json.loads(STATUS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        status = {}
+    if status.get("state") in ("running", "downloading", "verifying", "installing"):
+        raise RuntimeError("a local model download is already running")
+
+    backend_id = args.backend
+    if not backend_id:
+        backend_id = helper.select_backend(catalogue, helper.detect_hardware())
+    if helper.backend_by_id(catalogue, backend_id) is None:
+        raise RuntimeError("unknown inference backend")
+    fit = next((item for item in helper.evaluate_models(catalogue, helper.detect_hardware(), backend_id)
+                if item["id"] == args.model), None)
+    if fit is not None and not fit.get("fits"):
+        raise RuntimeError("that model does not fit this appliance")
+
+    CHOICE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Downloading a second model must not change the live server. The fetcher
+    # installs verified weights and only activates when explicitly requested.
+    CHOICE.write_text(json.dumps({"model": args.model, "backend": backend_id,
+                                  "activate": args.activate}), encoding="utf-8")
+    CHOICE.chmod(0o600)
+    subprocess.run(["systemctl", "start", "--no-block", "safi-model-fetch.service"], check=True)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(str(exc), flush=True)
+        raise SystemExit(1)

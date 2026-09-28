@@ -37,6 +37,13 @@ function fmtTokens(n) {
     return String(n);
 }
 
+// Model sizes and RAM floors are byte counts from the catalogue.
+function fmtBytes(n) {
+    if (!n || n <= 0) return '—';
+    const gb = n / 1e9;
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(n / 1e6).toFixed(0)} MB`;
+}
+
 function fmtUsd(v) {
     if (v === null) return '<span class="text-gray-400" title="No price configured for this model">n/a</span>';
     if (v > 0 && v < 0.01) return '&lt;$0.01';
@@ -82,22 +89,28 @@ export async function renderSettingsUsageTab(days = 30) {
         </div>
     `;
 
-    let org, res;
+    // No organization is a legitimate state on a single-tenant appliance, and
+    // it must not cost this tab its whole body: the Model Catalog is where a
+    // box with no org would go configure a local model. Only the per-org usage
+    // rollup is genuinely unavailable, so that is the only thing that is
+    // skipped. An error loading usage, by contrast, still replaces the page --
+    // that is a real failure, not a missing precondition.
+    let org = null, res = null;
     try {
         const orgRes = await api.getMyOrganization();
         org = orgRes ? orgRes.organization : null;
-        if (!org) {
-            container.innerHTML = `
-                <div class="text-center p-8">
-                    <h3 class="text-xl font-semibold mb-2">No Organization Found</h3>
-                    <p class="text-neutral-500">Usage is tracked per organization.</p>
-                </div>`;
+    } catch (e) {
+        // Treat an org lookup failure as "no org" rather than aborting: the
+        // catalog is still reachable, and cloud keys simply cannot be edited.
+        org = null;
+    }
+    if (org) {
+        try {
+            res = await api.getOrgUsage(org.id, days);
+        } catch (e) {
+            container.innerHTML = `<div class="text-center p-8 text-red-500">Failed to load usage: ${escapeHtml(e.message)}</div>`;
             return;
         }
-        res = await api.getOrgUsage(org.id, days);
-    } catch (e) {
-        container.innerHTML = `<div class="text-center p-8 text-red-500">Failed to load usage: ${escapeHtml(e.message)}</div>`;
-        return;
     }
 
     const usage = (res && res.usage) || { by_day: [], by_model: [], by_route: [], by_agent: [] };
@@ -117,6 +130,22 @@ export async function renderSettingsUsageTab(days = 30) {
         conscience: 'Conscience (audit)',
         will: 'Will',
     };
+
+    if (!org) {
+        container.innerHTML = `
+            <div class="settings-page-header">
+                <h1>Usage &amp; Cost</h1>
+            </div>
+            <div class="settings-card">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Usage is tracked per organization, and this account is not in one yet.
+                </p>
+            </div>
+            <div id="usage-model-catalog-section"></div>
+        `;
+        renderModelCatalogSection(null);
+        return;
+    }
 
     container.innerHTML = `
         <div class="settings-page-header">
@@ -210,7 +239,6 @@ export async function renderSettingsUsageTab(days = 30) {
 
         <div id="usage-deployment-section"></div>
         <div id="usage-model-catalog-section"></div>
-        <div id="usage-provider-keys-section"></div>
     `;
 
     const daySelect = document.getElementById('usage-days');
@@ -221,61 +249,277 @@ export async function renderSettingsUsageTab(days = 30) {
     }
 
     renderDeploymentSection(days, prices);
-    renderModelCatalogSection();
-    renderProviderKeysSection(org.id);
+    renderModelCatalogSection(org ? org.id : null);
 }
 
-// Provider API Keys (backlog 64): the org's own keys, layered over the
-// deployment .env defaults. Write-only by design — the server stores the
-// key encrypted and only ever returns the last 4 characters.
-async function renderProviderKeysSection(orgId) {
-    const host = document.getElementById('usage-provider-keys-section');
+// Model Catalog (backlog 63/64): one card, two sources of models. "Local" is
+// the model on this box, chosen from the appliance catalogue. "Cloud" is
+// bring-your-own provider keys plus operator-added model ids. They used to be
+// two separate cards, which implied they were two unrelated things, when in
+// fact the answer to "which models can SAFi use here" is one question with two
+// possible homes.
+async function renderModelCatalogSection(orgId) {
+    const host = document.getElementById('usage-model-catalog-section');
     if (!host) return;
-    let res;
-    try {
-        res = await api.getOrgProviderKeys(orgId);
-    } catch (e) {
-        return;
-    }
-    if (!res || !res.ok) return;
-
-    const own = new Map(res.keys.map(k => [k.provider, k]));
 
     host.innerHTML = `
         <div class="settings-card">
-            <h4 class="text-lg font-semibold">Provider API Keys</h4>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-4">
-                Bring your organization's own provider keys. A stored key replaces the deployment default
-                for this org's calls only (including background work), so your usage bills to your account.
-                Keys are stored encrypted, are never displayed after saving, and changes apply within a minute.
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h4 class="text-lg font-semibold">Model Catalog</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        Where SAFi gets its models: a model running on this appliance, or a cloud provider.
+                    </p>
+                </div>
+                <div class="flex rounded-lg border border-neutral-300 dark:border-neutral-700 p-0.5 text-sm" role="tablist">
+                    <button class="catalog-pane-btn px-4 py-1.5 rounded-md font-medium transition-colors" data-pane="local" role="tab">Local</button>
+                    <button class="catalog-pane-btn px-4 py-1.5 rounded-md font-medium transition-colors" data-pane="cloud" role="tab">Cloud</button>
+                </div>
+            </div>
+            <div id="catalog-pane-local" class="mt-5"></div>
+            <div id="catalog-pane-cloud" class="mt-5 hidden"></div>
+        </div>
+    `;
+
+    const panes = {
+        local: document.getElementById('catalog-pane-local'),
+        cloud: document.getElementById('catalog-pane-cloud'),
+    };
+
+    // Default to whichever side can actually offer something. On an appliance
+    // with a model already served, Local is the answer; otherwise Cloud.
+    let local = null;
+    try {
+        local = await api.getLocalModels();
+    } catch (e) {
+        local = null;
+    }
+    const localHas = local && local.ok && local.available && (local.models || []).length;
+
+    const show = (which) => {
+        for (const [name, el] of Object.entries(panes)) {
+            el.classList.toggle('hidden', name !== which);
+        }
+        host.querySelectorAll('.catalog-pane-btn').forEach(btn => {
+            const on = btn.dataset.pane === which;
+            btn.classList.toggle('bg-green-600', on);
+            btn.classList.toggle('text-white', on);
+            btn.classList.toggle('text-gray-500', !on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+    };
+    host.querySelectorAll('.catalog-pane-btn').forEach(btn => {
+        btn.addEventListener('click', () => show(btn.dataset.pane));
+    });
+
+    renderLocalPane(panes.local, local, orgId);
+    renderCloudPane(panes.cloud, orgId);
+    show(localHas ? 'local' : 'cloud');
+}
+
+// Local: what this box has. Hardware fit matters here because the download has
+// to happen on the operator's own machine, so a model too big for the RAM is
+// listed as not runnable rather than offered and then failing at load time.
+async function renderLocalPane(host, res, orgId) {
+    if (!host) return;
+
+    if (!res || !res.ok || !res.available) {
+        host.innerHTML = `
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                ${escapeHtml((res && res.reason) || 'This deployment has no on-appliance model catalogue.')}
             </p>
-            <div class="overflow-x-auto"><table class="w-full text-sm">
+            <p class="text-xs text-gray-400 mt-2">
+                SAFi is not shipping as an appliance here, so there is nothing local to run. Use the Cloud tab.
+            </p>`;
+        return;
+    }
+
+    const models = res.models || [];
+    const badge = (m) => m.downloading
+        ? '<span class="text-blue-600 dark:text-blue-400 font-medium">Downloading</span>'
+        : m.active
+        ? '<span class="text-green-600 dark:text-green-400 font-medium">Serving</span>'
+            : m.installed
+                ? '<span class="text-gray-500">Downloaded, not active</span>'
+                : '<span class="text-gray-400">Not downloaded</span>';
+
+    host.innerHTML = `
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Models on this appliance. One runs at a time — the local model server serves a single
+            model, and it has to be restarted to switch. A download runs on this box and needs
+            the weights on local disk, so check free space before starting one.
+        </p>
+        ${models.length === 0
+            ? '<p class="text-sm text-gray-400">The catalogue is empty.</p>'
+            : `<div class="overflow-x-auto mb-4"><table class="w-full text-sm">
                 <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
-                    <th class="py-2 pr-4">Provider</th><th class="py-2 pr-4">Status</th><th class="py-2 pr-4">Key</th><th class="py-2"></th>
+                    <th class="py-2 pr-4">Model</th><th class="py-2 pr-4">Size</th>
+                    <th class="py-2 pr-4">Needs RAM</th><th class="py-2 pr-4">Status</th>
                 </tr></thead>
-                <tbody>${res.providers.map(p => {
-                    const mine = own.get(p.id);
-                    const status = mine
-                        ? `<span class="text-green-600 dark:text-green-400 font-medium">Your org's key, ends in …${escapeHtml(mine.last4)}</span>`
-                        : (p.deployment_configured
-                            ? '<span class="text-gray-500">Using deployment default</span>'
-                            : '<span class="text-gray-400">Not configured</span>');
-                    return `
-                    <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
-                        <td class="py-2 pr-4 font-medium">${escapeHtml(p.label)}</td>
-                        <td class="py-2 pr-4">${status}</td>
+                <tbody>${models.map(m => `
+                    <tr class="border-b border-gray-100 dark:border-neutral-800/60">
                         <td class="py-2 pr-4">
-                            <input type="password" autocomplete="off" data-provider="${escapeHtml(p.id)}"
-                                class="provider-key-input w-full min-w-[160px] p-1.5 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-xs"
-                                placeholder="${mine ? 'Paste to replace' : 'Paste key to set'}">
+                            <div class="font-medium">${escapeHtml(m.label)}</div>
+                            <code class="text-xs text-gray-400">${escapeHtml(m.alias)}</code>
                         </td>
-                        <td class="py-2 text-right whitespace-nowrap">
-                            <button class="provider-key-set text-xs font-semibold text-green-600 hover:text-green-700 hover:underline mr-3" data-provider="${escapeHtml(p.id)}">${mine ? 'Replace' : 'Set'}</button>
-                            ${mine ? `<button class="provider-key-del text-xs text-red-500 hover:text-red-600 hover:underline" data-provider="${escapeHtml(p.id)}">Remove</button>` : ''}
+                        <td class="py-2 pr-4 tabular-nums">${escapeHtml(m.size_human || fmtBytes(m.size))}</td>
+                        <td class="py-2 pr-4 tabular-nums">${escapeHtml(fmtBytes(m.min_ram))}</td>
+                        <td class="py-2 pr-4">${badge(m)}${m.active || m.downloading ? '' : `
+                            <button type="button" class="local-model-action mt-1 block text-xs text-green-600 hover:underline" data-model-id="${escapeHtml(m.id)}" data-activate="${m.installed ? 'true' : 'false'}">
+                                ${m.installed ? 'Activate' : 'Download'}
+                            </button>`}</td>
+                    </tr>`).join('')}
+                </tbody></table></div>`}
+        <p id="local-fetch-status" class="text-xs text-gray-400">
+            ${res.active
+                ? `The local model server is currently serving <code>${escapeHtml(res.active)}</code>.`
+                : 'No local model is being served, so no local model is offered in the composer.'}
+        </p>`;
+
+    host.querySelectorAll('.local-model-action').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+            try {
+                const activate = btn.dataset.activate === 'true';
+                const result = await api.downloadLocalModel(btn.dataset.modelId, activate);
+                if (!result || !result.ok) throw new Error((result && result.error) || 'Unable to start download');
+                watchLocalFetch(host, orgId);
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = btn.dataset.activate === 'true' ? 'Activate' : 'Download';
+                ui.showToast(e.message, 'error');
+            }
+        });
+    });
+}
+
+function watchLocalFetch(host, orgId) {
+    const statusEl = host.querySelector('#local-fetch-status');
+    if (!statusEl) return;
+    const poll = async () => {
+        try {
+            const result = await api.getLocalModelStatus();
+            const status = (result && result.status) || {};
+            if (status.state === 'done') {
+                statusEl.textContent = status.activated
+                    ? 'Model activated. Refreshing catalog...'
+                    : 'Download verified. Refreshing catalog...';
+                setTimeout(() => renderModelCatalogSection(orgId), 1500);
+                return;
+            }
+            if (status.state === 'error') {
+                statusEl.textContent = status.error || 'Local model download failed.';
+                return;
+            }
+            if (status.percent != null) {
+                statusEl.textContent = `${status.label || 'Downloading local model'}: ${status.percent}%`;
+            } else {
+                statusEl.textContent = status.label || 'Preparing local model download...';
+            }
+            setTimeout(poll, 2000);
+        } catch (_) {
+            setTimeout(poll, 3000);
+        }
+    };
+    poll();
+}
+
+// Cloud: BYOK provider keys (write-only) plus operator-added model ids. Same
+// two widgets as the old Provider API Keys and Model Catalog cards, now sharing
+// one card with Local.
+async function renderCloudPane(host, orgId) {
+    if (!host) return;
+
+    let keys = null, catalog = null;
+    if (orgId) {
+        try {
+            keys = await api.getOrgProviderKeys(orgId);
+        } catch (e) { /* rendered as empty below */ }
+    }
+    try {
+        catalog = await api.getCustomModels();
+    } catch (e) { /* rendered as empty below */ }
+
+    const providers = (keys && keys.ok && keys.providers) || [];
+    const own = new Map(((keys && keys.keys) || []).map(k => [k.provider, k]));
+    const custom = (catalog && catalog.ok && catalog.models) || [];
+
+    host.innerHTML = `
+        ${orgId ? `<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Bring your organization's own provider keys. A stored key replaces the deployment default
+            for this org's calls only (including background work), so your usage bills to your account.
+            Keys are stored encrypted, are never displayed after saving, and changes apply within a minute.
+        </p>
+        <div class="overflow-x-auto mb-6"><table class="w-full text-sm">
+            <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
+                <th class="py-2 pr-4">Provider</th><th class="py-2 pr-4">Status</th><th class="py-2 pr-4">Key</th><th class="py-2"></th>
+            </tr></thead>
+            <tbody>${providers.map(p => {
+                const mine = own.get(p.id);
+                const status = mine
+                    ? `<span class="text-green-600 dark:text-green-400 font-medium">Your org's key, ends in …${escapeHtml(mine.last4)}</span>`
+                    : (p.deployment_configured
+                        ? '<span class="text-gray-500">Using deployment default</span>'
+                        : '<span class="text-gray-400">Not configured</span>');
+                return `
+                <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
+                    <td class="py-2 pr-4 font-medium">${escapeHtml(p.label)}</td>
+                    <td class="py-2 pr-4">${status}</td>
+                    <td class="py-2 pr-4">
+                        <input type="password" autocomplete="off" data-provider="${escapeHtml(p.id)}"
+                            class="provider-key-input w-full min-w-[160px] p-1.5 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-xs"
+                            placeholder="${mine ? 'Paste to replace' : 'Paste key to set'}">
+                    </td>
+                    <td class="py-2 text-right whitespace-nowrap">
+                        <button class="provider-key-set text-xs font-semibold text-green-600 hover:text-green-700 hover:underline mr-3" data-provider="${escapeHtml(p.id)}">${mine ? 'Replace' : 'Set'}</button>
+                        ${mine ? `<button class="provider-key-del text-xs text-red-500 hover:text-red-600 hover:underline" data-provider="${escapeHtml(p.id)}">Remove</button>` : ''}
+                    </td>
+                </tr>`;
+            }).join('')}
+            </tbody></table></div>` : `<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            This appliance is not connected to an organization. Add deployment-wide cloud models
+            using the provider keys configured for the appliance.
+        </p>`}
+
+        <h5 class="text-base font-semibold mb-1">Add a cloud model</h5>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Offer a model the providers above do not list by default. Use the provider's exact model id.
+            Only providers with a configured API key can be chosen; each org's provider allow-list still applies.
+        </p>
+        ${custom.length === 0
+            ? '<p class="text-sm text-gray-400 mb-4">No custom models yet. The built-in catalog is unaffected.</p>'
+            : `<div class="overflow-x-auto mb-4"><table class="w-full text-sm">
+                <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
+                    <th class="py-2 pr-4">Model id</th><th class="py-2 pr-4">Label</th><th class="py-2 pr-4">Provider</th><th class="py-2"></th>
+                </tr></thead>
+                <tbody>${custom.map(m => `
+                    <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
+                        <td class="py-2 pr-4"><code class="text-xs">${escapeHtml(m.id)}</code></td>
+                        <td class="py-2 pr-4">${escapeHtml(m.label)}</td>
+                        <td class="py-2 pr-4">${escapeHtml(m.provider)}</td>
+                        <td class="py-2 text-right">
+                            <button class="catalog-del-btn text-xs text-red-500 hover:text-red-600 hover:underline" data-id="${escapeHtml(m.id)}">Remove</button>
                         </td>
-                    </tr>`;
-                }).join('')}
-                </tbody></table></div>
+                    </tr>`).join('')}
+                </tbody></table></div>`}
+        <div class="flex flex-wrap gap-2 items-end">
+            <div class="flex-1 min-w-[180px]">
+                <label class="text-xs text-gray-500 block mb-1" for="catalog-model-id">Model id (exact)</label>
+                <input type="text" id="catalog-model-id" placeholder="e.g. claude-sonnet-5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <label class="text-xs text-gray-500 block mb-1" for="catalog-model-label">Display label</label>
+                <input type="text" id="catalog-model-label" placeholder="e.g. Claude Sonnet 5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+            </div>
+            <div class="min-w-[140px]">
+                <label class="text-xs text-gray-500 block mb-1" for="catalog-model-provider">Provider</label>
+                <select id="catalog-model-provider" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
+                    ${((catalog && catalog.providers) || []).map(p =>
+                        `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`).join('')}
+                </select>
+            </div>
+            <button id="catalog-add-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">Add Model</button>
         </div>
     `;
 
@@ -289,7 +533,7 @@ async function renderProviderKeysSection(orgId) {
                 const r = await api.setOrgProviderKey(orgId, provider, key);
                 if (r && r.ok) {
                     ui.showToast(`Key stored for ${provider}. Applies within a minute.`, 'success');
-                    renderProviderKeysSection(orgId);
+                    renderCloudPane(host, orgId);
                 } else {
                     throw new Error((r && r.error) || 'Save failed');
                 }
@@ -307,7 +551,42 @@ async function renderProviderKeysSection(orgId) {
                 const r = await api.deleteOrgProviderKey(orgId, provider);
                 if (r && r.ok) {
                     ui.showToast('Key removed.', 'success');
-                    renderProviderKeysSection(orgId);
+                    renderCloudPane(host, orgId);
+                } else {
+                    throw new Error((r && r.error) || 'Remove failed');
+                }
+            } catch (e) {
+                ui.showToast(e.message, 'error');
+            }
+        });
+    });
+
+    host.querySelector('#catalog-add-btn')?.addEventListener('click', async () => {
+        const id = document.getElementById('catalog-model-id').value.trim();
+        const label = document.getElementById('catalog-model-label').value.trim();
+        const provider = document.getElementById('catalog-model-provider').value;
+        if (!id) return ui.showToast('Model id is required.', 'error');
+        try {
+            const r = await api.addCustomModel({ id, label, provider });
+            if (r && r.ok) {
+                ui.showToast('Model added. It appears in the composer within a minute.', 'success');
+                renderCloudPane(host, orgId);
+            } else {
+                throw new Error((r && r.error) || 'Add failed');
+            }
+        } catch (e) {
+            ui.showToast(e.message, 'error');
+        }
+    });
+
+    host.querySelectorAll('.catalog-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm(`Remove ${btn.dataset.id} from the catalog? Users currently set to it fall back to the default model.`)) return;
+            try {
+                const r = await api.deleteCustomModel(btn.dataset.id);
+                if (r && r.ok) {
+                    ui.showToast('Model removed.', 'success');
+                    renderCloudPane(host, orgId);
                 } else {
                     throw new Error((r && r.error) || 'Remove failed');
                 }
@@ -363,99 +642,4 @@ async function renderDeploymentSection(days, prices) {
             fmtUsd(o.unpriced ? null : o.cost),
         ])
     );
-}
-
-// Model Catalog (backlog 63): operator-added models offered in the composer
-// alongside the built-ins, each with an explicit provider so dispatch never
-// guesses. Admin-only endpoints; the whole tab is already admin-gated.
-async function renderModelCatalogSection() {
-    const host = document.getElementById('usage-model-catalog-section');
-    if (!host) return;
-    let res;
-    try {
-        res = await api.getCustomModels();
-    } catch (e) {
-        return;
-    }
-    if (!res || !res.ok) return;
-
-    const providerOptions = res.providers.map(p =>
-        `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`).join('');
-
-    host.innerHTML = `
-        <div class="settings-card">
-            <h4 class="text-lg font-semibold">Model Catalog</h4>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 mb-4">
-                Add models to the composer picker without a code change. Use the provider's exact model id.
-                Only providers with a configured API key are offered; each org's provider allow-list still applies.
-            </p>
-            ${res.models.length === 0
-                ? '<p class="text-sm text-gray-400 mb-4">No custom models yet. The built-in catalog is unaffected.</p>'
-                : `<div class="overflow-x-auto mb-4"><table class="w-full text-sm">
-                    <thead><tr class="text-left text-xs uppercase text-gray-400 border-b border-gray-200 dark:border-neutral-800">
-                        <th class="py-2 pr-4">Model id</th><th class="py-2 pr-4">Label</th><th class="py-2 pr-4">Provider</th><th class="py-2"></th>
-                    </tr></thead>
-                    <tbody>${res.models.map(m => `
-                        <tr class="border-b border-gray-100 dark:border-neutral-800/60 hover:bg-gray-50 dark:hover:bg-neutral-800/40 transition-colors">
-                            <td class="py-2 pr-4"><code class="text-xs">${escapeHtml(m.id)}</code></td>
-                            <td class="py-2 pr-4">${escapeHtml(m.label)}</td>
-                            <td class="py-2 pr-4">${escapeHtml(m.provider)}</td>
-                            <td class="py-2 text-right">
-                                <button class="catalog-del-btn text-xs text-red-500 hover:text-red-600 hover:underline" data-id="${escapeHtml(m.id)}">Remove</button>
-                            </td>
-                        </tr>`).join('')}
-                    </tbody></table></div>`
-            }
-            <div class="flex flex-wrap gap-2 items-end">
-                <div class="flex-1 min-w-[180px]">
-                    <label class="text-xs text-gray-500 block mb-1">Model id (exact)</label>
-                    <input type="text" id="catalog-model-id" placeholder="e.g. claude-sonnet-5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
-                </div>
-                <div class="flex-1 min-w-[140px]">
-                    <label class="text-xs text-gray-500 block mb-1">Display label</label>
-                    <input type="text" id="catalog-model-label" placeholder="e.g. Claude Sonnet 5" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">
-                </div>
-                <div class="min-w-[140px]">
-                    <label class="text-xs text-gray-500 block mb-1">Provider</label>
-                    <select id="catalog-model-provider" class="w-full p-2 rounded border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 text-sm">${providerOptions}</select>
-                </div>
-                <button id="catalog-add-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">Add Model</button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('catalog-add-btn')?.addEventListener('click', async () => {
-        const id = document.getElementById('catalog-model-id').value.trim();
-        const label = document.getElementById('catalog-model-label').value.trim();
-        const provider = document.getElementById('catalog-model-provider').value;
-        if (!id) return ui.showToast('Model id is required.', 'error');
-        try {
-            const r = await api.addCustomModel({ id, label, provider });
-            if (r && r.ok) {
-                ui.showToast('Model added. It appears in the composer within a minute.', 'success');
-                renderModelCatalogSection();
-            } else {
-                throw new Error((r && r.error) || 'Add failed');
-            }
-        } catch (e) {
-            ui.showToast(e.message, 'error');
-        }
-    });
-
-    host.querySelectorAll('.catalog-del-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            if (!confirm(`Remove ${btn.dataset.id} from the catalog? Users currently set to it fall back to the default model.`)) return;
-            try {
-                const r = await api.deleteCustomModel(btn.dataset.id);
-                if (r && r.ok) {
-                    ui.showToast('Model removed.', 'success');
-                    renderModelCatalogSection();
-                } else {
-                    throw new Error((r && r.error) || 'Remove failed');
-                }
-            } catch (e) {
-                ui.showToast(e.message, 'error');
-            }
-        });
-    });
 }

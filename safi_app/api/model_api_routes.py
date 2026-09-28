@@ -1,4 +1,5 @@
 import re
+import subprocess
 
 from flask import Blueprint, jsonify, request, session, current_app
 
@@ -56,6 +57,52 @@ def list_models():
     })
 
 
+@model_api_bp.route('/models/local', methods=['GET'])
+@require_role('admin')
+def list_local_models():
+    """The appliance catalogue: available, installed, and what is being served.
+
+    Backs the Local side of the Model Catalog. Distinct from /models, which
+    answers "what may this org dispatch right now" and so returns only the live
+    model -- here an admin needs to see the whole choice, including models that
+    are absent (to download) or present but not currently served.
+    """
+    from ..core.services.provider_governance import local_catalog_payload
+    return jsonify(local_catalog_payload())
+
+
+@model_api_bp.route('/models/local/status', methods=['GET'])
+@require_role('admin')
+def local_model_status():
+    from pathlib import Path
+    import json
+    path = Path('/var/lib/safi/model-fetch.json')
+    try:
+        status = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        status = {}
+    return jsonify({'ok': True, 'available': path.exists(), 'status': status})
+
+
+@model_api_bp.route('/models/local/download', methods=['POST'])
+@require_role('admin')
+def download_local_model():
+    model_id = (request.json or {}).get('model_id', '').strip()
+    activate = bool((request.json or {}).get('activate', False))
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,63}', model_id):
+        return jsonify({'error': 'Invalid local model id.'}), 400
+    try:
+        result = subprocess.run(
+            ['sudo', '/usr/local/sbin/safi-model-manage', model_id]
+            + (['--activate'] if activate else []),
+            capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return jsonify({'error': f'Local model management is unavailable: {exc}'}), 503
+    if result.returncode:
+        return jsonify({'error': result.stderr.strip() or result.stdout.strip() or 'Unable to start local model download.'}), 409
+    return jsonify({'ok': True})
+
+
 @model_api_bp.route('/models/custom', methods=['GET'])
 @require_role('admin')
 def list_custom():
@@ -109,6 +156,12 @@ def add_custom():
         return jsonify({"error": f"No API key is configured for '{provider}', so this model could never dispatch."}), 400
     if any(m["id"].lower() == model_id.lower() for m in Config.AVAILABLE_MODELS):
         return jsonify({"error": "That model is already in the built-in catalog."}), 409
+    # Same check against the appliance's installed local models. Without this an
+    # operator could add a shadow row for an id the catalogue already supplies,
+    # and the picker would list it twice.
+    from ..core.services.provider_governance import installed_local_models
+    if any(m["id"].lower() == model_id.lower() for m in installed_local_models()):
+        return jsonify({"error": "That model is already provided by the appliance."}), 409
     # Fresh read, not the worker-local cache: a stale cache here would let a
     # duplicate through to the primary-key constraint as a raw 500.
     #

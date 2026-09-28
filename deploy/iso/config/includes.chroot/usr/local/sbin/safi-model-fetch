@@ -1,0 +1,482 @@
+#!/usr/bin/python3
+"""Fetch, verify and activate a local model for the SAFi appliance.
+
+Runs as root from safi-model-fetch.service, invoked by the setup wizard once the
+operator has chosen a model. Standard library only: this runs on early boot
+before the app virtualenv is known to be good, and a download must not depend on
+the application stack being importable.
+
+The contract with the wizard is a single JSON status file that the browser
+polls, so a 20 GB transfer survives the operator closing the tab, reloading, or
+the box losing power. curl's -C - makes every step resumable.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+
+CHOICE_PATH = Path("/var/lib/safi-firstboot/model-choice.json")
+STATUS_PATH = Path("/var/lib/safi/model-fetch.json")
+
+# Partials live in a cache keyed by digest, not in the final model directory:
+# a half-written GGUF in the model dir would look installable, and the resume
+# logic would have to trust a file it has never verified.
+CACHE_DIR = Path("/var/cache/safi-models")
+# Falls back to the 070 hook's directory if the catalogue predates
+# model_root. install_model() reads the authoritative value from the
+# catalogue it is given.
+MODEL_ROOT = Path("/var/lib/safi/models")
+CPU_HOME = Path("/opt/safi/bin")
+CUDA_HOME = Path("/opt/safi/cuda")
+
+ENV_FILE = Path("/etc/safi/llama-server.env")
+UNIT_PATH = Path("/etc/systemd/system/safi-llama-server.service")
+UNIT_NAME = "safi-llama-server.service"
+
+POLL_SECONDS = 0.5
+
+
+class FetchError(Exception):
+    """Operator-facing failure: the message is shown verbatim in the wizard."""
+
+
+def _load_safi_local():
+    path = os.environ.get("SAFI_LOCAL_MODULE", "/usr/local/lib/safi_local.py")
+    spec = importlib.util.spec_from_file_location("safi_local", path)
+    if not spec or not spec.loader:
+        raise FetchError(f"appliance helper module missing at {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+safi_local = _load_safi_local()
+
+
+# --------------------------------------------------------------------------
+# status
+# --------------------------------------------------------------------------
+
+def write_status(**fields) -> None:
+    """Publish progress for the wizard to poll.
+
+    Written via a temp file + rename so a poll can never observe a half-written
+    JSON document, which would surface to the operator as a parse error in the
+    progress bar.
+    """
+    STATUS_PATH.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    current = read_status()
+    current.update(fields)
+    current["updated"] = time.time()
+    tmp = STATUS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(current, indent=2), encoding="utf-8")
+    tmp.chmod(0o644)
+    os.replace(tmp, STATUS_PATH)
+
+
+def read_status() -> dict:
+    try:
+        return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+# --------------------------------------------------------------------------
+# plan
+# --------------------------------------------------------------------------
+
+def build_plan(catalogue: dict, model: dict, backend: dict) -> list[dict]:
+    """Ordered list of downloads: backend first, then the weights.
+
+    Order matters. The backend decides which llama-server binary will run the
+    model, and installing a 20 GB model only to discover the CUDA libraries are
+    broken would waste the operator's evening.
+    """
+    steps = []
+    if not backend.get("on_iso"):
+        for asset in backend.get("assets", []):
+            steps.append({
+                "kind": "backend",
+                "name": asset["name"],
+                "url": asset["url"],
+                "size": int(asset["size"]),
+                "sha256": asset["sha256"],
+                "archive": True,
+            })
+    steps.append({
+        "kind": "model",
+        "name": model["label"],
+        "url": model["url"],
+        "size": int(model["size"]),
+        "sha256": model["sha256"],
+        "archive": False,
+    })
+    return steps
+
+
+def plan_total_bytes(plan: list[dict]) -> int:
+    return sum(step["size"] for step in plan)
+
+
+# --------------------------------------------------------------------------
+# verification
+# --------------------------------------------------------------------------
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(4 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def verify(path: Path, expected: str) -> None:
+    """Raise unless the file matches its pinned digest.
+
+    A mismatch deletes the file. Leaving it would make the next attempt resume
+    onto a corrupt prefix and fail forever, and keeping an unverified artefact
+    around on a governance appliance is worse than re-downloading it.
+    """
+    actual = sha256_file(path)
+    if actual == expected:
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    raise FetchError(
+        f"checksum mismatch for {path.name}\n"
+        f"  expected: {expected}\n"
+        f"  actual:   {actual}\n"
+        "The download was discarded. Check the network path and try again.")
+
+
+# --------------------------------------------------------------------------
+# download
+# --------------------------------------------------------------------------
+
+def download(step: dict, progress) -> Path:
+    """Fetch one artefact into the cache, resuming if a partial is present."""
+    CACHE_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    dest = CACHE_DIR / f"{step['sha256']}.part"
+
+    if dest.exists():
+        have = dest.stat().st_size
+        if have == step["size"]:
+            progress(step, have, verifying=True)
+            verify(dest, step["sha256"])
+            return dest
+        if have > step["size"]:
+            # Truncated or re-tagged upstream; a resume past the real length
+            # produces a corrupt file that hashes wrong forever.
+            dest.unlink()
+
+    if not shutil.which("curl"):
+        raise FetchError("curl is not installed, so nothing can be downloaded.")
+
+    progress(step, dest.stat().st_size if dest.exists() else 0)
+    proc = subprocess.Popen(
+        ["curl", "--fail", "--location", "--continue-at", "-",
+         "--retry", "3", "--retry-delay", "2", "--silent", "--show-error",
+         "--output", str(dest), step["url"]],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        while True:
+            code = proc.poll()
+            if code is not None:
+                break
+            try:
+                progress(step, dest.stat().st_size)
+            except OSError:
+                pass
+            time.sleep(POLL_SECONDS)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    if proc.returncode != 0:
+        detail = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+        raise FetchError(
+            f"download of {step['name']} failed (curl exit {proc.returncode})"
+            + (f": {detail}" if detail else "")
+            + "\nProgress was kept, so retrying resumes where it stopped.")
+
+    if not dest.exists():
+        raise FetchError(f"download of {step['name']} produced no file")
+    actual_size = dest.stat().st_size
+    if actual_size != step["size"]:
+        raise FetchError(
+            f"{step['name']} is {actual_size} bytes, expected {step['size']}. "
+            "The catalogue pin and the upstream artefact disagree.")
+    progress(step, actual_size, verifying=True)
+    verify(dest, step["sha256"])
+    return dest
+
+
+# --------------------------------------------------------------------------
+# install
+# --------------------------------------------------------------------------
+
+def install_backend(archive: Path, dest: Path) -> None:
+    """Flatten a llama.cpp release archive into one directory.
+
+    The archives ship build/bin/llama-server plus its shared libraries in a
+    sibling tree, and the dynamic loader will not find them without a
+    deterministic library path. Copying the server plus every .so found
+    anywhere under the archive is layout-agnostic, which matters because the
+    cudart archive is a separate tarball and may place its libraries elsewhere.
+    """
+    dest.mkdir(mode=0o755, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="safi-llama-") as tmpdir:
+        tmp = Path(tmpdir)
+        with tarfile.open(archive, "r:gz") as tar:
+            _safe_extract(tar, tmp)
+        servers = [p for p in tmp.rglob("llama-server") if p.is_file()]
+        if not servers:
+            raise FetchError(
+                f"no llama-server binary inside {archive.name}; the pinned "
+                "release layout changed and this script needs updating.")
+        shutil.copy2(servers[0], dest / "llama-server")
+        dest.joinpath("llama-server").chmod(0o755)
+        for lib in tmp.rglob("*.so*"):
+            if lib.is_file():
+                shutil.copy2(lib, dest / lib.name)
+
+
+def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract refusing absolute paths and traversal.
+
+    The archive is digest-pinned, so this is defence in depth rather than the
+    primary control -- but a pinned artefact that is ever replaced upstream
+    should not be able to write outside the temp dir.
+    """
+    dest_resolved = dest.resolve()
+    for member in tar.getmembers():
+        target = (dest / member.name).resolve()
+        if not str(target).startswith(str(dest_resolved)):
+            raise FetchError(f"refusing unsafe path in archive: {member.name}")
+    # filter= also strips setuid bits and absolute paths; our own check above
+    # runs first so the operator gets a readable message instead of tarfile's.
+    tar.extractall(dest, filter="data")
+
+
+def model_root(catalogue: dict) -> Path:
+    return Path(catalogue.get("model_root") or MODEL_ROOT)
+
+
+def install_model(cached: Path, model: dict, catalogue: dict | None = None) -> Path:
+    root = model_root(catalogue or {})
+    target_dir = root / model["id"]
+    target_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+    name = model.get("file") or Path(model["url"].split("?", 1)[0]).name
+    target = target_dir / name
+    if target.exists() and target.stat().st_size == int(model["size"]):
+        target.unlink()
+    os.replace(cached, target)
+    target.chmod(0o644)
+    return target
+
+
+# --------------------------------------------------------------------------
+# systemd
+# --------------------------------------------------------------------------
+
+def render_env_file(catalogue: dict, backend: dict) -> str:
+    gpu_layers = 99 if backend.get("gpu") else 0
+    return (
+        "# Written by safi-model-fetch. Operators may retune these without\n"
+        "# changing SAFi's provider configuration; the server stays loopback-only.\n"
+        f"SAFI_LOCAL_MODEL_CONTEXT={int(catalogue.get('context_size', 8192))}\n"
+        "SAFI_LOCAL_MODEL_THREADS=0\n"
+        f"SAFI_LOCAL_MODEL_GPU_LAYERS={gpu_layers}\n"
+    )
+
+
+def render_unit(binary: str, lib_dir: str, model_path: str, alias: str) -> str:
+    """Render the model server unit.
+
+    The readiness probe is inherited from the build-time unit deliberately: a
+    20 GB model can take minutes to mmap and the KV cache to allocate, and
+    without it systemd reports "started" for a process that is not yet
+    answering, and the first SAFi request fails.
+    """
+    return f"""[Unit]
+Description=SAFi local OpenAI-compatible model server
+After=network.target local-fs.target
+Before=safi.service safi-browser-setup.service
+
+[Service]
+Type=simple
+User=safi
+Group=safi
+EnvironmentFile={ENV_FILE}
+Environment=LD_LIBRARY_PATH={lib_dir}
+ExecStart={binary} --model {model_path} --host 127.0.0.1 --port 8081 --alias {alias} --ctx-size ${{SAFI_LOCAL_MODEL_CONTEXT}} --threads ${{SAFI_LOCAL_MODEL_THREADS}} --n-gpu-layers ${{SAFI_LOCAL_MODEL_GPU_LAYERS}} --reasoning off
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=900
+ExecStartPost=/bin/sh -c 'n=0; while [ "$$n" -lt 900 ]; do if curl -sf -m 5 http://127.0.0.1:8081/v1/models >/dev/null 2>&1; then exit 0; fi; n=$$((n+1)); sleep 1; done; echo "safi-llama-server: model server not answering on 127.0.0.1:8081 after 900s; check the journal for OOM or a failed model load" >&2; exit 1'
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def install_unit(catalogue: dict, model: dict, backend: dict, model_path: Path) -> None:
+    gpu = bool(backend.get("gpu"))
+    home = CUDA_HOME if gpu else CPU_HOME
+    binary = home / "llama-server"
+    if not binary.exists():
+        raise FetchError(f"expected llama-server at {binary}, which is missing")
+
+    ENV_FILE.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    ENV_FILE.write_text(render_env_file(catalogue, backend), encoding="utf-8")
+    ENV_FILE.chmod(0o644)
+    UNIT_PATH.write_text(
+        render_unit(str(binary), str(home), str(model_path), model["alias"]),
+        encoding="utf-8")
+    UNIT_PATH.chmod(0o644)
+
+
+def activate_unit() -> None:
+    run = lambda *args: subprocess.run(args, check=True, capture_output=True)
+    run("systemctl", "daemon-reload")
+    # Start first, enable only once the server has answered: a unit that is
+    # enabled but wedged would retry on every boot and fill the journal.
+    run("systemctl", "restart", UNIT_NAME)
+    run("systemctl", "enable", UNIT_NAME)
+
+
+def should_activate() -> bool:
+    """Only replace the live server after the operator explicitly asks."""
+    try:
+        return bool(read_choice().get("activate", False))
+    except FetchError:
+        return False
+
+
+# --------------------------------------------------------------------------
+# entry point
+# --------------------------------------------------------------------------
+
+def read_choice() -> dict:
+    try:
+        return json.loads(CHOICE_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise FetchError(f"no model selection found at {CHOICE_PATH}: {exc}") from exc
+    except ValueError as exc:
+        raise FetchError(f"model selection at {CHOICE_PATH} is not valid JSON: {exc}") from exc
+
+
+def resolve(args, catalogue: dict) -> tuple[dict, dict]:
+    choice = read_choice()
+    model_id = args.model or choice.get("model")
+    backend_id = args.backend or choice.get("backend")
+    if not model_id:
+        raise FetchError("no model was selected")
+    model = safi_local.model_by_id(catalogue, model_id)
+    if model is None:
+        raise FetchError(f"unknown model id {model_id!r}")
+    if not backend_id:
+        raise FetchError("no inference backend was selected")
+    backend = safi_local.backend_by_id(catalogue, backend_id)
+    if backend is None:
+        raise FetchError(f"unknown backend id {backend_id!r}")
+    return model, backend
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", help="catalogue model id; default from the wizard's choice file")
+    parser.add_argument("--backend", help="catalogue backend id; default from the wizard's choice file")
+    args = parser.parse_args(argv)
+
+    try:
+        catalogue = safi_local.load_catalogue()
+    except (OSError, ValueError) as exc:
+        write_status(state="error", error=f"model catalogue is unusable: {exc}")
+        return 1
+
+    try:
+        model, backend = resolve(args, catalogue)
+        plan = build_plan(catalogue, model, backend)
+        total = plan_total_bytes(plan)
+
+        write_status(state="running", phase="starting", model=model["id"],
+                     model_label=model["label"], backend=backend["id"],
+                     backend_label=backend.get("label", backend["id"]),
+                     alias=model["alias"], total_bytes=total, done_bytes=0,
+                     percent=0, label="Preparing", error="", started=time.time())
+
+        def progress(step: dict, have: int, verifying: bool = False) -> None:
+            # Bytes finished before this step, so the bar advances across the
+            # whole plan rather than restarting at each artefact.
+            base = _prior(step, plan)
+            overall = min(100, int(100 * (base + min(have, step["size"])) / total)) if total else 100
+            write_status(
+                done_bytes=base + min(have, step["size"]),
+                percent=overall,
+                phase="verifying" if verifying else "downloading",
+                label=f"{'Checking' if verifying else 'Downloading'} {step['name']}",
+                step_name=step["name"], step_bytes=min(have, step["size"]),
+                step_size=step["size"])
+
+        model_path = None
+        for step in plan:
+            cached = download(step, progress)
+            if step["kind"] == "backend":
+                write_status(phase="installing", label=f"Installing {step['name']}")
+                install_backend(cached, CUDA_HOME)
+                cached.unlink(missing_ok=True)
+            else:
+                write_status(phase="installing", label="Installing model weights")
+                model_path = install_model(cached, model, catalogue)
+
+        if model_path is None:
+            raise FetchError("the model was never installed")
+
+        activated = should_activate()
+        if activated:
+            write_status(phase="configuring", label="Configuring the model server")
+            install_unit(catalogue, model, backend, model_path)
+            write_status(phase="starting", label="Starting the model server", percent=99)
+            activate_unit()
+
+        write_status(state="done", phase="done", percent=100,
+                     label="Model ready" if activated else "Model downloaded",
+                     model_path=str(model_path), alias=model["alias"],
+                     backend=backend["id"], activated=activated, finished=time.time())
+        return 0
+    except FetchError as exc:
+        write_status(state="error", error=str(exc), finished=time.time())
+        print(f"safi-model-fetch: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 - status file is the operator's view
+        write_status(state="error", error=f"unexpected failure: {exc}", finished=time.time())
+        raise
+
+
+def _prior(step: dict, plan: list[dict]) -> int:
+    """Bytes completed before this step, for the overall percentage."""
+    total = 0
+    for other in plan:
+        if other is step:
+            break
+        total += other["size"]
+    return total
+
+
+if __name__ == "__main__":
+    sys.exit(main())

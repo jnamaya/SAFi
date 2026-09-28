@@ -18,12 +18,19 @@ Contract:
   validation in the chat endpoints is the second net for that case.
 """
 from __future__ import annotations
+import json
 import time
 import threading
 from contextvars import ContextVar
+from pathlib import Path
 from typing import FrozenSet, List, Optional
 
 from .model_routing import PROVIDER_METADATA, configured_providers, detect_provider
+
+# The appliance catalogue, installed by the ISO's 070 hook. It is the only place
+# that knows which local models this build can offer, so the model list is read
+# from it rather than hardcoded here.
+LOCAL_CATALOGUE_PATH = "/etc/safi/local-models.json"
 
 _ACTIVE_ALLOWLIST: ContextVar[Optional[FrozenSet[str]]] = ContextVar(
     "safi_provider_allowlist", default=None
@@ -101,6 +108,123 @@ def model_allowed(model_id: str, allowlist: Optional[FrozenSet[str]]) -> bool:
     return allowlist is None or detect_provider(model_id) in allowlist
 
 
+def local_model_inventory(catalogue_path: str | None = None) -> List[dict]:
+    """Every local model in the appliance catalogue, with what is on disk.
+
+    Shapes each entry with installed/active so a catalog UI can show the whole
+    choice without pretending an absent model can be dispatched. Returns [] on
+    any problem: this is an appliance-only file, so on a normal deployment it
+    simply is not there and must never be able to fail a request.
+    """
+    from ...config import active_local_model
+
+    if catalogue_path is None:
+        catalogue_path = LOCAL_CATALOGUE_PATH
+    try:
+        with open(catalogue_path, encoding="utf-8") as handle:
+            catalogue = json.load(handle)
+        if catalogue.get("schema") != 1:
+            return []
+        root = Path(catalogue["model_root"])
+        live = active_local_model()
+        context = int(catalogue.get("context_size", 0) or 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+    out = []
+    for model in catalogue.get("models", []) or []:
+        # Per-model, not per-catalogue. A single malformed entry must cost only
+        # that entry: an outer try around the whole loop turns one bad key into
+        # an empty catalog, which reads as "this box has no models" and hides
+        # the very model the operator is looking at.
+        try:
+            size = int(model["size"])
+            path = root / model["id"] / model["file"]
+            try:
+                installed = path.stat().st_size == size
+            except OSError:
+                installed = False
+            out.append({
+                "id": model["id"],
+                "alias": model["alias"],
+                "label": model.get("label") or model["alias"],
+                "summary": model.get("summary", ""),
+                "size": size,
+                "size_human": f"{size / 1e9:.1f} GB",
+                "context_window": context,
+                "min_ram": int(model.get("min_ram", 0) or 0),
+                "installed": installed,
+                # Only the model the server was started with is dispatchable.
+                # llama-server takes a single --alias, so a second downloaded
+                # model is installed but not being served.
+                "active": installed and model["alias"] == live,
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def local_catalog_payload(catalogue_path: str | None = None) -> dict:
+    """Response body for GET /api/models/local.
+
+    Answers a different question from /models: not "what may be dispatched" but
+    "what could be downloaded, what is on disk, and what is being served". The
+    Model Catalog needs the middle and last of those, which a dispatch-only
+    endpoint cannot express.
+
+    An off-appliance install has no catalogue and reports available=False. The
+    UI treats that as an ordinary state, not an error, because most SAFi
+    deployments are not appliances.
+    """
+    inventory = local_model_inventory(catalogue_path)
+    try:
+        from ...config import LOCAL_MODEL_STATUS_PATH
+        with open(LOCAL_MODEL_STATUS_PATH, encoding="utf-8") as handle:
+            status = json.load(handle)
+    except (OSError, ValueError):
+        status = {}
+    downloading = status.get("model") if status.get("state") in (
+        "running", "downloading", "verifying", "installing", "configuring", "starting"
+    ) else None
+    for model in inventory:
+        model["downloading"] = model["id"] == downloading
+    if not inventory:
+        return {
+            "ok": True, "available": False, "models": [], "active": None,
+            "reason": "This deployment has no on-appliance model catalogue.",
+        }
+    return {
+        "ok": True,
+        "available": True,
+        "models": inventory,
+        "active": next((m["alias"] for m in inventory if m["active"]), None),
+    }
+
+
+def installed_local_models(catalogue_path: str | None = None) -> List[dict]:
+    """Local (safi-*) models that can actually be dispatched right now.
+
+    Synthesized rather than stored: the operator picks a model in the setup
+    wizard, and a DB row would have to be written and rewritten on every change.
+    Reading the catalogue means a model swap shows up on the next request with
+    no write path at all, and there is no second source of truth to fall out of
+    step with the file the downloader used.
+
+    Only the model the server is actually serving is returned. The rest of this
+    module's contract is that a model which cannot be dispatched is never
+    offered, and llama-server answers to exactly one --alias: offering a second
+    downloaded model would store a selection that 404s on first use. The
+    catalog UI shows the rest via local_model_inventory().
+
+    Returns [] on any problem, or when no model is live.
+    """
+    return [{"id": m["alias"], "label": m["label"], "provider": "local",
+             "local": True, "size_bytes": m["size"],
+             "size_human": m["size_human"],
+             "context_window": m["context_window"]}
+            for m in local_model_inventory(catalogue_path) if m["active"]]
+
+
 def list_models_for_org(org_id) -> List[dict]:
     """Config.AVAILABLE_MODELS enriched with provider metadata, filtered to
     providers whose API key is configured, then by the org's allow-list.
@@ -113,10 +237,12 @@ def list_models_for_org(org_id) -> List[dict]:
     # A provider is usable with a deployment .env key OR the org's own key
     # (backlog 64) — either way its models can actually dispatch for this org.
     configured = configured_providers(Config) | org_key_providers(org_id)
-    # Built-ins first, then operator-added rows (backlog 63) marked custom
-    # so the catalog UI knows which entries are deletable. Both pass the
-    # same configured-provider and allow-list filters.
+    # Built-ins first, then the appliance's installed local models, then
+    # operator-added rows (backlog 63) marked custom so the catalog UI knows
+    # which entries are deletable. All pass the same configured-provider and
+    # allow-list filters.
     merged = [dict(m) for m in Config.AVAILABLE_MODELS]
+    merged += installed_local_models()
     # Custom rows are scoped: this org's own entries plus the deployment-wide
     # ones (org_id ''). Without the filter every org's picker listed every other
     # org's models, which disclosed ids and labels across tenants (backlog 77).

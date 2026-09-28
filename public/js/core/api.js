@@ -564,6 +564,21 @@ export async function getCustomModels() {
     return httpGet('/api/models/custom');
 }
 
+// The on-appliance catalogue: what could be downloaded, what is on disk, and
+// which single model the local server is being served. Empty on a normal
+// deployment, which is not an error.
+export async function getLocalModels() {
+    return httpGet('/api/models/local');
+}
+
+export async function getLocalModelStatus() {
+    return httpGet('/api/models/local/status');
+}
+
+export async function downloadLocalModel(modelId, activate = false) {
+    return httpJSON('/api/models/local/download', 'POST', { model_id: modelId, activate });
+}
+
 export async function addCustomModel(payload) {
     return httpJSON('/api/models/custom', 'POST', payload);
 }
