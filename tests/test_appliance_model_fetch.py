@@ -277,6 +277,26 @@ def test_download_choice_does_not_require_activation(catalogue, tmp_path, monkey
         fetch.argparse.Namespace(model=None, backend=None), catalogue)
     assert model["id"] == "qwen3-8b"
     assert backend["id"] == "cpu"
+    assert fetch.should_activate() is False
+
+
+def test_a_fetch_without_an_activate_key_still_activates(catalogue, tmp_path, monkeypatch):
+    # The setup wizard writes {"model", "backend"} with no activate key. That
+    # is the first-boot path, and it must end with the model server running: a
+    # default of False here left a downloaded model with no unit on disk.
+    monkeypatch.setattr(fetch, "CHOICE_PATH", tmp_path / "choice.json")
+    (tmp_path / "choice.json").write_text(json.dumps({
+        "model": "qwen3-8b", "backend": "cpu",
+    }))
+    assert fetch.should_activate() is True
+
+
+def test_an_explicit_activate_true_activates(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetch, "CHOICE_PATH", tmp_path / "choice.json")
+    (tmp_path / "choice.json").write_text(json.dumps({
+        "model": "qwen3-8b", "backend": "cpu", "activate": True,
+    }))
+    assert fetch.should_activate() is True
 
 
 def test_resolve_rejects_corrupt_choice_json(catalogue, tmp_path, monkeypatch):
@@ -285,6 +305,125 @@ def test_resolve_rejects_corrupt_choice_json(catalogue, tmp_path, monkeypatch):
     with pytest.raises(fetch.FetchError) as exc:
         fetch.resolve(fetch.argparse.Namespace(model=None, backend=None), catalogue)
     assert "not valid JSON" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# re-activation must not re-download
+# --------------------------------------------------------------------------
+
+def test_an_installed_model_is_recognised(catalogue, tmp_path):
+    model = safi_local.model_by_id(catalogue, "phi4-mini")
+    target = tmp_path / model["id"] / model["file"]
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"\0" * 4)
+    # A short file is not an installed model.
+    catalogue = dict(catalogue, model_root=str(tmp_path))
+    assert fetch.installed_model_path(model, catalogue) is None
+
+    with open(target, "wb") as handle:  # sparse stand-in for 2.5 GB
+        handle.truncate(int(model["size"]))
+    assert fetch.installed_model_path(model, catalogue) == target
+
+
+def test_a_short_or_missing_file_is_not_treated_as_installed(catalogue, tmp_path):
+    model = safi_local.model_by_id(catalogue, "qwen3-4b")
+    catalogue = dict(catalogue, model_root=str(tmp_path))
+    assert fetch.installed_model_path(model, catalogue) is None
+
+
+def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monkeypatch):
+    """The bug: install_model() moves the cache file away, so every switch back
+    to a model re-fetched the full weights. The installed path must short-circuit
+    the download step, and activation must still happen."""
+    catalogue = safi_local.load_catalogue(CATALOGUE)
+    model = safi_local.model_by_id(catalogue, "phi4-mini")
+    root = tmp_path / "models"
+    target = root / model["id"] / model["file"]
+    target.parent.mkdir(parents=True)
+    # A sparse file stands in for 2.5 GB of weights.
+    with open(target, "wb") as handle:
+        handle.truncate(int(model["size"]))
+    catalogue = dict(catalogue, model_root=str(root))
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    status = tmp_path / "model-fetch.json"
+    choice = tmp_path / "choice.json"
+    choice.write_text(json.dumps({"model": "phi4-mini", "backend": "cpu",
+                                  "activate": True}))
+    unit = tmp_path / "safi-llama-server.service"
+    env_file = tmp_path / "llama-server.env"
+
+    monkeypatch.setattr(fetch.safi_local, "load_catalogue", lambda *a, **kw: catalogue)
+    monkeypatch.setattr(fetch, "CACHE_DIR", cache)
+    monkeypatch.setattr(fetch, "STATUS_PATH", status)
+    monkeypatch.setattr(fetch, "CHOICE_PATH", choice)
+    monkeypatch.setattr(fetch, "UNIT_PATH", unit)
+    monkeypatch.setattr(fetch, "ENV_FILE", env_file)
+    monkeypatch.setattr(fetch, "write_status",
+                        lambda **kw: status.write_text(json.dumps(kw, default=str)))
+    monkeypatch.setattr(fetch, "activate_unit", lambda: None)
+    monkeypatch.setattr(fetch, "verify", lambda *a, **kw: None)
+    cpu_home = tmp_path / "opt/bin"
+    cpu_home.mkdir(parents=True)
+    (cpu_home / "llama-server").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(fetch, "CPU_HOME", cpu_home)
+
+    def _no_downloads(*a, **kw):
+        raise AssertionError("re-activation must not download")
+
+    monkeypatch.setattr(fetch, "download", _no_downloads)
+    monkeypatch.setattr(fetch.shutil, "which", _no_downloads)
+
+    rc = fetch.main(["--model", "phi4-mini", "--backend", "cpu"])
+    assert rc == 0
+    # Nothing was fetched, and the unit still points at the model.
+    assert list(cache.iterdir()) == []
+    body = unit.read_text()
+    assert f"--alias {model['alias']}" in body
+    assert model["file"] in body
+    # The weights were left exactly where they were.
+    assert target.exists()
+    assert json.loads(status.read_text())["activated"] is True
+
+
+def test_an_uninstalled_model_still_downloads(tmp_path, monkeypatch):
+    catalogue = safi_local.load_catalogue(CATALOGUE)
+    model = safi_local.model_by_id(catalogue, "phi4-mini")
+    root = tmp_path / "models"
+    root.mkdir()
+    catalogue = dict(catalogue, model_root=str(root))
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    status = tmp_path / "model-fetch.json"
+    choice = tmp_path / "choice.json"
+    choice.write_text(json.dumps({"model": "phi4-mini", "backend": "cpu",
+                                  "activate": False}))
+
+    monkeypatch.setattr(fetch.safi_local, "load_catalogue", lambda *a, **kw: catalogue)
+    monkeypatch.setattr(fetch, "CACHE_DIR", cache)
+    monkeypatch.setattr(fetch, "STATUS_PATH", status)
+    monkeypatch.setattr(fetch, "CHOICE_PATH", choice)
+    monkeypatch.setattr(fetch, "UNIT_PATH", tmp_path / "safi-llama-server.service")
+    monkeypatch.setattr(fetch, "ENV_FILE", tmp_path / "llama-server.env")
+    monkeypatch.setattr(fetch, "write_status",
+                        lambda **kw: status.write_text(json.dumps(kw, default=str)))
+    monkeypatch.setattr(fetch, "verify", lambda *a, **kw: None)
+
+    def _fake_download(step, progress):
+        progress(step, step["size"])
+        blob = cache / f"{step['sha256']}.part"
+        blob.write_bytes(b"\0" * int(step["size"]))
+        return blob
+
+    monkeypatch.setattr(fetch, "download", _fake_download)
+
+    rc = fetch.main(["--model", "phi4-mini", "--backend", "cpu"])
+    assert rc == 0
+    # The weights were fetched and installed, and nothing was activated.
+    assert (root / model["id"] / model["file"]).exists()
+    assert not (tmp_path / "safi-llama-server.service").exists()
 
 
 # --------------------------------------------------------------------------

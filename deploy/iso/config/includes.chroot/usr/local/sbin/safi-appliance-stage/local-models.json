@@ -1,0 +1,201 @@
+{
+  "schema": 1,
+  "comment": [
+    "Catalogue of local models the appliance can fetch at setup time, and of the",
+    "llama.cpp runtime backends it can run them on. Staged here and installed by",
+    "the 070 hook to /etc/safi/local-models.json. Read by safi-browser-setup.py",
+    "(to render the model picker) and by safi-model-fetch (to download and",
+    "verify). Both consumers parse this file, so the format is deliberately flat",
+    "JSON rather than code shared through an import path: safi-model-fetch runs",
+    "on stdlib python before the app venv is known to be healthy.",
+    "",
+    "Every url is pinned to a digest-verified artefact. sha256 is mandatory and",
+    "a mismatch aborts the fetch and never starts the server -- a model fetched",
+    "over the network is otherwise a supply-chain hole in a product whose audit",
+    "record carries a TCB fingerprint.",
+    "",
+    "kv_bytes_per_token is the f16 KV cache cost at the configured context",
+    "window: 2 (K and V) * layers * kv_heads * head_dim * 2 bytes. For Qwen3 that",
+    "is 144 KiB/token for 4B and 8B (36 layers), 160 KiB/token for 14B (40) and",
+    "256 KiB/token for 32B (64). Cross-checked against llama.cpp's reported KV",
+    "size for Qwen3-0.6B (112 KiB/token) and Qwen3-8B (144 KiB/token) at 8192."
+  ],
+  "context_size": 8192,
+  "max_output_tokens": 1024,
+  "model_root": "/var/lib/safi/models",
+  "model_root_comment": "Installed weights live at <model_root>/<model id>/<file>. Stated here rather than hardcoded so safi-model-fetch (which writes) and the app (which reports what is installed) cannot drift apart. 'file' is given per model for the same reason: deriving it from the url's basename is a convention, and a convention shared across two codebases is a drift waiting to happen.",
+  "overhead_bytes": 2684354560,
+  "overhead_comment": "Reserved for SAFi + MariaDB + page cache, added on top of weights + KV when deriving min_ram. 2.5 GiB.",
+  "backends": {
+    "cpu": {
+      "id": "cpu",
+      "label": "CPU only",
+      "min_driver": 0,
+      "gpu": false,
+      "on_iso": true,
+      "on_iso_comment": "The 070 hook already installs this tarball's contents into /opt/safi/bin, so a CPU fetch must not download it again. The asset entry is kept so a rebuild can re-derive the pinned digest from one place.",
+      "assets": [
+        {
+          "name": "llama-server (CPU)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-x64.tar.gz",
+          "size": 17403637,
+          "sha256": "730ea8e54b97735abb46e46747999249719251f29753fcda97b5e2f2f3ea6912"
+        }
+      ]
+    },
+    "cuda-12.8": {
+      "id": "cuda-12.8",
+      "label": "NVIDIA GPU (CUDA 12.8)",
+      "min_driver": 525,
+      "gpu": true,
+      "assets": [
+        {
+          "name": "llama-server (CUDA 12.8)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-cuda-12.8-x64.tar.gz",
+          "size": 170927888,
+          "sha256": "2922888a8c1c946d829bd6d283ac9cc1b154fff951046a3e5cd74e8582427b56"
+        },
+        {
+          "name": "CUDA runtime (12.8)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/cudart-llama-b11205-bin-ubuntu-cuda-12.8-x64.tar.gz",
+          "size": 594377688,
+          "sha256": "d55fd64fd568e91bba77613317f40bba7a6c65d123c7e7f7598364314275a00b"
+        }
+      ]
+    },
+    "cuda-13.4": {
+      "id": "cuda-13.4",
+      "label": "NVIDIA GPU (CUDA 13.4)",
+      "min_driver": 580,
+      "gpu": true,
+      "assets": [
+        {
+          "name": "llama-server (CUDA 13.4)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-cuda-13.4-x64.tar.gz",
+          "size": 151686507,
+          "sha256": "a4bc288c9157091e65066f91e12a4cb9057afca8e45e922dfc458ec03e0c01e0"
+        },
+        {
+          "name": "CUDA runtime (13.4)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/cudart-llama-b11205-bin-ubuntu-cuda-13.4-x64.tar.gz",
+          "size": 440236706,
+          "sha256": "f6377d2b7405d9a261b09d540b021a081c1f991dc8c393cded101069cc7a9c68"
+        }
+      ]
+    }
+  },
+  "backend_note": [
+    "A CUDA backend needs BOTH assets above. llama.cpp split the CUDA runtime out",
+    "of the server archive at b11205, so fetching only llama-server yields a",
+    "build whose ggml-cuda.so cannot resolve libcudart, which fails at the first",
+    "GPU layer load rather than at startup -- hence the two-entry list and the",
+    "combined 765 MB pre-flight, not 171 MB.",
+    "",
+    "Only the x64 CPU tarball ships on the ISO. A CUDA box pays the ~765 MB",
+    "backend download once, at setup, which keeps the ISO near 1.5 GB instead of",
+    "~3.3 GB for boxes that will never touch a GPU."
+  ],
+  "models": [
+    {
+      "id": "qwen3-4b",
+      "alias": "safi-qwen3-4b",
+      "file": "Qwen3-4B-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3-4B",
+      "summary": "Smallest useful local model. Fits a 6 GB VM.",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "size": 2497280256,
+      "kv_bytes_per_token": 147456,
+      "min_ram": 6250000000,
+      "min_vram": 0,
+      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+    },
+    {
+      "id": "qwen3-8b",
+      "alias": "safi-qwen3-8b",
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3-8B",
+      "summary": "Recommended default. Follows SAFi's reflection contract and uses the fiduciary tools.",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "size": 5027783488,
+      "kv_bytes_per_token": 147456,
+      "min_ram": 9000000000,
+      "min_vram": 0,
+      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+    },
+    {
+      "id": "qwen3-14b",
+      "alias": "safi-qwen3-14b",
+      "file": "Qwen3-14B-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3-14B",
+      "summary": "Noticeably better reasoning. Wants 16 GB RAM, or a GPU to keep it responsive.",
+      "url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
+      "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+      "size": 9001752960,
+      "kv_bytes_per_token": 163840,
+      "min_ram": 13000000000,
+      "min_vram": 10350000000,
+      "min_vram_comment": "Roughly weights + KV at 8192 ctx. Below this, expect partial layer offload: it still runs, on CPU, slowly."
+    },
+    {
+      "id": "qwen3-32b",
+      "alias": "safi-qwen3-32b",
+      "file": "Qwen3-32B-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3-32B",
+      "summary": "Largest offered. Effectively GPU-only: 20 GB of weights does not fit a CPU VM comfortably.",
+      "url": "https://huggingface.co/Qwen/Qwen3-32B-GGUF/resolve/main/Qwen3-32B-Q4_K_M.gguf",
+      "sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+      "size": 19762149024,
+      "kv_bytes_per_token": 262144,
+      "min_ram": 24500000000,
+      "min_vram": 22000000000,
+      "min_vram_comment": "Weights (19.8 GB) + KV (2.1 GB) at 8192 ctx, so a 24 GB card fits with little headroom. Prefer 32 GB+."
+    },
+    {
+      "id": "llama3.2-3b",
+      "alias": "safi-llama3.2-3b",
+      "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "label": "SAFi-Llama3.2-3B",
+      "summary": "Fast CPU-oriented instruction model for smaller appliances.",
+      "url": "https://huggingface.co/lmstudio-community/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "sha256": "e4f1a04d927b09ec18eb2f233d85ecd760fc2d35cec97e37f8604d3632210d9a",
+      "size": 2019377440,
+      "kv_bytes_per_token": 114688,
+      "min_ram": 5800000000,
+      "min_vram": 0,
+      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+    },
+    {
+      "id": "phi4-mini",
+      "alias": "safi-phi4-mini",
+      "file": "Phi-4-mini-instruct-Q4_K_M.gguf",
+      "label": "SAFi-Phi4-Mini",
+      "summary": "Compact reasoning and coding model for CPU or low-memory GPU use.",
+      "url": "https://huggingface.co/lmstudio-community/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
+      "sha256": "3c4d3cbdf3006d81444f6c7a5a56eb93d8e0f0e2ba5963b8ab62f9fd42604233",
+      "size": 2491874400,
+      "kv_bytes_per_token": 98304,
+      "min_ram": 6200000000,
+      "min_vram": 0,
+      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+    },
+    {
+      "id": "llama3.1-8b",
+      "alias": "safi-llama3.1-8b",
+      "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "label": "SAFi-Llama3.1-8B",
+      "summary": "More capable general-purpose model; needs substantially more CPU time than the small options.",
+      "url": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+      "size": 4920739232,
+      "kv_bytes_per_token": 131072,
+      "min_ram": 9000000000,
+      "min_vram": 0,
+      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+    }
+  ],
+  "retired": {
+    "qwen3-0.6b": "Dropped from the picker. Q4_K_M shipped at 484 MB but leaked the ---REFLECTION--- contract on 6/6 runs and called a real fiduciary tool on 0/6, so it could neither be reasoned with nor audited. A box that can hold it can hold the 4B."
+  }
+}

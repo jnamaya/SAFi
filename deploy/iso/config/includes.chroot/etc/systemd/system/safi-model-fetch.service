@@ -1,0 +1,33 @@
+[Unit]
+Description=SAFi local model fetch (download, verify and activate)
+Documentation=file:///var/www/safi/docs/DEPLOY_BAREMETAL.md
+# Started on demand by the setup wizard, never enabled: a 20 GB download must
+# not begin because the box rebooted. The wizard calls
+# `systemctl start --no-block safi-model-fetch.service` so the browser request
+# that triggered it returns immediately.
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/safi-firstboot/model-choice.json
+# A retry is an explicit operator action from the wizard's retry button, so a
+# failed transfer must not hot-loop on its own.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/local/sbin/safi-model-fetch
+# A 20 GB transfer on a slow uplink is measured in hours, not minutes. Killing
+# it at a fixed timeout would destroy the resume point the operator is relying
+# on, so this is deliberately unbounded; the wizard's progress bar and its
+# cancel/retry are the controls.
+TimeoutStartSec=infinity
+TimeoutStopSec=60
+# curl needs the network; tar and the hash walk do not need anything else.
+Nice=5
+IOSchedulingClass=best-effort
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=safi-model-fetch
+
+[Install]
+# Intentionally no WantedBy=. The unit is transient by design.

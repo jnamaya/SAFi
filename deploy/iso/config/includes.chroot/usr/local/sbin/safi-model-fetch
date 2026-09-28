@@ -274,6 +274,31 @@ def model_root(catalogue: dict) -> Path:
     return Path(catalogue.get("model_root") or MODEL_ROOT)
 
 
+def installed_model_path(model: dict, catalogue: dict | None = None) -> Path | None:
+    """The model's weights if already on disk at full size, else None.
+
+    install_model() moves the cached artefact into place with os.replace, so
+    the cache is empty again the instant a model is installed and can never
+    answer "do we already have this model?". Every re-activation therefore
+    re-fetched the full weights. The installed path is the real answer, and a
+    full-size file there is the same test the app's own inventory uses to show a
+    model as downloaded.
+
+    A size check, not a re-hash: this runs on every activation, and re-reading
+    a 20 GB model to confirm what was verified at download time would stall
+    activation for minutes. The weights are only put here after verify().
+    """
+    root = model_root(catalogue or {})
+    name = model.get("file") or Path(model["url"].split("?", 1)[0]).name
+    target = root / model["id"] / name
+    try:
+        if target.stat().st_size == int(model["size"]):
+            return target
+    except OSError:
+        return None
+    return None
+
+
 def install_model(cached: Path, model: dict, catalogue: dict | None = None) -> Path:
     root = model_root(catalogue or {})
     target_dir = root / model["id"]
@@ -360,9 +385,17 @@ def activate_unit() -> None:
 
 
 def should_activate() -> bool:
-    """Only replace the live server after the operator explicitly asks."""
+    """Whether this run should also replace the live model server.
+
+    Defaults to True, because a fetch started without an explicit flag is the
+    setup wizard's own first-boot fetch: that path is the one that must end with
+    a running server, and a missing key there would leave a fully downloaded
+    model with no unit on disk and nothing answering on 8081. Only the Model
+    Catalog's plain "Download" button writes activate=false, and its whole
+    purpose is to fetch a second model without disturbing the one in service.
+    """
     try:
-        return bool(read_choice().get("activate", False))
+        return bool(read_choice().get("activate", True))
     except FetchError:
         return False
 
@@ -412,13 +445,21 @@ def main(argv: list[str] | None = None) -> int:
     try:
         model, backend = resolve(args, catalogue)
         plan = build_plan(catalogue, model, backend)
+        # Re-activating a model that is already on disk must not re-fetch it.
+        # Only the backend assets can still be missing, so drop the model step
+        # and keep the existing weights.
+        installed = installed_model_path(model, catalogue)
+        if installed is not None:
+            plan = [step for step in plan if step["kind"] != "model"]
         total = plan_total_bytes(plan)
 
         write_status(state="running", phase="starting", model=model["id"],
                      model_label=model["label"], backend=backend["id"],
                      backend_label=backend.get("label", backend["id"]),
                      alias=model["alias"], total_bytes=total, done_bytes=0,
-                     percent=0, label="Preparing", error="", started=time.time())
+                     percent=100 if installed is not None and not plan else 0,
+                     label="Model already downloaded" if installed is not None else "Preparing",
+                     error="", started=time.time())
 
         def progress(step: dict, have: int, verifying: bool = False) -> None:
             # Bytes finished before this step, so the bar advances across the
@@ -433,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
                 step_name=step["name"], step_bytes=min(have, step["size"]),
                 step_size=step["size"])
 
-        model_path = None
+        model_path = installed
         for step in plan:
             cached = download(step, progress)
             if step["kind"] == "backend":

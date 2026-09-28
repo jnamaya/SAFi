@@ -15,7 +15,7 @@ WorkingDirectory=/var/www/safi
 # One worker + threads: SAFi keeps per-agent orchestrator state in process;
 # scale threads before workers unless you know the cache implications.
 ExecStart=/var/www/safi/venv/bin/gunicorn --workers 1 --threads 20 \
-    --worker-class gthread --timeout 120 \
+    --worker-class gthread --timeout 300 \
     "safi_app:create_app()" --bind 0.0.0.0:5001
 
 Restart=always

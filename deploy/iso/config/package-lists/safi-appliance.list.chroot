@@ -78,3 +78,5 @@ sudo
 tesseract-ocr
 tesseract-ocr-eng
 wget
+
+syslinux-utils

@@ -1,20 +1,33 @@
 #!/bin/sh
-# 070 — Bundle the local OpenAI-compatible demo model and llama-server.
+# 070 — Bundle the pinned llama-server runtime and the local-model catalogue.
 #
-# Downloads happen during the ISO build, never on first boot. The appliance
-# therefore remains usable with no Internet connection after installation.
-# The URLs and digests are pinned so a rebuild cannot silently ship a different
-# inference binary or model.
+# This hook installs the *runtime*, never a model. Weights are fetched on the
+# installed system by the setup wizard (safi-browser-setup.py ->
+# safi-model-fetch.service), because ISO 9660 caps a file at 4 GiB-1 and every
+# useful local model is larger than that, and because a 5 GB download has no
+# business being baked into an image that may sit on a build server for weeks.
+#
+# Two consequences worth stating, because they used to be the other way round:
+#
+#   * No gguf-split sharding. A 20 GB GGUF written to ext4/LUKS is just a file;
+#     the ISO 9660 limit that forced -00001-of-00002 shards does not apply.
+#   * safi-llama-server.service is NOT enabled here. With no model on disk it
+#     would crash-loop on every boot. safi-model-fetch writes and enables the
+#     unit after a verified download.
+#
+# The CPU tarball is pinned so a rebuild cannot silently ship a different
+# inference binary, and it is small enough to always carry: 17 MB compressed is
+# what makes the "no model yet" state functional rather than broken. A CUDA
+# backend is ~765 MB and is fetched on demand only when a usable GPU is found.
 set -eu
 
 LLAMA_URL="https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-x64.tar.gz"
 LLAMA_SHA256="730ea8e54b97735abb46e46747999249719251f29753fcda97b5e2f2f3ea6912"
-MODEL_URL="https://huggingface.co/second-state/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
-MODEL_SHA256="dd6df9d5627007fa6e29cf2fff3464b1ab01a789fa8220c61ff5f3cf4989ce0e"
 
 BIN_DIR=/opt/safi/bin
-MODEL_DIR=/opt/safi/models
-TMP_DIR=/tmp/safi-local-model
+MODEL_DIR=/var/lib/safi/models
+STAGE_DIR=/usr/local/sbin/safi-appliance-stage
+TMP_DIR=/tmp/safi-llama-runtime
 mkdir -p "$BIN_DIR" "$MODEL_DIR" /etc/safi "$TMP_DIR"
 
 download_checked() {
@@ -50,44 +63,29 @@ if [ "$server" != "$BIN_DIR/llama-server" ]; then
 fi
 chmod 0755 "$BIN_DIR/llama-server"
 
-download_checked "$MODEL_URL" "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf" "$MODEL_SHA256"
-chmod 0644 "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf"
+# The catalogue and the shared helper are staged in includes.chroot because
+# /etc/safi and /usr/local/lib are not writable in a non-root checkout; install
+# them into their real homes and drop the staging copies so nothing stale can
+# be mistaken for the live copy.
+if [ -f "$STAGE_DIR/local-models.json" ]; then
+    install -Dm0644 "$STAGE_DIR/local-models.json" /etc/safi/local-models.json
+fi
+if [ -f "$STAGE_DIR/safi_local.py" ]; then
+    install -Dm0644 "$STAGE_DIR/safi_local.py" /usr/local/lib/safi_local.py
+fi
+rm -rf "$STAGE_DIR"
 
+# Placeholders so the paths exist even before the operator chooses a model.
+# safi-model-fetch overwrites the env file and writes the unit itself.
 cat > /etc/safi/llama-server.env <<'EOF'
-# Local Qwen3 demo server. Operators may tune these without changing SAFi's
-# provider configuration; the server remains loopback-only.
-SAFI_LOCAL_MODEL_CONTEXT=32768
+# Written by safi-model-fetch once a model is chosen. These defaults let an
+# operator start the server by hand before then; the server stays loopback-only.
+SAFI_LOCAL_MODEL_CONTEXT=8192
 SAFI_LOCAL_MODEL_THREADS=0
+SAFI_LOCAL_MODEL_GPU_LAYERS=0
 EOF
 chmod 0644 /etc/safi/llama-server.env
 
-cat > /etc/systemd/system/safi-llama-server.service <<'EOF'
-[Unit]
-Description=SAFi local Qwen3 OpenAI-compatible model server
-After=network.target local-fs.target
-Before=safi.service safi-browser-setup.service
-
-[Service]
-Type=simple
-User=safi
-Group=safi
-EnvironmentFile=/etc/safi/llama-server.env
-Environment=LD_LIBRARY_PATH=/opt/safi/bin
-ExecStart=/opt/safi/bin/llama-server --model /opt/safi/models/qwen3-0.6b-q4_k_m.gguf --host 127.0.0.1 --port 8081 --alias safi-demo --ctx-size ${SAFI_LOCAL_MODEL_CONTEXT} --threads ${SAFI_LOCAL_MODEL_THREADS} --reasoning off
-Restart=on-failure
-RestartSec=5
-TimeoutStartSec=300
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-chown -R root:root /opt/safi /etc/safi
+chown -R root:root /opt/safi /etc/safi "$MODEL_DIR"
 chmod 0755 /opt/safi "$BIN_DIR" "$MODEL_DIR"
-chmod 0644 "$MODEL_DIR/qwen3-0.6b-q4_k_m.gguf"
-mkdir -p /etc/systemd/system/multi-user.target.wants
-ln -sf /etc/systemd/system/safi-llama-server.service \
-    /etc/systemd/system/multi-user.target.wants/safi-llama-server.service
 rm -rf "$TMP_DIR"

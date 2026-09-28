@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+install -d -m 0755 /etc/sudoers.d
+printf '%s\n' 'safi ALL=(root) NOPASSWD: /usr/local/sbin/safi-model-manage *' \
+    > /etc/sudoers.d/safi-model-manage
+chmod 0440 /etc/sudoers.d/safi-model-manage

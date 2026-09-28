@@ -19,11 +19,10 @@ cd /var/www/safi
 # in-app TCB "branch/release" control reports a value.
 #
 # Source selection: production builds clone ${SAFI_GIT_URL} at ${SAFI_REF}.
-# Private ISO builds pre-stage a shallow local clone at
-# /var/cache/safi-src (see deploy/iso/stage-local-release.sh) so the appliance
-# can be packaged with code that is not yet published as a tag — the stage is
-# preferred when present and removed right after the clone so it never lands
-# on the installed system.
+# Private ISO builds pre-stage a shallow local tree at /var/cache/safi-src
+# (see deploy/iso/stage-local-release.sh). Copy that tree directly: it may
+# contain uncommitted frontend/backend changes layered over the tag, and a
+# git clone from it would silently discard those working-tree changes.
 #
 # 020 created /var/www/safi with its runtime subdirs (logs/cache/mcp/
 # vector_store), so git refuses to clone straight into it — and /var/www is
@@ -31,11 +30,12 @@ cd /var/www/safi
 # and merge as root, then chown the whole tree before the venv steps run as
 # safi. dotglob moves .git along with everything else.
 if [ -d /var/cache/safi-src/.git ]; then
-    SAFI_CLONE_SRC=/var/cache/safi-src
+    mkdir /var/www/safi.repo
+    bash -c 'shopt -s dotglob; cp -a /var/cache/safi-src/. /var/www/safi.repo/'
 else
     SAFI_CLONE_SRC="${SAFI_GIT_URL}"
+    git clone --depth 1 --branch "${SAFI_REF}" "${SAFI_CLONE_SRC}" /var/www/safi.repo
 fi
-git clone --depth 1 --branch "${SAFI_REF}" "${SAFI_CLONE_SRC}" /var/www/safi.repo
 rm -rf /var/cache/safi-src
 bash -c 'shopt -s dotglob; mv /var/www/safi.repo/* /var/www/safi/ && rmdir /var/www/safi.repo'
 chown -R safi:safi /var/www/safi

@@ -17,7 +17,11 @@ load_dotenv(dotenv_path=dotenv_path, override=True)
 # once you know which ones you want.
 # "light" covers the background roles: summarizer, backend, and note-taker.
 _FACULTY_DEFAULTS_BY_PROVIDER = {
-    "local":     {"intellect": "safi-demo",             "conscience": "safi-demo",             "light": "safi-demo"},
+    # No "local" entry on purpose. The appliance's local alias is whatever the
+    # operator downloaded (safi-qwen3-8b, safi-qwen3-32b, ...), so it cannot be
+    # a constant here. A hardcoded one shipped "safi-demo", a name the model
+    # server never served -- every faculty defaulted to a model that 404s. It is
+    # resolved from the live model at startup instead; see active_local_model.
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
     "gemini":    {"intellect": "gemini-3.7-flash",          "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
@@ -47,13 +51,64 @@ _PROVIDER_KEY_ENV_ORDER = [
 ]
 
 
+# Written by safi-model-fetch (STATUS_PATH) once a download is verified and the
+# server unit points at the model. Keep in step with that script.
+LOCAL_MODEL_STATUS_PATH = "/var/lib/safi/model-fetch.json"
+
+# The unit safi-model-fetch writes at activation. Its --alias is the ONLY
+# truthful answer to "what is the server actually serving": the status file
+# records a completed download even when that download was deliberately not
+# activated (fetching a second model must not disturb the first), so trusting
+# it made the catalog advertise "Serving" for a model no server was running.
+LOCAL_MODEL_UNIT_PATH = "/etc/systemd/system/safi-llama-server.service"
+
+
+def active_local_model() -> str:
+    """Alias of the local model the appliance is actually serving, or "".
+
+    Read from the model server unit's --alias, because that is what the running
+    server answers to. The fetch status file is deliberately NOT trusted for
+    this: a download that was verified but not activated still writes
+    state="done" with its own alias, and reading that reported a freshly
+    downloaded model as serving while the server was still on the old one (or
+    absent entirely). Falls back to the status file only for the first-boot
+    case, where the unit is written in the same run and is normally present.
+
+    Deliberately stdlib-only and dependency-free. It is called during Config
+    class construction, long before the app's service layer is importable.
+    """
+    import re as _re
+
+    try:
+        with open(LOCAL_MODEL_UNIT_PATH, encoding="utf-8") as handle:
+            unit = handle.read()
+    except OSError:
+        unit = ""
+    if unit:
+        match = _re.search(r"--alias\s+(\S+)", unit)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
 def _detect_faculty_defaults() -> dict:
     for provider, env_var in _PROVIDER_KEY_ENV_ORDER:
-        if os.environ.get(env_var):
-            return _FACULTY_DEFAULTS_BY_PROVIDER[provider]
-    # No key at all: Config.validate() aborts startup with a clear "no LLM API
-    # key" error before any of these defaults is used; the shape just has to exist.
-    return _FACULTY_DEFAULTS_BY_PROVIDER["groq"]
+        if not os.environ.get(env_var):
+            continue
+        if provider == "local":
+            # "local" is first in the detection order and the appliance sets the
+            # local key as soon as setup is deferred, so it must be skipped
+            # until a model is genuinely live. Otherwise a deferred install
+            # defaults every faculty to a model nothing is serving.
+            alias = active_local_model()
+            if alias:
+                return {"intellect": alias, "conscience": alias, "light": alias}
+            continue
+        return _FACULTY_DEFAULTS_BY_PROVIDER[provider]
+    # No provider we can name a real model for. SAFI_*_MODEL may still be set
+    # explicitly, and Config.validate() refuses to start when no provider key
+    # exists at all, so this shape only has to exist.
+    return {"intellect": "", "conscience": "", "light": ""}
 
 
 DEPLOYMENT_MODES = ("production", "trial", "showcase")
@@ -580,8 +635,12 @@ class Config:
 
     # This list is sent to the frontend.
     AVAILABLE_MODELS = [
-        # Bundled appliance model (OpenAI-compatible llama-server on loopback)
-        {"id": "safi-demo", "label": "SAFi Demo Model"},
+        # NOTE: local (on-appliance) models are NOT listed here. They are
+        # whatever the operator downloaded, so they are read from the appliance
+        # catalogue at request time -- see provider_governance.installed_local_models.
+        # The old hardcoded {"id": "safi-demo"} entry is gone: the ISO no longer
+        # ships a model, and llama-server serves one --alias, so "safi-demo" was
+        # an id nothing answered to.
 
         # Groq Models
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
