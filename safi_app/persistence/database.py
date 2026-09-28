@@ -4945,6 +4945,7 @@ def get_deployment_provider_keys_decrypted():
         conn.close()
 
 
+def validate_retention_years(value):
     """Returns (ok, normalized). None means keep-forever (no purge)."""
     if value is None:
         return True, None
