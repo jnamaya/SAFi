@@ -261,6 +261,14 @@ def test_commit_keeps_sso_off(env_paths):
     assert "SAFI_SSO_ENABLED=false" in text
 
 
+def test_commit_uses_https_and_secure_cookie_for_appliance_access(env_paths):
+    text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
+                               "api_key": "sk-test"})
+    assert "WEB_BASE_URL=https://10.0.0.5" in text
+    assert "ALLOWED_ORIGINS=https://10.0.0.5" in text
+    assert "SESSION_COOKIE_SECURE=True" in text
+
+
 def test_commit_removes_the_pin_and_marks_done(env_paths):
     _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY", "api_key": "sk"})
     assert not env_paths["pin"].exists()
@@ -300,6 +308,9 @@ def test_choose_page_has_the_pin_and_both_modes():
     assert 'value="local"' in page
     assert 'value="cloud"' in page
     assert 'name="password_confirm"' in page
+    assert "This appliance uses HTTPS." in page
+    assert 'href="/appliance.crt"' in page
+    assert 'Open https://' in page
 
 
 def test_choose_page_shows_the_detected_hardware():

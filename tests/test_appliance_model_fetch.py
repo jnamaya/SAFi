@@ -129,6 +129,39 @@ def test_cpu_unit_pins_the_cpu_binary_and_zero_gpu_layers(catalogue):
     assert "--host 127.0.0.1" in unit
 
 
+def test_threads_is_a_physical_core_count_never_the_all_logical_default(catalogue):
+    # 0 would mean "every logical CPU". On an SMT host llama.cpp hands the work
+    # to sibling cores that share one physical core's FP units, which measured
+    # at roughly half the decode throughput of the physical core count on the
+    # 12-core/16-thread development host.
+    env = fetch.render_env_file(catalogue, catalogue["backends"]["cpu"])
+    threads = int(
+        next(l for l in env.splitlines() if l.startswith("SAFI_LOCAL_MODEL_THREADS=")).split("=")[1]
+    )
+    assert threads >= 1
+    assert f"SAFI_LOCAL_MODEL_THREADS={threads}" in env
+    assert "SAFI_LOCAL_MODEL_THREADS=0\n" not in env
+
+
+def test_physical_core_count_never_exceeds_the_logical_count_and_never_zero():
+    count = fetch.physical_core_count()
+    assert 1 <= count <= (os.cpu_count() or 1)
+
+
+def test_physical_core_count_falls_back_when_sysfs_has_no_topology(monkeypatch):
+    # Containers and some virtualised guests expose no thread_siblings_list.
+    # Degrading to the logical count is the old behaviour, so a missing
+    # topology tree must not raise or invent a core.
+    import pathlib
+
+    monkeypatch.setattr(pathlib.Path, "glob", lambda self, pat: iter(()))
+    monkeypatch.setattr(fetch.os, "cpu_count", lambda: 8)
+    assert fetch.physical_core_count() == 8
+
+    monkeypatch.setattr(fetch.os, "cpu_count", lambda: None)
+    assert fetch.physical_core_count() == 1
+
+
 def test_cuda_unit_points_at_the_cuda_tree_and_offloads_everything(catalogue):
     env = fetch.render_env_file(catalogue, catalogue["backends"]["cuda-12.8"])
     assert "SAFI_LOCAL_MODEL_GPU_LAYERS=99" in env

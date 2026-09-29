@@ -316,13 +316,49 @@ def install_model(cached: Path, model: dict, catalogue: dict | None = None) -> P
 # systemd
 # --------------------------------------------------------------------------
 
+def physical_core_count() -> int:
+    """Count physical cores for llama.cpp's --threads, best effort.
+
+    0 means "every logical CPU", and on a machine with SMT that is a
+    pessimization rather than a neutral default: llama.cpp splits work across
+    every thread it is handed, so sibling cores contend for the same physical
+    core's FP units. Measured on the 12-core/16-thread development host,
+    pinning to 12 gave 10.90 tok/s decode against 5.63 for 16 -- nearly 2x --
+    with prefill also up about 1.6x.
+
+    Each cpu's thread_siblings_list names the logical CPUs sharing one physical
+    core, so the count of distinct lists is the count of physical cores. Read
+    sysfs rather than shelling out to lscpu to honour the module docstring's
+    standard-library-only constraint, and count a hybrid part's P-cores and
+    E-cores together.
+    """
+    try:
+        siblings = set()
+        for cpu_dir in Path("/sys/devices/system/cpu").glob("cpu[0-9]*"):
+            listing = cpu_dir / "topology" / "thread_siblings_list"
+            # Offline CPUs still have a sysfs directory, so an absent topology
+            # file means "cannot count this one", not "this is not a core".
+            if listing.is_file():
+                value = listing.read_text().strip()
+                if value:
+                    siblings.add(value)
+        if siblings:
+            return len(siblings)
+    except OSError:
+        pass
+    # Containers and some virtualised guests expose no topology directory at
+    # all. Logical count is the old behaviour, so this degrades rather than
+    # fails, and a single-core box still gets a usable --threads value.
+    return max(1, os.cpu_count() or 1)
+
+
 def render_env_file(catalogue: dict, backend: dict) -> str:
     gpu_layers = 99 if backend.get("gpu") else 0
     return (
         "# Written by safi-model-fetch. Operators may retune these without\n"
         "# changing SAFi's provider configuration; the server stays loopback-only.\n"
         f"SAFI_LOCAL_MODEL_CONTEXT={int(catalogue.get('context_size', 8192))}\n"
-        "SAFI_LOCAL_MODEL_THREADS=0\n"
+        f"SAFI_LOCAL_MODEL_THREADS={physical_core_count()}\n"
         f"SAFI_LOCAL_MODEL_GPU_LAYERS={gpu_layers}\n"
     )
 

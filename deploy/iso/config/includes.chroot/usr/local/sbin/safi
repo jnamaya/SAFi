@@ -385,16 +385,12 @@ cmd_cert() {
     case "$action" in
         show)
             [ -f "$cert" ] || { echo "no certificate generated yet" >&2; return 1; }
-            openssl x509 -in "$cert" -noout -subject -dates -serial
+            openssl x509 -in "$cert" -noout -subject -dates -serial -ext subjectAltName -fingerprint -sha256
             ;;
         renew)
-            echo "Regenerating appliance TLS certificate..."
-            sudo openssl req -x509 -new -nodes -newkey rsa:3072 -days 3650 \
-                -keyout "$CERT_DIR/appliance.key" -out "$cert" \
-                -subj "/CN=SAFi Appliance" 2>/dev/null
-            sudo chmod 600 "$CERT_DIR/appliance.key"; sudo chmod 644 "$cert"
-            sudo systemctl reload apache2
-            echo "done. Browsers will warn until you re-accept the cert."
+            echo "Refreshing appliance TLS certificate SANs for the current management address..."
+            sudo /usr/local/sbin/safi-browser-setup.py --refresh-certificate
+            echo "Compare the printed SHA-256 fingerprint before trusting the downloaded certificate."
             ;;
         *) usage; return 1;;
     esac

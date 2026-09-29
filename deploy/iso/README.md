@@ -37,20 +37,42 @@ The console output on first boot is:
 
 ```text
 SAFi Appliance is Active. Complete configuration at: https://192.168.1.42/
+TLS certificate SHA-256 fingerprint: AA:BB:...:FF
+Download certificate: https://192.168.1.42/appliance.crt
 One-time setup PIN: 123456
 ```
 
-Open the HTTPS address from a workstation, accept the locally generated
-certificate warning, and enter the PIN, provider API key, and administrator
-credentials. The setup service writes `.env`, initializes MariaDB, and sets the
+Open the HTTPS address from a workstation. On the first connection, proceed past
+the browser's temporary certificate warning, download
+`https://<appliance-ip>/appliance.crt`, compare its SHA-256 fingerprint with the
+one printed on the appliance console, and install it in the workstation's
+trusted root certificate store. Reload SAFi; the connection will then be trusted.
+The appliance creates a local CA certificate with SANs for its management IP and
+`safi.local`/`runsafi.local`. Enter the PIN, provider API key, and administrator
+credentials after trusting the certificate. The setup service writes `.env`, initializes MariaDB, and sets the
 OS `admin` account's password to the administrator password you entered, so one
 password governs both the web admin login and SSH/console access. The SAFi
 services are then enabled, and the setup service hands the console over to an
 **always-on dashboard** (`safi-console.service`) that repaints tty1 every few
 seconds with the management URL, service health, and operator hints. From this
 point on, every reboot ends on that clean panel instead of the raw fsck/journal
-boot tail. Replace the generated certificate under `/etc/ssl/runsafi/` with the
-organization's trusted certificate before production use.
+boot tail. The generated certificate is intended for a private appliance
+network. For public or enterprise deployment, replace it with the organization's
+trusted certificate or use `safi domain add` for a public DNS name and Let's
+Encrypt.
+
+On Debian/Ubuntu clients, after verifying the console fingerprint, install the
+downloaded certificate with:
+
+```bash
+sudo install -m 0644 safi-appliance.crt /usr/local/share/ca-certificates/safi-appliance.crt
+sudo update-ca-certificates
+```
+
+Firefox may use its own certificate store: import the file under **Settings →
+Privacy & Security → Certificates → View Certificates → Authorities**, trust it
+to identify websites, and reload SAFi. Other operating systems can import it
+into their trusted root certificate store. Keep the private key on the appliance.
 
 Operator access after setup:
 
@@ -81,6 +103,10 @@ safi help                  show this help
 without sudo. `safi doctor` is the first thing to run when anything looks off:
 it checks `.env` ownership/perms, API health, every service, disk, and journal
 readability.
+
+If the appliance's management IP changes, run `safi cert renew` to regenerate
+the certificate SAN for the current address and reload Apache. The command
+prints the new fingerprint; download and trust the updated certificate again.
 
 The installer is configured not to contact Debian mirrors. The live ISO carries
 the appliance root filesystem and runtime packages; network access is only
@@ -150,9 +176,10 @@ to the preseeded default, historically used for debugging).
 - **Scheduler and OAuth gateways** (`safi-scheduler`, `*-gateway`) are
   deliberately not enabled — they need SMTP / OAuth app registrations per site.
   Enable manually after first boot.
-- **TLS.** HTTPS is served with a self-signed certificate generated on first
-  boot (`/etc/ssl/runsafi/`). Replace it with the organization's trusted
-  certificate before production use.
+- **TLS.** HTTPS is served with a self-signed local CA certificate generated on
+  first boot (`/etc/ssl/runsafi/`) and SANs for the current management IP plus
+  `safi.local` and `runsafi.local`. Clients must trust the downloaded certificate
+  (after fingerprint verification) to remove the first-visit browser warning.
 - **Upgrades** follow DEPLOY_BAREMETAL step 10 (`git pull` + venv rebuild) over
   SSH (`admin@<ip>`). Multi-ISO updates / apt repo are future work.
 - **First real build is a validation milestone**: MySQL datadir initialisation

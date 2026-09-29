@@ -58,6 +58,22 @@ LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
 MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
 
 
+# Ceiling for the on-box llama.cpp server, applied only when a route resolves to
+# the `local` provider. That server is CPU-bound on the same hardware the whole
+# appliance shares, so a cloud provider's token budget is not a meaningful
+# request of it: asking for 8192 on a 3B model at ~11 tok/s means roughly 12
+# minutes of generation against SAFI_LLM_TIMEOUT's 300 s, so the call is cut off
+# by the timeout and returns nothing at all. Capping the request means the
+# generation completes and whatever the model produced is returned, which is
+# strictly better than a guaranteed timeout. Set it to 0 to disable the clamp
+# and pass the caller's budget through unchanged.
+#
+# This is a capacity ceiling, not an audit policy: it is keyed on the provider,
+# never on a model-name substring, so it cannot change how strictly any agent is
+# audited. See run_conscience's docstring for why that distinction matters there.
+LOCAL_MAX_TOKENS = int(os.environ.get("SAFI_LOCAL_MAX_TOKENS", "1024"))
+
+
 # Set when a provider reports that it stopped because the output budget ran out,
 # rather than because the model finished. A ContextVar, not an attribute: one
 # LLMProvider instance is shared by every concurrent request against the same
@@ -245,6 +261,17 @@ class LLMProvider:
              raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
 
         provider_type = provider_details["type"]
+        # The on-box model server cannot serve a cloud-scale token budget inside
+        # the per-call timeout; see LOCAL_MAX_TOKENS. Applied here rather than at
+        # the call sites so no route has to know which provider it will reach.
+        if provider_name == "local" and LOCAL_MAX_TOKENS > 0:
+            if max_tokens > LOCAL_MAX_TOKENS:
+                self.log.info(
+                    "Capping %s route output at %d tokens for the local provider "
+                    "(requested %d); set SAFI_LOCAL_MAX_TOKENS=0 to disable.",
+                    route, LOCAL_MAX_TOKENS, max_tokens,
+                )
+                max_tokens = LOCAL_MAX_TOKENS
         # Cleared per call: the agent loop makes several, and only the one that
         # produced the text the user sees should be able to flag it.
         _TRUNCATED.set(False)

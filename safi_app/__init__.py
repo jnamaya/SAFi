@@ -7,7 +7,8 @@ database connections, and API blueprints.
 """
 import logging
 import os
-from flask import Flask, send_from_directory, jsonify
+from pathlib import Path
+from flask import Flask, send_file, send_from_directory, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
@@ -17,6 +18,24 @@ from .extensions import oauth, cors  # Import centralized extension instances
 # reach the orchestrator gets the shipped plugins without the manifest-covered
 # orchestrator triggering content registration itself.
 from .core.plugins import builtin as _builtin_plugins  # noqa: F401
+
+APPLIANCE_CERT_PATH = Path("/etc/ssl/runsafi/appliance.crt")
+
+
+def _appliance_certificate_response():
+    """Serve the public appliance certificate for client trust-store setup."""
+    if not APPLIANCE_CERT_PATH.is_file():
+        return jsonify({"error": "Appliance certificate is unavailable"}), 404
+    response = send_file(
+        APPLIANCE_CERT_PATH,
+        mimetype="application/x-x509-ca-cert",
+        as_attachment=True,
+        download_name="safi-appliance.crt",
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 def create_app():
     """
@@ -275,6 +294,10 @@ def create_app():
             "object-src 'none'"
         )
         return response
+
+    @app.get('/appliance.crt')
+    def download_appliance_certificate():
+        return _appliance_certificate_response()
 
     # Catch-all route to serve the Single Page Application (SPA) frontend
     @app.route('/', defaults={'path': ''})

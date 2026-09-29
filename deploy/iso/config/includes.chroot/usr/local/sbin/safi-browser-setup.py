@@ -32,6 +32,8 @@ FETCH_STATUS = Path("/var/lib/safi/model-fetch.json")
 FETCH_UNIT = "safi-model-fetch.service"
 HOST = "127.0.0.1"
 PORT = 5001
+CERT_DIR = Path("/etc/ssl/runsafi")
+CERT_FILE = CERT_DIR / "appliance.crt"
 
 # Cloud providers offered at setup. DeepSeek and Zhipu are deliberately absent:
 # PROVIDER_METADATA records zdr=False for both ("retained indefinitely, used for
@@ -99,20 +101,72 @@ def load_safi_local():
 safi_local = load_safi_local()
 
 
-def ensure_certificate() -> tuple[Path, Path]:
-    cert_dir = Path("/etc/ssl/runsafi")
+def ensure_certificate(ip_address: str | None = None) -> tuple[Path, Path]:
+    cert_dir = CERT_DIR
     cert_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     key = cert_dir / "appliance.key"
-    cert = cert_dir / "appliance.crt"
-    if not key.exists() or not cert.exists():
-        subprocess.run([
-            "openssl", "req", "-x509", "-nodes", "-newkey", "rsa:3072",
-            "-days", "3650", "-keyout", str(key), "-out", str(cert),
-            "-subj", "/CN=SAFi Appliance",
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        key.chmod(0o600)
-        cert.chmod(0o644)
+    cert = CERT_FILE
+    address = ip_address if ip_address is not None else local_ip()
+    expected_dns = ("safi.local", "runsafi.local")
+
+    def matches_current_names() -> bool:
+        if not key.is_file() or not cert.is_file():
+            return False
+        try:
+            sans = subprocess.run(
+                ["openssl", "x509", "-in", str(cert), "-noout", "-ext", "subjectAltName"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            constraints = subprocess.run(
+                ["openssl", "x509", "-in", str(cert), "-noout", "-ext", "basicConstraints"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            subprocess.run(
+                ["openssl", "x509", "-in", str(cert), "-checkend", "0", "-noout"],
+                check=True, capture_output=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return False
+        if "CA:TRUE" not in constraints or any(f"DNS:{name}" not in sans for name in expected_dns):
+            return False
+        if address and address != "<appliance-ip>":
+            return re.search(rf"IP Address:\s*{re.escape(address)}(?:\s|,|$)", sans) is not None
+        return True
+
+    if not matches_current_names():
+        san = [*(f"DNS:{name}" for name in expected_dns)]
+        if address and address != "<appliance-ip>":
+            san.append(f"IP:{address}")
+        new_key = cert_dir / "appliance.key.new"
+        new_cert = cert_dir / "appliance.crt.new"
+        new_key.unlink(missing_ok=True)
+        new_cert.unlink(missing_ok=True)
+        try:
+            subprocess.run([
+                "openssl", "req", "-x509", "-nodes", "-newkey", "rsa:3072",
+                "-days", "3650", "-keyout", str(new_key), "-out", str(new_cert),
+                "-subj", "/CN=SAFi Appliance",
+                "-addext", f"subjectAltName={','.join(san)}",
+                "-addext", "basicConstraints=critical,CA:TRUE",
+                "-addext", "keyUsage=critical,digitalSignature,keyCertSign,cRLSign",
+                "-addext", "extendedKeyUsage=serverAuth",
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            new_key.chmod(0o600)
+            new_cert.chmod(0o644)
+            os.replace(new_key, key)
+            os.replace(new_cert, cert)
+        finally:
+            new_key.unlink(missing_ok=True)
+            new_cert.unlink(missing_ok=True)
     return cert, key
+
+
+def certificate_fingerprint(cert: Path) -> str:
+    result = subprocess.run(
+        ["openssl", "x509", "-in", str(cert), "-noout", "-fingerprint", "-sha256"],
+        check=True, capture_output=True, text=True,
+    )
+    return result.stdout.strip().split("=", 1)[-1]
 
 
 def local_ip(retries: int = 1) -> str:
@@ -384,6 +438,7 @@ def page_choose(error: str = "", hardware: dict | None = None, values: dict | No
     body = f"""{banner}
 <p>Configure the runtime environment and set up the local administrator account.
 This appliance has internet access, so live market and web tools work.</p>
+<p>This appliance uses HTTPS. To remove the first-visit certificate warning, <a href="/appliance.crt">download its certificate</a>, verify its SHA-256 fingerprint against the appliance console, then add it to your browser or operating system's trusted root certificates.</p>
 <form method="post" action="/setup" id="setup-form">
 <div class="section-card"><h2>1. Device Authorization</h2>
 <p>Enter the one-time PIN displayed on the appliance console.</p>
@@ -413,7 +468,7 @@ This appliance has internet access, so live market and web tools work.</p>
 <label for="password">Administrator password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="new-password">
 <label for="password_confirm">Confirm administrator password</label><input id="password_confirm" name="password_confirm" type="password" minlength="8" required autocomplete="new-password"></div>
 <button type="submit">Complete Setup</button>
-<p style="text-align:center"><small>Open https://{html.escape(local_ip())}/ after completion. Replace the generated certificate with your enterprise certificate.</small></p>
+<p style="text-align:center"><small>Open https://{html.escape(local_ip())}/ after completion.</small></p>
 </form>
 <script>function toggleMode(){{const m=document.querySelector('input[name="mode"]:checked').value;document.getElementById('local-options').classList.toggle('hidden',m!=='local');document.getElementById('cloud-options').classList.toggle('hidden',m!=='cloud');document.getElementById('api_key').required=m==='cloud';}}</script>"""
     return shell("Appliance setup", body)
@@ -636,6 +691,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if path == "/appliance.crt":
+            try:
+                body = CERT_FILE.read_bytes()
+            except OSError:
+                self.send_error(404, "Appliance certificate is not available")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-x509-ca-cert")
+            self.send_header("Content-Disposition", 'attachment; filename="safi-appliance.crt"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/setup/status":
             self._json(read_fetch_status())
             return
@@ -775,6 +844,19 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    if sys.argv[1:] == ["--refresh-certificate"]:
+        address = local_ip(60)
+        cert, _key = ensure_certificate(address)
+        subprocess.run(["systemctl", "reload", "apache2"], check=True)
+        print(f"Refreshed TLS certificate for https://{address}/")
+        print(f"SHA-256 fingerprint: {certificate_fingerprint(cert)}")
+        print(f"Download certificate: https://{address}/appliance.crt")
+        return 0
+    if sys.argv[1:]:
+        print("Usage: safi-browser-setup.py [--refresh-certificate]", file=sys.stderr)
+        return 2
+
+    address = local_ip(60)
     if DONE_FILE.exists():
         return 0
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -782,7 +864,7 @@ def main() -> int:
         PIN_FILE.write_text(f"{secrets.randbelow(1_000_000):06d}\n", encoding="ascii")
         PIN_FILE.chmod(0o600)
     pin = PIN_FILE.read_text(encoding="ascii").strip()
-    cert, key = ensure_certificate()
+    cert, key = ensure_certificate(address)
     setup = load_setup_module()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     server.pin = pin
@@ -798,8 +880,10 @@ def main() -> int:
     # DHCP can finish just after network-online.target on appliances with more
     # than one NIC. Wait briefly so the console shows a usable URL, not a
     # permanent <appliance-ip> placeholder.
-    address = local_ip(60)
     print(f"SAFi Appliance is Active. Complete configuration at: https://{address}/", flush=True)
+    print(f"TLS certificate SHA-256 fingerprint: {certificate_fingerprint(cert)}", flush=True)
+    print(f"Download certificate: https://{address}/appliance.crt", flush=True)
+    print("Trust it as a root certificate after comparing its SHA-256 fingerprint here.", flush=True)
     if address == "<appliance-ip>":
         # No DHCP lease (isolated lab, or a static site that has not been
         # configured yet). The install is still fully usable over the console;
