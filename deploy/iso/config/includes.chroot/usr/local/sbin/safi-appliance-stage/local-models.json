@@ -18,7 +18,9 @@
     "window: 2 (K and V) * layers * kv_heads * head_dim * 2 bytes. For Qwen3 that",
     "is 144 KiB/token for 4B and 8B (36 layers), 160 KiB/token for 14B (40) and",
     "256 KiB/token for 32B (64). Cross-checked against llama.cpp's reported KV",
-    "size for Qwen3-0.6B (112 KiB/token) and Qwen3-8B (144 KiB/token) at 8192."
+    "size for Qwen3-0.6B (112 KiB/token) and Qwen3-8B (144 KiB/token) at 8192.",
+    "",
+    "jev_local is a separate block because it is not a chat model: the 'models' list is what the wizard offers as Intellect, and every entry there is a GGUF for llama.cpp. Laya is a fixed component -- there is nothing for the operator to choose -- so putting it in that list would show a 1.7 GB encoder in the model picker and let a fetch of it try to start a llama-server that cannot load the file. safi-model-fetch reads it as a mandatory step of first-boot setup instead, alongside the selected model."
   ],
   "context_size": 8192,
   "max_output_tokens": 1024,
@@ -95,6 +97,54 @@
     "backend download once, at setup, which keeps the ISO near 1.5 GB instead of",
     "~3.3 GB for boxes that will never touch a GPU."
   ],
+  "jev_local": {
+    "id": "laya",
+    "label": "Laya (local typed reasoning)",
+    "model": "jev-1.13.0",
+    "summary": "Serves Jev's typed-decision API locally, so Conscience works with no API key and no internet. Not a chat model: Intellect still does the writing.",
+    "url_base_comment": "Pinned to a commit, not to a branch or a tag, so a rebuild cannot silently pick up different weights: a mutable ref would make the ISO's supply chain unverifiable between releases.",
+    "revision": "68f27dfe5a27a54fb2b1fefc432f43f972e90868",
+    "min_ram": 2147483648,
+    "min_ram_comment": "2 GiB while resident; loaded into each app worker, not shared.",
+    "files": [
+      {
+        "name": "laya.onnx",
+        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya.onnx",
+        "size": 3807291,
+        "sha256": "a874eb254b58b0fcb1e7ad56fbb188c29d64e08c9a46b689433e1f52c66dba1e",
+        "note": "ONNX graph. Tensors are in laya.onnx.data."
+      },
+      {
+        "name": "laya.onnx.data",
+        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya.onnx.data",
+        "size": 1685258240,
+        "sha256": "487746363a8da57bcadb4345352997d22a0fb90d70aa22c6856668d023242aba",
+        "note": "External tensor weights. Nearly all of the download."
+      },
+      {
+        "name": "laya_config.json",
+        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya_config.json",
+        "size": 369,
+        "sha256": "5049005dc6ae3ca5e82cc7d85c421357d5c543817300c8e8c5281ddbc69bb561",
+        "note": "max_len, head_max_len and the fitted temperatures."
+      },
+      {
+        "name": "tokenizer/tokenizer.json",
+        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/tokenizer/tokenizer.json",
+        "size": 3583228,
+        "sha256": "6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30",
+        "note": "WordPiece vocabulary."
+      },
+      {
+        "name": "tokenizer/tokenizer_config.json",
+        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/tokenizer/tokenizer_config.json",
+        "size": 308,
+        "sha256": "50044de60daaa73df97d262e15a40d4faf0160e7d742df64b377877a1320dd12",
+        "note": "Special-token names."
+      }
+    ],
+    "install_note": "Installed to <model_root>/laya so the weights sit beside the chat models; safi-model-fetch writes SAFI_LOCAL_JEV_PATH into the env file only after every file has verified, and clears it if the directory is ever removed."
+  },
   "models": [
     {
       "id": "qwen3-4b",

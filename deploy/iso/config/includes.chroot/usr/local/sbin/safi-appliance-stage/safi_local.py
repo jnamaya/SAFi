@@ -20,6 +20,10 @@ from pathlib import Path
 
 CATALOGUE_PATH = Path("/etc/safi/local-models.json")
 
+# Used only when the catalogue predates model_root. Must match MODEL_ROOT in
+# safi-model-fetch, which writes the bundle here.
+MODEL_ROOT_FALLBACK = "/var/lib/safi/models"
+
 # Where to look for the catalogue, in order. The staged path is a build-time
 # fallback for an image whose 070 hook has not yet moved the file into /etc.
 CATALOGUE_CANDIDATES = (
@@ -115,6 +119,46 @@ def model_by_id(catalogue: dict, model_id: str) -> dict | None:
 
 def backend_by_id(catalogue: dict, backend_id: str) -> dict | None:
     return catalogue.get("backends", {}).get(backend_id)
+
+
+def jev_local(catalogue: dict) -> dict | None:
+    """The local typed-reasoning component, or None on a catalogue without one.
+
+    Not a member of models(): every entry there is a GGUF for llama.cpp that the
+    wizard offers as Intellect, whereas this is a fixed ONNX encoder nothing
+    chooses. It lives under its own key so a change to the chat-model list cannot
+    silently drop -- or silently ship -- the thing that makes offline Conscience
+    work.
+    """
+    return catalogue.get("jev_local")
+
+
+def jev_local_files(catalogue: dict) -> list[dict]:
+    """Ordered download steps for the local Jev bundle.
+
+    Smallest first, so a failure part-way through leaves the operator looking at
+    a progress bar that had already verified the cheap files.
+    """
+    block = jev_local(catalogue) or {}
+    return sorted(block.get("files", []), key=lambda f: int(f.get("size", 0)))
+
+
+def jev_local_bytes(catalogue: dict) -> int:
+    block = jev_local(catalogue) or {}
+    return sum(int(f.get("size", 0)) for f in block.get("files", []))
+
+
+def jev_local_dir(catalogue: dict | None = None) -> Path:
+    """Where the bundle is installed.
+
+    A sibling of the chat models rather than inside the ISO: 1.7 GB is over the
+    4 GiB-1 ISO 9660 file ceiling only for the GGUF sharding case, but it would
+    still add a third of a megabyte-scale download to every ISO, and it must be
+    re-verifiable at install time. model_root() states the location for the same
+    reason it states the location for weights -- one authority, two readers.
+    """
+    root = Path((catalogue or {}).get("model_root") or MODEL_ROOT_FALLBACK)
+    return root / str((jev_local(catalogue or {}) or {}).get("id", "laya"))
 
 
 def backend_asset_bytes(backend: dict) -> int:

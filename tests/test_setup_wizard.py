@@ -150,8 +150,18 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         same answer everywhere, with or without a .env on disk.
         """
         import dotenv
-        for mod in [m for m in sys.modules if m.startswith("safi_app")]:
-            del sys.modules[mod]
+        # Evicting safi_app is what forces Config to re-read the environment, but
+        # it must be undone. Any test module that already holds a reference --
+        # `from safi_app.core.services import usage_tracking` at import time is
+        # enough -- keeps pointing at the evicted object while the code under
+        # test re-imports a brand new one, so a monkeypatch lands on a module
+        # nothing calls again. Symptoms are far from the cause: the patch appears
+        # to apply cleanly, and only tests asserting on a *patched safi_app
+        # function* fail, in whatever order pytest happens to run them.
+        evicted = {m: mod for m, mod in sys.modules.items()
+                   if m.startswith("safi_app")}
+        for m in evicted:
+            del sys.modules[m]
         saved_env = dict(os.environ)
         saved_loader = dotenv.load_dotenv
         # Keep the process usable; drop everything that could configure SAFi.
@@ -168,6 +178,12 @@ class ValidateAgainstRealConfig(unittest.TestCase):
             dotenv.load_dotenv = saved_loader
             os.environ.clear()
             os.environ.update(saved_env)
+            # Put the pre-eviction modules back so every other test keeps the
+            # object references it imported, and so a later import does not build
+            # a duplicate tree beside the one still in use.
+            for m in [k for k in sys.modules if k.startswith("safi_app")]:
+                del sys.modules[m]
+            sys.modules.update(evicted)
 
     def test_generated_env_satisfies_production_validate(self):
         values = setup.generated_secrets()

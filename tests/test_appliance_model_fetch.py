@@ -43,6 +43,23 @@ def catalogue():
     return safi_local.load_catalogue(CATALOGUE)
 
 
+def _stage_jev_bundle(catalogue, root: Path) -> Path:
+    """Put a complete, correctly-sized bundle on disk without downloading it.
+
+    Sparse files: the real bundle is 1.7 GB and every test here is about control
+    flow, not about 1.7 GB of zeroes. installed_jev_dir() checks size, which is
+    the same check it makes against a real install.
+    """
+    catalogue = dict(catalogue, model_root=str(root))
+    target = safi_local.jev_local_dir(catalogue)
+    for entry in safi_local.jev_local(catalogue)["files"]:
+        path = target / entry["name"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as handle:
+            handle.truncate(int(entry["size"]))
+    return target
+
+
 # --------------------------------------------------------------------------
 # plan
 # --------------------------------------------------------------------------
@@ -402,11 +419,14 @@ def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monk
     (cpu_home / "llama-server").write_text("#!/bin/sh\n")
     monkeypatch.setattr(fetch, "CPU_HOME", cpu_home)
 
-    def _no_downloads(*a, **kw):
-        raise AssertionError("re-activation must not download")
+    def _no_downloads(step, *a, **kw):
+        raise AssertionError(f"re-activation must not download {step.get('name', step.get('kind'))}")
 
     monkeypatch.setattr(fetch, "download", _no_downloads)
     monkeypatch.setattr(fetch.shutil, "which", _no_downloads)
+    # The local Jev bundle is a mandatory step of its own, so "already
+    # downloaded" only means "downloaded nothing" when it too is on disk.
+    _stage_jev_bundle(catalogue, root)
 
     rc = fetch.main(["--model", "phi4-mini", "--backend", "cpu"])
     assert rc == 0
@@ -582,3 +602,290 @@ def test_the_catalogue_layout_matches_what_the_app_reads(catalogue, tmp_path, mo
 
     offered = pg.installed_local_models(str(path))
     assert [m["id"] for m in offered] == [model["alias"]]
+
+
+# --------------------------------------------------------------------------
+# the local Jev bundle
+# --------------------------------------------------------------------------
+#
+# Laya is what lets an appliance audit itself with no TypeSafe key and no
+# internet. It is a five-file ONNX bundle rather than a GGUF, so it cannot go
+# through the chat-model path: the fetcher would try to start a llama-server
+# that cannot load it. These tests pin the bundle-specific contract: it is a
+# mandatory step, it installs as one atomic unit, and it is digest-pinned.
+
+def test_the_local_jev_bundle_is_not_offered_as_a_chat_model(catalogue):
+    """It must not appear in the Intellect picker.
+
+    A 1.7 GB encoder in that list would be selectable, and selecting it would
+    produce a llama-server that cannot load the file -- a broken model choice
+    that looks valid in the UI.
+    """
+    assert safi_local.jev_local(catalogue) is not None
+    assert all(m["id"] != "laya" for m in catalogue["models"])
+    assert "laya" not in [m.get("file") for m in catalogue["models"]]
+
+
+def test_every_jev_file_is_digest_pinned_at_a_pinned_revision(catalogue):
+    """Supply chain: a mutable ref would make the ISO unverifiable between builds.
+
+    The revision is the exact commit Laya's release documents, so a rebuild
+    cannot pick up different weights under the same version string.
+    """
+    block = safi_local.jev_local(catalogue)
+    assert len(block["revision"]) == 40
+    for entry in block["files"]:
+        assert len(entry["sha256"]) == 64, entry["name"]
+        assert entry["size"] > 0, entry["name"]
+        assert entry["url"].startswith("https://"), entry["name"]
+        assert block["revision"] in entry["url"], entry["name"]
+
+
+def test_jev_files_are_ordered_smallest_first(catalogue):
+    """A failure part-way through should leave the cheap files already verified."""
+    sizes = [f["size"] for f in safi_local.jev_local_files(catalogue)]
+    assert sizes == sorted(sizes)
+
+
+def test_jev_install_path_is_a_sibling_of_the_chat_models(catalogue, tmp_path):
+    """One model_root, two readers -- so the location is derived, not duplicated."""
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    jev_dir = safi_local.jev_local_dir(payload)
+    assert jev_dir == tmp_path / "models" / "laya"
+    assert jev_dir.parent == tmp_path / "models"
+
+
+def test_jev_total_is_about_1_7_gb(catalogue):
+    """Sanity on the pin: a mis-transcribed size would make the fetch unresumable."""
+    total = safi_local.jev_local_bytes(catalogue)
+    assert 1_600_000_000 < total < 1_800_000_000
+
+
+def test_installed_jev_dir_is_none_when_the_bundle_is_absent(catalogue, tmp_path):
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    assert fetch.installed_jev_dir(payload) is None
+
+
+def test_installed_jev_dir_is_none_when_any_file_is_short(catalogue, tmp_path):
+    """A truncated weights file is the failure that matters most here.
+
+    laya.onnx is a small graph that opens fine without its .data sibling, so
+    "the ONNX file is present" is not a usable completeness test. Every pinned
+    file has to be at full size.
+    """
+    root = _stage_jev_bundle(catalogue, tmp_path / "models")
+    weights = root / "laya.onnx.data"
+    with open(weights, "r+b") as handle:
+        handle.truncate(1024)
+    assert fetch.installed_jev_dir(dict(catalogue, model_root=str(tmp_path / "models"))) is None
+
+
+def test_a_complete_bundle_is_recognised_as_installed(catalogue, tmp_path):
+    _stage_jev_bundle(catalogue, tmp_path / "models")
+    found = fetch.installed_jev_dir(dict(catalogue, model_root=str(tmp_path / "models")))
+    assert found == tmp_path / "models" / "laya"
+
+
+def test_install_jev_lands_every_file_where_the_catalogue_says(catalogue, tmp_path):
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    steps = []
+    for entry in safi_local.jev_local_files(payload):
+        cached = tmp_path / f"cached-{entry['name'].replace('/', '-')}"
+        # Sparse to the pinned size so the post-install completeness check is
+        # meaningful without writing 1.7 GB per test.
+        with open(cached, "wb") as handle:
+            handle.truncate(int(entry["size"]))
+        steps.append((cached, entry))
+
+    target = fetch.install_jev_local(steps, payload)
+
+    assert target == tmp_path / "models" / "laya"
+    for entry in safi_local.jev_local_files(payload):
+        assert (target / entry["name"]).is_file()
+    # The cache is emptied by moving, not by copying, so a 1.7 GB install does
+    # not transiently need twice the disk.
+    assert not list(tmp_path.glob("cached-*"))
+
+
+def test_install_jev_is_all_or_nothing(catalogue, tmp_path):
+    """The bundle is only coherent as a set, so the live path is renamed in one step.
+
+    is_available() is a file-existence test: a half-populated directory at the
+    live path would pass it and then fail on the missing weights file at the
+    first governance turn, long after the operator's setup screen said "done".
+    """
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    steps = []
+    for entry in safi_local.jev_local_files(payload):
+        cached = tmp_path / f"cached-{entry['name'].replace('/', '-')}"
+        # Sparse to the pinned size so the post-install completeness check is
+        # meaningful without writing 1.7 GB per test.
+        with open(cached, "wb") as handle:
+            handle.truncate(int(entry["size"]))
+        steps.append((cached, entry))
+
+    fetch.install_jev_local(steps, payload)
+    assert fetch.installed_jev_dir(payload) is not None
+    # No staging or backup directory is left behind to be mistaken for a bundle.
+    root = tmp_path / "models"
+    assert not (root / "laya.partial").exists()
+    assert not (root / "laya.previous").exists()
+    assert sorted(p.name for p in root.iterdir()) == ["laya"]
+
+
+def test_a_failed_reinstall_restores_the_previous_bundle(catalogue, tmp_path, monkeypatch):
+    """A rename that fails must not leave the live path empty.
+
+    This is the failure that would be worst to debug: the operator sees setup
+    report an error, but typed Conscience silently falls back to the hosted
+    provider, which the ISO ships no key for. The next turn fails with a
+    connection error that has nothing to do with the failed upgrade.
+    """
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    for generation in (b"good", b"doomed"):
+        steps = []
+        for entry in safi_local.jev_local_files(payload):
+            cached = tmp_path / f"cached-{generation}-{entry['name'].replace('/', '-')}"
+            with open(cached, "wb") as handle:
+                handle.write(generation)
+                handle.truncate(int(entry["size"]))
+            steps.append((cached, entry))
+        if generation == b"good":
+            fetch.install_jev_local(steps, payload)
+
+    root = tmp_path / "models"
+    assert fetch.installed_jev_dir(payload) is not None
+
+    real_replace = os.replace
+
+    def flaky(src, dst):
+        # Fail only the staging -> live rename, after the old bundle was moved
+        # aside. That is the window where the live path is momentarily empty.
+        if Path(src).name == "laya.partial" and Path(dst).name == "laya":
+            raise OSError(28, "No space left on device")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetch.os, "replace", flaky)
+    steps = []
+    for entry in safi_local.jev_local_files(payload):
+        cached = tmp_path / f"cached-doomed-{entry['name'].replace('/', '-')}"
+        with open(cached, "wb") as handle:
+            handle.write(b"doomed")
+            handle.truncate(int(entry["size"]))
+        steps.append((cached, entry))
+
+    with pytest.raises(fetch.FetchError):
+        fetch.install_jev_local(steps, payload)
+    monkeypatch.undo()
+
+    # The previously verified bundle is serving again, not a hole.
+    assert fetch.installed_jev_dir(payload) is not None
+    # Sparse files, so compare the leading bytes rather than the whole 3.8 MB.
+    assert (root / "laya" / "laya.onnx").read_bytes()[:4] == b"good"
+    assert not (root / "laya.partial").exists()
+    assert not (root / "laya.previous").exists()
+
+
+def test_reinstalling_replaces_the_previous_bundle(catalogue, tmp_path):
+    """A changed bundle must not leave two candidate directories on disk."""
+    payload = dict(catalogue, model_root=str(tmp_path / "models"))
+    for generation in (b"first", b"second"):
+        steps = []
+        for entry in safi_local.jev_local_files(payload):
+            cached = tmp_path / f"cached-{generation}-{entry['name'].replace('/', '-')}"
+            with open(cached, "wb") as handle:
+                handle.write(generation)
+                handle.truncate(int(entry["size"]))
+            steps.append((cached, entry))
+        fetch.install_jev_local(steps, payload)
+
+    root = tmp_path / "models"
+    assert sorted(p.name for p in root.iterdir()) == ["laya"]
+    # Sparse files, so compare the leading bytes rather than the whole 3.8 MB.
+    assert (root / "laya" / "laya.onnx").read_bytes()[:6] == b"second"
+
+
+def test_a_first_boot_fetch_installs_the_jev_bundle(catalogue, tmp_path, monkeypatch):
+    """End to end: the bundle is fetched, verified and installed with the model.
+
+    This is the behaviour the appliance depends on -- an ISO that cannot audit
+    itself offline is not a working appliance -- so it is tested through main()
+    rather than by calling install_jev_local directly.
+    """
+    catalogue = dict(catalogue, model_root=str(tmp_path / "models"))
+    model = next(m for m in catalogue["models"] if m["id"] == "phi4-mini")
+    catalogue["models"] = [dict(model, size=8) if m["id"] == "phi4-mini" else m
+                           for m in catalogue["models"]]
+    root = tmp_path / "models"
+    root.mkdir()
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    status = tmp_path / "model-fetch.json"
+    choice = tmp_path / "choice.json"
+    choice.write_text(json.dumps({"model": "phi4-mini", "backend": "cpu",
+                                  "activate": False}))
+    monkeypatch.setattr(fetch.safi_local, "load_catalogue", lambda *a, **kw: catalogue)
+    monkeypatch.setattr(fetch, "CACHE_DIR", cache)
+    monkeypatch.setattr(fetch, "STATUS_PATH", status)
+    monkeypatch.setattr(fetch, "CHOICE_PATH", choice)
+    monkeypatch.setattr(fetch, "UNIT_PATH", tmp_path / "safi-llama-server.service")
+    monkeypatch.setattr(fetch, "ENV_FILE", tmp_path / "llama-server.env")
+    monkeypatch.setattr(fetch, "write_status",
+                        lambda **kw: status.write_text(json.dumps(kw, default=str)))
+    monkeypatch.setattr(fetch, "verify", lambda *a, **kw: None)
+
+    requested = []
+
+    def _fake_download(step, progress):
+        requested.append(step["kind"])
+        progress(step, step["size"])
+        blob = cache / f"{step['sha256']}.part"
+        blob.write_bytes(b"\0" * int(step["size"]))
+        return blob
+
+    monkeypatch.setattr(fetch, "download", _fake_download)
+
+    assert fetch.main(["--model", "phi4-mini", "--backend", "cpu"]) == 0
+    assert "jev_local" in requested
+    assert fetch.installed_jev_dir(catalogue) is not None
+    assert (root / model["id"] / model["file"]).exists()
+    assert json.loads(status.read_text())["jev_local_path"]
+
+
+def test_the_jev_bundle_is_only_fetched_once_across_fetches(catalogue, tmp_path, monkeypatch):
+    """Re-running setup must not re-download 1.7 GB of already-verified weights."""
+    catalogue = dict(catalogue, model_root=str(tmp_path / "models"))
+    model = next(m for m in catalogue["models"] if m["id"] == "phi4-mini")
+    # Shrink the weights in the catalogue so the size check passes on a sparse
+    # file; the point of this test is the Jev bundle, not the GGUF.
+    small = dict(model, size=8)
+    catalogue["models"] = [small if m["id"] == "phi4-mini" else m
+                           for m in catalogue["models"]]
+    root = tmp_path / "models"
+    root.mkdir()
+    (root / small["id"]).mkdir(parents=True)
+    with open(root / small["id"] / small["file"], "wb") as handle:
+        handle.truncate(int(small["size"]))
+    _stage_jev_bundle(catalogue, root)
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    choice = tmp_path / "choice.json"
+    choice.write_text(json.dumps({"model": "phi4-mini", "backend": "cpu",
+                                  "activate": False}))
+    monkeypatch.setattr(fetch.safi_local, "load_catalogue", lambda *a, **kw: catalogue)
+    monkeypatch.setattr(fetch, "CACHE_DIR", cache)
+    monkeypatch.setattr(fetch, "STATUS_PATH", tmp_path / "status.json")
+    monkeypatch.setattr(fetch, "CHOICE_PATH", choice)
+    monkeypatch.setattr(fetch, "UNIT_PATH", tmp_path / "safi-llama-server.service")
+    monkeypatch.setattr(fetch, "ENV_FILE", tmp_path / "llama-server.env")
+    monkeypatch.setattr(fetch, "write_status", lambda **kw: None)
+    monkeypatch.setattr(fetch, "verify", lambda *a, **kw: None)
+
+    def _no_downloads(step, *a, **kw):
+        raise AssertionError(f"must not re-download {step.get('name')}")
+
+    monkeypatch.setattr(fetch, "download", _no_downloads)
+    assert fetch.main(["--model", "phi4-mini", "--backend", "cpu"]) == 0
+    assert fetch.installed_jev_dir(catalogue) is not None

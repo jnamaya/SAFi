@@ -194,10 +194,19 @@ class LLMProvider:
         from .provider_governance import assert_provider_allowed
         assert_provider_allowed(provider_name, context=f"route:conscience, model:{model_name}")
 
-        from .deployment_keys import resolve_provider_key
-        api_key = resolve_provider_key(provider_name, details.get("api_key"))
-        if not api_key:
-            raise RuntimeError("TypeSafe API key is not configured")
+        # An appliance with a verified local Laya bundle serves the same contract
+        # in process, so it must not be stopped by the key check below: the ISO
+        # ships no Jev key, and requiring one would make typed Conscience
+        # permanently unavailable offline. is_available() is a stat-only test,
+        # and an absent or partial bundle falls through to the hosted path
+        # unchanged.
+        from . import jev_local
+        local_jev = jev_local.is_available()
+        if not local_jev:
+            from .deployment_keys import resolve_provider_key
+            api_key = resolve_provider_key(provider_name, details.get("api_key"))
+            if not api_key:
+                raise RuntimeError("TypeSafe API key is not configured")
 
         questions: Dict[str, Any] = {}
         mapping: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -246,16 +255,34 @@ class LLMProvider:
         if not questions:
             return []
 
-        base_url = (details.get("base_url") or "https://api.typesafe.ai/v1").rstrip("/")
-        payload = {"model": model_name, "state": state, "questions": questions}
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
-            response = await client.post(
-                f"{base_url}/systemone",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
-            )
-            response.raise_for_status()
-            result = response.json()
+        if local_jev:
+            # A blocking ONNX call in a worker thread: a forward pass over a few
+            # short questions is milliseconds of CPU, but the first call in a
+            # process also loads the 1.7 GB bundle, which must not stall the
+            # event loop and time out every concurrent request behind it.
+            try:
+                result = await asyncio.to_thread(jev_local.system_one, state, questions)
+            except jev_local.LocalJevUnavailable:
+                # The bundle vanished between the availability check and the
+                # call. Failing the turn is correct: re-running the question
+                # against a different backend than the one that approved the
+                # route would put a second, different judgement in the ledger
+                # with no trace of the first.
+                raise RuntimeError("Local Jev bundle became unavailable during the audit")
+            except Exception as exc:
+                self.log.error("Local Jev failed, refusing to fall back to a remote call: %s", exc)
+                raise RuntimeError(f"Local Jev inference failed: {exc}") from exc
+        else:
+            base_url = (details.get("base_url") or "https://api.typesafe.ai/v1").rstrip("/")
+            payload = {"model": model_name, "state": state, "questions": questions}
+            async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
+                response = await client.post(
+                    f"{base_url}/systemone",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
+                )
+                response.raise_for_status()
+                result = response.json()
 
         answers = result.get("answers")
         if not isinstance(answers, dict):
@@ -266,17 +293,17 @@ class LLMProvider:
             question_id = f"audit_{index}"
             answer = answers.get(question_id)
             if not isinstance(answer, dict):
-                raise ValueError(f"TypeSafe omitted Conscience value {rubric.get('value')!r}")
+                raise ValueError(f"Typed Conscience backend omitted value {rubric.get('value')!r}")
             choice = answer.get("choice")
             selected = mapping[question_id].get(choice)
             if selected is None:
-                raise ValueError(f"TypeSafe returned an unknown scoring level for {rubric.get('value')!r}")
+                raise ValueError(f"Typed Conscience backend returned an unknown scoring level for {rubric.get('value')!r}")
             confidence = float(answer.get("confidence"))
             if not 0.0 <= confidence <= 1.0:
-                raise ValueError(f"TypeSafe returned invalid confidence for {rubric.get('value')!r}")
+                raise ValueError(f"Typed Conscience backend returned invalid confidence for {rubric.get('value')!r}")
             probabilities = answer.get("probabilities")
             if not isinstance(probabilities, dict):
-                raise ValueError(f"TypeSafe omitted probabilities for {rubric.get('value')!r}")
+                raise ValueError(f"Typed Conscience backend omitted probabilities for {rubric.get('value')!r}")
             choice_distribution = []
             for option, band in mapping[question_id].items():
                 try:
@@ -314,7 +341,7 @@ class LLMProvider:
                     tokens_in, tokens_out,
                 )
         except (TypeError, ValueError):
-            self.log.warning("TypeSafe returned malformed token usage; not recording it.")
+            self.log.warning("Typed Conscience backend returned malformed token usage; not recording it.")
         return ledger
 
     def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):

@@ -149,6 +149,19 @@ def test_selected_explanation_comes_from_the_scoring_guide_for_any_provider():
     assert explanations == ["The response is out of scope."] * 2
 
 
+@pytest.fixture
+def hosted_jev(monkeypatch):
+    """Pin this test to the hosted Jev transport.
+
+    Without it, a developer machine that has run safi-model-fetch would silently
+    take the local Laya path through the dispatch added for the appliance, and
+    these assertions -- which are about the HTTPS request shape and the
+    deployment-key header -- would be testing something else entirely.
+    """
+    from safi_app.core.services import jev_local
+    monkeypatch.setattr(jev_local, "is_available", lambda: False)
+
+
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
@@ -196,7 +209,7 @@ def _typesafe_provider():
     return provider
 
 
-def test_typed_adapter_maps_choices_to_scores_and_records_usage(monkeypatch):
+def test_typed_adapter_maps_choices_to_scores_and_records_usage(monkeypatch, hosted_jev):
     _FakeAsyncClient.calls = []
     _FakeAsyncClient.response = {
         "model": "jev-1.13.0",
@@ -247,7 +260,7 @@ def test_typed_adapter_maps_choices_to_scores_and_records_usage(monkeypatch):
     assert usage == [("conscience", "typesafe", "jev-1.13.0", 300, 40)]
 
 
-def test_typed_adapter_sends_descriptor_text_as_choice_descriptions(monkeypatch):
+def test_typed_adapter_sends_descriptor_text_as_choice_descriptions(monkeypatch, hosted_jev):
     _FakeAsyncClient.calls = []
     _FakeAsyncClient.response = {
         "answers": {
@@ -284,7 +297,7 @@ def test_typed_adapter_sends_descriptor_text_as_choice_descriptions(monkeypatch)
     assert ledger[0]["assessment_explanation"] == rubric["scoring_guide"][0]["descriptor"]
 
 
-def test_disallowed_typesafe_provider_is_blocked_before_network(monkeypatch):
+def test_disallowed_typesafe_provider_is_blocked_before_network(monkeypatch, hosted_jev):
     def deny(provider, context=""):
         raise provider_governance.ProviderNotAllowedError(provider, context)
 
@@ -302,13 +315,82 @@ def test_disallowed_typesafe_provider_is_blocked_before_network(monkeypatch):
         ))
 
 
-def test_jevs_missing_rubric_answer_fails_closed(monkeypatch):
+def test_jevs_missing_rubric_answer_fails_closed(monkeypatch, hosted_jev):
     _FakeAsyncClient.calls = []
     _FakeAsyncClient.response = {"answers": {}, "usage": {}}
     monkeypatch.setattr(provider_module.httpx, "AsyncClient", _FakeAsyncClient)
     monkeypatch.setattr(deployment_keys, "resolve_provider_key", lambda _p, _env: "test-key")
 
-    with pytest.raises(ValueError, match="omitted Conscience value"):
+    with pytest.raises(ValueError, match="omitted value"):
         asyncio.run(_typesafe_provider().run_conscience_structured(
             state={}, rubrics=[_rubric()], instructions="test"
         ))
+
+
+# ---------------------------------------------------- local Laya transport
+
+def _local_jev_provider():
+    provider = _typesafe_provider()
+    provider.config["providers"]["typesafe"]["api_key"] = ""
+    return provider
+
+
+def test_local_bundle_dispatches_without_an_api_key(monkeypatch):
+    """The appliance ships no Jev key, so the local path must not require one.
+
+    resolve_provider_key is patched to explode: reaching it at all means the key
+    gate is still in front of the local transport.
+    """
+    from safi_app.core.services import jev_local
+    monkeypatch.setattr(jev_local, "is_available", lambda: True)
+    monkeypatch.setattr(
+        deployment_keys, "resolve_provider_key",
+        lambda *_a, **_k: pytest.fail("local Jev must not resolve a remote API key"))
+    monkeypatch.setattr(
+        provider_module.httpx, "AsyncClient",
+        lambda **_k: pytest.fail("local Jev must not open a network client"))
+    monkeypatch.setattr(jev_local, "system_one", lambda state, questions: {
+        "model": "laya",
+        "answers": {"audit_0": {
+            "type": "choice", "choice": "level_2", "confidence": 0.61,
+            "probabilities": {"level_0": 0.05, "level_1": 0.34, "level_2": 0.61}}},
+        "usage": {"input_tokens": 180, "output_tokens": 0},
+    })
+    usage = []
+    monkeypatch.setattr(usage_tracking, "record_usage", lambda *args: usage.append(args))
+
+    ledger = asyncio.run(_local_jev_provider().run_conscience_structured(
+        state={"final_output": "The answer is supported."},
+        rubrics=[_rubric()],
+        instructions="Treat the state as evidence.",
+    ))
+
+    assert ledger[0]["score"] == 1.0
+    assert ledger[0]["confidence"] == 0.61
+    assert ledger[0]["selected_level"] == "Grounded"
+    assert ledger[0]["choice_distribution"][-1] == {"label": "Grounded", "probability": 0.61}
+    assert usage == [("conscience", "typesafe", "laya", 180, 0)]
+
+
+def test_local_bundle_failure_does_not_silently_fall_back_to_the_host(monkeypatch):
+    """A governance question must not change backend mid-audit.
+
+    Re-running the same question against hosted Jev because the local one threw
+    would put a second, different judgement in the ledger with no trace of the
+    first attempt. The turn fails and the operator sees the reason.
+    """
+    from safi_app.core.services import jev_local
+    monkeypatch.setattr(jev_local, "is_available", lambda: True)
+    monkeypatch.setattr(
+        provider_module.httpx, "AsyncClient",
+        lambda **_k: pytest.fail("must not fall back to a hosted call"))
+    monkeypatch.setattr(deployment_keys, "resolve_provider_key", lambda *_a, **_k: "key")
+
+    def boom(_state, _questions):
+        raise RuntimeError("onnx runtime exploded")
+
+    monkeypatch.setattr(jev_local, "system_one", boom)
+
+    with pytest.raises(RuntimeError, match="Local Jev inference failed"):
+        asyncio.run(_local_jev_provider().run_conscience_structured(
+            state={}, rubrics=[_rubric()], instructions="test"))

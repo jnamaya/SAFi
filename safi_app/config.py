@@ -114,6 +114,20 @@ def _detect_faculty_defaults() -> dict:
     return {"intellect": "", "conscience": "", "light": ""}
 
 
+def _faculty_env(name: str, default: str) -> str:
+    """Read a SAFI_*_MODEL var, treating a blank assignment as unset.
+
+    .env.example ships every faculty line present-but-empty so operators can see
+    the knob without setting it, and the appliance wizard leaves Conscience
+    empty on purpose so a TypeSafe key added later is auto-promoted to Jev.
+    load_dotenv() turns that blank line into an empty string, and
+    os.environ.get(name, default) would hand the empty string straight back,
+    shadowing the detected default with no model at all.
+    """
+    value = os.environ.get(name)
+    return value.strip() if value and value.strip() else default
+
+
 DEPLOYMENT_MODES = ("production", "trial", "showcase")
 
 # Set when SAFI_DEPLOYMENT_MODE is present but not a recognised mode, so
@@ -343,6 +357,12 @@ class Config:
     # API-key-shaped setting because the existing OpenAI client uses the same
     # initialization path for every OpenAI-compatible endpoint.
     LOCAL_MODEL_API_KEY = os.environ.get("SAFI_LOCAL_MODEL_API_KEY", "").strip()
+    # There is deliberately no LOCAL_JEV_PATH field here. The directory of a
+    # verified Laya bundle is read straight from the environment by jev_local,
+    # because that lookup has to tell "absent" (probe the default location) from
+    # "set to empty" (local Jev deliberately off, for comparison against hosted).
+    # Any value resolved through Config collapses both to "" and loses the
+    # distinction, which is the only part of it that carries meaning.
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
     # MySQL connection details
@@ -494,19 +514,19 @@ class Config:
     # configured provider key so a fresh install works with any single key
     # (see _detect_faculty_defaults at module level).
     _faculty_defaults = _detect_faculty_defaults()
-    INTELLECT_MODEL = os.environ.get("SAFI_INTELLECT_MODEL", _faculty_defaults["intellect"])
-    CONSCIENCE_MODEL = os.environ.get("SAFI_CONSCIENCE_MODEL", _faculty_defaults["conscience"])
+    INTELLECT_MODEL = _faculty_env("SAFI_INTELLECT_MODEL", _faculty_defaults["intellect"])
+    CONSCIENCE_MODEL = _faculty_env("SAFI_CONSCIENCE_MODEL", _faculty_defaults["conscience"])
 
     # Models used exclusively by the public WordPress chatbot endpoint.
     # Falls back to the global defaults above if not set.
-    PUBLIC_INTELLECT_MODEL = os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
-    PUBLIC_CONSCIENCE_MODEL = os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
-    SUMMARIZER_MODEL = os.environ.get("SAFI_SUMMARIZER_MODEL", _faculty_defaults["light"])
+    PUBLIC_INTELLECT_MODEL = _faculty_env("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
+    PUBLIC_CONSCIENCE_MODEL = _faculty_env("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
+    SUMMARIZER_MODEL = _faculty_env("SAFI_SUMMARIZER_MODEL", _faculty_defaults["light"])
     # General-purpose background model (suggestions, etc.).
-    BACKEND_MODEL = os.environ.get("SAFI_BACKEND_MODEL", _faculty_defaults["light"])
+    BACKEND_MODEL = _faculty_env("SAFI_BACKEND_MODEL", _faculty_defaults["light"])
     # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
     # note-taking can run on a different provider than suggestions/summaries.
-    NOTETAKER_MODEL = os.environ.get("SAFI_NOTETAKER_MODEL", _faculty_defaults["light"])
+    NOTETAKER_MODEL = _faculty_env("SAFI_NOTETAKER_MODEL", _faculty_defaults["light"])
 
     # --- Agent work-context ("note-taker") memory tuning ---
     # Sampling temperature for the background extraction call (deterministic by default).

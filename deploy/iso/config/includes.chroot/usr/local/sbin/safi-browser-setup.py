@@ -579,7 +579,13 @@ def initialize(state: dict, setup) -> None:
         alias = choice["alias"]
         values.update({
             "SAFI_INTELLECT_MODEL": alias,
-            "SAFI_CONSCIENCE_MODEL": alias,
+            # Conscience is deliberately NOT pinned to the local alias. An
+            # explicit SAFI_CONSCIENCE_MODEL counts as the operator's own
+            # choice and blocks the automatic Jev promotion in
+            # resolve_faculty_model_pair, so typing a TypeSafe key into the
+            # Model Catalog after setup would never take effect. Left empty,
+            # _detect_faculty_defaults() picks Jev once that key exists and
+            # the local alias until then.
             "SAFI_BACKEND_MODEL": alias,
             "SAFI_NOTETAKER_MODEL": alias,
             "SAFI_SUMMARIZER_MODEL": alias,

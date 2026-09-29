@@ -188,6 +188,11 @@ def build_providers_config(config) -> dict:
         # LLMProvider dispatches it through the structured Conscience adapter.
         "typesafe": {
             "type": "typesafe",
+            # Empty when an appliance answers typed Conscience from a local Laya
+            # bundle: the "key" for that transport is the bundle, and configured_
+            # providers() below treats it as configured. No placeholder value is
+            # stored, so nothing that reads TYPESAFE_API_KEY as a bearer token can
+            # mistake it for a real credential and attempt an authenticated call.
             "api_key": getattr(config, "TYPESAFE_API_KEY", ""),
             "base_url": "https://api.typesafe.ai/v1",
         },
@@ -195,15 +200,22 @@ def build_providers_config(config) -> dict:
 
 
 def configured_providers(config) -> frozenset:
-    """Provider keys whose API key is actually set in the running config.
+    """Provider keys that can actually reach a backend in the running config.
 
-    Derived from build_providers_config so it can never drift from the set of
-    providers the dispatch layer knows how to reach.
+    Usually this is "has an API key", derived from build_providers_config so it
+    can never drift from the set of providers the dispatch layer knows how to
+    reach. The exception is typesafe: an appliance with a verified local Laya
+    bundle dispatches typed Conscience in process and ships no key at all, so
+    the bundle counts as its credential. The import is local and cheap because
+    is_available() only stats five files; the 1.7 GB load happens on first use.
     """
+    from . import jev_local
+
+    local_jev = jev_local.is_available()
     return frozenset(
         name
         for name, p in build_providers_config(config).items()
-        if (p.get("api_key") or "").strip()
+        if (p.get("api_key") or "").strip() or (local_jev and name == "typesafe")
     )
 
 
@@ -244,10 +256,11 @@ def resolve_faculty_model_pair(
     """Resolve usable faculty models and keep Intellect distinct when possible.
 
     Available models are dictionaries from the model catalogue (or model-id
-    strings in tests). A Jev key makes Jev the automatic Conscience choice;
-    an explicit user/agent Conscience choice remains in force. Without Jev,
-    stale automatic Jev selections fall back to an available chat model.
-    Intellect never receives the typed-only Jev route.
+    strings in tests). Jev availability -- a hosted key or a local Laya bundle on
+    an appliance -- makes Jev the automatic Conscience choice; an explicit
+    user/agent Conscience choice remains in force. Without Jev, stale automatic
+    Jev selections fall back to an available chat model. Intellect never
+    receives the typed-only Jev route.
     """
     entries = []
     for entry in available_models or []:

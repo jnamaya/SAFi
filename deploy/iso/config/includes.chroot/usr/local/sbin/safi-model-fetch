@@ -299,6 +299,75 @@ def installed_model_path(model: dict, catalogue: dict | None = None) -> Path | N
     return None
 
 
+def installed_jev_dir(catalogue: dict | None = None) -> Path | None:
+    """The local Jev bundle directory if every pinned file is on disk at full size.
+
+    Same size-not-hash reasoning as installed_model_path(): this runs on every
+    first-boot fetch, and re-reading 1.7 GB to re-confirm what verify() already
+    confirmed at download time would add minutes to a setup that is already
+    long. Nothing is written here before it has verified.
+    """
+    block = safi_local.jev_local(catalogue or {})
+    if not block or not block.get("files"):
+        return None
+    root = safi_local.jev_local_dir(catalogue or {})
+    try:
+        for entry in block["files"]:
+            if (root / entry["name"]).stat().st_size != int(entry["size"]):
+                return None
+    except OSError:
+        return None
+    return root
+
+
+def install_jev_local(cached_steps: list[tuple[Path, dict]], catalogue: dict | None = None) -> Path:
+    """Move a verified bundle into place as one atomic directory swap.
+
+    Each file is verified before it arrives here (download() calls verify), so
+    this only moves verified bytes. The directory is populated in a temporary
+    sibling and renamed into place: is_available() is a file-existence test, and
+    a half-populated directory at the live path would pass it and then fail on
+    the missing laya.onnx.data at the first governance turn.
+    """
+    block = safi_local.jev_local(catalogue or {})
+    if not block:
+        raise FetchError("the catalogue has no jev_local block to install")
+    root = safi_local.jev_local_dir(catalogue or {})
+    staging = root.with_name(root.name + ".partial")
+    backup: Path | None = None
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(mode=0o755, parents=True, exist_ok=True)
+    try:
+        for cached, entry in cached_steps:
+            target = staging / entry["name"]
+            target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            os.replace(cached, target)
+            target.chmod(0o644)
+        # Only now does the complete bundle exist. The old directory is kept
+        # until the new one is in place so a failure here leaves the previous
+        # verified bundle serving rather than nothing at all.
+        if root.exists():
+            backup = root.with_name(root.name + ".previous")
+            shutil.rmtree(backup, ignore_errors=True)
+            os.replace(root, backup)
+        try:
+            os.replace(staging, root)
+        except OSError:
+            # Put the previous bundle back. Leaving the live path empty would
+            # quietly downgrade typed Conscience to the hosted provider on an
+            # appliance that ships no key, so the turn would fail for a reason
+            # that looks nothing like a failed upgrade.
+            if backup is not None and backup.exists() and not root.exists():
+                os.replace(backup, root)
+            raise
+    except OSError as exc:
+        raise FetchError(f"could not install the local Jev bundle: {exc}") from exc
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(root.with_name(root.name + ".previous"), ignore_errors=True)
+    return root
+
+
 def install_model(cached: Path, model: dict, catalogue: dict | None = None) -> Path:
     root = model_root(catalogue or {})
     target_dir = root / model["id"]
@@ -487,6 +556,14 @@ def main(argv: list[str] | None = None) -> int:
         installed = installed_model_path(model, catalogue)
         if installed is not None:
             plan = [step for step in plan if step["kind"] != "model"]
+        # The local Jev bundle is a mandatory step, not an operator choice: an ISO
+        # that cannot audit itself offline is not a working appliance. Appended to
+        # the plan up front so the progress bar accounts for it from the start --
+        # adding steps later would make the percentage jump backwards.
+        installed_jev = installed_jev_dir(catalogue)
+        if installed_jev is None and safi_local.jev_local(catalogue):
+            plan.extend(dict(f, kind="jev_local")
+                        for f in safi_local.jev_local_files(catalogue))
         total = plan_total_bytes(plan)
 
         write_status(state="running", phase="starting", model=model["id"],
@@ -511,15 +588,27 @@ def main(argv: list[str] | None = None) -> int:
                 step_size=step["size"])
 
         model_path = installed
+        jev_cached: list[tuple[Path, dict]] = []
         for step in plan:
             cached = download(step, progress)
             if step["kind"] == "backend":
                 write_status(phase="installing", label=f"Installing {step['name']}")
                 install_backend(cached, CUDA_HOME)
                 cached.unlink(missing_ok=True)
+            elif step["kind"] == "jev_local":
+                # Held in the cache, not moved: the bundle is only coherent as a
+                # set, so a partial install would pass is_available() and then
+                # fail on a missing weights file. install_jev_local() renames the
+                # whole staging directory in one step.
+                jev_cached.append((cached, step))
             else:
                 write_status(phase="installing", label="Installing model weights")
                 model_path = install_model(cached, model, catalogue)
+
+        jev_dir = installed_jev
+        if jev_cached:
+            write_status(phase="installing", label="Installing local Jev bundle")
+            jev_dir = install_jev_local(jev_cached, catalogue)
 
         if model_path is None:
             raise FetchError("the model was never installed")
@@ -534,7 +623,9 @@ def main(argv: list[str] | None = None) -> int:
         write_status(state="done", phase="done", percent=100,
                      label="Model ready" if activated else "Model downloaded",
                      model_path=str(model_path), alias=model["alias"],
-                     backend=backend["id"], activated=activated, finished=time.time())
+                     backend=backend["id"], activated=activated,
+                     jev_local_path=str(jev_dir) if jev_dir else "",
+                     finished=time.time())
         return 0
     except FetchError as exc:
         write_status(state="error", error=str(exc), finished=time.time())

@@ -231,10 +231,24 @@ def test_local_commit_writes_the_chosen_alias_to_every_faculty(env_paths):
     text = _commit(env_paths, {"mode": "local", "model": "qwen3-32b",
                                "alias": "safi-qwen3-32b", "backend": "cuda-13.4",
                                "size": 19762149024})
-    for faculty in ("INTELLECT", "CONSCIENCE", "BACKEND", "NOTETAKER", "SUMMARIZER"):
+    for faculty in ("INTELLECT", "BACKEND", "NOTETAKER", "SUMMARIZER"):
         assert f"SAFI_{faculty}_MODEL=safi-qwen3-32b" in text
     assert "SAFI_LOCAL_MODEL_API_KEY=local" in text
     assert "SAFI_MAX_INTELLECT_TOKENS=1024" in text
+
+
+def test_local_commit_leaves_conscience_unpinned(env_paths):
+    """Conscience must stay auto-selectable so a later TypeSafe key promotes Jev.
+
+    An explicit SAFI_CONSCIENCE_MODEL is the operator's own choice and blocks
+    the automatic Jev promotion in resolve_faculty_model_pair, so pinning the
+    local alias at setup would make a Model Catalog key a no-op forever.
+    """
+    text = _commit(env_paths, {"mode": "local", "model": "qwen3-32b",
+                               "alias": "safi-qwen3-32b", "backend": "cuda-13.4",
+                               "size": 19762149024})
+    assert "SAFI_CONSCIENCE_MODEL=safi-qwen3-32b" not in text
+    assert "SAFI_CONSCIENCE_MODEL\n" not in text
 
 
 def test_local_commit_never_writes_a_cloud_key(env_paths):

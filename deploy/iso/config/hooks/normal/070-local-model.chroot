@@ -77,6 +77,11 @@ rm -rf "$STAGE_DIR"
 
 # Placeholders so the paths exist even before the operator chooses a model.
 # safi-model-fetch overwrites the env file and writes the unit itself.
+#
+# SAFI_LOCAL_JEV_PATH is deliberately not written here. The app probes the
+# default bundle location when that variable is absent and reads an empty value
+# as "off", so a stock appliance picks the bundle up once the fetch installs it
+# and nothing has to coordinate a path between this hook and the fetcher.
 cat > /etc/safi/llama-server.env <<'EOF'
 # Written by safi-model-fetch once a model is chosen. These defaults let an
 # operator start the server by hand before then; the server stays loopback-only.

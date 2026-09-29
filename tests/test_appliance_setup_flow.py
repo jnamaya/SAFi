@@ -418,7 +418,14 @@ def test_a_deferred_env_file_really_configures_no_provider(env_paths, monkeypatc
     proves the template itself leaves every provider blank.
     """
     from test_appliance_setup_wizard import _load
+    from safi_app.core.services import jev_local
     from safi_app.core.services.model_routing import configured_providers
+
+    # This asserts the *rendered template*, not the machine running the test. A
+    # developer box that has run safi-model-fetch has a local Laya bundle, which
+    # is a legitimate typed-Conscience route with no key -- so leaving it in place
+    # would make this fail for a reason that has nothing to do with 'decide later'.
+    monkeypatch.setattr(jev_local, "is_available", lambda: False)
 
     setup = _load("real_setup_under_test", REPO / "scripts/setup.py")
     # APP_DIR is redirected to tmp by the fixture; the template has to come from
