@@ -119,6 +119,13 @@ class TheLedgerScoresWhetherTheReasonIsTrue(unittest.TestCase):
         self.assertIn("scope", block,
                       "the common mismatch is claiming a scope limit; name it")
 
+    def test_ambiguous_or_implied_causes_are_not_scored_as_misleading(self):
+        i = CONSCIENCE.index('"value": "Reason Fidelity"')
+        block = CONSCIENCE[i:i + 1200].lower()
+        self.assertIn("merely implied reason is not a false reason", block)
+        self.assertIn("reason is vague or implied", block)
+        self.assertIn("explicitly states a cause", block)
+
     def test_all_four_redirect_rubrics_are_present(self):
         for value in ("Redirect Clarity", "Redirect Helpfulness",
                       "Tone and Respect", "Reason Fidelity"):
@@ -137,6 +144,30 @@ class TheDeterministicTierIsUnchanged(unittest.TestCase):
         for token in ("run_intellect", "run_conscience", "await "):
             with self.subTest(token=token):
                 self.assertNotIn(token, body)
+
+
+class TheFallbackNamesTheActualBlockType(unittest.TestCase):
+
+    def test_persona_swap_is_not_mislabeled_as_out_of_scope(self):
+        from safi_app.core.orchestrator import SAFi
+
+        directive = SAFi._default_redirect_directive("injection:persona_swap").lower()
+        self.assertIn("change your role", directive)
+        self.assertIn("override your governing instructions", directive)
+        self.assertNotIn("falls outside this agent's area of focus", directive)
+
+    def test_real_scope_blocks_still_get_a_scope_explanation(self):
+        from safi_app.core.orchestrator import SAFi
+
+        directive = SAFi._default_redirect_directive("scope_violation").lower()
+        self.assertIn("falls outside this agent's area of focus", directive)
+
+    def test_pii_blocks_keep_the_safe_redaction_guidance(self):
+        from safi_app.core.orchestrator import SAFi
+
+        directive = SAFi._default_redirect_directive("pii_detected").lower()
+        self.assertIn("sensitive data", directive)
+        self.assertIn("removed or replaced", directive)
 
 
 if __name__ == "__main__":

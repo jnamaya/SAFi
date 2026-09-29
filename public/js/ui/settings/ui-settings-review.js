@@ -337,6 +337,13 @@ async function renderDetail(queueId) {
     // Parse persisted JSON strings (ledger, attribution) defensively.
     let ledger = [];
     try { ledger = JSON.parse(turn?.conscience_ledger || '[]') || []; } catch (e) { /* leave empty */ }
+    let profileValues = [];
+    try {
+        profileValues = Array.isArray(turn?.profile_values)
+            ? turn.profile_values
+            : JSON.parse(turn?.profile_values || '[]');
+        if (!Array.isArray(profileValues)) profileValues = [];
+    } catch (e) { /* legacy/malformed row — omit rubric descriptions */ }
     let attribution = null;
     try { attribution = turn?.model_attribution ? JSON.parse(turn.model_attribution) : null; } catch (e) { /* opaque */ }
 
@@ -405,6 +412,10 @@ async function renderDetail(queueId) {
                         profile: turn.profile_name,
                         policy_id: turn.policy_id,
                         policy_version: turn.policy_version,
+                        will_reason: ledger.find(item => item?.recorded_violation)?.recorded_violation || null,
+                        is_redirect: ledger.some(item => Boolean(item?.recorded_violation)),
+                        final_output: turn.content || null,
+                        values: profileValues,
                     }, 'rq-')
                     : `<p class="text-sm text-gray-400">No value-by-value evaluation was recorded for this turn${willStage === 'hard_gate' ? ' — it was stopped at a hard gate before the audit stage' : ''}.</p>`}
             </div>

@@ -836,6 +836,7 @@ function renderHistory(history, user, showModal, activeProfileData) {
             values: values || [],
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
+            final_output: turn.role === 'ai' ? turn.content : null,
             message_id: turn.message_id // Ensure message_id is in payload
         };
 
@@ -893,7 +894,7 @@ function renderHistory(history, user, showModal, activeProfileData) {
                         .filter(s => s !== null && s !== undefined);
                 }
 
-                ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+                await showConscienceAuditModal({ ...p, spirit_scores_history: freshScores });
             },
             options
         );
@@ -907,6 +908,22 @@ function renderHistory(history, user, showModal, activeProfileData) {
                 if (outcome === 'pending') _pollForAudit(turn.message_id);
             });
         }
+    });
+}
+
+async function showConscienceAuditModal(payload) {
+    let context = {};
+    if (payload.message_id && payload.will_reason == null && payload.is_redirect !== true) {
+        try {
+            const result = await api.fetchAuditResult(payload.message_id);
+            if (result?.status === 'complete') context = result;
+        } catch { /* the cached audit remains viewable without extra context */ }
+    }
+    ui.showModal('conscience', {
+        ...payload,
+        will_reason: payload.will_reason ?? context.will_reason ?? null,
+        is_redirect: payload.is_redirect ?? context.is_redirect ?? false,
+        final_output: context.final_output ?? payload.final_output ?? null,
     });
 }
 
@@ -1259,6 +1276,9 @@ export async function sendMessage(activeProfileData, user) {
             values: values,
             spirit_score: spiritScore,
             spirit_scores_history: scoresHistoryForPayload,
+            final_output: mainAnswer,
+            will_reason: initialResponse.willReason || null,
+            is_redirect: initialResponse.isRedirect === true,
             message_id: messageId
         };
 
@@ -1284,7 +1304,7 @@ export async function sendMessage(activeProfileData, user) {
                         .filter(s => s !== null && s !== undefined);
                 }
 
-                ui.showModal('conscience', { ...p, spirit_scores_history: freshScores });
+                await showConscienceAuditModal({ ...p, spirit_scores_history: freshScores });
             },
             // Redo re-asks the prompt that produced this answer — the clean
             // typed text (userMessage), not the outgoing prompt with document
@@ -1443,6 +1463,7 @@ async function fetchAndApplyAuditResult(messageId) {
         const payload = {
             ...auditResult,
             ledger: parsedLedger,
+            final_output: history.find(m => m.message_id === messageId)?.content || null,
             spirit_scores_history: spiritScoresHistory,
             message_id: messageId
         };

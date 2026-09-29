@@ -15,11 +15,14 @@ disclose AI interaction rests with the deploying caller — SAFi's disclosure
 covers only its own surfaces. Every response repeats this in
 `caller_obligations` so external deployers cannot miss it.
 """
+import os
+
 from flask import Blueprint, jsonify, request, current_app
 
 from ..persistence import database as db
 from ..config import Config
 from ..core import provenance
+from ..core.services.model_routing import resolve_effective_faculty_models
 from .conversations import global_safi_cache
 
 evaluate_bp = Blueprint('evaluate', __name__)
@@ -74,11 +77,19 @@ async def evaluate_endpoint():
         org_id = policy.get('org_id') or (user_details or {}).get('org_id')
 
         # 5. Governed instance (cached), policy injected over the agent
+        intellect_model, conscience_model = resolve_effective_faculty_models(
+            Config,
+            Config.INTELLECT_MODEL,
+            Config.CONSCIENCE_MODEL,
+            org_id,
+            intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
+            conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+        )
         saf_system = global_safi_cache.get_or_create(
             agent_key,
-            Config.INTELLECT_MODEL,
+            intellect_model,
             None,
-            Config.CONSCIENCE_MODEL,
+            conscience_model,
             policy_id=policy_id
         )
 

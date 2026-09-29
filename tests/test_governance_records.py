@@ -194,7 +194,14 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         Audit Hub (only the retention purge destroys them)."""
         provider_governance.activate_org(self.org_id)
         cid, mid = self._make_turn()
-        self._commit_turn(mid, record=_record(mid))
+        values = [{
+            "value": "Honesty",
+            "rubric": {"scoring_guide": [{"score": 1.0, "descriptor": "Claims are grounded."}]},
+        }]
+        self._commit_turn(mid, record=_record(mid, profileValues=values))
+        message_pk = self._gov_row(mid)["message_pk"]
+        before_delete = db.get_governance_event(self.org_id, message_pk)
+        self.assertEqual(before_delete["chat"]["profile_values"], ["honesty"])
         self.assertTrue(db.delete_conversation(cid, self.user_id))
         row = self._gov_row(mid)
         self.assertIsNotNone(row, "org governance record must survive member deletion")
@@ -202,6 +209,7 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         detail = db.get_governance_event(self.org_id, row["message_pk"])
         self.assertIsNone(detail["chat"])
         self.assertEqual(detail["record"]["userPrompt"], "what is our fiduciary duty?")
+        self.assertEqual(detail["record"]["profileValues"], values)
 
     def test_07_personal_turn_without_org_still_recorded(self):
         provider_governance.activate_org(None)

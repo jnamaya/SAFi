@@ -23,16 +23,13 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     # server never served -- every faculty defaulted to a model that 404s. It is
     # resolved from the live model at startup instead; see active_local_model.
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
-    "gemini":    {"intellect": "gemini-3.7-flash",          "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
+    "gemini":    {"intellect": "gemini-3.5-flash-lite",    "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
     "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
     "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
-    # Conscience defaults to gpt-oss-120b rather than gemma-4-31b. The old note
-    # here claimed gemma "must not audit" — that dated from the free Cerebras
-    # tier, whose context limits made long audit prompts fail; it is not a
-    # property of the model, and operators run gemma as Conscience today.
-    # 120b stays the default simply as the stronger auditor of the two.
-    "cerebras":  {"intellect": "gpt-oss-120b",              "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
+    # Keep faculties on distinct available models while retaining the stronger
+    # GPT-OSS 120B model for Conscience.
+    "cerebras":  {"intellect": "zai-glm-4.7",               "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
     "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
     "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
 }
@@ -102,9 +99,15 @@ def _detect_faculty_defaults() -> dict:
             # defaults every faculty to a model nothing is serving.
             alias = active_local_model()
             if alias:
-                return {"intellect": alias, "conscience": alias, "light": alias}
+                defaults = {"intellect": alias, "conscience": alias, "light": alias}
+                if os.environ.get("TYPESAFE_API_KEY", "").strip():
+                    defaults["conscience"] = "jev-1.13.0"
+                return defaults
             continue
-        return _FACULTY_DEFAULTS_BY_PROVIDER[provider]
+        defaults = dict(_FACULTY_DEFAULTS_BY_PROVIDER[provider])
+        if os.environ.get("TYPESAFE_API_KEY", "").strip():
+            defaults["conscience"] = "jev-1.13.0"
+        return defaults
     # No provider we can name a real model for. SAFI_*_MODEL may still be set
     # explicitly, and Config.validate() refuses to start when no provider key
     # exists at all, so this shape only has to exist.
@@ -335,6 +338,7 @@ class Config:
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
     ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
     CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
+    TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "").strip()
     # The appliance uses the harmless value "local". It remains an
     # API-key-shaped setting because the existing OpenAI client uses the same
     # initialization path for every OpenAI-compatible endpoint.

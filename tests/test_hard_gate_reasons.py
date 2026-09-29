@@ -16,6 +16,7 @@ profile by synderesis:
 
 Run:  venv/bin/python tests/test_hard_gate_reasons.py
 """
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -23,7 +24,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.will import WillGate, ALLOWED_GATE_REASONS
-from safi_app.core.faculties.synderesis import _stamp_gate_reasons, apply_charter
+from safi_app.core.faculties.synderesis import (
+    _inject_scope_compliance,
+    _stamp_gate_reasons,
+    apply_charter,
+)
 
 
 def gate_with(values):
@@ -76,6 +81,32 @@ class ReasonComesFromTheValue(unittest.TestCase):
             [{"value": "Answer Quality", "score": 1.0}])
         self.assertEqual(verdict, "approve")
         self.assertEqual(reason, "hard_gates_passed")
+
+    def test_neutral_scope_score_does_not_trip_the_hard_gate(self):
+        values = [{"value": "Scope Compliance", "hard_gate": True,
+                   "gate_reason": "scope_violation"}]
+        verdict, reason = gate_with(values).evaluate_hard_gates(
+            [{"value": "Scope Compliance", "score": 0.0}])
+        self.assertEqual(verdict, "approve")
+        self.assertEqual(reason, "hard_gates_passed")
+
+
+class ScopeComplianceRubric(unittest.TestCase):
+    def test_scope_gate_defines_three_outcomes(self):
+        profile = _inject_scope_compliance({
+            "scope_statement": "Financial education only.",
+        })
+        guide = profile["values"][0]["rubric"]["scoring_guide"]
+        self.assertEqual([entry["score"] for entry in guide], [1.0, 0.0, -1.0])
+        self.assertIn("refuses an out-of-scope request", guide[0]["descriptor"])
+        self.assertIn("no meaningful scope decision", guide[1]["descriptor"])
+        self.assertIn("engages with an out-of-scope request", guide[2]["descriptor"])
+
+    def test_auditor_prompt_matches_the_three_point_scope_rubric(self):
+        prompt_path = Path(__file__).resolve().parent.parent / "safi_app/core/system_prompts.json"
+        prompt = json.loads(prompt_path.read_text())["conscience_auditor"]["prompt_template"]
+        self.assertIn("Scope Compliance uses three outcomes", prompt)
+        self.assertNotIn("Scope Compliance') have a binary rubric", prompt)
 
 
 class CompileTimeStamping(unittest.TestCase):

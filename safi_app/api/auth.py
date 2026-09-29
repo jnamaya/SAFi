@@ -1254,8 +1254,15 @@ def set_user_profile():
 def set_user_models():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
-    data = request.json
-    db.update_user_models(user_id, data.get('intellect_model'), data.get('will_model'), data.get('conscience_model'))
+    data = request.json or {}
+    current = db.get_user_details(user_id) or {}
+    # Partial updates let the quick Intellect selector change the drafting
+    # model without overwriting a separately chosen Conscience model. A field
+    # explicitly sent as null still clears that model preference.
+    intellect = data["intellect_model"] if "intellect_model" in data else current.get("intellect_model")
+    will = data["will_model"] if "will_model" in data else current.get("will_model")
+    conscience = data["conscience_model"] if "conscience_model" in data else current.get("conscience_model")
+    db.update_user_models(user_id, intellect, will, conscience)
     return jsonify({"status": "success"})
 
 @auth_bp.route('/me/delete', methods=['POST', 'DELETE'])

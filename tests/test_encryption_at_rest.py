@@ -79,7 +79,13 @@ class TestEncryptionAtRest(unittest.TestCase):
         # 3. Content + audit results stored encrypted
         db.update_message_content(self.msg_id, ANSWER, audit_status="complete")
         db.update_audit_results(self.msg_id, [{"value": "truth", "score": 1}], 9,
-                                "ENCTEST aligned note", "test", ["truth"], None, drift=0.42)
+                                "ENCTEST aligned note", "test", ["truth"], None, drift=0.42,
+                                governance_record={
+                                    "userId": self.uid,
+                                    "willReason": "injection:persona_swap",
+                                    "isRedirect": True,
+                                    "finalOutput": ANSWER,
+                                })
         raw_ai = self.raw("SELECT content, spirit_note, conscience_ledger, reasoning_log "
                           "FROM chat_history WHERE message_id=%s", (self.msg_id,))[0]
         for col in ("content", "spirit_note", "conscience_ledger", "reasoning_log"):
@@ -99,6 +105,9 @@ class TestEncryptionAtRest(unittest.TestCase):
         self.assertEqual(json.loads(audit["ledger"])[0]["value"], "truth")
         self.assertEqual(len(json.loads(audit["reasoning_log"])), 2)
         self.assertAlmostEqual(audit["drift"], 0.42, places=5)
+        self.assertEqual(audit["will_reason"], "injection:persona_swap")
+        self.assertTrue(audit["is_redirect"])
+        self.assertEqual(audit["final_output"], ANSWER)
         self.assertAlmostEqual(hist[1]["drift"], 0.42, places=5)
 
         # 6. Hash chain valid over ciphertext states

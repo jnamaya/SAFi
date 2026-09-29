@@ -700,6 +700,12 @@ async function renderDetail(messagePk) {
         } catch { /* unparseable legacy value — omit */ }
     }
 
+    let auditValues = r.profileValues ?? doc.chat?.profile_values ?? [];
+    if (typeof auditValues === 'string') {
+        try { auditValues = JSON.parse(auditValues); } catch { auditValues = []; }
+    }
+    if (!Array.isArray(auditValues)) auditValues = [];
+
     const sections = [
         ['draft', 'AI Draft'],
         ['decision', 'Decision'],
@@ -745,6 +751,10 @@ async function renderDetail(messagePk) {
                 profile: r.agentName || ev.profile_key,
                 policy_id: r.policyId || ev.policy_id,
                 policy_version: r.policyVersion ?? ev.policy_version,
+                will_reason: r.willReason || null,
+                is_redirect: r.isRedirect === true,
+                final_output: r.finalOutput || null,
+                values: auditValues,
             }, 'ah-')
             : `<p class="text-sm text-gray-400">No value-by-value evaluation was recorded for this turn${ev.will_stage === 'phase_zero' ? ' — it was blocked before the audit stage' : ''}.</p>`,
         alignment: `

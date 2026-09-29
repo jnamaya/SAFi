@@ -760,12 +760,10 @@ async function handleViewGoverningPolicy(profile) {
 
 async function handleQuickModelSwitch(modelId) {
   try {
-    // The appliance runs one local model for both drafting and audit. Updating
-    // only Intellect leaves a stale cloud Conscience preference behind, which
-    // then fails when the appliance has no cloud key.
-    await api.updateUserModels({ intellect_model: modelId, conscience_model: modelId });
+    // Intellect and Conscience are independent faculty routes. Changing the
+    // drafting model must preserve a separately selected auditor (e.g. Jev).
+    await api.updateUserModels({ intellect_model: modelId });
     user.intellect_model = modelId;
-    user.conscience_model = modelId;
     const model = availableModels.find(m => m.id === modelId);
     ui.showToast(`Switched to ${model?.label || modelId}`, 'success');
   } catch(e) {

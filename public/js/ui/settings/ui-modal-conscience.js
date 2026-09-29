@@ -63,6 +63,11 @@ export function setupConscienceModalContent(payload) {
  */
 export function renderConscienceReport(payload, idPrefix = '') {
     const ledger = payload.ledger || [];
+    let values = payload.values || [];
+    if (typeof values === 'string') {
+        try { values = JSON.parse(values); } catch { values = []; }
+    }
+    if (!Array.isArray(values)) values = [];
     const groups = {
         upholds: ledger.filter(r => r.score > 0),
         conflicts: ledger.filter(r => r.score < 0),
@@ -79,6 +84,7 @@ export function renderConscienceReport(payload, idPrefix = '') {
     const active = groups.conflicts.length > 0 ? 'conflicts' : 'upholds';
 
     return `
+        ${renderRedirectContext(payload, ledger)}
         ${renderScoreAndTrend(payload)}
 
         <div>
@@ -93,12 +99,95 @@ export function renderConscienceReport(payload, idPrefix = '') {
 
             <!-- Tab Panels -->
             <div class="py-5">
-                ${renderTabPanel('upholds', groups.upholds, active === 'upholds', idPrefix)}
-                ${renderTabPanel('conflicts', groups.conflicts, active === 'conflicts', idPrefix)}
-                ${renderTabPanel('neutral', groups.neutral, false, idPrefix)}
+                ${renderTabPanel('upholds', groups.upholds, active === 'upholds', idPrefix, values)}
+                ${renderTabPanel('conflicts', groups.conflicts, active === 'conflicts', idPrefix, values)}
+                ${renderTabPanel('neutral', groups.neutral, false, idPrefix, values)}
             </div>
         </div>
     `;
+}
+
+function isTypedAssessment(item) {
+    return Boolean(item?.selected_level || item?.assessment_explanation || item?.choice_distribution);
+}
+
+function readableTrigger(code) {
+    const value = String(code || '').trim();
+    if (value.startsWith('injection:')) {
+        const category = value.split(':', 2)[1].replace(/_/g, ' ');
+        return `Prompt injection — ${category}`;
+    }
+    const known = {
+        pii_detected: 'Sensitive information detected',
+        scope_violation: 'Request outside the agent’s scope',
+        scope_validation: 'Request outside the agent’s scope',
+        ethical_violation: 'Draft failed a governance value check',
+        low_alignment_score: 'Draft did not meet the alignment threshold',
+        audit_unavailable: 'Governance audit unavailable',
+        hard_gate_violation: 'A non-negotiable governance check failed',
+    };
+    return known[value] || value.replace(/_/g, ' ') || 'Not recorded';
+}
+
+function typedAssessmentBasis(item) {
+    if (item.assessment_explanation) return String(item.assessment_explanation);
+    if (String(item.value || '').toLowerCase() !== 'reason fidelity') return '';
+
+    const level = String(item.selected_level || '').toLowerCase();
+    if (level === 'misleading') {
+        return 'The reply states a reason that conflicts with the recorded trigger and is not independently supported by the request. Compare the trigger and reply above.';
+    }
+    if (level === 'unclear') {
+        return 'The reason implied by the reply is too vague to determine whether it conflicts with the recorded trigger.';
+    }
+    if (level === 'accurate') {
+        return 'The stated reason matches the trigger, or the reply makes no unsupported claim about why it declined.';
+    }
+    return '';
+}
+
+function scoringGuideDescription(item, values) {
+    const itemName = String(item.value || item.name || '').trim().toLowerCase();
+    const score = Number(item.score);
+    if (!Array.isArray(values) || !itemName || !Number.isFinite(score)) return '';
+
+    const definition = values.find(value =>
+        String(value?.value || value?.name || '').trim().toLowerCase() === itemName
+    );
+    if (!definition) return '';
+
+    const rubric = definition.rubric;
+    const guide = Array.isArray(rubric) ? rubric : (rubric?.scoring_guide || []);
+    const band = guide.find(entry =>
+        entry && Number.isFinite(Number(entry.score))
+        && Math.abs(Number(entry.score) - score) < 1e-9
+    );
+    return String(band?.descriptor || band?.criteria || band?.description || '').trim();
+}
+
+function renderRedirectContext(payload, ledger) {
+    const recordedViolation = ledger.find(item => item?.recorded_violation)?.recorded_violation;
+    const trigger = payload.will_reason || payload.willReason || recordedViolation;
+    const isRedirect = payload.is_redirect === true || payload.isRedirect === true || Boolean(recordedViolation);
+    if (!isRedirect || !trigger) return '';
+
+    const finalOutput = String(payload.final_output || payload.finalOutput || '').trim();
+    const outputPreview = finalOutput.length > 1200
+        ? `${finalOutput.slice(0, 1200)}…`
+        : finalOutput;
+    const safeTrigger = DOMPurify.sanitize(readableTrigger(trigger));
+    const safeOutput = outputPreview
+        ? DOMPurify.sanitize(outputPreview)
+        : 'No delivered reply was recorded.';
+
+    return `
+        <section class="mb-5 rounded-lg border border-gray-200 dark:border-neutral-700" aria-label="Redirect evidence">
+            <div class="border-b border-gray-100 px-4 py-2 text-xs uppercase text-gray-500 dark:border-neutral-800 dark:text-gray-400">Redirect evidence</div>
+            <div class="space-y-3 px-4 py-3 text-sm">
+                <div><span class="font-semibold text-gray-700 dark:text-gray-200">Recorded trigger:</span> ${safeTrigger}</div>
+                <div><div class="mb-1 font-semibold text-gray-700 dark:text-gray-200">Reply audited:</div><blockquote class="border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-neutral-600 dark:text-gray-300 whitespace-pre-wrap">${safeOutput}</blockquote></div>
+            </div>
+        </section>`;
 }
 
 /**
@@ -285,10 +374,10 @@ function renderTabButton(key, title, count, isActive, idPrefix = '') {
 /**
  * Renders a single tab panel with its ledger items.
  */
-function renderTabPanel(key, items, isActive, idPrefix = '') {
+function renderTabPanel(key, items, isActive, idPrefix = '', values = []) {
     let content = '';
     if (items.length > 0) {
-        content = items.map(item => renderLedgerItem(item, key)).join('');
+        content = items.map(item => renderLedgerItem(item, key, values)).join('');
     } else {
         content = `<p class="text-sm text-center text-gray-500 dark:text-gray-400">No items in this category.</p>`;
     }
@@ -303,10 +392,33 @@ function renderTabPanel(key, items, isActive, idPrefix = '') {
 /**
  * Renders a single ledger item.
  */
-function renderLedgerItem(item, key) {
+function renderLedgerItem(item, key, values = []) {
+    const typed = isTypedAssessment(item);
+    const score = Number(item.score);
+    const scoreText = Number.isFinite(score)
+        ? `${score > 0 ? '+' : ''}${score.toFixed(1)}`
+        : '';
+    const scoreToneClass = !Number.isFinite(score)
+        ? ''
+        : score > 0
+            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+            : score === 0
+                ? 'bg-neutral-100 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-300'
+                : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
+    const confidence = item.confidence === null || item.confidence === undefined
+        ? null
+        : Number(item.confidence);
+    const validConfidence = Number.isFinite(confidence)
+        ? Math.max(0, Math.min(1, confidence))
+        : null;
+    const basis = scoringGuideDescription(item, values)
+        || String(item.assessment_explanation || '').trim()
+        || (typed ? typedAssessmentBasis(item) : '');
     const reasonHtml = DOMPurify.sanitize(String(item.reason || ''));
+    const basisHtml = DOMPurify.sanitize(basis);
     const maxLength = 120;
-    const isLong = reasonHtml.length > maxLength;
+    const displayedText = typed && basisHtml ? basisHtml : reasonHtml;
+    const isLong = displayedText.length > maxLength;
 
     const statusCardClass = {
         upholds: 'audit-card-uphold',
@@ -314,13 +426,23 @@ function renderLedgerItem(item, key) {
         neutral: 'audit-card-neutral',
     }[key];
 
-    const confidenceDisplayHtml = item.confidence ? `
+    const confidenceDisplayHtml = validConfidence !== null ? `
         <div class="flex items-center gap-2 w-full md:w-auto md:min-w-[160px]">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Confidence</span>
+            <span class="text-xs font-medium text-gray-500 dark:text-gray-400" title="Confidence in this selected rubric choice; separate from its score.">Confidence</span>
             <div class="confidence-meter-track flex-1">
-                <div class="confidence-meter-fill" style="width: ${item.confidence * 100}%"></div>
+                <div class="confidence-meter-fill" style="width: ${validConfidence * 100}%"></div>
             </div>
-            <span class="text-xs font-semibold text-gray-600 dark:text-gray-300 w-9 text-right">${Math.round(item.confidence * 100)}%</span>
+            <span class="text-xs font-semibold text-gray-600 dark:text-gray-300 w-9 text-right">${Math.round(validConfidence * 100)}%</span>
+        </div>
+    ` : '';
+
+    const assessmentHtml = basisHtml
+        ? `<div class="min-w-0 flex-1 text-sm">${basisHtml}</div>`
+        : (typed ? '' : `<div class="min-w-0 flex-1"><div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>${isLong ? '<button class="expand-btn">Show More</button>' : ''}</div>`);
+    const findingHtml = (typed || scoreText) ? `
+        <div class="mb-2 flex items-start gap-2">
+            ${scoreText ? `<span class="inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-mono font-bold ${scoreToneClass}">${scoreText}</span>` : ''}
+            ${assessmentHtml}
         </div>
     ` : '';
 
@@ -331,8 +453,8 @@ function renderLedgerItem(item, key) {
                 ${confidenceDisplayHtml}
             </div>
             <div class="text-sm text-gray-600 dark:text-gray-400 max-w-none">
-                <div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>
-                ${isLong ? '<button class="expand-btn">Show More</button>' : ''}
+                ${findingHtml}
+                ${findingHtml ? '' : assessmentHtml}
             </div>
         </div>
     `;
@@ -433,6 +555,13 @@ function copyAuditToClipboard(payload) {
         if (copyPolicyId) text += `Policy ID: ${copyPolicyId}\n`;
     }
     text += `Alignment Score: ${payload.spirit_score !== null && payload.spirit_score !== undefined ? payload.spirit_score.toFixed(1) + '/10' : 'N/A'}\n`;
+    const recordedViolation = (payload.ledger || []).find(item => item?.recorded_violation)?.recorded_violation;
+    const trigger = payload.will_reason || payload.willReason || recordedViolation;
+    if (trigger && (payload.is_redirect || payload.isRedirect || recordedViolation)) {
+        text += `Redirect trigger: ${readableTrigger(trigger)}\n`;
+        const output = payload.final_output || payload.finalOutput;
+        if (output) text += `Reply audited: ${output}\n`;
+    }
     text += `------------------------------------\n\n`;
 
     if (payload.ledger && payload.ledger.length > 0) {
@@ -443,21 +572,21 @@ function copyAuditToClipboard(payload) {
         if (upholds.length > 0) {
             text += 'UPHOLDS:\n';
             upholds.forEach(item => {
-                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
             });
             text += '\n';
         }
         if (conflicts.length > 0) {
             text += 'CONFLICTS:\n';
             conflicts.forEach(item => {
-                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
             });
             text += '\n';
         }
         if (neutral.length > 0) {
             text += 'NEUTRAL:\n';
             neutral.forEach(item => {
-                text += `- ${item.value} (Confidence: ${Math.round((item.confidence || 0) * 100)}%): ${item.reason}\n`;
+                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
             });
         }
     } else {

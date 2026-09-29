@@ -51,8 +51,11 @@ PROVIDER_METADATA = {
                   "zdr": False,
                   "zdr_note": "Data stored in China, retained indefinitely, used for training; no ZDR option."},
     "zhipu":     {"label": "Zhipu (Z.ai)",  "baa_capable": False, "eu_hostable": False,
-                  "zdr": False,
-                  "zdr_note": "Policy claims real-time processing without storage, but no contractual ZDR program or training-use statement."},
+                   "zdr": False,
+                   "zdr_note": "Policy claims real-time processing without storage, but no contractual ZDR program or training-use statement."},
+    "typesafe":  {"label": "TypeSafe Jev", "baa_capable": False, "eu_hostable": False,
+                   "zdr": "available",
+                   "zdr_note": "TypeSafe says API inputs are not used for training; standard retention applies, with enterprise zero-data-retention available."},
 }
 
 
@@ -102,6 +105,8 @@ def detect_provider(model_name: str) -> str:
     custom = _custom_models_cache["map"].get(m)
     if custom:
         return custom
+    if m.startswith("jev-") or m.startswith("typesafe/jev"):
+        return "typesafe"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
     # "openai/gpt-oss-*"), so this must be checked before the bare "gpt-" rule.
     if m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4"):
@@ -179,6 +184,13 @@ def build_providers_config(config) -> dict:
             "api_key": getattr(config, "LOCAL_MODEL_API_KEY", ""),
             "base_url": "http://127.0.0.1:8081/v1",
         },
+        # Jev has a typed-decision endpoint, not OpenAI Chat Completions.
+        # LLMProvider dispatches it through the structured Conscience adapter.
+        "typesafe": {
+            "type": "typesafe",
+            "api_key": getattr(config, "TYPESAFE_API_KEY", ""),
+            "base_url": "https://api.typesafe.ai/v1",
+        },
     }
 
 
@@ -215,6 +227,108 @@ def effective_configured_providers(config, org_id=None) -> frozenset:
     except Exception:
         # Never let a DB hiccup hide every provider; .env alone is a safe floor.
         return configured_providers(config)
+
+
+JEV_CONSCIENCE_MODEL = "jev-1.13.0"
+
+
+def resolve_faculty_model_pair(
+    intellect_model: str,
+    conscience_model: str,
+    available_models: list,
+    *,
+    jev_available: bool,
+    conscience_explicit: bool = False,
+    intellect_explicit: bool = False,
+) -> tuple[str, str]:
+    """Resolve usable faculty models and keep Intellect distinct when possible.
+
+    Available models are dictionaries from the model catalogue (or model-id
+    strings in tests). A Jev key makes Jev the automatic Conscience choice;
+    an explicit user/agent Conscience choice remains in force. Without Jev,
+    stale automatic Jev selections fall back to an available chat model.
+    Intellect never receives the typed-only Jev route.
+    """
+    entries = []
+    for entry in available_models or []:
+        model_id = entry.get("id") if isinstance(entry, dict) else entry
+        if not isinstance(model_id, str) or not model_id.strip():
+            continue
+        provider = (
+            entry.get("provider") if isinstance(entry, dict) else None
+        ) or detect_provider(model_id)
+        entries.append((model_id, provider))
+
+    by_id = {model_id.casefold(): (model_id, provider) for model_id, provider in entries}
+    llm_models = [model_id for model_id, provider in entries if provider != "typesafe"]
+    # Keep catalogue ordering stable while removing duplicate ids.
+    llm_models = list(dict.fromkeys(llm_models))
+    if jev_available:
+        by_id[JEV_CONSCIENCE_MODEL.casefold()] = (JEV_CONSCIENCE_MODEL, "typesafe")
+
+    intellect = intellect_model or ""
+    conscience = conscience_model or ""
+    configured_conscience = by_id.get(conscience.casefold()) if conscience else None
+
+    if jev_available and not conscience_explicit:
+        conscience = JEV_CONSCIENCE_MODEL
+    elif detect_provider(conscience) == "typesafe" and not jev_available:
+        # A stale Jev selection cannot be dispatched without its key.
+        conscience = llm_models[0] if llm_models else conscience
+    elif not conscience_explicit and configured_conscience is None and llm_models:
+        # Automatic defaults may name a model whose provider is not configured.
+        conscience = llm_models[0]
+
+    if detect_provider(intellect) == "typesafe":
+        intellect = llm_models[0] if llm_models else intellect
+    elif not intellect_explicit and intellect.casefold() not in by_id and llm_models:
+        intellect = llm_models[0]
+
+    if intellect and conscience and intellect.casefold() == conscience.casefold():
+        alternatives = [model for model in llm_models if model.casefold() != conscience.casefold()]
+        if alternatives:
+            intellect = alternatives[0]
+
+    return intellect, conscience
+
+
+def resolve_effective_faculty_models(
+    config,
+    intellect_model: str,
+    conscience_model: str,
+    org_id=None,
+    *,
+    conscience_explicit: bool = False,
+    intellect_explicit: bool = False,
+) -> tuple[str, str]:
+    """Resolve faculty models against keys, installed models, and org policy."""
+    from .provider_governance import get_org_allowlist, list_models_for_org
+
+    allowlist = get_org_allowlist(org_id)
+    # Do not silently route around a deliberately blocked provider. The chat
+    # endpoint will return its normal provider-policy error for these choices.
+    if allowlist is not None and any(
+        detect_provider(model) not in allowlist
+        for model in (intellect_model, conscience_model)
+        if model
+    ):
+        return intellect_model, conscience_model
+
+    configured = effective_configured_providers(config, org_id)
+    jev_available = "typesafe" in configured and (
+        allowlist is None or "typesafe" in allowlist
+    )
+    available = list_models_for_org(org_id)
+    if jev_available:
+        available.append({"id": JEV_CONSCIENCE_MODEL, "provider": "typesafe"})
+    return resolve_faculty_model_pair(
+        intellect_model,
+        conscience_model,
+        available,
+        jev_available=jev_available,
+        conscience_explicit=conscience_explicit,
+        intellect_explicit=intellect_explicit,
+    )
 
 
 def model_provider_configured(model_name: str, config, org_id=None) -> bool:

@@ -2654,6 +2654,26 @@ def get_audit_result(msg_id, user_id=None):
         row = cursor.fetchone()
         if row:
             crypto.decrypt_fields(row, ("conscience_ledger", "spirit_note", "reasoning_log"))
+            redirect_context = {}
+            if row["audit_status"] == "complete":
+                cursor.execute(
+                    "SELECT record_enc FROM governance_records "
+                    "WHERE message_pk=%s AND conversation_id=%s",
+                    (row["id"], row["conversation_id"]),
+                )
+                capture = cursor.fetchone()
+                if capture:
+                    try:
+                        record = json.loads(crypto.decrypt_value(capture["record_enc"]))
+                        redirect_context = {
+                            "will_reason": record.get("willReason"),
+                            "is_redirect": bool(record.get("isRedirect")),
+                            "final_output": record.get("finalOutput"),
+                        }
+                    except (ValueError, TypeError):
+                        logging.warning(
+                            "Could not decode governance context for audit result %s", msg_id
+                        )
             return {
                 "status": row['audit_status'],
                 "ledger": row['conscience_ledger'],
@@ -2666,6 +2686,7 @@ def get_audit_result(msg_id, user_id=None):
                 "values": row['profile_values'],
                 "suggested_prompts": _decode_suggested_prompts(row['suggested_prompts']),
                 "reasoning_log": row['reasoning_log'],
+                **redirect_context,
                 # Derived server-side on purpose. The Alignment Trend used to be
                 # assembled from the client's conversation cache, which is empty
                 # whenever an org disables offline persistence (the default), so
@@ -5999,7 +6020,8 @@ def get_governance_event(org_id, message_pk):
         if not row:
             return None
         cursor.execute(
-            "SELECT audit_status, model_attribution, timestamp FROM chat_history WHERE id=%s",
+            "SELECT audit_status, model_attribution, profile_values, timestamp "
+            "FROM chat_history WHERE id=%s",
             (message_pk,))
         chat = cursor.fetchone()
         cursor.execute(
@@ -6179,7 +6201,7 @@ def get_review_item(org_id, queue_id):
         cursor.execute(
             "SELECT id, message_id, role, content, audit_status, conscience_ledger, "
             "spirit_score, drift, spirit_note, profile_name, policy_id, policy_version, "
-            "model_attribution, will_decision, will_stage, reasoning_log, timestamp "
+            "profile_values, model_attribution, will_decision, will_stage, reasoning_log, timestamp "
             "FROM chat_history WHERE id=%s", (queue["message_pk"],))
         turn = cursor.fetchone()
         crypto.decrypt_fields(turn, ("content", "spirit_note", "conscience_ledger", "reasoning_log"))

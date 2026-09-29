@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 import threading
 import hashlib
@@ -13,6 +14,7 @@ from ..persistence import conversation_sharing_store
 from ..core.orchestrator import SAFi
 from ..core.faculties.synderesis import get_profile, list_profiles, AGENTS
 from ..core.services import provider_governance as pg
+from ..core.services.model_routing import resolve_effective_faculty_models
 from ..core import provenance
 from ..config import Config
 
@@ -288,6 +290,17 @@ async def bot_process_prompt_endpoint():
         # --- MODEL SELECTION LOGIC ---
         selected_intellect = Config.INTELLECT_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
+        org_id = (user_details.get('org_id') if user_details else None)
+        if not org_id:
+            org_id = (db.get_policy(policy_id) or {}).get('org_id')
+        selected_intellect, selected_conscience = resolve_effective_faculty_models(
+            Config,
+            selected_intellect,
+            selected_conscience,
+            org_id,
+            intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
+            conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+        )
 
         # 4. Get Safi Instance (Cached) with Policy Injection
         saf_system = global_safi_cache.get_or_create(
@@ -300,9 +313,6 @@ async def bot_process_prompt_endpoint():
 
         # 5. Process Prompt — JIT bot users carry no org, so provider
         # governance falls to the governing policy's org.
-        org_id = (user_details.get('org_id') if user_details else None)
-        if not org_id:
-            org_id = (db.get_policy(policy_id) or {}).get('org_id')
         result = await saf_system.process_prompt(
             user_prompt,
             user_id,
@@ -549,11 +559,26 @@ async def public_process_prompt_endpoint():
     # Record usage against the IP key for rate limiting
     db.record_prompt_usage(ip_key)
 
+    intellect_model, conscience_model = resolve_effective_faculty_models(
+        Config,
+        Config.PUBLIC_INTELLECT_MODEL,
+        Config.PUBLIC_CONSCIENCE_MODEL,
+        org_id,
+        intellect_explicit=bool(
+            os.environ.get("SAFI_PUBLIC_INTELLECT_MODEL")
+            or os.environ.get("SAFI_INTELLECT_MODEL")
+        ),
+        conscience_explicit=bool(
+            os.environ.get("SAFI_PUBLIC_CONSCIENCE_MODEL")
+            or os.environ.get("SAFI_CONSCIENCE_MODEL")
+        ),
+    )
+
     saf_system = global_safi_cache.get_or_create(
         agent_key,
-        Config.PUBLIC_INTELLECT_MODEL,   # isolated from the main app's model selection
+        intellect_model,   # isolated from the main app's model selection
         None,
-        Config.PUBLIC_CONSCIENCE_MODEL
+        conscience_model
     )
 
     # org_id was already resolved above (user -> policy -> configured public org).
@@ -566,7 +591,7 @@ async def public_process_prompt_endpoint():
         user_name="Guest",
         org_id=org_id
     )
-    result["aiProvenance"] = provenance.ai_marker(model=Config.PUBLIC_INTELLECT_MODEL)
+    result["aiProvenance"] = provenance.ai_marker(model=intellect_model)
     return provenance.mark_json_response(jsonify(result))
 
 
@@ -695,7 +720,10 @@ async def process_prompt_endpoint():
             "code": "AGENT_ACCESS_DENIED"
         }), 403
 
-    # PRIORITY: Agent -> User -> System Default
+    # PRIORITY: Agent -> User -> System Default, then prefer Jev for an
+    # inherited Conscience route when its key is available. Keep explicit
+    # model choices, but resolve duplicate faculty models when another usable
+    # chat model is available.
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
     conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
 
@@ -703,6 +731,22 @@ async def process_prompt_endpoint():
     # clear error instead of failing mid-turn. Defense in depth — the LLM
     # dispatch layer enforces the same allow-list fail-closed regardless.
     effective_org = agent_profile.get('org_id') or user_details.get('org_id')
+    intellect_model, conscience_model = resolve_effective_faculty_models(
+        Config,
+        intellect_model,
+        conscience_model,
+        effective_org,
+        intellect_explicit=bool(
+            agent_profile.get('intellect_model')
+            or user_details.get('intellect_model')
+            or os.environ.get("SAFI_INTELLECT_MODEL")
+        ),
+        conscience_explicit=bool(
+            agent_profile.get('conscience_model')
+            or user_details.get('conscience_model')
+            or os.environ.get("SAFI_CONSCIENCE_MODEL")
+        ),
+    )
     allowlist = pg.get_org_allowlist(effective_org)
     for faculty, mdl in (("Intellect", intellect_model), ("Conscience", conscience_model)):
         if not pg.model_allowed(mdl, allowlist):
