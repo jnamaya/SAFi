@@ -29,6 +29,7 @@ Requires no database and makes no network calls. Run:
     venv/bin/python tests/test_gpt5_params.py
 """
 import asyncio
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -118,6 +119,73 @@ class Gpt5ParameterContract(unittest.TestCase):
                 self.assertIn("max_completion_tokens", p)
                 self.assertNotIn("max_tokens", p)
                 self.assertNotIn("temperature", p)
+
+
+class Gpt6SharesTheGpt5Contract(unittest.TestCase):
+    """gpt-6 must reach the same branch gpt-5 does.
+
+    WHY. This shipped broken the same way gpt-5 first did, one release later.
+    The gate read `startswith("gpt-5")`, so every gpt-6 model fell through to
+    the generic branch and was sent `max_tokens` — a hard 400, surfaced as
+    "Intellect failed: could not reach the language model". Probed 2026-09-30
+    against gpt-6-luna: `max_tokens`, `top_p` and every non-default temperature
+    are all rejected, and tools need `reasoning_effort: "none"`, exactly as on
+    gpt-5.6-luna. The contract is the line's, so the gate must not name a
+    version.
+    """
+
+    def test_16_gpt6_reaches_the_gpt5_branch(self):
+        for model in ("gpt-6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol",
+                      "GPT-6-Luna"):
+            with self.subTest(model=model):
+                p = _params_for(model, max_tokens=1024, temperature=0.1, top_p=0.9)
+                self.assertEqual(p.get("max_completion_tokens"), 1024)
+                self.assertNotIn("max_tokens", p)
+                self.assertNotIn("temperature", p)
+                self.assertNotIn("top_p", p)
+
+    def test_17_gpt6_keeps_the_system_role(self):
+        """The o1/o3 flatten-into-one-turn rewrite must not reach gpt-6 either:
+        it supports the system role, and flattening would silently change every
+        governed prompt."""
+        p = _params_for("gpt-6-luna", max_tokens=1024)
+        self.assertEqual([m["role"] for m in p["messages"]], ["system", "user"])
+
+    def test_18_gpt6_tools_disable_reasoning(self):
+        p = _params_for("gpt-6-luna", max_tokens=1024, tools=_TOOLS)
+        self.assertEqual(p.get("reasoning_effort"), "none")
+        self.assertTrue(p.get("tools"))
+
+    def test_19_a_new_major_version_needs_no_edit(self):
+        """The regression this file exists to prevent: a gate naming a version
+        number breaks on the next release. Any future gpt-N id must be covered by
+        the existing rule without the dispatcher being taught about it."""
+        from safi_app.core.services.llm_provider import _is_openai_flagship
+        for major in range(5, 12):
+            for suffix in ("", "-luna", "-mini", "-pro"):
+                model = f"gpt-{major}{suffix}"
+                with self.subTest(model=model):
+                    self.assertTrue(_is_openai_flagship(model),
+                                    f"{model} is OpenAI's own line and must be "
+                                    f"covered without a code change")
+
+    def test_20_gpt_oss_stays_excluded_at_every_version(self):
+        """The counterweight to test_19. gpt-oss is OpenAI's open-weight family
+        served by Cerebras (bare) and Groq ("openai/"-prefixed); it is
+        temperature- and max_tokens-capable, so widening the gate to sweep it up
+        would cap every gpt-oss answer at the provider default with no error."""
+        from safi_app.core.services.llm_provider import _is_openai_flagship
+        for model in ("gpt-oss-20b", "gpt-oss-120b", "openai/gpt-oss-20b",
+                      "openai/gpt-oss-120b", "gpt-oss-6-luna"):
+            with self.subTest(model=model):
+                self.assertFalse(_is_openai_flagship(model),
+                                 f"{model} is gpt-oss, not the flagship line")
+        for model in ("gpt-oss-120b", "openai/gpt-oss-120b"):
+            with self.subTest(model=model):
+                p = _params_for(model, max_tokens=4096, temperature=0.2)
+                self.assertEqual(p.get("max_tokens"), 4096)
+                self.assertNotIn("max_completion_tokens", p)
+                self.assertEqual(p.get("temperature"), 0.2)
 
 
 _TOOLS = [{
@@ -224,15 +292,19 @@ class RegistryWiring(unittest.TestCase):
                               f"{m['id']} resolves to a provider with no governance "
                               f"metadata, so it would render an empty badge")
 
-    def test_11_gpt5_ids_keep_the_prefix_the_dispatcher_switches_on(self):
+    def test_11_gpt_ids_keep_the_prefix_the_dispatcher_switches_on(self):
         """A label may say anything; the id may not. If someone "tidies" an id to
         `gpt5.6-luna`, detect_provider falls back to groq AND the parameter fix
-        stops applying — two silent failures from one edit."""
+        stops applying — two silent failures from one edit.
+
+        The invariant is the `gpt-` prefix itself, not the `gpt-5` prefix: that is
+        what both detect_provider and _is_openai_flagship key on, and a gate that
+        named a version is what broke gpt-6."""
         for m in Config.AVAILABLE_MODELS:
-            if "5.6" in m["id"] or "gpt-5" in m["id"]:
+            if re.match(r"^gpt-\d", m["id"]):
                 with self.subTest(model=m["id"]):
-                    self.assertTrue(m["id"].startswith("gpt-5"),
-                                    f"{m['id']} must start with 'gpt-5' exactly")
+                    self.assertTrue(m["id"].startswith("gpt-"),
+                                    f"{m['id']} must start with 'gpt-' exactly")
 
 
 if __name__ == "__main__":

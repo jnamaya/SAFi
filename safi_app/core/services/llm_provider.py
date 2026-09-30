@@ -1,9 +1,12 @@
-"""
-Defines the LLMProvider service.
+"""The single dispatch point for every outbound model call.
 
-This is the "Universal Client". It centralizes all API interactions.
-It supports OpenAI, Anthropic, and Gemini natively, and generic OpenAI-compatible
-providers (like DeepSeek, Groq, Mistral, Ollama) via configuration.
+One provider-agnostic surface — `_chat_completion` for prose, and
+`run_conscience_structured` for the typed-decision contract — so faculties call
+by route ('intellect', 'will', 'conscience') and never name a model or vendor.
+Supports OpenAI, Anthropic and Gemini natively plus any OpenAI-compatible
+provider (DeepSeek, Groq, Mistral, Zhipu, Cerebras, local llama.cpp) from
+config. Provider-specific quirks live in the dispatch branches below, never in
+the call sites.
 """
 from __future__ import annotations
 import os
@@ -13,14 +16,12 @@ import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 from contextvars import ContextVar
 
-# External provider libraries
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
 from google import genai
 from google.genai import types
 import httpx
 
-# Internal parsing utilities
 from .parsing_utils import (
     parse_intellect_response,
     parse_will_response,
@@ -40,8 +41,8 @@ from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exp
 # for OpenAI/Anthropic) exceed gunicorn's --timeout (300s), so a provider that
 # stalls rides to the worker-kill, which takes the worker's in-flight siblings
 # with it (docker-entrypoint.sh) — one stuck call becomes a host-wide outage.
-# Kept comfortably under 300s so even a turn's two calls (intellect + conscience)
-# stay inside the request budget, and tunable for slow self-hosted providers.
+# Kept under 300s so even a turn's two calls (intellect + conscience) stay inside
+# the request budget.
 LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
 
 
@@ -60,18 +61,16 @@ MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
 
 
 # Ceiling for the on-box llama.cpp server, applied only when a route resolves to
-# the `local` provider. That server is CPU-bound on the same hardware the whole
-# appliance shares, so a cloud provider's token budget is not a meaningful
-# request of it: asking for 8192 on a 3B model at ~11 tok/s means roughly 12
-# minutes of generation against SAFI_LLM_TIMEOUT's 300 s, so the call is cut off
-# by the timeout and returns nothing at all. Capping the request means the
-# generation completes and whatever the model produced is returned, which is
-# strictly better than a guaranteed timeout. Set it to 0 to disable the clamp
-# and pass the caller's budget through unchanged.
+# the `local` provider. That server is CPU-bound on hardware the whole appliance
+# shares, so a cloud provider's token budget is not a meaningful request of it:
+# 8192 on a 3B model at ~11 tok/s is ~12 minutes of generation against
+# SAFI_LLM_TIMEOUT's 300 s, so the call is cut off and returns nothing at all.
+# Capping the request means the generation completes and whatever the model
+# produced is returned, which beats a guaranteed timeout. Set to 0 to disable.
 #
-# This is a capacity ceiling, not an audit policy: it is keyed on the provider,
-# never on a model-name substring, so it cannot change how strictly any agent is
-# audited. See run_conscience's docstring for why that distinction matters there.
+# A capacity ceiling, not an audit policy: keyed on the provider, never on a
+# model-name substring, so it cannot change how strictly any agent is audited.
+# See run_conscience's docstring for why that distinction matters there.
 LOCAL_MAX_TOKENS = int(os.environ.get("SAFI_LOCAL_MAX_TOKENS", "1024"))
 
 
@@ -107,16 +106,27 @@ def generation_was_truncated() -> bool:
     return _TRUNCATED.get()
 
 
+def _is_openai_flagship(model_name: str) -> bool:
+    """True for OpenAI's own gpt line, which rejects max_tokens/top_p/temperature.
+
+    Deliberately not a version prefix. `provider_type == "openai"` is shared with
+    Groq, Cerebras, DeepSeek and Mistral, all of which still need `max_tokens`,
+    so the discriminator has to be the vendor's own naming and nothing else.
+
+    "gpt-oss" is OpenAI's open-weight family, served here by Cerebras under a
+    bare id and by Groq under an "openai/"-prefixed one. The bare form is the
+    only one this can be fooled by, and it is excluded explicitly: it is
+    temperature- and max_tokens-capable, so a gate that swept it up would cap
+    every gpt-oss answer at the provider default with no error anywhere.
+
+    A new major version must not need an edit here. That is the whole point.
+    """
+    m = (model_name or "").lower()
+    return m.startswith("gpt-") and not m.startswith("gpt-oss")
+
+
 class LLMProvider:
-    """
-    A unified service to handle all LLM calls.
-    Faculties call this service by 'route' (e.g., 'intellect'), not by model name.
-    """
     def __init__(self, config: Dict[str, Any]):
-        """
-        Args:
-            config: A dictionary defining providers and routes.
-        """
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
         self.clients = {}
@@ -127,14 +137,12 @@ class LLMProvider:
         self._initialize_clients()
 
     def _initialize_clients(self):
-        """Initializes API clients based on the provider config."""
         providers = self.config.get("providers", {})
 
         for name, details in providers.items():
             p_type = details.get("type")
             api_key = details.get("api_key")
 
-            # Allow skipping provider if key is empty/None
             if not api_key:
                 self.log.debug(f"Skipping provider '{name}': No API key provided.")
                 continue
@@ -143,7 +151,9 @@ class LLMProvider:
                 if p_type == "openai":
                     self.clients[name] = AsyncOpenAI(
                         api_key=api_key,
-                        base_url=details.get("base_url"), # Handles Groq, DeepSeek, Mistral
+                        # base_url is what makes Groq/DeepSeek/Mistral/Zhipu/
+                        # Cerebras/local-llama.cpp work through one SDK.
+                        base_url=details.get("base_url"),
                         timeout=LLM_TIMEOUT_SECONDS,
                     )
                 elif p_type == "anthropic":
@@ -164,7 +174,6 @@ class LLMProvider:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
     def uses_typed_conscience(self) -> bool:
-        """Whether the configured Conscience route needs typed questions."""
         route = self.config.get("routes", {}).get("conscience", {})
         provider = route.get("provider")
         details = self.config.get("providers", {}).get(provider, {})
@@ -345,11 +354,10 @@ class LLMProvider:
         return ledger
 
     def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):
-        """A client bound to a DB-stored key for this provider — the active org's
-        own key, else the deployment key — or None = use the .env deployment
-        client. Mirrors _initialize_clients per provider type; construction
-        failures fall back to the deployment client rather than breaking the
-        turn.
+        """A client bound to a DB-stored key — the active org's own key, else
+        the deployment key — or None to use the .env deployment client. Mirrors
+        _initialize_clients per provider type; a construction failure falls back
+        to the deployment client rather than breaking the turn.
 
         Keyed on the resolved key, not the org, so the org layer and the
         deployment layer share one cache: a provider with only a deployment key
@@ -420,14 +428,17 @@ class LLMProvider:
         top_p: Optional[float] = None,
         json_mode: bool = False,
     ) -> str:
-        """
-        Internal generic handler that routes the request to the correct provider.
+        """Dispatch one request to whichever provider the route names.
 
-        json_mode constrains decoding to valid JSON at the API level (OpenAI-compatible
-        response_format / Gemini response_mime_type). Callers must still instruct the
-        model to produce JSON in the prompt — OpenAI-compatible providers reject json
-        mode otherwise. Ignored when tools are passed (the two are incompatible) and
-        on providers with no native support (Anthropic).
+        json_mode constrains decoding to valid JSON at the API level
+        (OpenAI-compatible response_format / Gemini response_mime_type). Callers
+        must still instruct the model to produce JSON in the prompt —
+        OpenAI-compatible providers reject json mode otherwise. Ignored when
+        tools are passed (the two are incompatible) and on providers with no
+        native support (Anthropic).
+
+        Returns the assistant text, or a JSON string carrying `tool_calls` when
+        the model called a tool — the agent loop parses both shapes.
         """
         route_config = self.config.get("routes", {}).get(route)
         if not route_config:
@@ -442,7 +453,6 @@ class LLMProvider:
         from .provider_governance import assert_provider_allowed
         assert_provider_allowed(provider_name, context=f"route:{route}, model:{model_name}")
 
-        # Get provider details
         provider_details = self.config.get("providers", {}).get(provider_name)
         if not provider_details:
              raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
@@ -470,7 +480,8 @@ class LLMProvider:
         if not client:
             raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
 
-        # Serialize user_prompt to string for non-Gemini providers if it's a list (history array)
+        # Gemini takes the history array as typed Content; every other provider
+        # needs a single string, so flatten it.
         user_prompt_str = user_prompt
         if isinstance(user_prompt, list) and provider_type != "gemini":
             str_parts = []
@@ -478,9 +489,6 @@ class LLMProvider:
                 str_parts.append(str(item))
             user_prompt_str = "\n\n".join(str_parts)
 
-        # --- Dispatch based on Type ---
-
-        # 1. OpenAI / DeepSeek / Groq / Mistral
         if provider_type == "openai":
             params = {
                 "model": model_name,
@@ -497,7 +505,6 @@ class LLMProvider:
             if json_mode and not tools:
                 params["response_format"] = {"type": "json_object"}
 
-            # Map generic MCP tools to OpenAI format if provided
             if tools:
                 openai_tools = []
                 for t in tools:
@@ -510,38 +517,43 @@ class LLMProvider:
                         }
                     })
                 params["tools"] = openai_tools
-                # If tools are present, we force auto or required? Default is auto.
 
-            # Handle o1/o3 reasoning models
             if "o1" in model_name or "o3" in model_name:
-                # o1 models do not support 'system' role in current API versions
+                # o1 models reject the 'system' role and 'temperature', and use
+                # max_completion_tokens. Tools are left as-is: the caller opted
+                # in, so an API error is better than a silent drop.
                 params["messages"] = [{"role": "user", "content": f"System Instruction: {system_prompt}\n\nUser Query: {user_prompt}"}]
-                # o1 models do not support temperature
                 params.pop("temperature", None)
-                # o1 uses max_completion_tokens
                 params.pop("max_tokens", None)
                 params["max_completion_tokens"] = max_tokens
-                # o1 preview doesn't support tools well yet, so maybe skip tools for o1?
-                # For now let's leave it, it might just error if used.
-            elif model_name.lower().startswith("gpt-5"):
-                # OpenAI's gpt-5.x line. Verified against the live API on
-                # 2026-07-30 with gpt-5.6-luna: the system role and
+            elif _is_openai_flagship(model_name):
+                # OpenAI's first-party gpt line. The system role and
                 # `response_format: json_object` both work, but `max_tokens`,
                 # `top_p`, and ANY temperature other than the default all return
-                # a hard 400. This is why the whole family was unusable — note
-                # that gpt-5-mini and gpt-5-nano are the configured `openai`
-                # route defaults (see DEFAULT_MODELS_BY_PROVIDER), so this path
-                # was broken for them too, not just for newly added models.
+                # a hard 400. Verified against the live API on 2026-07-30 with
+                # gpt-5.6-luna and again on 2026-09-30 with gpt-6-luna, which
+                # returns the identical four rejections — so this is a property
+                # of the line, not of one release.
                 #
-                # Gated on `startswith("gpt-5")` deliberately. provider_type
-                # "openai" is shared with Groq, Cerebras, DeepSeek and Mistral,
-                # and those must keep sending max_tokens. The prefix excludes
-                # Groq's "openai/gpt-oss-*" (vendor-prefixed) and Cerebras'
-                # "gpt-oss-*" without needing to know the provider here.
+                # Gated on the "gpt-" prefix MINUS "gpt-oss", deliberately.
+                # provider_type "openai" is shared with Groq, Cerebras, DeepSeek
+                # and Mistral, and those must keep sending max_tokens. The
+                # exclusion is what keeps Cerebras' bare "gpt-oss-*" on the old
+                # parameter; Groq's "openai/gpt-oss-*" never reaches here at all.
+                # Widening this to "gpt" in model_name, as the obvious fix for a
+                # newly released major version looks, silently caps every
+                # gpt-oss answer at the provider default — see
+                # tests/test_gpt5_params.py, which pins that trap.
+                #
+                # A version prefix is the wrong shape for this gate, and it has
+                # now broken twice: gpt-5 was unreachable because the gate still
+                # read o1/o3, and gpt-6 was unreachable because the gate read
+                # "gpt-5". Both times the fix was to widen the gate, not to
+                # re-teach the dispatcher a new model.
                 #
                 # CAVEAT, deliberately not worked around: forcing the default
                 # temperature costs the Conscience its temperature=0.0
-                # determinism if an operator selects a gpt-5.x model for that
+                # determinism if an operator selects a gpt-5/6 model for that
                 # route. That is the model's constraint, not ours, but it is a
                 # governance-visible behaviour change.
                 params.pop("temperature", None)
@@ -552,17 +564,16 @@ class LLMProvider:
                     # reasoning is explicitly turned OFF. The error names
                     # reasoning_effort even when the caller never sent one,
                     # because the model applies a default. Probed 2026-07-30
-                    # against gpt-5.6-luna: omitted / "low" / "medium" / "high"
-                    # all 400; "minimal" is not a valid value for this model;
-                    # only "none" is accepted, and it returns a proper
-                    # tool_calls response.
+                    # against gpt-5.6-luna and 2026-09-30 against gpt-6-luna:
+                    # omitted / "low" / "medium" / "high" all 400; "minimal" is
+                    # not a valid value for this model; only "none" is accepted,
+                    # and it returns a proper tool_calls response.
                     #
-                    # The trade-off is real and worth knowing: this buys tool
-                    # calling by giving up the model's reasoning for that turn.
-                    # Keeping tools AND reasoning requires the /v1/responses API,
-                    # which is a port rather than a parameter change. Only sent
-                    # when tools are actually present, so ordinary turns keep
-                    # the model's default reasoning.
+                    # The trade-off is real: this buys tool calling by giving up
+                    # the model's reasoning for that turn. Keeping tools AND
+                    # reasoning requires the /v1/responses API, which is a port
+                    # rather than a parameter change. Only sent when tools are
+                    # present, so ordinary turns keep the model's reasoning.
                     params["reasoning_effort"] = "none"
             else:
                  params["max_tokens"] = max_tokens
@@ -579,10 +590,8 @@ class LLMProvider:
             except Exception:
                 pass
 
-            # OpenAI Tool Use Handling
             msg = resp.choices[0].message
             if msg.tool_calls:
-                # Return a special structure indicating tool call
                 return json.dumps({
                     "tool_calls": [
                         {
@@ -595,7 +604,6 @@ class LLMProvider:
 
             return msg.content or "{}"
 
-        # 2. Anthropic (Claude)
         elif provider_type == "anthropic":
             kwargs = {
                 "model": model_name,
@@ -628,7 +636,6 @@ class LLMProvider:
                 resp = await client.messages.create(**kwargs)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
-            # Check for tool use
             if resp.stop_reason == "tool_use":
                 tool_calls = []
                 for block in resp.content:
@@ -659,7 +666,6 @@ class LLMProvider:
             if getattr(resp, "stop_reason", None) == "max_tokens":
                 self._note_truncation(route, provider_name, model_name, "stop_reason=max_tokens")
 
-            # Check for text content
             text_content = ""
             for block in resp.content:
                 if block.type == "text":
@@ -667,7 +673,6 @@ class LLMProvider:
 
             return text_content or "{}"
 
-        # 3. Google Gemini
         elif provider_type == "gemini":
             def convert_schema(schema_dict: Dict[str, Any]) -> types.Schema:
                 if not schema_dict:
@@ -710,7 +715,6 @@ class LLMProvider:
             )
 
             try:
-                # user_prompt can be a string or list of types.Content (history array)
                 resp = await client.aio.models.generate_content(
                     model=model_name,
                     contents=user_prompt,
@@ -721,7 +725,6 @@ class LLMProvider:
                 return "{}"
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
-            # --- GEMINI FIX: Safe Text Access & Tool Check ---
             try:
                 if getattr(resp, 'function_calls', None):
                     fc = resp.function_calls[0]
@@ -738,7 +741,9 @@ class LLMProvider:
                     if resp.candidates and resp.candidates[0].content:
                         raw_content = resp.candidates[0].content
 
-                        # Try to use mode='json' if available (Pydantic v2)
+                        # model_dump(mode="json") is preferred when available:
+                        # it keeps the payload free of Pydantic objects that
+                        # json.dumps would have to stringify via safe_serialize.
                         if hasattr(raw_content, "model_dump"):
                             try:
                                 payload["_gemini_raw_turn"] = raw_content.model_dump(mode="json")
@@ -775,8 +780,6 @@ class LLMProvider:
         else:
             raise ValueError(f"Unsupported provider type '{provider_type}'")
 
-
-    # --- Public Faculty Interfaces ---
 
     # Times to re-ask the Intellect model when it returns a blank/contentless
     # response. Fast models (e.g. *-flash) intermittently emit empty content,
@@ -858,12 +861,13 @@ class LLMProvider:
         return answer.strip() in ("{}", "[]")
 
     async def run_intellect(self, system_prompt: str, user_prompt: Any, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str, Optional[Dict[str, Any]]]:
-        """Runs the configured Intellect model and parses the result.
+        """Run the configured Intellect model and parse the result.
 
-        Retries on a blank/contentless response so an empty model turn never
-        reaches the user as a literal "{}". If every attempt is still blank,
-        returns an empty answer so the caller's graceful empty-response path
-        handles it instead of surfacing the sentinel.
+        Returns (answer, reflection, context_for_audit, raw_turn). On a hard
+        error the answer is None and `last_intellect_error` holds an
+        operator-readable cause; after exhausted blank retries it is "" so the
+        caller's graceful empty-response path handles it instead of surfacing
+        the sentinel.
         """
         last_exc: Optional[Exception] = None
         # Cleared per call so a stale cause from an earlier turn is never
@@ -884,8 +888,8 @@ class LLMProvider:
                 raw_content_stripped = raw_content.strip() if raw_content else ""
 
                 # A tool call is a valid (non-empty) response — return immediately,
-                # never retried. Robust extraction for chatty models that wrap the
-                # tool-call JSON in surrounding text.
+                # never retried. Extraction is by first '{'/last '}' because
+                # chatty models wrap the tool-call JSON in surrounding text.
                 if '"tool_calls"' in raw_content_stripped:
                     start = raw_content_stripped.find('{')
                     end = raw_content_stripped.rfind('}')
@@ -946,7 +950,11 @@ class LLMProvider:
         return "", "", context_for_audit, None
 
     async def run_will(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
-        """Runs the configured Will model and parses the result."""
+        """Run the configured Will model and parse the result.
+
+        Never raises: any error becomes a "violation" decision, so a provider
+        outage fails the turn closed rather than skipping the Will entirely.
+        """
         try:
             raw_content = await self._chat_completion(
                 route="will",
@@ -962,7 +970,7 @@ class LLMProvider:
             return "violation", f"System Error: {e}"
 
     async def run_conscience(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
-        """Runs the configured Conscience model and parses the result.
+        """Run the configured Conscience model and parse the result.
 
         Model-agnostic by design. The Conscience route is whatever the operator
         configured, and this method must not know or care which model that is:
@@ -971,6 +979,9 @@ class LLMProvider:
         model needs a different request *shape* to be callable at all, that
         belongs in _chat_completion with the other provider adapters — it is an
         API constraint, not an audit policy.
+
+        An empty list is the fail-closed signal: the Will then blocks, which is
+        the safe outcome when the auditor is unreachable.
         """
         try:
             ledger: List[Dict[str, Any]] = []
