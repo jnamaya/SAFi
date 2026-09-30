@@ -156,6 +156,8 @@ export async function renderSettingsUsageTab(days = 30) {
             <p>LLM token consumption for ${escapeHtml(org.name)}, aggregated per call at the provider layer. Dollar figures are estimates from current list prices, not invoices.</p>
         </div>
 
+        <div id="usage-model-catalog-section"></div>
+
         <div class="settings-card">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Last ${usage.days} days</p>
@@ -241,7 +243,6 @@ export async function renderSettingsUsageTab(days = 30) {
         )}
 
         <div id="usage-deployment-section"></div>
-        <div id="usage-model-catalog-section"></div>
     `;
 
     const daySelect = document.getElementById('usage-days');
