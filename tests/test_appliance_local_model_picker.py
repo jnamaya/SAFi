@@ -294,6 +294,41 @@ def test_the_local_provider_is_no_longer_labelled_the_demo_model():
     assert "local" in PROVIDER_METADATA["local"]["label"].lower()
 
 
+def test_built_in_labels_are_unique():
+    """Labels are versionless by design, so uniqueness is not automatic.
+
+    The picker renders one row per entry and falls back to `model.id` only when
+    `label` is falsy — which it never is — so two identical labels are two
+    indistinguishable rows, not a fallback to the id. The switch toast in
+    app.js says the same thing twice for two different models.
+
+    This is not hypothetical: the catalogue carried both "Gemini 3.6 Flash" and
+    "Gemini 3.7 Flash" (-> "Gemini Flash"), and both a Zhipu and a Cerebras GLM
+    (-> "GLM"). Nothing else caught it. Case-insensitive, because the picker
+    groups and compares by the label string it receives.
+    """
+    from collections import Counter
+    from safi_app.config import Config
+
+    labels = [m["label"] for m in Config.AVAILABLE_MODELS]
+    assert all(l and l.strip() == l for l in labels), \
+        f"blank or untrimmed label in {[l for l in labels if not l or l.strip() != l]}"
+
+    dupes = {lbl: n for lbl, n in Counter(l.lower() for l in labels).items() if n > 1}
+    assert not dupes, (
+        f"duplicate labels {dupes} — the picker shows these as identical rows. "
+        "Add a tier/size word (Flash Lite, 120B) rather than a version."
+    )
+
+
+def test_built_in_ids_are_unique():
+    from collections import Counter
+    from safi_app.config import Config
+    ids = [m["id"] for m in Config.AVAILABLE_MODELS]
+    dupes = {i: n for i, n in Counter(ids).items() if n > 1}
+    assert not dupes, f"duplicate model ids {dupes} — the selector keys on the id"
+
+
 def test_no_faculty_default_names_a_model_the_server_never_serves():
     from safi_app import config as cm
     for provider, defaults in cm._FACULTY_DEFAULTS_BY_PROVIDER.items():

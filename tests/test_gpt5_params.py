@@ -237,7 +237,8 @@ class Gpt5ToolCalling(unittest.TestCase):
 
     def test_15_other_providers_get_no_reasoning_effort(self):
         """Groq/Cerebras/Mistral do not take this parameter at all."""
-        for model in ("openai/gpt-oss-120b", "gpt-oss-120b", "mistral-medium-latest"):
+        for model in ("openai/gpt-oss-120b", "gpt-oss-120b", "mistral-small-2603",
+                      "mistral-medium-latest"):
             with self.subTest(model=model):
                 p = _params_for(model, max_tokens=4096, tools=_TOOLS)
                 self.assertNotIn("reasoning_effort", p,
@@ -253,8 +254,7 @@ class OtherOpenAiCompatibleProvidersAreUnaffected(unittest.TestCase):
         for model in ("openai/gpt-oss-120b",   # Groq, vendor-prefixed
                       "openai/gpt-oss-20b",
                       "gpt-oss-120b",          # Cerebras, bare
-                      "zai-glm-4.7",
-                      "gemma-4-31b"):
+                      "qwen-3.8-27b"):         # Cerebras, other vendor's model
             with self.subTest(model=model):
                 p = _params_for(model, max_tokens=4096, temperature=0.2)
                 self.assertEqual(p.get("max_tokens"), 4096,
@@ -264,7 +264,11 @@ class OtherOpenAiCompatibleProvidersAreUnaffected(unittest.TestCase):
                                  f"{model} supports temperature; do not strip it")
 
     def test_07_mistral_deepseek_zhipu_keep_max_tokens(self):
-        for model in ("mistral-medium-latest", "deepseek-v4-pro", "glm-5.2"):
+        # mistral-small-2603 is the Mistral Intellect default, so it is the
+        # highest-traffic non-OpenAI id here: a gate that caught the "mistral-"
+        # prefix would silently cap every Mistral install's answers.
+        for model in ("mistral-small-2603", "mistral-medium-latest",
+                      "deepseek-v4-pro", "glm-5.2"):
             with self.subTest(model=model):
                 p = _params_for(model, max_tokens=2048, temperature=0.1)
                 self.assertEqual(p.get("max_tokens"), 2048)
@@ -275,14 +279,31 @@ class RegistryWiring(unittest.TestCase):
 
     def test_08_luna_is_selectable(self):
         ids = [m["id"] for m in Config.AVAILABLE_MODELS]
-        self.assertIn("gpt-5.6-luna", ids)
+        self.assertIn("gpt-6-luna", ids)
 
     def test_09_luna_routes_to_openai_not_the_groq_fallback(self):
         """detect_provider is prefix matching with a `groq` default, and
         PROVIDER_METADATA is keyed per provider — so a misroute would badge an
         OpenAI model with Groq's baa_capable=False / zdr="default", publishing a
         false HIPAA/ZDR claim in the org-settings UI and on /models."""
-        self.assertEqual(detect_provider("gpt-5.6-luna"), "openai")
+        self.assertEqual(detect_provider("gpt-6-luna"), "openai")
+
+    def test_09b_qwen_routes_to_cerebras_not_the_groq_fallback(self):
+        """The same misroute, for a prefix no other vendor claims.
+
+        Cerebras is inference-only: it serves other people's models, and
+        "qwen-" is the only prefix in the catalogue whose id does not carry its
+        own vendor's name. Without an explicit rule it falls through to the
+        groq default, which is IN PROVIDER_METADATA — so test_10 still passes
+        and the misroute ships green. It surfaces only as a wrong HIPAA/ZDR
+        badge and a prompt sent with the wrong provider's key.
+        """
+        self.assertEqual(detect_provider("qwen-3.8-27b"), "cerebras")
+        # Future Qwen releases must route without another edit, same invariant
+        # as the gpt- prefix above.
+        for model in ("qwen-3.8-27b", "qwen-4-405b", "qwen-3.8-235b-a22b"):
+            with self.subTest(model=model):
+                self.assertEqual(detect_provider(model), "cerebras")
 
     def test_10_every_listed_model_resolves_to_a_known_provider(self):
         from safi_app.core.services.model_routing import PROVIDER_METADATA

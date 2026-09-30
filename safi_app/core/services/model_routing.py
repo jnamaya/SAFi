@@ -114,7 +114,15 @@ def detect_provider(model_name: str) -> str:
         return "typesafe"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
     # "openai/gpt-oss-*"), so this must precede the bare "gpt-" rule.
-    if m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4"):
+    # "qwen-" belongs here for a different reason: Qwen is not a Cerebras
+    # product, but Cerebras is what serves it, and nothing else in this file
+    # claims the prefix. An id with no matching prefix falls through to groq
+    # BELOW and is routed there silently — a listed model then renders with
+    # Groq's baa_capable=False/zdr="default" badge, publishing a false
+    # HIPAA/ZDR claim. A miss is invisible: groq is a valid provider, so the
+    # known-provider check still passes.
+    if (m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4")
+            or m.startswith("qwen-")):
         return "cerebras"
     if m.startswith("gpt-") or m.startswith("o1-"):
         return "openai"

@@ -23,13 +23,23 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     # server never served -- every faculty defaulted to a model that 404s. It is
     # resolved from the live model at startup instead; see active_local_model.
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
-    "gemini":    {"intellect": "gemini-3.5-flash-lite",    "conscience": "gemini-3.7-flash",          "light": "gemini-3.5-flash-lite"},
+    "gemini":    {"intellect": "gemini-3.5-flash-lite",    "conscience": "gemini-3.8-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
     "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
-    "mistral":   {"intellect": "mistral-medium-latest",     "conscience": "mistral-medium-latest",     "light": "mistral-small-latest"},
+    # Conscience keeps Medium while Intellect and the background tier drop to
+    # Small: auditing is the one role where a weaker model changes what the
+    # framework can block, so it does not get cut alongside the answering path.
+    # This also pins the former floating "mistral-small-latest" alias to a
+    # concrete release, and puts it in AVAILABLE_MODELS so light no longer
+    # names a model the picker never offers.
+    "mistral":   {"intellect": "mistral-small-2603",         "conscience": "mistral-medium-latest",     "light": "mistral-small-2603"},
     # Keep faculties on distinct available models while retaining the stronger
     # GPT-OSS 120B model for Conscience.
-    "cerebras":  {"intellect": "zai-glm-4.7",               "conscience": "gpt-oss-120b",              "light": "gpt-oss-120b"},
+    # Cerebras is inference-only and carries no chat vendor of its own: what it
+    # serves is other people's models. All three faculties land on the same one
+    # because it is the only Cerebras model in the catalogue — unlike Cerebras
+    # before it, Conscience gives up its stronger auditing tier here.
+    "cerebras":  {"intellect": "qwen-3.8-27b",               "conscience": "qwen-3.8-27b",              "light": "qwen-3.8-27b"},
     "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
     "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
 }
@@ -654,6 +664,17 @@ class Config:
     ENABLE_PROFILE_EXTRACTION = False 
 
     # This list is sent to the frontend.
+    #
+    # LABELS ARE VERSIONLESS BY DESIGN; the "id" is the only version signal, and
+    # the id is what actually gets sent. A label that carries a version has to be
+    # rewritten every release, which churns saved UI state and every doc that
+    # names a model. Two consequences worth knowing:
+    #   - Sizes (120B, 20B) are KEPT. They are parameter counts, not versions,
+    #     and dropping them would collapse both GPT-OSS rows into one label.
+    #   - Uniqueness is NOT automatic. "GLM" and "Qwen" are family names, so a
+    #     second model from either family reintroduces a duplicate that renders
+    #     as two identical rows in the picker. test_built_in_labels_are_unique
+    #     is the guard; keep the disambiguator when adding a second one.
     AVAILABLE_MODELS = [
         # NOTE: local (on-appliance) models are NOT listed here. They are
         # whatever the operator downloaded, so they are read from the appliance
@@ -671,31 +692,35 @@ class Config:
         # and llm_provider._is_openai_flagship keys on it to send
         # max_completion_tokens and drop temperature/top_p, which the whole
         # first-party line requires. Siblings gpt-5.6-sol, gpt-5.6-terra,
-        # gpt-6-luna, gpt-6-sol and gpt-6-astra also exist and are deliberately
-        # not listed.
-        {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna"},
+        # gpt-6-sol and gpt-6-astra also exist and are deliberately not listed.
+        {"id": "gpt-6-luna", "label": "GPT Luna"},
 
         # Anthropic (Claude) Models
-        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
+        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku"},
 
-        # Google Models
-        {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite"},
-        {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash"},
-        {"id": "gemini-3.7-flash", "label": "Gemini 3.7 Flash"},
+        # Google Models. "Flash Lite" and "Flash" stay distinct on the tier
+        # word alone, so neither needs its version back.
+        {"id": "gemini-3.5-flash-lite", "label": "Gemini Flash Lite"},
+        {"id": "gemini-3.8-flash", "label": "Gemini Flash"},
 
         # Mistral Models
-        {"id": "mistral-medium-latest", "label": "Mistral-Medium-3.5"},
+        {"id": "mistral-small-2603", "label": "Mistral Small"},
+        {"id": "mistral-medium-latest", "label": "Mistral Medium"},
 
-        # DeepSeek Models
-        {"id": "deepseek-v4-flash", "label": "DeepSeek-v4-flash"},
-        {"id": "deepseek-v4-pro", "label": "DeepSeek-v4-pro"},
+        # DeepSeek Models. "Flash"/"Pro" are the capability tier, like Mini/Pro
+        # on OpenAI's line, so they survive the version being dropped.
+        {"id": "deepseek-v4-flash", "label": "DeepSeek Flash"},
+        {"id": "deepseek-v4-pro", "label": "DeepSeek Pro"},
 
         # Zhipu (Z.ai) Models
-        {"id": "glm-5.2", "label": "GLM-5.2"},
+        {"id": "glm-5.2", "label": "GLM"},
 
-        # Cerebras Models (bare ids, unlike Groq's "openai/"-prefixed ones)
-        {"id": "zai-glm-4.7", "label": "GLM 4.7"},
-        {"id": "gemma-4-31b", "label": "Gemma 4 31B"},
+        # Cerebras Models (bare ids, unlike Groq's "openai/"-prefixed ones).
+        # Cerebras is inference-only and publishes no first-party model, so
+        # every id here is someone else's: "qwen-" belongs to Cerebras purely
+        # because Cerebras is what serves it. detect_provider claims that prefix
+        # for the same reason -- see the cerebras branch there.
+        {"id": "qwen-3.8-27b", "label": "Qwen"},
     ]
 
     MAX_UPLOAD_SIZE_MB = int(os.environ.get("SAFI_MAX_UPLOAD_MB", "10"))
