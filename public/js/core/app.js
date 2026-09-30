@@ -571,7 +571,7 @@ function renderControlPanel() {
     else navTools.classList.add('hidden');
   }
 
-  // Usage & Cost: admin only, same contract as Tools Catalog — the endpoint
+  // Models & Usage: admin only, same contract as Tools Catalog — the endpoint
   // behind it is require_role('admin').
   const navUsage = document.getElementById('nav-usage');
   if (navUsage) {

@@ -3,12 +3,15 @@ import * as ui from '../ui.js';
 import { escapeHtml } from '../../core/utils.js';
 
 /**
- * Usage & Cost tab (backlog 61). Admin-only.
+ * Models & Usage tab (backlog 61). Admin-only.
  *
  * Shows the org's LLM token consumption aggregated by day, agent, faculty
  * route, and model. Raw token counts come from the llm_usage table; dollar
  * figures are computed HERE from the price map the API serves, so they are
  * estimates that track current prices rather than stored history.
+ *
+ * The model catalogue is rendered onto the same tab (renderModelCatalogSection),
+ * which is why the tab is named for both rather than for cost alone.
  */
 
 // Longest-substring match against the price map. Returns [in, out] USD per
@@ -134,7 +137,7 @@ export async function renderSettingsUsageTab(days = 30) {
     if (!org) {
         container.innerHTML = `
             <div class="settings-page-header">
-                <h1>Usage &amp; Cost</h1>
+                <h1>Models &amp; Usage</h1>
             </div>
             <div class="settings-card">
                 <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -149,7 +152,7 @@ export async function renderSettingsUsageTab(days = 30) {
 
     container.innerHTML = `
         <div class="settings-page-header">
-            <h1>Usage &amp; Cost</h1>
+            <h1>Models &amp; Usage</h1>
             <p>LLM token consumption for ${escapeHtml(org.name)}, aggregated per call at the provider layer. Dollar figures are estimates from current list prices, not invoices.</p>
         </div>
 
