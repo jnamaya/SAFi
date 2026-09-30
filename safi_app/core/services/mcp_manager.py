@@ -16,9 +16,9 @@ Two kinds of tool arrive here and they are not the same thing:
 That difference decides what each is FOR, and it belongs in the docs an
 organization reads: a shared or system resource (a company API, an internal
 pricing service) is right for an MCP server; a member's own mailbox or files
-belong on per-user authorization (the OAuth MCP path or a delegated connector), or every read in the source system's
-audit log is attributed to SAFi rather than to a person, and offboarding stops
-cutting access.
+belong on per-user authorization (the OAuth MCP path or a delegated
+connector), or every read in the source system's audit log is attributed to
+SAFi rather than to a person, and offboarding stops cutting access.
 
 What is NOT different is the governance. A discovered server becomes a
 connector like any other (tool_connectors.py), an organization allows it
@@ -176,8 +176,7 @@ def start_servers(config: Any) -> Dict[str, Any]:
     """Connect the operator's MCP servers and register them as connectors.
 
     Called once per process from create_app(). Never raises: a deployment with a
-    broken server file must still start, minus those tools. Returns the
-    discovery summary for the boot log.
+    broken server file must still start, minus those tools.
     """
     servers = (getattr(config, "MCP_CONFIG", None) or {}).get("mcp_servers") or {}
     if not servers:
@@ -217,11 +216,10 @@ def start_servers(config: Any) -> Dict[str, Any]:
 def refresh_discovered_connectors() -> None:
     """Re-register the connector table from whatever is currently connected.
 
-    Called after the operator's file changes the live set. Built
-    from the runtime rather than from the database so the table can never claim
-    a connector whose session did not actually come up: an agent authorized for
-    tools that do not exist would be blocked at the Will with a confusing
-    reason, which is worse than the tool simply being absent.
+    Built from the runtime rather than from the database so the table can never
+    claim a connector whose session did not actually come up: an agent
+    authorized for tools that do not exist would be blocked at the Will with a
+    confusing reason, which is worse than the tool simply being absent.
     """
     clear_discovered_connectors()
     for server, functions in mcp_runtime.connectors().items():
@@ -275,7 +273,7 @@ async def discover_after_connect(server_key: str, token: str) -> list:
     from ...persistence import mcp_store
     mcp_store.replace_cached_tools(server_key, tools)
     mcp_store.bump_generation()
-    # This worker republishes immediately rather than on its next request.
+    # This worker republishes now rather than on its next request.
     mcp_runtime.sync_origin(file_servers(), reserved_tool_names=builtin_tool_names(),
                             origin=mcp_runtime.origin_of(server_key) or "file")
     refresh_discovered_connectors()
@@ -327,7 +325,7 @@ class MCPManager:
 
     async def get_tools_for_agent(self, agent_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Returns a list of tool schemas allowed for this agent.
+        The tool schemas this agent may be offered.
 
         Two lists matter and they are not the same. `tools` is what the agent
         was configured with; `allowed_tools` is what Synderesis stamped after
@@ -341,16 +339,12 @@ class MCPManager:
         the model a tool the Will would refuse costs nothing and removes a whole
         class of avoidable blocked turns.
         """
-        # 1. Check what Tools this agent is allowed to use (from profile)
         allowed_tools = agent_profile.get("tools", [])
         if not allowed_tools:
             return []
 
-        # 2. In a real impl, we would fetch tools from connected sessions.
-        # For this PoC, we will manually define the Fiduciary tools if the agent has them.
         tools = []
-        
-        # Fallback/Hardcoded for PoC until full dynamic discovery is built
+
         if "get_stock_price" in allowed_tools:
              tools.append({
                 "name": "get_stock_price",
@@ -416,7 +410,6 @@ class MCPManager:
                 }
             })
 
-        # --- WEB SEARCH ---
         if "web_search" in allowed_tools:
             tools.append({
                 "name": "web_search",
@@ -460,9 +453,9 @@ class MCPManager:
                 })
 
         # The policy ceiling, applied once at the end so it covers built-in and
-        # discovered tools identically. A profile with no `allowed_tools` key
-        # was not built by the compiler (tests, direct construction), and is
-        # left alone rather than silently emptied.
+        # discovered tools identically. A profile with no `allowed_tools` key was
+        # not built by the compiler (tests, direct construction), and is left
+        # alone rather than silently emptied.
         authorized = agent_profile.get("allowed_tools")
         if isinstance(authorized, list):
             permitted = set(authorized)
@@ -472,14 +465,12 @@ class MCPManager:
 
     def list_all_tools(self, org_id: Optional[str] = None, guest: bool = False) -> List[Dict[str, Any]]:
         """
-        Returns a list of all available tools for selection in the UI.
-        Categorized by domain.
+        The catalogue a tool picker renders, grouped by category.
 
         `org_id` scopes GUI-installed servers to the organization that installed
         them. Omit it only where there is no organization to scope to.
         """
         return [
-            # --- FINANCE (Fiduciary) ---
             {
                 "category": "Finance & Market Data",
                 "tools": [
@@ -509,7 +500,6 @@ class MCPManager:
                     }
                 ]
             },
-            # --- GEO (Google Maps) ---
             {
                 "category": "Location & Maps",
                 "tools": [
@@ -521,7 +511,6 @@ class MCPManager:
                     }
                 ]
             },
-            # --- WEB SEARCH ---
             {
                 "category": "Web Search",
                 "tools": [
@@ -539,13 +528,11 @@ class MCPManager:
     def known_connectors(org_id: Optional[str] = None, guest: bool = False) -> set:
         """Every connector name this caller can be offered.
 
-        Built-ins are deployment-wide. Installed MCP servers are NOT, and the
-        reasoning that briefly made them so was wrong: a built-in that touches
-        member data is gated by the org connector allow-list AND by that
-        member's own OAuth, while an MCP server has neither and holds one shared
-        credential. On a multi-tenant deployment that meant any organization
-        could reach any installed server, and a guest is an admin of a sandbox
-        organization, so a guest could too.
+        Built-ins are deployment-wide. Installed MCP servers are NOT: a built-in
+        that touches member data is gated by the org connector allow-list AND by
+        that member's own OAuth, while an MCP server has neither and holds one
+        shared credential. Treating them alike let any organization — and a
+        guest, who admins a sandbox org — reach any installed server.
 
         Pass org_id=None only where there is no caller to scope to (background
         jobs, tests); it returns the deployment-wide view.
@@ -570,7 +557,7 @@ class MCPManager:
         decision unavailable.
 
         Individual tool names need nothing special downstream: expand_connectors
-        passes an unknown name through unchanged, and the Will matches exactly,
+        passes an unknown name through unchanged and the Will matches exactly,
         so a policy listing three of a server's nine tools authorizes three.
         """
         if guest:
@@ -597,20 +584,18 @@ class MCPManager:
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], user_id: Optional[str] = None) -> str:
         """
-        Executes a named tool.
+        Run one approved tool call.
 
         Built-in connectors dispatch to the in-process implementations in
         core/mcp_servers/ below; anything discovered from an operator-installed
         MCP server goes over the real protocol at the end (core/mcp_runtime.py).
 
         Reached only after WillGate.evaluate_tool_intent approved this exact
-        name, so nothing here re-checks authorization.
+        name, so nothing here re-checks agent-level authorization.
         """
         self.log.info(f"Executing tool '{tool_name}' with args {arguments}")
         
-        # -- FIDUCIARY DIRECT IMPLEMENTATION (PoC bridge) --
         if tool_name == "get_stock_price":
-            # We can import the new server code dynamically
             from ..mcp_servers.fiduciary import get_stock_price
             return await get_stock_price(arguments["ticker"])
             
@@ -626,12 +611,10 @@ class MCPManager:
             from ..mcp_servers.fiduciary import get_analyst_recommendations
             return await get_analyst_recommendations(arguments["ticker"])
 
-        # -- GOOGLE MAPS IMPLEMENTATION --
         if tool_name == "find_places":
             from ..mcp_servers.google_maps import find_places
             return await find_places(arguments["query"])
 
-        # -- WEB SEARCH IMPLEMENTATION --
         if tool_name in ["web_search", "web_news"]:
             from ..mcp_servers.web_search import search_web, get_news
             if tool_name == "web_search":
@@ -640,12 +623,11 @@ class MCPManager:
                 return await get_news(arguments["query"])
 
         # -- DISCOVERED MCP SERVERS --
-        #
-        # Dispatch-time authorization, and not a duplicate of the Will's. The
-        # Will asks whether THIS AGENT may call this tool; this asks whether the
+        # Dispatch-time authorization, and not a duplicate of the Will's. The Will
+        # asks whether THIS AGENT may call this tool; this asks whether the
         # caller's ORGANIZATION may reach this server at all. The catalogue and
-        # the save guard both apply the same rule, but a filter on a picker is
-        # not a check, and an agent created before a restriction was added would
+        # the save guard apply the same rule, but a filter on a picker is not a
+        # check, and an agent created before a restriction was added would
         # otherwise keep working.
         if mcp_runtime.owns(tool_name):
             server = mcp_runtime.server_of(tool_name)
@@ -671,8 +653,7 @@ class MCPManager:
         if mcp_runtime.owns(tool_name):
             server = mcp_runtime.server_of(tool_name)
             if mcp_runtime.auth_mode_of(server) == "oauth":
-                # Per-user authorization: the call runs as the person who asked.
-                # No user means no identity to run as — the public bot and
+                # No user means no identity to run as: the public bot and
                 # /evaluate have no way to hold a token.
                 if not user_id:
                     return json.dumps({"error": (
@@ -683,10 +664,10 @@ class MCPManager:
                 definition = file_servers().get(server) or {}
                 token = mcp_oauth.access_token_for(user_id, server, definition)
                 if not token:
-                    # The link, not directions: the old text sent members to a
-                    # tab only admins can see. The agent relays this message, so
-                    # it carries the absolute sign-in URL, which the chat
-                    # renders as a link the member can actually click.
+                    # The link, not directions: the old text pointed members at
+                    # a tab only admins can see. The agent relays this message, so
+                    # it carries the absolute sign-in URL, which the chat renders
+                    # as a link the member can actually click.
                     from ...config import Config
                     login_url = (f"{Config.WEB_BASE_URL.rstrip('/')}"
                                  f"/api/mcp/auth/{server}/login")

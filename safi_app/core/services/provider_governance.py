@@ -7,9 +7,9 @@ Contract:
   of provider keys from model_routing.PROVIDER_METADATA. Absent/None means
   unrestricted. Writes go through db.set_org_provider_allowlist, which
   evidence-logs the change to org_compliance_log in the same transaction.
-- Org context is established once per request/turn with activate_org(org_id);
-  it is carried in a ContextVar so it survives awaits, and SAFi._submit_bg
-  copies the context into background executor threads.
+- Org context is established once per request/turn with activate_org(org_id); a
+  ContextVar carries it so it survives awaits, and SAFi._submit_bg copies the
+  context into background executor threads.
 - Every LLM dispatch point calls assert_provider_allowed(provider). FAIL
   CLOSED: a disallowed provider raises ProviderNotAllowedError — there is
   never a silent fallback to another provider, because silent fallback to the
@@ -28,9 +28,8 @@ from typing import FrozenSet, List, Optional
 from .model_routing import (PROVIDER_METADATA, configured_providers, detect_provider,
                             effective_configured_providers)
 
-# The appliance catalogue, installed by the ISO's 070 hook. It is the only place
-# that knows which local models this build can offer, so the model list is read
-# from it rather than hardcoded here.
+# The appliance catalogue, installed by the ISO's 070 hook. It alone knows which
+# local models this build can offer, so the list is read from it, not hardcoded.
 LOCAL_CATALOGUE_PATH = "/etc/safi/local-models.json"
 
 _ACTIVE_ALLOWLIST: ContextVar[Optional[FrozenSet[str]]] = ContextVar(
@@ -79,13 +78,11 @@ def get_org_allowlist(org_id) -> Optional[FrozenSet[str]]:
 
 
 def invalidate_org(org_id) -> None:
-    """Bust the cached allow-list after a write."""
     with _cache_lock:
         _cache.pop(org_id, None)
 
 
 def activate_org(org_id) -> None:
-    """Establish org provider governance for the current execution context."""
     _ACTIVE_ORG.set(str(org_id) if org_id else None)
     _ACTIVE_ALLOWLIST.set(get_org_allowlist(org_id))
 
@@ -95,7 +92,7 @@ def active_allowlist() -> Optional[FrozenSet[str]]:
 
 
 def active_org() -> Optional[str]:
-    """The org governing the current execution context. None = ungoverned."""
+    """The org governing this execution context. None = ungoverned."""
     return _ACTIVE_ORG.get()
 
 
@@ -113,9 +110,9 @@ def local_model_inventory(catalogue_path: str | None = None) -> List[dict]:
     """Every local model in the appliance catalogue, with what is on disk.
 
     Shapes each entry with installed/active so a catalog UI can show the whole
-    choice without pretending an absent model can be dispatched. Returns [] on
-    any problem: this is an appliance-only file, so on a normal deployment it
-    simply is not there and must never be able to fail a request.
+    choice without pretending an absent model can be dispatched. Returns [] on any
+    problem: this is an appliance-only file, absent on a normal deployment, and
+    must never be able to fail a request.
     """
     from ...config import active_local_model
 
@@ -173,9 +170,9 @@ def local_catalog_payload(catalogue_path: str | None = None) -> dict:
     Model Catalog needs the middle and last of those, which a dispatch-only
     endpoint cannot express.
 
-    An off-appliance install has no catalogue and reports available=False. The
-    UI treats that as an ordinary state, not an error, because most SAFi
-    deployments are not appliances.
+    An off-appliance install has no catalogue and reports available=False — an
+    ordinary state, not an error, because most SAFi deployments are not
+    appliances.
     """
     inventory = local_model_inventory(catalogue_path)
     try:
@@ -207,15 +204,15 @@ def installed_local_models(catalogue_path: str | None = None) -> List[dict]:
 
     Synthesized rather than stored: the operator picks a model in the setup
     wizard, and a DB row would have to be written and rewritten on every change.
-    Reading the catalogue means a model swap shows up on the next request with
-    no write path at all, and there is no second source of truth to fall out of
-    step with the file the downloader used.
+    Reading the catalogue means a model swap shows up on the next request with no
+    write path at all, and there is no second source of truth to fall out of step
+    with the file the downloader used.
 
     Only the model the server is actually serving is returned. The rest of this
     module's contract is that a model which cannot be dispatched is never
     offered, and llama-server answers to exactly one --alias: offering a second
-    downloaded model would store a selection that 404s on first use. The
-    catalog UI shows the rest via local_model_inventory().
+    downloaded model would store a selection that 404s on first use. The catalog
+    UI shows the rest via local_model_inventory().
 
     Returns [] on any problem, or when no model is live.
     """
@@ -227,19 +224,18 @@ def installed_local_models(catalogue_path: str | None = None) -> List[dict]:
 
 
 def list_models_for_org(org_id) -> List[dict]:
-    """Config.AVAILABLE_MODELS enriched with provider metadata, filtered to
-    providers whose API key is configured, then by the org's allow-list.
-    Single source of truth for every model picker — a model that can't
-    actually be dispatched is never offered."""
+    """Config.AVAILABLE_MODELS plus local and operator-added rows, enriched with
+    provider metadata, filtered to configured providers and then by the org's
+    allow-list. Single source of truth for every model picker — a model that
+    can't actually be dispatched is never offered."""
     from ...config import Config
     from .model_routing import custom_models
     allow = get_org_allowlist(org_id)
     # A provider is usable with a deployment .env key, a deployment key stored
-    # from the UI, OR the org's own key (backlog 64) — any of them can actually
-    # dispatch for this org, so the catalog must offer its models. Reading this
-    # from the .env-only set here is what made a deployment-key-only provider
-    # show up in the add-model form while its models were missing from the list
-    # the form writes into.
+    # from the UI, OR the org's own key (backlog 64) — any of them dispatches for
+    # this org, so the catalog must offer its models. Reading this from the
+    # .env-only set made a deployment-key-only provider show up in the add-model
+    # form while its models were missing from the list that form writes into.
     configured = effective_configured_providers(Config, org_id)
     # Built-ins first, then the appliance's installed local models, then
     # operator-added rows (backlog 63) marked custom so the catalog UI knows
@@ -248,8 +244,8 @@ def list_models_for_org(org_id) -> List[dict]:
     merged = [dict(m) for m in Config.AVAILABLE_MODELS]
     merged += installed_local_models()
     # Custom rows are scoped: this org's own entries plus the deployment-wide
-    # ones (org_id ''). Without the filter every org's picker listed every other
-    # org's models, which disclosed ids and labels across tenants (backlog 77).
+    # ones (org_id ''). Unscoped, every org's picker listed every other org's
+    # models, disclosing ids and labels across tenants (backlog 77).
     merged += [{"id": r["model_id"], "label": r["label"], "custom": True}
                for r in custom_models()
                if str(r.get("org_id") or "") in ("", str(org_id or ""))]

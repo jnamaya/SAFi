@@ -1,9 +1,10 @@
-"""
-Application factory for the Flask backend.
+"""Application factory for the Flask backend.
 
-This file contains the `create_app` function which initializes and configures
-the Flask application, including middleware, extensions (CORS, OAuth),
-database connections, and API blueprints.
+create_app() wires the extensions, the boot-time schema and the API
+blueprints. Two orderings in it are load-bearing, and both are noted inline:
+the integrity check runs before MCP discovery (so the boot log reads kernel
+first, deployment second), and the demo-usage backfill runs before the demo
+purge that could otherwise delete the orphans it rebuilds history from.
 """
 import logging
 import os
@@ -38,13 +39,6 @@ def _appliance_certificate_response():
 
 
 def create_app():
-    """
-    Application factory function. Creates and configures the Flask app.
-    
-    Returns:
-        The configured Flask app instance.
-    """
-    # Initialize Flask app, pointing static files to the '../public' directory
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
     Config.validate()
@@ -104,25 +98,21 @@ def create_app():
             "sensitive columns will be written in plaintext"
         )
 
-    # Apply ProxyFix middleware to correctly handle headers from a reverse proxy
-    # (e.g., Nginx, Heroku) for things like HTTPS and client IP.
+    # ProxyFix so headers from a reverse proxy (Nginx, or a fronting load
+    # balancer) are trusted for scheme and client IP.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-    
-    # Configure CORS (Cross-Origin Resource Sharing)
     cors.init_app(
         app, 
         supports_credentials=True, 
-        origins=Config.ALLOWED_ORIGINS,  # Use dynamic origin list from config
-        allow_headers=["Content-Type", "Authorization"], # Allow auth headers for JWTs
+        origins=Config.ALLOWED_ORIGINS,
+        allow_headers=["Content-Type", "Authorization"],
         expose_headers=["Content-Type"],
-        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"] # Ensure all methods are allowed
+        methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
     )
 
-    # Initialize extensions
     oauth.init_app(app)
 
-    # Initialize the database connection pool within the app context
     with app.app_context():
         db.init_db()
         # Demo signup counter, and a ONE-TIME backfill from orphaned audit rows.
@@ -141,37 +131,31 @@ def create_app():
             mcp_store.init_schema()
         except Exception as e:
             app.logger.error("MCP server table init failed, GUI install disabled: %s", e)
-        # Scoped agent sharing (backlog 55). Also outside database.py: who may
-        # use which agent is Section III org configuration, not audit ledger.
+        # The stores below are all Section III org configuration, outside
+        # database.py for the same reason: org sharing (55), conversation and
+        # folder sharing (56), tool-grant workflow state (57b), SCIM directory
+        # state (68). None of them is the governance ledger.
         try:
             from .persistence import sharing_store
             sharing_store.init_schema()
         except Exception as e:
             app.logger.error("Sharing table init failed, agent sharing disabled: %s", e)
-        # Conversation/folder sharing (backlog 56). Same tier as sharing_store
-        # above: who may see or continue someone else's conversation, not the
-        # audit ledger itself.
         try:
             from .persistence import conversation_sharing_store
             conversation_sharing_store.init_schema()
         except Exception as e:
             app.logger.error("Conversation sharing table init failed, disabled: %s", e)
-        # Tool-grant approvals (backlog 57b): workflow state, not audit ledger.
         try:
             from .persistence import tool_approval_store
             tool_approval_store.init_schema()
         except Exception as e:
             app.logger.error("Tool-approval table init failed: %s", e)
-        # SCIM directory sync (backlog 68): IdP-facing provisioning state.
-        # Userland, same class as the stores above — org identity config, not
-        # the governance ledger.
         try:
             from .persistence import scim_store
             scim_store.init_schema()
         except Exception as e:
             app.logger.error("SCIM table init failed, directory sync disabled: %s", e)
 
-    # Register the Google OAuth client with Authlib
     oauth.register(
         name='google',
         client_id=app.config['GOOGLE_CLIENT_ID'],
@@ -186,7 +170,6 @@ def create_app():
         jwks_uri="https://www.googleapis.com/oauth2/v3/certs"
     )
 
-    # Register the Microsoft OAuth client
     microsoft_client_id = app.config.get('MICROSOFT_CLIENT_ID')
     microsoft_client_secret = app.config.get('MICROSOFT_CLIENT_SECRET')
 
@@ -195,9 +178,9 @@ def create_app():
             name='microsoft',
             client_id=microsoft_client_id,
             client_secret=microsoft_client_secret,
-            # FIX: Use manual endpoints instead of server_metadata_url.
-            # This bypasses the strict 'iss' claim validation which fails for 
-            # multi-tenant apps where the issuer URL changes per tenant.
+            # Manual endpoints instead of server_metadata_url: discovery would
+            # bring strict 'iss' claim validation, which fails for multi-tenant
+            # apps where the issuer URL changes per tenant.
             access_token_url='https://login.microsoftonline.com/common/oauth2/v2.0/token',
             authorize_url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
             jwks_uri='https://login.microsoftonline.com/common/discovery/v2.0/keys',
@@ -207,7 +190,6 @@ def create_app():
     else:
         app.logger.warning("Microsoft OAuth credentials not found. Microsoft login will be disabled.")
 
-    # Import and register API blueprints
     from .api.auth import auth_bp
     from .api.conversations import conversations_bp
     from .api.profile_api_routes import profile_bp
@@ -251,7 +233,6 @@ def create_app():
     # clean /scim/v2 base URL. Auth is the per-org bearer token, not a session.
     app.register_blueprint(scim_bp, url_prefix='/scim/v2')
 
-    # Server-side session resolution (enterprise identity Phase 1).
     # Pick up servers the operator added with scripts/safi_mcp.py. One indexed
     # read, and it only reconnects when the generation actually moved, so the
     # steady state cost is a single SELECT rather than any reconnection work.
@@ -262,6 +243,7 @@ def create_app():
 
     app.before_request(_mcp_resync)
 
+    # Server-side session resolution (enterprise identity Phase 1).
     from .core.identity import resolve_session, strip_session_shim
     app.before_request(resolve_session)
     app.after_request(strip_session_shim)
@@ -270,13 +252,9 @@ def create_app():
     def add_security_headers(response):
         # HSTS: enforce HTTPS for 1 year; only active when served over TLS
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-        # Prevent MIME-type sniffing
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        # Block this app from being embedded in iframes (clickjacking)
         response.headers['X-Frame-Options'] = 'DENY'
-        # Limit referrer info sent to third-party sites
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        # Restrict access to sensitive browser APIs
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
         # CSP: unsafe-inline is required by the existing inline scripts/styles in index.html;
         # remove it once those are refactored to use nonces.
@@ -299,26 +277,17 @@ def create_app():
     def download_appliance_certificate():
         return _appliance_certificate_response()
 
-    # Catch-all route to serve the Single Page Application (SPA) frontend
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve(path):
-        """
-        Serves static files for the frontend.
-        - If the path is a file (e.g., main.js), it serves the file.
-        - If the path is a route (e.g., /chat), it serves index.html.
-        - It explicitly blocks API calls from being served as HTML.
-        """
-        # Prevent API routes from being handled by the static file server
+        # An unknown /api/... path must 404 as JSON, not fall through to the
+        # SPA fallback below and hand the caller index.html.
         if path.startswith('api/'):
             return jsonify({"error": "Not Found", "message": f"API endpoint '{path}' not found."}), 404
-            
+
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            # Serve the requested static file (e.g., main.js, styles.css)
             return send_from_directory(app.static_folder, path)
         else:
-            # Serve the main index.html for all other routes to support
-            # frontend routing (e.g., /login, /chat/123)
             return send_from_directory(app.static_folder, 'index.html')
 
     return app

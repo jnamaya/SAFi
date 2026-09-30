@@ -161,7 +161,6 @@ def _sole_reviewer(user_id, org_id):
     return db.count_other_eligible_reviewers(org_id, user_id) == 0
 
 
-# --- Knowledge bases ------------------------------------------------------
 
 @knowledge_bp.route('/knowledge-bases', methods=['GET'], strict_slashes=False)
 def list_knowledge_bases():
@@ -353,7 +352,6 @@ def reindex_knowledge_base(kb_id):
     return jsonify(_shape(db.get_knowledge_base(kb_id)))
 
 
-# --- Documents ------------------------------------------------------------
 
 @knowledge_bp.route('/knowledge-bases/<kb_id>/documents', methods=['POST'])
 def upload_document(kb_id):
@@ -449,7 +447,6 @@ def delete_document(kb_id, doc_id):
     return jsonify({"ok": True, "knowledge_base": _shape(db.get_knowledge_base(kb_id))})
 
 
-# --- Approval -------------------------------------------------------------
 
 @knowledge_bp.route('/knowledge-bases/<kb_id>/documents/<doc_id>/review',
                     methods=['POST'])

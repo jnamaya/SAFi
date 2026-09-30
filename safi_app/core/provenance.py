@@ -1,4 +1,3 @@
-# safi_app/core/provenance.py
 """Machine-readable AI-output marking (EU AI Act Art. 50(2)).
 
 Every surface that delivers AI-generated content — chat responses, the

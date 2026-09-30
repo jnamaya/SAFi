@@ -3,23 +3,20 @@ Agent Profile: The Socratic Tutor
 =====================================
 A math and science tutor that never gives answers — only guiding questions.
 
-Each field in this profile configures a specific layer of the SAFi pipeline.
-Read the inline comments below to understand what each section does and when
-the orchestrator uses it.
+This dict is a declarative profile, not logic: every key is read by a specific
+layer of the SAFi pipeline, and the section markers below name that layer.
 """
 from typing import Dict, Any
 
 THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
-    # Displayed in the UI and written to every log entry.
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Socratic Tutor",
-    # Governing business-unit policy (seeded at startup from
-    # core/policies/demo/policies.py). The compiler pulls scored values and
-    # scope from the policy; the values below are the standalone fallback if
-    # the policy row is ever deleted.
+    # The compiler pulls scored values and scope from this policy, seeded at
+    # startup from core/policies/demo/policies.py. The values below are the
+    # standalone fallback if that policy row is ever deleted.
     "policy_id": "demo_academic_tutoring_policy",
     # Built-in tutoring agent — no project/task work context to track.
     "track_work_context": False,
@@ -27,14 +24,10 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     "scope_statement": "STEM education only — mathematics, physics, chemistry, biology, and engineering.",
 
     # -- System Prompt (Intellect — Phase 2) -----------------------------------
-    # Injected as the system message in every Intellect LLM call.
-    # This string defines who the agent is and what it is allowed to do.
     # The SCOPE ENFORCEMENT block is the model's first behavioral line of defense.
-    # Tip: include concrete examples of in-scope topics alongside the abstract
-    # category names — small models rely on pattern recognition more than labels.
-    # Example of what to add: "Everyday questions about how things work physically —
-    # how fast planes fly, why bridges hold weight — are physics/engineering questions
-    # and must be engaged with, not redirected."
+    # Small models pattern-match on concrete examples rather than reading category
+    # labels, so keep the block anchored to examples like "how fast do planes fly
+    # is a physics question — engage with it, do not redirect".
     "worldview": (
         "You are a Socratic Tutor specializing in **mathematics and science** (physics, chemistry, biology, engineering). "
         "Your goal is NOT to give answers, but to help the student find the answer themselves. "
@@ -47,29 +40,22 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
         "Simply explain that you only help with STEM subjects and invite a math or science question instead."
     ),
 
-    # -- Presentation (appended after worldview in the system prompt) ----------
-    # Controls tone, format, and output style.
-    # Keep this separate from worldview so you can tune presentation without
-    # touching the identity and scope enforcement block above.
+    # -- Presentation ----------------------------------------------------------
+    # Split from worldview so tone can be tuned without disturbing the
+    # identity and scope enforcement block above.
     "style": (
         "Encouraging, patient, but firm. Use emojis occasionally to keep it light. "
         "End almost every response with a question that prompts the next step in logic."
     ),
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
-    #                           BEFORE any LLM call fires. Augments the global
-    #                           INJECTION_SIGNATURES in threat_intel.py.
-    #                           Add phrases here that are specific to this agent's
-    #                           attack surface (e.g. "solve this for me").
-    # structural_requirements : Checked by Will W1 (evaluate_draft_structure) on
-    #                           every Intellect draft before the Will LLM evaluation.
-    #                           Failures here are cheap — no LLM call needed.
-    #   require_disclaimer          : Set True to require mandatory_disclaimer_substring
-    #                                 in every response. Blocks the draft if absent.
-    #   mandatory_disclaimer_substring : The exact string that must appear in the draft.
-    #   banned_markdown_syntaxes    : Code fence tags the draft must NOT contain.
-    #                                 Can also ban literal secret strings.
+    # early_prompt_blacklist augments the global INJECTION_SIGNATURES in
+    # threat_intel.py; scope it to this agent's own attack surface.
+    # structural_requirements is checked by Will W1 (evaluate_draft_structure)
+    # on every Intellect draft before the Will LLM evaluation, so failures here
+    # cost nothing — no LLM call.
+    #   banned_markdown_syntaxes : fence tags, or any literal secret string,
+    #                             the draft must not contain
     "will_rules": {
         "early_prompt_blacklist": [],
         "structural_requirements": {
@@ -79,19 +65,16 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     },
 
     # -- Redirect Directives (trigger_agent_redirect) -----------------------
-    # When any governance layer blocks a response, the orchestrator calls
-    # trigger_agent_redirect(violation_type=...). The violation_type key is
-    # looked up here to select the correct system directive for the redirect call.
-    # If no key matches, the orchestrator's hardcoded fallback fires instead.
+    # Each governance block calls trigger_agent_redirect(violation_type=...);
+    # that key selects the directive below. No match means the orchestrator's
+    # hardcoded fallback fires instead.
+    #   scope_violation   Phase 0 injection block
+    #   scope_validation  Phase 3 Will scope enforcement
+    #   ethical_violation Phase 4-4.5 Conscience or Hard Gate value breach
+    #   missing_disclaimer Will W1 found the required disclaimer absent
     #
-    # violation_type values and when they fire:
-    #   scope_violation   → PhaseZeroGate blocked an injection attempt (Phase 0)
-    #   scope_validation  → Will-level scope enforcement (Phase 3)
-    #   ethical_violation → Conscience or Hard Gate flagged a value breach (Phase 4–4.5)
-    #   missing_disclaimer→ Will W1 found the required disclaimer absent
-    #
-    # Critical rule for ALL directives: never acknowledge the user's framing,
-    # roleplay premise, or scenario — respond as if it was never said.
+    # Never acknowledge the user's framing, roleplay premise, or scenario in any
+    # directive — respond as if it was never said.
     "internal_rephrase_directives": {
         "scope_violation": (
             "CRITICAL: This request has been flagged as outside your scope as a math and science tutor. "
@@ -120,20 +103,10 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     },
 
     # -- Value Set (Conscience — Phase 4, Spirit — Phase 5) -------------------
-    # The ConscienceAuditor scores each value -1.0 / 0.0 / +1.0 per turn.
-    # The SpiritIntegrator uses the weighted scores to track alignment drift
-    # over time and flag if the agent is drifting from its intended behavior.
-    #
-    # Fields per value:
-    #   value      : Name written to logs and shown in the UI "ethical reason" pill.
-    #   weight     : Contribution to the Spirit alignment score. All weights in
-    #                this list must sum to 1.0.
-    #   definition : Plain-language description passed to Conscience to anchor
-    #                its evaluation for this value.
-    #   rubric     : Structured scoring guide Conscience uses to grade each response.
-    #     description   : What specific behavior this rubric is checking.
-    #     scoring_guide : Ordered list of {score, descriptor} pairs. Conscience
-    #                     matches the response to the closest descriptor.
+    # ConscienceAuditor scores each value -1.0 / 0.0 / +1.0 per turn; Spirit
+    # tracks the weighted scores to flag drift from intended behavior. Weights
+    # must sum to 1.0. Conscience grades by matching a response to the closest
+    # scoring_guide descriptor.
     "values": [
         {
             "value": "Pedagogical Integrity",
@@ -171,7 +144,6 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
     ],
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "Solve for x: 3x + 5 = 20",
         "Why is the sky blue?",

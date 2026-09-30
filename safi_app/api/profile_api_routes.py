@@ -6,15 +6,11 @@ profile_bp = Blueprint('profile_api', __name__)
 
 @profile_bp.route('/me/profile', methods=['GET'])
 def get_user_profile():
-    """
-    Fetches the user's persistent profile (facts, values, interests).
-    We manually check the session for auth, just like in your auth.py.
-    """
+    """Reads the authenticated user's persistent profile (facts, values, interests)."""
     user_id = session.get('user', {}).get('id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
     
-    # Store user_id in g for consistency, though we use it directly here
     g.user_id = user_id
     
     try:
@@ -27,10 +23,7 @@ def get_user_profile():
 
 @profile_bp.route('/me/profile', methods=['POST'])
 def update_user_profile():
-    """
-    Updates/overwrites the user's persistent profile.
-    We manually check the session for auth.
-    """
+    """Overwrites the authenticated user's persistent profile."""
     user_id = session.get('user', {}).get('id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401

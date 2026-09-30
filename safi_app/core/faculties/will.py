@@ -60,8 +60,8 @@ ALLOWED_GATE_REASONS: frozenset = frozenset(
 
 class WillGate:
     """
-    An ethical gatekeeper that evaluates a draft response against a set of values.
-    Refactored to be purely deterministic in Python with zero LLM calls.
+    The only component that may approve or block. Every decision here is made in
+    Python, with no LLM call — see the note on llm_provider in __init__.
     """
 
     def __init__(
@@ -86,13 +86,12 @@ class WillGate:
         self.log = logging.getLogger(self.__class__.__name__)
 
     def evaluate_draft_structure(self, draft_output: str) -> Tuple[bool, str]:
-        """Validates structural invariants of the generated draft without an LLM."""
         rules = self.profile.get("will_rules", {})
         
         if isinstance(rules, dict):
             struct = rules.get("structural_requirements", {})
             
-            # 1. Enforce Disclaimer Presence
+            # Disclaimer presence
             if struct.get("require_disclaimer"):
                 expected = (struct.get("mandatory_disclaimer_substring") or "").strip()
                 if not expected:
@@ -106,7 +105,7 @@ class WillGate:
                 elif expected not in draft_output:
                     return False, "missing_disclaimer"
             
-            # 1b. Sensitive identifiers in the OUTPUT (GOVERNANCE_BACKLOG 83).
+            # Sensitive identifiers in the OUTPUT (GOVERNANCE_BACKLOG 83).
             # Phase Zero covers the inbound half, but it is prompt-only and
             # never sees a draft. This is the half that matters once agents
             # hold tools: an agent can read a document containing account
@@ -132,7 +131,7 @@ class WillGate:
                         pii_validators.summarize(findings))
                     return False, "pii_detected"
 
-            # 2. Enforce Code Block Policy (zero-trust whitelist OR legacy blacklist)
+            # Code block policy: zero-trust whitelist OR legacy blacklist
             allowed = struct.get("allowed_markdown_syntaxes")
             if allowed:
                 # Zero-trust whitelist: block any code fence not explicitly permitted.
@@ -146,12 +145,11 @@ class WillGate:
                         if fence not in allowed:
                             return False, "ethical_violation"
             else:
-                # Legacy blacklist: block only the explicitly banned syntaxes.
                 for syntax in struct.get("banned_markdown_syntaxes", []):
                     if syntax in draft_output:
                         return False, "ethical_violation"
         else:
-            # Legacy list fallback
+            # Legacy prose-list will_rules
             draft_lower = draft_output.lower()
             has_disclaimer_rule = any("disclaimer" in str(r).lower() for r in rules)
             if has_disclaimer_rule:
@@ -256,15 +254,14 @@ class WillGate:
         profile: dict,
     ) -> Tuple[str, str]:
         """
-        Evaluates a proposed tool call using CQRS pattern before any execution occurs.
-        No LLM calls.
+        Gate a proposed tool call before any execution. No LLM calls.
 
-        Decision flow:
-          1. Profile allow-list   — structural block if tool not permitted.
-          2. Parameter constraints — structural block if values are out of range.
-          3. Fast pass / Auto approve for allowed tools.
+        Order is a security property, not a style choice: the allow-list runs
+        BEFORE the read-only fast pass, so a policy that narrows web_search can
+        still block it, and parameter constraints run last because they are
+        per-tool and only meaningful for tools that get that far.
         """
-        # --- Step 1: Profile allow-list check (Structural Security) ---
+        # 1. Profile allow-list.
         # Compiled profiles (synderesis.get_profile) always carry allowed_tools:
         # the advertised tool list, optionally narrowed by the policy's
         # will_rules.allowed_tools. An empty list is deny-all — an agent that
@@ -279,12 +276,12 @@ class WillGate:
                 f"Tool '{tool_name}' is not authorized for this agent profile.",
             )
 
-        # --- Step 2: CQRS fast pass for read-only tools ---
+        # 2. CQRS fast pass for read-only tools.
         if tool_name in READ_ONLY_TOOLS:
             self.log.info(f"WillGate: Fast-pass approved read-only tool '{tool_name}'.")
             return ("approve", "Read-only fast pass.")
 
-        # --- Step 3: Parameter constraint validation ---
+        # 3. Parameter constraint validation.
         parameter_constraints: Dict[str, List[Any]] = (
             profile.get("tool_parameter_constraints", {}).get(tool_name, {})
         )
@@ -311,6 +308,5 @@ class WillGate:
                     f"Parameter '{param_key}={param_val}' is not permitted for tool '{tool_name}'.",
                 )
 
-        # --- Step 4: Pure deterministic pass for allowed write/command tools ---
         self.log.info(f"WillGate: Deterministically approved write/command tool '{tool_name}'.")
         return ("approve", "Passed structural and allow-list constraints.")

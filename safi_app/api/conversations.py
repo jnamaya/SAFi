@@ -105,13 +105,9 @@ def _strip_markdown(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)          # excess blank lines
     return text.strip()
 
-# --- CACHING INFRASTRUCTURE ---
 
 class SafiInstanceCache:
-    """
-    Thread-safe cache for SAFi instances to prevent reloading 
-    heavy resources (Vector DB, Embeddings) on every request.
-    """
+    """Thread-safe SAFi instance cache, so Vector DB and embeddings load once."""
     def __init__(self, ttl_seconds=600): # Default 10 minute TTL
         self._cache = {}
         self._lock = threading.Lock()
@@ -120,20 +116,18 @@ class SafiInstanceCache:
     def _normalize_key(self, name):
         """Standardizes profile name to ensure cache hits regardless of casing/spacing."""
         if not name: return ""
-        # Match safe slug logic from values.py/agent_api_routes.py
+        # Same safe-slug rule as values.py / agent_api_routes.py.
         clean = name.lower().strip().replace(" ", "_")
         return "".join(c for c in clean if c.isalnum() or c == '_')
 
     def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None, org_settings_hash=None):
-        """
-        Creates a unique key that allows prefix matching for invalidation.
-        Format: {normalized_profile_name}|{md5_hash_of_rest}
-        """
+        """Key permitting prefix-match invalidation:
+        {normalized_profile_name}|{md5_hash_of_rest}"""
         norm_name = self._normalize_key(profile_name)
         rest = f"{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
         rest_hash = hashlib.md5(rest.encode()).hexdigest()
         
-        # KEY CHANGE: Prefix is plaintext profile name, suffix is unique hash
+        # Prefix is the plaintext profile name; suffix is a unique hash.
         return f"{norm_name}|{rest_hash}"
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
@@ -164,18 +158,15 @@ class SafiInstanceCache:
         now = time.time()
 
         with self._lock:
-            # 1. Cleanup expired items first (simple lazy expiration)
             keys_to_delete = [k for k, v in self._cache.items() if now - v['last_used'] > self._ttl]
             for k in keys_to_delete:
                 del self._cache[k]
 
-            # 2. Return existing if found
             if key in self._cache:
                 entry = self._cache[key]
                 entry['last_used'] = now
                 return entry['instance']
 
-            # 3. Create new if missing
             instance = SAFi(
                 config=Config,
                 value_profile_or_list=prof,
@@ -192,14 +183,12 @@ class SafiInstanceCache:
             return instance
 
     def invalidate_profile(self, profile_name):
-        """
-        Removes all cached instances for a specific profile, forcing a reload on next request.
-        """
+        """Drop every cached instance of a profile, forcing a reload next request."""
         norm_name = self._normalize_key(profile_name)
         prefix = f"{norm_name}|"
         
         with self._lock:
-            # Keys now START with the normalized profile name, enabling safe prefix deletion
+            # Keys start with the normalized profile name, so a prefix delete is safe.
             keys_to_remove = [k for k in self._cache.keys() if k.startswith(prefix)]
             count = len(keys_to_remove)
             for k in keys_to_remove:
@@ -208,38 +197,28 @@ class SafiInstanceCache:
             if count > 0:
                 current_app.logger.info(f"Invalidated {count} cached instances for profile: {profile_name}")
 
-# Initialize the global cache
 global_safi_cache = SafiInstanceCache(ttl_seconds=600)
 
 
 
 def get_user_id():
-    """Retrieves the authenticated user's ID from the session."""
     user = session.get('user')
     if not user:
         return None
     return user.get('sub') or user.get('id')
 
 def get_user_profile_name():
-    """Retrieves the user's currently active profile name from the session."""
     user = session.get('user', {})
     return user.get('active_profile') or Config.DEFAULT_PROFILE
 
 
-# --- NEW: Dedicated Endpoint for Teams Bot ---
 @conversations_bp.route('/bot/process_prompt', methods=['POST'])
 async def bot_process_prompt_endpoint():
-    """
-    Dedicated endpoint for the Microsoft Teams Bot.
-    Uses Policy API Key authentication.
-    """
-    # 1. Security: Check API Key against Database
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "): api_key = api_key.split(" ")[1]
 
     policy_id = db.get_policy_id_by_api_key(api_key)
     if not policy_id:
-        # Strict Mode: Only valid Policy Keys allowed
         return jsonify({"error": "Unauthorized: Invalid Policy API Key"}), 401
 
     data = request.json
@@ -261,7 +240,7 @@ async def bot_process_prompt_endpoint():
         }), 400
     conversation_id = conversation_id.strip()
 
-    # 2. Ensure User Exists in DB (Just-in-Time Registration)
+    # Just-in-time registration of the external bot user.
     try:
         user_details = db.get_user_details(user_id)
         if not user_details:
@@ -274,20 +253,11 @@ async def bot_process_prompt_endpoint():
             })
             db.update_user_profile(user_id, agent_key)
         
-        # 3. Ensure Conversation Exists
         if hasattr(db, 'upsert_external_conversation'):
             db.upsert_external_conversation(conversation_id, user_id, title="Bot Chat")
         else:
-            # Fallback if specific function missing (use generic create if needed, or just warn)
-            # Safi Orchestrator handles memory by CID, so explicit row creation might be optional if memory table handles FKs loosely? 
-            # Actually, FKs are strict. We need a conversation row.
-            # db.create_conversation(user_id) creates a NEW ID. We have existing external ID.
-            # We need `ensure_conversation_access` logic to handle external claim?
-            # Or assume `db.ensure_conversation_access` handles it?
-            # It handles it! (Lines 291 in database.py)
             db.ensure_conversation_access(user_id, conversation_id)
 
-        # --- MODEL SELECTION LOGIC ---
         selected_intellect = Config.INTELLECT_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
         org_id = (user_details.get('org_id') if user_details else None)
@@ -302,7 +272,6 @@ async def bot_process_prompt_endpoint():
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
         )
 
-        # 4. Get Safi Instance (Cached) with Policy Injection
         saf_system = global_safi_cache.get_or_create(
             agent_key,
             selected_intellect,
@@ -311,8 +280,8 @@ async def bot_process_prompt_endpoint():
             policy_id=policy_id # <--- INJECT POLICY
         )
 
-        # 5. Process Prompt — JIT bot users carry no org, so provider
-        # governance falls to the governing policy's org.
+        # JIT bot users carry no org, so provider governance falls to the
+        # governing policy's org.
         result = await saf_system.process_prompt(
             user_prompt,
             user_id,
@@ -385,7 +354,7 @@ def tts_audio_endpoint():
         cache_hash = hashlib.sha256(f"{text_clean}|{model}|{voice}".encode()).hexdigest()
         cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
 
-        # Cache hit: serve immediately with Content-Length so browser knows duration
+        # Cache hit: Content-Length is what lets the browser scrub the duration.
         if cache_path.exists():
             try:
                 audio_bytes = cache_path.read_bytes()
@@ -512,14 +481,13 @@ async def public_process_prompt_endpoint():
     # Stable, namespaced user identity so public users don't collide with real accounts
     anonymous_user_id = f"public_{incoming_convo_id}"
 
-    # --- IP-based rate limiting (reuses existing prompt_usage DB functions) ---
+    # IP-based rate limiting, reusing the existing prompt_usage DB functions.
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     ip_key = f"ip_{hashlib.md5(client_ip.encode()).hexdigest()[:16]}"
     public_limit = Config.DAILY_PROMPT_LIMIT if Config.DAILY_PROMPT_LIMIT > 0 else 20
     if db.get_todays_prompt_count(ip_key) >= public_limit:
         return jsonify({"error": "Daily message limit reached.", "code": "LIMIT_REACHED"}), 429
 
-    # --- Ensure user exists (idempotent) ---
     # Email must be globally unique — use the full anonymous_user_id so two
     # public users created in the same time window never collide on the
     # UNIQUE email constraint (which would cause upsert_user to silently
@@ -551,12 +519,10 @@ async def public_process_prompt_endpoint():
             "Set SAFI_PUBLIC_ORG_ID to make the public bot auditable.",
             anonymous_user_id)
 
-    # --- Ensure conversation row exists, reuse it on subsequent turns ---
     # ensure_conversation_access() creates the row only if it doesn't exist yet,
     # preserving history and Spirit EMA memory across the full session.
     db.ensure_conversation_access(anonymous_user_id, incoming_convo_id)
 
-    # Record usage against the IP key for rate limiting
     db.record_prompt_usage(ip_key)
 
     intellect_model, conscience_model = resolve_effective_faculty_models(
@@ -597,15 +563,12 @@ async def public_process_prompt_endpoint():
 
 @conversations_bp.route('/process_prompt', methods=['POST'])
 async def process_prompt_endpoint():
-    """
-    Process a user prompt using their selected profile AND selected models.
-    IDOR PROTECTION ADDED: Verifies ownership before processing.
-    """
+    """Process a prompt under the caller's selected profile and models, after
+    verifying ownership of the conversation."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # --- DEMO LIMIT ENFORCEMENT ---
     if user_id.startswith('demo_'):
         try:
             demo_count = db.get_todays_prompt_count(user_id)
@@ -616,7 +579,7 @@ async def process_prompt_endpoint():
                 }), 429
         except Exception as e:
             current_app.logger.error(f"Demo limit check failed: {e}")
-            # Fail safe: If we can't check, assume limit reached to prevent abuse & prompt login
+            # Fail safe: if the count cannot be read, treat the limit as reached.
             return jsonify({
                 "error": "Demo limit reached (Verification Failed).",
                 "code": "DEMO_LIMIT_REACHED"
@@ -634,7 +597,6 @@ async def process_prompt_endpoint():
 
     conversation_id = data['conversation_id']
 
-    # 1. Resolve User Configuration
     user_details = db.get_user_details(user_id)
     if not user_details:
          return jsonify({"error": "User not found."}), 404
@@ -659,7 +621,6 @@ async def process_prompt_endpoint():
             return jsonify({"error": "You have view-only access to this conversation.",
                             "code": "VIEWER_ONLY"}), 403
         is_owner = (convo_role == 'owner')
-    # ----------------------------------
 
     if limit > 0 or user_id.startswith('demo_'):
         db.record_prompt_usage(user_id)
@@ -675,7 +636,6 @@ async def process_prompt_endpoint():
     else:
         user_profile_name = db.get_conversation_agent_profile(conversation_id) or Config.DEFAULT_PROFILE
 
-    # FETCH AGENT PROFILE FIRST to check for overrides
     try:
         agent_profile = get_profile(user_profile_name)
     except KeyError:
@@ -720,10 +680,10 @@ async def process_prompt_endpoint():
             "code": "AGENT_ACCESS_DENIED"
         }), 403
 
-    # PRIORITY: Agent -> User -> System Default, then prefer Jev for an
-    # inherited Conscience route when its key is available. Keep explicit
-    # model choices, but resolve duplicate faculty models when another usable
-    # chat model is available.
+    # Resolution order: agent -> user -> system default, preferring Jev for an
+    # inherited Conscience route when its key is available. Explicit model
+    # choices are kept, but duplicate faculty models resolve to another usable
+    # chat model.
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
     conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
 
@@ -759,7 +719,6 @@ async def process_prompt_endpoint():
     full_name = user_details.get('name', 'User')
     user_name = full_name.split(' ')[0] if full_name else 'User'
 
-    # 2. Get Cached Instance
     saf_system = global_safi_cache.get_or_create(
         user_profile_name,
         intellect_model,
@@ -767,8 +726,6 @@ async def process_prompt_endpoint():
         conscience_model
     )
     
-    # 3. Process
-    # 3. Process
     try:
         org_id = user_details.get('org_id')
         result = await saf_system.process_prompt(
@@ -853,7 +810,6 @@ def profiles_list():
         try:
             profile_details = get_profile(p['key'])
             profile_details['key'] = p['key'] 
-            # Pass ownership info to frontend
             profile_details['is_custom'] = p.get('is_custom', False)
             profile_details['created_by'] = p.get('created_by')
             all_profiles.append(profile_details)
@@ -880,7 +836,6 @@ def get_conversations():
     
     conversations_with_timestamps = []
     for convo in conversations:
-        # Pass user_id for security
         history = db.fetch_chat_history_for_conversation(convo['id'], limit=1, offset=0, user_id=user_id) 
         
         full_history = db.fetch_chat_history_for_conversation(convo['id'], limit=9999, offset=0, user_id=user_id)
@@ -979,7 +934,6 @@ def handle_delete_conversation(conversation_id):
     conversation_sharing_store.delete_grants_for_conversation(conversation_id)
     return jsonify({"status": "success"})
 
-# --- Projects (workspaces that group conversations) ---
 
 @conversations_bp.route('/projects', methods=['GET'])
 def get_projects():
@@ -1311,7 +1265,6 @@ def list_projects_shared_with_me():
     return jsonify(conversation_sharing_store.list_projects_shared_with_me(user_id, org_id))
 
 
-# --- Saved content (snapshots of individual AI responses) ---
 
 @conversations_bp.route('/saved-content', methods=['GET'])
 def get_saved_content():

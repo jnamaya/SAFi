@@ -155,13 +155,6 @@ class IntellectEngine:
         prompt_config: Optional[Dict[str, Any]] = None,
         mcp_manager: Any = None
     ):
-        """
-        Args:
-            llm_provider: The unified LLM service.
-            profile: The agent profile configuration.
-            prompt_config: The configuration for system prompts.
-            mcp_manager: Manager used only for listing available tools, never for execution.
-        """
         self.llm_provider = llm_provider
         self.profile = profile or {}
         self.prompt_config = prompt_config or {}
@@ -169,11 +162,9 @@ class IntellectEngine:
         self.last_error = None
         self.mcp_manager = mcp_manager
 
-        # Initialize Retriever if configured.
-        #
-        # Imported HERE rather than at module scope: importing the retriever
-        # pulls in faiss and the ONNX embedding runtime, and most agents have no
-        # knowledge base at all. A top-level import made every deployment pay
+        # The Retriever is imported HERE rather than at module scope: importing
+        # it pulls in faiss and the ONNX embedding runtime, and most agents have
+        # no knowledge base at all. A top-level import made every deployment pay
         # for a vector-search stack it may never call.
         self.retriever = None
         kb_name = self.profile.get("rag_knowledge_base")
@@ -217,12 +208,12 @@ class IntellectEngine:
         """
         self.last_error = None
 
-        # --- 0. Prepare Tools (for informing the LLM, not for execution) ---
+        # --- 0. Tools, for informing the LLM only; never executed here ---
         tools: List[Dict[str, Any]] = []
         if self.mcp_manager:
             tools = await self.mcp_manager.get_tools_for_agent(self.profile)
 
-        # --- 1. RAG & Plugin Context Logic ---
+        # --- 1. RAG & Plugin Context ---
         if precomputed_retrieved_context is not None:
             # Reuse context from the first Intellect call (retry / tool-agent follow-up).
             retrieved_context_string = precomputed_retrieved_context
@@ -353,7 +344,7 @@ class IntellectEngine:
         if agent_context_json and agent_context_json not in ("{}", "null", ""):
             try:
                 parsed = json.loads(agent_context_json)
-                # Only inject if the context has at least one non-empty array
+                # At least one non-empty array, or there is no memory to inject.
                 if any(v for v in parsed.values() if isinstance(v, list) and v):
                     template = self.prompt_config.get(
                         "agent_context_template",
@@ -454,33 +445,27 @@ class IntellectEngine:
         system_directive: str,
         conversation_id: str,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """
-        Forces a compliant, rephrased response based on a specific system directive.
-        Uses run_intellect under the hood.
-        """
         self.last_error = None
-        
-        # Build memory injection
+
         memory_summary = db.fetch_conversation_summary(conversation_id)
         memory_injection = (
             f"CONTEXT: Here is a summary of our conversation so far.\n<summary>{memory_summary}</summary>"
             if memory_summary else ""
         )
-        
-        # Build worldview and standard formatting rules but override with directive
+
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
-        
+
         system_prompt = "\n\n".join(filter(None, [
             worldview,
             memory_injection,
             system_directive,
             style
         ]))
-        
-        # Do NOT pass the original user_prompt — it may contain injection content that
-        # would cause the model to reproduce the attack even with a corrective directive.
-        # The system_directive already provides full context for generating the redirect.
+
+        # Do NOT pass the original user_prompt: it may carry injection content
+        # that the model reproduces even under a corrective directive. The
+        # system_directive already supplies the full context for the redirect.
         response_tuple = await self.llm_provider.run_intellect(
             system_prompt=system_prompt,
             user_prompt="[Generate a compliant redirect response per the system directive above.]",

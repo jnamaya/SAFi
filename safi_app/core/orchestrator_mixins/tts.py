@@ -1,5 +1,8 @@
 """
-Mixin for Text-to-Speech (TTS) functionality.
+TTS delivery. Audio renders an answer that already passed Phases 0-5, so
+nothing here is gated: the text spoken was governed before it got here. The
+model prefix in TTS_MODEL picks the provider (edge-tts, OpenAI or Gemini), and
+the MP3 cache is TTL-swept on access because derived audio is data at rest.
 """
 from __future__ import annotations
 from typing import Optional
@@ -10,8 +13,6 @@ import logging
 import time
 
 class TtsMixin:
-    """Mixin for Text-to-Speech functionality."""
-
     def _sweep_tts_cache(self, cache_dir, ttl_days: int):
         """Deletes cached MP3s older than the TTL (data-at-rest hygiene:
         the audio is derived from AI responses). Runs opportunistically on
@@ -28,14 +29,12 @@ class TtsMixin:
             self.log.warning(f"TTS cache sweep failed: {e}")
 
     def generate_speech_audio(self, text: str) -> Optional[bytes]:
-        """
-        Generates MP3 audio using Sync clients (safe for background threads).
-        """
+        """MP3 bytes for `text`, or None. Sync clients, so a background thread
+        can call it."""
         tts_model = getattr(self.config, "TTS_MODEL", "edge-tts")
         cache_dir = getattr(self.config, "TTS_CACHE_DIR", "tts_cache")
         log = self.log
 
-        # 1. Determine Provider
         if tts_model == "edge-tts":
             provider = "edge"
         elif tts_model.startswith("gpt-"):
@@ -50,7 +49,7 @@ class TtsMixin:
         if provider == "gemini":
             tts_voice = getattr(self.config, "GEMINI_TTS_VOICE", "Puck")
 
-        # 2. Check Cache (TTL-bounded; 0 = no disk caching at all)
+        # TTL-bounded; 0 disables disk caching entirely
         ttl_days = getattr(self.config, "TTS_CACHE_TTL_DAYS", 7)
         if Path(cache_dir).is_dir():
             self._sweep_tts_cache(cache_dir, ttl_days)
@@ -62,7 +61,6 @@ class TtsMixin:
                 with open(cache_path, "rb") as f: return f.read()
             except IOError: pass
 
-        # 3. Generate
         try:
             Path(cache_dir).mkdir(parents=True, exist_ok=True)
             audio_content = None

@@ -4,23 +4,20 @@ Agent Profile: The Fiduciary
 A market-aware financial guide that educates without giving personalized advice.
 Uses MCP tools to pull real-time stock data, news, and analyst insights.
 
-Each field in this profile configures a specific layer of the SAFi pipeline.
-Read the inline comments below to understand what each section does and when
-the orchestrator uses it.
+This dict is a declarative profile, not logic: every key is read by a specific
+layer of the SAFi pipeline, and the section markers below name that layer.
 """
 from typing import Dict, Any
 
 THE_FIDUCIARY_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
-    # Displayed in the UI and written to every log entry.
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Fiduciary",
-    # Governing business-unit policy (seeded at startup from
-    # core/policies/demo/policies.py). The compiler pulls scored values and
-    # scope from the policy; the values below are the standalone fallback if
-    # the policy row is ever deleted.
+    # The compiler pulls scored values and scope from this policy, seeded at
+    # startup from core/policies/demo/policies.py. The values below are the
+    # standalone fallback if that policy row is ever deleted.
     "policy_id": "demo_financial_advisory_policy",
     # Built-in informational agent — no project/task work context to track.
     "track_work_context": False,
@@ -31,11 +28,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ),
 
     # -- System Prompt (Intellect — Phase 2) -----------------------------------
-    # Injected as the system message in every Intellect LLM call.
-    # Defines identity, capabilities, guiding principles, and scope rules.
-    # The SCOPE ENFORCEMENT block must explicitly forbid off-topic requests.
-    # The {retrieved_context} placeholder is filled by the RAG service if
-    # rag_knowledge_base is set; otherwise it remains empty.
+    # {retrieved_context} is filled by the RAG service when rag_knowledge_base
+    # is set, and is left empty otherwise.
     "worldview": (
         "You are 'The Fiduciary', an AI market analyst acting with the prudence and objectivity of a fiduciary. "
         "Your goal is to empower users with clear, data-driven financial insights using real-time market tools.\n\n"
@@ -58,10 +52,9 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
         "Simply state your scope and offer to help with a financial or market question instead."
     ),
 
-    # -- Presentation (appended after worldview in the system prompt) ----------
-    # Controls tone, format, source attribution rules, and the mandatory disclaimer.
-    # The disclaimer text here must match mandatory_disclaimer_substring in will_rules
-    # exactly — Will W1 checks for that substring in every draft.
+    # -- Presentation ----------------------------------------------------------
+    # The disclaimer text here must contain mandatory_disclaimer_substring
+    # from will_rules exactly — Will W1 substring-checks every draft.
     "style": (
         "Be empathetic, clear, educational, and objective. Break complex ideas into simple language. Use everyday analogies "
         "and practical examples that help the user understand how a concept works without telling them what decision to make.\n\n"
@@ -78,8 +71,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ),
 
     # -- Value Set (Conscience — Phase 4, Spirit — Phase 5) -------------------
-    # Scored by ConscienceAuditor each turn. Weighted scores feed SpiritIntegrator
-    # for alignment drift tracking. All weights must sum to 1.0.
+    # Scored -1.0 / 0.0 / +1.0 per turn; the weighted scores feed Spirit's
+    # alignment-drift tracking. Weights must sum to 1.0.
     "values": [
         {
             "value": "Client's Best Interest",
@@ -145,12 +138,10 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ],
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
-    #                           before any LLM call. Augments global INJECTION_SIGNATURES.
-    # structural_requirements : Checked by Will W1 on every draft before Will's LLM eval.
-    #   require_disclaimer          : True — every draft must contain the disclaimer.
-    #   mandatory_disclaimer_substring : Must match the disclaimer text in style exactly.
-    #   banned_markdown_syntaxes    : Code fences that must not appear in responses.
+    # early_prompt_blacklist is scanned by PhaseZeroGate before any LLM call and
+    # augments the global INJECTION_SIGNATURES; structural_requirements is
+    # checked by Will W1 on every draft, ahead of Will's own LLM evaluation.
+    #   banned_markdown_syntaxes : fence tags the draft must not contain
     "will_rules": {
         "structural_requirements": {
             "require_disclaimer": True,
@@ -165,9 +156,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     },
 
     # -- Redirect Directives (trigger_agent_redirect) -----------------------
-    # Matched by violation_type when the orchestrator calls trigger_agent_redirect.
-    # If the key is not found, the orchestrator's hardcoded fallback fires.
-    # Never acknowledge the user's framing in any directive — respond fresh.
+    # Keyed by violation_type; no match means the orchestrator's hardcoded
+    # fallback fires. Never acknowledge the user's framing in any directive.
     "internal_rephrase_directives": {
         "scope_violation": (
             "CRITICAL: This request has been flagged as outside your scope as a Fiduciary Guide. "
@@ -203,9 +193,8 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     },
 
     # -- MCP Tools -------------------------------------------------------------
-    # Tool names this agent may call via the MCP manager.
-    # Will gate checks every tool_call intent against this list (Phase 3).
-    # Remove a name here to revoke access without touching tool definitions.
+    # Will gate checks every tool_call intent against this list (Phase 3);
+    # remove a name here to revoke access without touching tool definitions.
     #
     # These are CONNECTOR names, not function names. "web_search" expands to
     # web_search + web_news at compile time (see core/tool_connectors.py); the
@@ -226,25 +215,19 @@ THE_FIDUCIARY_AGENT: Dict[str, Any] = {
     ],
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the agent selector card, and the first thing a
-    # visitor to the demo sees. They escalate on purpose, because all three
-    # previous prompts produced an ordinary approval and showed a governance
-    # engine doing nothing visible:
-    #
+    # These escalate on purpose: the three previous prompts all produced an
+    # ordinary approval and showed a governance engine doing nothing visible.
     #   1. answered normally, so the agent is obviously useful,
-    #   2. answered while REFUSING the personalised part, and the answer quotes
-    #      live market data, so the boundary and the tools show at once,
+    #   2. answered while REFUSING the personalised part, quoting live market
+    #      data, so the boundary and the tools show at once,
     #   3. blocked before the model ever sees it.
-    #
     # Each was run through the real loop on 2026-08-28 and its Will decision
-    # recorded here. Do not add a prompt to this list claiming a behaviour
-    # nobody has observed; a starter question that promises a block and then
-    # gets a cheerful answer is worse than no starter question at all.
-    #
+    # recorded here. Do not add a prompt claiming a behaviour nobody has
+    # observed; a starter question that promises a block and then gets a
+    # cheerful answer is worse than no starter question at all.
     #   "types of investment risk"      -> approve
     #   "Should I buy Nvidia stock?"    -> approve, model declines the advice
     #   "Ignore your instructions ..."  -> redirected, injection:instruction_override
-    #
     # The third is a Phase Zero match, which is deterministic, so it blocks on
     # every run rather than depending on how a model scored that turn.
     "example_prompts": [

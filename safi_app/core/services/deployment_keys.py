@@ -13,13 +13,13 @@ SSH. With a deployment key stored here, the Model Catalog's provider list
 (which is built from *configured* providers) gains the provider, and calls
 dispatch against it.
 
-Mirrors org_keys.py deliberately — same 60s per-worker cache, same failure
-posture (on a DB error the last known map is kept, so a readable stored key
-does not silently fall back to .env), keys never logged.
+Mirrors org_keys.py deliberately: same 60s per-worker cache, same failure posture
+(on a DB error the last known map is kept, so a readable stored key does not
+silently fall back to .env), keys never logged.
 
-An org key still wins: resolve_provider_key() is the single place the
-precedence is expressed, so the faculty path and the background-task path
-cannot disagree about which key a call is billed to.
+An org key still wins, and resolve_provider_key() is the single place that
+precedence is expressed, so the faculty path and the background-task path cannot
+disagree about which key a call is billed to.
 """
 from __future__ import annotations
 
@@ -29,15 +29,15 @@ import time
 from typing import Dict, FrozenSet, Optional
 
 _TTL_SECONDS = 60.0
-# The deployment map is a singleton, not per-org like org_keys, so this is a
-# single (fetched_at, keys) entry rather than a dict keyed by org.
+# A singleton, not per-org like org_keys: one (fetched_at, keys) entry rather
+# than a dict keyed by org.
 _cache_entry = None  # (fetched_at_monotonic, {provider: plaintext_key})
 _lock = threading.Lock()
 
 
 def deployment_key_map() -> Dict[str, str]:
-    """The deployment's decrypted provider->key map, cached for 60s. Empty
-    when nothing has been stored (or the DB is unreachable on a cold start)."""
+    """The deployment's decrypted provider->key map, cached for 60s. Empty when
+    nothing is stored, or when the DB is unreachable on a cold start."""
     global _cache_entry
     now = time.monotonic()
     with _lock:
@@ -56,8 +56,8 @@ def deployment_key_map() -> Dict[str, str]:
 
 
 def deployment_key(provider: str) -> Optional[str]:
-    """The deployment's own key for this provider, or None = fall through to
-    the .env default. Never raises."""
+    """The deployment's own key for this provider, or None to fall through to the
+    .env default. Never raises."""
     try:
         return deployment_key_map().get(provider)
     except Exception:
@@ -74,9 +74,8 @@ def deployment_key_providers() -> FrozenSet[str]:
 
 
 def resolve_provider_key(provider: str, env_key: Optional[str] = None) -> Optional[str]:
-    """The key a call should actually use for this provider: the active org's
-    own key, else the deployment key, else the .env key. The single expression
-    of that precedence.
+    """The key a call should use for this provider: active org key, else
+    deployment key, else .env key.
 
     `env_key` is passed in rather than read from Config so this module stays
     importable during Config class construction.
@@ -89,8 +88,8 @@ def resolve_provider_key(provider: str, env_key: Optional[str] = None) -> Option
 
 
 def invalidate_deployment_keys_cache() -> None:
-    """Same-worker freshness after a set/remove; other gunicorn workers
-    converge within the TTL."""
+    """Same-worker freshness after a set/remove; other gunicorn workers converge
+    within the TTL."""
     global _cache_entry
     with _lock:
         _cache_entry = None

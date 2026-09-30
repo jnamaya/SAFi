@@ -70,10 +70,6 @@ def _discover_ms_tenant_id(domain):
 @organizations_bp.route('/organizations/domain/start', methods=['POST'])
 @require_role('admin')
 def start_domain_verification():
-    """
-    [POST /api/organizations/domain/start]
-    Generates a verification token for the given domain.
-    """
     data = request.json or {}
     org_id = data.get('org_id')
     domain = data.get('domain')
@@ -81,7 +77,6 @@ def start_domain_verification():
     current_org_id = get_current_org_id()
     current_app.logger.info(f"VERIFY START: Payload org_id={org_id}, Session org_id={current_org_id}")
 
-    # Security check: Ensure user belongs to this org
     if str(org_id) != str(current_org_id):
         return jsonify({"error": f"Forbidden: Mismatch {org_id} vs {current_org_id}"}), 403
     
@@ -123,10 +118,6 @@ def start_domain_verification():
 @organizations_bp.route('/organizations/domain/verify', methods=['POST'])
 @require_role('admin')
 def verify_domain_dns():
-    """
-    [POST /api/organizations/domain/verify]
-    Checks DNS TXT records for the verification token.
-    """
     data = request.json or {}
     org_id = data.get('org_id')
     
@@ -171,8 +162,7 @@ def verify_domain_dns():
         if found:
             db.confirm_domain_verification(org_id)
             
-            # NEW: Auto-rename organization to match verified domain
-            # This standardizes the org name (e.g., "My Org" -> "safinstitute.org")
+            # Auto-rename to the verified domain (e.g. "My Org" -> "safinstitute.org").
             try:
                 db.update_organization_name(org_id, domain)
                 current_app.logger.info(f"Auto-renamed Org {org_id} to {domain}")
@@ -534,10 +524,6 @@ def delete_scim_group_role(org_id):
 @organizations_bp.route('/organizations/domain/cancel', methods=['POST'])
 @require_role('admin')
 def cancel_domain_verification():
-    """
-    [POST /api/organizations/domain/cancel]
-    Cancels a pending domain verification.
-    """
     data = request.json or {}
     org_id = data.get('org_id')
     
@@ -556,13 +542,8 @@ def cancel_domain_verification():
         return jsonify({"error": "Internal Server Error"}), 500
 
 @organizations_bp.route('/organizations', methods=['POST'])
-# No Role required strictly, but usually only authenticated users can create orgs
-# If we want to limit org creation, we can add a check. For now, any user can create.
+# Any authenticated user may create an organization; there is no role gate.
 def create_organization():
-    """
-    [POST /api/organizations]
-    Creates Organization + Default Policy (Atomic).
-    """
     user = session.get('user')
     user_id = user.get('id') if user else None
     
@@ -575,8 +556,7 @@ def create_organization():
     try:
         result = db.create_organization_atomic(name, user_id)
         
-        # Determine logic for session update? 
-        # Ideally the user's generic session should update, but for now we just return ID
+        # The user's generic session is left alone; only the new org id is returned.
         
         return jsonify({
             "status": "created", 
@@ -611,7 +591,7 @@ def get_my_organization():
     # a valid organization from username-only admins.
     if not user: return jsonify({"organization": None})
     
-    # FIX: Prefer DB org_id over email domain if available
+    # The stored org_id wins over the email domain.
     if user.get('org_id'):
        org = db.get_organization(user['org_id'])
        return jsonify({"organization": org})
@@ -621,10 +601,6 @@ def get_my_organization():
 @organizations_bp.route('/organizations/<org_id>', methods=['PUT'])
 @require_role('admin')
 def update_organization(org_id):
-    """
-    [PUT /api/organizations/<org_id>]
-    Updates organization details (e.g., name).
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -666,10 +642,6 @@ def update_organization(org_id):
 
 @organizations_bp.route('/organizations/<org_id>/members', methods=['GET'])
 def list_organization_members(org_id):
-    """
-    [GET /api/organizations/<org_id>/members]
-    Lists all members of the organization.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -683,10 +655,6 @@ def list_organization_members(org_id):
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>/role', methods=['PUT'])
 @require_role('admin')
 def update_user_role(org_id, user_id):
-    """
-    [PUT /api/organizations/<org_id>/members/<user_id>/role]
-    Updates a member's role (Admin only).
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
         
@@ -728,10 +696,6 @@ def update_user_role(org_id, user_id):
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>', methods=['DELETE'])
 @require_role('admin')
 def remove_organization_member(org_id, user_id):
-    """
-    [DELETE /api/organizations/<org_id>/members/<user_id>]
-    Removes a member from the organization (Admin only).
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -764,9 +728,7 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# -------------------------------------------------------------------------
 # ENTERPRISE IDENTITY (Phase 1): member sessions, invitations, identity config
-# -------------------------------------------------------------------------
 
 def _actor():
     user = session.get('user') or {}
@@ -933,16 +895,10 @@ def update_identity_config(org_id):
         current_app.logger.error(f"Error updating identity config: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
-# -------------------------------------------------------------------------
 # CHARTER ROUTES
-# -------------------------------------------------------------------------
 
 @organizations_bp.route('/organizations/<org_id>/charter', methods=['GET'])
 def get_charter(org_id):
-    """
-    [GET /api/organizations/<org_id>/charter]
-    Returns the org charter, or null if none has been written.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -956,10 +912,6 @@ def get_charter(org_id):
 @organizations_bp.route('/organizations/<org_id>/charter', methods=['PUT'])
 @require_role('admin')
 def upsert_charter(org_id):
-    """
-    [PUT /api/organizations/<org_id>/charter]
-    Creates or updates the org charter (Admin only).
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -991,10 +943,6 @@ def upsert_charter(org_id):
 @organizations_bp.route('/organizations/<org_id>/charter', methods=['DELETE'])
 @require_role('admin')
 def delete_charter(org_id):
-    """
-    [DELETE /api/organizations/<org_id>/charter]
-    Deletes the org charter (Admin only).
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -1010,7 +958,6 @@ def delete_charter(org_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# --- Org AI Standards -------------------------------------------------------
 # A separate resource from the charter, because they are separate artifacts: a
 # charter is who the organization is and every organization has one; AI
 # standards say how its AI must behave and are optional. Adopting or dropping
@@ -1033,7 +980,6 @@ def list_pii_checks(org_id):
 
 @organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['GET'])
 def get_ai_standards(org_id):
-    """[GET] Returns the org's AI standards, or null if none are set."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
@@ -1046,7 +992,6 @@ def get_ai_standards(org_id):
 @organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['PUT'])
 @require_role('admin')
 def upsert_ai_standards(org_id):
-    """[PUT] Creates or updates the org's AI standards (Admin only)."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -1169,7 +1114,6 @@ def upsert_ai_standards(org_id):
 @organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['DELETE'])
 @require_role('admin')
 def delete_ai_standards(org_id):
-    """[DELETE] Removes the org's AI standards, leaving the charter untouched."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
@@ -1184,7 +1128,6 @@ def delete_ai_standards(org_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# --- TCB remote verification (org settings "Verify this Install") ---------
 # The boot integrity check (`safi_app/core/integrity.py`) compares the files
 # against the in-tree manifest. It cannot answer the authenticity question:
 # a local tamper can regenerate that manifest. This endpoint answers it by

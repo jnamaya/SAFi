@@ -1,4 +1,3 @@
-# safi_app/persistence/database.py
 import mysql.connector
 from mysql.connector import pooling
 import json
@@ -62,9 +61,9 @@ def init_db():
         cursor = conn.cursor()
         logging.info("Initializing database schema...")
 
-        # Serialize schema creation/migration + seeding across concurrent
-        # gunicorn workers. On a fresh DB all workers would otherwise race on the
-        # CREATE TABLE / guarded ALTER migrations and leave a partial schema.
+        # Serialize schema creation, migration and seeding across concurrent
+        # gunicorn workers: on a fresh DB they would otherwise race the CREATE
+        # TABLE / guarded ALTER migrations and leave a partial schema.
         try:
             cursor.execute("SELECT GET_LOCK('safi_schema_init', 60)")
             rows = cursor.fetchall()  # fully drain the result set
@@ -100,14 +99,12 @@ def init_db():
             if match and int(match.group(1)) < 100:
                 cursor.execute("ALTER TABLE users MODIFY COLUMN active_profile VARCHAR(100)")
         
-        # Check if new columns exist (for migration of existing dev DBs)
         cursor.execute("SHOW COLUMNS FROM users LIKE 'org_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN org_id CHAR(36)")
             cursor.execute("ALTER TABLE users ADD COLUMN role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'")
             cursor.execute("CREATE INDEX idx_user_org ON users(org_id)")
 
-        # Add password_hash column for local account login
         cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) DEFAULT NULL")
@@ -464,7 +461,6 @@ def init_db():
             )
         ''')
 
-        # Check for new columns in agents table
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'org_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN org_id CHAR(36)")
@@ -484,7 +480,6 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN scope_statement TEXT")
 
-        # --- Check for AI Model Columns (Missing in initial migration) ---
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'intellect_model'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN intellect_model VARCHAR(100)")
@@ -495,7 +490,6 @@ def init_db():
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN max_agent_turns INT DEFAULT NULL")
 
-        # Per-agent work/task context memory toggle (default ON for custom agents).
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'track_work_context'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN track_work_context BOOLEAN DEFAULT TRUE")
@@ -605,7 +599,7 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM api_keys LIKE 'policy_id'")
         _ak_col = cursor.fetchone()
         if _ak_col and 'char(36)' in str(_ak_col[1]).lower():
-            # The column is part of a foreign key, so drop it, widen, re-add.
+            # The column is an FK, so it must be dropped, widened, re-added.
             cursor.execute("""
                 SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_keys'
@@ -698,7 +692,7 @@ def init_db():
             )
         ''')
         
-        # --- SPIRIT MEMORY (Missing in your setup) ---
+        # --- SPIRIT MEMORY ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS spirit_memory (
                 profile_name VARCHAR(255) PRIMARY KEY,
@@ -1202,14 +1196,8 @@ def init_db():
         conn.commit()
         logging.info("Database initialized.")
 
-        # Ensure the SAFi default policy template exists (system-wide seed)
         _ensure_safi_policy_exists()
-
-        # Ensure the demo business-unit policies governing the built-in demo
-        # agents exist (one per agent)
         _ensure_demo_agent_policies_exist()
-
-        # Seed persistent local admin account (if configured)
         _seed_local_admin()
 
     except Exception as e:
@@ -1227,10 +1215,8 @@ def init_db():
         if conn: conn.close()
 
 def _ensure_safi_policy_exists():
-    """
-    Ensures the SAFi default policy template exists in the database.
-    This is the system-wide seed used as the starting point for new organizations.
-    """
+    """Seeds the SAFi default policy template — the system-wide
+    starting point every new organization is cloned from."""
     from ..core.policies.safi.policy import SAFI_DEFAULT_POLICY
 
     SAFI_POLICY_ID = "safi_default_policy"
@@ -1276,10 +1262,10 @@ def _ensure_demo_agent_policies_exist():
     from ..core.policies.demo.policies import DEMO_AGENT_POLICIES, DEMO_AGENT_POLICY_MAP
     from ..config import Config
 
-    # Only seed policies for the built-in agents enabled via SAFI_BUILTIN_AGENTS —
+    # Only seed policies for the built-in agents enabled via SAFI_BUILTIN_AGENTS:
     # a lean install shouldn't grow governance rows for agents it never shows.
-    # Already-seeded policies are left untouched (idempotency below), so enabling
-    # more agents later just seeds the missing ones on the next restart.
+    # Idempotency below means enabling more agents later just seeds the missing
+    # ones on the next restart.
     enabled_policy_ids = {
         pid for key, pid in DEMO_AGENT_POLICY_MAP.items()
         if Config.builtin_agent_enabled(key)
@@ -1348,14 +1334,13 @@ def _seed_local_admin():
     try:
         password_hash = generate_password_hash(password)
 
-        # Check if local admin already exists
         cursor.execute("SELECT id, org_id FROM users WHERE id = 'local_admin'")
         existing = cursor.fetchone()
 
         if existing:
-            # Sync identity + password in case env vars changed. The display
+            # Re-sync identity + password in case env vars changed; the display
             # name follows whichever identifier is configured, so renaming the
-            # admin account in .env relabels it in the UI on next boot.
+            # account in .env relabels it in the UI on next boot.
             cursor.execute(
                 "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s WHERE id='local_admin'",
                 (email or None, username or None, display_name, password_hash)
@@ -1371,9 +1356,9 @@ def _seed_local_admin():
             # rows on the demo host, each looking like a real organization in
             # every count.
             #
-            # Matched on the fixed name because that is the only stable handle
-            # the old rows have; the oldest is kept so repeated recreation
-            # converges on one org rather than drifting between them.
+            # Matched on the fixed name because that is the only stable handle the
+            # old rows have; the oldest is kept so repeated recreation converges
+            # on one org rather than drifting between them.
             cursor.execute(
                 "SELECT id FROM organizations WHERE name = %s ORDER BY created_at LIMIT 1",
                 ("Local Admin Organization",)
@@ -1404,7 +1389,7 @@ def _seed_local_admin():
         conn.close()
 
 # -------------------------------------------------------------------------
-# SPIRIT MEMORY FUNCTIONS (These were missing!)
+# SPIRIT MEMORY FUNCTIONS
 # -------------------------------------------------------------------------
 
 def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
@@ -1415,7 +1400,7 @@ def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
         row = cursor.fetchone()
         if row:
             turn, mu_json = row
-            # Return raw object (List or Dict), let SpiritIntegrator handle type coercion
+            # Stored as-is (List or Dict): type coercion belongs to SpiritIntegrator.
             mu_obj = json.loads(mu_json) if mu_json else {}
             return {"turn": turn, "mu": mu_obj}
         return None
@@ -1424,9 +1409,8 @@ def load_spirit_memory(profile_name: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 def save_spirit_memory_in_transaction(cursor, profile_name: str, memory: Dict[str, Any]):
-    # Accepts Dict or List, dumps to JSON
     mu_obj = memory.get('mu', {})
-    if hasattr(mu_obj, 'tolist'): mu_obj = mu_obj.tolist() # Handle numpy array
+    if hasattr(mu_obj, 'tolist'): mu_obj = mu_obj.tolist()
     
     mu_json = json.dumps(mu_obj)
     turn = memory.get('turn', 0)
@@ -1506,13 +1490,9 @@ def update_spirit_memory_atomic(profile_name: str, compute_fn):
     raise last_exc
 
 def save_spirit_memory(agent_id, mu, turn, score=None, drift=None):
-    """
-    Wrapper to save spirit memory. 
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Robust serialization: Handle Dict, List, or Numpy Array
         if hasattr(mu, 'tolist'): mu = mu.tolist()
         
         mu_json = json.dumps(mu)
@@ -1634,11 +1614,9 @@ def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
 # -------------------------------------------------------------------------
 
 def ensure_conversation_access(user_id, cid):
-    """
-    Checks if a conversation exists.
-    If it exists, ensures user_id owns it.
-    If it does NOT exist, claims it for user_id (External Bot Logic).
-    """
+    """True when user_id owns the conversation. A conversation that
+    does not exist yet is CLAIMED for user_id — the external-bot entry
+    point."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1650,7 +1628,6 @@ def ensure_conversation_access(user_id, cid):
             conn.commit()
             return True
         
-        # Verify Owner
         return row[0] == user_id
     finally:
         cursor.close()
@@ -2074,7 +2051,7 @@ def fetch_saved_content(user_id):
         conn.close()
 
 def move_saved_content(sid, project_id, user_id):
-    """Reassigns a saved item to a project (or None to detach)."""
+    """Reassigns a saved item to a project, or detaches it with None."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -2208,7 +2185,6 @@ def _chat_trail_append(cursor, message_pk, message_id, conversation_id, action, 
     )
 
 def _org_id_for_user(cursor, user_id):
-    """Resolves a user's org for trail attribution. None if unknown."""
     if not user_id:
         return None
     cursor.execute("SELECT org_id FROM users WHERE id=%s", (user_id,))
@@ -2281,8 +2257,9 @@ def _verify_chain_entries(entries):
     return result
 
 def verify_message_audit_trail(message_pk):
-    """Recomputes the hash chain for one chat_history row's trail entries.
-    Returns {'entries': n, 'valid': bool, 'first_bad_id': id or None}."""
+    """Recomputes one chat_history row's trail hash chain. See
+    _verify_chain_entries for the result shape — notably that `valid` is None,
+    not True, when the chain is empty."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -2391,7 +2368,6 @@ def cancel_message(msg_id, user_id=None):
         conn.close()
 
 def is_message_cancelled(msg_id):
-    """Returns True if the message has been cancelled by the client."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -2471,8 +2447,8 @@ def update_audit_results(msg_id, ledger, score, note, pname, pvals, prompts=None
         conn.close()
 
 def update_suggested_prompts(msg_id, prompts):
-    """Updates only the suggested_prompts column (used by the background
-    follow-up suggester so it never blocks the request path)."""
+    """Used by the background follow-up suggester, which must never
+    block the request path."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -2495,9 +2471,6 @@ def update_suggested_prompts(msg_id, prompts):
         conn.close()
 
 def update_message_content(msg_id, content, audit_status=None):
-    """
-    Updates the content and optionally the audit_status of an existing message.
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -2541,7 +2514,6 @@ def update_message_reasoning(msg_id, step_text, phase=None, extra=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # 1. Fetch existing log
         cursor.execute("SELECT id, conversation_id, reasoning_log FROM chat_history WHERE message_id=%s FOR UPDATE", (msg_id,))
         row = cursor.fetchone()
         if not row: return
@@ -2552,7 +2524,6 @@ def update_message_reasoning(msg_id, step_text, phase=None, extra=None):
         if not isinstance(current_log, list):
             current_log = []
 
-        # 2. Append new step with timestamp
         new_step = {
             "step": step_text,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -2567,8 +2538,8 @@ def update_message_reasoning(msg_id, step_text, phase=None, extra=None):
                     new_step[k] = v
         current_log.append(new_step)
 
-        # 3. Save back (step encrypted in the trail too — agentic tool steps
-        # can embed user-derived labels, so no plaintext enters the journal)
+        # The step is encrypted in the trail too: agentic tool steps can embed
+        # user-derived labels, so no plaintext enters the journal.
         _chat_trail_append(cursor, row['id'], msg_id, row['conversation_id'],
                            "append", "system:pipeline",
                            {"reasoning_step_enc": crypto.encrypt_value(json.dumps(new_step))})
@@ -3061,7 +3032,7 @@ def delete_agent_context_memory(user_id: str, agent_id: str) -> bool:
 
 
 def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
-    """Load the per-agent work context memory for a user. Returns '{}' if none exists."""
+    """Returns '{}' when the user holds no memory for this agent."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -3076,7 +3047,6 @@ def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
         conn.close()
 
 def upsert_agent_context_memory(user_id: str, agent_id: str, context_json: str) -> None:
-    """Create or update the per-agent work context memory for a user."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -3126,7 +3096,7 @@ def upsert_audit_snapshot(snap_hash, snapshot, turn, user_id):
         conn.close()
 
 # -------------------------------------------------------------------------
-# NEW: AGENT MANAGEMENT
+# AGENT MANAGEMENT
 # -------------------------------------------------------------------------
 
 def create_agent(key, name, description, avatar, worldview, style, values, rules, policy_id, created_by, org_id=None, visibility='private',
@@ -3186,13 +3156,14 @@ def get_agent(key):
         row = cursor.fetchone()
         if row:
             row['key'] = row['agent_key']
-            row['policy_id'] = row['policy_id'] or 'standalone' # FIX: Ensure never None
+            row['policy_id'] = row['policy_id'] or 'standalone'  # never None downstream
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
             row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             row['track_work_context'] = bool(row.get('track_work_context', True) if row.get('track_work_context') is not None else True)
 
-            # --- FIX: Ensure 'value' key exists for Core Engine ---
+            # The Core Engine reads 'value'; rows written before it existed
+            # only carry 'name'.
             for v in row['values']:
                 if 'name' in v and 'value' not in v:
                     v['value'] = v['name']
@@ -3207,14 +3178,9 @@ def list_agents(user_id, org_id=None, user_role='member'):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # LOGIC:
-        # 1. Always show agents created by the user (regardless of org or visibility)
-        # 2. Show agents from the same org IF visibility permissions are met:
-        #    - 'member' visible to everyone in org
-        #    - 'auditor' visible to auditor, editor, admin
-        #    - 'editor' visible to editor, admin
-        #    - 'admin' visible to admin
-        #    - 'private' is NOT visible to others
+        # Visibility ladder: an agent's creator always sees it; everyone else
+        # in the org sees it only at or above its visibility level, and
+        # 'private' is visible to nobody else.
         
         sql = """
             SELECT * FROM agents 
@@ -3243,14 +3209,14 @@ def list_agents(user_id, org_id=None, user_role='member'):
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
             row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             
-            # --- FIX: Ensure 'value' key exists here too for consistency ---
+            # The Core Engine reads 'value'; rows written before it existed
+            # only carry 'name'.
             for v in row['values']:
                 if 'name' in v and 'value' not in v:
                     v['value'] = v['name']
                     
             row['is_custom'] = True
             
-            # Add metadata for UI
             row['shared_with_org'] = (row['org_id'] == org_id) and (row['visibility'] != 'private')
             
             res.append(row)
@@ -3261,10 +3227,8 @@ def list_agents(user_id, org_id=None, user_role='member'):
         conn.close()
 
 def list_all_agents():
-    """
-    Lists ALL agents in the database, ignoring permissions.
-    Used for the Dashboard/Admin view.
-    """
+    """ALL agents, ignoring permissions — the operator Dashboard/Admin
+    view only, never an org-scoped surface."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -3279,7 +3243,8 @@ def list_all_agents():
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
             row['tools'] = json.loads(row['tools_json']) if row.get('tools_json') and isinstance(row['tools_json'], str) else row.get('tools_json') or []
             
-            # Ensure 'value' key exists
+            # The Core Engine reads 'value'; rows written before it existed
+            # only carry 'name'.
             for v in row['values']:
                 if 'name' in v and 'value' not in v:
                     v['value'] = v['name']
@@ -3738,7 +3703,7 @@ def list_knowledge_bases_for_agent_picker(user_id, org_id=None, user_role='membe
 
 
 # -------------------------------------------------------------------------
-# NEW: ORG & POLICY MANAGEMENT
+# ORG & POLICY MANAGEMENT
 # -------------------------------------------------------------------------
 
 def create_organization_atomic(org_name, user_id):
@@ -3929,7 +3894,6 @@ def list_policies(user_id=None, org_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Filter by Demo, Creator, OR Organization
         demo_placeholders = ", ".join(["%s"] * len(demo_ids))
         cursor.execute(f"""
             SELECT * FROM policies
@@ -4252,13 +4216,10 @@ def update_organization_settings(oid, settings):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Check if settings exist first to merge? 
-        # For now, we assume frontend sends the full or partial dict and we merge it here?
-        # Actually safer to fetch, merge, save.
-        
-        # Fetch current
+        # settings is MERGED, not replaced: callers send a partial dict, so a
+        # read-modify-write is the only safe shape.
         cursor.execute("SELECT settings FROM organizations WHERE id=%s", (oid,))
-        row = cursor.fetchone() # Tuple (json_str,)
+        row = cursor.fetchone()
         current_settings = {}
         if row and row[0]:
             try:
@@ -4266,7 +4227,6 @@ def update_organization_settings(oid, settings):
             except:
                 current_settings = {}
         
-        # Merge
         current_settings.update(settings)
         
         cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s", (json.dumps(current_settings), oid))
@@ -4402,7 +4362,7 @@ def get_organization_members(org_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Sort so Admins appear first, then others
+        # FIELD(role, ...) puts admins first so the member list reads by authority.
         cursor.execute("SELECT id, name, email, role FROM users WHERE org_id=%s ORDER BY FIELD(role, 'admin', 'editor', 'auditor', 'member'), name", (org_id,))
         return cursor.fetchall()
     finally:
@@ -4855,7 +4815,6 @@ def set_org_provider_key(org_id, provider, key, updated_by=None):
         conn.close()
 
 def delete_org_provider_key(org_id, provider):
-    """Returns True when a row was removed."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -4922,7 +4881,6 @@ def set_deployment_provider_key(provider, key, updated_by=None):
         conn.close()
 
 def delete_deployment_provider_key(provider):
-    """Returns True when a row was removed."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -6648,7 +6606,6 @@ def remove_member_from_org(user_id, org_id, actor="system"):
                 "this is the organization's only admin — promote another member "
                 "to admin before removing this one"
             )
-        # We simply set org_id to NULL and role to 'member' (resetting them)
         cursor.execute("UPDATE users SET org_id=NULL, role='member' WHERE id=%s AND org_id=%s", (user_id, org_id))
         removed = cursor.rowcount > 0
         revoked = _revoke_user_sessions_cursor(cursor, user_id, "system:member_removed")
@@ -7281,7 +7238,6 @@ def get_policy_id_by_api_key(raw_key):
             cursor.execute("SELECT policy_id FROM api_keys WHERE key_hash=%s", (h,))
             row = cursor.fetchone()
             if row:
-                # Update usage stats
                 cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
                 conn.commit()
                 return row[0]
@@ -7374,7 +7330,6 @@ def delete_oauth_token(user_id, provider, org_id=None):
         conn.close()
 
 def get_connected_providers(user_id):
-    """Returns a list of provider names that the user has connected."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -7507,26 +7462,20 @@ def cleanup_orphaned_public_users():
 
 
 def cleanup_old_demo_users():
-    """
-    Deletes demo users AND their private organizations created more than 24 hours ago.
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 1. Identify Expired Demo Users and their Orgs
-        # We need to explicitly find orgs created by these users (or linked to them)
-        # Since we create a unique org per demo user, we can just grab their org_id.
+        # One org per demo user, so the user's own org_id identifies it.
         select_sql = "SELECT id, org_id FROM users WHERE id LIKE 'demo_%' AND created_at < NOW() - INTERVAL 24 HOUR"
         cursor.execute(select_sql)
-        expired_users = cursor.fetchall() # List of tuples (user_id, org_id)
+        expired_users = cursor.fetchall()
         
         if not expired_users:
             return
 
         expired_user_ids = [u[0] for u in expired_users]
-        expired_org_ids = [u[1] for u in expired_users if u[1]] # Filter None
+        expired_org_ids = [u[1] for u in expired_users if u[1]]
         
-        # 2. Delete Users (Cascades to history)
         if expired_user_ids:
             format_strings = ','.join(['%s'] * len(expired_user_ids))
             tuple_ids = tuple(expired_user_ids)
@@ -7559,29 +7508,19 @@ def cleanup_old_demo_users():
                 f"(SELECT id FROM conversations WHERE user_id IN ({format_strings}))",
                 tuple_ids)
 
-            # A. Conversations (Cascades to chat_history usually, but good to be sure)
             cursor.execute(f"DELETE FROM conversations WHERE user_id IN ({format_strings})", tuple_ids)
             
-            # B. Prompt Usage
             cursor.execute(f"DELETE FROM prompt_usage WHERE user_id IN ({format_strings})", tuple_ids)
-            
-            # C. OAuth Tokens
             cursor.execute(f"DELETE FROM oauth_tokens WHERE user_id IN ({format_strings})", tuple_ids)
-
-            # D. User Profiles
             cursor.execute(f"DELETE FROM user_profiles WHERE user_id IN ({format_strings})", tuple_ids)
-            
-            # E. Agents (Created by these users)
             cursor.execute(f"DELETE FROM agents WHERE created_by IN ({format_strings})", tuple_ids)
-
-            # ---------------------------------------------------------
 
             delete_users_sql = f"DELETE FROM users WHERE id IN ({format_strings})"
             cursor.execute(delete_users_sql, tuple_ids)
             logging.info(f"Cleaned up {cursor.rowcount} expired demo users.")
             
-        # 3. Delete their Organizations
-        # We only delete orgs that were gathered from these specific expiring users.
+        # Only orgs gathered from these specific expiring users, never a
+        # name-matched sweep.
         if expired_org_ids:
             format_strings = ','.join(['%s'] * len(expired_org_ids))
             # Any remaining demo-org governance records (e.g. gateway turns

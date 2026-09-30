@@ -83,7 +83,6 @@ def require_scim_token(f):
     return wrapper
 
 
-# --- SAFi application (reconciliation) ---------------------------------------
 
 def _actor(org_id):
     return f"scim:{org_id}"
@@ -153,7 +152,6 @@ def _reconcile_resource_role(org_id, res):
     _apply_membership(org_id, res["email"], role)
 
 
-# --- SCIM representations -----------------------------------------------------
 
 def _user_to_scim(res):
     return {
@@ -197,7 +195,6 @@ def _iso(dt):
         return None
 
 
-# --- discovery ---------------------------------------------------------------
 
 @scim_bp.route("/ServiceProviderConfig", methods=["GET"])
 @require_scim_token
@@ -239,7 +236,6 @@ def schemas():
                        "Resources": core, "startIndex": 1, "itemsPerPage": len(core)})
 
 
-# --- Users -------------------------------------------------------------------
 
 def _extract_email(body):
     email = (body.get("userName") or "").strip().lower()
@@ -406,7 +402,6 @@ def _as_bool(v):
     return bool(v)
 
 
-# --- Groups ------------------------------------------------------------------
 
 @scim_bp.route("/Groups", methods=["GET"])
 @require_scim_token

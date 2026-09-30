@@ -1,4 +1,3 @@
-# safi_app/api/review_api.py
 """Human review queue API (Phase E2): FINRA 3110/3120 supervisory review and
 EU AI Act Art. 14 human oversight over sampled governance turns.
 

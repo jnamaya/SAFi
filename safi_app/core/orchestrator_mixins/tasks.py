@@ -1,5 +1,12 @@
 """
-Mixin for background task management (summarization, profile extraction).
+Background work that runs OFF the request path: conversation titles,
+summaries, profile extraction and work-context memory.
+
+These are conveniences, not agent speech — a title or a summary is metadata
+derived from the user's own words — so unlike the faculties they are not
+governed turn by turn. They still ride the org's provider and usage context
+(ContextVars, copied into the worker thread by _submit_bg) and still fail
+open: a background failure logs and returns, never fails the turn.
 """
 from __future__ import annotations
 import json as _json
@@ -28,7 +35,6 @@ def _record_backend_usage(provider, model, resp):
 # silently dropped just because the model didn't re-type them. This is the
 # durability guarantee — it does not depend on the model behaving.
 
-# Ordered list categories and the field that identifies one entry within a list.
 _CTX_LIST_FIELDS = ["projects", "tasks", "decisions", "people", "milestones", "vendors", "notes"]
 _CTX_ID_FIELD = {
     "projects": "name",
@@ -83,7 +89,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
     else:
         upserts, removals = {}, {}
 
-    # --- Apply upserts ---
     for cat in _CTX_LIST_FIELDS:
         items = upserts.get(cat)
         if not isinstance(items, list):
@@ -137,7 +142,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
         remset.discard("")
         out[cat] = [it for it in out[cat] if _ctx_identity(cat, it) not in remset]
 
-    # --- Soft cap (only guards runaway growth) ---
     # Evict by staleness, not position: keep the _CTX_CAP most recently updated
     # entries. Position alone could drop an active project while a stale one
     # survived. Entries without an `updated` stamp (pre-stamp rows) count as
@@ -200,10 +204,6 @@ def apply_memory_budget(context_json: str, max_chars: int) -> str:
 
 
 class BackgroundTasksMixin:
-    """Mixin for background task management (summarization, profile extraction)."""
-
-    # --- Conversation titles -------------------------------------------------
-
     @staticmethod
     def _clean_title(raw):
         """Normalizes a model-produced title, or returns None to keep the
@@ -258,8 +258,6 @@ class BackgroundTasksMixin:
             self.log.warning(f"Background title generation failed: {e}")
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        """Runs the summarization logic in a background thread (provider-routed
-        via _backend_completion, so it follows SUMMARIZER_MODEL to any provider)."""
         summarizer_prompt_config = self.prompts.get("summarizer")
         if not summarizer_prompt_config: return
 
@@ -278,8 +276,6 @@ class BackgroundTasksMixin:
             self.log.warning(f"Summarization thread failed: {e}")
 
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
-        """Runs the long-term user profile update logic in a background thread
-        (provider-routed via _backend_completion)."""
         profile_prompt_config = self.prompts.get("profile_extractor")
         if not profile_prompt_config: return
 
@@ -460,10 +456,8 @@ class BackgroundTasksMixin:
                                         temperature=temperature, json_mode=True)
 
     def _extract_agent_context_raw(self, current_context_json: str, user_prompt: str, ai_response: str):
-        """
-        Single extraction call. Returns the model's raw candidate-context string, or
-        None on failure. Runs on NOTETAKER_MODEL (provider-routed via _backend_json_completion).
-        """
+        """The model's raw candidate-context string, or None. NOTETAKER_MODEL,
+        unparsed — merge_agent_context is what makes it safe to act on."""
         context_prompt_config = self.prompts.get("agent_context_extractor")
         if not context_prompt_config:
             return None

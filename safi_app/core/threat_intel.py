@@ -12,6 +12,11 @@ names descriptive.
 
 To add a new category: add a new key to INJECTION_SIGNATURES.
 The PhaseZeroGate will scan it automatically.
+
+SCOPE OF THIS GATE: everything here is matched against the USER PROMPT only.
+Retrieved documents and tool output are not scanned by Phase Zero and are not
+scanned anywhere else either — they reach the model as evidence, unscanned.
+A signature added here therefore narrows nothing but the injection surface.
 """
 from __future__ import annotations
 
@@ -331,10 +336,9 @@ ENTROPY_THRESHOLD: float = 4.5
 # threshold above is the wrong tool for this job — it lets a hex payload past.
 BLOB_MIN_ENTROPY: float = 3.0
 
-# How many characters from the start of the prompt to sample for entropy.
 ENTROPY_SAMPLE_LENGTH: int = 300
 
-# Minimum prompt length before entropy check runs (avoids penalizing short prompts).
+# Short prompts are exempt: entropy over a few characters says nothing.
 MIN_LENGTH_FOR_ENTROPY_CHECK: int = 150
 
 # Shannon entropy alone does NOT separate an encoded payload from technical prose.
@@ -356,8 +360,7 @@ BLOB_MIN_RUN: int = 200
 # documentation for it.
 BLOB_MARKER_PROXIMITY_CHARS: int = 600
 
-# Instruction markers used with the embedded-instruction heuristic.
-# If a high-entropy blob is followed by any of these, it's flagged.
+# A high-entropy blob followed by any of these is flagged.
 EMBEDDED_INSTRUCTION_MARKERS: list[str] = [
     "new task",
     "your task is",

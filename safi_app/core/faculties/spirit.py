@@ -19,32 +19,22 @@ from .utils import _norm_label
 class SpiritIntegrator:
     """
     Integrates Conscience evaluations into a long-term spirit memory vector (mu).
-    
-    This class performs mathematical operations to update the AI's ethical 
-    alignment over time. It uses an exponential moving average (EMA) to 
-    integrate new observations (p_t) into the existing memory (mu_tm1).
     """
 
     def __init__(self, values: List[Dict[str, Any]], beta: float = 0.9):
         """
-        Initializes the SpiritIntegrator.
-
-        Args:
-            values: The list of value dictionaries for this agent.
-            beta: The smoothing factor for the exponential moving average.
-                  A high value (e.g., 0.9) means slow changes (long memory).
-                  A low value (e.g., 0.1) means fast changes (short memory).
+        beta is the EMA smoothing factor: high (0.9) means slow change / long
+        memory, low (0.1) means fast change / short memory.
         """
         self.values = values
         self.beta = beta
         
-        # Pre-calculate value weights as a numpy array
-        # ROBUSTNESS FIX: Handle missing keys (custom wizard uses 'name', legacy uses 'value')
+        # Pre-calculate value weights. A missing key means the value is meant to
+        # be significant: wizard-built values use 'name', legacy ones 'value'.
         self.value_weights = (
             np.array([float(v.get("weight", 0.2)) for v in self.values], dtype=float) if self.values else np.array([1.0])
         )
         
-        # Pre-calculate normalized value names for quick lookup
         self._norm_values = (
             [_norm_label(v.get("value") or v.get("name") or "Unknown_Value") for v in self.values] if self.values else []
         )
@@ -63,7 +53,6 @@ class SpiritIntegrator:
         weight_total = 0.0
         matched = 0  # how many of this agent's values the audit actually scored
 
-        # Build normalized lookup for values/weights
         lmap = {_norm_label(row.get("value")): row for row in ledger if row.get("value")}
 
         for i, val_dict in enumerate(self.values):
@@ -82,12 +71,12 @@ class SpiritIntegrator:
                 if score <= -1.0 and val_dict.get("hard_gate"):
                     critical_violation = True
 
-                # Scaled score: map [-1, 1] to [0, 1]
+                # Map [-1, 1] to [0, 1]
                 scaled_score = (score + 1.0) / 2.0
                 weighted_sum += weight * scaled_score
                 weight_total += weight
             else:
-                # If ledger is missing a value, default to neutral (0.0 score -> 0.5 scaled)
+                # An unscored value defaults to neutral (0.0 -> 0.5 scaled).
                 weighted_sum += weight * 0.5
                 weight_total += weight
 
@@ -114,28 +103,24 @@ class SpiritIntegrator:
         Returns: spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector
         """
         if not self.values or not ledger:
-            # Return same memory if no update possible
             return 1, "Incomplete ledger", mu_memory, np.zeros(len(self.values)), None, np.zeros(len(self.values))
 
         # --- 1. Resolve Memory to Vector (Transition Logic) ---
         expected_len = len(self.value_weights)
         mu_tm1_vector = np.zeros(expected_len)
         
-        # Determine format
         is_legacy = isinstance(mu_memory, (list, np.ndarray))
         
         if is_legacy:
-            # LEGACY: Positional Memory
+            # LEGACY: positional memory — pad/truncate on a length change
             old_arr = np.array(mu_memory)
             if old_arr.shape[0] != expected_len:
-                # Resize logic (Pad/Truncate)
                 common_len = min(expected_len, old_arr.shape[0])
                 mu_tm1_vector[:common_len] = old_arr[:common_len]
             else:
                 mu_tm1_vector = old_arr
         else:
-            # MODERN: Semantic Memory (Dict)
-            # Map current values to memory keys
+            # MODERN: semantic memory (dict keyed by normalized label)
             for i, norm_name in enumerate(self._norm_values):
                 mu_tm1_vector[i] = mu_memory.get(norm_name, 0.0)
 
@@ -184,13 +169,13 @@ class SpiritIntegrator:
 
         # --- 5. Export Memory (Reconstruct Dict) ---
         if is_legacy:
-            # First time migration: Start fresh dict
+            # First-time migration: start a fresh dict rather than trying to
+            # splice positional memory into a keyed one.
             new_memory_dict = {}
         else:
-            # Checkpoint: Copy old memory to preserve DORMANT values (values not in current policy)
+            # Copy first to preserve DORMANT values (not in the current policy).
             new_memory_dict = mu_memory.copy()
         
-        # Update/Overwrite keys for CURRENT values
         for i, norm_name in enumerate(self._norm_values):
             new_memory_dict[norm_name] = float(mu_new_vector[i])
 
@@ -208,7 +193,6 @@ class SpiritIntegrator:
         if missing:
             note += f" Unscored: {', '.join(missing)}."
 
-        # Return the DICTIONARY memory for storage, AND the vector for in-memory history
         return spirit_score, note, new_memory_dict, p_t, drift, mu_new_vector
 
     def compute_redirect(self, ledger: List[Dict[str, Any]]) -> Tuple[int, str]:
@@ -296,11 +280,10 @@ def build_spirit_feedback(
     a, b, c = drift_bands
     d = drift or 0.0
 
-    # Only coach when something is actually off — otherwise emit nothing.
     if not (d >= a or decline > 0.05 or baseline < 0.50):
         return ""
 
-    # Severity is qualitative only — never numbers.
+    # Severity stays qualitative — never numbers (audit-independence contract).
     if d >= c or decline > 0.20 or baseline < 0.30:
         verb = "have fallen well below your usual standard"
         close = "Be markedly more deliberate, complete, and precise this turn."

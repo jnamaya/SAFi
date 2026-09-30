@@ -19,14 +19,12 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-# 1. Import Governance
 from ...persistence import database as db
 from ...config import Config
 from ..tool_connectors import expand_connectors
 from .utils import _norm_label
 from .will import ALLOWED_GATE_REASONS
 
-# 2. Discover Built-in Agents
 # Built-ins are content, not mechanism. Each module in ..agents declares KEY
 # and AGENT (the same contract SAFI_EXTENSIONS_DIR requires), and this file
 # discovers them without naming any. The Core Loop certifies the loader, never
@@ -116,7 +114,7 @@ if Config.DEFAULT_PROFILE not in AGENTS:
     logging.warning(f"SAFI_PROFILE '{Config.DEFAULT_PROFILE}' is not an enabled built-in agent; "
                     f"users without a stored profile will fall back to another agent.")
 
-# 4. Governance Mapping — in-code org policies layered onto built-in agents.
+# In-code org policies layered onto built-in agents.
 # Empty since 2026-08-13: its only occupant was a demo agent that existed to
 # showcase this legacy mechanism, removed because DB policies and the policy
 # wizard superseded it. The map (and the assemble_agent branch that reads it) stays
@@ -125,8 +123,6 @@ if Config.DEFAULT_PROFILE not in AGENTS:
 # whose active_profile still names the removed agent falls back to the default
 # profile at login (auth.py handles the KeyError explicitly).
 GOVERNANCE_MAP: Dict[str, Dict[str, Any]] = {}
-
-# 5. Compiler Logic
 
 # Default internal rephrase directives. Built-in agents each define their own
 # block; custom/DB agents ship without one. Without these, an ethical_violation
@@ -224,7 +220,7 @@ def _inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
     profile = copy.deepcopy(profile)
     profile["values"] = [scope_value] + profile.get("values", [])
 
-    # Inject scope boundary into worldview so the Intellect (system prompt) knows
+    # Inject the scope boundary into the worldview too, so the Intellect knows
     # the constraint proactively and refuses before any evaluation is needed.
     existing_worldview = profile.get("worldview", "")
     scope_directive = (
@@ -352,32 +348,27 @@ def _validate_value_rubrics(profile: Dict[str, Any], agent_name: str) -> Dict[st
 
 def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) -> List[Dict[str, Any]]:
     """
-    Scales the weights of the provided values so they sum to `target_sum`.
-    If weights are missing or zero, they are treated as equal.
+    Scale the given values' weights so they sum to `target_sum`. Weights are
+    relative: missing ones are treated as equal, and an all-zero set is
+    distributed equally rather than collapsing to nothing.
     """
     if not values: return []
 
-    # Copy to avoid mutation issues
+    # Deep copy: callers keep using the original value dicts.
     normalized = copy.deepcopy(values)
 
-    # 1. Fill missing weights
-    # If a value has no weight, assume it's meant to be significant (e.g., 1.0)
-    # We will scale everything down later.
     for v in normalized:
         if "weight" not in v:
             v["weight"] = 1.0
 
-    # 2. Calculate current sum
     current_sum = sum(float(v.get("weight", 0)) for v in normalized)
 
-    # 3. Handle zero sum (all weights 0) -> distribute equally
     if current_sum <= 0:
         count = len(normalized)
         equal_share = target_sum / count
         for v in normalized: v["weight"] = round(equal_share, 3)
         return normalized
 
-    # 4. Scale to target
     factor = target_sum / current_sum
     for v in normalized:
         v["weight"] = round(float(v.get("weight", 0)) * factor, 3)
@@ -385,9 +376,6 @@ def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) ->
     return normalized
 
 def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], governance_weight: float = 0.60) -> Dict[str, Any]:
-    """
-    Applies the Governance Layer to a base agent.
-    """
     final_profile = copy.deepcopy(base_profile)
 
     # A. Merge Worldview (Gov on top)
@@ -448,19 +436,16 @@ def assemble_agent(base_profile: Dict[str, Any], governance: Dict[str, Any], gov
     else:
         final_profile["will_rules"] = (gov_rules or []) + (agent_rules or [])
 
-    # C. Merge Values & Math (Enforce Configurable Split)
-    # AUTOMATIC DISTRIBUTION LOGIC:
-    # 1. Normalize Policy Values to target governance weight (Default 0.60)
-    # Ensure weight is within bounds
+    # C. Merge Values & Math (enforceable split).
+    # Policy values are normalized to governance_weight (default 0.60) and the
+    # agent's own values to the remainder, so the two tiers always total 1.0.
     gov_weight = max(0.0, min(1.0, float(governance_weight)))
     agent_weight = 1.0 - gov_weight
 
     global_values = _normalize_weights(governance.get("global_values", []), target_sum=gov_weight)
-
-    # 2. Normalize Agent Values to remaining weight
     agent_values = _normalize_weights(final_profile.get("values", []), target_sum=agent_weight)
 
-    # Ensure STRICT schema for Faculties (key 'value' is required)
+    # Strict schema for the faculties: key 'value' is required.
     final_combined = global_values + agent_values
     for v in final_combined:
         if "value" not in v and "name" in v:
@@ -722,27 +707,17 @@ def apply_charter(profile: Dict[str, Any], charter: Optional[Dict[str, Any]], po
     return profile
 
 
-# 6. Loading Helpers (DB UPDATED)
-
 def load_custom_agent(name: str) -> Optional[Dict[str, Any]]:
-    """
-    Loads a custom agent from the Database.
-    Replaces old file-based logic.
-    """
     try:
-        # Normalize key
         clean_name = name.lower().strip().replace(" ", "_")
         clean_name = "".join(c for c in clean_name if c.isalnum() or c == '_')
 
-        # Fetch from DB
         agent = db.get_agent(clean_name)
         if agent:
-            # Ensure critical keys exist
             if "values" not in agent: agent["values"] = []
             if "will_rules" not in agent: agent["will_rules"] = []
 
-            # --- COMPATIBILITY FIX ---
-            # Map 'name' -> 'value' for the core engine
+            # Legacy: wizard rows store 'name', the faculties require 'value'.
             if isinstance(agent["values"], list):
                 for v in agent["values"]:
                     if "name" in v and "value" not in v:
@@ -756,26 +731,18 @@ def load_custom_agent(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 def list_custom_agents(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, Any]]:
-    """
-    Lists agents from the Database.
-    """
     try:
         if include_all:
-             # Dashboard/Admin View
              return db.list_all_agents()
         else:
-             # Standard User View (filtered)
              return db.list_agents(owner_id)
     except Exception as e:
         log.error(f"Error listing custom agents: {e}")
         return []
 
-# 7. Public Accessors
 def list_profiles(owner_id: Optional[str] = None, include_all: bool = False) -> List[Dict[str, str]]:
-    # Built-in Agents
     builtins = [{"key": key, "name": agent["name"], "is_custom": False, "created_by": None} for key, agent in AGENTS.items()]
 
-    # Custom Agents (From DB)
     customs = list_custom_agents(owner_id, include_all=include_all)
 
     all_profiles = builtins + customs
@@ -1068,7 +1035,6 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final["policy_version"] = policy_version
     final["org_id"] = org_id
     final["spirit_beta"] = spirit_beta
-    # Display metadata for the UI (provenance line on the new-chat screen).
     final["policy_name"] = policy_name
     final["org_name"] = org_name
     final["has_charter"] = bool(charter)

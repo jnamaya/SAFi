@@ -30,7 +30,6 @@ evaluate_bp = Blueprint('evaluate', __name__)
 
 @evaluate_bp.route('/evaluate', methods=['POST'])
 async def evaluate_endpoint():
-    # 1. Security: Policy API key
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ")[1]
@@ -57,7 +56,8 @@ async def evaluate_endpoint():
     user_id = f"gateway:{agent_id}"
 
     try:
-        # 2. Just-in-time registration of the external agent as a principal
+        # Just-in-time registration: the gateway principal must exist before the
+        # hash-chained trail can attribute an evaluation to it.
         user_details = db.get_user_details(user_id)
         if not user_details:
             db.upsert_user({
@@ -68,15 +68,14 @@ async def evaluate_endpoint():
                 "picture": ""
             })
 
-        # 3. Claim (or verify ownership of) the evaluation session
+        # Session ownership is enforced in the database, not by the API key alone.
         if not db.ensure_conversation_access(user_id, conversation_id):
             return jsonify({"error": "session_id belongs to another principal"}), 403
 
-        # 4. Attribution: the governing policy's org owns the record
+        # Attribution: the governing policy's org owns the record
         policy = db.get_policy(policy_id) or {}
         org_id = policy.get('org_id') or (user_details or {}).get('org_id')
 
-        # 5. Governed instance (cached), policy injected over the agent
         intellect_model, conscience_model = resolve_effective_faculty_models(
             Config,
             Config.INTELLECT_MODEL,
@@ -93,7 +92,7 @@ async def evaluate_endpoint():
             policy_id=policy_id
         )
 
-        # 6. Evaluate — never generates, never redirects
+        # Governance only: SAFi evaluates, it never generates and never redirects.
         result = await saf_system.evaluate_output(
             user_prompt=user_prompt,
             agent_output=agent_output,

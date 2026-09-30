@@ -7,22 +7,17 @@ from openai import AsyncOpenAI
 import json
 import os
 
-# --- START FIX: Environment-Aware Caching ---
-# Use an environment variable or default to a local relative path
 cache_dir = os.environ.get("SAFI_YFINANCE_CACHE_DIR", os.path.join(os.getcwd(), "cache", "yfinance"))
 
-# Create it if it doesn't exist
 try:
     os.makedirs(cache_dir, exist_ok=True)
 except OSError as e:
     print(f"Warning: Could not create cache directory '{cache_dir}'. Reason: {e}")
 
-# Tell yfinance to use this location INSTEAD of the default
 try:
     yf.set_tz_cache_location(cache_dir)
 except Exception as e:
      print(f"Warning: Failed to set yfinance cache location. Reason: {e}")
-# --- END FIX ---
 
 
 # Regex for simple natural prompts like "price of apple" or "stock info for AAPL"
@@ -55,14 +50,11 @@ async def _extract_entities_with_llm_and_regex(
     groq_client: Optional[AsyncOpenAI],
     log: logging.Logger,
 ) -> List[str]:
-    """
-    Tries to extract company entities from the user's natural language prompt.
-    Uses a mix of regex heuristics and a lightweight LLM call as backup.
-    """
+    """Company entities from the prompt: regex heuristics first, and the LLM
+    only as a fallback for a prompt regex found nothing in."""
     log.info(f"--- Fiduciary Plugin: Extracting entities from prompt: {user_prompt} ---")
     entities = set()
 
-    # --- 1) Regex-based extraction for obvious patterns ---
     for pattern in ENTITY_REGEXES:
         for match in re.findall(pattern, user_prompt, flags=re.IGNORECASE):
             candidate = match.strip(" .,!?:;\"'").lower()
@@ -75,7 +67,6 @@ async def _extract_entities_with_llm_and_regex(
     if entities:
         log.info(f"--- Fiduciary Plugin: Regex found entities: {entities} ---")
 
-    # --- 2) If regex had no luck, fall back to LLM extraction ---
     if not entities and groq_client:
         try:
             extraction_prompt = (
@@ -125,10 +116,7 @@ async def _find_tickers_for_entities(
     groq_client: Optional[AsyncOpenAI],
     log: logging.Logger,
 ) -> Dict[str, str]:
-    """
-    Takes a list of textual entities (e.g. "apple") and returns a dict
-    {ticker: original_entity}.
-    """
+    """{ticker: original_entity} for each entity that resolves to a ticker."""
     tickers_to_fetch = {}
 
     for entity in entities:
@@ -166,9 +154,6 @@ async def _find_ticker_with_llm(
     groq_client: Optional[AsyncOpenAI],
     log: logging.Logger,
 ) -> Optional[str]:
-    """
-    Finds a ticker for a single entity name.
-    """
     if not groq_client:
         log.warning("LLM Ticker Finder: No Groq client provided. Skipping.")
         return None
@@ -202,9 +187,6 @@ async def _find_ticker_with_llm(
 
 
 async def _get_stock_data(ticker_to_fetch: str, entity_name: str, log: logging.Logger) -> Optional[Dict[str, Any]]:
-    """
-    Fetches and formats data for a single ticker.
-    """
     log.info(f"--- Fiduciary Plugin: Fetching yfinance data for '{ticker_to_fetch}' (from '{entity_name}')... ---")
     try:
         t = yf.Ticker(ticker_to_fetch)
@@ -326,9 +308,6 @@ async def _get_stock_data(ticker_to_fetch: str, entity_name: str, log: logging.L
 
 
 def _format_stock_data_as_markdown(stock_data: Dict[str, Any]) -> str:
-    """
-    Turns the yfinance data dictionary into a Markdown table.
-    """
     stock_table_md = f"## {stock_data.get('Company Name', 'N/A')} ({stock_data.get('Ticker Symbol', 'N/A')})\n"
     stock_table_md += f"| Metric | Value |\n"
     stock_table_md += f"| --- | --- |\n"
@@ -357,9 +336,6 @@ def _format_stock_data_as_markdown(stock_data: Dict[str, Any]) -> str:
 
 
 def _format_stock_snapshot_as_markdown(stock_data: Dict[str, Any]) -> str:
-    """
-    Builds a richer, sectioned markdown summary for a single stock.
-    """
     company = stock_data.get("Company Name", "N/A")
     ticker = stock_data.get("Ticker Symbol", "N/A")
     today_str = datetime.now().strftime("%A, %b %d, %Y")
@@ -453,7 +429,6 @@ async def handle_fiduciary_commands(
 
     log.info("--- FIDUCIARY PLUGIN (RAG-ENABLED): FILE LOADED ---")
 
-    # Only run for The Fiduciary agent
     if active_profile_name != "the fiduciary":
         return user_prompt, None
 
@@ -461,7 +436,6 @@ async def handle_fiduciary_commands(
         log.warning("--- Fiduciary Plugin: Exiting. No Groq client provided for entity extraction. ---")
         return user_prompt, None
 
-    # 1. Extract entities
     entities_to_find = await _extract_entities_with_llm_and_regex(
         user_prompt=user_prompt,
         groq_client=groq_client,
@@ -471,7 +445,6 @@ async def handle_fiduciary_commands(
     if not entities_to_find:
         return user_prompt, None 
 
-    # 2. Find tickers
     tickers_to_fetch = {} 
     for entity in entities_to_find:
         ticker = await _find_ticker_with_llm(entity, groq_client, log)
@@ -482,7 +455,6 @@ async def handle_fiduciary_commands(
         log.warning(f"--- Fiduciary Plugin: Found entities, but no valid tickers. Exiting. ---")
         return user_prompt, None
 
-    # 3. Fetch data
     all_stock_data = []
     for ticker, entity_name in tickers_to_fetch.items():
         data = await _get_stock_data(ticker, entity_name, log)
@@ -496,7 +468,6 @@ async def handle_fiduciary_commands(
         }
         return user_prompt, error_payload
 
-    # 4. Format all fetched data into a single markdown string
     context_string_parts = [
         "CONTEXT: I have fetched the following financial data as requested:\n"
     ]
@@ -511,7 +482,6 @@ async def handle_fiduciary_commands(
     
     final_context_string = "\n".join(context_string_parts)
 
-    # 5. Return the generic payload
     final_payload = {
         "preformatted_context_string": final_context_string
     }

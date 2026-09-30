@@ -2,10 +2,10 @@
 Registrations for the plugins that ship with SAFi. Imported once by the
 orchestrator; importing this module IS the registration.
 
-The Bible Scholar's readings plugin serves both name forms the orchestrator
-can carry (display-derived and sanitized) — the same two strings the handler
-itself checks internally, kept as belt-and-braces since the handler predates
-the registry.
+The Bible Scholar's readings plugin is registered under both name forms the
+orchestrator can carry (display-derived and sanitized). The handler checks both
+internally too; the duplicate is belt-and-braces since the handler predates the
+registry.
 
 The fiduciary_data plugin is deliberately NOT registered. Its dispatch was
 removed in v1.3 (81e27b0) when the fiduciary moved to governed MCP tools for

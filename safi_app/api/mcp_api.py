@@ -149,7 +149,7 @@ def list_servers():
     })
 
 
-# ── Per-user authorization for OAuth-protected servers (backlog 48i) ──────────
+# Per-user authorization for OAuth-protected servers (backlog 48i).
 #
 # The flow is OAuth 2.1 authorization code with PKCE, and the token asked for is
 # audience-bound to the MCP server (RFC 8707), never to anything upstream of it.

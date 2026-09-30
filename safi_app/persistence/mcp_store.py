@@ -35,7 +35,8 @@ log = logging.getLogger(__name__)
 
 
 def init_schema() -> None:
-    """Create the counter if absent. Called once at boot, after db.init_db()."""
+    """Create the runtime-state, OAuth-client and tool-cache tables if absent.
+    Called once at boot, after db.init_db()."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:

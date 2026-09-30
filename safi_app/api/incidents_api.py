@@ -1,4 +1,3 @@
-# safi_app/api/incidents_api.py
 """Security-incident registry API — multi-regime notification clocks.
 
 Org-scoped, admin-only. SAFi records incidents, tracks the incident-response

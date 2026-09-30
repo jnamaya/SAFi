@@ -499,7 +499,6 @@ def _policy_change_label(r, with_status=False):
 
 
 def pending_policy_summary(org_id):
-    """For the attention inbox: policy changes awaiting the policy approvers."""
     rows = list_policy_changes(org_id, 'pending')
     return {"count": len(rows),
             "oldest": rows[0]['created_at'] if rows else None,
@@ -515,7 +514,6 @@ def _request_label(r):
 
 
 def pending_summary(org_id):
-    """For the attention inbox: count, oldest, and short labels."""
     rows = list_requests(org_id, 'pending')
     return {"count": len(rows),
             "oldest": rows[0]['created_at'] if rows else None,

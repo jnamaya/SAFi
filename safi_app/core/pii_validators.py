@@ -32,13 +32,11 @@ from typing import Dict, List, NamedTuple, Optional, Sequence
 
 
 class Finding(NamedTuple):
-    key: str            # validator key, e.g. "credit_card"
-    label: str          # human label for the audit reason
+    key: str
+    label: str
     start: int
     end: int
 
-
-# ── checksums ────────────────────────────────────────────────────────────────
 
 def _luhn_ok(digits: str) -> bool:
     """Mod-10. The standard check on card PANs."""
@@ -87,10 +85,9 @@ def _ssn_ok(match: "re.Match[str]") -> bool:
 
 
 # ── the catalogue ────────────────────────────────────────────────────────────
-#
-# `digits_only` strips separators before the checksum runs, so a card written
-# with spaces or hyphens still validates. `verify` receives the raw match for
-# ssn (it needs the groups) and the cleaned digits for the rest.
+# The checksum receives separator-stripped digits, so a card written with
+# spaces or hyphens still validates — except ssn (`raw_match`: it needs its
+# groups) and iban (`keep_alpha`: the letters are part of the check).
 
 _CATALOGUE = {
     "ssn": {

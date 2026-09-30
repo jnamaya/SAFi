@@ -13,18 +13,18 @@ against.
 
 Design notes:
 - Each policy LIFTS its agent's scored values (rubrics included) verbatim.
-  Under the two-tier compiler an attached policy replaces the agent's
-  scored values entirely, so lifting them preserves audit behavior exactly
-  while moving the values to where the architecture says they belong.
-- scope_statement is likewise lifted into policy_config (policy scope
-  overrides agent scope in assemble_agent; same text = no behavior change).
+  Under the two-tier compiler an attached policy REPLACES the agent's scored
+  values entirely, so lifting them preserves audit behavior exactly while
+  moving the values to where the architecture says they belong.
+- scope_statement is lifted for the same reason: policy scope overrides agent
+  scope in assemble_agent, so the same text is a no-op.
 - will_rules stay empty at the policy layer: the agent's own will_rules
   survive the merge untouched, and duplicating them here would double them.
-- The worldview is the POLICY voice (organizational constraints), layered
-  above the agent's role worldview by assemble_agent.
+- The worldview is the POLICY voice (organizational constraints), layered above
+  the agent's role worldview by assemble_agent.
 
-Once seeded, the DB row is the source of truth — it is versioned and
-editable in the Governance tab. Edits here only affect fresh databases.
+Once seeded, the DB row is the source of truth — versioned and editable in the
+Governance tab. Edits here affect only fresh databases.
 """
 import copy
 from typing import Any, Dict, List
@@ -38,12 +38,10 @@ from ...agents.runsafi_steward import THE_RUNSAFI_STEWARD_AGENT
 
 
 def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Lift agent values to the policy layer. Hard gates get weight 0 — at the
-    policy tier a gate is a bright line that blocks on -1, never a component
-    of the alignment average (weight ≠ non-negotiability). Scored values keep
-    their authored ratios; the compiler renormalizes them to sum to 1.0.
-    """
+    """Lift agent values to the policy tier. Hard gates get weight 0: a gate is
+    a bright line that blocks on -1, never a component of the alignment average
+    (weight != non-negotiability). Scored values keep their authored ratios;
+    the compiler renormalizes them to sum to 1.0."""
     out = copy.deepcopy(values)
     for v in out:
         if v.get("hard_gate"):
@@ -176,8 +174,8 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# agent key -> governing demo policy id (used to stamp the agents and by
-# the seeder's sanity logging; the agents also carry this in "policy_id").
+# agent key -> governing demo policy id, used to stamp the agents and by the
+# seeder's sanity logging (the agents also carry this in "policy_id").
 DEMO_AGENT_POLICY_MAP: Dict[str, str] = {
     "fiduciary": "demo_financial_advisory_policy",
     "health_navigator": "demo_patient_navigation_policy",

@@ -1,12 +1,8 @@
 """
-Defines the authentication and user management API endpoints.
-
-This blueprint handles all user-facing authentication logic, including:
-- Google/Microsoft OAuth 2.0 flow for web Login (OpenID).
-- Tool-specific token acquisition (Google Drive, SharePoint).
-- Session management (login, logout, /me).
-- User profile and model preference management.
-- Account deletion.
+Authentication and user management: Google/Microsoft OAuth 2.0 (OpenID) web
+login, password and TOTP-MFA login, the disposable demo login, invite claiming,
+tool-token acquisition (Google Drive, SharePoint), server-side sessions, and
+profile / model-preference management.
 """
 from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort
 from functools import wraps
@@ -31,9 +27,7 @@ from ..core import totp as totp_lib
 
 auth_bp = Blueprint('auth', __name__)
 
-# =================================================================
 # TOTP MFA HELPERS (enterprise identity Phase 2)
-# =================================================================
 
 _MFA_TOKEN_TTL_SECONDS = 300
 
@@ -79,10 +73,8 @@ def _verify_mfa_token(token):
         return None
 
 
-# =================================================================
 # INVITE CLAIM LINK (backlog 51): password-based join for an invitee with
 # no Google/Microsoft account on their domain.
-# =================================================================
 
 def issue_invite_claim_token(invite_id, email, expires_days):
     """Signed, stateless proof that this invite's email was reached by SMTP —
@@ -113,9 +105,7 @@ def verify_invite_claim_token(token):
     except jwt.PyJWTError:
         return None
 
-# =================================================================
 # ENTERPRISE IDENTITY PHASE 1 HELPERS (server-side sessions)
-# =================================================================
 
 def _establish_session(user_details, idp, extra_context=None, lifetime_hours=None):
     """Create the server-side session row, journal the login, and set the slim
@@ -446,9 +436,7 @@ def _found_org_if_unaffiliated(user_details, idp):
         return False
 
 
-# =================================================================
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
-# =================================================================
 
 def sso_required(fn):
     """Refuse an SSO endpoint when this deployment has SSO turned off.
@@ -474,11 +462,7 @@ def sso_required(fn):
 
 @auth_bp.route('/app-config', methods=['GET'])
 def app_config():
-    """
-    [GET /api/app-config]
-    Returns non-sensitive feature flags so the frontend can adapt its UI
-    without requiring the user to be logged in.
-    """
+    """Non-sensitive feature flags, so the UI can adapt before login."""
     return jsonify({
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
         # Also true whenever SMTP is configured, not just the local admin —
@@ -493,20 +477,13 @@ def app_config():
         "sso_login_enabled":   Config.SSO_LOGIN_ENABLED,
     })
 
-# =================================================================
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
-# =================================================================
 
 @auth_bp.route('/login')
 @sso_required
 def login():
-    """
-    [GET /api/login]
-    Initiates the Google OAuth 2.0 login flow for web clients (User Identity).
-    """
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
-    # Force HTTPS scheme
     redirect_uri = url_for('auth.callback', _external=True, _scheme='https')
     return oauth.google.authorize_redirect(redirect_uri, nonce=nonce)
 
@@ -514,10 +491,6 @@ def login():
 @auth_bp.route('/callback')
 @sso_required
 def callback():
-    """
-    [GET /api/callback]
-    Handles the redirect callback from Google Login.
-    """
     try:
         current_app.logger.info("Web callback initiated.")
         # Authlib handles redirect_uri from session automatically, 
@@ -527,14 +500,12 @@ def callback():
         id_claims = oauth.google.parse_id_token(token, nonce=nonce) or {}
         user_info = oauth.google.get('userinfo').json()
         
-        # --- Account Linking ---
         email = user_info.get('email')
         if email:
             existing_user = db.get_user_by_email(email)
             if existing_user:
                 user_info['sub'] = existing_user['id']
                 user_info['id'] = existing_user['id']
-        # -----------------------
 
         db.upsert_user(user_info)
         user_id = user_info.get('sub') or user_info.get('id')
@@ -580,10 +551,6 @@ from google.auth.transport import requests as google_requests
 @auth_bp.route('/auth/google/mobile', methods=['POST'])
 @sso_required
 def login_mobile():
-    """
-    [POST /api/auth/google/mobile]
-    Handles Google Sign-In from the native Capacitor app.
-    """
     data = request.json
     token = data.get('code')
     
@@ -632,7 +599,6 @@ def login_mobile():
         if 'email' not in user_info:
             return jsonify({"error": "Invalid token payload"}), 401
             
-        # 1. Map the user info
         mapped_user = {
             'sub': user_info.get('sub'),
             'id': user_info.get('sub'),
@@ -641,24 +607,21 @@ def login_mobile():
             'picture': user_info.get('picture', '')
         }
         
-        # 2. Check for existing users to link accounts
         existing_user = db.get_user_by_email(mapped_user['email'])
         if existing_user:
             mapped_user['id'] = existing_user['id']
             mapped_user['sub'] = existing_user['id']
             
-        # 3. Save to database
         db.upsert_user(mapped_user)
         user_id = mapped_user['id']
         user_details = db.get_user_details(user_id)
         
-        # 4. Set Default Profile
         if not user_details.get('active_profile'):
             default_profile = getattr(Config, 'DEFAULT_PROFILE', 'fiduciary')
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
-        # 5. Membership + server-side session (enterprise identity Phase 1)
+        # Membership + server-side session (enterprise identity Phase 1).
         if not user_details.get('org_id'):
             try:
                 _resolve_membership(user_details, idp='google_mobile')
@@ -681,16 +644,13 @@ def login_mobile():
         _establish_session(user_details, idp='google_mobile',
                            extra_context=_sso_evidence('google_mobile', user_info))
 
-        # Return a status token so the frontend knows it succeeded
         return jsonify({"ok": True, "token": "mobile_session_active"})
 
     except Exception as e:
         current_app.logger.error(f"Mobile login failed: {e}", exc_info=True)
         return jsonify({"error": "Authentication failed"}), 500
 
-# =================================================================
 # LOCAL LOGIN (Persistent Admin, No OAuth Required)
-# =================================================================
 
 @auth_bp.route('/login/local', methods=['POST'])
 def login_local():
@@ -725,7 +685,6 @@ def login_local():
     if not check_password_hash(user['password_hash'], password):
         return jsonify({"error": "Invalid credentials."}), 401
 
-    # --- TOTP MFA (enterprise identity Phase 2) ---
     totp_state = db.get_user_totp(user['id'])
     if totp_state['enabled']:
         # Password verified but no session yet: hand back a short-lived
@@ -837,9 +796,7 @@ def claim_invitation():
     current_app.logger.info(f"Invite claimed: {claim['email']} joined org {accepted['org_id']}")
     return jsonify({"ok": True})
 
-# =================================================================
 # DEMO LOGIN (Auditor Role, Disposable)
-# =================================================================
 
 @auth_bp.route('/login/demo')
 def login_demo():
@@ -860,29 +817,24 @@ def login_demo():
         return jsonify({"error": "Demo login is not available on this instance."}), 404
 
     try:
-        # 1. Lazy Cleanup (Probabilistic: 5% chance)
         # Prevents "thundering herd" where every login triggers a DB-heavy cleanup
         import random
         if random.random() < 0.05:
             db.cleanup_old_demo_users()
         
-        # 2. Check for Existing Demo Session (Resumable)
         existing_demo_id = request.cookies.get('safi_demo_id')
         user_to_login = None
         
         if existing_demo_id:
-            # Verify if this user still exists in DB
             existing_user = db.get_user_details(existing_demo_id)
             if existing_user:
                 current_app.logger.info(f"Resuming demo session for {existing_demo_id}")
                 user_to_login = existing_user
                 
-        # 3. Create New User if needed
         if not user_to_login:
             demo_id = f"demo_{uuid.uuid4()}"
             
-            # Create Private Sandbox Organization
-            # We use the last 4 chars of ID to make it readable but unique
+            # Sandbox org name uses the last 4 id chars: readable but unique.
             org_name = f"SAFi Demo ({demo_id[-4:]})"
             org_id = db.create_organization(org_name)
             
@@ -903,7 +855,6 @@ def login_demo():
             # (GOVERNANCE_BACKLOG 82). Never fatal to a login.
             db.record_demo_signup()
 
-            # Initialize Profile
             default_profile = Config.DEFAULT_PROFILE
             db.update_user_profile(demo_id, default_profile)
 
@@ -921,22 +872,19 @@ def login_demo():
                         f"SAFI_DEMO_INTELLECT_MODEL '{Config.DEMO_INTELLECT_MODEL}' ignored: "
                         "its provider has no API key on this install.")
             
-            # Prepare for session
             user_to_login = user_info
             user_to_login['active_profile'] = default_profile
             
             current_app.logger.info(f"Created new demo user {demo_id}")
 
-        # 4. Create Session — fixed 24h absolute, matching the sandbox purge.
+        # Session: fixed 24h absolute, matching the sandbox purge.
         _establish_session(user_to_login, idp='demo', lifetime_hours=24,
                            extra_context={"is_demo": True})
         
-        # 5. Return Response with Cookie
         if request.args.get('client') == 'native':
             resp = jsonify({"ok": True})
         else:
             resp = redirect('/')
-        # Set cookie for 24 hours (86400 seconds)
         resp.set_cookie('safi_demo_id', user_to_login['id'], max_age=86400, httponly=True, samesite='Lax')
         return resp
         
@@ -945,22 +893,15 @@ def login_demo():
         return redirect('/?error=demo_failed')
 
 
-# =================================================================
 # MICROSOFT LOGIN (App Login / Linking via "Sign in with Microsoft")
-# =================================================================
 
 @auth_bp.route('/login/microsoft')
 @sso_required
 def login_microsoft():
-    """
-    [GET /api/login/microsoft]
-    Initiates the Microsoft OAuth 2.0 login flow using Authlib.
-    This supports the "Sign in with Microsoft" button.
-    Currently used primarily for linking accounts or identifying user.
-    """
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
-    # FIX: Explicitly force scheme='https' to prevent AADSTS50011
+    # scheme='https' explicitly: Authlib's inferred scheme otherwise fails with
+    # AADSTS50011 behind a reverse proxy.
     redirect_uri = url_for('auth.callback_microsoft', _external=True, _scheme='https')
     return oauth.microsoft.authorize_redirect(redirect_uri, nonce=nonce)
 
@@ -968,10 +909,6 @@ def login_microsoft():
 @auth_bp.route('/callback/microsoft')
 @sso_required
 def callback_microsoft():
-    """
-    [GET /api/callback/microsoft]
-    Handles the redirect callback from Microsoft.
-    """
     try:
         current_app.logger.info("Microsoft callback initiated.")
         
@@ -983,7 +920,6 @@ def callback_microsoft():
         
         email = user_info.get('mail') or user_info.get('userPrincipalName')
         
-        # --- Fetch Profile Picture ---
         picture_data = None
         try:
             photo_resp = oauth.microsoft.get('https://graph.microsoft.com/v1.0/me/photo/$value')
@@ -994,7 +930,6 @@ def callback_microsoft():
                 picture_data = f"data:{content_type};base64,{b64_img}"
         except Exception as e:
              current_app.logger.warning(f"Error fetching Microsoft photo: {e}")
-        # -----------------------------
         
         mapped_user_info = {
             'sub': user_info.get('id'),
@@ -1039,11 +974,6 @@ def callback_microsoft():
         _establish_session(user_details, idp='microsoft',
                            extra_context=_sso_evidence('microsoft', id_claims))
         
-        # --- Microsoft Token Storage for Tools (Bonus) ---
-        # Since we have the token here, we can piggyback and save it for OneDrive use!
-        # Scope might be limited to 'User.Read' depending on Init config, 
-        # but if we add 'Files.ReadWrite.All' to init, this works double-duty.
-        # For now, we just log in. The 'Connect' flow below adds specific scopes.
         
         current_app.logger.info(f"Microsoft callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
@@ -1053,9 +983,7 @@ def callback_microsoft():
         return redirect('/?error=auth_failed')
 
 
-# =================================================================
 # TOOL AUTHENTICATION (Google Drive & SharePoint via Manual Flow)
-# =================================================================
 
 @auth_bp.route('/auth/status')
 def auth_status():
@@ -1124,9 +1052,7 @@ def disconnect_provider(provider):
     db.delete_oauth_token(user_id, provider, org_id=_connector_org())
     return jsonify({"status": "disconnected", "provider": provider})
 
-# =================================================================
 # DATA-SOURCE CONNECTORS (retired)
-# =================================================================
 # The delegated per-user linking routes that lived here (/auth/github,
 # /auth/google, /auth/microsoft) retired one by one through 2026-08-15 as
 # their connectors were absorbed by MCP OAuth servers (GOVERNANCE_BACKLOG
@@ -1146,16 +1072,11 @@ def _connector_org():
 
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
-    """
-    [GET /api/me]
-    Returns full user details.
-    """
     user_id = session.get('user_id') # Use session['user_id'] for consistency
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
 
     try:
-        # We fetch the FULL details from DB here.
         user_details = db.get_user_details(user_id)
         if not user_details:
             return jsonify({"ok": False, "error": "User details not found"}), 404
@@ -1174,7 +1095,6 @@ def get_me():
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
         
-        # Ensure role/org are present
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
 
@@ -1217,7 +1137,6 @@ def get_me():
                     current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
                     db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
                     user_details['role'] = 'admin' # Update local dict
-        # -------------------------------------------
 
         return jsonify({"ok": True, "user": user_details})
         
@@ -1279,9 +1198,7 @@ def delete_me():
     session.clear()
     return jsonify({"status": "success"})
 
-# =================================================================
 # SESSION MANAGEMENT (self-service; enterprise identity Phase 1)
-# =================================================================
 
 @auth_bp.route('/me/sessions', methods=['GET'])
 def list_my_sessions():
@@ -1320,9 +1237,7 @@ def revoke_my_other_sessions():
     count = db.revoke_user_sessions(user_id, f"user:{user_id}", keep_sid=getattr(g, 'sid', None))
     return jsonify({"ok": True, "revoked": count})
 
-# =================================================================
 # TOTP MFA SELF-SERVICE (enterprise identity Phase 2)
-# =================================================================
 
 @auth_bp.route('/me/mfa', methods=['GET'])
 def get_my_mfa():
@@ -1423,10 +1338,7 @@ def disable_my_totp():
 
 @auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():
-    """
-    [POST /api/logout]
-    Revokes the server-side session and clears the cookie.
-    """
+    """Revokes the server-side session and clears the cookie."""
     sid = session.get('sid')
     user_id = session.get('user_id') or (session.get('user') or {}).get('id')
     if sid:

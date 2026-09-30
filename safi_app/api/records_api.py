@@ -1,4 +1,3 @@
-# safi_app/api/records_api.py
 """Records governance API: retention config, legal hold, compliance-log
 evidence, and examiner-production export (SEA 17a-4 / Advisers Act 204-2).
 

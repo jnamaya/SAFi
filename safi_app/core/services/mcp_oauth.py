@@ -72,7 +72,7 @@ def _expand_env(value: str) -> str:
 
 # Discovery results barely change and are re-read on every login redirect, so a
 # short cache keeps the login route from hammering the IdP. Failures are never
-# cached: a transient IdP outage should not stick for ten minutes.
+# cached: an IdP outage should not stick for ten minutes.
 _DISCOVERY_TTL = 600
 _discovery_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
@@ -103,10 +103,10 @@ def discover(server_url: str) -> Dict[str, Any]:
     """Resolve a server URL to its IdP's endpoints, per the MCP auth spec.
 
     Returns {resource, issuer, authorization_endpoint, token_endpoint,
-    registration_endpoint?, scopes_supported?}. Raises OAuthConfigError with a
-    reason an operator can act on — "the server publishes no resource
-    metadata" is a different problem from "its IdP publishes no metadata", and
-    collapsing them costs someone an afternoon.
+    registration_endpoint?, revocation_endpoint?, scopes_supported?}. Raises
+    OAuthConfigError with a reason an operator can act on: "the server publishes
+    no resource metadata" is a different problem from "its IdP publishes no
+    metadata", and collapsing them costs someone an afternoon.
     """
     cached = _discovery_cache.get(server_url)
     if cached and time.time() - cached[0] < _DISCOVERY_TTL:
@@ -163,9 +163,8 @@ def discover(server_url: str) -> Dict[str, Any]:
         )
 
     result = {
-        # The resource identifier the token must be bound to. The PRM's own
-        # `resource` claim is authoritative when present; the server URL is the
-        # spec's default identity for it.
+        # The identifier the token must be bound to. The PRM's own `resource`
+        # claim wins when present; the server URL is the spec's default identity.
         "resource": str(prm.get("resource") or server_url),
         "issuer": str(meta.get("issuer") or issuer),
         "authorization_endpoint": str(meta["authorization_endpoint"]),
@@ -201,20 +200,19 @@ def ensure_client(server_key: str, definition: Dict[str, Any],
                   discovery: Dict[str, Any], redirect_uri: str) -> Dict[str, str]:
     """The OAuth client this deployment presents to the IdP.
 
-    Order of precedence: credentials in the server definition (client_id, and
-    client_secret usually via ${VAR} from the environment) win; otherwise a
-    previously stored dynamic registration is reused; otherwise we register
+    Precedence: credentials in the server definition (client_secret usually via
+    ${VAR}) win; else a stored dynamic registration is reused; else register
     (RFC 7591) if the AS allows it. Registration is once per deployment and
-    persisted — re-registering on every login would litter the IdP with
-    clients and break token revocation as a management tool.
+    persisted — re-registering per login would litter the IdP with clients and
+    break token revocation as a management tool.
     """
     if definition.get("client_id"):
         client_id = _expand_env(str(definition["client_id"]))
         if not client_id:
             # Stop here with a reason, not at the IdP with a riddle. An empty
-            # expansion redirected the member to GitHub's authorize page with a
-            # blank client_id, which GitHub renders as a bare 404, and nothing
-            # in that page says whose fault it is.
+            # expansion once redirected the member to GitHub's authorize page
+            # with a blank client_id, which GitHub renders as a bare 404 that
+            # says nothing about whose fault it is.
             raise OAuthConfigError(
                 f"This server's client_id is configured as "
                 f"{definition['client_id']!r} but that variable is empty in the "
@@ -301,8 +299,8 @@ def _token_request(discovery: Dict[str, Any], client: Dict[str, str],
     form["resource"] = discovery["resource"]
     # The secret travels in the body, not as Basic auth. RFC 6749 permits both;
     # GitHub's token endpoint accepts only the body form, and every other AS we
-    # have met (Keycloak, Auth0, our own gateway) accepts it too, so the body is
-    # the one shape that works everywhere.
+    # have met (Keycloak, Auth0, our own gateway) accepts that too — so the body
+    # is the one shape that works everywhere.
     if client.get("client_secret"):
         form["client_secret"] = client["client_secret"]
     resp = requests.post(discovery["token_endpoint"], data=form,
@@ -362,11 +360,11 @@ def store_tokens(user_id: str, server_key: str, body: Dict[str, Any],
 
 def access_token_for(user_id: str, server_key: str,
                      definition: Dict[str, Any]) -> Optional[str]:
-    """This user's live token for this server, refreshing when it has expired.
+    """This user's live token for this server, refreshed when near expiry.
 
-    None means the person has never connected (or their refresh failed and the
-    stale row was cleared, which sends them back through a clean sign-in rather
-    than a loop of failing refreshes).
+    None means the person has never connected, or their refresh failed and the
+    stale row was cleared — which sends them back through a clean sign-in rather
+    than a loop of failing refreshes.
     """
     row = db.get_oauth_token(user_id, provider_key(server_key))
     if not row or not row.get("access_token"):
@@ -415,19 +413,17 @@ def revoke_at_server(user_id: str, server_key: str,
                      definition: Dict[str, Any]) -> bool:
     """Tell the server to destroy everything it holds for this member.
 
-    RFC 7009 against the revocation_endpoint the server's AS metadata
-    advertises. SAFi's own gateways cascade from the presented token to the
-    subject: every gateway refresh token dies, the stored upstream tokens die,
-    and where the upstream offers revocation (Google) the grant is revoked
-    there too. Best effort BY DESIGN: an unreachable gateway must never block
-    a disconnect or an offboarding, so every failure path returns False and
-    the caller deletes the SAFi-side row regardless. Returns True only when
-    the endpoint answered 200.
+    RFC 7009 against the revocation_endpoint from the server's AS metadata.
+    SAFi's own gateways cascade from the presented token to the subject: every
+    gateway refresh token dies, the stored upstream tokens die, and where the
+    upstream offers revocation (Google) the grant is revoked there too. Best
+    effort BY DESIGN — an unreachable gateway must never block a disconnect or an
+    offboarding, so every failure path returns False and the caller deletes the
+    SAFi-side row regardless. True only when the endpoint answered 200.
 
-    Servers without AS metadata or without a revocation_endpoint (GitHub's
-    official server is both today) simply return False: deleting SAFi's row
-    is the only lever available there, and pretending otherwise would be a
-    false audit claim.
+    A server with no AS metadata or no revocation_endpoint (GitHub's official
+    server is both today) simply returns False: deleting SAFi's row is the only
+    lever there, and pretending otherwise would be a false audit claim.
     """
     import requests
 
@@ -456,11 +452,10 @@ def revoke_at_server(user_id: str, server_key: str,
 def revoke_all_mcp_tokens(user_id: str) -> Dict[str, bool]:
     """Offboarding sweep: every MCP server this member ever connected.
 
-    Called BEFORE the rows die (delete_user cascades them away; the member
-    disconnect deletes one), because the stored token is the proof of
-    possession the revocation endpoint requires. The return maps server key
-    to whether its server confirmed, for the caller's log line; the sweep
-    itself never raises.
+    Called BEFORE the rows die (delete_user cascades them away), because the
+    stored token is the proof of possession the revocation endpoint requires.
+    Maps server key to whether its server confirmed, for the caller's log line.
+    Never raises.
     """
     from .mcp_manager import file_servers
 

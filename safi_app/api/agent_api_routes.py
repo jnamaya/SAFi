@@ -6,7 +6,7 @@ from ..persistence import tool_approval_store
 from ..core.faculties.synderesis import AGENTS, ALL_AGENTS, get_profile
 from ..core.rbac import check_permission, check_any_role
 from ..config import Config
-from .conversations import global_safi_cache  # Import Cache
+from .conversations import global_safi_cache
 
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
 from ..core.rbac import get_current_org_id
@@ -104,12 +104,10 @@ def _known_tool_functions(connectors):
 @agent_api_bp.route('/agents', methods=['POST', 'PUT'], strict_slashes=False)
 def save_agent():
     try:
-        # FIX: force=True handles missing Content-Type headers
         data = request.get_json(force=True, silent=True)
         if not data:
             return jsonify({"error": "Invalid JSON or Empty Body"}), 400
         
-        # DEBUG: Log payload to find 400 cause
         current_app.logger.info(f"Save Agent Payload: {json.dumps(data)}")
             
         key = data.get("key")
@@ -118,8 +116,6 @@ def save_agent():
         
         if not user_id: return jsonify({"error": "Unauthorized"}), 401
         
-        # RESTRICTION: Only Editors and Admins can create/edit agents
-        # FIX: check_permission takes only 1 arg (required_role)
         if not check_permission('editor'):
             return jsonify({"error": "Forbidden: Only Editors/Admins can manage agents"}), 403
 
@@ -248,11 +244,6 @@ def save_agent():
             exist = existing
             if not exist: return jsonify({"error": "Not found"}), 404
             
-            # Additional check: even if editor, maybe restrict editing others' agents?
-            # For now, we trust RBAC 'editor' implies generic edit rights, BUT existing code checked ownership.
-            # Let's keep ownership check OR admin check.
-            # actually check_permission('admin') OR ownership.
-            
             is_owner = (exist.get('created_by') == user_id)
             # An admin may edit agents IN THEIR OWN ORG only, not another org's
             # (backlog 70): the admin bypass previously had no org constraint.
@@ -285,7 +276,7 @@ def save_agent():
                 history_max_chars=data.get('history_max_chars')
             )
 
-        # File the pending widening (57b) now that the row write succeeded.
+        # File the pending widening (57b) only after the row write succeeded.
         request_id = None
         if pending_additions:
             request_id = tool_approval_store.create_request(
@@ -317,7 +308,6 @@ def save_agent():
             except Exception as e:
                 current_app.logger.error(f"tool-change evidence failed for {key}: {e}")
 
-        # Invalidate Cache to ensure runtime uses new config
         global_safi_cache.invalidate_profile(key)
 
         return jsonify({"ok": True, "key": key,
@@ -348,7 +338,6 @@ def list_all_agents():
     db_agents = []
     if user_id:
         try:
-            # Raw list from DB (Updated to fetch shared organization agents)
             raw_list = db.list_agents(user_id, user.get('org_id'), user.get('role', 'member'))
             # Grants widen the ladder (backlog 55): union in agents shared with
             # this user or one of their groups. Done here rather than inside
@@ -358,7 +347,6 @@ def list_all_agents():
                 if granted['key'] not in seen_keys:
                     granted['shared_via_grant'] = True
                     raw_list.append(granted)
-            # Enhance with merged policy data
             for agent in raw_list:
                 try:
                     # get_profile() is the sole compiler — it returns the full
@@ -366,7 +354,6 @@ def list_all_agents():
                     # shows charter mission in the worldview + charter/policy values.
                     merged = get_profile(agent['key'])
 
-                    # RESTORE METADATA: get_profile returns the "engine view", we need "db attributes" for UI
                     merged['key'] = agent['key']
                     merged['is_custom'] = agent.get('is_custom', True)
                     merged['created_by'] = agent.get('created_by')
@@ -374,7 +361,6 @@ def list_all_agents():
                     
                     db_agents.append(merged)
                 except Exception:
-                    # Fallback to raw if merge fails
                     db_agents.append(agent)
         except Exception as e:
             current_app.logger.error(f"DB List Error: {e}")
@@ -386,7 +372,6 @@ def get_agent(key):
     if not session.get('user'): return jsonify({"error": "Unauthorized"}), 401
     clean = "".join(c for c in key.lower() if c.isalnum() or c == '_')
     
-    # FIX: Use get_profile() to ensure Policy Inheritance is visible in UI
     try:
         agent = get_profile(clean)
         
@@ -403,12 +388,10 @@ def get_agent(key):
              if not (same_org or raw.get('created_by') == uid):
                  return jsonify({"error": "Not found"}), 404
 
-             # RESTORE METADATA & RAW CONFIG (For Editor)
              agent['created_by'] = raw.get('created_by')
              agent['is_custom'] = True
              agent['key'] = clean
              
-             # overwritten merged fields with raw db fields
              agent['values'] = raw.get('values', [])
              agent['will_rules'] = raw.get('will_rules', [])
              agent['worldview'] = raw.get('worldview', '')
@@ -438,14 +421,13 @@ def delete_agent(key):
     # Grants must not outlive the agent (no FKs, so cleanup is explicit).
     sharing_store.delete_grants_for_agent(clean)
 
-    # Invalidate Cache
     global_safi_cache.invalidate_profile(clean)
 
     return jsonify({"ok": True})
 
 @agent_api_bp.route('/generate/rubric', methods=['POST'], strict_slashes=False)
 async def generate_rubric():
-    # FIX: strict_slashes=False solves the 405 error
+    # strict_slashes=False: without it this route 405s on a trailing slash.
     user = session.get('user')
     if not user: return jsonify({"error": "Unauthorized"}), 401
 
@@ -456,7 +438,7 @@ async def generate_rubric():
 
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Use the configured backend model for wizard tasks
+        # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
@@ -485,12 +467,10 @@ async def generate_rubric():
         
         response_text = await provider._chat_completion(route="intellect", system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.7)
         
-        # FIX: More robust cleaning
         clean_text = response_text.strip()
         if "```" in clean_text:
             clean_text = clean_text.split("```json")[-1].split("```")[0].strip()
         
-        # Remove any pre-amble text if braces exist
         if "{" in clean_text and clean_text.find("{") > 0:
             clean_text = clean_text[clean_text.find("{"):]
         if "}" in clean_text:
@@ -517,7 +497,7 @@ async def generate_values():
         
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Use the configured backend model for wizard tasks
+        # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         
@@ -528,7 +508,6 @@ async def generate_values():
         activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
         
-        # Enhanced prompt to include rubrics with scoring guide
         system_prompt = (
             "You are an expert AI Character Designer and Ethicist. Suggest 3-5 Core Values for an AI agent based on the provided description.\n\n"
             "For EACH value, provide:\n"
@@ -558,7 +537,6 @@ async def generate_values():
         
         response_text = await provider._chat_completion(route="intellect", system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.7)
         
-        # Robust JSON cleaning
         clean_text = response_text.strip()
         if "```" in clean_text:
             clean_text = clean_text.split("```json")[-1].split("```")[0].strip()
@@ -624,11 +602,9 @@ async def generate_scope():
         return jsonify({"ok": False, "error": "An internal error occurred."}), 500
 
 
-# ---------------------------------------------------------------------------
 # Agent sharing (backlog 55): per-agent can_use grants to users and groups.
 # Grants only widen the visibility ladder, never narrow it, and are org-scoped:
 # an agent with no org cannot be shared, and a grantee must be in the same org.
-# ---------------------------------------------------------------------------
 
 def _share_authority(key):
     """Returns (agent, error_response). The caller may manage sharing when
@@ -728,11 +704,9 @@ def revoke_agent_share(key, grantee_type, grantee_id):
     return jsonify({"ok": True, "removed": removed})
 
 
-# ---------------------------------------------------------------------------
 # Tool-grant approvals (backlog 57b). Additions wait here; the author may not
 # approve their own request unless they are the org's only eligible reviewer,
 # in which case the sign-off is recorded as non-independent (KB pattern).
-# ---------------------------------------------------------------------------
 
 def _reviewer_context():
     """(user_id, email, org_id, error_response) for the review endpoints.

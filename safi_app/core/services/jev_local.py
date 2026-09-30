@@ -1,30 +1,32 @@
 """Local typed decisions on the appliance: Laya as a drop-in for Jev's system_one.
 
-SAFi's Conscience has two transports for the same typed-decision contract. A hosted
-install calls TypeSafe Jev over HTTPS at /v1/systemone. An appliance cannot: the ISO
-is a public artefact, so there is no Jev API key to ship in it, and an operator with
-no internet has nowhere to send the audit. Laya (https://github.com/receptron/laya) is
-an open-source, MIT/Apache-2.0 reimplementation of that exact API -- its TypeScript
-types say so, and it reproduces the reference implementation to four decimal places --
-so the appliance can serve the identical contract from a pinned ONNX bundle with no
-outbound call and no credential.
+SAFi's Conscience has two transports for one typed-decision contract. A hosted
+install calls TypeSafe Jev over HTTPS at /v1/systemone. An appliance cannot: the
+ISO is a public artefact, so there is no Jev API key to ship in it, and an
+operator with no internet has nowhere to send the audit. Laya
+(https://github.com/receptron/laya) is an open-source, MIT/Apache-2.0
+reimplementation of that exact API — its TypeScript types say so, and it
+reproduces the reference implementation to four decimal places — so the appliance
+can serve the identical contract from a pinned ONNX bundle with no outbound call
+and no credential.
 
-Why in-process rather than a sidecar HTTP service: onnxruntime is already a
-dependency (fastembed runs the MiniLM embedder through it, see requirements.txt), so
-Laya needs no new package, no Node runtime, no systemd unit and no listening port.
-It is not a dependency of the hosted path either: nothing here imports until
-is_available() finds a bundle, and Config.LOCAL_JEV_PATH is empty everywhere except
-an appliance that fetched one.
+In-process rather than a sidecar HTTP service: onnxruntime is already a
+dependency (fastembed runs the MiniLM embedder through it, see requirements.txt),
+so Laya needs no new package, no Node runtime, no systemd unit and no listening
+port. It is not a dependency of the hosted path either — nothing here imports
+until is_available() finds a bundle, and Config.LOCAL_JEV_PATH is empty
+everywhere except an appliance that fetched one.
 
-The model is a bidirectional encoder with a decision head, not a language model, so
-it answers typed questions and writes no prose. That is exactly the role typed
-Conscience already has -- LLMProvider's docstring notes Jev "does not generate
-evidence prose" -- so Intellect still does the writing and nothing is lost.
+The model is a bidirectional encoder with a decision head, not a language model,
+so it answers typed questions and writes no prose. That is exactly the role typed
+Conscience already has — LLMProvider's docstring notes Jev "does not generate
+evidence prose" — so Intellect still does the writing and nothing is lost.
 
 Tokenisation is reproduced from the reference implementation (rl_common.py) rather
-than re-derived, because the encoder is trained on that exact byte stream: a single
-differing space or truncation rule shifts every probability. State is truncated from
-the front after the question header, so callers should put what matters most first.
+than re-derived, because the encoder is trained on that exact byte stream: a
+single differing space or truncation rule shifts every probability. State is
+truncated from the front after the question header, so callers should put what
+matters most first.
 """
 from __future__ import annotations
 
@@ -42,18 +44,18 @@ logger = logging.getLogger(__name__)
 QTYPES = {"choice": 0, "score": 1, "noul": 2}
 QTYPE_NAMES = {v: k for k, v in QTYPES.items()}
 
-# The five files export/export_onnx.py emits. Presence and size are the availability
-# test; the digest is verified at fetch time by safi-model-fetch, which is the same
-# boundary the GGUF models use (see installed_model_path there: a size check at
-# activation, a hash at download). Re-hashing 1.7 GB on every request would stall a
-# governance turn, and re-hashing it on every worker start would not improve on a
-# fetch that already refused to install an unverified artefact.
+# The five files export/export_onnx.py emits. Presence and size are the
+# availability test; the digest is verified at fetch time by safi-model-fetch,
+# the same boundary the GGUF models use (see installed_model_path there: a size
+# check at activation, a hash at download). Re-hashing 1.7 GB per request would
+# stall a governance turn, and re-hashing it per worker start would not improve
+# on a fetch that already refused to install an unverified artefact.
+#
 # Default install location, matching the catalogue's model_root and the id of its
-# jev_local block. Resolved rather than hardcoded in the .env so the value cannot
-# drift between what the fetch installs and what the app looks for: the ISO has
-# two independent writers (safi-model-fetch and the setup wizard) that do not
-# coordinate, so the path is derived from one convention on both sides. The env
-# var still wins, for a non-standard install or a test.
+# jev_local block. Derived from one convention rather than hardcoded in .env
+# because the ISO has two independent writers (safi-model-fetch and the setup
+# wizard) that do not coordinate; the env var still wins, for a non-standard
+# install or a test.
 DEFAULT_BUNDLE_PATH = "/var/lib/safi/models/laya"
 BUNDLE_ENV_VAR = "SAFI_LOCAL_JEV_PATH"
 
@@ -190,12 +192,12 @@ def _prioritized_state(state: Any) -> Any:
 
     Laya sees a 512-token window and the head question already spends ~192, so a
     verbose state is clipped. Plain truncation keeps the *head* of the JSON and
-    drops the tail -- and SAFi builds state with final_output last, so a long
+    drops the tail — and SAFi builds state with final_output last, so a long
     session was silently graded on conversation history with the answer cut off.
-    That is worse than useless: the model returns a confident score about text it
-    never saw, and the ledger records it as an audit.
+    Worse than useless: the model returns a confident score about text it never
+    saw, and the ledger records it as an audit.
 
-    Reordering is only applied when the state does not already fit. A state short
+    Reordering is applied only when the state does not already fit. A state short
     enough for the window stays byte-identical to the reference serialisation, so
     the common case keeps matching the encoder's training distribution exactly.
     """
@@ -218,12 +220,12 @@ def _option_text(name: str, value: Any) -> str:
     """Render one choice option as text, structured values as prose.
 
     SAFI passes each option as {"score", "label", "description"} (see
-    LLMProvider.run_conscience_structured). Interpolating that dict directly yields
-    "level_2: {'score': 5.0, 'label': 'Clear', 'description': '...'}", which spends
-    the option's 48-token budget on punctuation and truncation can cut the label off
-    the end -- the model then judges an option it has only seen a fragment of. The
-    score is dropped because it is the answer, not evidence: showing the model its
-    own numeric rubric invites ordering bias rather than a judgement.
+    LLMProvider.run_conscience_structured). Interpolating that dict directly
+    yields "level_2: {'score': 5.0, 'label': 'Clear', ...}", which spends the
+    option's 48-token budget on punctuation and truncation can cut the label off
+    the end — the model then judges an option it has only seen a fragment of.
+    The score is dropped because it is the answer, not evidence: showing the
+    model its own numeric rubric invites ordering bias rather than a judgement.
     """
     if not value:
         return name
@@ -345,7 +347,7 @@ def system_one(state: Any, questions: Dict[str, Any]) -> Dict[str, Any]:
 
     Mirrors TypeSafe Jev's system_one: {id: {type, instructions, criteria}} in,
     {id: {type, choice|score|noul, probabilities, confidence}} out. SAFi's typed
-    Conscience only asks 'choice' questions, but all three are implemented so this
+    Conscience only asks 'choice' questions; all three are implemented so this
     stays a substitutable implementation of the documented API rather than a
     Conscience-shaped special case.
     """

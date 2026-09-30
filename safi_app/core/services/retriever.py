@@ -1,10 +1,8 @@
-"""
-Handles loading a FAISS index and performing hybrid searches.
+"""FAISS index loading and hybrid (keyword + semantic) search.
 
-This module provides the Retriever class, which encapsulates all logic for 
-interfacing with a FAISS vector store and associated metadata. It supports
-hybrid search, automatically using a keyword-based method for citation 
-queries (e.g., "John 3:16") and a semantic vector search for all other queries.
+Owns the on-disk contract for a knowledge base: the `.index` file, the metadata
+file, and the shape of the metadata dicts callers interpolate. Bible citations
+("John 3:16") route to keyword matching; everything else to vector search.
 """
 import faiss
 import json
@@ -17,10 +15,9 @@ import threading
 from fastembed import TextEmbedding
 from typing import List, Dict, Any
 
-# --- CONFIGURATION ---
-# Use environment variables to allow production config overrides; default to
-# paths anchored to the app root so imports work no matter what the caller's
-# CWD is (systemd, the safi CLI run from $HOME, cron, tests).
+# Env overrides exist so production can point off-disk; defaults are anchored
+# to the app root so imports work no matter the caller's CWD (systemd, the safi
+# CLI run from $HOME, cron, tests).
 _APP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), *([".."] * 3)))
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_APP_DIR, "vector_store"))
 CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_APP_DIR, "cache"))
@@ -33,20 +30,19 @@ def _hub_model_name(name: str) -> str:
     keeps working after the ONNX swap."""
     return name if "/" in name else f"sentence-transformers/{name}"
 
-# Set environment variables for model caching
 os.environ["NLTK_DATA"] = CACHE_DIR
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
 os.environ["HF_HUB_CACHE"] = CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
-# --------------------->
 
-# --- GLOBAL SINGLETON FOR EMBEDDING MODEL ---
-# Optimization: Load the model once, share across all user sessions.
+# --- shared embedding model ---------------------------------------------------
+
+# Loaded once and shared across every session; a second copy costs hundreds of
+# MB of RSS per process for identical weights.
 _SHARED_MODEL = None
 _MODEL_LOCK = threading.Lock()
 
 def get_shared_embedding_model():
-    """Returns the global singleton instance of the embedding model."""
     global _SHARED_MODEL
     with _MODEL_LOCK:
         if _SHARED_MODEL is None:
@@ -97,13 +93,12 @@ def embed_texts(model, texts: List[str]) -> np.ndarray:
     return np.array(list(model.embed(texts)), dtype="float32")
 
 
-# --- PATH SAFETY ---------------------------------------------------------
-# A knowledge base name reaches this module from agents.rag_knowledge_base,
-# which since 2026-08-07 can be a user-created KB. The name is interpolated
-# straight into a filename, so without this check a name of "../../etc/passwd"
-# would read outside the vector store. Built-in corpora ("safi",
-# "bible_bsb_v1") are plain identifiers and pass unchanged;
-# user KBs are UUIDs and also pass. Everything else is refused.
+# --- path safety -------------------------------------------------------------
+# A KB name reaches this module from agents.rag_knowledge_base, which since
+# 2026-08-07 can be a user-created KB, and is interpolated straight into a
+# filename — without this check a name of "../../etc/passwd" reads outside the
+# vector store. Built-in corpora ("safi", "bible_bsb_v1") and UUID user KBs
+# both pass; everything else is refused.
 _SAFE_KB_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
@@ -179,21 +174,9 @@ def invalidate_cached_retriever(knowledge_base_name: str) -> None:
 
 
 class Retriever:
-    """
-    Manages a FAISS index and metadata for hybrid (keyword + semantic) search.
-    
-    The search() method is the primary interface, returning a list of 
-    metadata dictionaries for matching document chunks.
-    """
+    """One knowledge base's index plus its metadata; search() is the interface
+    and returns raw metadata dicts, unrendered."""
     def __init__(self, knowledge_base_name: str):
-        """
-        Initializes the Retriever by loading the FAISS index and metadata
-        for the specified knowledge base.
-
-        Args:
-            knowledge_base_name: The name of the knowledge base (e.g., "bible_bsb_v1").
-                                 This name is used to find the .index and _metadata.pkl files.
-        """
         self.kb_name = knowledge_base_name
         self.model = None
         self.index = None
@@ -248,7 +231,6 @@ class Retriever:
             except OSError:
                 self.index_mtime = None
 
-            # OPTIMIZATION: Use the global singleton model
             self.model = get_shared_embedding_model()
             self.log.info(f"Retriever for '{knowledge_base_name}' attached to global model.")
 
@@ -256,16 +238,10 @@ class Retriever:
             self.log.exception(f"Error loading retriever for '{knowledge_base_name}': {e}")
 
     def _is_citation_query(self, query: str) -> bool:
-        """
-        Checks if the query likely contains a Bible citation (e.g., "John 3:16").
-        """
         citation_regex = re.compile(r'(\d?\s?[A-Za-z]+)\s(\d+)')
         return citation_regex.search(query) is not None
 
     def _keyword_search(self, query: str, k: int = 50) -> List[int]:
-        """
-        Performs a keyword-based search for Bible citations.
-        """
         self.log.info(f"Performing keyword search for: {query}")
         citation_regex = re.compile(r'(\d?\s?[A-Za-z]+)\s(\d+)')
         matches = citation_regex.finditer(query)
@@ -283,11 +259,11 @@ class Retriever:
                 chapter_to_check = -1 
 
                 if 'metadata' in meta and isinstance(meta.get('metadata'), dict):
-                    # NEW structure (e.g., bsb_chunks.json)
+                    # nested shape (bsb_chunks.json)
                     book_to_check = meta['metadata'].get('book', '').lower()
                     chapter_to_check = meta['metadata'].get('chapter')
                 else:
-                    # OLD structure (e.g., SAFi or old bible_asv)
+                    # flat shape (SAFi, old bible_asv)
                     book_to_check = meta.get('book', '').lower()
                     chapter_to_check = meta.get('chapter')
 
@@ -308,29 +284,26 @@ class Retriever:
         return sorted(list(all_indices))[:k]
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """
-        Performs a hybrid search.
-        """
         if not self.index or not self.model or not self.metadata:
             self.log.warning("Retriever.search() called but not initialized.")
             return []
 
         indices_to_return = []
         
-        # --- Hybrid Search Logic ---
-        # If it's a bible and a citation, use the keyword search
+        # Citation queries skip the vector path entirely: "John 3:16" has no
+        # useful embedding neighbourhood, so an exact book/chapter match beats
+        # the nearest neighbours.
         if self.kb_name.lower().startswith("bible") and self._is_citation_query(query):
             self.log.info("Bible citation detected, using keyword search.")
             indices_to_return = self._keyword_search(query, k=50) 
         
-        # If no citation results, or if it wasn't a citation query, perform semantic search
+        # Fall through to semantic search when the citation matched nothing.
         if not indices_to_return:
             self.log.info("Performing semantic vector search.")
             query_embedding = embed_texts(self.model, [query])
             distances, indices = self.index.search(query_embedding, k)
             indices_to_return = indices[0] 
 
-        # --- Map indices back to their full metadata ---
         results: List[Dict[str, Any]] = []
         for idx in indices_to_return:
             if idx < 0 or idx >= len(self.metadata):

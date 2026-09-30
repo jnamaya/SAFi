@@ -1,85 +1,64 @@
-"""
-Defines all robust parsing and sanitization logic.
-
-This file is the ONLY place that knows how to parse the raw, messy,
-and unreliable string/JSON outputs from different LLMs.
-"""
+"""The ONLY place that knows how to parse raw, unreliable string/JSON output
+from different LLMs. Faculty callers should never touch a model's bytes."""
 from __future__ import annotations
 import json
 import re
 import logging
 from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
-# Avoid circular import for type hint
+# Vestigial: `logging` is imported unconditionally above, so this block is a
+# no-op left over from an earlier import structure. Kept because the type
+# hints below quote it as "logging.Logger".
 if TYPE_CHECKING:
     import logging
 
 def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
-    """
-    Parses the first valid JSON object found in a raw text string.
-    
-    This function is highly resilient to common LLM-generated JSON errors,
-    such as trailing commas, newlines, and non-JSON text surrounding
-    the object.
+    """First valid JSON object in a raw text string, or an error dict.
 
-    Args:
-        raw_text: The raw, potentially messy string from the LLM.
-        log: The logger instance to use for errors.
-
-    Returns:
-        A dictionary, or an error dictionary if parsing fails.
+    Success and failure are both dicts: on failure the caller gets
+    {"error", "raw_content"} and can branch on the "error" key rather than
+    handling an exception. Escalating repairs run in order of destructiveness.
     """
     obj = {}
     if not raw_text:
         return {"error": "Empty input"}
 
     json_text = raw_text 
-    
-    # 0. STRIP MARKDOWN (Priority)
-    # If the model wrapped output in ```json ... ```, extract that inner content first.
-    # This avoids catching `{` in the preamble.
+
+    # A ```json fence is unwrapped BEFORE brace-scanning, or the `{` in a
+    # prose preamble gets taken as the start of the object.
     if "```" in raw_text:
-        # Try to find ```json ... ``` or just ``` ... ```
-        # We split by ``` and take the second element (the code block)
-        parts = raw_text.split("```")
+        parts = raw_text.split("```")   # [preamble, code, postamble]
         if len(parts) >= 3:
-            # parts[0] = preamble, parts[1] = code, parts[2] = postamble
             candidate = parts[1]
-            # Strip language identifier if present (e.g. "json\n{...}")
             if candidate.startswith("json"):
                 candidate = candidate[4:]
             json_text = candidate.strip()
             
-    # 1. Find the first '{' and last '}'
     start = json_text.find('{')
     end = json_text.rfind('}')
     
     if start != -1 and end != -1 and end > start:
         json_text = json_text[start:end+1]
     
-    # 2. Try to parse directly
     try:
         obj = json.loads(json_text)
         return obj
     except json.JSONDecodeError:
-        pass # Go to sanitization
+        pass
 
-    # 3. Sanitize and retry
+    # Sanitized retry: newline flattening, trailing commas, whitespace runs.
     try:
-        # Sanitize common errors:
-        # - Remove newlines and carriage returns (turns multiline JSON into single line)
         sanitized = json_text.replace("\r", " ").replace("\n", " ")
-        # - Fix trailing commas (e.g., "key": "value",})
         sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized) 
-        # - Consolidate excess whitespace
         sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
         
         obj = json.loads(sanitized)
         return obj
     except json.JSONDecodeError:
-        pass  # Go to escape repair
+        pass
 
-    # 4. Invalid-escape repair.
+    # Invalid-escape repair.
     # Models embed LaTeX inside JSON strings — \( t \), \alpha, \[ ... \] —
     # and those backslash sequences are not legal JSON escapes, so one math
     # marker kills the whole parse (observed leaking Intellect reflections to
@@ -93,17 +72,14 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         log.warning(f"Robust JSON parse failed. Content start: {json_text[:100]}...")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
 
-# --- Specific Parsers for Each Faculty ---
+# --- faculty parsers ----------------------------------------------------------
 
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str, Optional[Dict[str, Any]]]:
-    """
-    Parses the "Answer---REFLECTION---{...}" format from Intellect.
-    
-    Robustness Improvements:
-    - Handles proper delimiter usage.
-    - Handles implied delimiter (JSON block at end of text).
-    - Handles markdown wrapping (```json ... ```).
-    - Handles 'chatty' preambles/postambles.
+    """Split the Intellect's "Answer---REFLECTION---{...}" output.
+
+    The strategies below are tried in order; each is more permissive than the
+    last, so an earlier one must never accept a worse parse. Returns
+    (answer, reflection, gemini_raw_turn_or_None).
     """
     answer = ""
     reflection = ""
@@ -118,59 +94,44 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
             clean_text = re.sub(variant, delimiter_text, clean_text)
             break
 
-    # --- Strategy 1: Explicit Delimiter ---
+    # --- Strategy 1: explicit delimiter ---
     if delimiter_text in clean_text:
         parts = clean_text.split(delimiter_text)
         answer = parts[0].strip()
         json_part_raw = parts[-1].strip()
         
-        # Parse the JSON part
         json_obj = robust_json_parse(json_part_raw, log)
         if "error" not in json_obj:
             ref_val = json_obj.get("reflection")
             reflection = str(ref_val) if ref_val else "Parsed reflection from delimiter."
             return answer, reflection, json_obj.get("_gemini_raw_turn")
     
-    # --- Strategy 2: Implicit JSON Block (Regex) ---
-    # Look for the LAST JSON-like block in the text.
-    # We look for { "reflection": ... } loosely.
-    # This regex matches a curly brace block that contains "reflection" key.
-    
-    # Simple JSON object regex (non-recursive, but good enough for flat structures or 1-level deep)
-    # We rely on searching for the *last* valid JSON start '{' 
-    
+    # --- Strategy 2: implicit reflection JSON, no delimiter ---
+    # Non-recursive and good enough for the flat objects agents emit: find the
+    # "reflection" key, then walk back to the nearest '{' before it and treat
+    # everything from there as the object. The LAST such block wins, since a
+    # chatty model may mention the word earlier in its prose.
     last_brace_idx = clean_text.rfind("}")
     if last_brace_idx != -1:
-        # Scan backwards for the matching opening brace? 
-        # Actually, let's try to finding the first opening brace that makes a valid JSON with the rest of the string.
-        # OR: Look for markdown blocks first.
-        
-        # 2a. Markdown Block
+        # 2a. markdown block
         code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean_text, re.DOTALL | re.IGNORECASE)
         if code_block_match:
             json_candidate = code_block_match.group(1)
             json_obj = robust_json_parse(json_candidate, log)
             if "error" not in json_obj and "reflection" in json_obj:
-                # Successfully found the reflection JSON
                 reflection = str(json_obj["reflection"])
-                
-                # Answer is everything BEFORE this code block
                 answer = clean_text[:code_block_match.start()].strip()
-                # If answer contains the delimiter symbol but we ignored it (failed split above), clean it
+                # A delimiter survived Strategy 1 only because its JSON failed
+                # to parse; strip it from the answer rather than showing it.
                 answer = answer.replace(delimiter_text, "").strip()
                 return answer, reflection, json_obj.get("_gemini_raw_turn")
 
-        # 2b. Raw JSON at end
-        # Find the last occurrence of "{" that might start the reflection object
-        # We search specifically for the key "reflection"
+        # 2b. raw JSON at end of text
         ref_key_match = re.search(r'["\']reflection["\']\s*:', clean_text)
         if ref_key_match:
-            # The object probably starts before this key.
-            # Walk backwards from ref_key_match.start() to find '{'
             start_search = clean_text.rfind("{", 0, ref_key_match.start() + 1)
             if start_search != -1:
                 json_candidate = clean_text[start_search:]
-                # Try parsing this candidate
                 json_obj = robust_json_parse(json_candidate, log)
                 if "error" not in json_obj:
                      reflection = str(json_obj.get("reflection", "Parsed implicit JSON."))
@@ -178,7 +139,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
                      answer = answer.replace(delimiter_text, "").strip()
                      return answer, reflection, json_obj.get("_gemini_raw_turn")
 
-    # --- Strategy 3a: Salvage an unparseable reflection blob ---
+    # --- Strategy 3a: salvage an unparseable reflection blob ---
     # A "reflection": key is present but Strategies 1/2 couldn't parse its
     # JSON (malformed beyond even escape repair). NEVER ship the blob to the
     # user — it can contain internal governance coaching from reflexion
@@ -194,8 +155,7 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
             log.warning("parse_intellect_response: Strategy 3 salvage — stripped unparseable reflection blob from answer.")
             return answer.replace("\\n", "\n"), reflection, None
 
-    # --- Strategy 3b: Fallback (Raw Text) ---
-    # Model didn't include the delimiter or a reflection JSON block; surface the raw text as the answer.
+    # --- Strategy 3b: raw text fallback ---
     answer = re.sub(r'-*REFLECTION-*', '', clean_text).strip()
     log.info("parse_intellect_response: Strategy 3 fallback — model omitted reflection format.")
 
@@ -205,30 +165,25 @@ def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str,
     return answer.replace("\\n", "\n"), "", None
 
 def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]:
+    """Parse the Will's {"decision": ..., "reason": ...}.
+
+    JSON first, regex second, and an unreadable answer fails CLOSED to
+    "violation" — the Will's default is the safe direction, not the neutral one.
     """
-    Parses the {"decision": "...", "reason": "..."} format from Will.
-    
-    Includes Regex fallback for when the model outputs plain text or invalid JSON.
-    """
-    # 1. Try Standard JSON Parsing
     obj = robust_json_parse(raw_text, log)
     
     decision = ""
     reason = ""
 
     if "error" not in obj:
-        # Case-insensitive key lookup
         decision = str(obj.get("decision") or obj.get("Decision") or "").strip().lower()
         reason = (obj.get("reason") or obj.get("Reason") or "").strip()
     
-    # 2. Fallback: Regex Search if JSON failed or produced empty keys
+    # Regex fallback when JSON failed or yielded empty keys.
     if not decision or "error" in obj:
         log.info("JSON parse failed for Will. Attempting Regex fallback.")
         
-        # Look for "decision": "value" OR decision: value
         d_match = re.search(r'(?:["\']?decision["\']?|\bdecision\b)\s*[:=]\s*["\']?(\w+)["\']?', raw_text, re.IGNORECASE)
-        # Look for "reason": "value" OR reason: value
-        # Captures until end of line or next quote
         r_match = re.search(r'(?:["\']?reason["\']?|\breason\b)\s*[:=]\s*["\']?([^"}\n\r]+)["\']?', raw_text, re.IGNORECASE)
         
         if d_match:
@@ -236,9 +191,8 @@ def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]
         if r_match:
             reason = r_match.group(1).strip()
 
-    # 3. Validate and Default
     if decision not in {"approve", "violation"}:
-        # Aggressive check: if "violation" or "block" appears anywhere, assume violation
+        # Last resort, still fail-safe: any hint of a block is a block.
         if "violation" in raw_text.lower() or "block" in raw_text.lower():
             decision = "violation"
         elif "approve" in raw_text.lower():
@@ -249,8 +203,9 @@ def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]
                 reason = "Internal Error: Model output unreadable. Blocking for safety."
 
     if not reason:
-        # If we have a decision but no reason, try to grab the whole text as reason
-        # assuming the model just chattered without formatting.
+        # A model that decided but would not format may have chattered instead.
+        # Only short text is accepted as the reason; a long one is prose the
+        # user should see, not a justification to attribute to the Will.
         clean_text = raw_text.replace("{", "").replace("}", "").strip()
         if len(clean_text) < 200:
             reason = clean_text
@@ -260,15 +215,12 @@ def parse_will_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str]
     return decision, reason
 
 def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict[str, Any]]:
-    """
-    Parses the {"evaluations": [...]} format from Conscience.
-    """
-    # Find and parse the JSON blob
+    """Parse the Conscience's {"evaluations": [...]}. Never raises: the caller
+    must always have a scorable entry."""
     obj = robust_json_parse(raw_text, log)
     
     if "error" in obj:
-        # Try to salvage a list if the root object failed but a list exists
-        # e.g. model returned just [...] instead of {"evaluations": [...]}
+        # The model may have returned the bare list instead of the wrapper.
         list_match = re.search(r"\[.*\]", raw_text, re.DOTALL)
         if list_match:
             try:
@@ -289,7 +241,6 @@ def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict
     
     evaluations = obj.get("evaluations", [])
     
-    # Handle case where model returns just the list directly
     if not evaluations and isinstance(obj, list):
         evaluations = obj
 

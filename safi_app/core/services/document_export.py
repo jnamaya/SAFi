@@ -1,24 +1,20 @@
-"""
-Governed-answer document export (backlog 66).
+"""Governed-answer document export (backlog 66).
 
-Renders an already-governed answer to a downloadable DOCX or PDF. This is a
-DETERMINISTIC transform of text the Will already approved and the audit record
-already holds: no model call, no new content. It is the same shape as TTS,
-which renders a governed answer to audio. Nothing here belongs to a faculty or
-the TCB, and the load-bearing rule (CLAUDE.md invariant, and the vision item
-32z) is respected because formatting invents nothing that the Conscience did
+Renders an already-governed answer to DOCX / PDF / XLSX / MD. This is a
+DETERMINISTIC transform of text the Will approved and the audit record already
+holds: no model call, no new content. Same shape as TTS, which renders a
+governed answer to audio. Nothing here belongs to a faculty or the TCB, and the
+CLAUDE.md invariant holds because formatting invents nothing the Conscience did
 not score.
 
-Three formats:
-- DOCX: a focused markdown -> python-docx builder covering what agents emit
-  (headings, paragraphs, bold/italic/inline-code, bullet/numbered lists, code
-  blocks, blockquotes, tables, rules, links).
-- PDF: markdown -> HTML (the `markdown` lib) -> PDF (`xhtml2pdf`), both pure
-  Python so the image needs no system libraries.
-- XLSX: markdown -> a workbook via openpyxl (already a dependency, used by
-  document_processor). A markdown table becomes a real grid with a frozen,
-  bold header row; remaining prose and list lines become one row each on a
-  single "Answer" sheet, so nothing is lost. Deterministic like the other two.
+Each renderer is a different markdown subset:
+- DOCX: a focused python-docx builder covering what agents emit (headings,
+  paragraphs, inline styles, lists, code blocks, blockquotes, tables, rules).
+- PDF: markdown -> HTML (`markdown`) -> PDF (`xhtml2pdf`), both pure Python so
+  the image needs no system libraries.
+- XLSX: markdown -> workbook via openpyxl (already a dependency). A markdown
+  table becomes a real grid; remaining prose becomes one row each on a single
+  "Answer" sheet, so nothing is lost.
 """
 from __future__ import annotations
 
@@ -42,9 +38,10 @@ def _footer_text(attribution: Optional[str]) -> str:
     return f"{_FOOTER_PREFIX}{who}{_FOOTER_SUFFIX}"
 
 
-# --- inline markdown -> styled runs ------------------------------------------
+# --- inline markdown -> styled runs -------------------------------------------
 
-# Order matters: code first (its content is literal), then bold, then italic.
+# Alternation order is load-bearing: code must be tried first because its
+# content is literal, so a `**` inside a code span is not read as bold.
 _INLINE_RE = re.compile(
     r"(?P<code>`[^`]+`)"
     r"|(?P<bold>\*\*[^*]+\*\*|__[^_]+__)"
@@ -118,7 +115,6 @@ def _md_to_docx(text: str, title: str, attribution: Optional[str]) -> bytes:
     while i < n:
         line = lines[i]
 
-        # Fenced code block
         if _FENCE_RE.match(line):
             i += 1
             code_lines = []
@@ -195,12 +191,10 @@ def _md_to_docx(text: str, title: str, attribution: Optional[str]) -> bytes:
             i += 1
             continue
 
-        # Plain paragraph
         p = doc.add_paragraph()
         _add_inline(p, stripped)
         i += 1
 
-    # Transparency footer
     doc.add_paragraph()
     foot = doc.add_paragraph()
     frun = foot.add_run(_footer_text(attribution))

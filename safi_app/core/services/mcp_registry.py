@@ -126,8 +126,8 @@ def _normalize_remote(remote: Any) -> Optional[Dict[str, str]]:
 
 
 def _normalize_package(package: Any) -> Optional[Dict[str, Any]]:
-    """Packages are reported so the UI can EXPLAIN why an entry is not
-    installable here, and tell the operator what to put in their file."""
+    """Package fields, so an entry can explain why it is not installable here
+    and tell the operator what to put in their file."""
     if not isinstance(package, dict):
         return None
     identifier = str(package.get("identifier") or "").strip()
@@ -158,12 +158,10 @@ def _normalize_server(entry: Any) -> Optional[Dict[str, Any]]:
         return None
 
     # The list endpoint wraps every entry: {"server": {...}, "_meta": {...}},
-    # with the descriptive fields inside `server` and the registry's own status
-    # in the sibling `_meta`. Accept the unwrapped shape too, because a single
-    # entry read from elsewhere (or a mirror) may not wrap it, and because a
-    # parser that only understands one of the two shapes returns an empty
-    # catalogue rather than an error, which is exactly how this was missed the
-    # first time.
+    # descriptive fields inside `server`, the registry's own status in the
+    # sibling `_meta`. Accept the unwrapped shape too: a parser that understands
+    # only one of the two returns an empty catalogue rather than an error, which
+    # is how this was missed the first time.
     inner = entry.get("server") if isinstance(entry.get("server"), dict) else entry
 
     name = str(inner.get("name") or "").strip()
@@ -194,15 +192,15 @@ def _normalize_server(entry: Any) -> Optional[Dict[str, Any]]:
         "published_at": str(official.get("publishedAt") or "").strip(),
         "updated_at": str(official.get("updatedAt") or "").strip(),
         "is_latest": bool(official.get("isLatest", True)),
-        # Two booleans the UI needs and must not derive itself, or the rule
-        # would end up implemented twice with different edge cases.
+        # Two booleans the caller must not re-derive, or the installability rule
+        # ends up implemented twice with different edge cases.
         "has_remote": bool(remotes),
         "requires_local_execution": bool(packages) and not bool(remotes),
     }
 
 
 def search(query: str = "", limit: int = 30, cursor: str = "", config: Any = None) -> Dict[str, Any]:
-    """Search the registry. Returns {"servers": [...], "next_cursor": str}."""
+    """Search the registry. {"servers": [...], "next_cursor": str}."""
     params: Dict[str, Any] = {"limit": max(1, min(int(limit or 30), 100)), "version": "latest"}
     if query:
         params["search"] = query
@@ -254,9 +252,8 @@ def looks_like_a_web_page(url: str) -> bool:
 
     Called only after a probe has already failed, to turn a confusing MCP-level
     error into the actual explanation. Directories of MCP servers are ordinary
-    websites (mcpservers.org and its kind), and pasting one is the obvious
-    mistake to make: the page lists servers, so it looks like the address of
-    one.
+    websites (mcpservers.org and its kind) and pasting one is the obvious
+    mistake: the page lists servers, so it looks like the address of one.
     """
     try:
         resp = requests.get(
@@ -273,15 +270,15 @@ def looks_like_a_web_page(url: str) -> bool:
 
 
 def validate_remote_url(url: str) -> Tuple[bool, str]:
-    """Gate an admin-supplied endpoint. No model, no judgement, fixed rules.
+    """Gate an operator-supplied endpoint. No model, no judgement, fixed rules.
 
-    An admin-supplied URL that the server then fetches is a server-side request
-    forgery primitive by construction, so the check is on resolved ADDRESSES,
-    not on the hostname text: `internal.example.com` and a DNS name that
-    resolves to 169.254.169.254 look equally harmless as strings.
+    A URL the server then fetches is a server-side request forgery primitive by
+    construction, so the check is on resolved ADDRESSES, not on hostname text:
+    `internal.example.com` and a name resolving to 169.254.169.254 look equally
+    harmless as strings.
 
-    Fail closed. A hostname that will not resolve is refused rather than
-    accepted on the theory that it might be fine later.
+    Fail closed. A hostname that will not resolve is refused rather than accepted
+    on the theory that it might be fine later.
     """
     if not url or not isinstance(url, str):
         return False, "No URL provided."

@@ -5,23 +5,20 @@ An informational health guide that helps users understand the US healthcare syst
 and find local providers. Uses MCP tools for provider search and web search.
 Never diagnoses or prescribes — always defers to licensed professionals.
 
-Each field in this profile configures a specific layer of the SAFi pipeline.
-Read the inline comments below to understand what each section does and when
-the orchestrator uses it.
+This dict is a declarative profile, not logic: every key is read by a specific
+layer of the SAFi pipeline, and the section markers below name that layer.
 """
 from typing import Dict, Any
 
 THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
 
     # -- Identity --------------------------------------------------------------
-    # Displayed in the UI and written to every log entry.
     # scope_statement is used verbatim in the hardcoded fallback redirect if
     # generate_forced_response itself fails conscience — keep it one readable sentence.
     "name": "The Health Navigator",
-    # Governing business-unit policy (seeded at startup from
-    # core/policies/demo/policies.py). The compiler pulls scored values and
-    # scope from the policy; the values below are the standalone fallback if
-    # the policy row is ever deleted.
+    # The compiler pulls scored values and scope from this policy, seeded at
+    # startup from core/policies/demo/policies.py. The values below are the
+    # standalone fallback if that policy row is ever deleted.
     "policy_id": "demo_patient_navigation_policy",
     # Built-in informational agent — no project/task work context to track.
     "track_work_context": False,
@@ -32,10 +29,8 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     ),
 
     # -- System Prompt (Intellect — Phase 2) -----------------------------------
-    # Injected as the system message in every Intellect LLM call.
-    # Lists capabilities (what MCP tools are available), conversational rules,
-    # and the SCOPE ENFORCEMENT block.
-    # The disclaimer rule here must match mandatory_disclaimer_substring in will_rules.
+    # The disclaimer required here must match mandatory_disclaimer_substring
+    # in will_rules.
     "worldview": (
         "You are a Health Navigator. Your purpose is to help users understand their health information and the structure of "
         "the US healthcare system. You can also help them find local care.\n\n"
@@ -55,16 +50,14 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     ),
 
     # -- MCP Tools -------------------------------------------------------------
-    # Tool names this agent may call via the MCP manager.
-    # Will gate checks every tool_call intent against this list (Phase 3).
-    # Remove a name here to revoke access without touching tool definitions.
+    # Will gate checks every tool_call intent against this list (Phase 3);
+    # remove a name here to revoke access without touching tool definitions.
     "tools": [
         "find_places",   # geospatial provider lookup
         "web_search"     # real-time health news and medical updates
     ],
 
-    # -- Presentation (appended after worldview in the system prompt) ----------
-    # Controls tone and the mandatory medical disclaimer text.
+    # -- Presentation ----------------------------------------------------------
     # The disclaimer string here must match mandatory_disclaimer_substring exactly.
     "style": (
         "Be supportive, clear, and empowering. Use simple, approachable language. "
@@ -78,8 +71,8 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     ),
 
     # -- Value Set (Conscience — Phase 4, Spirit — Phase 5) -------------------
-    # ConscienceAuditor scores each value -1.0 / 0.0 / +1.0 per turn.
-    # SpiritIntegrator tracks alignment drift. All weights must sum to 1.0.
+    # Conscience scores each value -1.0 / 0.0 / +1.0 per turn; the weighted
+    # scores feed Spirit's alignment-drift tracking. Weights must sum to 1.0.
     "values": [
         {
             "value": "Patient Safety",
@@ -132,11 +125,9 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     ],
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
-    # early_prompt_blacklist  : Agent-level phrases scanned by PhaseZeroGate
-    #                           before any LLM call. Augments global INJECTION_SIGNATURES.
-    # structural_requirements : Checked by Will W1 on every draft before Will's LLM eval.
-    #   require_disclaimer          : True — every response must contain the disclaimer.
-    #   mandatory_disclaimer_substring : Must match the disclaimer text in style exactly.
+    # early_prompt_blacklist is scanned by PhaseZeroGate before any LLM call and
+    # augments the global INJECTION_SIGNATURES; structural_requirements is
+    # checked by Will W1 on every draft, ahead of Will's own LLM evaluation.
     "will_rules": {
         "early_prompt_blacklist": [],
         "structural_requirements": {
@@ -155,9 +146,8 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     },
 
     # -- Redirect Directives (trigger_agent_redirect) -----------------------
-    # Matched by violation_type when the orchestrator calls trigger_agent_redirect.
-    # If the key is not found, the orchestrator's hardcoded fallback fires.
-    # Never acknowledge the user's framing in any directive — respond fresh.
+    # Keyed by violation_type; no match means the orchestrator's hardcoded
+    # fallback fires. Never acknowledge the user's framing in any directive.
     "internal_rephrase_directives": {
         "scope_violation": (
             "CRITICAL: This request has been flagged as outside your scope as a Health Navigator. "
@@ -196,7 +186,6 @@ THE_HEALTH_NAVIGATOR_AGENT: Dict[str, Any] = {
     },
 
     # -- UI --------------------------------------------------------------------
-    # Starter questions shown in the agent selector card.
     "example_prompts": [
         "How do I find a primary care doctor?",
         "What does 'deductible' mean in my insurance plan?",

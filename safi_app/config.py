@@ -226,15 +226,18 @@ def _load_mcp_servers() -> dict:
 
 class Config:
     """
-    Central configuration class for SAFi.
-    Loads settings from environment variables with sensible defaults.
-    Now loads from a .env file first.
+    Every setting, resolved once at import from environment variables and
+    defaults, with .env loaded first (override=True, so the file wins over an
+    inherited shell environment). These are class attributes, so they are
+    read at import time and cannot change for the life of the process: a
+    setting whose behaviour depends on it changing later must be re-read from
+    the environment by the code that needs it, not from here.
+
+    validate() runs once from create_app() and is the startup gate. It raises
+    listing every problem at once, so an operator fixes one deploy rather than
+    one missing variable per attempt.
     """
 
-    # --- Environment-Aware URL Setup ---
-    
-    # 1. Determine the environment.
-    #
     # NOTE — there are TWO independent switches and both use the word
     # "production". They are orthogonal and every combination is valid:
     #
@@ -254,16 +257,15 @@ class Config:
     # customer runs production/production. A laptop runs development/trial.
     APP_ENV = os.environ.get('FLASK_ENV', 'production')
 
-    # 2. Base URL and allowed origins.
-    #
-    # Defaults to localhost, NOT to any particular deployment's hostname. These
-    # previously defaulted to the selfalignmentframework.com hosts, which meant
-    # every self-hoster who did not set WEB_BASE_URL silently inherited someone
-    # else's domain as their CORS origin and OAuth callback base — a
-    # configuration that cannot work for them and fails in ways (blocked
-    # cross-origin calls, callbacks redirecting off-site) that give no clue as
-    # to the cause. Any real deployment, including the public demo, sets
-    # WEB_BASE_URL explicitly in its own .env.
+    # Base URL and allowed origins default to localhost, NOT to any particular
+    # deployment's hostname. These previously defaulted to the
+    # selfalignmentframework.com hosts, which meant every self-hoster who did
+    # not set WEB_BASE_URL silently inherited someone else's domain as their
+    # CORS origin and OAuth callback base — a configuration that cannot work
+    # for them and fails in ways (blocked cross-origin calls, callbacks
+    # redirecting off-site) that give no clue as to the cause. Any real
+    # deployment, including the public demo, sets WEB_BASE_URL explicitly in
+    # its own .env.
     #
     # The official device client is the PWA (served same-origin), so no native
     # shell origins are needed (Capacitor retired 2026-08-19).
@@ -276,32 +278,25 @@ class Config:
 
     WEB_BASE_URL = os.environ.get("WEB_BASE_URL", _default_base_url)
 
-    # ALLOWED_ORIGINS can be a comma-separated list in the env variable.
-    # e.g. ALLOWED_ORIGINS=http://localhost:5000,https://yourdomain.com
+    # Comma-separated, e.g. ALLOWED_ORIGINS=http://localhost:5000,https://yourdomain.com
     _origins_env = os.environ.get("ALLOWED_ORIGINS", "")
     ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or _default_origins
 
-    # 3. Derive the callback URL
     WEB_CALLBACK_URL = f"{WEB_BASE_URL}/api/callback"
 
-    # --- Session Security ---
-    # FIX: Automatically enforce Secure cookies if the Base URL is HTTPS.
-    # Allow override via environment variable for local testing (HTTP)
+    # Secure cookies follow the base URL's scheme; SESSION_COOKIE_SECURE
+    # overrides it for local testing over HTTP.
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true" and WEB_BASE_URL.startswith("https")
-    
+
     SESSION_COOKIE_NAME = 'safi_session'
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax' 
-    
+
     # Ensure Flask generates URLs with https if behind a proxy
     PREFERRED_URL_SCHEME = 'https'
 
-    # --- Secrets & Keys ---
-
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-should-be-changed")
 
-    # Bot API Secret
-    # Moved from hardcoded string to environment variable
     BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "safi-bot-secret-123")
 
     # Master key for application-level encryption at rest (Fernet). Accepts a
@@ -316,7 +311,6 @@ class Config:
     # entirely while any org has an active legal hold.
     LOG_RETENTION_DAYS = int(os.environ.get("SAFI_LOG_RETENTION_DAYS") or 0) or None
 
-    # OAuth credentials for Google login
     GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
     # Native-app Google Sign-In uses its own OAuth client id(s) — its ID tokens
@@ -326,7 +320,6 @@ class Config:
         c.strip() for c in os.environ.get("GOOGLE_MOBILE_CLIENT_IDS", "").split(",") if c.strip()
     )
 
-    # OAuth credentials for Microsoft login
     MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID")
     MICROSOFT_CLIENT_SECRET = os.environ.get("MICROSOFT_CLIENT_SECRET")
 
@@ -338,12 +331,9 @@ class Config:
     # otherwise remain a working (if unreachable) entry point.
     SSO_LOGIN_ENABLED = _env_bool("SAFI_SSO_ENABLED", True)
 
-    # OAuth credentials for GitHub login
     GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
-    
 
-    # API keys for all providers
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
@@ -377,11 +367,10 @@ class Config:
     # MySQL connector caps pool_size at 32; values above that are clamped.
     DB_POOL_SIZE = max(1, min(32, int(os.environ.get("SAFI_DB_POOL_SIZE", "10"))))
 
-    # Comma-separated list of emails that have super-admin access to the Audit Hub
-    # (can see all orgs' logs). Leave blank to disable super-admin access entirely.
+    # Comma-separated list of emails with super-admin access to the Audit Hub
+    # (can see all orgs' logs). Blank disables super-admin access entirely.
     SUPER_ADMIN_EMAILS = [e.strip() for e in os.environ.get("SAFI_SUPER_ADMINS", "").split(",") if e.strip()]
 
-    # Usage controls
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
     # --- Tenancy mode --------------------------------------------------------
@@ -500,7 +489,6 @@ class Config:
     # need more hops to complete a task.
     MAX_AGENT_TURNS = int(os.environ.get("SAFI_MAX_AGENT_TURNS", "5"))
 
-    # Logging configuration
     LOG_DIR = os.environ.get("SAFI_LOG_DIR", "logs")
     LOG_FILE_TEMPLATE = os.environ.get("SAFI_LOG_TEMPLATE", "{profile}-%Y-%m-%d.jsonl")
 
@@ -509,7 +497,7 @@ class Config:
     # written atomically with each turn and served by the native Audit Hub.
     DEBUG_JSONL_LOGS = os.environ.get("SAFI_DEBUG_JSONL_LOGS", "false").strip().lower() in ("1", "true", "yes")
 
-    # Model assignments for each faculty (apply to authenticated users and bots).
+    # Faculty model assignments, applied to authenticated users and bots.
     # Explicit SAFI_*_MODEL vars win; otherwise defaults follow the first
     # configured provider key so a fresh install works with any single key
     # (see _detect_faculty_defaults at module level).
@@ -594,14 +582,13 @@ class Config:
     # entirely (synthesize every time, keep nothing on disk).
     TTS_CACHE_TTL_DAYS = int(os.environ.get("SAFI_TTS_CACHE_TTL_DAYS", "7"))
 
-    # Spirit computation parameters
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
     # Minimum alignment score Will requires before approving a response.
-    # Can be overridden per-agent via will_rules.structural_requirements.alignment_score_threshold.
+    # Overridable per-agent via
+    # will_rules.structural_requirements.alignment_score_threshold.
     SPIRIT_ALIGNMENT_THRESHOLD = float(os.environ.get("SAFI_SPIRIT_THRESHOLD", "0.5"))
 
-    # Default profile to use when none is specified.
     #
     # The Fiduciary leads because it demonstrates what SAFi is for in a single
     # interaction: a regulated-domain agent declining to give personalised
@@ -663,8 +650,6 @@ class Config:
     MCP_REGISTRY_URL = os.environ.get(
         "SAFI_MCP_REGISTRY_URL", "https://registry.modelcontextprotocol.io"
     ).strip()
-
-       # --- CONFIGURATION: AUTOMATIC PROFILE EXTRACTION ---
     # Set to False to disable the AI from silently adding facts to the user profile.
     ENABLE_PROFILE_EXTRACTION = False 
 
@@ -681,11 +666,13 @@ class Config:
         {"id": "openai/gpt-oss-120b", "label": "GPT-OSS 120B"},
         {"id": "openai/gpt-oss-20b", "label": "GPT-OSS 20B"},
 
-        # OpenAI Models. Ids must keep the "gpt-5" prefix exactly as OpenAI
-        # writes them: llm_provider.py switches on it to send
+        # OpenAI Models. Ids must keep the "gpt-" prefix exactly as OpenAI
+        # writes them: detect_provider routes on it to reach the openai client,
+        # and llm_provider._is_openai_flagship keys on it to send
         # max_completion_tokens and drop temperature/top_p, which the whole
-        # gpt-5.x family requires. Siblings gpt-5.6-sol and gpt-5.6-terra also
-        # exist and are deliberately not listed.
+        # first-party line requires. Siblings gpt-5.6-sol, gpt-5.6-terra,
+        # gpt-6-luna, gpt-6-sol and gpt-6-astra also exist and are deliberately
+        # not listed.
         {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna"},
 
         # Anthropic (Claude) Models
@@ -711,7 +698,6 @@ class Config:
         {"id": "gemma-4-31b", "label": "Gemma 4 31B"},
     ]
 
-    # --- DOCUMENT UPLOAD CONFIGURATION ---
     MAX_UPLOAD_SIZE_MB = int(os.environ.get("SAFI_MAX_UPLOAD_MB", "10"))
     MAX_DOCUMENT_CHARS = int(os.environ.get("SAFI_MAX_DOC_CHARS", "50000"))
     ALLOWED_UPLOAD_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv',
@@ -751,8 +737,9 @@ class Config:
     @classmethod
     def validate(cls) -> None:
         """
-        Called once at app startup. Raises ValueError listing all missing required
-        variables so operators see every problem in a single deploy, not one at a time.
+        The startup gate. Raises ValueError listing every missing or invalid
+        required variable at once, so an operator fixes one deploy rather than
+        discovering one problem per attempt.
         """
         _log = logging.getLogger(__name__)
         errors: List[str] = []

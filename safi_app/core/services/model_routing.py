@@ -1,9 +1,11 @@
-"""
-Model -> provider routing.
+"""Model -> provider routing.
 
 Single source of truth for mapping a model name to its LLM provider, used by the
 orchestrator, the background note-taker, and the agent/policy save endpoints.
-Kept dependency-free so it can be imported anywhere without circular-import risk.
+Dependency-free so it can be imported anywhere without circular-import risk.
+Two resolvers exist on purpose: the pure `resolve_faculty_model_pair` (no DB,
+no Config) and `resolve_effective_faculty_models` (keys + org policy) layered on
+top of it.
 """
 from __future__ import annotations
 
@@ -11,16 +13,16 @@ from __future__ import annotations
 # Provider governance metadata. baa_capable = the provider offers a HIPAA
 # Business Associate Agreement on an enterprise/API tier (OpenAI, Anthropic,
 # Google via Vertex, Mistral enterprise — verified July 2026); eu_hostable =
-# an EU/EEA-resident hosting option exists. zdr = zero-data-retention
-# posture, verified against official provider docs July 2026:
+# an EU/EEA-resident hosting option exists. zdr = zero-data-retention posture,
+# verified against official provider docs July 2026:
 #   "default"   — prompts/completions not retained by default
 #   "available" — ZDR offered on an enterprise/request basis (not automatic;
 #                 default is typically ~30-day abuse-monitoring retention)
 #   False       — no ZDR option, or only an unverifiable policy assertion
 #                 (Zhipu claims real-time processing but publishes no
-#                 contractual ZDR program or training-use statement, so it
-#                 is deliberately NOT badged; DeepSeek retains indefinitely
-#                 in China and trains on API data).
+#                 contractual ZDR program or training-use statement, so it is
+#                 deliberately NOT badged; DeepSeek retains indefinitely in
+#                 China and trains on API data).
 # zdr_note is surfaced verbatim as the badge tooltip in the org-settings UI.
 # Consumed by the per-org provider allow-list (provider_governance.py), the
 # /models endpoint, and the org-settings UI badges. Keys MUST match
@@ -95,9 +97,12 @@ def invalidate_custom_models_cache() -> None:
 
 
 def detect_provider(model_name: str) -> str:
-    """Map a model name to its provider key. Operator-added models carry an
-    explicit provider (exact-id match); everything else falls back to the
-    prefix heuristics below. Defaults to 'groq'."""
+    """Map a model name to its provider key.
+
+    Precedence: an exact match against an operator-registered id, then the
+    prefix heuristics below. Unknown ids fall back to 'groq' — the cheapest
+    configured tier, and the historical default.
+    """
     if not model_name:
         return "groq"
     m = model_name.lower()
@@ -108,7 +113,7 @@ def detect_provider(model_name: str) -> str:
     if m.startswith("jev-") or m.startswith("typesafe/jev"):
         return "typesafe"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
-    # "openai/gpt-oss-*"), so this must be checked before the bare "gpt-" rule.
+    # "openai/gpt-oss-*"), so this must precede the bare "gpt-" rule.
     if m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4"):
         return "cerebras"
     if m.startswith("gpt-") or m.startswith("o1-"):
@@ -123,19 +128,18 @@ def detect_provider(model_name: str) -> str:
         return "mistral"
     if m.startswith("glm-"):
         return "zhipu"
-    # Appliance-selected local models all carry a "safi-" alias
-    # (safi-qwen3-8b, safi-qwen3-32b, ...), so match the reserved prefix rather
-    # than one literal name. An unmatched alias would otherwise fall through to
-    # groq below and send the prompt to Groq with a placeholder key, which
-    # surfaces as an unreachable-provider error rather than a routing fault.
+    # Appliance-selected local models all carry a "safi-" alias (safi-qwen3-8b,
+    # safi-qwen3-32b, ...), so match the reserved prefix rather than one literal
+    # name. An unmatched alias would fall through to groq below and send the
+    # prompt to Groq with a placeholder key, which surfaces as an
+    # unreachable-provider error rather than as a routing fault.
     if m.startswith("safi-"):
         return "local"
     return "groq"
 
 
 def build_providers_config(config) -> dict:
-    """
-    Standard "providers" block for LLMProvider, built from the app Config.
+    """The standard "providers" block for LLMProvider, built from app Config.
 
     Every place that instantiates LLMProvider (orchestrator, agent/policy
     wizard endpoints) must use this so new providers only need to be added
@@ -255,12 +259,12 @@ def resolve_faculty_model_pair(
 ) -> tuple[str, str]:
     """Resolve usable faculty models and keep Intellect distinct when possible.
 
-    Available models are dictionaries from the model catalogue (or model-id
-    strings in tests). Jev availability -- a hosted key or a local Laya bundle on
-    an appliance -- makes Jev the automatic Conscience choice; an explicit
-    user/agent Conscience choice remains in force. Without Jev, stale automatic
-    Jev selections fall back to an available chat model. Intellect never
-    receives the typed-only Jev route.
+    `available_models` are catalogue entries (dicts) or, in tests, model-id
+    strings. Jev availability — a hosted key or a local Laya bundle on an
+    appliance — makes Jev the automatic Conscience choice, but an explicit
+    user/agent Conscience choice always stays in force. Without Jev, a stale
+    automatic Jev selection falls back to an available chat model. Intellect
+    never receives the typed-only Jev route.
     """
     entries = []
     for entry in available_models or []:
@@ -314,7 +318,6 @@ def resolve_effective_faculty_models(
     conscience_explicit: bool = False,
     intellect_explicit: bool = False,
 ) -> tuple[str, str]:
-    """Resolve faculty models against keys, installed models, and org policy."""
     from .provider_governance import get_org_allowlist, list_models_for_org
 
     allowlist = get_org_allowlist(org_id)

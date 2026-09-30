@@ -19,7 +19,6 @@ from ..core.faculties.synderesis import _has_usable_rubric
 policy_api_bp = Blueprint('policy_api', __name__)
 
 
-# --- Cross-org access guards (backlog 70) --------------------------------------
 # The DB getters are intentionally org-unfiltered (historical resolution relies
 # on it), so the guard belongs here, at the endpoints. Mirrors the working
 # pattern in knowledge_api._can_read. Returns (policy, error_response); the
@@ -138,7 +137,6 @@ def _hold_tool_widening(data, old_rules, org_id):
     return additions, sorted(set(new_list))
 
 
-# --- Integration endpoint, resolved per deployment -------------------------
 # The policy wizard's closing "getting started" panel prints an endpoint URL
 # and pastes it into a copy-pasteable Teams bot. That URL was hardcoded to the
 # public demo host, so every self-hoster — and every localhost developer — was
@@ -174,7 +172,6 @@ def validate_policy_data(data):
     if 'name' in data and not isinstance(data['name'], str):
         errors.append("Name must be a string.")
 
-    # Enforce Values
     if 'values' in data:
         if not isinstance(data['values'], list):
             errors.append("Values must be a list.")
@@ -243,17 +240,16 @@ def create_policy():
                 "policy_id": existing['id'],
             }), 409
 
-        # --- Readable ID Generation ---
         org_prefix = "p" # Default personal
         
         if org_id:
             org = db.get_organization(org_id)
             if org:
-                # Prioritize verified domain, else normalized name
                 if org.get('domain_verified') and org.get('domain_to_verify'):
                     org_prefix = org['domain_to_verify'].replace('.', '_').lower()
                 elif org.get('name'):
-                    # Without verified domain, use first 12 chars of org name + Random Token to prevent collisions
+                    # No verified domain: first 12 chars of the org name plus
+                    # a random token, to avoid collisions.
                     import secrets
                     safe_name = re.sub(r'[^a-z0-9]', '', org['name'].lower())[:12]
                     suffix = secrets.token_hex(2) # 4 chars
@@ -305,7 +301,6 @@ def create_policy():
             db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
                 "policy": pid, "request": rid, "added": pending_tools})
 
-        # Auto-generate credentials for immediate use
         default_key = db.create_api_key(pid, "Initial Key")
 
         return jsonify({
@@ -389,9 +384,7 @@ def update_policy(policy_id):
             policy_config = {
                 "business_unit":      data.get("business_unit", ""),
                 "scope_statement":    data.get("scope_statement", ""),
-                # The human-facing description. Stored as its own field; older
-                # builds embedded it in worldview as an HTML comment, which the
-                # wizard still reads as a legacy fallback.
+                # Same legacy HTML-comment fallback the create route reads.
                 "context":            data.get("context", ""),
                 "ethical_memory":     data.get("ethical_memory", 0.90),
                 "alignment_threshold": data.get("alignment_threshold", 0.5),
@@ -421,9 +414,9 @@ def update_policy(policy_id):
             db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
                 "policy": policy_id, "request": rid, "added": pending_tools})
 
-        # Return existing (or new) credentials for UI convenience
+        # Return existing or freshly minted credentials for the wizard's UI.
         keys = db.get_policy_keys(policy_id)
-        # Fix: handle keys that only have hashes (return masked)
+        # Keys created before hashing was introduced exist as hashes only; mask those.
         if keys:
             api_key = keys[0].get('key', 'sk_************************')
         else:
@@ -446,12 +439,10 @@ def update_policy(policy_id):
         current_app.logger.error(f"update_policy error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
-# ---------------------------------------------------------------------------
 # Policy-content approvals (backlog 57f): editors submit, the designated
 # policy approvers (or the admin|auditor fallback) activate. Same SoD,
 # sole-approver, and evidence pattern as tool approvals, separately routed
 # because the deciding bodies differ (AI committee vs legal, in Nelson's org).
-# ---------------------------------------------------------------------------
 
 def _policy_reviewer_context():
     user = session.get('user')
@@ -699,17 +690,14 @@ def restore_policy_version_endpoint(policy_id, version):
 @require_role('editor')
 def rotate_key(policy_id):
     try:
-        # Verify function existence (Guard against stale code in future)
         if not hasattr(db, 'delete_policy_keys'):
             return jsonify({"error": "FATAL: database.delete_policy_keys missing"}), 500
 
         policy, err = _load_policy_for_write(policy_id)
         if err: return err
 
-        # Revoke old keys
         db.delete_policy_keys(policy_id)
         
-        # Generate new one
         label = f"Rotated {datetime.now().strftime('%Y-%m-%d')}"
         new_key = db.create_api_key(policy_id, label)
         
@@ -1031,7 +1019,6 @@ async def generate_policy_content_endpoint():
                 "Return a JSON array of guardrail strings."
             )
 
-        # --- IMPROVED CONCISE AGENT PROMPT ---
         elif gen_type == 'agent':
              sys_prompt = "You are a creative writer. Output a single, concise paragraph."
              prompt = (
@@ -1045,7 +1032,6 @@ async def generate_policy_content_endpoint():
                  "5. Just the raw text paragraph."
              )
              
-        # --- IMPROVED CONCISE STYLE PROMPT ---
         elif gen_type == 'style':
              sys_prompt = "You are a creative writer. Output a single, concise paragraph."
              prompt = (
@@ -1068,13 +1054,11 @@ async def generate_policy_content_endpoint():
             max_tokens=gen_max_tokens,
         )
         
-        # FIX: Robust Cleaning
         cleaned = response_text.strip()
         if "```" in cleaned:
              try:
                 cleaned = cleaned.split("```json")[-1].split("```")[0].strip()
              except IndexError:
-                # Fallback if markdown format is weird
                 cleaned = cleaned.replace("```json", "").replace("```", "").strip()
 
         if gen_type == 'compile_rules':
@@ -1153,14 +1137,11 @@ async def generate_policy_content_endpoint():
             ] + dropped
             return jsonify({"ok": True, "content": {"gates": gates, "unconvertible": unconvertible}})
 
-        # Specific Handling for JSON types to prevent crashes
         if gen_type in ['values', 'rules', 'ai_standards']:
              try:
-                 # Find list/object start
                  if "[" in cleaned: cleaned = cleaned[cleaned.find("["):]
                  if "]" in cleaned: cleaned = cleaned[:cleaned.rfind("]")+1]
                  
-                 # Verify JSON
                  parsed = json.loads(cleaned)
                  return jsonify({"ok": True, "content": parsed}) # Return object, not string
              except json.JSONDecodeError:

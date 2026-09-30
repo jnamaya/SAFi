@@ -36,7 +36,7 @@ from ..persistence import database as db
 _MFA_ENROLLMENT_PATHS = re.compile(
     r"^/api/(me$|me/mfa($|/)|logout$|app-config$)")
 
-# Deploy date + 7 days; override via env if the window needs extending.
+# Deploy date + 7 days; extend via SAFI_LEGACY_COOKIE_GRACE_UNTIL if needed.
 LEGACY_COOKIE_GRACE_UNTIL = datetime.fromisoformat(
     os.environ.get("SAFI_LEGACY_COOKIE_GRACE_UNTIL", "2026-07-23T00:00:00+00:00")
 )

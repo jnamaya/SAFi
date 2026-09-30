@@ -345,16 +345,12 @@ async def handle_bible_scholar_commands(
     active_profile_name: str, 
     log: logging.Logger
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """
-    Checks for 'bible scholar' profile-specific commands.
-    If a command is detected, it returns a generic data payload
-    for faculties.py to consume.
-    
-    Returns the ORIGINAL user_prompt and a dictionary of fetched data (or None).
-    """
-    
-    # This plugin only runs for 'the bible scholar'
-    # FIX: Orchestrator sanitizes names to use underscores, so we must check for that too.
+    """Handle a readings request for the Bible Scholar; return the ORIGINAL
+    prompt plus the generic faculty payload (rag_query_override,
+    preformatted_context_string, or plugin_error)."""
+
+    # The orchestrator carries both the display name and its underscore-sanitized
+    # form as active_profile_name, so both must be matched.
     if active_profile_name not in ["the bible scholar", "the_bible_scholar"]:
         return user_prompt, None
 
@@ -362,7 +358,6 @@ async def handle_bible_scholar_commands(
     prompt_command = user_prompt.strip().lower()
 
     if not any(t in prompt_command for t in _READING_TRIGGERS):
-        # Not a readings request. data_payload stays None.
         return original_user_prompt, None
 
     target_date = _requested_date(prompt_command)
@@ -383,7 +378,6 @@ async def handle_bible_scholar_commands(
             "plugin_error": f"I reached the readings source for {day_label} but it listed no readings."
         }
 
-    # --- One specific reading -------------------------------------------------
     if requested_reading_key:
         found = next((p for p in passages if p.get("title") == requested_reading_key), None)
         if found is None:
@@ -405,8 +399,7 @@ async def handle_bible_scholar_commands(
             ),
         }
 
-    # --- Every reading the day actually has -----------------------------------
-    # This is the branch that used to be unreachable: 'today's reading', 'daily
+    # The all-readings branch used to be unreachable: 'today's reading', 'daily
     # reading', 'mass reading' and 'reading for today' all matched the trigger
     # list, selected nothing, and produced "couldn't find a specific 'None'".
     #

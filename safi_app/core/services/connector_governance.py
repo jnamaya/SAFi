@@ -33,20 +33,20 @@ CONTRACT (mirrors provider_governance, deliberately)
   has no admin to set a policy, and failing closed there would break the
   Quick Start for no security gain.
 
-Note the two namespaces. OAuth *account* keys (what oauth_tokens.provider
-stores, what the login routes were named for) are distinct from tool
-*connector* names (tool_connectors.py): one account could serve several
-connectors. This module governs the account and carries the tool mapping so
-the admin UI can say what allowing it actually unlocks.
+Two namespaces. OAuth *account* keys (what oauth_tokens.provider stores, what
+the login routes were named for) are distinct from tool *connector* names
+(tool_connectors.py): one account could serve several connectors. This module
+governs the account and carries the tool mapping so the admin UI can say what
+allowing it actually unlocks.
 
 THE CATALOG IS NOW EMPTY, DELIBERATELY. The last delegated connector
 (microsoft/sharepoint) retired 2026-08-15, absorbed by the Graph gateway;
 github and google_drive went the same day (GOVERNANCE_BACKLOG 48k). Their
-successors are OAuth MCP servers, governed per server by the `orgs` field in
-the operator's file and per member by the agent-grant gate in mcp_manager.
-This module and its routes are the machinery an empty catalog leaves idle;
-deleting the machinery itself is a separate, pending decision, because it is
-also the shape any future delegated account would reuse.
+successors are OAuth MCP servers, governed per server by the `orgs` field in the
+operator's file and per member by the agent-grant gate in mcp_manager. This
+module and its routes are the machinery an empty catalog leaves idle; deleting
+the machinery is a separate, pending decision, because it is also the shape any
+future delegated account would reuse.
 """
 from __future__ import annotations
 
@@ -54,8 +54,8 @@ import threading
 import time
 from typing import FrozenSet, List, Optional
 
-# key -> what an admin needs to know to make the decision. "tools" is the
-# tool-connector namespace (tool_connectors.CONNECTOR_TOOLS), not this one.
+# key -> what an admin needs to decide. "tools" is the tool-connector
+# namespace (tool_connectors.CONNECTOR_TOOLS), not this one.
 CONNECTOR_METADATA: dict = {}
 
 _CACHE_TTL_SECONDS = 60.0
@@ -80,8 +80,8 @@ def get_org_allowlist(org_id) -> Optional[FrozenSet[str]]:
 
     Unknown keys are dropped on read, so removing a connector from
     CONNECTOR_METADATA cannot resurrect it via a stale stored list. A
-    stored-but-empty list blocks everything (fail closed); the write path
-    refuses to store one, the same way the provider allow-list does."""
+    stored-but-empty list blocks everything (fail closed); the write path refuses
+    to store one, the same way the provider allow-list does."""
     if not org_id:
         return None
     now = time.monotonic()
@@ -98,7 +98,6 @@ def get_org_allowlist(org_id) -> Optional[FrozenSet[str]]:
 
 
 def invalidate_org(org_id) -> None:
-    """Bust the cached allow-list after a write."""
     with _cache_lock:
         _cache.pop(org_id, None)
 
@@ -119,9 +118,8 @@ def assert_connector_allowed(connector: str, org_id, context: str = "") -> None:
 
 def list_connectors_for_org(org_id) -> List[dict]:
     """The full catalogue with an `allowed` flag — single source of truth for
-    both the member's Settings tab and the admin control. The member's tab
-    renders only the allowed ones; the admin needs the blocked ones too, to be
-    able to turn them back on."""
+    both the member's Settings tab and the admin control. The admin needs the
+    blocked ones too, to be able to turn them back on."""
     allow = get_org_allowlist(org_id)
     return [
         {"key": k, **meta, "allowed": (allow is None or k in allow)}
@@ -142,10 +140,9 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     awkward question from anyone reviewing why those tokens exist.
 
     Reuses synderesis.authorized_tools so this answers with the same
-    intersection the Will enforces. Deliberately does NOT call get_profile:
-    that is the full governance compiler (charter, values, worldview layering)
-    and this runs on every /api/auth/status. Only the tool authorization is
-    needed, and it comes from the same function either way.
+    intersection the Will enforces. Deliberately does NOT call get_profile: that
+    is the full governance compiler and this runs on every /api/auth/status. Only
+    tool authorization is needed, and it comes from the same function either way.
     """
     from ...persistence import database as db
     from ..faculties.synderesis import AGENTS, authorized_tools
@@ -158,8 +155,8 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     policy_cache: dict = {}
 
     def _policy_tools(policy_id):
-        """will_rules.allowed_tools for a policy, fetched once per call. Agents
-        in an org usually share a handful of policies."""
+        """will_rules.allowed_tools for a policy, fetched once per call — the
+        agents in an org usually share a handful of policies."""
         if policy_id in (None, "", "standalone"):
             return None
         if policy_id not in policy_cache:
@@ -175,7 +172,6 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
             policy_cache[policy_id] = allowed
         return policy_cache[policy_id]
 
-    # (advertised tools, policy_id) for every agent this member can reach.
     candidates = [(p.get("tools"), p.get("policy_id")) for p in AGENTS.values()]
     try:
         import json as _json

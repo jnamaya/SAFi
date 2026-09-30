@@ -1,22 +1,15 @@
-"""
-Defines the RAGService.
-
-This class is the ONLY part of the application that knows how to:
-1.  Import and instantiate the Retriever.
-2.  Perform a search using the Retriever.
-3.  Format the raw search results (metadata dicts) into a 
-    single context string for the Intellect to use.
-"""
+"""Retriever facade: the only place that knows how to obtain a Retriever, run a
+search, and render the raw metadata dicts into one context string for the
+Intellect. Everything else in the request path sees only this."""
 from __future__ import annotations
 import logging
 from typing import List, Dict, Any
 
-# Import the Retriever from its sibling directory
 try:
     from .retriever import Retriever, get_cached_retriever
 except (ImportError, ValueError) as e:
     logging.critical(f"Failed to import Retriever: {e}. Ensure safi_app/core/services/retriever.py exists.")
-    # Define a mock class if import fails so the app can load but RAG is disabled
+    # Stand-in so the app still loads with RAG disabled.
     class Retriever:
         def __init__(self, *args, **kwargs):
             logging.error("Using Mock Retriever class. Import failed.")
@@ -28,20 +21,7 @@ except (ImportError, ValueError) as e:
 
 
 class RAGService:
-    """
-    A service layer that abstracts the Retriever.
-    
-    It handles the initialization of the Retriever and formats its
-    output into a clean string.
-    """
     def __init__(self, knowledge_base_name: str | None):
-        """
-        Initializes the RAGService and the underlying Retriever.
-
-        Args:
-            knowledge_base_name: The name of the knowledge base to load.
-                                 If None, RAG will be disabled.
-        """
         self.log = logging.getLogger(self.__class__.__name__)
         if knowledge_base_name:
             try:
@@ -57,26 +37,20 @@ class RAGService:
                 self.retriever = None
                 self.enabled = False
         else:
-            # RAG is explicitly disabled
             self.retriever = None
             self.enabled = False
             self.log.info("RAGService disabled (no knowledge_base_name provided).")
 
     async def get_context(self, query: str, format_string: str) -> str:
-        """
-        Searches for context and returns a formatted string.
+        """Format retrieved metadata dicts into one context string.
 
-        Args:
-            query: The user's search query.
-            format_string: A Python format-string to apply to each
-                           metadata dictionary (e.g., "{source}: {text_chunk}").
-
-        Returns:
-            A single string containing all formatted context, or
-            "[NO DOCUMENTS FOUND]" if no results.
+        `format_string` is applied per chunk with `**doc` as the namespace
+        (e.g. "{source}: {text_chunk}"). Returns "" when RAG is disabled and
+        "[NO DOCUMENTS FOUND]" when the search returned nothing — the two are
+        different signals to the caller and must not be collapsed.
         """
         if not self.enabled or not self.retriever:
-            return "" # Return empty string if RAG is disabled
+            return ""
 
         # An empty/whitespace template renders every chunk as "" — retrieval
         # succeeds and the caller receives nothing. Same trap intellect.py hit
@@ -86,22 +60,18 @@ class RAGService:
         format_string = resolve_rag_format_string(format_string)
 
         try:
-            # --- 1. Perform the search ---
-            # Note: The retriever's search method is synchronous.
-            # If this becomes a bottleneck, it should be run in a thread.
+            # search() is synchronous and FAISS releases the GIL; if it ever
+            # becomes a bottleneck it must move to a thread, not a queue.
             retrieved_docs = self.retriever.search(query)
             
             if not retrieved_docs:
                 return "[NO DOCUMENTS FOUND]"
 
-            # --- 2. Format the results ---
             formatted_chunks = []
             for doc in retrieved_docs:
                 try:
-                    # Use **doc to unpack the metadata dictionary into the format string
                     formatted_chunks.append(format_string.format(**doc))
                 except KeyError as e:
-                    # Fallback: if format fails (e.g., missing key), just use the text_chunk
                     self.log.warning(f"RAG format string failed for key {e}. Falling back to 'text_chunk'.")
                     if "text_chunk" in doc:
                         formatted_chunks.append(doc["text_chunk"])

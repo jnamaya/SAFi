@@ -1,9 +1,9 @@
 """
-API routes for document upload and text extraction.
+Document upload and text extraction.
 
-Provides a single endpoint that accepts a file upload, extracts its text
-content, and returns it to the frontend. The frontend then injects this
-text into the user's prompt as contextual information.
+POST /api/documents/extract takes a multipart file upload and returns its
+extracted text for injection into the user's prompt. The uploaded file is
+never stored — only a sha256 digest of it.
 """
 from flask import Blueprint, session, jsonify, request, current_app
 from ..config import Config
@@ -15,7 +15,6 @@ documents_bp = Blueprint('documents', __name__)
 
 
 def get_user_id():
-    """Retrieves the authenticated user's ID from the session."""
     user = session.get('user')
     if not user:
         return None
@@ -24,14 +23,10 @@ def get_user_id():
 
 @documents_bp.route('/documents/extract', methods=['POST'])
 def extract_document_text():
-    """
-    Accepts a file upload and returns extracted plain text.
+    """multipart/form-data upload with a 'file' field.
 
-    The frontend uses this to inject document content into prompts
-    before sending them through the normal process_prompt flow.
-
-    Request: multipart/form-data with a 'file' field.
-    Response: JSON with 'text', 'filename', 'total_chars', 'was_truncated'.
+    Response: JSON with 'text', 'filename', 'sha256', 'bytes',
+    'total_chars', 'was_truncated', 'chars_used'.
     """
     user_id = get_user_id()
     if not user_id:
@@ -44,34 +39,31 @@ def extract_document_text():
     if not file.filename:
         return jsonify({"error": "No file selected."}), 400
 
-    # Import the processor
     from ..core.services.document_processor import allowed_file, extract_text
 
-    # Validate file extension
     if not allowed_file(file.filename):
         allowed = ', '.join(Config.ALLOWED_UPLOAD_EXTENSIONS)
         return jsonify({
             "error": f"Unsupported file type. Allowed: {allowed}"
         }), 400
 
-    # Validate file size
-    file.seek(0, 2)  # Seek to end to get size
+    file.seek(0, 2)
     size_bytes = file.tell()
     size_mb = size_bytes / (1024 * 1024)
-    file.seek(0)  # Reset for reading
+    file.seek(0)
 
     if size_mb > Config.MAX_UPLOAD_SIZE_MB:
         return jsonify({
             "error": f"File too large ({size_mb:.1f}MB). Maximum: {Config.MAX_UPLOAD_SIZE_MB}MB"
         }), 400
 
-    # Digest the bytes before extraction consumes the stream. This is the whole
-    # provenance record: the file itself is deliberately NOT stored — the
-    # extracted text already lands encrypted in chat_history and the audit
-    # trail, and keeping the original would add a second copy of the same
-    # sensitive data needing its own purge, legal-hold and export coverage.
-    # A digest answers the question that actually gets asked — "is this the
-    # document the agent read?" — at the cost of 64 characters.
+    # Digest the bytes before extraction consumes the stream: this is the whole
+    # provenance record. The file itself is deliberately NOT stored — the text
+    # already lands encrypted in chat_history and the audit trail, so keeping
+    # the original would mean a second copy of the same sensitive data needing
+    # its own purge, legal-hold and export coverage. A digest answers the
+    # question that actually gets asked — "is this the document the agent
+    # read?" — for 64 characters.
     file.seek(0)
     digest = hashlib.sha256(file.read()).hexdigest()
     file.seek(0)
@@ -89,9 +81,8 @@ def extract_document_text():
             f"{total_chars:,} chars | sha256:{digest[:12]} | User: {user_id}"
         )
 
-        # Org-level evidence, matching what a knowledge-base upload records.
-        # Feeding a document into a governed agent is a governance-relevant act,
-        # and this endpoint recorded nothing at all (see backlog 21b).
+        # Org-level evidence, matching a knowledge-base upload: feeding a
+        # document into a governed agent is governance-relevant (see backlog 21b).
         try:
             org_id = get_current_org_id()
             if org_id:

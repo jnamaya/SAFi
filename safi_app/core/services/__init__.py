@@ -1,12 +1,7 @@
-"""
-This package bundles all external-facing services for the application.
+"""Package facade for the external-facing service layer.
 
-By centralizing I/O-bound and parsing logic here (e.g., LLM calls,
-RAG queries, JSON parsing), the core "faculties" can remain
-purely logical and testable.
-
-This file makes 'services' a Python package and exports its
-primary classes and functions for use by the orchestrator and faculties.
+I/O and parsing live here so the faculties stay purely logical; import from
+this module rather than reaching into the submodules.
 """
 from .llm_provider import LLMProvider
 from .parsing_utils import (

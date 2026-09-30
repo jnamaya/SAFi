@@ -71,7 +71,6 @@ def scan_tool_descriptions(tools: Dict[str, Dict[str, Any]], server: str) -> Lis
 
 
 def available_key(base: str, taken=()) -> str:
-    """A connector key nothing else has claimed."""
     candidate = base
     suffix = 2
     while candidate in CONNECTOR_TOOLS or candidate in taken:

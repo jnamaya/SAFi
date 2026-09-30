@@ -1,17 +1,17 @@
 from typing import Dict, Any
 
 # SAFi DEFAULT GOVERNANCE POLICY
-# This policy is seeded for every new organization as a starting point.
-# It reflects SAFi's own mission and values and can be customized by the org admin.
+# Seeded for every new organization as a starting point; the org admin can
+# customize it. The policy compiler reads the rows below into agent values and
+# scope — once the DB row exists it is the source of truth, so edits here only
+# affect fresh databases.
 #
-# WEIGHT DISTRIBUTION:
-# Total scored weight: 0.99 (leaving 0.01 headroom for rounding)
-# - Alignment:             0.28
-# - Integrity:             0.28
-# - Stewardship:           0.28
-# - Rationale Consistency: 0.15
-# Grounding Fidelity is a hard gate (weight 0.0): excluded from the Spirit EMA
-# and enforced directly by the Will, failing closed if the Conscience omits it.
+# WEIGHT INVARIANT: the scored values sum to 0.99, not 1.0 (0.01 headroom for
+# the compiler's renormalization) —
+#   Alignment 0.28 / Integrity 0.28 / Stewardship 0.28 / Rationale 0.15
+# Grounding Fidelity is a hard gate at weight 0.0: excluded from the Spirit EMA
+# and enforced directly by the Will, which fails closed if the Conscience omits
+# it (will.py, hard_gate_unscored).
 
 SAFI_DEFAULT_POLICY: Dict[str, Any] = {
 
@@ -32,27 +32,25 @@ SAFI_DEFAULT_POLICY: Dict[str, Any] = {
         "principles. Never act in a way that contradicts this policy when it clearly applies."
     ),
 
-    # ADVISORY TEXT — these do not block anything on their own.
-    #
-    # WillGate is deterministic (zero LLM calls). It reads only
-    # will_rules.structural_requirements, hard-gate values in the Conscience
-    # ledger, and tool allow-lists/parameter constraints — never a prose rule
-    # list. The sole runtime consumer of these strings is the suggestion engine,
-    # which drafts compliant alternative prompts *after* a block that something
-    # else caused.
-    #
-    # The enforcement corresponding to these rules lives in "global_values"
-    # below: Alignment, Integrity and Stewardship are scored by the Conscience
-    # on every turn, and Grounding Fidelity is a hard gate the Will enforces.
-    # They are kept here in prose because the policy wizard can compile written
-    # rules into hard-gate values with rubrics ("compile_rules"), and these are
-    # a reasonable starting set for an author to convert.
-    #
-    # Deliberately NOT auto-converted into hard gates: this policy is seeded into
-    # every new organization, and each hard gate must appear in the Conscience
-    # ledger or the Will fails closed (will.py, hard_gate_unscored). Adding six
-    # at once would raise the blocked-turn rate for every org and every built-in
-    # agent, to enforce constraints the scored values above already cover.
+# ADVISORY TEXT — these block nothing on their own.
+#
+# WillGate is deterministic (zero LLM calls): it reads only
+# will_rules.structural_requirements, hard-gate values in the Conscience
+# ledger, and tool allow-lists/parameter constraints — never a prose rule
+# list. The only runtime consumer of these strings is the suggestion engine,
+# which drafts compliant alternative prompts *after* some other rule blocked.
+#
+# The enforcement these describe lives in "global_values": Alignment,
+# Integrity and Stewardship are scored every turn, Grounding Fidelity is a
+# hard gate. They are kept here in prose because the policy wizard can compile
+# written rules into hard-gate values with rubrics ("compile_rules"), and this
+# is a reasonable starting set for an author to convert.
+#
+# Deliberately NOT auto-converted into hard gates: this policy is seeded into
+# every new org, and each hard gate must appear in the Conscience ledger or the
+# Will fails closed (will.py, hard_gate_unscored). Six at once would raise the
+# blocked-turn rate for every org and every built-in agent, to enforce
+# constraints the scored values above already cover.
     "global_will_rules": [
         "Reject any request that requires producing false, fabricated, or misleading information.",
         "Always disclose uncertainty — never present speculative content as established fact.",
@@ -143,7 +141,7 @@ SAFI_DEFAULT_POLICY: Dict[str, Any] = {
             "weight": 0.0,  # hard gate → excluded from the Spirit EMA, enforced by the Will
             "hard_gate": True,
             # A fabrication is a grounding failure, not a scope breach; the
-            # reason keeps the redirect from misreporting it as off-topic.
+            # reason keeps the redirect from reporting it as off-topic.
             "gate_reason": "grounding_violation",
             "definition": (
                 "When grounding material (retrieved context, tool results, or supplied documents) "

@@ -280,9 +280,7 @@ def delete_custom():
     return jsonify({"ok": True})
 
 
-# --------------------------------------------------------------------------
 # deployment-wide provider keys
-# --------------------------------------------------------------------------
 # The org-scoped equivalents live in api/organizations.py. These exist because
 # an appliance has no organization: without them the Cloud pane's key table was
 # org-gated, so the only way to give an org-less deployment a cloud provider

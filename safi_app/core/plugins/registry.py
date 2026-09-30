@@ -39,14 +39,12 @@ _PLUGINS: List[Tuple[FrozenSet[str], Handler]] = []
 
 
 def register_plugin(agent_names, handler: Handler) -> None:
-    """Register `handler` for the given agent names (the values the
-    orchestrator carries as active_profile_name — register both the display
-    and sanitized forms, as the shipped plugins match both). "*" serves every
-    agent."""
+    """Register `handler` for the given agent names — the values the
+    orchestrator carries as active_profile_name. Register both the display and
+    the sanitized form; the shipped plugins match both. "*" serves every agent."""
     _PLUGINS.append((frozenset(n.lower().strip() for n in agent_names), handler))
 
 
 def plugins_for(active_profile_name: str) -> List[Handler]:
-    """Handlers registered for this agent, in registration order."""
     key = (active_profile_name or "").lower().strip()
     return [h for names, h in _PLUGINS if key in names or "*" in names]

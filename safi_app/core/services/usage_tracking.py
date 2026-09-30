@@ -2,19 +2,18 @@
 Per-org LLM token usage capture (backlog 61).
 
 Every model call in SAFi goes through LLMProvider._chat_completion, and every
-provider response already carries token counts. This module extracts those
-counts and records one row per call in the plaintext llm_usage table, so the
-"Usage & Cost" tab can aggregate spend per org without touching governance
-records. Cost never enters the governance record: examiners adjudicate what
-the model saw and said, not what it cost.
+provider response already carries token counts. This module extracts those counts and
+records one row per call in the plaintext llm_usage table, so the "Usage & Cost" tab
+can aggregate spend per org without touching governance records. Cost never enters
+the governance record: examiners adjudicate what the model saw and said, not what it
+cost.
 
 Attribution:
-- org comes from provider_governance.active_org(), the same ContextVar the
-  provider allow-list uses. It is set once per turn and copied into
-  background executor threads.
+- org comes from provider_governance.active_org(), the same ContextVar the provider
+  allow-list uses: set once per turn and copied into background executor threads.
 - agent comes from the activate_agent ContextVar below, set beside the two
-  activate_org calls in the orchestrator. None is fine (wizard calls, public
-  bot): the row still lands with the org.
+  activate_org calls in the orchestrator. None is fine (wizard calls, public bot) —
+  the row still lands with the org.
 
 Failure contract: record_usage never raises. A usage write failure is a log
 line, not a broken chat turn.
@@ -36,10 +35,10 @@ from .provider_governance import active_org
 
 _ACTIVE_AGENT: ContextVar[Optional[str]] = ContextVar("safi_active_agent", default=None)
 
-# USD per 1M tokens (input, output), matched by longest substring of the
-# model name. Estimates for display, not billing records. Claude rates
-# verified against Anthropic's published pricing 2026-08-17; the rest are
-# best-effort defaults. Override any entry with SAFI_LLM_PRICES.
+# USD per 1M tokens (input, output), matched by longest substring of the model
+# name. Estimates for display, not billing records: Claude rates verified against
+# Anthropic's published pricing 2026-08-17, the rest best-effort. Override any entry
+# with SAFI_LLM_PRICES.
 DEFAULT_PRICES = {
     "gpt-5-nano": (0.05, 0.40),
     "gpt-5-mini": (0.25, 2.00),
@@ -90,9 +89,9 @@ def get_price_map() -> dict:
 
 
 def extract_usage(provider_type: str, resp: Any) -> Optional[Tuple[int, int]]:
-    """(input_tokens, output_tokens) from a provider response, or None when
-    the response carries no usage. Never raises: SDK shape drift downgrades
-    to an uncounted call, not a broken one."""
+    """(input_tokens, output_tokens) from a provider response, or None when it
+    carries no usage. Never raises: SDK shape drift downgrades to an uncounted call,
+    not a broken one."""
     try:
         if provider_type == "openai":
             u = getattr(resp, "usage", None)

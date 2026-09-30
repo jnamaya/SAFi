@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 from typing import List
 
-# Chunking limit for the built-in markdown/text chunker.
 MAX_CHUNK_CHARS = 2000
 
 
@@ -44,7 +43,6 @@ def chunk_markdown(text: str, max_chunk_chars: int = MAX_CHUNK_CHARS) -> List[st
         text = text[m.end():]
     sections = re.split(r"(?m)^(?=#{1,6}\s)", text)
 
-    # Carry heading-only sections onto the following one.
     merged: List[str] = []
     carry = ""
     for section in sections:

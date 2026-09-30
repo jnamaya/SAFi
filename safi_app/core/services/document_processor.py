@@ -1,16 +1,12 @@
-"""
-Document text extraction service.
+"""Uploaded-file text extraction (PDF, DOCX, XLSX, TXT, MD, CSV, images).
 
-Extracts plain text from uploaded files (PDF, DOCX, XLSX, TXT, MD, CSV, and
-images via OCR) so it can be injected as context into the user's prompt.
-
-IMAGES ARE OCR'd TO TEXT — the image itself is never sent to a model. That is a
-governance decision, not a limitation of convenience: Phase Zero is a literal
-substring scan over the prompt and cannot see inside an image, so attaching image
-bytes to a model call would create an input channel the deterministic tier
-structurally cannot inspect. Turning the image into text first means it travels
-the same gated path as every other attachment. See GOVERNANCE_BACKLOG 32z for the
-sketch of how real vision could be governed, and why it is not built.
+IMAGES ARE OCR'd TO TEXT — the image bytes are never sent to a model. That is a
+governance decision, not a convenience: Phase Zero is a literal substring scan
+over the prompt and cannot see inside an image, so attaching image bytes would
+create an input channel the deterministic tier structurally cannot inspect.
+Turning the image into text first means it travels the same gated path as every
+other attachment. See GOVERNANCE_BACKLOG 32z for the sketch of how real vision
+could be governed, and why it is not built.
 """
 import os
 import csv
@@ -23,30 +19,22 @@ log = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.bmp'}
 ALLOWED_EXTENSIONS = {'.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv'} | IMAGE_EXTENSIONS
 
-# A page that yields fewer than this many characters is treated as scanned rather
-# than as genuinely sparse, and re-read with OCR when OCR is available. Chosen to
-# clear a stray header or page number without swallowing a real, short page.
+# A page yielding fewer than this many characters is treated as scanned rather
+# than genuinely sparse, and re-read with OCR when OCR is available. Set to
+# clear a stray header or page number without swallowing a real short page.
 _SCANNED_PAGE_CHAR_FLOOR = 40
 
 
 def allowed_file(filename: str) -> bool:
-    """Checks if the file extension is in the allowed set."""
     ext = os.path.splitext(filename)[1].lower()
     return ext in ALLOWED_EXTENSIONS
 
 
 def extract_text(file_storage, filename: str, max_chars: int = 50000) -> Tuple[str, int]:
-    """
-    Extracts text from an uploaded file.
+    """Extract text from an uploaded file.
 
-    Args:
-        file_storage: A file-like object (e.g., from Flask's request.files).
-        filename: The original filename (used to detect format).
-        max_chars: Maximum characters to return. Documents exceeding this
-                   will be truncated with a notice.
-
-    Returns:
-        A tuple of (extracted_text, total_chars_before_truncation).
+    Returns (extracted_text, total_chars_before_truncation) — the second value
+    is measured BEFORE the max_chars cut, so callers can report the real size.
     """
     ext = os.path.splitext(filename)[1].lower()
 
@@ -76,7 +64,6 @@ def extract_text(file_storage, filename: str, max_chars: int = 50000) -> Tuple[s
 
 
 def _extract_csv(file_storage) -> str:
-    """Reads a CSV and formats it as a Markdown table."""
     content = file_storage.read().decode('utf-8', errors='replace')
     reader = csv.reader(io.StringIO(content))
     rows = list(reader)
@@ -87,14 +74,12 @@ def _extract_csv(file_storage) -> str:
     lines = ["| " + " | ".join(header) + " |"]
     lines.append("| " + " | ".join(["---"] * len(header)) + " |")
     for row in rows[1:]:
-        # Pad or truncate columns to match header length
         padded = row + [''] * (len(header) - len(row))
         lines.append("| " + " | ".join(padded[:len(header)]) + " |")
     return "\n".join(lines)
 
 
 def _extract_pdf(file_storage) -> str:
-    """Extracts text from a PDF using PyPDF2."""
     try:
         import PyPDF2
     except ImportError:
@@ -141,7 +126,7 @@ def _extract_pdf(file_storage) -> str:
 
 
 def _ocr_available() -> bool:
-    """True when both the Python binding and the tesseract binary are present.
+    """True only when both the Python binding and the tesseract binary exist.
     The wheel installs without the binary, so importing pytesseract proves
     nothing on its own."""
     try:
@@ -202,7 +187,6 @@ def _ocr_pdf_page_images(page) -> str:
 
 
 def _extract_image(file_storage, filename: str) -> str:
-    """Extracts text from an image via OCR."""
     if not _ocr_available():
         raise ValueError(
             "Image support requires OCR, which is not available in this deployment. "
@@ -226,7 +210,6 @@ def _extract_image(file_storage, filename: str) -> str:
 
 
 def _extract_docx(file_storage) -> str:
-    """Extracts text from a DOCX using python-docx."""
     try:
         from docx import Document
     except ImportError:
@@ -245,7 +228,6 @@ def _extract_docx(file_storage) -> str:
 
 
 def _extract_xlsx(file_storage) -> str:
-    """Extracts cell values from an XLSX workbook as one Markdown table per sheet."""
     try:
         import openpyxl
     except ImportError:
@@ -260,7 +242,6 @@ def _extract_xlsx(file_storage) -> str:
     for ws in wb.worksheets:
         rows = []
         for row in ws.iter_rows(values_only=True):
-            # Skip fully empty rows; stringify cells, blanking out None.
             cells = ["" if c is None else str(c) for c in row]
             if any(c.strip() for c in cells):
                 rows.append(cells)

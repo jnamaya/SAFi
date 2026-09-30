@@ -1,4 +1,3 @@
-# safi_app/api/audit_api.py
 """Native Audit Hub API: the observe surface over governance_records.
 
 Org-scoped, session-authenticated, admin|editor|auditor — the same auth

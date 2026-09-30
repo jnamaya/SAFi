@@ -27,7 +27,6 @@ log = logging.getLogger(__name__)
 
 
 def _one(sql, params):
-    """One aggregate row: (count, oldest, examples...) style queries."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -50,7 +49,6 @@ def _column(sql, params, key):
 
 
 def pending_kb_documents(org_id):
-    """Documents awaiting sign-off in this org's shared knowledge bases."""
     agg = _one(
         """
         SELECT COUNT(*) AS n, MIN(d.created_at) AS oldest
@@ -71,7 +69,6 @@ def pending_kb_documents(org_id):
 
 
 def pending_review_items(org_id):
-    """Supervisory review queue: flagged turns awaiting disposition."""
     agg = _one(
         "SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM review_queue "
         "WHERE org_id = %s AND status = 'pending'", (org_id,))

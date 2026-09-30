@@ -1,8 +1,6 @@
-"""
-Web Search MCP Server — DuckDuckGo backend.
-Uses the `duckduckgo-search` package (pip install duckduckgo-search).
-Runs the synchronous DDGS client in a thread to stay async-compatible.
-"""
+"""Web Search MCP server — DuckDuckGo backend via the `ddgs` package
+(pip install ddgs). The synchronous DDGS client is run in a thread to stay
+async-compatible."""
 import json
 import logging
 import asyncio

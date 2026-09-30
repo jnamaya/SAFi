@@ -592,7 +592,6 @@ class _Runtime:
             ready.set()
 
     def _open_transport(self, transport: str, params: Dict[str, Any]):
-        """Return the SDK's async context manager for the configured transport."""
         if transport in ("http", "streamable_http", "streamable-http"):
             from mcp.client.streamable_http import streamable_http_client
 

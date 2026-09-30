@@ -21,9 +21,9 @@ WHY NOT PICKLE
 --------------
 The legacy CLI (`rag/build_index_v2.py`) writes `<name>_metadata.pkl`. These
 indexes carry user-uploaded content with a user-driven lifecycle, so their
-metadata is written as JSON instead: `pickle.load` on a file whose write path
-is reachable from an upload endpoint is a deserialization surface with no
-upside. `Retriever` reads either, preferring JSON.
+metadata is written as JSON instead: `pickle.load` on a file whose write path is
+reachable from an upload endpoint is a deserialization surface with no upside.
+`Retriever` reads either, preferring JSON.
 """
 from __future__ import annotations
 
@@ -46,22 +46,22 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
                       r"[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 
 # Documents are indexed in full. This is NOT Config.MAX_DOCUMENT_CHARS (50k),
-# which exists to bound a single prompt — reusing it here would silently index
-# the first chapter of a long PDF and let the agent answer confidently from it.
+# which bounds a single prompt — reusing it here would silently index the first
+# chapter of a long PDF and let the agent answer confidently from it.
 MAX_INDEX_CHARS_PER_DOC = int(os.environ.get("SAFI_KB_MAX_DOC_CHARS", "5000000"))
 
 
 class InvalidKnowledgeBaseId(ValueError):
-    """The id is not a UUID we could have generated, so it does not get to
-    name a file. This is the path-traversal guard: Retriever builds its path
-    by f-string (`retriever.py`), so a `../../` id would otherwise read and
-    write outside the vector store."""
+    """The id is not a UUID we could have generated, so it does not get to name
+    a file. This is the path-traversal guard: Retriever builds its path by
+    f-string (`retriever.py`), so a `../../` id would otherwise read and write
+    outside the vector store."""
 
 
 def kb_paths(kb_id: str) -> Tuple[str, str]:
     """(index_path, metadata_path) for a KB. Raises InvalidKnowledgeBaseId
-    rather than sanitising: an allow-list of characters is a thing to get
-    wrong once; a UUID check is a thing that cannot be."""
+    rather than sanitising: an allow-list of characters is a thing to get wrong
+    once; a UUID check is a thing that cannot be."""
     if not isinstance(kb_id, str) or not _UUID_RE.match(kb_id):
         raise InvalidKnowledgeBaseId(f"not a knowledge base id: {kb_id!r}")
     return (os.path.join(VECTOR_STORE_PATH, f"{kb_id}.index"),
@@ -114,8 +114,8 @@ def _atomic_write(path: str, write_fn) -> None:
 
 
 def build_kb_index(kb_id: str) -> Dict[str, Any]:
-    """Rebuilds one KB from its approved documents. Synchronous; the indexer
-    service and the tests both call this. Returns a summary dict.
+    """Rebuild one KB from its approved documents, synchronously. Returns a
+    summary dict.
 
     Sets status to 'empty' (and deletes the artifacts) when nothing is
     indexable — a KB whose documents are all pending must not keep serving the
