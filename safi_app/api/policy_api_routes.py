@@ -15,6 +15,7 @@ from ..core.services.provider_governance import activate_org
 # strip (ordinary value) or raise on (hard gate) at chat time, we reject at
 # save time — the author is looking at the form, not at a user's failed chat.
 from ..core.faculties.synderesis import _has_usable_rubric
+from ..role_config import ROLE_CONFIG
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
@@ -452,7 +453,10 @@ def _policy_reviewer_context():
     if not org_id:
         return None, None, None, (jsonify({"error": "You are not part of an organization."}), 400)
     uid = user.get('id') or user.get('sub')
-    if not tool_approval_store.is_reviewer(org_id, uid, user.get('role'), kind='policy'):
+    if not tool_approval_store.is_reviewer(
+        org_id, uid, user.get('role'), kind='policy',
+        reviewer_roles=ROLE_CONFIG["reviewer_roles"],
+    ):
         return None, None, None, (jsonify({"error": "Forbidden: you are not one of "
                                                     "this organization's policy approvers."}), 403)
     return uid, user.get('email'), org_id, None
@@ -484,7 +488,9 @@ def approve_policy_change(request_id):
 
     self_approved = False
     if str(req['requested_by']) == str(uid):
-        if tool_approval_store.other_reviewer_exists(org_id, uid, kind='policy'):
+        if tool_approval_store.other_reviewer_exists(
+            org_id, uid, kind='policy', reviewer_roles=ROLE_CONFIG["reviewer_roles"]
+        ):
             return jsonify({"error": "You submitted this change; another "
                                      "policy approver must decide it."}), 403
         self_approved = True
@@ -543,8 +549,9 @@ def reject_policy_change(request_id):
     if not req or not org_id or str(req['org_id']) != str(org_id):
         return jsonify({"error": "Not found"}), 404
     is_author = str(req['requested_by']) == str(uid)
-    if not (is_author or tool_approval_store.is_reviewer(org_id, uid,
-                                                         user.get('role'), kind='policy')):
+    if not (is_author or tool_approval_store.is_reviewer(
+            org_id, uid, user.get('role'), kind='policy',
+            reviewer_roles=ROLE_CONFIG["reviewer_roles"])):
         return jsonify({"error": "Forbidden"}), 403
     if req['status'] != 'pending':
         return jsonify({"error": f"This request is already {req['status']}."}), 409

@@ -1,14 +1,9 @@
-// Conversation Management Logic:chat.js
-
 import * as api from './api.js';
 import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import { openConversationShareDialog, openProjectShareDialog } from '../ui/ui-share-dialog.js';
 import * as cache from './cache.js'; // Use cache for optimistic updates
-// CHANGE: Import the utility function
-
-
 // --- CONVERSATION STATE ---
 export let currentConversationId = null;
 let convoToRename = { id: null, oldTitle: null };
@@ -162,8 +157,6 @@ function _clearAllPendingFiles() {
     _renderFileChips();
 }
 
-// --- CORE EXPORTED HANDLERS (Fixing ReferenceError) ---
-// Moved declarations of handlers here to ensure they are defined before renderConvoList uses them.
 export function getProjects() {
     return projects;
 }
@@ -356,8 +349,6 @@ async function handleMoveConversation(convoId, projectId, activeProfileData, use
     }
 }
 
-// --- HELPER: Create Prompt Handler ---
-// This ensures that "New Chat" buttons always have a working prompt click handler
 function createDefaultPromptHandler(activeProfileData, user) {
     return (promptText) => {
         if (!ui.elements.messageInput) return;
@@ -380,14 +371,11 @@ function createDefaultPromptHandler(activeProfileData, user) {
  * @param {boolean} [shouldSwitchChat=true] - NEW: If false, only the list is refreshed, preserving current chat view.
  */
 export async function loadConversations(activeProfileData, user, promptClickHandler, showModal, shouldSwitchChat = true) {
-    // --- ADDED --- (Feature 1)
     // Check for the flag set during profile change
     const forceNewChat = sessionStorage.getItem('forceNewChat') === 'true';
     if (forceNewChat) {
-        // Clear the flag so it doesn't persist on future reloads
         sessionStorage.removeItem('forceNewChat');
     }
-    // --- END ADDED ---
 
     // 1. Load from local cache for immediate display
     const cachedConvos = await cache.loadConvoList();
@@ -420,22 +408,17 @@ export async function loadConversations(activeProfileData, user, promptClickHand
         renderConvoList(conversations, activeProfileData, user, showModal);
 
         if (shouldSwitchChat) {
-            // --- MODIFIED BLOCK --- (Feature 1)
             if (forceNewChat) {
-                // If the flag is set, always start a new conversation
                 await startNewConversation(false, activeProfileData, user, promptClickHandler);
             } else if (conversations?.length > 0) {
-                // Original logic: load the last active or most recent convo
                 const targetConvoId = (currentConversationId && conversations.some(c => c.id === currentConversationId))
                     ? currentConversationId
                     : conversations[0].id;
 
-                await switchConversation(targetConvoId, activeProfileData, user, showModal, true); // Scroll to bottom on full load
+                await switchConversation(targetConvoId, activeProfileData, user, showModal, true);
             } else {
-                // Original logic: no convos exist, so start a new one
                 await startNewConversation(false, activeProfileData, user, promptClickHandler);
             }
-            // --- END MODIFIED BLOCK ---
         }
     } catch (error) {
         console.error('Failed to load conversations:', error);
@@ -446,12 +429,11 @@ export async function loadConversations(activeProfileData, user, promptClickHand
 }
 
 /**
- * NEW: Loads conversation list from server/cache and re-renders sidebar ONLY.
- * This is used for actions like Pin/Delete/Rename where we don't want to force
+ * Loads conversation list from server/cache and re-renders sidebar ONLY.
+ * Used for actions like Pin/Delete/Rename where we don't want to force
  * the main chat window to reload or scroll.
  */
 export async function refreshConvoListOnly(activeProfileData, user, showModal) {
-    // This calls loadConversations but explicitly sets shouldSwitchChat to false.
     return loadConversations(activeProfileData, user, () => { }, showModal, false);
 }
 
@@ -460,7 +442,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     const convoList = document.getElementById('convo-list');
     if (!convoList) return;
 
-    // ADDED SAFETY CHECK: Ensure user object exists before proceeding
     if (!user) {
         console.warn('Cannot render conversation list: User data is missing.');
         return;
@@ -479,7 +460,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     const handlers = {
         switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal, true), // Click always switches/scrolls
-        // NOTE: handleRename, handleDelete, handleTogglePin are now defined at the module top level.
         renameHandler: handleRename,
         deleteHandler: handleDelete,
         pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user), // Pass all args
@@ -685,8 +665,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         headerContainer.appendChild(clearBtn);
         convoList.appendChild(headerContainer);
     }
-    // --- END NEW: Sorting Logic ---
-
     // Ensure the currently active link is highlighted after rendering
     if (currentConversationId) {
         uiAuthSidebar.setActiveConvoLink(currentConversationId);
@@ -790,7 +768,6 @@ function _stripDocumentContext(content) {
     return content.replace(/\n\n\[UPLOADED DOCUMENT:[\s\S]*?\[END DOCUMENT\]/g, '').trim();
 }
 
-// Updated signature to accept activeProfileData
 function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
 
@@ -810,12 +787,10 @@ function renderHistory(history, user, showModal, activeProfileData) {
         // an ungoverned model call, and a stored chip is still ungoverned output
         // offered as a one-click action. The rows stay for the record.
 
-        // --- THIS IS THE FIX ---
-        // Filter out null/undefined scores *before* passing to the trend line.
+        // Filter out null/undefined scores before passing to the trend line.
         const scoresHistory = history.slice(0, i + 1)
             .map(t => t.spirit_score)
             .filter(s => s !== null && s !== undefined);
-        // --- END FIX ---
 
         // Point-in-time governance provenance persisted with the turn
         // (chat_history.policy_id / policy_version). The display name resolves
@@ -878,7 +853,6 @@ function renderHistory(history, user, showModal, activeProfileData) {
             turn.message_id,
             payload,
             async (p) => {
-                // --- FIX: Fetch fresh history on click ---
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
@@ -927,8 +901,6 @@ async function showConscienceAuditModal(payload) {
     });
 }
 
-
-// --- MESSAGE FLOW ---
 
 // --- ABORT CONTROLLER STATE ---
 let currentAbortController = null;
@@ -1066,7 +1038,6 @@ export async function sendMessage(activeProfileData, user) {
     currentAbortController = new AbortController();
 
     const now = new Date();
-    // ADDED NULL CHECK: Safely get user info
     const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
     // generateUUID(), never crypto.randomUUID() directly: the Web Crypto API is
     // only exposed in a secure context, so on a self-hosted instance reached

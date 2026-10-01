@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.synderesis import apply_charter, authorized_tools
 from safi_app.core.faculties.will import WillGate
-from safi_app.core.tool_connectors import expand_connectors
+from safi_app.core.tool_connectors import CONNECTOR_TOOLS, expand_connectors
 
 
 def base_profile(will_rules=None):
@@ -175,7 +175,11 @@ class TestToolCap(unittest.TestCase):
         # intersecting, so authorizing the "web_search" connector authorizes
         # every function under it — the same expansion authorized_tools does.
         policy = {"allowed_tools": ["web_search", "calculator"]}
-        out = apply_charter(base_profile(policy), None, ai_standards=charter_with(allowed_tools=["web_search"]))
+        out = apply_charter(
+            base_profile(policy), None,
+            ai_standards=charter_with(allowed_tools=["web_search"]),
+            tool_catalog=CONNECTOR_TOOLS,
+        )
         allowed = out["will_rules"]["allowed_tools"]
         self.assertEqual(set(allowed), set(expand_connectors(["web_search"])))
         self.assertNotIn("calculator", allowed)

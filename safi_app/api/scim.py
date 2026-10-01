@@ -31,6 +31,7 @@ from ..persistence import scim_store
 from ..persistence import sharing_store
 from ..persistence import conversation_sharing_store
 from ..core.services import mcp_oauth
+from ..role_config import ROLE_CONFIG
 
 scim_bp = Blueprint("scim", __name__)
 
@@ -100,15 +101,21 @@ def _apply_membership(org_id, email, role):
             if str(user.get("org_id")) != str(org_id):
                 db.update_user_org_and_role(uid, org_id, role)
             else:
-                db.update_member_role(uid, org_id, role, actor=_actor(org_id))
-        except db.LastAdminError:
+                db.update_member_role(
+                    uid, org_id, role, actor=_actor(org_id),
+                    administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+                )
+        except db.LastAuthorityRoleError:
             # Never strip the final admin via a directory sync; leave as-is.
             current_app.logger.warning("SCIM role change skipped: would remove last admin (%s)", email)
         db.append_compliance_log(org_id, "scim_user_provisioned", _actor(org_id),
                                  {"email": email, "role": role, "linked": True})
     else:
         # expires far out: a SCIM-provisioned invite persists until deprovisioned.
-        db.create_org_invitation(org_id, email, role, invited_by=_actor(org_id), expires_days=3650)
+        db.create_org_invitation(
+            org_id, email, role, invited_by=_actor(org_id), expires_days=3650,
+            allowed_roles=ROLE_CONFIG["levels"].keys(),
+        )
         db.append_compliance_log(org_id, "scim_user_provisioned", _actor(org_id),
                                  {"email": email, "role": role, "linked": False})
 
@@ -127,10 +134,14 @@ def _deprovision(org_id, email):
             current_app.logger.warning("SCIM deprovision token revoke failed for %s: %s", email, e)
             revoked = {}
         try:
-            db.remove_member_from_org(uid, org_id, actor=_actor(org_id))
+            db.remove_member_from_org(
+                uid, org_id, actor=_actor(org_id),
+                administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+                default_role=ROLE_CONFIG["default_role"],
+            )
             sharing_store.remove_user_from_org_sharing(uid, org_id)
             conversation_sharing_store.remove_user_from_org_sharing(uid, org_id)
-        except db.LastAdminError:
+        except db.LastAuthorityRoleError:
             current_app.logger.warning("SCIM deprovision skipped: would remove last admin (%s)", email)
             return
         db.append_compliance_log(org_id, "scim_user_deprovisioned", _actor(org_id),

@@ -33,16 +33,19 @@ from flask import Blueprint, session, jsonify, request, current_app
 from ..config import Config
 from ..core.rbac import (check_permission, get_current_org_id, get_current_role,
                          require_any_role)
+from ..role_config import ROLE_CONFIG
 from ..persistence import database as db
 from ..timeutil import utc_isoformat
 from ..persistence.database import SelfReviewError
 
 knowledge_bp = Blueprint('knowledge', __name__)
 
-REVIEWER_ROLES = ("admin", "auditor")
+REVIEWER_ROLES = tuple(ROLE_CONFIG["reviewer_roles"])
 
 # Visibility values that mean "shared with the org" — i.e. approval applies.
-SHARED_VISIBILITIES = ("member", "auditor", "editor", "admin")
+SHARED_VISIBILITIES = tuple(
+    value for value in ROLE_CONFIG["visibility_roles"] if value != "private"
+)
 
 
 def _actor():
@@ -150,7 +153,7 @@ def _sees_review_detail(kb, user_id, role):
 
 
 def _sole_reviewer(user_id, org_id):
-    """True when the caller is the org's only admin/auditor.
+    """True when the caller is the org's only configured reviewer.
 
     Drives the UI only — the authoritative check runs inside
     set_knowledge_base_document_status, in the same transaction as the write,
@@ -158,7 +161,9 @@ def _sole_reviewer(user_id, org_id):
     """
     if not org_id:
         return False
-    return db.count_other_eligible_reviewers(org_id, user_id) == 0
+    return db.count_other_eligible_reviewers(
+        org_id, user_id, reviewer_roles=ROLE_CONFIG["reviewer_roles"]
+    ) == 0
 
 
 
@@ -167,7 +172,9 @@ def list_knowledge_bases():
     user_id, _ = _actor()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
-    rows = db.list_knowledge_bases(user_id, get_current_org_id(), get_current_role())
+    rows = db.list_knowledge_bases(
+        user_id, get_current_org_id(), get_current_role(), ROLE_CONFIG["visibility_roles"]
+    )
     return jsonify({"knowledge_bases": [_shape(kb) for kb in rows]})
 
 
@@ -190,13 +197,13 @@ def list_available_knowledge_bases():
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     rows = db.list_knowledge_bases_for_agent_picker(
-        user_id, get_current_org_id(), get_current_role())
+        user_id, get_current_org_id(), get_current_role(), ROLE_CONFIG["visibility_roles"])
     out = [{"id": kb["id"], "name": kb["name"],
             "chunk_count": kb.get("chunk_count") or 0, "builtin": False}
            for kb in rows]
 
     if request.args.get('include_builtin') in ('1', 'true', 'yes'):
-        from ..core.faculties.synderesis import ALL_AGENTS
+        from ..profile_resolver import ALL_AGENTS
         seen = set()
         for agent in ALL_AGENTS.values():
             name = isinstance(agent, dict) and agent.get("rag_knowledge_base")
@@ -475,7 +482,8 @@ def review_document(kb_id, doc_id):
     try:
         updated = db.set_knowledge_base_document_status(
             doc_id, action, reviewer_id=user_id, reviewer_email=email,
-            reason=data.get('reason'), org_id=kb['org_id'])
+            reason=data.get('reason'), org_id=kb['org_id'],
+            reviewer_roles=ROLE_CONFIG["reviewer_roles"])
     except SelfReviewError as e:
         # 403, not 400: the request was well formed, the actor was wrong.
         return jsonify({"error": str(e)}), 403
@@ -508,7 +516,9 @@ def list_pending_reviews():
 
     sole = _sole_reviewer(user_id, org_id)
     pending = []
-    for kb in db.list_knowledge_bases(user_id, org_id, get_current_role()):
+    for kb in db.list_knowledge_bases(
+        user_id, org_id, get_current_role(), ROLE_CONFIG["visibility_roles"]
+    ):
         if kb.get('visibility') not in SHARED_VISIBILITIES:
             continue
         for doc in db.list_knowledge_base_documents(kb['id'], statuses=('pending',)):

@@ -53,7 +53,7 @@ def scan_tool_descriptions(tools: Dict[str, Dict[str, Any]], server: str) -> Lis
     list Phase Zero already owns. No model call and no judgement: a hit is
     printed, and a person decides what it means.
     """
-    from ..threat_intel import EMBEDDED_INSTRUCTION_MARKERS, INJECTION_SIGNATURES
+    from ...security_policy import EMBEDDED_INSTRUCTION_MARKERS, INJECTION_SIGNATURES
 
     findings: List[str] = []
     for name, spec in tools.items():

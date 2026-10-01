@@ -14,9 +14,12 @@ import dns.exception
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from ..persistence import database as db
+from ..bootstrap import create_organization
+from ..role_config import ROLE_CONFIG
 from ..timeutil import utc_isoformat
 from ..config import Config
 from ..core import pii_validators
+from .. import security_policy
 from ..core.rbac import require_role, check_permission, get_current_org_id
 from ..core import integrity
 # Same check the governance compiler uses, applied at save time: what would
@@ -175,9 +178,13 @@ def verify_domain_dns():
             # succeeded and is committed; a failure here is reported and left for
             # a retry rather than rolling back a proven domain.
             absorbed = {"moved": [], "skipped": [], "emptied_orgs": [],
-                        "orgs_without_admin": []}
+                        "orgs_without_authority": []}
             try:
-                absorbed = db.absorb_domain_users(org_id, domain, f"user:{_actor()}")
+                absorbed = db.absorb_domain_users(
+                    org_id, domain, f"user:{_actor()}",
+                    administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+                    default_role=ROLE_CONFIG["default_role"],
+                )
                 if absorbed["moved"]:
                     current_app.logger.info(
                         f"Domain {domain} verified: absorbed {len(absorbed['moved'])} "
@@ -220,7 +227,7 @@ def verify_domain_dns():
                 # members of their org, and any org left without an admin or
                 # without members needs an operator to reconcile it.
                 "absorbed": absorbed["moved"],
-                "orgs_without_admin": absorbed["orgs_without_admin"],
+                "orgs_without_admin": absorbed["orgs_without_authority"],
                 "emptied_orgs": absorbed["emptied_orgs"],
             })
         else:
@@ -554,7 +561,7 @@ def create_organization():
     if not name: return jsonify({"error": "Organization Name is required"}), 400
         
     try:
-        result = db.create_organization_atomic(name, user_id)
+        result = create_organization(name, user_id)
         
         # The user's generic session is left alone; only the new org id is returned.
         
@@ -646,7 +653,8 @@ def list_organization_members(org_id):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
-        members = db.get_organization_members(org_id)
+        role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
+        members = db.get_organization_members(org_id, role_order)
         return jsonify({"members": members})
     except Exception as e:
         current_app.logger.error(f"Error listing members: {e}")
@@ -672,7 +680,10 @@ def update_user_role(org_id, user_id):
         # records_api surfaces, and a role change is an access-control event an
         # auditor expects to find beside the config changes it enables.
         prior = (db.get_user_details(user_id) or {}).get('role')
-        db.update_member_role(user_id, org_id, new_role, actor=_actor())
+        db.update_member_role(
+            user_id, org_id, new_role, actor=_actor(),
+            administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+        )
         db.append_compliance_log(org_id, 'member_role_changed', f"user:{_actor()}", {
             "member": user_id,
             "prior_role": prior,
@@ -684,7 +695,7 @@ def update_user_role(org_id, user_id):
             "admin_revoked": prior == 'admin' and new_role != 'admin',
         })
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
-    except db.LastAdminError as e:
+    except db.LastAuthorityRoleError as e:
         # 409: valid request, conflicts with current state. The message is
         # deliberately surfaced — a generic 500 here would leave the admin with
         # no idea why the change was refused or how to proceed.
@@ -710,7 +721,11 @@ def remove_organization_member(org_id, user_id):
         revoked = mcp_oauth.revoke_all_mcp_tokens(user_id)
         for key in revoked:
             db.delete_oauth_token(user_id, mcp_oauth.provider_key(key), org_id=org_id)
-        db.remove_member_from_org(user_id, org_id, actor=_actor())
+        db.remove_member_from_org(
+            user_id, org_id, actor=_actor(),
+            administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+            default_role=ROLE_CONFIG["default_role"],
+        )
         # Sharing rows must not outlive the membership: direct grants and
         # group memberships in this org go with the member (backlog 55),
         # and so do direct conversation/folder shares (backlog 56).
@@ -721,7 +736,7 @@ def remove_organization_member(org_id, user_id):
                                  {"member": user_id, "prior_role": prior,
                                   "tool_tokens_revoked": revoked})
         return jsonify({"status": "removed", "user_id": user_id})
-    except db.LastAdminError as e:
+    except db.LastAuthorityRoleError as e:
         return jsonify({"error": str(e)}), 409
     except Exception as e:
         current_app.logger.error(f"Error removing member: {e}")
@@ -839,7 +854,8 @@ def create_invitation(org_id):
     data = request.json or {}
     try:
         inv = db.create_org_invitation(org_id, data.get('email'),
-                                       data.get('role', 'member'), _actor())
+                                       data.get('role') or ROLE_CONFIG["default_role"], _actor(),
+                                       allowed_roles=ROLE_CONFIG["levels"].keys())
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -975,7 +991,7 @@ def list_pii_checks(org_id):
     """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
-    return jsonify({"checks": pii_validators.catalogue()})
+    return jsonify({"checks": pii_validators.catalogue(security_policy.PII_CATALOGUE)})
 
 
 @organizations_bp.route('/organizations/<org_id>/ai-standards', methods=['GET'])
@@ -1029,17 +1045,19 @@ def upsert_ai_standards(org_id):
     if pii is not None:
         if not isinstance(pii, list):
             return jsonify({"error": "pii_validators must be an array"}), 400
-        known = set(pii_validators.VALIDATOR_KEYS)
+        known = set(security_policy.PII_CATALOGUE)
         unknown = [str(k) for k in pii if str(k).strip().lower() not in known]
         if unknown:
             return jsonify({"error": (
                 "Unknown sensitive-data check(s): %s. Valid options are: %s."
-                % (", ".join(unknown[:5]), ", ".join(pii_validators.VALIDATOR_KEYS))
+                % (", ".join(unknown[:5]), ", ".join(security_policy.PII_CATALOGUE))
             )}), 400
         # Normalized so storage order is stable and duplicates cannot accumulate
         # across saves. An empty list is a legitimate value: it means the org
         # turned every check off, which is the default state.
-        structural['pii_validators'] = pii_validators.normalize(pii)
+        structural['pii_validators'] = pii_validators.normalize(
+            pii, security_policy.PII_CATALOGUE
+        )
 
     threshold = structural.get('alignment_score_threshold')
     if threshold is not None:

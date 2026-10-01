@@ -1,18 +1,8 @@
-"""
-Spirit — the mathematical memory of the agent's character.
-
-In Thomistic philosophy, Habitus refers to the accumulation of moral actions that build
-stable dispositions over time, forming virtues or vices that shape the ultimate character
-of the soul. Here it is the long-term ethical alignment memory of the agent: an exponential
-moving average (EMA) smoothly integrates each turn's Conscience ledger into a persistent
-alignment vector (mu), measures conceptual drift, and maps ethical performance over time —
-translating metaphysical virtue into trackable vector coordinates.
-"""
+"""Aggregate scored evaluations and maintain per-profile alignment history."""
 from __future__ import annotations
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple, Union
 
-# Relative import from within the 'faculties' package
 from .utils import _norm_label
 
 

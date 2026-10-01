@@ -14,11 +14,12 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
 from .extensions import oauth, cors  # Import centralized extension instances
-# Shipped plugin registrations (agreement §III). Imported here at package init,
-# which Python runs before any safi_app submodule, so every consumer that can
-# reach the orchestrator gets the shipped plugins without the manifest-covered
-# orchestrator triggering content registration itself.
-from .core.plugins import builtin as _builtin_plugins  # noqa: F401
+# Host-side composition: user-land plugin modules describe registrations as
+# data; the host wires them into the generic core registry.
+from .core.plugins import builtin as _builtin_plugins
+from .core.plugins.registry import register_plugin as _register_plugin
+for _plugin_names, _plugin_handler in _builtin_plugins.PLUGIN_REGISTRATIONS:
+    _register_plugin(_plugin_names, _plugin_handler)
 
 APPLIANCE_CERT_PATH = Path("/etc/ssl/runsafi/appliance.crt")
 
@@ -41,6 +42,9 @@ def _appliance_certificate_response():
 def create_app():
     app = Flask(__name__, static_folder='../public', static_url_path='/')
     app.config.from_object(Config)
+    from .role_config import ROLE_CONFIG, ROLE_CONFIG_VERSION
+    app.config["ROLE_CONFIG"] = ROLE_CONFIG
+    app.config["ROLE_CONFIG_VERSION"] = ROLE_CONFIG_VERSION
     Config.validate()
 
     # Reject an oversized request body at the framework edge (413) before Flask
@@ -115,12 +119,23 @@ def create_app():
 
     with app.app_context():
         db.init_db()
+        from .bootstrap import initialize as initialize_userland_defaults
+        try:
+            initialize_userland_defaults()
+        except Exception as e:
+            app.logger.error("Application data bootstrap failed: %s", e)
+        try:
+            from .persistence import incident_store
+            incident_store.init_schema()
+        except Exception as e:
+            app.logger.error("Incident module schema initialization failed: %s", e)
         # Demo signup counter, and a ONE-TIME backfill from orphaned audit rows.
         # Ordering matters: this must run at boot, before the widened demo purge
         # in cleanup_old_demo_users() can remove the orphans it reconstructs
         # history from (GOVERNANCE_BACKLOG 82). Idempotent after the first run.
         try:
-            db.init_demo_usage_schema()
+            from .persistence.demo_store import init_demo_usage_schema
+            init_demo_usage_schema()
         except Exception as e:
             app.logger.error("demo usage counter init failed: %s", e)
         # The MCP reload counter (backlog 48b). Its own module, deliberately

@@ -4,7 +4,7 @@ import {
     setAuthToken,
     getAuthToken,
     awaitAuthInit,
-    clearAuthToken // Function specifically for clearing the token
+    clearAuthToken
 } from './cache.js';
 
 import offlineManager from '../services/offline-manager.js';
@@ -12,7 +12,6 @@ import offlineManager from '../services/offline-manager.js';
 // PWA is served same-origin, so API paths are bare and relative.
 const j = (p) => p;
 
-// Export Auth utilities used by app.js
 export { awaitAuthInit, setAuthToken, getAuthToken, clearAuthToken };
 
 export const urls = {
@@ -68,8 +67,6 @@ export const urls = {
 };
 
 
-// --- CORE HYBRID FETCHING FUNCTIONS ---
-
 async function createHeaders() {
     const auth = await getAuthToken();
     const headers = new Headers();
@@ -78,10 +75,8 @@ async function createHeaders() {
     return headers;
 }
 
-// Same-origin PWA: API paths are already correct as-is.
 const apiUrl = (u) => u;
 
-// GET requests use offlineManager.fetchWithCache
 async function httpGet(url) {
     url = apiUrl(url);
     const request = new Request(url, {
@@ -98,7 +93,6 @@ async function httpGet(url) {
     return result;
 }
 
-// POST/PUT/DELETE/PATCH requests use offlineManager.postWithQueue
 async function httpJSON(url, method, body, options = {}) {
     url = apiUrl(url);
     // We construct the body string and headers here
@@ -118,8 +112,6 @@ function ensureOkOrQueued(res, tag) {
     return res;
 }
 
-
-// --- EXPORTED API FUNCTIONS (Hybrid) ---
 
 export async function login(payload) {
     const res = await httpJSON(urls.LOGIN, "POST", payload);
@@ -159,7 +151,6 @@ export const getMe = async () => {
     }
 };
 
-// User/Profile/Model management
 export const fetchAvailableProfiles = () => httpGet(urls.PROFILES);
 export const fetchAvailableModels = () => httpGet(urls.MODELS);
 export const updateUserProfile = (profileName) =>
@@ -167,7 +158,6 @@ export const updateUserProfile = (profileName) =>
 export const updateUserModels = (models) =>
     httpJSON(urls.UPDATE_MODELS, 'PUT', models);
 
-// Conversation management
 export const fetchConversations = () => httpGet(urls.CONVERSATIONS);
 export const createNewConversation = (projectId = null) =>
     httpJSON(urls.CONVERSATIONS, 'POST', projectId ? { project_id: projectId } : {});
@@ -181,7 +171,6 @@ export const clearAllConversations = () =>
 export const togglePinConversation = (id, isPinned) =>
     httpJSON(urls.PIN_CONVERSATION(id), 'PATCH', { is_pinned: isPinned });
 
-// Projects (workspaces)
 export const fetchSchedules = () => httpGet(urls.SCHEDULES);
 export const createSchedule = (payload) => httpJSON(urls.SCHEDULES, 'POST', payload);
 export const updateSchedule = (id, payload) => httpJSON(urls.SCHEDULE(id), 'PUT', payload);
@@ -198,7 +187,6 @@ export const deleteProject = (id) => httpJSON(urls.PROJECT(id), 'DELETE', {});
 export const moveConversationToProject = (id, projectId) =>
     httpJSON(urls.MOVE_CONVERSATION(id), 'PATCH', { project_id: projectId });
 
-// Saved content (snapshots of individual AI responses)
 export const fetchSavedContent = () => httpGet(urls.SAVED_CONTENT);
 export const saveContent = (messageId, projectId = null) =>
     httpJSON(urls.SAVED_CONTENT, 'POST', { message_id: messageId, project_id: projectId });
@@ -206,7 +194,6 @@ export const moveSavedContent = (id, projectId) =>
     httpJSON(urls.MOVE_SAVED_ITEM(id), 'PATCH', { project_id: projectId });
 export const deleteSavedContent = (id) => httpJSON(urls.SAVED_ITEM(id), 'DELETE', {});
 
-// Chat flow
 export const fetchHistory = (id, limit = 50, offset = 0) =>
     httpGet(urls.HISTORY(id, limit, offset));
 export const processUserMessage = (message, conversation_id, signal = null, message_id = null) =>
@@ -223,10 +210,8 @@ export const cancelMessage = (messageId) =>
 export const deleteAccount = () =>
     httpJSON(urls.DELETE_ACCOUNT, 'DELETE', {});
 
-// Auth & Third-party Tools
 export const fetchAuthStatus = () => httpGet(j('/api/auth/status'));
 
-// TTS audio
 export const fetchTTSAudio = async (text) => {
     const headers = await createHeaders();
     const body = JSON.stringify({ text });
@@ -292,7 +277,6 @@ export const fetchTTSStream = async (text) => {
     return response;
 };
 
-// --- NEW: API functions for "My Profile" tab ---
 export async function fetchUserProfileMemory() {
     return httpGet(urls.MY_PROFILE);
 }
@@ -301,7 +285,6 @@ export async function updateUserProfileMemory(profileData) {
     return httpJSON(urls.MY_PROFILE, 'POST', profileData);
 }
 
-// --- NEW: API functions for Custom Agents ---
 export async function saveAgent(agentData) {
     if (agentData.is_update_mode) {
         return httpJSON(urls.AGENTS, 'PUT', agentData);
@@ -317,8 +300,6 @@ export async function getAgent(key) {
 export async function deleteAgent(key) {
     return httpJSON(`${urls.AGENTS}/${key}`, 'DELETE', {});
 }
-
-// --- Tool-grant approvals: widening an agent's tool list needs a reviewer ---
 
 export async function listToolRequests(status = 'pending') {
     return httpGet(`/api/agents/tool-requests?status=${encodeURIComponent(status)}`);
@@ -339,8 +320,6 @@ export async function setToolApprovers(groupId) {
     return httpJSON('/api/agents/tool-approvers', 'PUT', { group_id: groupId || null });
 }
 
-// --- Policy-content approvals: editors submit, policy approvers activate ---
-
 export async function listPolicyChanges(status = 'pending') {
     return httpGet(`/api/policies/change-requests?status=${encodeURIComponent(status)}`);
 }
@@ -357,8 +336,6 @@ export async function setPolicyApprovers(groupId) {
     return httpJSON('/api/policies/policy-approvers', 'PUT', { group_id: groupId || null });
 }
 
-// --- Attention inbox: everything waiting on this user, role-aware ---
-
 export async function fetchAttention() {
     return httpGet('/api/attention');
 }
@@ -368,8 +345,6 @@ export async function fetchAttention() {
 export async function fetchAttentionActions() {
     return httpGet('/api/attention/actions');
 }
-
-// --- Agent sharing: per-agent can_use grants to users and groups ---
 
 export async function getAgentShares(key) {
     return httpGet(`${urls.AGENTS}/${key}/share`);
@@ -381,8 +356,6 @@ export async function grantAgentShare(key, granteeType, granteeId) {
 export async function revokeAgentShare(key, granteeType, granteeId) {
     return httpJSON(`${urls.AGENTS}/${key}/share/${granteeType}/${encodeURIComponent(granteeId)}`, 'DELETE', {});
 }
-
-// --- Conversation & folder sharing (backlog 56): viewer/contributor grants ---
 
 export async function getConversationShares(id) {
     return httpGet(`${urls.CONVERSATION(id)}/shares`);
@@ -414,8 +387,6 @@ export async function revokeProjectShare(id, granteeType, granteeId) {
 export async function fetchProjectsSharedWithMe() {
     return httpGet(`${urls.PROJECTS}/shared-with-me`);
 }
-
-// --- Custom groups (org admin) ---
 
 export async function listGroups() {
     return httpGet('/api/groups');
@@ -465,8 +436,6 @@ export async function disconnectProvider(provider) {
     return httpJSON(j(`/api/auth/${provider}/disconnect`), 'POST', {});
 }
 
-// --- GOVERNANCE API Functions ---
-
 export async function fetchPolicies() {
     return httpGet(`${urls.POLICIES}?_t=${Date.now()}`);
 }
@@ -513,8 +482,6 @@ export async function rotateKey(policyId) {
 export async function generatePolicyContent(type, context, extraData = {}) {
     return httpJSON(`${urls.POLICIES}/ai/generate`, 'POST', { type, context, ...extraData });
 }
-
-// --- ORGANIZATION API Functions ---
 
 export async function getMyOrganization() {
     return httpGet(urls.ORG_ME);
@@ -631,8 +598,6 @@ export async function updateMemberRole(orgId, userId, role) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/role`, 'PUT', { role });
 }
 
-// --- Enterprise identity: org identity config, invitations, sessions ---
-
 export async function getOrgIdentity(orgId) {
     return httpGet(`/api/organizations/${orgId}/identity`);
 }
@@ -651,8 +616,6 @@ export async function revokeInvitation(orgId, inviteId) {
 export async function revokeMemberSessions(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/sessions`, 'DELETE', {});
 }
-
-// --- Enterprise identity Phase 2: TOTP MFA (self-service) ---
 
 export async function getMyMfa() {
     return httpGet('/api/me/mfa');
@@ -709,8 +672,6 @@ export const tcbVerify = (orgId) =>
 export function getLastTcbVerify(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/tcb-verify/last`));
 }
-
-// --- Document Upload ---
 
 /**
  * Uploads a file and returns the extracted text content.
@@ -785,8 +746,6 @@ export async function extractDocumentText(file) {
     return data;
 }
 
-// --- KNOWLEDGE BASES (user-created RAG corpora) ---
-
 export async function listKnowledgeBases() {
     return httpGet(j('/api/knowledge-bases'));
 }
@@ -836,8 +795,6 @@ export async function listPendingKnowledgeReviews() {
     return httpGet(j('/api/knowledge-bases/pending-reviews'));
 }
 
-// --- MCP tool servers (backlog 48d) ---
-//
 // Read-only. Installation is an operator action on the host (scripts/safi_mcp.py),
 // so there is deliberately no install, review or remove call here: the browser
 // does not install tool servers.
@@ -881,8 +838,6 @@ export async function uploadKnowledgeBaseDocument(kbId, file) {
     return data;
 }
 
-// --- SECURITY INCIDENTS API Functions (Reg S-P registry, admin-only) ---
-
 export async function listIncidents(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/incidents`));
 }
@@ -917,8 +872,6 @@ export function incidentExportUrl(orgId, incidentId, format) {
     return j(`/api/organizations/${orgId}/incidents/${incidentId}/export?format=${format}`);
 }
 
-// --- RECORDS GOVERNANCE API Functions (retention, legal hold, examiner export) ---
-
 export async function getRetention(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/retention`));
 }
@@ -940,8 +893,6 @@ export async function getComplianceLog(orgId, limit = 20) {
     return httpGet(j(`/api/organizations/${orgId}/compliance-log?limit=${limit}`));
 }
 
-// --- LLM provider allow-list (HIPAA BAA chains / EU data residency) ---
-
 export async function getOrgProviders(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/providers`));
 }
@@ -950,8 +901,6 @@ export async function getOrgProviders(orgId) {
 export async function updateOrgProviders(orgId, allowlist) {
     return httpJSON(j(`/api/organizations/${orgId}/providers`), 'PUT', { allowlist });
 }
-
-// --- Data-source connector allow-list (which accounts members may link) ---
 
 export async function getOrgConnectors(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/connectors`));
@@ -972,8 +921,6 @@ export function recordsExportUrl(orgId, from, to, userId) {
     const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
     return j(`/api/organizations/${orgId}/records/export?from=${from}&to=${to}${u}`);
 }
-
-// --- HUMAN REVIEW QUEUE API Functions (FINRA supervisory / EU Art. 14; admin|auditor) ---
 
 export async function listReviewQueue(orgId, { status, trigger, profile, limit, offset } = {}) {
     const q = new URLSearchParams();
@@ -1031,8 +978,6 @@ export function reviewItemsCsvUrl(orgId, from, to) {
 export async function listReviewAlerts(orgId, limit = 10) {
     return httpGet(j(`/api/organizations/${orgId}/review/alerts?limit=${limit}`));
 }
-
-// --- NATIVE AUDIT HUB API Functions (observe surface; admin|editor|auditor) ---
 
 function auditQs(params = {}) {
     const q = new URLSearchParams();

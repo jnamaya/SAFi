@@ -223,8 +223,8 @@ def send_email(config, to_addr: str, subject: str, body: str,
 def run_task(task: dict) -> None:
     from safi_app.config import Config
     from safi_app.persistence import database as db
-    from safi_app.core.faculties.synderesis import get_profile
-    from safi_app.core.orchestrator import SAFi
+    from safi_app.profile_resolver import get_profile
+    from safi_app.runtime_factory import build_safi
     from safi_app.core.services.provider_governance import activate_org
 
     tz = ZoneInfo(str(task.get("timezone") or "UTC"))
@@ -264,9 +264,9 @@ def run_task(task: dict) -> None:
         convo = db.create_conversation(task["user_id"])
         conversation_id = convo["id"] if isinstance(convo, dict) else convo
 
-    saf = SAFi(
+    saf = build_safi(
         config=Config,
-        value_profile_or_list=prof,
+        profile=prof,
         intellect_model=prof.get("intellect_model") or Config.INTELLECT_MODEL,
         will_model=None,
         conscience_model=prof.get("conscience_model") or Config.CONSCIENCE_MODEL,

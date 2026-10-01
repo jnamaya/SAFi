@@ -1,25 +1,4 @@
-"""
-Will — the executive faculty and absolute gatekeeper.
-
-In Thomistic psychology, the Will is the faculty that chooses and commands action based on
-the Intellect's apprehension. Here it is the sole decision-making authority — but it
-operates under three structurally necessary philosophical limitations:
-
-  No Moral Apprehension (The Will is Blind): Following nihil volitum nisi praecognitum
-  ("nothing is willed unless first known"), the Will has no LLM of its own. It cannot read
-  semantic meaning or evaluate morality. It relies entirely on the mathematical judgments
-  handed down by the Conscience and Spirit to "see" whether an action is aligned.
-
-  No Body: The system has no physical form, drives, or passions — the Will operates in a
-  sterile computational vacuum, free from the sensitive appetites that constantly pull
-  against human volition.
-
-  Deontological rather than Teleological (The Kantian Engine): A human Will has a
-  teleological hunger for flourishing. An AI cannot possess genuine desire. The WillGate
-  therefore acts as a strictly Kantian construct — enforcing structural invariants
-  (disclaimers, parameter constraints, allowed-tool lists, hard-gate thresholds) purely
-  out of duty to the law, without context, nuance, or orientation toward the Good.
-"""
+"""Apply deterministic structural, authorization, and threshold checks."""
 from __future__ import annotations
 import json
 import re
@@ -27,22 +6,6 @@ from typing import List, Dict, Any, Tuple, Optional
 import logging
 from .utils import _norm_label
 from .. import pii_validators
-
-# Tools that only read data and carry no write/destructive side-effects.
-# These receive an instant "approve" without an LLM call (CQRS fast path).
-READ_ONLY_TOOLS: frozenset = frozenset({
-    "get_stock_price",
-    "calculator",
-    "web_search",
-    "find_places",
-    "search_web",
-    "web_news",
-    "fetch_url",
-    "read_file",
-    "list_files",
-    "get_weather",
-    "lookup_definition",
-})
 
 # The violation reason a failing hard gate reports is DATA on the value itself
 # (gate_reason, stamped into the compiled profile by synderesis), never derived
@@ -119,7 +82,9 @@ class WillGate:
             enabled = struct.get("pii_validators")
             if enabled:
                 try:
-                    findings = pii_validators.scan(draft_output, enabled)
+                    findings = pii_validators.scan(
+                        draft_output, enabled, self.profile.get("pii_validator_catalog")
+                    )
                 except Exception as e:
                     self.log.error(
                         "WillGate: PII scan failed, refusing the draft: %s", e)
@@ -148,29 +113,9 @@ class WillGate:
                 for syntax in struct.get("banned_markdown_syntaxes", []):
                     if syntax in draft_output:
                         return False, "ethical_violation"
-        else:
-            # Legacy prose-list will_rules
-            draft_lower = draft_output.lower()
-            has_disclaimer_rule = any("disclaimer" in str(r).lower() for r in rules)
-            if has_disclaimer_rule:
-                style_text = self.profile.get("style", "")
-                if "Disclaimer:" in style_text:
-                    if "Disclaimer: I am an AI guide, not a doctor" in style_text:
-                        expected = "Disclaimer: I am an AI guide, not a doctor"
-                    elif "Disclaimer: This information is for educational" in style_text:
-                        expected = "Disclaimer: This information is for educational"
-                    else:
-                        expected = "Disclaimer:"
-                    
-                    if expected not in draft_output:
-                        return False, "missing_disclaimer"
-            
-            has_disclosure_rule = any("disclose" in str(r).lower() or "note" in str(r).lower() for r in rules)
-            if has_disclosure_rule:
-                if "AI assistance" in self.profile.get("style", ""):
-                    expected_note = "*Note: If you share this information externally, please disclose that it was generated with AI assistance.*"
-                    if expected_note not in draft_output:
-                        return False, "missing_disclaimer"
+        # Legacy prose rules are normalized to structured requirements by the
+        # application adapter. The enforcement core does not infer requirements
+        # from natural-language rules or profile style.
                         
         return True, "pass"
 
@@ -262,7 +207,7 @@ class WillGate:
         per-tool and only meaningful for tools that get that far.
         """
         # 1. Profile allow-list.
-        # Compiled profiles (synderesis.get_profile) always carry allowed_tools:
+        # Compiled profiles always carry allowed_tools:
         # the advertised tool list, optionally narrowed by the policy's
         # will_rules.allowed_tools. An empty list is deny-all — an agent that
         # was offered no tools has no legitimate tool intents (a name arriving
@@ -276,12 +221,7 @@ class WillGate:
                 f"Tool '{tool_name}' is not authorized for this agent profile.",
             )
 
-        # 2. CQRS fast pass for read-only tools.
-        if tool_name in READ_ONLY_TOOLS:
-            self.log.info(f"WillGate: Fast-pass approved read-only tool '{tool_name}'.")
-            return ("approve", "Read-only fast pass.")
-
-        # 3. Parameter constraint validation.
+        # 2. Parameter constraints apply uniformly to all authorized tools.
         parameter_constraints: Dict[str, List[Any]] = (
             profile.get("tool_parameter_constraints", {}).get(tool_name, {})
         )
@@ -308,5 +248,5 @@ class WillGate:
                     f"Parameter '{param_key}={param_val}' is not permitted for tool '{tool_name}'.",
                 )
 
-        self.log.info(f"WillGate: Deterministically approved write/command tool '{tool_name}'.")
+        self.log.info(f"WillGate: Deterministically approved authorized tool '{tool_name}'.")
         return ("approve", "Passed structural and allow-list constraints.")

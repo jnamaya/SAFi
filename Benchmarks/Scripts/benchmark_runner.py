@@ -112,8 +112,8 @@ except (ImportError, AttributeError):
 
 
 from safi_app.config import Config
-from safi_app.core.orchestrator import SAFi
-from safi_app.core.values import get_profile
+from safi_app.runtime_factory import build_safi
+from safi_app.profile_resolver import get_profile
 
 
 # -----------------------------
@@ -198,36 +198,10 @@ async def _run_safi_turn(safi: SAFi, profile_name: str, prompt: str, conversatio
 # ---------------------
 # Build a SAFi instance
 # ---------------------
-def _build_safi(config: Config, profile_key: str, profile_obj) -> SAFi:
-    """
-    SAFi.__init__ requires either:
-      - value_profile_or_list: dict with 'values' or a list of values
-      - value_set: concrete values payload
-    """
-    init_sig = inspect.signature(SAFi.__init__)
-    params = set(init_sig.parameters.keys())
-
-    # If get_profile returns dict with 'values' list => pass it
-    if isinstance(profile_obj, dict) and "values" in profile_obj and isinstance(profile_obj["values"], (list, dict)):
-        if "value_profile_or_list" in params:
-            return SAFi(config=config, value_profile_or_list=profile_obj)
-
-    # If get_profile returns list of values => pass list
-    if isinstance(profile_obj, list) and "value_profile_or_list" in params:
-        return SAFi(config=config, value_profile_or_list=profile_obj)
-
-    # If it exposes 'value_set' and ctor accepts it
-    if isinstance(profile_obj, dict) and "value_set" in profile_obj and "value_set" in params:
-        return SAFi(config=config, value_set=profile_obj["value_set"])
-
-    # Try derive list from dict values
-    if isinstance(profile_obj, dict) and "values" in profile_obj and isinstance(profile_obj["values"], dict):
-        vs = profile_obj["values"]
-        derived = [{"name": k, "weight": float(v) if isinstance(v, (int, float)) else (1.0 if v else 0.0)} for k, v in vs.items()]
-        if "value_profile_or_list" in params:
-            return SAFi(config=config, value_profile_or_list={"name": profile_obj.get("name", profile_key), "values": derived})
-
-    raise ValueError("Profile lacks usable values. Ensure get_profile returns a dict with 'values' or a list, or a dict with 'value_set'.")
+def _build_safi(config: Config, profile_key: str, profile_obj):
+    if not isinstance(profile_obj, dict) or "values" not in profile_obj:
+        raise ValueError("Profile lacks a compiled values list.")
+    return build_safi(config=config, profile=profile_obj)
 
 
 # ---------------------
@@ -381,4 +355,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -35,12 +35,8 @@ from pathlib import Path
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from openai import OpenAI
-from google import genai
-
 from collections import deque
 from .faculties.spirit import build_spirit_feedback
-from ..persistence import database as db
 from . import pii_validators
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
 # Reused rather than reimplemented: the tool-evidence merge below needs the same
@@ -49,14 +45,12 @@ from .faculties.intellect import _apply_context_budget
 # Plugins arrive through the registry (agreement §III: organizations add
 # plugins without touching this file). The shipped registrations are imported
 # by safi_app/__init__.py, so this manifest-covered file neither knows any
-# plugin's name nor triggers content registration. A dead plugin import that
-# sat here since v1.3 removed its dispatch is gone; see plugins/builtin.py
-# for why it must not quietly return.
+# plugin's name nor triggers content registration.
 from .plugins.registry import plugins_for
 
 # Unlimited-turns mode still bounds the DB read: "every row in the conversation"
 # is the intent, but an unbounded LIMIT on a thread that has run for months is a
-# way to hurt yourself. The character budget below is the real constraint; this
+# pathological query. The character budget below is the real constraint; this
 # only stops the query itself being pathological.
 _HISTORY_FETCH_ALL = 400
 
@@ -136,54 +130,7 @@ def _render_history(messages, max_chars: int) -> str:
         + "\n".join(kept)
     )
 
-from .orchestrator_mixins.tts import TtsMixin
-from .orchestrator_mixins.tasks import BackgroundTasksMixin, apply_memory_budget
-
-from .services import LLMProvider, RAGService, MCPManager
-from .services.model_routing import detect_provider, build_providers_config
-from .services.provider_governance import activate_org
-from .services.usage_tracking import activate_agent
-from .services import review_alerts
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Wording the thinking indicator shows while a tool runs; unlisted tool names
-# fall back to a shape guessed from the name (see _tool_status).
-_TOOL_LABELS: Dict[str, str] = {
-    # Web
-    "web_search":              "Searching the web",
-    "search_web":              "Searching the web",
-    "browser_search":          "Searching the web",
-    # Finance / Markets
-    "get_stock_price":         "Fetching stock data",
-    "get_earnings_data":       "Pulling earnings data",
-    "get_financial_data":      "Fetching financial data",
-    "get_market_data":         "Fetching market data",
-    # Cloud Storage
-    "sharepoint_search":       "Searching SharePoint",
-    "google_drive_search":     "Searching Google Drive",
-    "onedrive_search":         "Searching OneDrive",
-    # GitHub
-    "github_search":           "Searching GitHub",
-    "github_get_file":         "Reading from GitHub",
-    "github_list_files":       "Browsing GitHub",
-    # Maps / Location
-    "google_maps_search":      "Looking up location data",
-    "nearby_search":           "Finding nearby locations",
-    "get_location_info":       "Fetching location data",
-    "geocode":                 "Resolving location",
-    # Knowledge / RAG
-    "knowledge_search":        "Searching knowledge base",
-    "document_search":         "Searching documents",
-    # Messaging / Comms
-    "send_email":              "Sending an email",
-    "slack_post_message":      "Posting to Slack",
-    "teams_send_message":      "Sending a Teams message",
-    # Calendar / Tasks
-    "get_calendar_events":     "Checking the calendar",
-    "create_calendar_event":   "Creating a calendar event",
-    "get_tasks":               "Fetching tasks",
-}
 
 AUDIT_PARAM_MAXLEN = 120
 
@@ -237,24 +184,12 @@ def _clip(value) -> str:
 
 
 def _tool_status(tool_name: str, turn: int = 0) -> str:
-    label = _TOOL_LABELS.get(tool_name)
-    if not label:
-        n = tool_name.lower()
-        if "search" in n:
-            label = "Searching for data"
-        elif "get" in n or "fetch" in n or "load" in n:
-            label = "Fetching data"
-        elif "read" in n or "list" in n or "browse" in n:
-            label = "Reading data"
-        elif "send" in n or "post" in n or "create" in n:
-            label = "Taking an action"
-        else:
-            label = tool_name.replace("_", " ").title()
+    label = tool_name.replace("_", " ").strip().capitalize()
     suffix = " (step {})...".format(turn + 1) if turn > 0 else "..."
     return "{}{}".format(label, suffix)
 
 
-class SAFi(TtsMixin, BackgroundTasksMixin):
+class SAFi:
     """
     One orchestrator per (agent, models, policy), cached and shared by every
     request for that profile — hence the locked coaching state in __init__ and
@@ -269,10 +204,22 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         intellect_model: Optional[str] = None,
         will_model: Optional[str] = None,
         conscience_model: Optional[str] = None,
-        spirit_beta: Optional[float] = None
+        spirit_beta: Optional[float] = None,
+        llm_provider: Any = None,
+        retriever: Any = None,
+        mcp_manager: Any = None,
+        persistence: Any = None,
+        model_attribution: str = "",
+        application_prompts: Optional[Dict[str, Any]] = None,
+        activate_org_callback=None,
+        activate_agent_callback=None,
+        review_alert_callback=None,
+        context_budgeter=None,
+        background_task_callback=None,
     ):
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
+        self.max_context_chars = int(getattr(config, "MAX_CONTEXT_CHARS", 0) or 0)
         
         self.executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="SafiWorker")
 
@@ -281,45 +228,17 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         self.intellect_model = i_model
         self.conscience_model = c_model
 
-        llm_config = {
-            "providers": build_providers_config(config),
-            "routes": {
-                "intellect": {
-                    "provider": getattr(config, "INTELLECT_PROVIDER", detect_provider(i_model)),
-                    "model": i_model
-                },
-                "conscience": {
-                    "provider": getattr(config, "CONSCIENCE_PROVIDER", detect_provider(c_model)),
-                    "model": c_model
-                }
-            }
-        }
-        
-        self.llm_provider = LLMProvider(llm_config)
-        self.clients = self.llm_provider.clients
-
-        # Model provenance for the audit record: which provider/model serves
-        # each faculty of this instance. Persisted per turn alongside
-        # policy_id/policy_version by update_audit_results.
-        self.model_attribution = json.dumps({
-            "intellect": f"{llm_config['routes']['intellect']['provider']}/{i_model}",
-            "conscience": f"{llm_config['routes']['conscience']['provider']}/{c_model}",
-        })
-
-        # Sync clients: background tasks build theirs lazily per provider
-        # (BackgroundTasksMixin._get_backend_sync_client); only TTS still needs
-        # one here.
-        if config.OPENAI_API_KEY:
-            self.openai_client_sync = OpenAI(api_key=config.OPENAI_API_KEY)
-        else:
-            self.openai_client_sync = None
-            
-        self.gemini_client = None
-        if config.GEMINI_API_KEY:
-            try:
-                self.gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
-            except Exception as e:
-                self.log.warning(f"Gemini client initialization failed: {e}")
+        if llm_provider is None or persistence is None:
+            raise ValueError("the host must supply model and persistence adapters")
+        self.llm_provider = llm_provider
+        self.clients = getattr(llm_provider, "clients", {})
+        self.store = persistence
+        self.model_attribution = model_attribution
+        self.activate_org = activate_org_callback or (lambda _org_id: None)
+        self.activate_agent = activate_agent_callback or (lambda _agent: None)
+        self.review_alert_callback = review_alert_callback
+        self.context_budgeter = context_budgeter or (lambda context, _limit: context)
+        self.background_task_callback = background_task_callback
 
         prompts_path = Path(__file__).parent / "system_prompts.json"
         try:
@@ -328,6 +247,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         except Exception as e:
             self.log.error(f"Failed to load system_prompts.json: {e}")
             self.prompts = {}
+
+        self.application_prompts = application_prompts or {}
 
         if value_profile_or_list:
             if isinstance(value_profile_or_list, dict) and "values" in value_profile_or_list:
@@ -360,22 +281,21 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         self.last_drift = 0.0
         self.mu_history = deque(maxlen=5)
 
-        self.rag_service = RAGService(
-            knowledge_base_name=(self.profile or {}).get("rag_knowledge_base")
-        )
-
-        mcp_config = getattr(config, "MCP_CONFIG", {})
-        self.mcp_manager = MCPManager(mcp_config)
+        self.mcp_manager = mcp_manager
         
         self.intellect_engine = IntellectEngine(
             llm_provider=self.llm_provider,
             profile=self.profile, 
             prompt_config=self.prompts.get("intellect_engine", {}),
-            mcp_manager=self.mcp_manager
+            mcp_manager=self.mcp_manager,
+            max_context_chars=self.max_context_chars,
+            retriever=retriever,
         )
-        self.intellect_engine.retriever = self.rag_service.retriever
 
-        self.phase_zero = PhaseZeroGate()
+        self.phase_zero = PhaseZeroGate(
+            (self.profile or {}).get("phase_zero_rules"),
+            (self.profile or {}).get("pii_validator_catalog"),
+        )
 
         self.will_gate = WillGate(
             llm_provider=self.llm_provider,
@@ -457,7 +377,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
     def _is_cancelled(self, message_id: str) -> bool:
         try:
-            return db.is_message_cancelled(message_id)
+            return self.store.is_message_cancelled(message_id)
         except Exception:
             return False
 
@@ -513,7 +433,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 return ledger
             if attempt == 1:
                 self.log.warning("[Governance | Phase 4] Audit degraded — retrying Conscience once.")
-                db.update_message_reasoning(message_id, "Re-auditing response...")
+                self.store.update_message_reasoning(message_id, "Re-auditing response...")
         return ledger
 
     async def _finalize_draft(
@@ -544,7 +464,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         """
         tag = f" | {label}" if label else ""
 
-        db.update_message_reasoning(message_id, "Checking response structure...")
+        self.store.update_message_reasoning(message_id, "Checking response structure...")
         is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
         if not is_valid_struct and structure_reason == "missing_disclaimer":
             # Mechanically repairable: append the mandatory disclaimer and
@@ -562,7 +482,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return {"verdict": "violation", "stage": "structure", "reason": structure_reason,
                     "ledger": [], "spirit_assessment": None, "draft": a_t}
 
-        db.update_message_reasoning(message_id, "Auditing response for compliance...")
+        self.store.update_message_reasoning(message_id, "Auditing response for compliance...")
         ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id, recent_history)
 
         # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
@@ -586,7 +506,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return {"verdict": "violation", "stage": "hard_gate", "reason": E_hard,
                     "ledger": ledger, "spirit_assessment": None, "draft": a_t}
 
-        db.update_message_reasoning(message_id, "Computing alignment score...")
+        self.store.update_message_reasoning(message_id, "Computing alignment score...")
         spirit_assessment = self.spirit.integrate(ledger)
         D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
         self.log.info(
@@ -615,9 +535,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # Per-org provider governance for this turn: every LLM dispatch below
         # (Intellect, Conscience, backgrounds via _submit_bg) checks this
         # context and fails closed on a disallowed provider.
-        activate_org(org_id or (self.profile or {}).get("org_id"))
+        self.activate_org(org_id or (self.profile or {}).get("org_id"))
         # Usage attribution rides the same context (backlog 61).
-        activate_agent(self.active_profile_name)
+        self.activate_agent(self.active_profile_name)
 
         now_utc = datetime.now(timezone.utc)
         current_date_string = _current_date_line(now_utc, user_timezone)
@@ -625,19 +545,19 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         try:
             # Title derives from the first message, so decide it before inserting.
-            history_check = db.fetch_chat_history_for_conversation(conversation_id, limit=1)
-            new_title = db.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
+            history_check = self.store.fetch_chat_history_for_conversation(conversation_id, limit=1)
+            new_title = self.store.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
 
             # Insert the user row and the AI placeholder atomically. A repeated
             # or concurrent submit reusing this message_id fails the AI row's
             # UNIQUE key, rolls the whole turn back (so no orphaned duplicate
             # user row is left behind — the flaw of the old two-insert path),
             # and returns False so we drop the double-submit cleanly.
-            if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
+            if not self.store.insert_turn_atomic(conversation_id, user_prompt, message_id):
                 self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
                 return { "finalOutput": "", "messageId": message_id, "duplicate": True }
 
-            db.update_message_reasoning(message_id, "Analyzing your request...")
+            self.store.update_message_reasoning(message_id, "Analyzing your request...")
         except Exception as e:
             import traceback
             self.log.error(f"Pre-Insert CRASH: {str(e)}\n{traceback.format_exc()}")
@@ -656,21 +576,21 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             for _, data in plugin_results:
                 if data: plugin_context_data.update(data)
         
-        memory_summary = db.fetch_conversation_summary(conversation_id)
-        current_profile_json = db.fetch_user_profile_memory(user_id)
+        memory_summary = self.store.fetch_conversation_summary(conversation_id)
+        current_profile_json = self.store.fetch_user_profile_memory(user_id)
         # Per-agent gate: only task/project-oriented agents accumulate work context.
         # Built-in informational agents set track_work_context=False; org/custom
         # agents (no flag in DB) default to True. "{}" is the empty sentinel.
         track_work_context = bool((self.profile or {}).get("track_work_context", True))
         current_agent_context_json = (
-            db.fetch_agent_context_memory(user_id, self.active_profile_name)
+            self.store.fetch_agent_context_memory(user_id, self.active_profile_name)
             if track_work_context else "{}"
         )
         # Two copies on purpose: the budgeted copy is what the Intellect sees,
         # the FULL copy stays the extractor's merge base. Feeding the truncated
         # one to the merge would persist the loss and quietly break
         # merge_agent_context's anti-shrink guarantee.
-        agent_context_for_prompt = apply_memory_budget(
+        agent_context_for_prompt = self.context_budgeter(
             current_agent_context_json, self.config.AGENT_MEMORY_MAX_CHARS
         )
 
@@ -680,7 +600,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         turns, max_chars = self._resolve_history_window()
         # +2 covers the current user message, which is dropped below.
         fetch_limit = _HISTORY_FETCH_ALL if turns == 0 else (turns * 2) + 2
-        raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=fetch_limit)
+        raw_history = self.store.fetch_chat_history_for_conversation(conversation_id, limit=fetch_limit)
         prior_turns = [
             m for m in raw_history
             if m.get("content", "").strip() and m.get("message_id") != message_id
@@ -694,7 +614,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # EMA commit at the end of the turn re-reads mu under a row lock
         # (update_spirit_memory_atomic), so this copy being seconds stale by
         # then is harmless.
-        temp_spirit_memory = db.load_spirit_memory(self.active_profile_name)
+        temp_spirit_memory = self.store.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              temp_spirit_memory = {"turn": 0, "mu": {}}
 
@@ -774,7 +694,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
         # --- PHASE 2: Generate Proposal (Intellect) ---
-        db.update_message_reasoning(message_id, "Drafting a response...")
+        self.store.update_message_reasoning(message_id, "Drafting a response...")
         intent, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
             memory_summary=memory_summary,
@@ -813,7 +733,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         if intent is None:
             msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
-            db.update_message_content(message_id, msg, audit_status="complete")
+            self.store.update_message_content(message_id, msg, audit_status="complete")
             return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
         retry_metadata: Dict[str, Any] = {
@@ -830,7 +750,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             a_t = intent.get("content") or ""
             if not a_t:
                 msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
-                db.update_message_content(message_id, msg, audit_status="complete")
+                self.store.update_message_content(message_id, msg, audit_status="complete")
                 return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
             self.log.info(f"[Governance | Phase 2 | Intellect] Draft: {len(a_t)} chars | '{a_t[:100].strip()}'")
@@ -856,7 +776,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             )
             _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
             tool_audit.append(_entry)
-            db.update_message_reasoning(
+            self.store.update_message_reasoning(
                 message_id,
                 _tool_status(tool_name) if tool_decision == "approve"
                 else "Blocked a tool call",
@@ -871,15 +791,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 current_parameters = parameters
                 next_intent = intent
 
-                # Determine whether the intellect provider is Gemini so we can
-                # format the tool-result history correctly. Gemini needs native
-                # Content/Part objects; every other provider wants plain strings.
-                _intellect_provider_name = self.llm_provider.config.get("routes", {}).get("intellect", {}).get("provider", "groq")
-                _intellect_provider_type = self.llm_provider.config.get("providers", {}).get(_intellect_provider_name, {}).get("type", "openai")
-                _use_gemini_history = (_intellect_provider_type == "gemini")
-
                 for agent_turn in range(MAX_AGENT_TURNS):
-                    db.update_message_reasoning(
+                    self.store.update_message_reasoning(
                         message_id,
                         _tool_status(current_tool_name, agent_turn),
                         phase="gather"
@@ -894,18 +807,10 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                     except Exception:
                         _args_str = str(current_parameters)
 
-                    raw_turn = next_intent.get("_gemini_raw_turn") if isinstance(next_intent, dict) else None
-                    if raw_turn and _use_gemini_history:
-                        from google.genai import types
-                        agent_history.append(types.Content(**raw_turn))
-                    else:
-                        # Include the arguments — without them the model cannot
-                        # tell WHICH call produced the result below (e.g. which
-                        # query, which page) and multi-step reasoning degrades.
-                        agent_history.append(
-                            f"SYSTEM OBSERVATION: Model requested tool {current_tool_name} "
-                            f"with arguments: {_args_str}"
-                        )
+                    raw_turn = next_intent.get("_provider_raw_turn") if isinstance(next_intent, dict) else None
+                    agent_history.append(self.llm_provider.tool_call_history_entry(
+                        current_tool_name, _args_str, raw_turn
+                    ))
 
                     try:
                         tool_result = await self.mcp_manager.execute_tool(
@@ -929,12 +834,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                         f"{tool_result}"
                     )
 
-                    if _use_gemini_history:
-                        from google.genai import types
-                        tool_part = types.Part.from_function_response(name=current_tool_name, response={"result": tool_result})
-                        agent_history.append(types.Content(role="user", parts=[tool_part]))
-                    else:
-                        agent_history.append(f"TOOL RESULT for {current_tool_name}:\n{tool_result}")
+                    agent_history.append(
+                        self.llm_provider.tool_result_history_entry(current_tool_name, tool_result)
+                    )
 
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
                         user_prompt=agent_history,
@@ -965,7 +867,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                                                follow_decision, follow_reason,
                                                agent_turn=agent_turn + 1)
                     tool_audit.append(_entry)
-                    db.update_message_reasoning(
+                    self.store.update_message_reasoning(
                         message_id,
                         _tool_status(current_tool_name, agent_turn + 1)
                         if follow_decision == "approve" else "Blocked a tool call",
@@ -1063,7 +965,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # what stops truncation from looking like fabrication to the auditor.
         if tool_evidence:
             retrieved_context = _apply_context_budget(
-                ([retrieved_context] if retrieved_context else []) + tool_evidence
+                ([retrieved_context] if retrieved_context else []) + tool_evidence,
+                self.max_context_chars,
             )
 
         # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
@@ -1141,7 +1044,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
             _retry_phase = "Phase 4.5 | Hard Gate" if correctable_gate else "Phase 5 | Spirit"
             self.log.info(f"[Governance | {_retry_phase}] Attempting reflexion retry ({E_spirit}).")
-            db.update_message_reasoning(message_id, "Refining response for alignment...")
+            self.store.update_message_reasoning(message_id, "Refining response for alignment...")
 
             _directives = (self.profile or {}).get("internal_rephrase_directives", {})
             spirit_directive = _directives.get(E_spirit) or _directives.get("ethical_violation", "")
@@ -1177,7 +1080,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
             retry_result = None
             if a_t_spirit:
-                db.update_message_reasoning(message_id, "Re-auditing corrected response...")
+                self.store.update_message_reasoning(message_id, "Re-auditing corrected response...")
                 # The retry draft runs the SAME full gate path as the original:
                 # structure, guarded audit, coverage fail-closed, hard gates, Spirit.
                 # (Previously it skipped structure + hard gates, and an audit error
@@ -1267,7 +1170,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return computed[2], computed  # (new_mu, full result tuple)
 
         (S_t, note, mu_new, p_t, drift_val, mu_new_vector), spirit_turn = (
-            db.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
+            self.store.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
         )
         drift_for_log = drift_val if drift_val is not None else 0.0
         self.log.info(f"[Governance | Phase 5 | Spirit] Score: {S_t}/10 | Drift: {drift_for_log:.4f} | Note: '{(note or '')[:80]}'")
@@ -1277,8 +1180,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             self.mu_history.append(mu_new_vector)
 
         # --- PHASE 6: Safe Execution (Will) ---
-        db.update_message_reasoning(message_id, "Preparing your answer...")
-        db.update_message_content(message_id, a_t, audit_status="complete")
+        self.store.update_message_reasoning(message_id, "Preparing your answer...")
+        self.store.update_message_content(message_id, a_t, audit_status="complete")
 
         # Record the gate's approve reason unless a more specific note (e.g. a
         # blocked tool) was already set — approved turns used to log an empty reason.
@@ -1328,6 +1231,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "retryMetadata": retry_metadata,
             "policyId": (self.profile or {}).get("policy_id"),
             "policyVersion": (self.profile or {}).get("policy_version"),
+            "securityRulesVersion": (self.profile or {}).get("phase_zero_rules_version"),
+            "roleConfigVersion": (self.profile or {}).get("role_config_version"),
             "orgId": org_id or (self.profile or {}).get("org_id"),
             "userId": user_id,
             "agentName": self.active_profile_name,
@@ -1335,7 +1240,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "conscienceModel": self.conscience_model,
         }
 
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+        self.store.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
                                 drift=drift_val,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
@@ -1343,21 +1248,15 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                                 will_decision="approve", will_stage=will_stage_final,
                                 governance_record=governance_record)
 
-        # Art. 72 monitoring runs off the request path; _submit_bg copies
-        # contextvars so the org context (active_org) still resolves inside.
-        self._submit_bg(review_alerts.evaluate_turn_alerts,
-                        self.active_profile_name, S_t, drift_val, "approve")
+        # Optional host monitoring callback runs off the request path.
+        if self.review_alert_callback:
+            self._submit_bg(self.review_alert_callback,
+                            self.active_profile_name, S_t, drift_val, "approve")
 
         # Suggested prompts were removed: they were an ungoverned model call
         # whose output was shown to the user as if it came from the agent. The
         # column stays populated for historical turns.
         S_p: List[str] = []
-
-        # First turn of a conversation: replace the truncation title with a
-        # generated one, off the request path. new_title is only ever set on
-        # the first message, so this fires once per conversation.
-        if new_title:
-            self._submit_bg(self._run_title_thread, conversation_id, user_prompt, a_t, new_title)
 
         self._append_log(governance_record)
 
@@ -1367,18 +1266,21 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             f"Turn: {spirit_turn}"
         )
 
-        self._submit_bg(self._run_summarization_thread, conversation_id, memory_summary, user_prompt, a_t)
-
-        if getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False):
-            if hasattr(self.config, "SUMMARIZER_MODEL"):
-                self._submit_bg(self._run_profile_update_thread, user_id, current_profile_json, user_prompt, a_t)
-
-        if track_work_context:
-            self._submit_bg(
-                self._run_agent_context_update_thread,
-                user_id, self.active_profile_name, current_agent_context_json, user_prompt, a_t,
-                message_id
-            )
+        if self.background_task_callback:
+            self._submit_bg(self.background_task_callback, {
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "profile_name": self.active_profile_name,
+                "memory_summary": memory_summary,
+                "current_profile_json": current_profile_json,
+                "user_prompt": user_prompt,
+                "assistant_output": a_t,
+                "new_title": new_title,
+                "current_agent_context": current_agent_context_json,
+                "message_id": message_id,
+                "track_work_context": track_work_context,
+                "enable_profile_extraction": bool(getattr(self.config, "ENABLE_PROFILE_EXTRACTION", False)),
+            })
 
         return {
             "finalOutput": a_t, "newTitle": new_title, "willDecision": D_t, "willReason": E_t,
@@ -1422,18 +1324,18 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         # Per-org provider governance: the Conscience audit below must honor
         # the governing org's provider allow-list, same as a native turn.
-        activate_org(org_id or (self.profile or {}).get("org_id"))
+        self.activate_org(org_id or (self.profile or {}).get("org_id"))
         # Usage attribution rides the same context (backlog 61).
-        activate_agent(self.active_profile_name)
+        self.activate_agent(self.active_profile_name)
 
-        if not db.insert_turn_atomic(conversation_id, user_prompt, message_id):
+        if not self.store.insert_turn_atomic(conversation_id, user_prompt, message_id):
             return {"error": "duplicate message_id", "messageId": message_id, "duplicate": True}
 
         def _commit_and_report(verdict: str, stage: str, reason: str,
                                evaluated: str, ledger: List[Dict[str, Any]],
                                spirit_score: Optional[int], spirit_note: str,
                                drift_val: Optional[float]) -> Dict[str, Any]:
-            db.update_message_content(message_id, evaluated, audit_status="complete")
+            self.store.update_message_content(message_id, evaluated, audit_status="complete")
             governance_record = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": "evaluate_gateway",
@@ -1450,6 +1352,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 "drift": drift_val,
                 "policyId": (self.profile or {}).get("policy_id"),
                 "policyVersion": (self.profile or {}).get("policy_version"),
+                "securityRulesVersion": (self.profile or {}).get("phase_zero_rules_version"),
+                "roleConfigVersion": (self.profile or {}).get("role_config_version"),
                 "orgId": org_id or (self.profile or {}).get("org_id"),
                 "userId": user_id,
                 "agentName": self.active_profile_name,
@@ -1457,7 +1361,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 # The audit model is the only model provenance for this record.
                 "conscienceModel": self.conscience_model,
             }
-            db.update_audit_results(message_id, ledger, spirit_score, spirit_note,
+            self.store.update_audit_results(message_id, ledger, spirit_score, spirit_note,
                                     self.active_profile_name, self.values, None,
                                     drift=drift_val,
                                     policy_id=(self.profile or {}).get("policy_id"),
@@ -1466,9 +1370,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                                     will_decision=verdict,
                                     will_stage=(stage if verdict != "approve" else None),
                                     governance_record=governance_record)
-            # Art. 72 monitoring off the request path (same as native turns).
-            self._submit_bg(review_alerts.evaluate_turn_alerts,
-                            self.active_profile_name, spirit_score, drift_val, verdict)
+            if self.review_alert_callback:
+                self._submit_bg(self.review_alert_callback,
+                                self.active_profile_name, spirit_score, drift_val, verdict)
             self._append_log(governance_record)
             self.log.info(
                 f"[Governance | Gateway] Profile: {self.active_profile_name} | "
@@ -1520,7 +1424,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             return computed[2], computed
 
         (S_t, note, mu_new, p_t, drift_val, mu_new_vector), spirit_turn = (
-            db.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
+            self.store.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
         )
         with self._spirit_state_lock:
             self.last_drift = drift_val if drift_val is not None else 0.0
@@ -1556,8 +1460,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
     )
 
     _PII_REFUSAL = (
-        "Your message was not processed because it appeared to contain sensitive "
-        "personal or financial information. This is an organizational policy. "
+        "Your message was not processed because it appeared to contain sensitive information. "
         "Please resend your request with that information removed or replaced "
         "with a placeholder."
     )
@@ -1567,16 +1470,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         The Intellect is given an explicit directive for `pii_detected` telling
         it to say the message contained sensitive data and invite a resend. A
-        model may ignore that and fall back to the agent's house refusal, which
-        for a scoped agent means "I only cover financial topics". Observed
-        2026-08-27 on a 20B model: a card number in "how is Tesla doing today"
-        produced a scope refusal, and the user was told to change the subject
-        when the subject was fine.
-
-        That is the false-refusal bug CLAUDE.md names, and correctness here must
-        not depend on model compliance. So the wording is repaired in code, the
-        same way a missing disclaimer already is: deterministic, terminal, no
-        second model call.
+        model may ignore it and return a response that misstates why the request
+        was blocked. Correctness must not depend on model compliance, so the
+        user-facing reason is repaired deterministically without another model call.
         """
         if violation_type != "pii_detected" or not safe_output:
             return safe_output
@@ -1663,7 +1559,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 "answer, so I can't share a response this time. This was not a problem with "
                 "your question. Please try asking it again in a moment."
             )
-        db.update_message_content(message_id, notice, audit_status="complete")
+        self.store.update_message_content(message_id, notice, audit_status="complete")
 
         # Nothing to audit: the text is fixed, governance-authored copy, and no
         # redirect-quality score applies (None, not 0 — a 0 would read as a real
@@ -1671,7 +1567,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # preserved in the log entry so the dashboard can show WHY the draft failed.
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
 
-        _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
+        _sm_readonly = self.store.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1697,6 +1593,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "retrievedContext": "",
             "policyId": self.profile.get("policy_id"),
             "policyVersion": self.profile.get("policy_version"),
+            "securityRulesVersion": self.profile.get("phase_zero_rules_version"),
+            "roleConfigVersion": self.profile.get("role_config_version"),
             "orgId": org_id or self.profile.get("org_id"),
             "userId": user_id,
             "agentName": self.active_profile_name,
@@ -1704,7 +1602,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "conscienceModel": self.conscience_model,
         }
 
-        db.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
+        self.store.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
                                 model_attribution=self.model_attribution,
@@ -1737,14 +1635,10 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
              asked for, merged by Synderesis;
           2. the ACTING USER'S organization, looked up per turn.
 
-        Why the acting user and not just the agent. A PII floor is not a
-        property of the agent, it is a property of WHOSE DATA IS AT RISK, and
-        the data arrives from the person typing it. Scoping it to the agent
-        left the five agents SAFi ships exempt — they have no org, so
-        _apply_ai_standards never runs for them — which meant an admin who
-        ticked "block sensitive data" was not covered on the Fiduciary, the
-        one agent where an account number is most likely to be pasted. Found
-        exactly that way on 2026-08-27.
+        The acting user's organization is included because the person supplying
+        the data determines which organization-level controls apply. Applying
+        both profile and organization rules as a union means neither layer can
+        silently remove the other's configured checks.
 
         A union, so it can only tighten: neither source can switch the other
         off, and the org floor stays a floor. Guests have no org and so get
@@ -1761,15 +1655,18 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         try:
             rules = (self.profile or {}).get("will_rules") or {}
             struct = rules.get("structural_requirements") or {}
-            keys.extend(pii_validators.normalize(struct.get("pii_validators")))
+            catalog = (self.profile or {}).get("pii_validator_catalog")
+            keys.extend(pii_validators.normalize(struct.get("pii_validators"), catalog))
         except Exception:
             pass
 
         if org_id:
             try:
-                standards = db.get_ai_standards(org_id) or {}
+                standards = self.store.get_ai_standards(org_id) or {}
                 struct = standards.get("structural_requirements") or {}
-                for k in pii_validators.normalize(struct.get("pii_validators")):
+                for k in pii_validators.normalize(
+                    struct.get("pii_validators"), (self.profile or {}).get("pii_validator_catalog")
+                ):
                     if k not in keys:
                         keys.append(k)
             except Exception as e:
@@ -1777,7 +1674,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
                 # take down the turn; it means this org's floor is not applied
                 # for this request, which is logged and visible.
                 self.log.warning("PII: org standards lookup failed for %s: %s", org_id, e)
-        return pii_validators.normalize(keys)
+        return pii_validators.normalize(keys, (self.profile or {}).get("pii_validator_catalog"))
 
     def _redact_pii(self, text, org_id=None):
         """Strip detected identifiers before anything is persisted.
@@ -1792,7 +1689,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         enabled = self._pii_enabled(org_id)
         if not enabled or not isinstance(text, str) or not text:
             return text
-        return pii_validators.redact(text, enabled)
+        return pii_validators.redact(
+            text, enabled, (self.profile or {}).get("pii_validator_catalog")
+        )
 
     @staticmethod
     def _default_redirect_directive(violation_type: str) -> str:
@@ -1807,11 +1706,10 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             # Never restate the detected value.
             return (
                 "CRITICAL: The user's message contained what appears to be sensitive "
-                "personal or financial information (for example a national ID or an "
-                "account number), and it was blocked before reaching you. "
+                "information, and it was blocked before reaching you. "
                 "Do NOT repeat, quote, guess at or reference the specific value. "
                 "Say plainly that the message was not processed because it appeared "
-                "to contain sensitive data, that this is an organizational policy, "
+                "to contain sensitive data, "
                 "and invite the user to resend the request with that information "
                 "removed or replaced with a placeholder. Be brief and matter-of-fact; "
                 "the user has done nothing wrong."
@@ -1861,7 +1759,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
     ) -> Dict[str, Any]:
         """Agent Redirect: Re-engages the Intellect to handle boundaries in the agent's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
-        db.update_message_reasoning(message_id, "Applying governance policy...")
+        self.store.update_message_reasoning(message_id, "Applying governance policy...")
 
         directives = self.profile.get("internal_rephrase_directives", {})
         directive = directives.get(violation_type)
@@ -1873,7 +1771,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         safe_intent, _ = await self.intellect_engine.generate_forced_response(
             user_prompt=original_prompt,
             system_directive=directive,
-            conversation_id=conversation_id
+            memory_summary=self.store.fetch_conversation_summary(conversation_id) or "",
         )
         
         safe_output = safe_intent.get("content") or "I am currently unable to process this request under governance rules."
@@ -1890,9 +1788,9 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         # NOTE: generate_forced_response never receives the original malicious
         # content (see intellect.py), so the redirect is safe to commit here
         # without a second gate pass.
-        db.update_message_content(message_id, safe_output, audit_status="complete")
+        self.store.update_message_content(message_id, safe_output, audit_status="complete")
 
-        db.update_message_reasoning(message_id, "Auditing governance response...")
+        self.store.update_message_reasoning(message_id, "Auditing governance response...")
         try:
             # REDACTED, not raw. evaluate_redirect fences the prompt into the
             # body it sends to the Conscience (conscience.py:301-304), so a
@@ -1918,10 +1816,10 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
         p_t = np.zeros(max(1, len(self.spirit.values)))
         mu_new_vector = p_t
         # Load turn count for log context only — not incrementing, not saving.
-        _sm_readonly = db.load_spirit_memory(self.active_profile_name) or {"turn": 0}
+        _sm_readonly = self.store.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         redirect_turn = int(_sm_readonly.get("turn", 0))
 
-        db.update_message_reasoning(message_id, "Preparing your answer...")
+        self.store.update_message_reasoning(message_id, "Preparing your answer...")
 
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1954,6 +1852,8 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "agentWorkContext": "" if agent_context in ("{}", "null", "") else agent_context,
             "policyId": self.profile.get("policy_id"),
             "policyVersion": self.profile.get("policy_version"),
+            "securityRulesVersion": self.profile.get("phase_zero_rules_version"),
+            "roleConfigVersion": self.profile.get("role_config_version"),
             "orgId": org_id or self.profile.get("org_id"),
             "userId": user_id,
             "agentName": self.active_profile_name,
@@ -1961,7 +1861,7 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
             "conscienceModel": self.conscience_model,
         }
 
-        db.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
+        self.store.update_audit_results(message_id, ledger, S_t, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),
                                 policy_version=(self.profile or {}).get("policy_version"),
                                 model_attribution=self.model_attribution,
@@ -1970,11 +1870,21 @@ class SAFi(TtsMixin, BackgroundTasksMixin):
 
         S_p: List[str] = []
 
-        # Same once-per-conversation title generation on the redirect path: a
-        # first message that got blocked still deserves a real title, and the
-        # user prompt alone carries the topic (the redirect text does not).
-        if new_title:
-            self._submit_bg(self._run_title_thread, conversation_id, original_prompt, "", new_title)
+        if self.background_task_callback:
+            self._submit_bg(self.background_task_callback, {
+                "conversation_id": conversation_id,
+                "user_id": user_id,
+                "profile_name": self.active_profile_name,
+                "memory_summary": "",
+                "current_profile_json": "{}",
+                "user_prompt": original_prompt,
+                "assistant_output": "",
+                "new_title": new_title,
+                "current_agent_context": "{}",
+                "message_id": message_id,
+                "track_work_context": False,
+                "enable_profile_extraction": False,
+            })
 
         self._append_log(governance_record)
 

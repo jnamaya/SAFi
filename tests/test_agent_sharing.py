@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.persistence import sharing_store
+from safi_app.role_config import ROLE_CONFIG
 from support import login_as, new_user
 
 
@@ -81,42 +82,42 @@ class TheResolver(SharingTestBase):
 
     def test_default_deny(self):
         self.assertFalse(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()))
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG))
 
     def test_owner_always(self):
         self.assertTrue(sharing_store.can_use_agent(
-            self.owner, 'editor', self.org, self._agent()))
+            self.owner, 'editor', self.org, self._agent(), ROLE_CONFIG))
 
     def test_org_admin_clears_private(self):
         self.assertTrue(sharing_store.can_use_agent(
-            self.admin, 'admin', self.org, self._agent()))
+            self.admin, 'admin', self.org, self._agent(), ROLE_CONFIG))
 
     def test_foreign_org_admin_denied(self):
         self.assertFalse(sharing_store.can_use_agent(
-            self.outsider, 'admin', self.other_org, self._agent()))
+            self.outsider, 'admin', self.other_org, self._agent(), ROLE_CONFIG))
 
     def test_ladder_still_works(self):
         _exec("UPDATE agents SET visibility='member' WHERE agent_key=%s", (self.agent_key,))
         self.assertTrue(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()))
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG))
 
     def test_direct_grant_widens(self):
         sharing_store.set_grant(self.agent_key, 'user', self.member, self.org, self.owner)
         self.assertTrue(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()))
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG))
         sharing_store.revoke_grant(self.agent_key, 'user', self.member)
         self.assertFalse(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()))
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG))
 
     def test_group_grant_widens_and_dies_with_the_group(self):
         gid = sharing_store.create_group(self.org, "Finance", self.admin)
         sharing_store.add_group_member(gid, self.member, self.admin)
         sharing_store.set_grant(self.agent_key, 'group', gid, self.org, self.owner)
         self.assertTrue(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()))
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG))
         sharing_store.delete_group(gid)
         self.assertFalse(sharing_store.can_use_agent(
-            self.member, 'member', self.org, self._agent()),
+            self.member, 'member', self.org, self._agent(), ROLE_CONFIG),
             "a deleted group kept conferring access through orphaned rows")
 
     def test_grant_never_crosses_orgs(self):
@@ -126,7 +127,7 @@ class TheResolver(SharingTestBase):
               "(agent_key, grantee_type, grantee_id, org_id) VALUES (%s,'user',%s,%s)",
               (self.agent_key, self.outsider, self.other_org))
         self.assertFalse(sharing_store.can_use_agent(
-            self.outsider, 'member', self.other_org, self._agent()))
+            self.outsider, 'member', self.other_org, self._agent(), ROLE_CONFIG))
 
     def test_offboarding_cleanup(self):
         gid = sharing_store.create_group(self.org, "Ops", self.admin)

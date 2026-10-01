@@ -24,10 +24,8 @@ class SelfReviewError(PermissionError):
     was wrong."""
 
 
-class LastAdminError(RuntimeError):
-    """The change would leave an organization with no admin. Refused: an org
-    with zero admins loses policy authoring, member management and the
-    provider allow-list, and has no in-product way back."""
+class LastAuthorityRoleError(RuntimeError):
+    """The change would leave an organization with no configured authority role."""
 
 
 db_pool = None
@@ -86,7 +84,7 @@ def init_db():
                 will_model VARCHAR(255) DEFAULT NULL,
                 conscience_model VARCHAR(255) DEFAULT NULL,
                 org_id CHAR(36),
-                role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'
+                role VARCHAR(100) NULL
             )
         ''')
 
@@ -102,8 +100,13 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM users LIKE 'org_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE users ADD COLUMN org_id CHAR(36)")
-            cursor.execute("ALTER TABLE users ADD COLUMN role ENUM('admin', 'editor', 'auditor', 'member') DEFAULT 'member'")
+            cursor.execute("ALTER TABLE users ADD COLUMN role VARCHAR(100) NULL")
             cursor.execute("CREATE INDEX idx_user_org ON users(org_id)")
+
+        cursor.execute("SHOW COLUMNS FROM users LIKE 'role'")
+        role_column = cursor.fetchone()
+        if role_column and "enum(" in str(role_column[1]).lower():
+            cursor.execute("ALTER TABLE users MODIFY COLUMN role VARCHAR(100) NULL")
 
         cursor.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
         if not cursor.fetchone():
@@ -452,7 +455,7 @@ def init_db():
                 policy_id VARCHAR(255) DEFAULT 'standalone',
                 created_by VARCHAR(255),
                 org_id CHAR(36),
-                visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private',
+                visibility VARCHAR(100) DEFAULT 'private',
                 rag_knowledge_base VARCHAR(255),
                 rag_format_string TEXT,
                 scope_statement TEXT,
@@ -464,8 +467,13 @@ def init_db():
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'org_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agents ADD COLUMN org_id CHAR(36)")
-            cursor.execute("ALTER TABLE agents ADD COLUMN visibility ENUM('private', 'member', 'auditor', 'editor', 'admin') DEFAULT 'private'")
+            cursor.execute("ALTER TABLE agents ADD COLUMN visibility VARCHAR(100) DEFAULT 'private'")
             cursor.execute("CREATE INDEX idx_agent_org ON agents(org_id)")
+
+        cursor.execute("SHOW COLUMNS FROM agents LIKE 'visibility'")
+        visibility_column = cursor.fetchone()
+        if visibility_column and "enum(" in str(visibility_column[1]).lower():
+            cursor.execute("ALTER TABLE agents MODIFY COLUMN visibility VARCHAR(100) DEFAULT 'private'")
 
         cursor.execute("SHOW COLUMNS FROM agents LIKE 'rag_knowledge_base'")
         if not cursor.fetchone():
@@ -522,8 +530,7 @@ def init_db():
                 description TEXT,
                 org_id CHAR(36) NULL,
                 created_by VARCHAR(255) NOT NULL,
-                visibility ENUM('private', 'member', 'auditor', 'editor', 'admin')
-                    DEFAULT 'private',
+                visibility VARCHAR(100) DEFAULT 'private',
                 status ENUM('empty', 'pending', 'indexing', 'ready', 'failed')
                     DEFAULT 'empty',
                 status_detail TEXT NULL,
@@ -535,6 +542,12 @@ def init_db():
                 INDEX idx_kb_owner (created_by)
             )
         ''')
+        cursor.execute("SHOW COLUMNS FROM knowledge_bases LIKE 'visibility'")
+        kb_visibility_column = cursor.fetchone()
+        if kb_visibility_column and "enum(" in str(kb_visibility_column[1]).lower():
+            cursor.execute(
+                "ALTER TABLE knowledge_bases MODIFY COLUMN visibility VARCHAR(100) DEFAULT 'private'"
+            )
 
         # --- Knowledge Base Documents ---
         # Approval columns exist from v1 even though private KBs never use
@@ -569,7 +582,7 @@ def init_db():
             )
         ''')
 
-        # self_approved marks a sign-off taken under the sole-administrator
+        # self_approved marks a sign-off taken under the sole-reviewer
         # exception. It lives on the RECORD, not only in org_compliance_log,
         # because an examiner reading the document's own history must be able
         # to see that the review was not independent without cross-referencing
@@ -711,14 +724,14 @@ def init_db():
             )
         ''')
 
-        # --- Chat Audit Trail (SEA Rule 17a-4(f)(2)(i)(A) audit-trail alternative) ---
+        # --- Chat Audit Trail ---
         # Append-only, hash-chained journal of every create/modify/delete that
         # touches chat_history, with a timestamp and actor per entry. No foreign
         # keys: entries must survive the cascade deletes they document so a
         # deleted record can still be re-created for its full retention period.
         # state is LONGTEXT, not JSON: MySQL normalizes JSON documents (key
         # order, number formatting), which would break byte-exact verification
-        # of entry_hash. See docs/internal/SEC_COMPLIANCE_READINESS.md.
+        # of entry_hash.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_audit_trail (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -761,93 +774,6 @@ def init_db():
             if cursor.fetchone()[0] == 0:
                 cursor.execute(f"ALTER TABLE {_tbl} ADD INDEX {_idx} {_cols}")
                 logging.info(f"Retention migration: added index {_idx} on {_tbl}")
-
-        # --- Security Incidents (SEC Reg S-P, 17 CFR 248.30) ---
-        # Incident records are examiner-facing evidence with their own retention
-        # obligations, so like policy_versions they carry NO foreign keys: they
-        # must survive org/user deletion. There is deliberately no delete helper
-        # or endpoint — closing an incident is a status change.
-        # firm_aware_at drives the 30-day customer-notification clock (the rule
-        # runs from when the covered institution becomes AWARE, not occurrence).
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS security_incidents (
-                id CHAR(36) PRIMARY KEY,
-                org_id CHAR(36) NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                status VARCHAR(20) NOT NULL DEFAULT 'open',
-                severity VARCHAR(20) DEFAULT 'medium',
-                occurred_at DATETIME NULL,
-                occurred_range_end DATETIME NULL,
-                firm_aware_at DATETIME NOT NULL,
-                source VARCHAR(20) NOT NULL DEFAULT 'internal',
-                vendor_name VARCHAR(255) NULL,
-                vendor_aware_at DATETIME NULL,
-                vendor_notified_firm_at DATETIME NULL,
-                data_types JSON,
-                affected_scope TEXT,
-                affected_user_ids JSON,
-                assessment_notes TEXT,
-                containment_notes TEXT,
-                harm_assessment TEXT,
-                harm_determination VARCHAR(40) NULL,
-                harm_determined_by VARCHAR(255) NULL,
-                harm_determined_at DATETIME NULL,
-                ag_delay BOOLEAN DEFAULT FALSE,
-                ag_delay_reference VARCHAR(500) NULL,
-                ag_delay_until DATETIME NULL,
-                customers_notified_at DATETIME NULL,
-                regimes JSON NULL,
-                eu_incident_class VARCHAR(40) NULL,
-                hipaa_role VARCHAR(20) NULL,
-                affected_count INT NULL,
-                authority_notified_at DATETIME NULL,
-                individuals_notified_at DATETIME NULL,
-                hhs_notified_at DATETIME NULL,
-                media_notified_at DATETIME NULL,
-                ce_notified_at DATETIME NULL,
-                created_by VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_incident_org (org_id)
-            )
-        ''')
-
-        # Regime generalization (Phase D): which notification regimes an
-        # incident is reportable under (NULL = legacy row, reads as reg_sp),
-        # the per-regime clock inputs, and one stop timestamp per regime
-        # notice (stamped by the matching *_notified event, like
-        # customers_notified_at).
-        cursor.execute("SHOW COLUMNS FROM security_incidents LIKE 'regimes'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN regimes JSON NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN eu_incident_class VARCHAR(40) NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN hipaa_role VARCHAR(20) NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN affected_count INT NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN authority_notified_at DATETIME NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN individuals_notified_at DATETIME NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN hhs_notified_at DATETIME NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN media_notified_at DATETIME NULL")
-            cursor.execute("ALTER TABLE security_incidents ADD COLUMN ce_notified_at DATETIME NULL")
-            logging.info("Incident migration: added regime-clock columns to security_incidents")
-
-        # Append-only event log per incident (who/when/what, field diffs).
-        # No UPDATE/DELETE helpers exist for it by construction.
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS incident_events (
-                id BIGINT PRIMARY KEY AUTO_INCREMENT,
-                incident_id CHAR(36) NOT NULL,
-                org_id CHAR(36) NOT NULL,
-                event_type VARCHAR(40) NOT NULL,
-                detail TEXT,
-                changes JSON,
-                actor_id VARCHAR(255),
-                actor_email VARCHAR(255),
-                event_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_ievent_incident (incident_id),
-                INDEX idx_ievent_org (org_id)
-            )
-        ''')
 
         # --- Org Compliance Log (retention/legal-hold/export evidence) ---
         # Append-only, no FKs (survives org deletion). Records destruction and
@@ -913,7 +839,7 @@ def init_db():
         # Rows that predate this column become deployment-wide, because there is
         # no reliable way to attribute them after the fact. They stay visible to
         # every org until an operator removes them, but they are no longer
-        # deletable by a tenant admin, which was the actual defect.
+        # deletable by an unrelated organization member, which was the defect.
         #
         # model_id stays the PRIMARY KEY, so a model id is registered once per
         # DEPLOYMENT rather than once per org. That is deliberate:
@@ -963,8 +889,8 @@ def init_db():
             )
         ''')
 
-        # --- Human Review Queue (FINRA supervisory review / EU AI Act Art. 14) ---
-        # Workflow state only — the regulatory evidence for each disposition is
+        # --- Human Review Queue ---
+        # Workflow state only — the evidence for each disposition is
         # the 'review' entry appended to chat_audit_trail in the same
         # transaction as the status change. One row per sampled turn even when
         # several triggers fire (triggers is a JSON array): the queue measures
@@ -1017,13 +943,9 @@ def init_db():
         # need — decryption happens only in drill-down and downloads.
         # DELIBERATELY NO FK CASCADE from chat_history: org-attributed
         # governance records are the ORGANIZATION's supervisory evidence and
-        # must survive a member deleting their conversation (otherwise a
-        # flagged user could erase the org's Audit Hub evidence and skew its
-        # metrics). Deletion is explicit per path: user-initiated deletes
-        # remove only org_id-NULL (personal) records — the GDPR erasure
-        # promise; the retention purge (legal-hold aware) is the only path
-        # that destroys org records; demo cleanup removes everything
-        # (disposable fixtures).
+        # must survive a user deleting their conversation. Deletion is explicit
+        # per path: user-initiated deletes remove only user-owned records, while
+        # organization records are removed by the configured retention path.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS governance_records (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -1124,7 +1046,7 @@ def init_db():
                 id          CHAR(36) PRIMARY KEY,
                 org_id      VARCHAR(36) NOT NULL,
                 email       VARCHAR(255) NOT NULL,
-                role        ENUM('admin','editor','auditor','member') DEFAULT 'member',
+                role        VARCHAR(100) NULL,
                 invited_by  VARCHAR(255) NOT NULL,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at  TIMESTAMP NOT NULL,
@@ -1133,6 +1055,10 @@ def init_db():
                 UNIQUE KEY uq_org_email (org_id, email)
             )
         ''')
+        cursor.execute("SHOW COLUMNS FROM org_invitations LIKE 'role'")
+        invitation_role_column = cursor.fetchone()
+        if invitation_role_column and "enum(" in str(invitation_role_column[1]).lower():
+            cursor.execute("ALTER TABLE org_invitations MODIFY COLUMN role VARCHAR(100) NULL")
         # Append-only, no FKs — lifecycle records must survive user/org deletion
         # (same rationale as chat_audit_trail).
         cursor.execute('''
@@ -1196,10 +1122,6 @@ def init_db():
         conn.commit()
         logging.info("Database initialized.")
 
-        _ensure_safi_policy_exists()
-        _ensure_demo_agent_policies_exist()
-        _seed_local_admin()
-
     except Exception as e:
         logging.error(f"DB Init Failed: {e}")
     finally:
@@ -1213,180 +1135,6 @@ def init_db():
             pass
         if cursor: cursor.close()
         if conn: conn.close()
-
-def _ensure_safi_policy_exists():
-    """Seeds the SAFi default policy template — the system-wide
-    starting point every new organization is cloned from."""
-    from ..core.policies.safi.policy import SAFI_DEFAULT_POLICY
-
-    SAFI_POLICY_ID = "safi_default_policy"
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT id FROM policies WHERE id = %s", (SAFI_POLICY_ID,))
-        if cursor.fetchone():
-            logging.info("SAFi default policy already exists.")
-            return
-
-        logging.info("Seeding SAFi default policy...")
-
-        cursor.execute("""
-            INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by, is_demo)
-            VALUES (%s, NULL, %s, %s, %s, %s, NULL, TRUE)
-        """, (
-            SAFI_POLICY_ID,
-            "SAFi Default Policy",
-            SAFI_DEFAULT_POLICY.get("global_worldview", ""),
-            json.dumps(SAFI_DEFAULT_POLICY.get("global_will_rules", [])),
-            json.dumps(SAFI_DEFAULT_POLICY.get("global_values", [])),
-        ))
-        conn.commit()
-        logging.info("SAFi default policy seeded.")
-
-    except Exception as e:
-        logging.error(f"Failed to seed SAFi default policy: {e}")
-    finally:
-        cursor.close()
-        conn.close()
-
-def _ensure_demo_agent_policies_exist():
-    """
-    Seeds the demo business-unit policies that govern the built-in demo agents
-    (one per agent; see core/policies/demo/policies.py). Idempotent: any
-    policy id already present is left untouched, so operator edits made through
-    the Governance tab survive restarts. Uses create_policy() so each seed also
-    gets its version-1 history row, then flips is_demo so the policies are
-    visible to every user.
-    """
-    from ..core.policies.demo.policies import DEMO_AGENT_POLICIES, DEMO_AGENT_POLICY_MAP
-    from ..config import Config
-
-    # Only seed policies for the built-in agents enabled via SAFI_BUILTIN_AGENTS:
-    # a lean install shouldn't grow governance rows for agents it never shows.
-    # Idempotency below means enabling more agents later just seeds the missing
-    # ones on the next restart.
-    enabled_policy_ids = {
-        pid for key, pid in DEMO_AGENT_POLICY_MAP.items()
-        if Config.builtin_agent_enabled(key)
-    }
-
-    for pid, pol in DEMO_AGENT_POLICIES.items():
-        try:
-            if pid not in enabled_policy_ids:
-                continue
-            if get_policy(pid):
-                continue
-            create_policy(
-                name=pol["name"],
-                worldview=pol.get("worldview", ""),
-                will_rules=pol.get("will_rules", []),
-                values=pol.get("values", []),
-                policy_id=pid,
-                policy_config={
-                    "business_unit": pol.get("business_unit", ""),
-                    "scope_statement": pol.get("scope_statement", ""),
-                },
-            )
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            try:
-                cursor.execute("UPDATE policies SET is_demo=TRUE WHERE id=%s", (pid,))
-                conn.commit()
-            finally:
-                cursor.close()
-                conn.close()
-            logging.info(f"Seeded demo agent policy '{pid}'.")
-        except Exception as e:
-            logging.error(f"Failed to seed demo agent policy '{pid}': {e}")
-
-# -------------------------------------------------------------------------
-# LOCAL ADMIN SEEDING
-# -------------------------------------------------------------------------
-
-def _seed_local_admin():
-    """
-    Creates or updates the persistent local admin account from env config.
-    Called once at startup. Safe to call repeatedly — always converges to
-    the current SAFI_LOCAL_ADMIN_USERNAME / _EMAIL / _PASSWORD values.
-
-    The account is identified by EITHER a username or an email. An appliance
-    sets only the username, so `email` is left NULL there; a deployment that
-    still sets only the email is unaffected and keeps its NULL username.
-    Either way `name` is populated so the account renders normally in the UI.
-    """
-    if not Config.ENABLE_LOCAL_LOGIN:
-        return
-
-    from werkzeug.security import generate_password_hash
-
-    email    = Config.LOCAL_ADMIN_EMAIL
-    username = Config.LOCAL_ADMIN_USERNAME
-    # `name` is what every display path already renders (header, avatar initial,
-    # first-name greeting in chat.js), so seeding it from the username is what
-    # lets a username-only account look normal everywhere without touching a
-    # single one of those call sites.
-    display_name = username or email or "Local Admin"
-    password = Config.LOCAL_ADMIN_PASSWORD
-
-    conn   = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        password_hash = generate_password_hash(password)
-
-        cursor.execute("SELECT id, org_id FROM users WHERE id = 'local_admin'")
-        existing = cursor.fetchone()
-
-        if existing:
-            # Re-sync identity + password in case env vars changed; the display
-            # name follows whichever identifier is configured, so renaming the
-            # account in .env relabels it in the UI on next boot.
-            cursor.execute(
-                "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s WHERE id='local_admin'",
-                (email or None, username or None, display_name, password_hash)
-            )
-            logging.info("Local admin account updated.")
-        else:
-            # Reuse the existing local-admin org if one is already there.
-            #
-            # This branch runs whenever the `local_admin` USER is missing — a
-            # cleanup, a purge, a test run against the wrong database — and it
-            # used to mint a fresh org every time, abandoning the previous one.
-            # Twenty restarts produced twenty empty "Local Admin Organization"
-            # rows on the demo host, each looking like a real organization in
-            # every count.
-            #
-            # Matched on the fixed name because that is the only stable handle the
-            # old rows have; the oldest is kept so repeated recreation converges
-            # on one org rather than drifting between them.
-            cursor.execute(
-                "SELECT id FROM organizations WHERE name = %s ORDER BY created_at LIMIT 1",
-                ("Local Admin Organization",)
-            )
-            row = cursor.fetchone()
-            org_id = row["id"] if row else None
-            if org_id:
-                logging.info("Reusing existing local admin organization %s", org_id)
-            else:
-                org_id = str(uuid.uuid4())
-                cursor.execute(
-                    "INSERT INTO organizations (id, name) VALUES (%s, %s)",
-                    (org_id, "Local Admin Organization")
-                )
-            cursor.execute(
-                """INSERT INTO users (id, email, username, name, picture, role, org_id, password_hash, active_profile)
-                   VALUES ('local_admin', %s, %s, %s, '', 'admin', %s, %s, %s)""",
-                (email or None, username or None, display_name, org_id,
-                 password_hash, Config.DEFAULT_PROFILE)
-            )
-            logging.info("Local admin account created (username=%s).", username or "-")
-
-        conn.commit()
-    except Exception as e:
-        logging.error(f"Failed to seed local admin: {e}")
-    finally:
-        cursor.close()
-        conn.close()
 
 # -------------------------------------------------------------------------
 # SPIRIT MEMORY FUNCTIONS
@@ -1692,7 +1440,7 @@ def upsert_user(user_info: Dict[str, Any]):
     cursor = conn.cursor()
     try:
         user_id = user_info.get('sub') or user_info.get('id')
-        role = user_info.get('role', 'member')
+        role = user_info.get('role')
         org_id = user_info.get('org_id')
         
         sql = """
@@ -2745,7 +2493,7 @@ def toggle_conversation_pin(cid, is_pinned, user_id=None):
 
 def _erase_personal_governance_records(cursor, conversation_where_sql, params):
     """User-initiated deletion of governance records: PERSONAL (org_id NULL)
-    records only — the GDPR-erasure promise. Org-attributed records are the
+    records only — the account-data deletion promise. Org-attributed records are the
     organization's supervisory evidence and deliberately survive; only the
     retention purge (legal-hold aware) destroys those. conversation_where_sql
     must alias conversations as c and scope ownership."""
@@ -2759,12 +2507,8 @@ def _erase_personal_governance_records(cursor, conversation_where_sql, params):
 class LegalHoldActive(Exception):
     """Raised when a destructive operation is attempted under an active hold.
 
-    A hold is not advisory. `DATA_ERASURE_AND_RETENTION.md` §4 and
-    `HIPAA_READINESS.md` both state that it "suspends all destruction", and the
-    retention purge has always honoured that. User-initiated deletion did not:
-    a member could clear their own conversations mid-hold, which is precisely
-    the spoliation a hold exists to prevent, and it is the first thing an
-    opposing expert would test. GOVERNANCE_BACKLOG 2.
+    A hold suspends configured destruction operations. The retention path
+    honors that state, and user-initiated deletion must honor it as well.
 
     Raised rather than returned so it cannot be mistaken for "nothing matched".
     """
@@ -3174,36 +2918,26 @@ def get_agent(key):
         cursor.close()
         conn.close()
 
-def list_agents(user_id, org_id=None, user_role='member'):
+def list_agents(user_id, org_id=None, user_role=None, visibility_roles=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Visibility ladder: an agent's creator always sees it; everyone else
-        # in the org sees it only at or above its visibility level, and
-        # 'private' is visible to nobody else.
-        
-        sql = """
-            SELECT * FROM agents 
-            WHERE 
-                (created_by = %s)
-                OR 
-                (
-                    org_id = %s 
-                    AND org_id IS NOT NULL
-                    AND (
-                        visibility = 'member'
-                        OR (visibility = 'auditor' AND %s IN ('auditor', 'editor', 'admin'))
-                        OR (visibility = 'editor' AND %s IN ('editor', 'admin'))
-                        OR (visibility = 'admin' AND %s = 'admin')
-                    )
-                )
-            ORDER BY created_at DESC
-        """
-        
-        cursor.execute(sql, (user_id, org_id, user_role, user_role, user_role))
+        # Persistence returns candidates; host-supplied visibility policy data
+        # decides which organization rows the caller may see.
+        cursor.execute(
+            "SELECT * FROM agents WHERE created_by=%s OR (org_id=%s AND org_id IS NOT NULL) "
+            "ORDER BY created_at DESC",
+            (user_id, org_id),
+        )
         rows = cursor.fetchall()
         res = []
         for row in rows:
+            is_owner = str(row.get("created_by") or "") == str(user_id or "")
+            same_org = bool(org_id and row.get("org_id") and str(row["org_id"]) == str(org_id))
+            visibility_roles = visibility_roles or {}
+            role_allowed = user_role in (visibility_roles.get(row.get("visibility")) or ())
+            if not is_owner and not (same_org and role_allowed):
+                continue
             row['key'] = row['agent_key']
             row['values'] = json.loads(row['values_json']) if isinstance(row['values_json'], str) else row['values_json'] or []
             row['will_rules'] = json.loads(row['will_rules_json']) if isinstance(row['will_rules_json'], str) else row['will_rules_json'] or []
@@ -3227,8 +2961,7 @@ def list_agents(user_id, org_id=None, user_role='member'):
         conn.close()
 
 def list_all_agents():
-    """ALL agents, ignoring permissions — the operator Dashboard/Admin
-    view only, never an org-scoped surface."""
+    """Return all stored profiles for explicitly authorized host tooling."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -3270,7 +3003,7 @@ def delete_agent(key):
 # KNOWLEDGE BASES (user-created RAG corpora)
 # -------------------------------------------------------------------------
 # Two rules hold this together and are enforced HERE rather than in the API,
-# so every future caller — batch, script, admin tooling — inherits them:
+# so every future caller — batch, script, or host tooling — inherits them:
 #
 #   1. A document's text is only ever indexed when it is retrievable-eligible
 #      (`_INDEXABLE_DOC_STATUSES`). Approval that only hides a row in the UI
@@ -3315,18 +3048,8 @@ def get_knowledge_base(kb_id):
         conn.close()
 
 
-def list_knowledge_bases(user_id, org_id=None, user_role='member'):
-    """KBs the caller may see: their own always, plus org-visible ones their
-    role clears. Mirrors list_agents' visibility ladder deliberately — a KB
-    is an org asset of the same kind, and two different rules would be a bug
-    waiting to happen."""
-    role_clears = {
-        'admin':   ('member', 'auditor', 'editor', 'admin'),
-        'editor':  ('member', 'auditor', 'editor'),
-        'auditor': ('member', 'auditor'),
-        'member':  ('member',),
-    }.get(user_role or 'member', ('member',))
-
+def list_knowledge_bases(user_id, org_id=None, user_role=None, visibility_roles=None):
+    """Return user-owned and organization-scoped candidate knowledge sources."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -3343,13 +3066,20 @@ def list_knowledge_bases(user_id, org_id=None, user_role='member'):
         """
         params = [user_id]
         if org_id:
-            placeholders = ', '.join(['%s'] * len(role_clears))
-            sql += f" OR (kb.org_id=%s AND kb.visibility IN ({placeholders}))"
+            sql += " OR kb.org_id=%s"
             params.append(org_id)
-            params.extend(role_clears)
         sql += " ORDER BY kb.created_at DESC"
         cursor.execute(sql, tuple(params))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        visibility_roles = visibility_roles or {}
+        return [
+            row for row in rows
+            if str(row.get("created_by") or "") == str(user_id or "")
+            or (
+                org_id and row.get("org_id") and str(row["org_id"]) == str(org_id)
+                and user_role in (visibility_roles.get(row.get("visibility")) or ())
+            )
+        ]
     finally:
         cursor.close()
         conn.close()
@@ -3507,24 +3237,26 @@ def delete_knowledge_base_document(doc_id):
         conn.close()
 
 
-def count_other_eligible_reviewers(org_id, exclude_user_id, cursor=None):
+def count_other_eligible_reviewers(org_id, exclude_user_id, cursor=None, reviewer_roles=None):
     """How many OTHER people in the org could sign off on a document.
 
-    Eligibility is the reviewer set — admin or auditor — matching
-    knowledge_api's require_any_role. Not the role ladder: editor outranks
-    auditor but must not review, so a `role >= auditor` query here would
-    silently re-open the hole the API is careful to avoid.
+    Eligibility is supplied by the host's reviewer-role configuration rather
+    than a role-name list or the role hierarchy.
     """
     if not org_id:
+        return 0
+    reviewer_roles = list(reviewer_roles or [])
+    if not reviewer_roles:
         return 0
     own_conn = None
     if cursor is None:
         own_conn = get_db_connection()
         cursor = own_conn.cursor()
     try:
+        placeholders = ",".join(["%s"] * len(reviewer_roles))
         cursor.execute(
-            "SELECT COUNT(*) FROM users WHERE org_id=%s AND role IN ('admin','auditor') "
-            "AND id <> %s", (org_id, exclude_user_id))
+            f"SELECT COUNT(*) FROM users WHERE org_id=%s AND role IN ({placeholders}) "
+            "AND id <> %s", (org_id, *reviewer_roles, exclude_user_id))
         row = cursor.fetchone()
         # dictionary=True cursors return a mapping, plain ones a tuple.
         return int(list(row.values())[0] if isinstance(row, dict) else row[0])
@@ -3536,7 +3268,7 @@ def count_other_eligible_reviewers(org_id, exclude_user_id, cursor=None):
 
 def set_knowledge_base_document_status(doc_id, action, reviewer_id,
                                        reviewer_email=None, reason=None,
-                                       org_id=None):
+                                       org_id=None, reviewer_roles=None):
     """Records an approval decision in ONE transaction: locks the row, applies
     separation of duties, flips status, and appends the evidence to
     org_compliance_log so the decision cannot be made without the log.
@@ -3546,21 +3278,20 @@ def set_knowledge_base_document_status(doc_id, action, reviewer_id,
     first, and a rule that lives in one HTTP handler is a rule that the next
     caller silently skips.
 
-    THE SOLE-ADMINISTRATOR EXCEPTION
-    --------------------------------
+    THE SOLE-REVIEWER EXCEPTION
+    --------------------------
     Self-approval is refused whenever anyone else in the org could review the
-    document. When the reviewer is the ONLY admin/auditor, it is permitted —
+    document. When the reviewer is the only eligible reviewer, it is permitted —
     and recorded as a different thing: `self_approved` on the row and
     `kb_document_self_approved` in the evidence log, so the audit trail
     distinguishes a non-independent sign-off from an independent one.
 
-    This mirrors FINRA 3110's limited-size-and-resources exception, and the
-    reasoning is that an unreviewable queue in a one-person org is not a
+    The reasoning is that an unreviewable queue in a one-person org is not a
     control, it is a dead end that gets worked around outside the product.
     What makes it defensible is that the exception is NAMED, not silent.
 
     Note it evaluates per decision, against the org's CURRENT membership: add
-    a second admin and the exception stops applying immediately, with no
+    another eligible reviewer and the exception stops applying immediately, with no
     setting to remember to turn back on. Do not replace this with a stored
     flag — a stored flag is exactly the thing that gets left on.
 
@@ -3586,26 +3317,28 @@ def set_knowledge_base_document_status(doc_id, action, reviewer_id,
             return None
 
         is_self = str(row["uploaded_by"]) == str(reviewer_id)
-        sole_admin = False
+        sole_reviewer = False
         if is_self:
-            if count_other_eligible_reviewers(org_id, reviewer_id, cursor=cursor) > 0:
+            if count_other_eligible_reviewers(
+                org_id, reviewer_id, cursor=cursor, reviewer_roles=reviewer_roles
+            ) > 0:
                 conn.rollback()
                 raise SelfReviewError(
                     "separation of duties: you cannot approve a document you "
-                    "uploaded — another admin or auditor must review it"
+                    "uploaded — another eligible reviewer must review it"
                 )
-            sole_admin = True
+            sole_reviewer = True
 
         reason_enc = crypto.encrypt_value(reason) if reason else None
         cursor.execute(
             "UPDATE knowledge_base_documents SET status=%s, reviewed_by=%s, "
             "reviewer_email=%s, reviewed_at=NOW(), reason_enc=%s, self_approved=%s "
             "WHERE id=%s",
-            (status, reviewer_id, reviewer_email, reason_enc, sole_admin, doc_id),
+            (status, reviewer_id, reviewer_email, reason_enc, sole_reviewer, doc_id),
         )
 
         if action == "approve":
-            event = "kb_document_self_approved" if sole_admin else "kb_document_approved"
+            event = "kb_document_self_approved" if sole_reviewer else "kb_document_approved"
         else:
             event = "kb_document_rejected"
         detail = {
@@ -3616,13 +3349,13 @@ def set_knowledge_base_document_status(doc_id, action, reviewer_id,
             "uploaded_by": row["uploaded_by"],
             "char_count": row["char_count"],
         }
-        if sole_admin:
+        if sole_reviewer:
             # Spelled out in the evidence itself. A reader of this row should
             # not have to infer non-independence from the event name alone.
             detail["independent_review"] = False
-            detail["exception"] = "sole_administrator"
+            detail["exception"] = "sole_reviewer"
             detail["attestation"] = (
-                "Approved by the only admin/auditor in the organization; no "
+                "Approved by the only eligible reviewer in the organization; no "
                 "independent reviewer was available at the time of sign-off."
             )
         append_compliance_log(org_id, event, f"user:{reviewer_id}", detail, cursor=cursor)
@@ -3695,10 +3428,10 @@ def claim_pending_knowledge_base():
         conn.close()
 
 
-def list_knowledge_bases_for_agent_picker(user_id, org_id=None, user_role='member'):
+def list_knowledge_bases_for_agent_picker(user_id, org_id=None, user_role=None, visibility_roles=None):
     """Only KBs that can actually ground an answer. A KB with no indexed
     vectors attached to an agent looks configured and answers nothing."""
-    return [kb for kb in list_knowledge_bases(user_id, org_id, user_role)
+    return [kb for kb in list_knowledge_bases(user_id, org_id, user_role, visibility_roles)
             if kb.get("status") == "ready" and (kb.get("chunk_count") or 0) > 0]
 
 
@@ -3706,9 +3439,7 @@ def list_knowledge_bases_for_agent_picker(user_id, org_id=None, user_role='membe
 # ORG & POLICY MANAGEMENT
 # -------------------------------------------------------------------------
 
-def create_organization_atomic(org_name, user_id):
-    from ..core.policies.safi.policy import SAFI_DEFAULT_POLICY
-
+def create_organization_atomic(org_name, user_id, default_policy):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -3720,19 +3451,17 @@ def create_organization_atomic(org_name, user_id):
             VALUES (%s, %s, %s, %s, NOW())
         """, (oid, org_name, user_id, json.dumps({'allow_auto_join': False})))
 
-        # Seed the new org's policy from the SAFi default template so it
-        # starts with a complete, well-structured governance baseline rather
-        # than an empty shell.
+        # The host supplies the initial policy data; persistence only stores it.
         pid = str(uuid.uuid4())
         cursor.execute("""
             INSERT INTO policies (id, org_id, name, worldview, will_rules, values_weights, created_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             pid, oid,
-            "SAFi Default Policy",
-            SAFI_DEFAULT_POLICY.get("global_worldview", ""),
-            json.dumps(SAFI_DEFAULT_POLICY.get("global_will_rules", [])),
-            json.dumps(SAFI_DEFAULT_POLICY.get("global_values", [])),
+            default_policy.get("name", "Default Policy"),
+            default_policy.get("global_worldview", ""),
+            json.dumps(default_policy.get("global_will_rules", [])),
+            json.dumps(default_policy.get("global_values", [])),
             user_id,
         ))
 
@@ -3884,24 +3613,16 @@ def get_policy(pid):
         conn.close()
 
 def list_policies(user_id=None, org_id=None):
-    # Demo rows are matched against the current seed set, not the is_demo flag
-    # alone. Retired demo policies (e.g. demo_contoso_genai_policy) stay in the
-    # DB as provenance for old governance records but must not surface as
-    # examples. get_policy stays unfiltered so those records keep resolving.
-    from ..core.policies.demo.policies import DEMO_AGENT_POLICIES
-    demo_ids = list(DEMO_AGENT_POLICIES) + ["safi_default_policy"]
-
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        demo_placeholders = ", ".join(["%s"] * len(demo_ids))
         cursor.execute(f"""
             SELECT * FROM policies
-            WHERE (is_demo=TRUE AND id IN ({demo_placeholders}))
+            WHERE (is_demo=TRUE AND org_id IS NULL)
             OR created_by=%s
             OR (org_id IS NOT NULL AND org_id=%s)
             ORDER BY created_at DESC
-        """, (*demo_ids, user_id, org_id))
+        """, (user_id, org_id))
         
         rows = cursor.fetchall()
         for row in rows:
@@ -3984,7 +3705,7 @@ def get_organization_by_domain(domain):
 
 def count_organizations():
     """How many organizations exist. Used to tell a single-tenant appliance
-    (where the admin IS the deployment) from a multi-tenant install (where a
+    (where the operator IS the deployment) from a multi-tenant install (where a
     deployment-wide setting must be limited to a named operator)."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -4055,48 +3776,16 @@ def confirm_domain_verification(oid):
         conn.close()
 
 
-def absorb_domain_users(org_id, domain, actor):
-    """Move existing accounts on a just-verified domain into the owning org as
-    members (backlog 78). Returns a report: moved, skipped, emptied_orgs.
+def absorb_domain_users(org_id, domain, actor, administrator_roles=None, default_role=None):
+    """Apply the host's verified-domain membership rule transactionally.
 
-    Proving you control a domain proves you control its identities, so those
-    accounts belong to your organization, at the lowest role. The verifying
-    admin then decides who is promoted. This is the corporate-standard
-    behaviour (Google Workspace and Microsoft 365 both reclaim conflicting
-    accounts on a verified domain), and it is Nelson's explicit product call.
-
-    Everyone lands as 'member', never as an admin, so absorption can only ever
-    REDUCE an absorbed user's authority. Sessions are revoked so the next
-    request re-resolves membership instead of acting in the old org.
-
-    The rule has no exceptions, by design (Nelson, 2026-08-20): one domain per
-    org, whoever verifies it is the admin, everyone else on the domain is a
-    member. An account's email domain decides which org it belongs to, so a
-    person administering some other org from an address on this domain is out of
-    model, and the domain wins.
-
-    WHY, and this is the governance argument rather than a convenience one:
-    accounts created on a domain nobody has claimed are shadow IT. Someone stood
-    up governed agents under a corporate identity with no organizational
-    oversight, no charter, and no accountable administrator. Verifying the
-    domain is the moment that authority is asserted, and the point of asserting
-    it is to bring those accounts under governance. An absorption that politely
-    skipped the awkward cases would leave exactly the ungoverned corners the
-    verification exists to eliminate.
-
-    The consequence, journaled rather than prevented: if an absorbed user was the
-    only admin of another org that still has members, that org is left with no
-    administrator. It is reported as org_left_without_admin so an operator can
-    appoint one. Promoting a replacement automatically was rejected: handing
-    someone admin they never asked for is a silent authority grant, which is
-    exactly what a governance product must not do quietly.
-
-    An org left with no members is likewise reported, never deleted: its
-    governance records are evidence, and dissolving them to tidy up a membership
-    change would destroy an audit trail.
+    Role names and fallback assignment are supplied by the caller. Existing
+    membership changes are journaled; any organization left without an
+    administrator is reported for host-level remediation.
     """
     dom = (domain or "").strip().lower().lstrip("@")
-    report = {"moved": [], "skipped": [], "emptied_orgs": [], "orgs_without_admin": []}
+    administrator_roles = list(administrator_roles or [])
+    report = {"moved": [], "skipped": [], "emptied_orgs": [], "orgs_without_authority": []}
     if not dom or not org_id:
         return report
 
@@ -4114,44 +3803,45 @@ def absorb_domain_users(org_id, domain, actor):
         for u in candidates:
             old_org = u.get("org_id")
             # Everyone on the domain is absorbed. Where that removes another
-            # org's last admin, the org is flagged below rather than spared:
+            # org's last privileged member, the org is flagged rather than spared:
             # the domain decides membership, and a headless org is an operator
             # problem, not a reason to leave an identity outside its domain.
             leaves_org_headless = False
-            if old_org and (u.get("role") or "").lower() == "admin":
+            if old_org and u.get("role") in administrator_roles:
+                role_placeholders = ",".join(["%s"] * len(administrator_roles))
                 cursor.execute(
                     "SELECT COUNT(*) AS n FROM users "
-                    "WHERE org_id=%s AND role='admin' AND id != %s",
-                    (old_org, u["id"]),
+                    f"WHERE org_id=%s AND role IN ({role_placeholders}) AND id != %s",
+                    (old_org, *administrator_roles, u["id"]),
                 )
-                other_admins = (cursor.fetchone() or {}).get("n", 0)
+                other_authority_roles = (cursor.fetchone() or {}).get("n", 0)
                 cursor.execute(
                     "SELECT COUNT(*) AS n FROM users WHERE org_id=%s AND id != %s",
                     (old_org, u["id"]),
                 )
                 other_members = (cursor.fetchone() or {}).get("n", 0)
-                leaves_org_headless = bool(not other_admins and other_members)
+                leaves_org_headless = bool(not other_authority_roles and other_members)
 
-            cursor.execute("UPDATE users SET org_id=%s, role='member' WHERE id=%s",
-                           (str(org_id), u["id"]))
+            cursor.execute("UPDATE users SET org_id=%s, role=%s WHERE id=%s",
+                           (str(org_id), default_role, u["id"]))
             log_auth_event("member_absorbed_by_domain", actor, org_id=str(org_id),
                            user_id=u["id"],
                            detail={"email": u.get("email"), "domain": dom,
                                    "previous_org_id": old_org,
                                    "previous_role": u.get("role"),
-                                   "new_role": "member"},
+                                    "new_role": default_role},
                            cursor=cursor)
             report["moved"].append(u.get("email"))
 
-            # Took the old org's last admin while people remain in it. Not
+            # Removed the old org's last privileged member while people remain in it. Not
             # prevented, but it must never be silent: those members cannot
             # administer anything until an operator appoints someone.
             if leaves_org_headless:
-                report["orgs_without_admin"].append(old_org)
-                log_auth_event("org_left_without_admin", actor, org_id=str(org_id),
+                report["orgs_without_authority"].append(old_org)
+                log_auth_event("org_left_without_authority", actor, org_id=str(org_id),
                                detail={"headless_org_id": old_org, "domain": dom,
-                                       "absorbed_admin": u.get("email"),
-                                       "note": "org still has members; needs an admin appointed"},
+                                       "absorbed_privileged_user": u.get("email"),
+                                        "note": "organization still has users and needs an authority role assigned"},
                                cursor=cursor)
 
             # Did that empty the old org? Reported, never deleted.
@@ -4358,239 +4048,24 @@ def delete_charter(org_id):
         cursor.close()
         conn.close()
 
-def get_organization_members(org_id):
+def get_organization_members(org_id, role_order=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # FIELD(role, ...) puts admins first so the member list reads by authority.
-        cursor.execute("SELECT id, name, email, role FROM users WHERE org_id=%s ORDER BY FIELD(role, 'admin', 'editor', 'auditor', 'member'), name", (org_id,))
-        return cursor.fetchall()
-    finally:
-        cursor.close()
-        conn.close()
-
-# -------------------------------------------------------------------------
-# SECURITY INCIDENTS (Reg S-P 248.30)
-# -------------------------------------------------------------------------
-# Every query is scoped by org_id at the SQL layer, not just the route guard.
-# incident_events is append-only: no update/delete helpers exist for it.
-
-# Columns an admin may set through the API; everything else (harm provenance
-# stamps, customers_notified_at, timestamps) is server-managed.
-_INCIDENT_MUTABLE = [
-    "title", "description", "status", "severity", "occurred_at",
-    "occurred_range_end", "firm_aware_at", "source", "vendor_name",
-    "vendor_aware_at", "vendor_notified_firm_at", "data_types",
-    "affected_scope", "affected_user_ids", "assessment_notes",
-    "containment_notes", "harm_assessment", "harm_determination",
-    "ag_delay", "ag_delay_reference", "ag_delay_until",
-    "regimes", "eu_incident_class", "hipaa_role", "affected_count",
-]
-_INCIDENT_JSON_COLS = ("data_types", "affected_user_ids", "regimes")
-_INCIDENT_DT_COLS = ("occurred_at", "occurred_range_end", "firm_aware_at",
-                     "vendor_aware_at", "vendor_notified_firm_at", "ag_delay_until")
-
-def _incident_dt(value):
-    """Normalizes ISO-8601 input (with T/Z/offset) to the naive-UTC
-    'YYYY-MM-DD HH:MM:SS' form MySQL DATETIME accepts."""
-    if value is None or value == "":
-        return None
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return value  # let MySQL reject anything unparseable
-    if not isinstance(value, datetime):
-        return value
-    if value.tzinfo:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value.strftime("%Y-%m-%d %H:%M:%S")
-
-def _incident_store_value(col, value):
-    if col in _INCIDENT_JSON_COLS:
-        return json.dumps(value) if value is not None else None
-    if col in _INCIDENT_DT_COLS:
-        return _incident_dt(value)
-    return value
-
-def _incident_event_append(cursor, org_id, incident_id, event_type, detail,
-                           actor_id, actor_email, changes=None):
-    cursor.execute(
-        "INSERT INTO incident_events (incident_id, org_id, event_type, detail, "
-        "changes, actor_id, actor_email) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (incident_id, org_id, event_type, detail,
-         json.dumps(changes) if changes else None, actor_id, actor_email),
-    )
-
-def create_security_incident(org_id, data, actor_id, actor_email):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        iid = str(uuid.uuid4())
-        cols, vals = ["id", "org_id", "created_by"], [iid, org_id, actor_id]
-        for c in _INCIDENT_MUTABLE:
-            if c in data and data[c] is not None:
-                cols.append(c)
-                vals.append(_incident_store_value(c, data[c]))
-        cursor.execute(
-            f"INSERT INTO security_incidents ({', '.join(cols)}) "
-            f"VALUES ({', '.join(['%s'] * len(vals))})",
-            tuple(vals),
-        )
-        _incident_event_append(cursor, org_id, iid, "created",
-                               f"Incident opened: {data.get('title', '')}",
-                               actor_id, actor_email)
-        conn.commit()
-        return iid
-    finally:
-        cursor.close()
-        conn.close()
-
-def list_security_incidents(org_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM security_incidents WHERE org_id=%s "
-                       "ORDER BY firm_aware_at DESC", (org_id,))
-        rows = cursor.fetchall()
-        for r in rows:
-            for c in _INCIDENT_JSON_COLS:
-                if isinstance(r.get(c), str):
-                    try:
-                        r[c] = json.loads(r[c])
-                    except (ValueError, TypeError):
-                        pass
-        return rows
-    finally:
-        cursor.close()
-        conn.close()
-
-def get_security_incident(org_id, incident_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM security_incidents WHERE id=%s AND org_id=%s",
-                       (incident_id, org_id))
-        row = cursor.fetchone()
-        if row:
-            for c in _INCIDENT_JSON_COLS:
-                if isinstance(row.get(c), str):
-                    try:
-                        row[c] = json.loads(row[c])
-                    except (ValueError, TypeError):
-                        pass
-        return row
-    finally:
-        cursor.close()
-        conn.close()
-
-def update_security_incident(org_id, incident_id, changes, actor_id, actor_email):
-    """Whitelisted-field update with an atomic field-level diff event.
-    Returns the updated row, or None if the incident isn't in this org."""
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM security_incidents WHERE id=%s AND org_id=%s FOR UPDATE",
-                       (incident_id, org_id))
-        current = cursor.fetchone()
-        if not current:
-            return None
-        diff = {}
-        sets, vals = [], []
-        for c in _INCIDENT_MUTABLE:
-            if c not in changes:
-                continue
-            new_v = changes[c]
-            stored_v = _incident_store_value(c, new_v)
-            old_v = current.get(c)
-            if isinstance(old_v, bool):
-                old_cmp = old_v
-            else:
-                old_cmp = str(old_v) if old_v is not None else None
-            new_cmp = str(stored_v) if stored_v is not None else None
-            if c == "ag_delay":
-                new_cmp = bool(new_v)
-                old_cmp = bool(old_v)
-                stored_v = new_cmp
-            if old_cmp != new_cmp:
-                diff[c] = {"from": old_v if not isinstance(old_v, (bytes,)) else str(old_v),
-                           "to": new_v}
-                sets.append(f"{c}=%s")
-                vals.append(stored_v)
-        # Server-stamp harm-determination provenance: the Reg S-P exception
-        # must be a *documented determination* attributable to a person.
-        if "harm_determination" in diff and changes.get("harm_determination"):
-            sets.append("harm_determined_by=%s")
-            vals.append(actor_email or actor_id)
-            sets.append("harm_determined_at=UTC_TIMESTAMP()")
-        if sets:
-            vals.extend([incident_id, org_id])
+        role_order = list(role_order or [])
+        if role_order:
+            placeholders = ",".join(["%s"] * len(role_order))
             cursor.execute(
-                f"UPDATE security_incidents SET {', '.join(sets)} WHERE id=%s AND org_id=%s",
-                tuple(vals),
+                "SELECT id, name, email, role FROM users WHERE org_id=%s "
+                f"ORDER BY FIELD(role, {placeholders}), name",
+                (org_id, *role_order),
             )
-            event_type = "updated"
-            if "status" in diff:
-                event_type = "status_changed"
-            elif "harm_determination" in diff:
-                event_type = "harm_determination"
-            _incident_event_append(cursor, org_id, incident_id, event_type,
-                                   None, actor_id, actor_email, changes=diff)
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-    return get_security_incident(org_id, incident_id)
-
-# Regime-notice events → the stop-timestamp column they stamp. Stamps are
-# first-occurrence-only: the FIRST notice stops the clock, later events of the
-# same type are evidence entries without a re-stamp.
-_EVENT_STAMP_COLS = {
-    "notification_sent": "customers_notified_at",     # reg_sp customers
-    "authority_notified": "authority_notified_at",    # eu_ai_act Art. 73
-    "individuals_notified": "individuals_notified_at",  # hipaa CE → individuals
-    "hhs_notified": "hhs_notified_at",                # hipaa → HHS (or annual log)
-    "media_notified": "media_notified_at",            # hipaa ≥500 media
-    "ce_notified": "ce_notified_at",                  # hipaa BA → covered entity
-}
-
-def append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
-    """Manual event log entry. Regime-notice event types also stamp their
-    clock's stop timestamp (see _EVENT_STAMP_COLS)."""
-    stamp_col = _EVENT_STAMP_COLS.get(event_type)
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(f"SELECT {stamp_col or 'id'} FROM security_incidents "
-                       "WHERE id=%s AND org_id=%s FOR UPDATE", (incident_id, org_id))
-        row = cursor.fetchone()
-        if not row:
-            return False
-        if stamp_col and row[0] is None:
-            cursor.execute(f"UPDATE security_incidents SET {stamp_col}=UTC_TIMESTAMP() "
-                           "WHERE id=%s AND org_id=%s", (incident_id, org_id))
-        _incident_event_append(cursor, org_id, incident_id, event_type, detail,
-                               actor_id, actor_email)
-        conn.commit()
-        return True
-    finally:
-        cursor.close()
-        conn.close()
-
-def list_incident_events(org_id, incident_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT * FROM incident_events WHERE incident_id=%s AND org_id=%s "
-                       "ORDER BY id ASC", (incident_id, org_id))
-        rows = cursor.fetchall()
-        for r in rows:
-            if isinstance(r.get("changes"), str):
-                try:
-                    r["changes"] = json.loads(r["changes"])
-                except (ValueError, TypeError):
-                    pass
-        return rows
+        else:
+            cursor.execute(
+                "SELECT id, name, email, role FROM users WHERE org_id=%s ORDER BY role, name",
+                (org_id,),
+            )
+        return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()
@@ -4735,7 +4210,7 @@ def list_custom_models(visible_to_org=None):
 
 def add_custom_model(model_id, label, provider, created_by=None, org_id=''):
     """org_id='' publishes deployment-wide and is reserved for operators; a
-    tenant admin's entry is scoped to their own org."""
+    organization member's entry is scoped to their own org."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -4752,7 +4227,7 @@ def delete_custom_model(model_id, org_id=None):
     """Returns True when a row was removed.
 
     org_id=None deletes regardless of owner and is for operators only. Passing
-    an org id restricts the delete to that org's own rows, so a tenant admin
+    an org id restricts the delete to that org's own rows, so a user
     cannot remove another org's model or a deployment-wide one.
     """
     conn = get_db_connection()
@@ -5034,7 +4509,7 @@ def set_org_retention_config(org_id, changes, actor):
     return get_org_retention_config(org_id)
 
 def export_user_data(user_id):
-    """Right-of-access export (GDPR Art. 15 / HIPAA §164.524): everything
+    """Right-of-access export: everything
     SAFi holds about ONE user, decrypted, for self-service download. A
     deliberate subset of the examiner export — the requesting user's own
     records only: account row (credential material stripped), conversations
@@ -5109,9 +4584,9 @@ def export_user_data(user_id):
     }
 
 def get_org_offline_config(org_id):
-    """Offline/PWA kill switch. Regulated posture: default OFF — members'
+    """Offline/PWA kill switch. Default OFF — users'
     browsers keep no local copies of org content (GET cache, write queue,
-    conversation cache, service-worker caches) unless an admin opts in."""
+    conversation cache, service-worker caches) unless the organization opts in."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -5233,7 +4708,7 @@ def set_org_provider_allowlist(org_id, allowlist, actor):
 
 
 # --- Data-source connector allow-list ---------------------------------------
-# Which external accounts (Google Drive / SharePoint / GitHub) members of this
+# Which external accounts members of this
 # org may link. Same storage, validation and evidence contract as the LLM
 # provider allow-list above — see core/services/connector_governance.py for why
 # the credential itself stays per-user rather than becoming a service principal.
@@ -5315,7 +4790,7 @@ def set_org_connector_allowlist(org_id, allowlist, actor):
 
 
 def list_org_connections(org_id):
-    """Who in this org has linked which data source. Admin visibility — the
+    """Who in this org has linked which data source. Authorized visibility — the
     question 'what corporate data can our agents currently reach' had no answer
     before this.
 
@@ -5339,66 +4814,6 @@ def list_org_connections(org_id):
         conn.close()
 
 
-# --- Incident notification regimes (Phase D) --------------------------------
-# The org's default regime set for NEW incidents, stored in
-# organizations.settings.incident_regimes. Per-incident tags live on the
-# incident row itself (regimes JSON) and override this at create time.
-# Canonical key order matches REGIME_RULES in api/incidents_api.py.
-
-INCIDENT_REGIME_KEYS = ("reg_sp", "eu_ai_act", "hipaa")
-
-def get_org_incident_regimes(org_id):
-    """The org's default regime set; reg_sp when unset (the registry's
-    original, always-applicable baseline for regulated firms)."""
-    org = get_organization(org_id)
-    stored = ((org or {}).get("settings") or {}).get("incident_regimes")
-    if isinstance(stored, list) and stored:
-        kept = [k for k in INCIDENT_REGIME_KEYS if k in stored]
-        if kept:
-            return kept
-    return ["reg_sp"]
-
-def set_org_incident_regimes(org_id, regimes, actor):
-    """Sets the org's default regime set AND appends the compliance-log
-    evidence row in the same transaction — same contract as
-    set_org_provider_allowlist. Raises ValueError on invalid input."""
-    if not isinstance(regimes, list) or not regimes:
-        raise ValueError("regimes must be a non-empty list of regime keys")
-    unknown = sorted({str(r) for r in regimes} - set(INCIDENT_REGIME_KEYS))
-    if unknown:
-        raise ValueError(f"unknown regimes: {', '.join(unknown)} "
-                         f"(valid: {', '.join(INCIDENT_REGIME_KEYS)})")
-    regimes = [k for k in INCIDENT_REGIME_KEYS if k in {str(r) for r in regimes}]
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT settings FROM organizations WHERE id=%s FOR UPDATE", (org_id,))
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError("organization not found")
-        settings = {}
-        if row[0]:
-            try:
-                settings = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            except (ValueError, TypeError):
-                settings = {}
-
-        old = settings.get("incident_regimes")
-        old = [k for k in INCIDENT_REGIME_KEYS if isinstance(old, list) and k in old] or None
-        if old != regimes:
-            settings["incident_regimes"] = regimes
-            append_compliance_log(org_id, "incident_regimes_changed", actor,
-                                  {"changed": {"incident_regimes": {"old": old, "new": regimes}}},
-                                  cursor=cursor)
-            cursor.execute("UPDATE organizations SET settings=%s WHERE id=%s",
-                           (json.dumps(settings), org_id))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-    return {"regimes": get_org_incident_regimes(org_id)}
-
 # --- Human review queue: config, sampling, enqueue (Phase E) ---------------
 # Config lives in organizations.settings.review_config, changed only through
 # set_org_review_config (evidence-logged, same pattern as retention and the
@@ -5413,7 +4828,7 @@ REVIEW_CONFIG_DEFAULTS = {
         "hard_gate_block": True,
         "gateway_violation": True,
         # Off by default, unlike its siblings: turning it on changes queue
-        # volume for orgs already running review, so it must be an admin's
+        # volume for orgs already running review, so it must be an authorized
         # journaled opt-in rather than arrive silently via a deploy.
         "agent_redirect": False,
         "low_alignment": True,
@@ -5692,7 +5107,7 @@ GOVERNANCE_EXPORT_CAP = 10_000
 #
 # OPERATOR TOOLING ONLY — must never be reachable from an org-scoped HTTP route.
 # A record with no org belongs to no tenant, so surfacing it in one org's Audit
-# Hub would show that org's admin turns that are not theirs (public-bot
+# Hub would show organization turns that are not theirs (public-bot
 # conversations from anyone). Every role in rbac.ROLES is org-scoped; there is no
 # platform superuser to gate it behind, so the exposure would be unavoidable.
 # That would be a worse defect than the invisibility. The real fix is upstream:
@@ -6199,15 +5614,13 @@ def apply_review_action(org_id, queue_id, action, reason, reviewer_id, reviewer_
     """Records a supervisory disposition. In ONE transaction: locks the queue
     row, rejects anything not 'pending', updates workflow state, and appends
     the 'review' entry to the message's chat_audit_trail hash chain — the
-    trail entry is the regulatory artifact (Art. 14 auditable intervention /
-    FINRA sign-off); the queue row is merely workflow state. An override is a
+    trail entry is the auditable decision record; the queue row is workflow state. An override is a
     documented supervisory determination about a delivered message — it does
     NOT retract or alter the message itself.
 
     Separation of duties: a reviewer may not dispose of a turn from their own
-    conversation. FINRA 3110/3120 supervisory review means someone OTHER than
-    the principal signs off, and self-approval is the first thing an examiner
-    tests. Enforced here rather than in the route so every caller — API, and
+    conversation. A reviewer other than the principal must sign off. Enforced
+    here rather than in the route so every caller — API, and
     any future batch or scripted path — inherits it.
 
     Returns the updated queue row, or None when the row doesn't exist in this
@@ -6242,7 +5655,7 @@ def apply_review_action(org_id, queue_id, action, reason, reviewer_id, reviewer_
             conn.rollback()
             raise SelfReviewError(
                 "separation of duties: you cannot review a turn from your own "
-                "conversation — another admin or auditor must dispose of this item"
+                "conversation — another authorized reviewer must dispose of this item"
             )
         reason_enc = crypto.encrypt_value(reason) if reason else None
         cursor.execute(
@@ -6545,25 +5958,25 @@ def list_orgs_with_retention():
         cursor.close()
         conn.close()
 
-def _would_orphan_org(cursor, user_id, org_id):
-    """True when removing this user's admin rights leaves the org with none.
-    Counted inside the caller's transaction so a concurrent demotion of the
-    other admin cannot slip between the check and the write."""
+def _would_orphan_org(cursor, user_id, org_id, administrator_roles=None):
+    """True when removing this user leaves no configured authority role."""
+    administrator_roles = list(administrator_roles or [])
+    if not administrator_roles:
+        return True
+    placeholders = ",".join(["%s"] * len(administrator_roles))
     cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE org_id=%s AND role='admin' AND id<>%s",
-        (org_id, user_id))
+        f"SELECT COUNT(*) FROM users WHERE org_id=%s AND role IN ({placeholders}) AND id<>%s",
+        (org_id, *administrator_roles, user_id))
     return (cursor.fetchone()[0] or 0) == 0
 
 
-def update_member_role(user_id, org_id, new_role, actor="system"):
+def update_member_role(user_id, org_id, new_role, actor="system", administrator_roles=None):
     """Role change revokes the target's live sessions in the SAME transaction
-    and journals the change — a demoted admin must not keep an admin session
+    and journals the change — a demoted privileged user must not keep a session
     (fresh role is re-read per request, but revocation forces a clean re-auth
     and provides the examiner-facing event).
 
-    Refuses to demote the last admin (LastAdminError): an org with no admin
-    cannot author policy, manage members, or set the provider allow-list, and
-    nothing in the product can restore it."""
+    Refuses to demote the last configured organization authority."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -6571,15 +5984,17 @@ def update_member_role(user_id, org_id, new_role, actor="system"):
                        (user_id, org_id))
         row = cursor.fetchone()
         prior_role = row[0] if row else None
-        if prior_role == 'admin' and new_role != 'admin' and _would_orphan_org(cursor, user_id, org_id):
+        administrator_roles = list(administrator_roles or [])
+        if (prior_role in administrator_roles and new_role not in administrator_roles
+                and _would_orphan_org(cursor, user_id, org_id, administrator_roles)):
             conn.rollback()
-            raise LastAdminError(
-                "this is the organization's only admin — promote another member "
-                "to admin before changing this role"
+            raise LastAuthorityRoleError(
+                "this is the organization's only authority-bearing member; "
+                "assign another member before changing this role"
             )
         cursor.execute("UPDATE users SET role=%s WHERE id=%s AND org_id=%s", (new_role, user_id, org_id))
-        revoked = _revoke_user_sessions_cursor(cursor, user_id, f"admin:{actor}")
-        log_auth_event("role_changed", f"admin:{actor}", org_id=org_id, user_id=user_id,
+        revoked = _revoke_user_sessions_cursor(cursor, user_id, f"authority:{actor}")
+        log_auth_event("role_changed", f"authority:{actor}", org_id=org_id, user_id=user_id,
                        detail={"prior_role": prior_role, "new_role": new_role,
                                "sessions_revoked": revoked}, cursor=cursor)
         conn.commit()
@@ -6587,12 +6002,14 @@ def update_member_role(user_id, org_id, new_role, actor="system"):
         cursor.close()
         conn.close()
 
-def remove_member_from_org(user_id, org_id, actor="system"):
+def remove_member_from_org(
+    user_id, org_id, actor="system", administrator_roles=None, default_role=None
+):
     """Removal revokes all the member's live sessions in the SAME transaction
     and journals member_removed — off-boarding evidence (design §3.4).
 
-    Refuses to remove the last admin (LastAdminError) for the same reason
-    update_member_role does — removal strips admin just as effectively as a
+    Refuses to remove the last configured organization authority
+    for the same reason update_member_role does — removal strips authority just as
     demotion, so guarding only the demotion path would leave the door open."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -6600,16 +6017,21 @@ def remove_member_from_org(user_id, org_id, actor="system"):
         cursor.execute("SELECT role FROM users WHERE id=%s AND org_id=%s FOR UPDATE",
                        (user_id, org_id))
         row = cursor.fetchone()
-        if row and row[0] == 'admin' and _would_orphan_org(cursor, user_id, org_id):
+        administrator_roles = list(administrator_roles or [])
+        if (row and row[0] in administrator_roles
+                and _would_orphan_org(cursor, user_id, org_id, administrator_roles)):
             conn.rollback()
-            raise LastAdminError(
-                "this is the organization's only admin — promote another member "
-                "to admin before removing this one"
+            raise LastAuthorityRoleError(
+                "this is the organization's only authority-bearing member; "
+                "assign another member before removing this one"
             )
-        cursor.execute("UPDATE users SET org_id=NULL, role='member' WHERE id=%s AND org_id=%s", (user_id, org_id))
+        cursor.execute(
+            "UPDATE users SET org_id=NULL, role=%s WHERE id=%s AND org_id=%s",
+            (default_role, user_id, org_id),
+        )
         removed = cursor.rowcount > 0
         revoked = _revoke_user_sessions_cursor(cursor, user_id, "system:member_removed")
-        log_auth_event("member_removed", f"admin:{actor}", org_id=org_id, user_id=user_id,
+        log_auth_event("member_removed", f"authority:{actor}", org_id=org_id, user_id=user_id,
                        detail={"sessions_revoked": revoked, "removed": removed}, cursor=cursor)
         conn.commit()
     finally:
@@ -6627,7 +6049,7 @@ IDENTITY_DEFAULTS = {
     "idle_timeout_minutes": 7 * 24 * 60,   # 7 days
     "session_lifetime_hours": 30 * 24,     # 30 days absolute
     "join_policy": "domain_auto_join",     # preserves pre-Phase-1 behavior
-    "require_mfa": False,                  # org opt-in (HIPAA/SEC posture)
+        "require_mfa": False,                  # org opt-in security posture
     "ms_tenant_id": None,                  # Entra tid to enforce (Phase 2)
     "google_hd": None,                     # Workspace hosted domain to enforce
 }
@@ -6997,7 +6419,7 @@ def enable_user_totp(user_id, actor, org_id=None):
 def disable_user_totp(user_id, actor, org_id=None):
     """Remove the secret entirely; journals mfa_disabled in the same
     transaction. Caller is responsible for verifying authority (live code
-    for self-service, admin role for resets)."""
+    for self-service, a configured authority role for resets)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -7014,9 +6436,9 @@ def disable_user_totp(user_id, actor, org_id=None):
         conn.close()
 
 
-def create_org_invitation(org_id, email, role, invited_by, expires_days=14):
+def create_org_invitation(org_id, email, role, invited_by, expires_days=14, allowed_roles=None):
     """Create (or refresh a pending) invitation. Journals member_invited."""
-    if role not in ("admin", "editor", "auditor", "member"):
+    if role not in (allowed_roles or []):
         raise ValueError("invalid role")
     email = (email or "").strip().lower()
     if "@" not in email:
@@ -7336,237 +6758,6 @@ def get_connected_providers(user_id):
         cursor.execute("SELECT provider FROM oauth_tokens WHERE user_id=%s", (user_id,))
         rows = cursor.fetchall()
         return [row[0] for row in rows]
-    finally:
-        cursor.close()
-        conn.close()
-
-def init_demo_usage_schema():
-    """The demo signup counter, and a one-time backfill of what came before it.
-
-    WHY THIS EXISTS AT ALL. Demo accounts are destroyed after 24 hours, so the
-    only surviving evidence that anyone ever used the demo was the rows the
-    purge happened to MISS: orphaned `auth_events` and `sessions` still naming
-    a `demo_%` user whose row was long gone. Counting those distinct ids was
-    how we learned the demo had served 153 accounts in 40 days while the
-    `organizations` table only ever showed the ~10 alive at that instant.
-
-    That is evidence by accident, and it has already been lost once: both
-    `auth_events` and `sessions` begin at exactly 2026-07-16, the moment those
-    tables were added, so demo usage from 2026-05-25 to 2026-07-15 is gone for
-    good. Widening the purge without this counter would repeat that, silently.
-    Count deliberately, then destroy freely.
-
-    Backfill is idempotent and additive-only: it fills days the table does not
-    already have, so re-running it cannot double-count, and a day recorded live
-    is never overwritten by an estimate.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS demo_usage_daily (
-                day DATE PRIMARY KEY,
-                accounts INT NOT NULL DEFAULT 0
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """)
-        cursor.execute("SELECT COUNT(*) FROM demo_usage_daily")
-        if (cursor.fetchone() or [0])[0]:
-            conn.commit()
-            return 0
-        # First run only. Reconstruct history from the orphans BEFORE any
-        # widened purge removes them.
-        cursor.execute("""
-            INSERT INTO demo_usage_daily (day, accounts)
-            SELECT DATE(ts) d, COUNT(DISTINCT user_id) FROM (
-                SELECT user_id, created_at AS ts FROM sessions    WHERE user_id LIKE 'demo\\_%'
-                UNION ALL
-                SELECT user_id, ts          AS ts FROM auth_events WHERE user_id LIKE 'demo\\_%'
-            ) x
-            GROUP BY d
-            ON DUPLICATE KEY UPDATE accounts = GREATEST(accounts, VALUES(accounts))
-        """)
-        filled = cursor.rowcount
-        conn.commit()
-        logging.info("demo_usage_daily backfilled from orphaned audit rows: %d day(s).", filled)
-        return filled
-    except Exception as e:
-        logging.error("demo usage schema/backfill failed: %s", e)
-        return 0
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def record_demo_signup():
-    """Count one demo account at CREATION time.
-
-    Deliberately not counted at purge time: a count taken while deleting is a
-    count that disappears if the delete path ever changes. Recorded here, the
-    number is independent of whatever the purge does later.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "INSERT INTO demo_usage_daily (day, accounts) VALUES (CURDATE(), 1) "
-            "ON DUPLICATE KEY UPDATE accounts = accounts + 1")
-        conn.commit()
-    except Exception as e:
-        # Never break a demo login over a counter.
-        logging.warning("demo signup not counted: %s", e)
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def cleanup_orphaned_public_users():
-    """Removes `public_*` user rows that no longer have a conversation.
-
-    The public widget mints one user row per CONVERSATION
-    (`conversations.py`: `public_{conversation_id}`), so a page reload creates
-    another. Nothing ever removed them: `cleanup_old_demo_users` matches
-    `demo_%` only, and the retention purge deletes conversations rather than
-    the user rows that pointed at them. The rows therefore accumulated forever
-    and counted as registered users in every query anyone would naturally run.
-
-    Deliberately narrow: a row is removed ONLY when it has no conversation
-    left. Anything with a conversation, a message or a governance record is
-    evidence of a governed turn, and destroying that belongs to the retention
-    engine — which respects each org's retention period, checks legal holds and
-    writes its own evidence. This function must never become a second, quieter
-    destruction path.
-
-    Returns the number of rows removed.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            """
-            SELECT u.id FROM users u
-             WHERE u.id LIKE 'public\\_%'
-               AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.user_id = u.id)
-               AND NOT EXISTS (SELECT 1 FROM governance_records g WHERE g.user_id = u.id)
-            """
-        )
-        ids = [r[0] for r in cursor.fetchall()]
-        if not ids:
-            return 0
-        marks = ",".join(["%s"] * len(ids))
-        cursor.execute(f"DELETE FROM users WHERE id IN ({marks})", tuple(ids))
-        conn.commit()
-        return len(ids)
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def cleanup_old_demo_users():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        # One org per demo user, so the user's own org_id identifies it.
-        select_sql = "SELECT id, org_id FROM users WHERE id LIKE 'demo_%' AND created_at < NOW() - INTERVAL 24 HOUR"
-        cursor.execute(select_sql)
-        expired_users = cursor.fetchall()
-        
-        if not expired_users:
-            return
-
-        expired_user_ids = [u[0] for u in expired_users]
-        expired_org_ids = [u[1] for u in expired_users if u[1]]
-        
-        if expired_user_ids:
-            format_strings = ','.join(['%s'] * len(expired_user_ids))
-            tuple_ids = tuple(expired_user_ids)
-            
-            # --- MANUALLY DELETE DEPENDENCIES TO PREVENT FK ERRORS ---
-            # Even if CASCADE is set, strict SQL modes or missing permissions can block it.
-            
-            # A0. Governance records — demo sandboxes are disposable fixtures,
-            # so ALL their records go (governance_records has no FK by
-            # design, see init_db). Matched by the record's own user
-            # attribution, NOT via conversations: records whose conversation
-            # the demo user already deleted would escape a join.
-            cursor.execute(
-                f"DELETE FROM governance_records WHERE user_id IN ({format_strings})",
-                tuple_ids)
-
-            # A1. Chat audit trail — same ruling as governance_records above,
-            # and the same one this module already states at the trail helpers:
-            # "demo chats are disposable fixtures, not business records"
-            # (Nelson, 2026-08-25). Safe for chain integrity because the hash
-            # chain is scoped PER message_pk (see append_chat_audit's tip
-            # query), so removing a demo message's chain cannot invalidate any
-            # other org's. Deleted by conversation, which takes whole chains;
-            # deleting by org_id alone would leave partial chains behind for
-            # any row written before org_id was populated.
-            # MUST run before the conversations delete on the next line, or the
-            # conversation ids it selects are already gone.
-            cursor.execute(
-                f"DELETE FROM chat_audit_trail WHERE conversation_id IN "
-                f"(SELECT id FROM conversations WHERE user_id IN ({format_strings}))",
-                tuple_ids)
-
-            cursor.execute(f"DELETE FROM conversations WHERE user_id IN ({format_strings})", tuple_ids)
-            
-            cursor.execute(f"DELETE FROM prompt_usage WHERE user_id IN ({format_strings})", tuple_ids)
-            cursor.execute(f"DELETE FROM oauth_tokens WHERE user_id IN ({format_strings})", tuple_ids)
-            cursor.execute(f"DELETE FROM user_profiles WHERE user_id IN ({format_strings})", tuple_ids)
-            cursor.execute(f"DELETE FROM agents WHERE created_by IN ({format_strings})", tuple_ids)
-
-            delete_users_sql = f"DELETE FROM users WHERE id IN ({format_strings})"
-            cursor.execute(delete_users_sql, tuple_ids)
-            logging.info(f"Cleaned up {cursor.rowcount} expired demo users.")
-            
-        # Only orgs gathered from these specific expiring users, never a
-        # name-matched sweep.
-        if expired_org_ids:
-            format_strings = ','.join(['%s'] * len(expired_org_ids))
-            # Any remaining demo-org governance records (e.g. gateway turns
-            # attributed to the org but not a demo user id) go with the org.
-            cursor.execute(
-                f"DELETE FROM governance_records WHERE org_id IN ({format_strings})",
-                tuple(expired_org_ids))
-            cursor.execute(
-                f"DELETE FROM chat_audit_trail WHERE org_id IN ({format_strings})",
-                tuple(expired_org_ids))
-
-            # Everything else that names this org. Two different treatments,
-            # and the difference is the point:
-            #
-            #   NULLED  authentication evidence. auth_events and sessions
-            #           record logins, MFA outcomes and revocations. Those are
-            #           security records about a person, not demo content, and
-            #           they outlive the sandbox on purpose — the same call
-            #           Nelson made for the Local Admin orgs on 2026-08-25.
-            #           Nulling keeps the row and removes the dangling pointer.
-            #
-            #   DELETED demo-only working data with no evidentiary role.
-            #
-            # This list existed as a hand-maintained set of table names and
-            # silently fell six tables behind the schema, which is what left
-            # 1,576 rows pointing at orgs that no longer existed. Anything not
-            # named here is a table that did not exist when this was written:
-            # see GOVERNANCE_BACKLOG 82 for the schema-derived version.
-            for table in ("auth_events", "sessions"):
-                cursor.execute(
-                    f"UPDATE {table} SET org_id=NULL WHERE org_id IN ({format_strings})",
-                    tuple(expired_org_ids))
-            for table in ("llm_usage", "org_compliance_log", "knowledge_bases",
-                          "agents", "policies", "org_charter", "org_ai_standards",
-                          "org_invitations", "custom_groups", "approval_settings"):
-                cursor.execute(
-                    f"DELETE FROM {table} WHERE org_id IN ({format_strings})",
-                    tuple(expired_org_ids))
-
-            delete_orgs_sql = f"DELETE FROM organizations WHERE id IN ({format_strings})"
-            cursor.execute(delete_orgs_sql, tuple(expired_org_ids))
-            logging.info(f"Cleaned up {cursor.rowcount} expired demo organizations.")
-
-        conn.commit()
-    except Exception as e:
-        logging.error(f"Failed to cleanup demo users/orgs: {e}")
     finally:
         cursor.close()
         conn.close()

@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-DASHES = ["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"]  # hyphen, nb-hyphen, figure dash, en, em, minus
+DASHES = ["\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"]
 
 def _norm_label(s: str) -> str:
     """Normalize a value label so config names and auditor-returned names compare

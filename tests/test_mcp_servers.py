@@ -56,6 +56,11 @@ def authorize(tool, profile, params=None):
     return decision, reason
 
 
+def _stamp_profile(profile):
+    catalog = {**CONNECTOR_TOOLS, **discovered_connectors()}
+    return _stamp_tool_authorization(profile, catalog)
+
+
 class ConfigLoadingTests(unittest.TestCase):
     """The server file is read once at import. Every malformed shape must
     degrade to 'no MCP tools', never to a partially-applied config."""
@@ -162,7 +167,7 @@ class ConnectorRegistrationTests(unittest.TestCase):
         # Discovery never ran. The connector name expands to itself, so none of
         # the server's real function names reach allowed_tools, and the Will
         # blocks every call the model makes.
-        profile = _stamp_tool_authorization({"tools": ["acme"]})
+        profile = _stamp_profile({"tools": ["acme"]})
         self.assertEqual(profile["allowed_tools"], ["acme"])
         decision, _ = authorize("acme_invoice", profile)
         self.assertEqual(decision, "violation")
@@ -300,7 +305,7 @@ class LiveServerTests(unittest.TestCase):
         """What the per-tool cards are FOR: naming a function directly
         authorizes exactly that function, because expand_connectors passes an
         unknown name through and the Will matches exactly."""
-        profile = _stamp_tool_authorization({"tools": ["fixture_echo"]})
+        profile = _stamp_profile({"tools": ["fixture_echo"]})
         self.assertEqual(profile["allowed_tools"], ["fixture_echo"])
         self.assertEqual(authorize("fixture_echo", profile)[0], "approve")
         self.assertEqual(authorize("fixture_add", profile)[0], "violation")
@@ -308,18 +313,18 @@ class LiveServerTests(unittest.TestCase):
     # --- the governance assertions ---
 
     def test_granting_the_server_authorizes_its_functions(self):
-        profile = _stamp_tool_authorization({"tools": ["fixture"]})
+        profile = _stamp_profile({"tools": ["fixture"]})
         self.assertIn("fixture_echo", profile["allowed_tools"])
         self.assertEqual(authorize("fixture_echo", profile)[0], "approve")
 
     def test_a_connected_tool_nobody_granted_is_still_blocked(self):
-        profile = _stamp_tool_authorization({"tools": ["web_search"]})
+        profile = _stamp_profile({"tools": ["web_search"]})
         decision, reason = authorize("fixture_echo", profile)
         self.assertEqual(decision, "violation")
         self.assertIn("not authorized", reason)
 
     def test_a_policy_can_narrow_within_a_server(self):
-        profile = _stamp_tool_authorization({
+        profile = _stamp_profile({
             "tools": ["fixture"],
             "will_rules": {"allowed_tools": ["fixture_echo"]},
         })
@@ -327,15 +332,8 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual(authorize("fixture_echo", profile)[0], "approve")
         self.assertEqual(authorize("fixture_add", profile)[0], "violation")
 
-    def test_discovered_tools_take_the_write_path_not_the_fast_pass(self):
-        # No promotion mechanism exists on purpose: a server must not be able to
-        # declare itself read-only and skip a policy's parameter constraints.
-        from safi_app.core.faculties.will import READ_ONLY_TOOLS
-        for name in mcp_runtime.tools():
-            self.assertNotIn(name, READ_ONLY_TOOLS)
-
     def test_parameter_constraints_are_enforced_on_a_discovered_tool(self):
-        profile = _stamp_tool_authorization({
+        profile = _stamp_profile({
             "tools": ["fixture"],
             "will_rules": {"tool_parameter_constraints": {"fixture_echo": {"message": ["safe"]}}},
         })

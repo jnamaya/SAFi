@@ -11,12 +11,13 @@ from datetime import datetime, timezone
 from ..persistence import database as db
 from ..persistence import sharing_store
 from ..persistence import conversation_sharing_store
-from ..core.orchestrator import SAFi
-from ..core.faculties.synderesis import get_profile, list_profiles, AGENTS
+from ..runtime_factory import build_safi
+from ..profile_resolver import get_profile, list_profiles, AGENTS
 from ..core.services import provider_governance as pg
 from ..core.services.model_routing import resolve_effective_faculty_models
 from ..core import provenance
 from ..config import Config
+from ..role_config import ROLE_CONFIG
 
 conversations_bp = Blueprint('conversations', __name__)
 
@@ -131,7 +132,7 @@ class SafiInstanceCache:
         return f"{norm_name}|{rest_hash}"
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
-        # The fully-governed profile is compiled in ONE place: synderesis.get_profile()
+        # The profile adapter resolves user-land data, then calls the pure compiler.
         # resolves role + Policy + Charter (+ weights and β) and stamps policy_id /
         # org_id / spirit_beta. Here we only handle caching and SAFi instantiation.
         # `policy_id`, when given (e.g. the API-key path), overrides the agent's own.
@@ -167,9 +168,9 @@ class SafiInstanceCache:
                 entry['last_used'] = now
                 return entry['instance']
 
-            instance = SAFi(
+            instance = build_safi(
                 config=Config,
-                value_profile_or_list=prof,
+                profile=prof,
                 intellect_model=intellect_model,
                 will_model=will_model,
                 conscience_model=conscience_model,
@@ -661,7 +662,8 @@ async def process_prompt_endpoint():
     # working immediately rather than at the next profile switch.
     raw_agent = db.get_agent(user_profile_name)
     if raw_agent and not sharing_store.can_use_agent(
-            user_id, user_details.get('role'), user_details.get('org_id'), raw_agent):
+            user_id, user_details.get('role'), user_details.get('org_id'), raw_agent,
+            ROLE_CONFIG):
         if is_owner:
             # Heal the stored selection so the next page load recovers.
             try:
@@ -794,11 +796,13 @@ def profiles_list():
 
     user_profile_name = get_user_profile_name()
 
-    candidates = list_profiles(owner_id=user_id)
-    # Grants widen the ladder (backlog 55): agents shared with this user or
-    # one of their groups join the picker. Unioned here, in the API layer,
-    # because db.list_agents is manifest-covered.
     sess_user = session.get('user') or {}
+    candidates = list_profiles(
+        owner_id=user_id,
+        org_id=sess_user.get('org_id'),
+        user_role=sess_user.get('role'),
+    )
+    # Explicit grants widen the role-based visibility result.
     seen = {p['key'] for p in candidates}
     for granted in sharing_store.granted_agents(user_id, sess_user.get('org_id')):
         if granted['key'] not in seen:
@@ -1053,7 +1057,9 @@ def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
     target = db.get_user_details(grantee_id)
     if not target:
         return None
-    if sharing_store.can_use_agent(grantee_id, target.get('role'), target.get('org_id'), raw_agent):
+    if sharing_store.can_use_agent(
+        grantee_id, target.get('role'), target.get('org_id'), raw_agent, ROLE_CONFIG
+    ):
         return None
     return jsonify({"error": "That person cannot use this conversation's agent, "
                              "so it cannot be shared with them."}), 400
@@ -1080,7 +1086,9 @@ def _agent_warning_for_project(project_id, grantee_type, grantee_id):
         if not raw_agent:
             continue  # built-in: platform-wide, never blocked
         total_custom += 1
-        if not sharing_store.can_use_agent(grantee_id, target.get('role'), target.get('org_id'), raw_agent):
+        if not sharing_store.can_use_agent(
+            grantee_id, target.get('role'), target.get('org_id'), raw_agent, ROLE_CONFIG
+        ):
             blocked += 1
     if not blocked:
         return None
@@ -1099,7 +1107,8 @@ def list_conversation_shares(conversation_id):
         return jsonify({"error": "Not found"}), 404
     org_id = (session.get('user') or {}).get('org_id')
     try:
-        members = db.get_organization_members(org_id) if org_id else []
+        role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
+        members = db.get_organization_members(org_id, role_order) if org_id else []
     except Exception:
         members = []
     try:
@@ -1190,7 +1199,8 @@ def list_project_shares(project_id):
         return jsonify({"error": "Not found"}), 404
     org_id = (session.get('user') or {}).get('org_id')
     try:
-        members = db.get_organization_members(org_id) if org_id else []
+        role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
+        members = db.get_organization_members(org_id, role_order) if org_id else []
     except Exception:
         members = []
     try:
@@ -1372,7 +1382,7 @@ def _validate_schedule_fields(data, require_all):
     if 'agent_key' in data or require_all:
         agent_key = (data.get('agent_key') or '').strip()
         try:
-            from ..core.faculties.synderesis import get_profile
+            from ..profile_resolver import get_profile
             get_profile(agent_key)
         except Exception:
             return None, f"Unknown agent '{agent_key}'."
@@ -1383,7 +1393,7 @@ def _validate_schedule_fields(data, require_all):
             sess_user = session.get('user') or {}
             uid = sess_user.get('sub') or sess_user.get('id')
             if not sharing_store.can_use_agent(uid, sess_user.get('role'),
-                                               sess_user.get('org_id'), raw_agent):
+                                               sess_user.get('org_id'), raw_agent, ROLE_CONFIG):
                 return None, "You do not have access to that agent."
         fields['agent_key'] = agent_key
     return fields, None

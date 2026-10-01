@@ -27,14 +27,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("FLASK_ENV", "development")
 
-from safi_app.persistence import database as db  # noqa: E402
+from safi_app.persistence import database as db, demo_store  # noqa: E402
 
 
 class DemoPurge(unittest.TestCase):
 
     def setUp(self):
         db.init_db()
-        db.init_demo_usage_schema()
+        demo_store.init_demo_usage_schema()
         self.conn = db.get_db_connection()
         self.cur = self.conn.cursor(dictionary=True)
         self.demo_id = "demo_%s" % uuid.uuid4()
@@ -108,7 +108,7 @@ class DemoPurge(unittest.TestCase):
             "SELECT COUNT(*) n FROM chat_audit_trail WHERE org_id=%s", (self.org_id,))
         self.assertEqual(self.cur.fetchone()["n"], 1, "seed failed")
 
-        db.cleanup_old_demo_users()
+        demo_store.cleanup_old_demo_users()
         self._refresh()
 
         self.cur.execute(
@@ -136,7 +136,7 @@ class DemoPurge(unittest.TestCase):
              "{}", "2026-08-25T00:00:00Z", None, "cafebabe"))
         self.conn.commit()
 
-        db.cleanup_old_demo_users()
+        demo_store.cleanup_old_demo_users()
         self._refresh()
 
         self.cur.execute(
@@ -149,7 +149,7 @@ class DemoPurge(unittest.TestCase):
         a person, not demo content. It outlives the sandbox, and must not be
         left pointing at an org that no longer exists."""
         self._seed_auth_evidence()
-        db.cleanup_old_demo_users()
+        demo_store.cleanup_old_demo_users()
         self._refresh()
 
         self.cur.execute(
@@ -167,7 +167,7 @@ class DemoPurge(unittest.TestCase):
         table added later fails here rather than silently accumulating."""
         self._seed_conversation_with_trail()
         self._seed_auth_evidence()
-        db.cleanup_old_demo_users()
+        demo_store.cleanup_old_demo_users()
         self._refresh()
 
         self.cur.execute("SELECT DATABASE() d")
@@ -198,13 +198,13 @@ class DemoPurge(unittest.TestCase):
         row = self.cur.fetchone()
         before = row["accounts"] if row else 0
 
-        db.record_demo_signup()
+        demo_store.record_demo_signup()
         self._refresh()
         self.cur.execute("SELECT accounts FROM demo_usage_daily WHERE day=CURDATE()")
         self.assertEqual(self.cur.fetchone()["accounts"], before + 1)
 
         self._seed_conversation_with_trail()
-        db.cleanup_old_demo_users()
+        demo_store.cleanup_old_demo_users()
         self._refresh()
 
         self.cur.execute("SELECT COUNT(*) n FROM users WHERE id=%s", (self.demo_id,))
@@ -218,8 +218,8 @@ class DemoPurge(unittest.TestCase):
         Running it again must never double-count a day."""
         self.cur.execute("SELECT day, accounts FROM demo_usage_daily ORDER BY day")
         before = {r["day"]: r["accounts"] for r in self.cur.fetchall()}
-        db.init_demo_usage_schema()
-        db.init_demo_usage_schema()
+        demo_store.init_demo_usage_schema()
+        demo_store.init_demo_usage_schema()
         self._refresh()
         self.cur.execute("SELECT day, accounts FROM demo_usage_daily ORDER BY day")
         after = {r["day"]: r["accounts"] for r in self.cur.fetchall()}

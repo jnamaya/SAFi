@@ -50,7 +50,7 @@ THE_SOCRATIC_TUTOR_AGENT: Dict[str, Any] = {
 
     # -- Will Gate Configuration (Phase 0 + Phase 3) ---------------------------
     # early_prompt_blacklist augments the global INJECTION_SIGNATURES in
-    # threat_intel.py; scope it to this agent's own attack surface.
+    # shared security rules; scope it to this profile's attack surface.
     # structural_requirements is checked by Will W1 (evaluate_draft_structure)
     # on every Intellect draft before the Will LLM evaluation, so failures here
     # cost nothing — no LLM call.

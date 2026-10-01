@@ -14,10 +14,8 @@ Registering it here would resurrect retired behavior — two data paths for one
 agent. The module stays in plugins/ for reference; register it consciously or
 delete it, but do not let it drift back in.
 """
-from .registry import register_plugin
 from .bible_scholar_readings import handle_bible_scholar_commands
 
-register_plugin(
-    {"the bible scholar", "the_bible_scholar"},
-    handle_bible_scholar_commands,
-)
+PLUGIN_REGISTRATIONS = [
+    ({"the bible scholar", "the_bible_scholar"}, handle_bible_scholar_commands),
+]

@@ -3,9 +3,10 @@ from flask import Blueprint, request, jsonify, session, current_app
 from ..persistence import database as db
 from ..persistence import sharing_store
 from ..persistence import tool_approval_store
-from ..core.faculties.synderesis import AGENTS, ALL_AGENTS, get_profile
+from ..profile_resolver import AGENTS, ALL_AGENTS, get_profile
 from ..core.rbac import check_permission, check_any_role
 from ..config import Config
+from ..role_config import ROLE_CONFIG
 from .conversations import global_safi_cache
 
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
@@ -338,10 +339,11 @@ def list_all_agents():
     db_agents = []
     if user_id:
         try:
-            raw_list = db.list_agents(user_id, user.get('org_id'), user.get('role', 'member'))
-            # Grants widen the ladder (backlog 55): union in agents shared with
-            # this user or one of their groups. Done here rather than inside
-            # db.list_agents, which is manifest-covered.
+            raw_list = db.list_agents(
+                user_id, user.get('org_id'), user.get('role') or ROLE_CONFIG["default_role"],
+                ROLE_CONFIG["visibility_roles"],
+            )
+            # Explicit grants widen the configured visibility result.
             seen_keys = {a.get('agent_key') or a.get('key') for a in raw_list}
             for granted in sharing_store.granted_agents(user_id, user.get('org_id')):
                 if granted['key'] not in seen_keys:
@@ -640,7 +642,8 @@ def list_agent_shares(key):
     # Candidates ride along so the dialog needs one request. The member list
     # is already org-visible via GET /organizations/<id>/members.
     try:
-        members = db.get_organization_members(org_id)
+        role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
+        members = db.get_organization_members(org_id, role_order)
     except Exception:
         members = []
     return jsonify({
@@ -720,7 +723,9 @@ def _reviewer_context():
     if not org_id:
         return None, None, None, (jsonify({"error": "You are not part of an organization."}), 400)
     uid = user.get('id') or user.get('sub')
-    if not tool_approval_store.is_reviewer(org_id, uid, user.get('role')):
+    if not tool_approval_store.is_reviewer(
+        org_id, uid, user.get('role'), reviewer_roles=ROLE_CONFIG["reviewer_roles"]
+    ):
         return None, None, None, (jsonify({"error": "Forbidden: you are not one of "
                                                     "this organization's tool approvers."}), 403)
     return uid, user.get('email'), org_id, None
@@ -755,7 +760,9 @@ def approve_tool_request(request_id):
     # stamps the non-independence on the request row itself.
     self_approved = False
     if str(req['requested_by']) == str(uid):
-        if tool_approval_store.other_reviewer_exists(org_id, uid):
+        if tool_approval_store.other_reviewer_exists(
+            org_id, uid, reviewer_roles=ROLE_CONFIG["reviewer_roles"]
+        ):
             return jsonify({"error": "You requested this change; another "
                                      "approver must decide it."}), 403
         self_approved = True

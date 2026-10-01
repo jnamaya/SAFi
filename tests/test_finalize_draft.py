@@ -67,6 +67,7 @@ class FakeConscience:
 def make_safi(conscience):
     s = object.__new__(SAFi)
     s.log = logging.getLogger("test.SAFi")
+    s.store = MagicMock()
     s.values = VALUES
     s.profile = PROFILE
     s.will_gate = WillGate(None, values=VALUES, profile=PROFILE, alignment_threshold=0.5)
@@ -80,10 +81,9 @@ def ledger_entry(value, score, confidence=1.0):
 
 
 def finalize(safi, draft):
-    with patch("safi_app.core.orchestrator.db", MagicMock()):
-        return asyncio.run(
-            safi._finalize_draft(draft, "user prompt", "reflection", "", "msg-1")
-        )
+    return asyncio.run(
+        safi._finalize_draft(draft, "user prompt", "reflection", "", "msg-1")
+    )
 
 
 class TestFinalizeDraft(unittest.TestCase):

@@ -8,7 +8,7 @@ produces a pass/fail report with category-level coverage statistics.
 Modes
 -----
 phase0  - Tests only the Phase 0 signature/entropy gate.
-          No server required. Instant. Run after editing threat_intel.py.
+          No server required. Instant. Run after editing security_policy.py.
 
 http    - Tests the full pipeline via HTTP against a running SAFi instance.
           Requires a session cookie, a bot API key, or uses the public
@@ -658,20 +658,19 @@ TEST_CASES: List[TestCase] = [
 
 def _load_threat_intel() -> Tuple[dict, float, int, int, list]:
     """
-    Load INJECTION_SIGNATURES and heuristic constants directly from threat_intel.py
+    Load INJECTION_SIGNATURES and heuristic constants from the policy data file
     using importlib, bypassing the package __init__.py chain that pulls in faiss.
     """
     import importlib.util
-    ti_path = _PROJECT_ROOT / "safi_app" / "core" / "threat_intel.py"
+    ti_path = _PROJECT_ROOT / "safi_app" / "security_policy.py"
     if not ti_path.exists():
-        raise FileNotFoundError(f"threat_intel.py not found at {ti_path}")
+        raise FileNotFoundError(f"security_policy.py not found at {ti_path}")
 
     spec = importlib.util.spec_from_file_location("threat_intel", ti_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
-    # Keep the loaded module addressable so _load_real_gate() can satisfy
-    # phase_zero.py's `from ..threat_intel import ...` without the app deps.
+    # Keep the policy data available to the isolated production-gate loader.
     global _TI_MODULE
     _TI_MODULE = mod
 
@@ -702,9 +701,8 @@ def _load_real_gate():
     implementation, and a signature change could pass here and behave
     differently in the app (or the reverse).
 
-    phase_zero.py imports only stdlib plus `..threat_intel`, so it can be loaded
-    without flask/faiss by registering a synthetic package tree that makes that
-    one relative import resolve.
+    phase_zero.py imports only stdlib and the generic validator engine, so it can
+    be loaded without flask/faiss by registering a synthetic package tree.
 
     Returns a callable(prompt, blacklist) -> (is_safe, reason), or None if the
     real gate cannot be loaded (the inline fallback then applies, loudly).
@@ -728,7 +726,11 @@ def _load_real_gate():
         faculties.__path__ = [str(_PROJECT_ROOT / "safi_app" / "core" / "faculties")]
         sys.modules["safi_pz_shim"] = shim
         sys.modules["safi_pz_shim.faculties"] = faculties
-        sys.modules["safi_pz_shim.threat_intel"] = _TI_MODULE
+        pii_path = _PROJECT_ROOT / "safi_app" / "core" / "pii_validators.py"
+        pii_spec = importlib.util.spec_from_file_location("safi_pz_shim.pii_validators", pii_path)
+        pii_module = importlib.util.module_from_spec(pii_spec)
+        sys.modules["safi_pz_shim.pii_validators"] = pii_module
+        pii_spec.loader.exec_module(pii_module)  # type: ignore[union-attr]
 
         spec = importlib.util.spec_from_file_location(
             "safi_pz_shim.faculties.phase_zero", pz_path)
@@ -736,7 +738,7 @@ def _load_real_gate():
         sys.modules["safi_pz_shim.faculties.phase_zero"] = mod
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
 
-        gate = mod.PhaseZeroGate()
+        gate = mod.PhaseZeroGate(_TI_MODULE.PHASE_ZERO_RULES)
         _REAL_GATE = gate.evaluate_prompt
         return _REAL_GATE
     except Exception as e:  # pragma: no cover - diagnostic path
@@ -816,7 +818,7 @@ def run_phase0(cases: List[TestCase], persona_key: str) -> List[TestResult]:
         (signatures, entropy_threshold, entropy_sample_len,
          min_len_entropy, entropy_markers) = _load_threat_intel()
     except Exception as e:
-        print(f"\n[ERROR] Cannot load threat_intel.py: {e}")
+        print(f"\n[ERROR] Cannot load security_policy.py: {e}")
         print("Make sure you're running from the project root.")
         sys.exit(1)
 

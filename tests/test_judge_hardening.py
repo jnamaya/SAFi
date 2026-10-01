@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.conscience import ConscienceAuditor
 from safi_app.core.faculties.phase_zero import PhaseZeroGate
+from safi_app.security_policy import PHASE_ZERO_RULES
 
 RUBRIC = {"description": "r", "scoring_guide": []}
 VALUES = [{"value": "Honesty", "weight": 1.0, "rubric": RUBRIC}]
@@ -30,7 +31,7 @@ INJECTION = (
 
 # Deterministic encoded blob: 400 characters with no whitespace, cycling ~90
 # distinct printable symbols. What makes it a blob is the unbroken run, not the
-# entropy — see BLOB_MIN_RUN in threat_intel.py.
+# entropy — see the configured minimum blob size in security_policy.py.
 BLOB = "".join(chr(33 + (i * 7) % 90) for i in range(400))
 
 # A hex dump is a real payload whose entropy (3.97) sits BELOW the old 4.5
@@ -96,6 +97,18 @@ class TestConscienceFencing(unittest.TestCase):
         ))
         self.assertIn("DATA BOUNDARY", self.provider.calls[0]["system"])
 
+    def test_audit_evidence_rule_follows_the_role_source_contract(self):
+        asyncio.run(self.auditor.evaluate(
+            final_output="x", user_prompt="y", reflection="", retrieved_context="",
+        ))
+        system = self.provider.calls[0]["system"]
+        self.assertIn("Determine the answerer's allowed sources from the role and policy", system)
+        self.assertIn("If the role and policy permit general domain knowledge", system)
+        self.assertIn("If the role or policy makes supplied documents the exclusive source", system)
+        self.assertIn("Do not use your memory to verify exact wording", system)
+        self.assertNotIn("Bible", system)
+        self.assertNotIn("Scripture", system)
+
     def test_recent_history_is_fenced_and_stripped(self):
         # A payload planted in an earlier turn can't close the history fence
         # or forge another audit section.
@@ -154,7 +167,7 @@ class TestConscienceFencing(unittest.TestCase):
 class TestPhaseZeroEntropyWindow(unittest.TestCase):
 
     def setUp(self):
-        self.gate = PhaseZeroGate()
+        self.gate = PhaseZeroGate(PHASE_ZERO_RULES)
 
     def test_preamble_no_longer_defeats_detection(self):
         # Low-entropy prose first, blob + marker after: the old first-300-chars

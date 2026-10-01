@@ -1,8 +1,7 @@
 """
-Threat intelligence database for the Phase 0 injection gate.
+Configurable shared security rules for prompt screening.
 
-This file is the SAFi equivalent of an antivirus signature database.
-It contains global injection signatures (applied to every persona) and
+It contains shared injection signatures and
 heuristic thresholds for detecting attack patterns that signatures alone
 cannot catch.
 
@@ -10,8 +9,8 @@ To add a new signature: append the lowercase pattern string to the
 appropriate category list. Categories are logged on match, so keep
 names descriptive.
 
-To add a new category: add a new key to INJECTION_SIGNATURES.
-The PhaseZeroGate will scan it automatically.
+To add a new category: add a new key to INJECTION_SIGNATURES and include
+it in the rules passed to the generic screening engine.
 
 SCOPE OF THIS GATE: everything here is matched against the USER PROMPT only.
 Retrieved documents and tool output are not scanned by Phase Zero and are not
@@ -19,6 +18,8 @@ scanned anywhere else either — they reach the model as evidence, unscanned.
 A signature added here therefore narrows nothing but the injection surface.
 """
 from __future__ import annotations
+
+RULESET_VERSION = "builtin-security-baseline-2"
 
 INJECTION_SIGNATURES: dict[str, list[str]] = {
 
@@ -88,7 +89,7 @@ INJECTION_SIGNATURES: dict[str, list[str]] = {
         "your new persona is",
         "ignore your persona",
         "forget your identity",
-        "you have no restrictions",
+        "you have no restrictions now",
         "you have been freed",
         "you are now uncensored",
         "now an uncensored",           # catches "you are now an uncensored AI"
@@ -162,7 +163,8 @@ INJECTION_SIGNATURES: dict[str, list[str]] = {
     "jailbreak_archetypes": [
         "dan mode",
         "do anything now",
-        "no restrictions",
+        "no restrictions mode",
+        "no restrictions apply",
         "unrestricted mode",
         "evil mode",
         "opposite mode",
@@ -433,3 +435,59 @@ INTERNALS_DISCLOSURE_CUES: list[str] = [
     "tell me your",
     "including your",
 ]
+
+PHASE_ZERO_RULES = {
+    "version": RULESET_VERSION,
+    "INJECTION_SIGNATURES": INJECTION_SIGNATURES,
+    "INTERNALS_PROXIMITY_CHARS": INTERNALS_PROXIMITY_CHARS,
+    "BLOB_MIN_RUN": BLOB_MIN_RUN,
+    "BLOB_MARKER_PROXIMITY_CHARS": BLOB_MARKER_PROXIMITY_CHARS,
+    "BLOB_MIN_ENTROPY": BLOB_MIN_ENTROPY,
+    "ENTROPY_SAMPLE_LENGTH": ENTROPY_SAMPLE_LENGTH,
+    "MIN_LENGTH_FOR_ENTROPY_CHECK": MIN_LENGTH_FOR_ENTROPY_CHECK,
+    "EMBEDDED_INSTRUCTION_MARKERS": EMBEDDED_INSTRUCTION_MARKERS,
+    "SENSITIVE_INTERNALS": SENSITIVE_INTERNALS,
+    "INTERNALS_DISCLOSURE_CUES": INTERNALS_DISCLOSURE_CUES,
+}
+
+PII_CATALOGUE = {
+    "ssn": {
+        "label": "US Social Security number",
+        "pattern": r"\b(\d{3})-(\d{2})-(\d{4})\b",
+        "validation": {
+            "type": "excluded_groups",
+            "groups": [
+                {"index": 1, "values": ["000", "666"], "prefixes": ["9"]},
+                {"index": 2, "values": ["00"]},
+                {"index": 3, "values": ["0000"]},
+            ],
+        },
+        "note": "formatted groups only; unformatted digit runs are not matched",
+    },
+    "credit_card": {
+        "label": "payment card number",
+        "pattern": r"\b(?:\d[ -]?){12,18}\d\b",
+        "normalization": "digits",
+        "validation": {"type": "luhn", "minimum": 13, "maximum": 19},
+        "note": "checksum validated",
+    },
+    "iban": {
+        "label": "international account identifier",
+        "pattern": r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b",
+        "normalization": "alphanumeric_upper",
+        "validation": {"type": "mod97", "minimum": 15, "maximum": 34},
+        "note": "mod-97 checksum validated",
+    },
+    "aba": {
+        "label": "routing identifier",
+        "pattern": r"\b\d{9}\b",
+        "validation": {
+            "type": "weighted_modulo",
+            "weights": [3, 7, 1, 3, 7, 1, 3, 7, 1],
+            "modulus": 10,
+            "length": 9,
+        },
+        "note": "checksum validated; approximately 1 in 10 random matching runs pass",
+    },
+}
+PII_VALIDATOR_KEYS = tuple(PII_CATALOGUE)

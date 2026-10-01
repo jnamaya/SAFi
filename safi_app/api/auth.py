@@ -18,7 +18,9 @@ from ..extensions import oauth
 from ..timeutil import utc_isoformat
 from ..persistence import database as db
 from ..config import Config
-from ..core.faculties.synderesis import get_profile, list_profiles
+from ..bootstrap import create_organization
+from ..role_config import ROLE_CONFIG
+from ..profile_resolver import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
 from google_auth_oauthlib.flow import Flow # For Tool Auth
 import jwt
@@ -302,7 +304,7 @@ def _resolve_single_tenant_membership(user_details, idp):
     # fresh install. Found it and become its admin, identical to the
     # multi-tenant Founder Flow except there will never be a second one.
     org_name = f"{user_details.get('name', 'My')} Organization"
-    new_org = db.create_organization_atomic(org_name, user_id)
+    new_org = create_organization(org_name, user_id)
     user_details['org_id'] = new_org['org_id']
     user_details['role'] = 'admin'
     db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
@@ -417,7 +419,7 @@ def _found_org_if_unaffiliated(user_details, idp):
     user_id = user_details['id']
     org_name = f"{user_details.get('name', 'My')} Organization"
     try:
-        new_org = db.create_organization_atomic(org_name, user_id)
+        new_org = create_organization(org_name, user_id)
         # create_organization_atomic sets organizations.owner_id and touches no
         # user row, so the promotion has to be persisted separately or the
         # founder is left outside the org they just founded.
@@ -820,7 +822,8 @@ def login_demo():
         # Prevents "thundering herd" where every login triggers a DB-heavy cleanup
         import random
         if random.random() < 0.05:
-            db.cleanup_old_demo_users()
+            from ..persistence import demo_store
+            demo_store.cleanup_old_demo_users()
         
         existing_demo_id = request.cookies.get('safi_demo_id')
         user_to_login = None
@@ -853,7 +856,8 @@ def login_demo():
             # its org are gone, and without this the only trace that anyone
             # used the demo is whatever the purge forgets to delete
             # (GOVERNANCE_BACKLOG 82). Never fatal to a login.
-            db.record_demo_signup()
+            from ..persistence import demo_store
+            demo_store.record_demo_signup()
 
             default_profile = Config.DEFAULT_PROFILE
             db.update_user_profile(demo_id, default_profile)
@@ -1156,7 +1160,7 @@ def set_user_profile():
     # no validation at all, and the chat path trusts it, so this endpoint was
     # a way to use any private agent by key. Built-ins are platform-wide;
     # custom agents must clear the sharing resolver.
-    from ..core.faculties.synderesis import AGENTS
+    from ..profile_resolver import AGENTS
     if profile_name not in AGENTS:
         from ..persistence import sharing_store
         agent = db.get_agent(profile_name)
@@ -1164,7 +1168,7 @@ def set_user_profile():
             return jsonify({"error": "Unknown agent."}), 404
         user = session.get('user') or {}
         if not sharing_store.can_use_agent(user_id, user.get('role'),
-                                           user.get('org_id'), agent):
+                                           user.get('org_id'), agent, ROLE_CONFIG):
             return jsonify({"error": "You do not have access to that agent."}), 403
     db.update_user_profile(user_id, profile_name)
     return jsonify({"status": "success", "active_profile": profile_name})

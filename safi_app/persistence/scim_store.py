@@ -22,10 +22,9 @@ from typing import Any, Dict, List, Optional
 
 from . import database as db
 from .sharing_store import _target_collation
+from ..role_config import ROLE_CONFIG
 
-# Role precedence for resolving a user's effective role from mapped groups.
-# admin outranks all; member is the floor.
-ROLE_RANK = {"member": 0, "auditor": 1, "editor": 2, "admin": 3}
+ROLE_RANK = ROLE_CONFIG["levels"]
 VALID_ROLES = set(ROLE_RANK)
 
 
@@ -66,13 +65,17 @@ def init_schema() -> None:
                 email VARCHAR(255) NOT NULL,
                 display_name VARCHAR(255) NULL,
                 active BOOLEAN NOT NULL DEFAULT TRUE,
-                base_role VARCHAR(20) NOT NULL DEFAULT 'member',
+                base_role VARCHAR(100) NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_scim_res_email (org_id, email),
                 INDEX idx_scim_res_org (org_id)
             ) {opts}
         """)
+        cursor.execute("SHOW COLUMNS FROM scim_resources LIKE 'base_role'")
+        base_role_column = cursor.fetchone()
+        if base_role_column and "varchar(20)" in str(base_role_column[1]).lower():
+            cursor.execute("ALTER TABLE scim_resources MODIFY base_role VARCHAR(100) NULL")
 
         # IdP-facing groups. members is a JSON array of scim resource ids.
         cursor.execute(f"""
@@ -93,10 +96,14 @@ def init_schema() -> None:
             CREATE TABLE IF NOT EXISTS scim_group_role_map (
                 org_id CHAR(36) NOT NULL,
                 group_name VARCHAR(255) NOT NULL,
-                role VARCHAR(20) NOT NULL,
+                role VARCHAR(100) NOT NULL,
                 PRIMARY KEY (org_id, group_name)
             ) {opts}
         """)
+        cursor.execute("SHOW COLUMNS FROM scim_group_role_map LIKE 'role'")
+        mapped_role_column = cursor.fetchone()
+        if mapped_role_column and "varchar(20)" in str(mapped_role_column[1]).lower():
+            cursor.execute("ALTER TABLE scim_group_role_map MODIFY role VARCHAR(100) NOT NULL")
         conn.commit()
     finally:
         cursor.close()
@@ -395,11 +402,12 @@ def delete_group_role(org_id, group_name) -> bool:
         conn.close()
 
 
-def effective_role(org_id, scim_id, base_role="member") -> str:
+def effective_role(org_id, scim_id, base_role=None) -> str:
     """Highest-privilege role among the mapped groups this resource belongs to,
     falling back to its base role. Pure computation over stored state."""
     mapping = {m["group_name"]: m["role"] for m in list_group_role_map(org_id)}
-    best = base_role if base_role in ROLE_RANK else "member"
+    base_role = base_role or ROLE_CONFIG["default_role"]
+    best = base_role if base_role in ROLE_RANK else ROLE_CONFIG["default_role"]
     for g in list_groups(org_id):
         if scim_id in (g.get("members") or []):
             role = mapping.get(g["display_name"])

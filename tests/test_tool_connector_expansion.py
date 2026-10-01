@@ -40,7 +40,7 @@ def compile_profile(tools, policy_allowed=None):
     profile = {"tools": list(tools)}
     if policy_allowed is not None:
         profile["will_rules"] = {"allowed_tools": list(policy_allowed)}
-    return _stamp_tool_authorization(profile)
+    return _stamp_tool_authorization(profile, CONNECTOR_TOOLS)
 
 
 def authorize(tool, profile, params=None):
@@ -103,8 +103,7 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
                         f"granting '{connector}' must authorize '{fn}'")
 
     def test_web_news_no_longer_blocked(self):
-        # In READ_ONLY_TOOLS, but the allow-list is checked before the fast pass,
-        # so it was rejected before it could be fast-passed.
+        # Granting the connector expands to all of its declared functions.
         profile = compile_profile(["web_search"])
         self.assertEqual(authorize("web_news", profile), "approve")
 

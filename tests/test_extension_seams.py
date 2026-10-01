@@ -108,9 +108,8 @@ class PluginRegistry(unittest.TestCase):
             del _PLUGINS[before:]
 
     def test_the_bible_scholar_is_registered_for_both_name_forms(self):
-        """Importing builtin.py is the registration; both the display-derived
-        and sanitized names the orchestrator can carry must resolve."""
-        import safi_app.core.plugins.builtin  # noqa: F401  (registration side effect)
+        """The host adapter registers user-land plugin data with the core."""
+        import safi_app  # noqa: F401  (application composition root)
         from safi_app.core.plugins.registry import plugins_for
         from safi_app.core.plugins.bible_scholar_readings import handle_bible_scholar_commands
         self.assertIn(handle_bible_scholar_commands, plugins_for("the bible scholar"))
@@ -132,7 +131,7 @@ def _run_with_extensions(ext_files: dict, code: str) -> dict:
         script = textwrap.dedent(f"""
             import json, sys
             sys.path.insert(0, {str(ROOT)!r})
-            from safi_app.core.faculties import synderesis as s
+            from safi_app import profile_resolver as s
             {code}
         """)
         p = subprocess.run([sys.executable, "-c", script],
@@ -202,7 +201,7 @@ class ExtensionAgents(unittest.TestCase):
     def test_off_by_default(self):
         """No SAFI_EXTENSIONS_DIR, no seam. The suite's own import of
         synderesis (no env var) proves nothing extension-shaped exists."""
-        from safi_app.core.faculties import synderesis as s
+        from safi_app import profile_resolver as s
         self.assertEqual(s._EXTENSION_KEYS, set())
 
 

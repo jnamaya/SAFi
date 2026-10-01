@@ -258,7 +258,7 @@ class BackgroundTasksMixin:
             self.log.warning(f"Background title generation failed: {e}")
 
     def _run_summarization_thread(self, conversation_id: str, old_summary: str, user_prompt: str, ai_response: str):
-        summarizer_prompt_config = self.prompts.get("summarizer")
+        summarizer_prompt_config = self.application_prompts.get("summarizer")
         if not summarizer_prompt_config: return
 
         try:
@@ -276,7 +276,7 @@ class BackgroundTasksMixin:
             self.log.warning(f"Summarization thread failed: {e}")
 
     def _run_profile_update_thread(self, user_id: str, current_profile_json: str, user_prompt: str, ai_response: str):
-        profile_prompt_config = self.prompts.get("profile_extractor")
+        profile_prompt_config = self.application_prompts.get("profile_extractor")
         if not profile_prompt_config: return
 
         try:
@@ -458,7 +458,7 @@ class BackgroundTasksMixin:
     def _extract_agent_context_raw(self, current_context_json: str, user_prompt: str, ai_response: str):
         """The model's raw candidate-context string, or None. NOTETAKER_MODEL,
         unparsed — merge_agent_context is what makes it safe to act on."""
-        context_prompt_config = self.prompts.get("agent_context_extractor")
+        context_prompt_config = self.application_prompts.get("agent_context_extractor")
         if not context_prompt_config:
             return None
         content = (

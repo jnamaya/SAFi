@@ -139,18 +139,21 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     A live credential nothing consumes is blast radius with no benefit, and an
     awkward question from anyone reviewing why those tokens exist.
 
-    Reuses synderesis.authorized_tools so this answers with the same
+    Reuses the pure profile compiler's authorized_tools so this answers with the same
     intersection the Will enforces. Deliberately does NOT call get_profile: that
     is the full governance compiler and this runs on every /api/auth/status. Only
     tool authorization is needed, and it comes from the same function either way.
     """
     from ...persistence import database as db
-    from ..faculties.synderesis import AGENTS, authorized_tools
-    from ..tool_connectors import expand_connectors
+    from ...profile_resolver import AGENTS
+    from ...role_config import ROLE_CONFIG
+    from ..faculties.synderesis import authorized_tools
+    from ..tool_connectors import expand_connectors, CONNECTOR_TOOLS, discovered_connectors
 
     # connector key -> the function names it would put on the table
     wanted = {k: set(expand_connectors(list(meta["tools"])))
               for k, meta in CONNECTOR_METADATA.items()}
+    tool_catalog = {**CONNECTOR_TOOLS, **discovered_connectors()}
 
     policy_cache: dict = {}
 
@@ -175,7 +178,7 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     candidates = [(p.get("tools"), p.get("policy_id")) for p in AGENTS.values()]
     try:
         import json as _json
-        for a in db.list_agents(user_id, org_id, user_role):
+        for a in db.list_agents(user_id, org_id, user_role, ROLE_CONFIG["visibility_roles"]):
             raw = a.get("tools_json")
             tools = raw if isinstance(raw, list) else (_json.loads(raw or "[]") or [])
             candidates.append((tools, a.get("policy_id")))
@@ -187,7 +190,7 @@ def usable_connector_keys(user_id, org_id=None, user_role="member") -> FrozenSet
     for advertised, policy_id in candidates:
         if len(usable) == len(wanted):
             break
-        granted = set(authorized_tools(advertised, _policy_tools(policy_id)))
+        granted = set(authorized_tools(advertised, _policy_tools(policy_id), tool_catalog))
         for key, fns in wanted.items():
             if key not in usable and granted & fns:
                 usable.add(key)

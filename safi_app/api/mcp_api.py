@@ -36,8 +36,9 @@ import secrets
 from flask import Blueprint, jsonify, redirect, request, session
 
 from ..core import mcp_runtime
-from ..core.rbac import require_role
+from ..core.rbac import require_role, get_current_role
 from ..core.tool_connectors import expand_connectors
+from ..role_config import ROLE_CONFIG
 from ..persistence import database as db
 
 log = logging.getLogger(__name__)
@@ -71,7 +72,9 @@ def _usage(user_id, org_id):
         log.warning("policy tool usage lookup failed: %s", e)
 
     try:
-        for agent in db.list_agents(user_id, org_id, 'admin') or []:
+        for agent in db.list_agents(
+            user_id, org_id, get_current_role(), ROLE_CONFIG["visibility_roles"]
+        ) or []:
             tools = agent.get('tools')
             if not isinstance(tools, list):
                 continue

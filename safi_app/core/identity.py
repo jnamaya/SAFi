@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from flask import request, session, g
 
 from ..persistence import database as db
+from ..role_config import ROLE_CONFIG
 
 # The only endpoints a session flagged mfa_pending_enrollment may reach:
 # identity introspection, TOTP enrollment itself, and logout.
@@ -136,7 +137,7 @@ def resolve_session():
             "username": user.get("username"),
             "name": user.get("name"),
             "active_profile": user.get("active_profile"),
-            "role": user.get("role", "member"),
+            "role": user.get("role") or ROLE_CONFIG["default_role"],
             "org_id": user.get("org_id"),
         }
         if str(user["id"]).startswith("demo_"):

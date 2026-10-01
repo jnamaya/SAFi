@@ -33,12 +33,14 @@ import sys
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
 from safi_app.persistence import database as db
 from safi_app.persistence.database import SelfReviewError
+from safi_app.role_config import ROLE_CONFIG
 from support import login_as, new_user
 
 
@@ -57,6 +59,15 @@ class KnowledgeBaseBase(unittest.TestCase):
     def setUpClass(cls):
         cls.app = create_app()
         cls.app.config["TESTING"] = True
+        original = db.set_knowledge_base_document_status
+
+        def configured_review(*args, **kwargs):
+            kwargs.setdefault("reviewer_roles", ROLE_CONFIG["reviewer_roles"])
+            return original(*args, **kwargs)
+
+        patcher = patch.object(db, "set_knowledge_base_document_status", side_effect=configured_review)
+        patcher.start()
+        cls.addClassCleanup(patcher.stop)
         cls.org_id = str(uuid.uuid4())
         _exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
               (cls.org_id, 'KB Test Org'))
@@ -201,7 +212,7 @@ class Authorization(KnowledgeBaseBase):
 
     def test_an_agent_keeps_working_across_a_rename(self):
         """The agent stores the id; the display name is resolved per turn."""
-        from safi_app.core.faculties.synderesis import _resolve_kb_display_name
+        from safi_app.profile_resolver import _resolve_kb_display_name
         kb = self.make_kb()
         db.update_knowledge_base(kb["id"], name="Second Name")
         self.assertEqual("Second Name", _resolve_kb_display_name(kb["id"]))
@@ -668,11 +679,11 @@ class PolicyAuthorization(unittest.TestCase):
         """get_profile resolves a display name for the new-chat header. If that
         ran before the policy check, the UI would promise grounding the agent
         does not have."""
-        source = (Path(__file__).resolve().parent.parent / "safi_app" / "core" /
-                  "faculties" / "synderesis.py").read_text()
-        stamp_at = source.index("_stamp_knowledge_authorization(final)")
-        name_at = source.index('final["rag_knowledge_base_name"]')
-        self.assertLess(stamp_at, name_at,
+        source = (Path(__file__).resolve().parent.parent / "safi_app" /
+                  "profile_resolver.py").read_text()
+        compile_at = source.index("compiler.compile_profile(")
+        name_at = source.index('"rag_knowledge_base_name"')
+        self.assertLess(compile_at, name_at,
                         "knowledge authorization must be stamped before the "
                         "display name is resolved")
 
@@ -826,13 +837,16 @@ class ChunkRendering(unittest.TestCase):
         self.assertIn("{source}", DEFAULT_RAG_FORMAT_STRING)
         self.assertIn("{text_chunk}", DEFAULT_RAG_FORMAT_STRING)
 
-    def test_intellect_does_not_use_get_with_a_default(self):
-        """The specific mistake, pinned. `profile.get(key, default)` cannot
-        distinguish an empty stored value from an absent one."""
+    def test_host_resolves_the_rag_template_before_it_reaches_intellect(self):
+        """Template defaults are application data, not faculty behavior."""
         source = (Path(__file__).resolve().parent.parent / "safi_app" / "core" /
                   "faculties" / "intellect.py").read_text()
+        host = (Path(__file__).resolve().parent.parent / "safi_app" /
+                "profile_resolver.py").read_text()
         self.assertNotIn('self.profile.get("rag_format_string", ', source)
-        self.assertIn("resolve_rag_format_string", source)
+        self.assertIn("resolve_rag_format_string", host)
+        self.assertNotIn("SOURCE:", source)
+        self.assertNotIn("resolve_rag_format_string", source)
 
     def test_no_agent_is_saved_with_an_empty_format_string(self):
         """Fixed at the consumer so existing rows are repaired, and at the

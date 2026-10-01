@@ -1,10 +1,9 @@
 """
 Scoped agent sharing (backlog 55): custom groups and per-agent grants.
 
-An agent's `visibility` column is a role ladder: it answers "which RANKS in my
-org may use this". It cannot answer "these three people and the Finance team".
-This module adds that second answer as pure widening: a grant can only ADD
-access on top of what the ladder already allows, never remove any.
+An agent's visibility data and the host's role policy determine baseline
+organization access. This module adds per-user and per-group grants as pure
+widening: a grant can add access but cannot remove baseline access.
 
 WHY IT IS NOT IN database.py
 ----------------------------
@@ -19,9 +18,9 @@ THE RESOLVER
 can_use_agent() is the single authorization answer for agent USE. Every
 entry point that resolves an agent_key from user input must call it: the
 profile switch, the chat turn, the schedule validator, the scheduled runner.
-The ladder used to be enforced on listing only (backlog 55b), which meant a
-private agent was hidden but not protected. Order of checks: owner, then
-org admin, then the ladder, then grants; anything else is denied.
+Visibility used to be enforced on listing only, which meant a private agent
+was hidden but not protected. Order of checks: owner, configured authority,
+configured visibility, then grants; anything else is denied.
 
 Grants are org-scoped at write time (the grant row carries the agent's
 org_id) and re-checked org-scoped at read time, so a grant can never leak an
@@ -57,15 +56,6 @@ def _target_collation(cursor) -> str:
     row = cursor.fetchone()
     coll = (row[0] if row else None) or 'utf8mb4_unicode_ci'
     return coll if _COLLATION_RE.match(coll) else 'utf8mb4_unicode_ci'
-
-# Mirror of the visibility ladder in db.list_agents. 'private' appears in no
-# set on purpose: without a grant, only the owner (and an org admin) clears it.
-_LADDER_CLEARS = {
-    'admin':   ('member', 'auditor', 'editor', 'admin'),
-    'editor':  ('member', 'auditor', 'editor'),
-    'auditor': ('member', 'auditor'),
-    'member':  ('member',),
-}
 
 # v1 grants confer USE only. 'can_edit' is deliberately absent: a grant that
 # let a member edit an agent's values or will_rules would override the role
@@ -141,7 +131,7 @@ def init_schema() -> None:
 # The resolver
 # ---------------------------------------------------------------------------
 
-def can_use_agent(user_id, role, org_id, agent) -> bool:
+def can_use_agent(user_id, role, org_id, agent, role_config=None) -> bool:
     """May `user_id` (with `role`, in `org_id`) use this DB agent row?
 
     Deny by default. Built-in agents never reach this function: they are not
@@ -154,12 +144,12 @@ def can_use_agent(user_id, role, org_id, agent) -> bool:
     agent_org = agent.get('org_id')
     if not agent_org or not org_id or str(agent_org) != str(org_id):
         return False
-    role = role or 'member'
-    # Org admins have full authority over the org's agents (rbac.py's role
-    # table); they can already edit any of them, so use follows.
-    if role == 'admin':
+    role_config = role_config or {}
+    role = role or role_config.get('default_role')
+    if role in (role_config.get('organization_admin_roles') or []):
         return True
-    if agent.get('visibility') in _LADDER_CLEARS.get(role, ('member',)):
+    visibility_roles = role_config.get('visibility_roles') or {}
+    if role in (visibility_roles.get(agent.get('visibility')) or []):
         return True
     key = agent.get('agent_key') or agent.get('key')
     return has_grant(key, user_id, org_id)
@@ -170,8 +160,8 @@ def has_grant(agent_key, user_id, org_id) -> bool:
     they belong to, scoped to `org_id` on both the grant and the group.
 
     Fails CLOSED: a storage error here denies grant-based access (and is
-    logged loudly) rather than crashing the caller. Owner, admin and ladder
-    access are decided before this is consulted, so they are unaffected."""
+    logged loudly) rather than crashing the caller. Owner and configured
+    visibility access are decided before this is consulted, so they are unaffected."""
     if not agent_key or not user_id or not org_id:
         return False
     try:

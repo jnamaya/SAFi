@@ -55,16 +55,17 @@ MANIFEST_NAME = "core_integrity_manifest.json"
 # inside it can violate the policy, a defect outside it cannot. Keeping the
 # list short is TCB minimization, and it is why additions get argued file by
 # file in the comments below.
-# The orchestrator's mixins are included because part of its routing logic
-# lives there. The Spirit->Intellect coaching note (the Coach) lives inside
-# spirit.py — merged from a standalone feedback.py on 2026-08-13 — so covering
-# the faculty covers the whole closed loop.
+# The orchestrator's background-task and speech-delivery mixins are excluded:
+# they run after governance and do not decide whether a draft is approved.
+# Coaching remains in spirit.py because its output is injected into the next
+# governed draft.
 CORE_FILES = [
     "safi_app/core/orchestrator.py",
-    "safi_app/core/orchestrator_mixins/tasks.py",
-    "safi_app/core/orchestrator_mixins/tts.py",
     "safi_app/core/faculties/__init__.py",
     "safi_app/core/faculties/phase_zero.py",
+    # Sensitive-identifier detection is called by Phase Zero and Will. Its
+    # implementation changes enforcement outcomes, so attest it with callers.
+    "safi_app/core/pii_validators.py",
     "safi_app/core/faculties/synderesis.py",
     "safi_app/core/faculties/intellect.py",
     "safi_app/core/faculties/will.py",
@@ -76,32 +77,23 @@ CORE_FILES = [
     # Core Loop change even though the *content* of the database belongs to
     # the organization (Section III).
     "safi_app/persistence/database.py",
-    # Enforcement CONTENT that feeds the deterministic gates and the model
-    # faculties — added 2026-08-13 (backlog 34b, decided). Without these two, a
-    # fork could gut Phase Zero's injection signatures or rewrite the
-    # Conscience's audit prompt and still verify INTACT:
-    #   threat_intel.py     — the global signature and marker lists Phase Zero
-    #                         scans. Per-agent additions remain a Section III
-    #                         variable (early_prompt_blacklist on the profile);
-    #                         the shipped floor is what this covers.
-    #   system_prompts.json — the faculty prompt templates, including the
-    #                         Conscience's audit instructions and the coaching
-    #                         note wrapper. Org worldviews/policies layer ON
-    #                         TOP of these (Section III); the templates
-    #                         themselves define how every deployment audits.
-    "safi_app/core/threat_intel.py",
+    # Database encryption is a local dependency of protected governance and
+    # identity records; include its implementation in the measured boundary.
+    "safi_app/persistence/crypto.py",
+    # The generic faculty prompt templates and shipped Phase Zero security
+    # baseline both affect governed outcomes, so both are attested. Hosts may
+    # add rules, but weakening the shipped baseline must change the fingerprint.
     "safi_app/core/system_prompts.json",
+    "safi_app/security_policy.py",
     # The plugin registry is the MECHANISM behind agreement §III's plugin
     # freedom (added 2026-08-13, backlog 37): organizations register plugins
     # without touching the orchestrator. The registry itself must be covered
     # or a fork could alter HOW dispatch works and still verify INTACT; what
     # organizations register through it is their own content and is not.
     "safi_app/core/plugins/registry.py",
-    # The human-side Will (added 2026-08-13, backlog 38): the role ladder and
-    # the separation-of-duties rules — editors may not sign off on content
-    # they authored — are enforcement semantics, and role ASSIGNMENT is data
-    # in the database, so no organization ever needs to edit this file. A fork
-    # that does is weakening who may approve what, and must not verify INTACT.
+    # The human-side Will: generic authorization and separation-of-duties
+    # mechanics are enforced here; role names, rank data, and assignments are
+    # supplied by the host configuration and database.
     #
     # Ruled OPEN at the same time, deliberately:
     #   api/auth.py       — integration plumbing (OAuth, MFA, sessions).

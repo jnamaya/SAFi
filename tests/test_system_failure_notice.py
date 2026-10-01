@@ -29,6 +29,7 @@ VALUES = [
 def make_safi():
     s = object.__new__(SAFi)
     s.log = logging.getLogger("test.SAFi")
+    s.store = MagicMock()
     s.values = VALUES
     s.profile = {"policy_id": "pol-1", "policy_version": 1, "org_id": "org-1"}
     s.active_profile_name = "test_agent"
@@ -47,8 +48,8 @@ def make_safi():
 
 
 def ship(safi, violation_type="audit_unavailable", **kwargs):
-    with patch("safi_app.core.orchestrator.db", MagicMock()) as db, \
-         patch.object(SAFi, "_append_log") as append_log:
+    db = safi.store
+    with patch.object(SAFi, "_append_log") as append_log:
         res = safi._ship_system_failure_notice(
             original_prompt="What does Romans say about the law?",
             violation_type=violation_type,

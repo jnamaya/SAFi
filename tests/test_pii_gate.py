@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app.core.faculties.phase_zero import PhaseZeroGate  # noqa: E402
 from safi_app.core.faculties.will import WillGate  # noqa: E402
 from safi_app.core.faculties import synderesis  # noqa: E402
+from safi_app.security_policy import PII_CATALOGUE  # noqa: E402
 
 SSN = "123-45-6789"
 CARD = "4111111111111111"
@@ -35,7 +36,7 @@ CARD = "4111111111111111"
 class PhaseZeroStopsItBeforeTheModel(unittest.TestCase):
 
     def setUp(self):
-        self.gate = PhaseZeroGate()
+        self.gate = PhaseZeroGate(validator_catalog=PII_CATALOGUE)
 
     def test_a_prompt_with_an_ssn_is_blocked(self):
         ok, reason = self.gate.evaluate_prompt("my ssn is %s" % SSN, None, ["ssn"])
@@ -76,7 +77,8 @@ class TheWillStopsItLeavingInADraft(unittest.TestCase):
             None,
             values=[],
             profile={"will_rules": {"structural_requirements":
-                     ({"pii_validators": validators} if validators is not None else {})}},
+                     ({"pii_validators": validators} if validators is not None else {})},
+                     "pii_validator_catalog": PII_CATALOGUE},
         )
 
     def test_a_draft_containing_a_card_number_is_refused(self):
@@ -155,7 +157,7 @@ class TheFloorFollowsTheActingUser(unittest.TestCase):
     def test_it_reads_the_org_standards_not_only_the_profile(self):
         i = self.src.index("def _pii_enabled")
         body = self.src[i:i + 3000]
-        self.assertIn("db.get_ai_standards(org_id)", body,
+        self.assertIn("self.store.get_ai_standards(org_id)", body,
                       "the acting user's org floor must be looked up per turn")
 
     def test_every_call_site_passes_org_id(self):
@@ -213,7 +215,7 @@ class TheDeterministicTierStaysDeterministic(unittest.TestCase):
                 self.assertNotIn("llm_provider", src)
 
     def test_the_validators_live_outside_the_faculties(self):
-        """Same boundary as threat_intel.py: adding a detector must never
+        """Adding a detector must never
         require editing a faculty."""
         core = Path(__file__).resolve().parent.parent / "safi_app" / "core"
         self.assertTrue((core / "pii_validators.py").exists())

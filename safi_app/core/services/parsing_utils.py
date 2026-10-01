@@ -6,9 +6,7 @@ import re
 import logging
 from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
-# Vestigial: `logging` is imported unconditionally above, so this block is a
-# no-op left over from an earlier import structure. Kept because the type
-# hints below quote it as "logging.Logger".
+# TYPE_CHECKING import for type hints only; logging is imported at runtime above.
 if TYPE_CHECKING:
     import logging
 
@@ -71,8 +69,6 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
     except json.JSONDecodeError:
         log.warning(f"Robust JSON parse failed. Content start: {json_text[:100]}...")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
-
-# --- faculty parsers ----------------------------------------------------------
 
 def parse_intellect_response(raw_text: str, log: "logging.Logger") -> Tuple[str, str, Optional[Dict[str, Any]]]:
     """Split the Intellect's "Answer---REFLECTION---{...}" output.

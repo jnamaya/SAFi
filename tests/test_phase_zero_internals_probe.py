@@ -44,10 +44,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.phase_zero import PhaseZeroGate
-from safi_app.core.threat_intel import (
+from safi_app.security_policy import (
     INJECTION_SIGNATURES,
     SENSITIVE_INTERNALS,
     INTERNALS_DISCLOSURE_CUES,
+    PHASE_ZERO_RULES,
 )
 
 # The exact text that was refused, as reported.
@@ -107,7 +108,7 @@ class InternalsProbeGate(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.gate = PhaseZeroGate()
+        cls.gate = PhaseZeroGate(PHASE_ZERO_RULES)
 
     def test_01_legitimate_discussion_is_not_blocked(self):
         for label, prompt in MUST_PASS:
@@ -214,7 +215,7 @@ class ShippedDocsPassTheGate(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.gate = PhaseZeroGate()
+        cls.gate = PhaseZeroGate(PHASE_ZERO_RULES)
         cls.root = pathlib.Path(__file__).resolve().parents[1]
 
     def test_08_public_docs_are_not_treated_as_injection(self):

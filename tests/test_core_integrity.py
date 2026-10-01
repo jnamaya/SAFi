@@ -133,9 +133,8 @@ class TheManifestIsWellFormed(unittest.TestCase):
         m = json.loads(MANIFEST.read_text())
         self.assertIn("Governance Agreement", m["comment"])
         self.assertEqual(len(m["root_fingerprint"]), 64)
-        # 14 files: orchestrator + 2 mixins + 7 faculty files (the Coach lives
-        # inside spirit.py since the 2026-08-13 merge) + database schema +
-        # threat_intel + system_prompts.
+        # Core decision code, required local enforcement dependencies, the
+        # generic audit templates, and the persistence integrity surface.
         self.assertGreaterEqual(len(m["files"]), 14)
 
     def test_every_deterministic_faculty_is_covered_by_a_hash(self):
@@ -149,17 +148,11 @@ class TheManifestIsWellFormed(unittest.TestCase):
                     "safi_app/core/faculties/synderesis.py"):
             self.assertIn(rel, m)
 
-    def test_the_enforcement_content_is_covered_too(self):
-        """Decided 2026-08-13 (backlog 34b): the files that FEED the gates are
-        Core Loop, not variables. Phase Zero's authority is its signature
-        list, and the Conscience's strictness is its audit prompt — a fork
-        that guts either must fail verification, not verify INTACT while
-        running materially weakened governance. Org customization stays at
-        the layer above: per-agent blacklists and worldviews are Section III
-        variables; these shipped floors are not."""
+    def test_generic_audit_template_and_shipped_security_baseline_are_covered(self):
         m = json.loads(MANIFEST.read_text())["files"]
-        self.assertIn("safi_app/core/threat_intel.py", m)
         self.assertIn("safi_app/core/system_prompts.json", m)
+        self.assertIn("safi_app/security_policy.py", m)
+        self.assertNotIn("safi_app/core/threat_intel.py", m)
 
     def test_the_human_side_will_is_covered_and_auth_is_deliberately_not(self):
         """Ruled 2026-08-13 (backlog 38). rbac.py is enforcement semantics —

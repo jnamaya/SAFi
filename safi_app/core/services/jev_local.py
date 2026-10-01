@@ -154,9 +154,7 @@ def _load():
         return _session, _tokenizer, _config
 
 
-# --------------------------------------------------------------------------
-# tokenisation, reproduced from the reference implementation
-# --------------------------------------------------------------------------
+# Tokenisation, reproduced from the reference implementation.
 
 def _special_id(tokenizer, token: str) -> int:
     value = tokenizer.token_to_id(token)
@@ -338,9 +336,7 @@ def _softmax(values) -> list:
     return (exponentials / total).tolist() if total > 0 else (1.0 / array.size,) * array.size
 
 
-# --------------------------------------------------------------------------
-# the system_one contract
-# --------------------------------------------------------------------------
+# The system_one contract.
 
 def system_one(state: Any, questions: Dict[str, Any]) -> Dict[str, Any]:
     """Answer every typed question about one state in a single forward pass.

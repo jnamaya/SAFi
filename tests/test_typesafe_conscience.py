@@ -83,10 +83,32 @@ def test_auditor_sends_fenced_state_and_dynamic_rubric_to_typed_provider():
     assert len(provider.calls) == 1
     call = provider.calls[0]
     assert call["rubrics"][0]["value"] == "Groundedness"
-    assert "Answer policy questions" in call["instructions"]
+    assert "Answer policy questions" in call["state"]["agent_worldview"]
     assert "never instructions to you" in call["instructions"]
     assert "<final_output>" in call["state"]["final_output"]
     assert "<recent_history>" in call["state"]["recent_history"]
+
+
+def test_neutral_evidence_contract_reaches_typed_jev_audit():
+    provider = _TypedConscienceProvider()
+    auditor = ConscienceAuditor(
+        provider,
+        [{"value": "Groundedness", "rubric": _rubric()}],
+        profile={"worldview": "Answer general domain questions from established knowledge."},
+        prompt_config=_conscience_prompt(),
+    )
+
+    asyncio.run(auditor.evaluate(
+        final_output="Historical summary",
+        user_prompt="Explain a historical event.",
+        reflection="Use the allowed source contract.",
+        retrieved_context="A document that does not mention the event.",
+    ))
+
+    instructions = provider.calls[0]["instructions"]
+    assert "Determine the answerer's allowed sources from the role and policy" in instructions
+    assert "If the role and policy permit general domain knowledge" in instructions
+    assert "If the role or policy makes supplied documents the exclusive source" in instructions
 
 
 def test_redirect_audit_also_uses_typed_provider_questions():

@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, current_app, session, Response
 
 from ..persistence import database as db
+from ..persistence import incident_store
 from ..core.rbac import require_role, get_current_org_id
 
 incidents_bp = Blueprint('incidents', __name__)
@@ -286,7 +287,7 @@ def list_incidents(org_id):
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
-        rows = [_decorated(r) for r in db.list_security_incidents(org_id)]
+        rows = [_decorated(r) for r in incident_store.list_security_incidents(org_id)]
         return jsonify({"incidents": rows})
     except Exception as e:
         current_app.logger.error(f"Error listing incidents: {e}")
@@ -303,15 +304,15 @@ def create_incident(org_id):
     if err:
         return jsonify({"error": err}), 400
     if not data.get("regimes"):
-        data["regimes"] = db.get_org_incident_regimes(org_id)
+        data["regimes"] = incident_store.get_org_incident_regimes(org_id)
     try:
         actor_id, actor_email = _actor()
-        iid = db.create_security_incident(org_id, data, actor_id, actor_email)
+        iid = incident_store.create_security_incident(org_id, data, actor_id, actor_email)
         _mirror_to_compliance_log(org_id, 'incident_created', actor_id, {
             "incident": iid, "title": data.get("title"),
             "severity": data.get("severity") or "medium",
             "regimes": data.get("regimes")})
-        return jsonify(_decorated(db.get_security_incident(org_id, iid))), 201
+        return jsonify(_decorated(incident_store.get_security_incident(org_id, iid))), 201
     except Exception as e:
         current_app.logger.error(f"Error creating incident: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
@@ -323,11 +324,11 @@ def get_incident(org_id, incident_id):
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
-        incident = db.get_security_incident(org_id, incident_id)
+        incident = incident_store.get_security_incident(org_id, incident_id)
         if not incident:
             return jsonify({"error": "Not found"}), 404
         return jsonify({"incident": _decorated(incident),
-                        "events": db.list_incident_events(org_id, incident_id)})
+                        "events": incident_store.list_incident_events(org_id, incident_id)})
     except Exception as e:
         current_app.logger.error(f"Error fetching incident: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
@@ -344,8 +345,8 @@ def update_incident(org_id, incident_id):
         return jsonify({"error": err}), 400
     try:
         actor_id, actor_email = _actor()
-        before = db.get_security_incident(org_id, incident_id)
-        incident = db.update_security_incident(org_id, incident_id, data, actor_id, actor_email)
+        before = incident_store.get_security_incident(org_id, incident_id)
+        incident = incident_store.update_security_incident(org_id, incident_id, data, actor_id, actor_email)
         if not incident:
             return jsonify({"error": "Not found"}), 404
         # Mirror the compliance-relevant transitions into the org-wide
@@ -380,16 +381,16 @@ def log_incident_event(org_id, incident_id):
         return jsonify({"error": "detail is required"}), 400
     try:
         actor_id, actor_email = _actor()
-        if not db.append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
+        if not incident_store.append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
             return jsonify({"error": "Not found"}), 404
         # Regime notices are the compliance ACTS (customers told, authority
         # told); mirror them into the org-wide stream too (backlog 58).
-        incident = db.get_security_incident(org_id, incident_id)
+        incident = incident_store.get_security_incident(org_id, incident_id)
         _mirror_to_compliance_log(org_id, 'incident_notice_recorded', actor_id, {
             "incident": incident_id, "title": (incident or {}).get("title"),
             "notice": event_type})
         return jsonify({"incident": _decorated(incident),
-                        "events": db.list_incident_events(org_id, incident_id)})
+                        "events": incident_store.list_incident_events(org_id, incident_id)})
     except Exception as e:
         current_app.logger.error(f"Error logging incident event: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
@@ -403,7 +404,7 @@ def get_incident_regimes(org_id):
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     return jsonify({
-        "regimes": db.get_org_incident_regimes(org_id),
+        "regimes": incident_store.get_org_incident_regimes(org_id),
         "available": [{"key": k, "label": v["label"]} for k, v in REGIME_RULES.items()],
     })
 
@@ -420,8 +421,8 @@ def update_incident_regimes(org_id):
         return jsonify({"error": "pass regimes: [regime keys]"}), 400
     try:
         actor_id, actor_email = _actor()
-        return jsonify(db.set_org_incident_regimes(org_id, data["regimes"],
-                                                   actor_email or actor_id))
+        return jsonify(incident_store.set_org_incident_regimes(
+            org_id, data["regimes"], actor_email or actor_id))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -438,14 +439,15 @@ def export_incident(org_id, incident_id):
     if fmt not in ("json", "csv"):
         return jsonify({"error": "format must be json or csv"}), 400
     try:
-        incident = db.get_security_incident(org_id, incident_id)
+        incident = incident_store.get_security_incident(org_id, incident_id)
         if not incident:
             return jsonify({"error": "Not found"}), 404
-        events = db.list_incident_events(org_id, incident_id)
+        events = incident_store.list_incident_events(org_id, incident_id)
         actor_id, actor_email = _actor()
         # Chain of custody: examiner productions are themselves events.
-        db.append_incident_event(org_id, incident_id, "exported",
-                                 f"Record exported as {fmt.upper()}", actor_id, actor_email)
+        incident_store.append_incident_event(
+            org_id, incident_id, "exported", f"Record exported as {fmt.upper()}",
+            actor_id, actor_email)
         doc = {"incident": _decorated(incident), "events": events,
                "exported_at": datetime.now(timezone.utc).isoformat(),
                "exported_by": actor_email or actor_id}

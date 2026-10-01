@@ -25,7 +25,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core import pii_validators as pv  # noqa: E402
+from safi_app.core import pii_validators as engine  # noqa: E402
+from safi_app.security_policy import PII_CATALOGUE  # noqa: E402
+
+
+class ConfiguredValidators:
+    @staticmethod
+    def catalogue():
+        return engine.catalogue(PII_CATALOGUE)
+
+    @staticmethod
+    def normalize(keys):
+        return engine.normalize(keys, PII_CATALOGUE)
+
+
+pv = ConfiguredValidators()
 
 ROUTES = (Path(__file__).resolve().parent.parent
           / "safi_app" / "api" / "organizations.py").read_text(encoding="utf-8")
@@ -48,7 +62,7 @@ class TheCatalogueIsServedFromTheDetectors(unittest.TestCase):
 
     def test_it_returns_the_catalogue_not_a_hardcoded_list(self):
         i = ROUTES.index("def list_pii_checks")
-        self.assertIn("pii_validators.catalogue()", ROUTES[i:i + 600])
+        self.assertIn("pii_validators.catalogue(security_policy.PII_CATALOGUE)", ROUTES[i:i + 1000])
 
     def test_every_catalogue_entry_can_be_rendered(self):
         for e in pv.catalogue():
@@ -63,7 +77,8 @@ class OnlyKnownKeysSurviveTheSaveRoute(unittest.TestCase):
     def test_the_route_rejects_unknown_keys(self):
         i = ROUTES.index("pii = structural.get('pii_validators')")
         body = ROUTES[i:i + 1400]
-        self.assertIn("VALIDATOR_KEYS", body, "the route must check against the catalogue")
+        self.assertIn("security_policy.PII_CATALOGUE", body,
+                      "the route must check against the host-owned catalogue")
         self.assertIn("400", body, "an unknown key must be rejected, not dropped")
 
     def test_the_route_rejects_a_non_list(self):
@@ -143,7 +158,7 @@ class TheStoredKeyIsTheOneSynderesisReads(unittest.TestCase):
             with self.subTest(where=name):
                 self.assertIn("pii_validators", src)
         self.assertIn('struct.get("pii_validators")', will)
-        self.assertIn('struct_in.get("pii_validators")', syn)
+        self.assertIn('("banned_markdown_syntaxes", "pii_validators")', syn)
 
 
 if __name__ == "__main__":

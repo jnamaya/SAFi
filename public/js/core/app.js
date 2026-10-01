@@ -34,12 +34,9 @@ let user = null;
 let activeProfileData = {};
 let availableProfiles = [];
 let availableModels = [];
-// FLAG: Ensure listeners are only attached once
 let listenersAttached = false;
 
-// =================================================================
-// --- NATIVE HELPERS (MOVED TO TOP TO FIX REFERENCE ERROR) ---
-// =================================================================
+// --- NATIVE HELPERS ---
 
 /** Sets the native status bar style and App Window color */
 function setSystemBarsTheme(isDark) {
@@ -475,7 +472,6 @@ async function handleDeleteAccount() {
 function renderControlPanel() {
   if (!user) return;
 
-  // --- NEW: Strict RBAC Visibility Matrix ---
   console.log('[RBAC] Checking visibility for user:', user.id, 'Role:', user.role);
 
   // Organization: Admin & Auditor only (Auditor = View Only)
@@ -502,7 +498,7 @@ function renderControlPanel() {
   // than from a second copy of the role list.
   uiSettingsModals.setConscienceDashboardAccess(canSeeDashboard);
 
-  const navOrg = document.getElementById('nav-organization'); // NEW ID
+  const navOrg = document.getElementById('nav-organization');
   if (navOrg) {
     if (canSeeOrg) navOrg.classList.remove('hidden');
     else navOrg.classList.add('hidden');
@@ -516,14 +512,14 @@ function renderControlPanel() {
   }
 
 
-  const navGov = document.getElementById('nav-governance'); // NEW ID
+  const navGov = document.getElementById('nav-governance');
   if (navGov) {
     if (canSeeGovernance) navGov.classList.remove('hidden');
     else navGov.classList.add('hidden');
   }
 
   // Dashboard tab currently hidden/removed in HTML, but keeping logic safe
-  const navDash = document.getElementById('nav-dashboard'); // NEW ID
+  const navDash = document.getElementById('nav-dashboard');
   if (navDash) {
     if (canSeeDashboard) navDash.classList.remove('hidden');
     else navDash.classList.add('hidden');
@@ -579,7 +575,6 @@ function renderControlPanel() {
     else navUsage.classList.add('hidden');
   }
 
-  // --- NEW: Hide entire Management Group if no children are visible ---
   const navGroupManagement = document.getElementById('nav-group-management');
   if (navGroupManagement) {
     if (canSeeOrg || canSeeGovernance || canSeeDashboard || canSeeReview || canSeeKnowledge) {
@@ -593,8 +588,6 @@ function renderControlPanel() {
   // Update UI Modals with current user context
   uiSettingsModals.updateCurrentUser(user);
 
-  // Render Agents Tab
-  // Render Agents Tab
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
     activeProfileData.key,
@@ -602,7 +595,6 @@ function renderControlPanel() {
     user // Pass user for ownership checks
   );
 
-  // --- NEW: Init Agent Selector ---
   uiAuthSidebar.initAgentSelector(
     availableProfiles,
     activeProfileData.key,
@@ -611,8 +603,6 @@ function renderControlPanel() {
   updateAgentLabel(activeProfileData.name, activeProfileData.avatar || getAvatarForProfile(activeProfileData.name));
   updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
 
-  // --- NEW: Push State to UI Settings Module ---
-  // This ensures the sidebar click handlers work correctly even if data changes
   updateSettingsState({
     currentUser: user,
     profiles: availableProfiles,
@@ -635,7 +625,6 @@ function renderControlPanel() {
     () => ui.showModal('delete') // Open "are you sure" modal
   );
 
-  // --- NEW: Select Default Open Tab (RBAC Aware) ---
   // Ensure we switch to a visible tab if the current/default one is hidden.
   // We prioritize: Agents (Profile) > Organization > Dashboard
   const orgTab = document.getElementById('nav-organization');
@@ -665,17 +654,8 @@ function renderControlPanel() {
       // Skip "Back to Chat" as header has one
       if (child.querySelector('#desktop-back-to-chat')) return;
 
-      // Only clone visible elements (respect RBAC)
-      // desktopNav children are divs wrapping uls. Check if the buttons inside are hidden?
-      // The RBAC logic hides the BUTTONS inside the list items usually? 
-      // WAIT, RBAC logic above removes 'hidden' from: navOrg, navGov, navDash.
-      // Those are BUTTONS.
-      // The structure is Div -> UL -> LI -> Button.
-      // If the button is hidden, we clone it hidden.
-      // If we want to skip cloning hidden items?
-      // Let's just clone. If button is hidden, it will be hidden on mobile too.
-      // BUT IDs must be stripped to avoid conflict.
-
+      // Clone visible elements (respect RBAC). Hidden buttons are cloned hidden;
+      // IDs are stripped to avoid conflicts.
       const clone = child.cloneNode(true);
       clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
 
@@ -830,8 +810,6 @@ function handleExamplePromptClick(promptText) {
 function attachEventListeners() {
   if (listenersAttached) return; // Prevent duplicates
 
-  // --- Auth Handlers (Explicit & Robust) ---
-
   // 1. Google Login
   if (ui.elements.loginButton) {
     if (isNative && GoogleAuth) {
@@ -859,7 +837,7 @@ function attachEventListeners() {
   // 3. Guest / Demo Login
   // Retired native-shell branch (isNative is always false now that the device
   // client is the PWA): the web login uses the plain <a href="/api/login/demo">
-  // link, same-origin. Kept inert rather than removed to keep this diff small.
+  // link, same-origin.
   const demoBtn = document.getElementById('login-demo-button');
   if (demoBtn && isNative) {
     demoBtn.addEventListener('click', async (e) => {
@@ -1005,8 +983,7 @@ function attachEventListeners() {
 
   // --- Control Panel Logout Button ---
 
-  // --- Control Panel Mobile Menu (Delegated for robustness) ---
-  // Using delegation to ensure it works even if elements aren't immediately found/bound
+  // Control Panel Mobile Menu (delegated for robustness)
   document.addEventListener('click', (e) => {
     // Open Menu
     const openBtn = e.target.closest('#mobile-menu-btn');
@@ -1035,8 +1012,6 @@ function attachEventListeners() {
     }
   });
 
-  // Back Button Logic (New ID: desktop-back-to-chat)
-  // Also keep support for old btn just in case, though we removed it from HTML
   const backButtons = [
     document.getElementById('desktop-back-to-chat'),
     document.getElementById('control-panel-back-btn'),

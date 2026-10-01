@@ -13,21 +13,9 @@ import re
 import collections
 import logging
 from functools import lru_cache
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 
 from .. import pii_validators
-from ..threat_intel import (
-    INJECTION_SIGNATURES,
-    INTERNALS_PROXIMITY_CHARS,
-    BLOB_MIN_RUN,
-    BLOB_MARKER_PROXIMITY_CHARS,
-    BLOB_MIN_ENTROPY,
-    ENTROPY_SAMPLE_LENGTH,
-    MIN_LENGTH_FOR_ENTROPY_CHECK,
-    EMBEDDED_INSTRUCTION_MARKERS,
-    SENSITIVE_INTERNALS,
-    INTERNALS_DISCLOSURE_CUES,
-)
 
 
 @lru_cache(maxsize=None)
@@ -42,9 +30,9 @@ class PhaseZeroGate:
     Pre-generation injection gate.
 
     Decision flow (first match wins and is the returned reason):
-      1. Global signature scan  — known injection patterns from threat_intel.py
+      1. Global signature scan  — supplied shared security rules
       2. Agent blacklist scan — per-agent blocked phrases (early_prompt_blacklist)
-      2b. Sensitive identifiers — enabled PII/financial validators (backlog 83)
+      2b. Sensitive identifiers — enabled validators supplied by governance data
       3. Internals probe        — a sensitive noun co-occurring with a disclosure cue
       4. Embedded instruction heuristic — high-entropy payload + instruction markers
 
@@ -52,8 +40,14 @@ class PhaseZeroGate:
     trigger_agent_redirect without ever calling Intellect.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        threat_rules: Optional[Dict[str, Any]] = None,
+        validator_catalog: Optional[Dict[str, Any]] = None,
+    ):
         self.log = logging.getLogger(self.__class__.__name__)
+        self.threat_rules = threat_rules or {}
+        self.validator_catalog = validator_catalog or {}
 
     def evaluate_prompt(
         self,
@@ -64,7 +58,7 @@ class PhaseZeroGate:
         prompt_lower = user_prompt.lower()
 
         # 1. Global signature scan — order above is the priority
-        for category, patterns in INJECTION_SIGNATURES.items():
+        for category, patterns in (self.threat_rules.get("INJECTION_SIGNATURES") or {}).items():
             for pattern in patterns:
                 if pattern in prompt_lower:
                     self.log.warning(
@@ -93,7 +87,9 @@ class PhaseZeroGate:
         # prompt to generate_forced_response, so a block here means the
         # identifier is not seen by the drafting model.
         if pii_validators_enabled:
-            findings = pii_validators.scan(user_prompt, pii_validators_enabled)
+            findings = pii_validators.scan(
+                user_prompt, pii_validators_enabled, self.validator_catalog
+            )
             if findings:
                 # The reason carries TYPES AND COUNTS, never the matched value:
                 # it is written to the governance record and the log.
@@ -149,7 +145,7 @@ class PhaseZeroGate:
         Returns (noun, cue) on a match so the log names both halves, or None.
         """
         noun_hits = []
-        for noun in SENSITIVE_INTERNALS:
+        for noun in self.threat_rules.get("SENSITIVE_INTERNALS", ()):
             start = 0
             while True:
                 i = prompt_lower.find(noun, start)
@@ -160,15 +156,13 @@ class PhaseZeroGate:
         if not noun_hits:
             return None
 
-        for cue in INTERNALS_DISCLOSURE_CUES:
-            # Word boundaries: matched as a bare substring, "expose" fires inside
-            # "exposes", "dump" inside "dumps", "reveal" inside "revealing". A verb
-            # conjugation is not a request to hand anything over -- this is what
-            # blocked SAFi's own article on the sentence "It exposes AGENTS...".
+        for cue in self.threat_rules.get("INTERNALS_DISCLOSURE_CUES", ()):
+            # Word boundaries prevent verb stems inside ordinary prose from
+            # being treated as requests to disclose internal material.
             for m in _cue_pattern(cue).finditer(prompt_lower):
                 ci = m.start()
                 for ni, noun in noun_hits:
-                    if abs(ni - ci) <= INTERNALS_PROXIMITY_CHARS:
+                    if abs(ni - ci) <= int(self.threat_rules.get("INTERNALS_PROXIMITY_CHARS", 0)):
                         return noun, cue
         return None
 
@@ -195,25 +189,31 @@ class PhaseZeroGate:
         why the marker check was silently carrying the whole heuristic. The test is
         now an actual blob: a long unbroken non-whitespace run whose contents are
         high-entropy, with an instruction marker ATTACHED to it. See the measurements
-        in threat_intel.py.
+        in the supplied security-rule bundle.
         """
-        if len(prompt) < MIN_LENGTH_FOR_ENTROPY_CHECK:
+        if len(prompt) < int(self.threat_rules.get("MIN_LENGTH_FOR_ENTROPY_CHECK", 0)):
             return False
 
         prompt_lower = prompt.lower()
         markers = [m.start()
-                   for marker in EMBEDDED_INSTRUCTION_MARKERS
+                   for marker in self.threat_rules.get("EMBEDDED_INSTRUCTION_MARKERS", ())
                    for m in re.finditer(re.escape(marker), prompt_lower)]
         if not markers:
             return False
 
-        for run in re.finditer(r"\S{%d,}" % BLOB_MIN_RUN, prompt):
+        blob_min_run = int(self.threat_rules.get("BLOB_MIN_RUN", 0))
+        if blob_min_run <= 0:
+            return False
+        for run in re.finditer(r"\S{%d,}" % blob_min_run, prompt):
             blob = run.group(0)
             # A long run alone is not a payload — it could be a path or a URL.
-            if self._compute_entropy(blob[:ENTROPY_SAMPLE_LENGTH]) < BLOB_MIN_ENTROPY:
+            sample_len = int(self.threat_rules.get("ENTROPY_SAMPLE_LENGTH", len(blob)))
+            min_entropy = float(self.threat_rules.get("BLOB_MIN_ENTROPY", float("inf")))
+            if self._compute_entropy(blob[:sample_len]) < min_entropy:
                 continue
-            lo = run.start() - BLOB_MARKER_PROXIMITY_CHARS
-            hi = run.end() + BLOB_MARKER_PROXIMITY_CHARS
+            proximity = int(self.threat_rules.get("BLOB_MARKER_PROXIMITY_CHARS", 0))
+            lo = run.start() - proximity
+            hi = run.end() + proximity
             if any(lo <= mi <= hi for mi in markers):
                 return True
         return False

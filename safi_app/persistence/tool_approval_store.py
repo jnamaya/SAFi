@@ -89,7 +89,7 @@ def init_schema() -> None:
             cursor.execute("ALTER TABLE agent_tool_requests ADD COLUMN target_tools JSON NULL")
         # Named approvers (backlog 57e): the org may designate one group as
         # the tool-approval reviewer set; unset or empty falls back to
-        # admin|auditor so no org can deadlock itself.
+        # the role set supplied by the application configuration.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS approval_settings (
                 org_id CHAR(36) PRIMARY KEY,
@@ -98,9 +98,7 @@ def init_schema() -> None:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        # Policy approvers (backlog 57f) are a SEPARATE designation: in
-        # Nelson's org the AI committee decides tools and legal decides
-        # policies, and conflating them would misroute both.
+        # Policy approvers are a separate designation from tool approvers.
         cursor.execute("SHOW COLUMNS FROM approval_settings LIKE 'policy_approver_group_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE approval_settings "
@@ -354,11 +352,10 @@ def set_approver_group(org_id, group_id, actor, kind='tools') -> None:
         conn.close()
 
 
-def is_reviewer(org_id, user_id, role, kind='tools') -> bool:
+def is_reviewer(org_id, user_id, role, kind='tools', reviewer_roles=None) -> bool:
     """May this person decide requests of this kind in this org? A
     designated (and non-empty) approver group REPLACES the role fallback:
-    naming the legal counsel as approver means the admins stop being
-    approvers, which is the point of naming anyone (backlog 57e)."""
+    an explicit group designation replaces the configured reviewer set."""
     if not org_id or not user_id:
         return False
     group_id = get_approver_group(org_id, kind)
@@ -373,10 +370,10 @@ def is_reviewer(org_id, user_id, role, kind='tools') -> bool:
         finally:
             cursor.close()
             conn.close()
-    return (role or 'member') in ('admin', 'auditor')
+    return role in (reviewer_roles or [])
 
 
-def other_reviewer_exists(org_id, exclude_user_id, kind='tools') -> bool:
+def other_reviewer_exists(org_id, exclude_user_id, kind='tools', reviewer_roles=None) -> bool:
     """Is there an eligible reviewer besides this person, against the ACTIVE
     set (the designated group when one exists, the role fallback otherwise)?
     When not, the sole-approver exception applies and self-approval is
@@ -390,9 +387,13 @@ def other_reviewer_exists(org_id, exclude_user_id, kind='tools') -> bool:
                 "SELECT 1 FROM group_memberships WHERE group_id=%s AND user_id != %s LIMIT 1",
                 (group_id, exclude_user_id))
         else:
+            reviewer_roles = list(reviewer_roles or [])
+            if not reviewer_roles:
+                return False
+            placeholders = ",".join(["%s"] * len(reviewer_roles))
             cursor.execute(
-                "SELECT 1 FROM users WHERE org_id=%s AND role IN ('admin','auditor') "
-                "AND id != %s LIMIT 1", (org_id, exclude_user_id))
+                f"SELECT 1 FROM users WHERE org_id=%s AND role IN ({placeholders}) "
+                "AND id != %s LIMIT 1", (org_id, *reviewer_roles, exclude_user_id))
         return cursor.fetchone() is not None
     finally:
         cursor.close()
@@ -523,7 +524,7 @@ def pending_summary(org_id):
 def pending_own_requests(user_id):
     """The caller's own requests still awaiting review, across BOTH request
     kinds, for their inbox: the submission should be as visible to the
-    requester as the outcome (Nelson, 2026-08-18). Purely derived; each row
+    requester as the outcome. Purely derived; each row
     leaves on its own when a reviewer decides, at which point the outcome
     row replaces it."""
     conn = db.get_db_connection()
@@ -563,8 +564,7 @@ def unacknowledged_outcomes(user_id):
     """The caller's own decided requests they have not dismissed yet, for
     the inbox (backlog 57c). Two exclusions: superseded (the requester
     caused those themselves by filing a newer ask) and decisions the
-    requester made themselves (a sole-admin self-approval is not news to
-    the person who clicked Approve)."""
+    requester made themselves."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:

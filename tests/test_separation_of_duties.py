@@ -2,13 +2,9 @@
 DB integration tests for the two authorization guards added 2026-07-27:
 
 - Separation of duties: a reviewer cannot dispose of a turn from their own
-  conversation (SelfReviewError). FINRA 3110/3120 supervisory review means
-  someone OTHER than the principal signs off, and self-approval is the first
-  thing an examiner tests.
-- Last-admin protection: neither a demotion nor a removal may leave an
-  organization with zero admins (LastAdminError), because such an org loses
-  policy authoring, member management and the provider allow-list with no
-  in-product way back.
+  conversation (SelfReviewError).
+- Authority-role protection: neither a role change nor a removal may leave an
+  organization without any configured authority role.
 
 Both guards live in the persistence layer rather than the routes, so these
 tests exercise them where every caller inherits them.
@@ -23,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
+from safi_app.role_config import ROLE_CONFIG
 from safi_app.core.services import provider_governance
 
 
@@ -158,32 +155,41 @@ class LastAdminTest(unittest.TestCase):
         return _fetchone("SELECT role, org_id FROM users WHERE id=%s", (uid,))
 
     def test_cannot_demote_sole_admin(self):
-        with self.assertRaises(db.LastAdminError):
-            db.update_member_role(self.admin, self.org_id, 'member', actor="test")
+        with self.assertRaises(db.LastAuthorityRoleError):
+            db.update_member_role(self.admin, self.org_id, 'member', actor="test",
+                                 administrator_roles=ROLE_CONFIG["organization_admin_roles"])
         self.assertEqual(self._role(self.admin)["role"], 'admin',
                          "refused demotion must leave the role untouched")
 
     def test_cannot_remove_sole_admin(self):
         """Removal strips admin as effectively as demotion, so it is guarded too."""
-        with self.assertRaises(db.LastAdminError):
-            db.remove_member_from_org(self.admin, self.org_id, actor="test")
+        with self.assertRaises(db.LastAuthorityRoleError):
+            db.remove_member_from_org(
+                self.admin, self.org_id, actor="test",
+                administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+                default_role=ROLE_CONFIG["default_role"],
+            )
         row = self._role(self.admin)
         self.assertEqual(row["role"], 'admin')
         self.assertEqual(str(row["org_id"]), self.org_id, "member must still be in the org")
 
     def test_demotion_allowed_once_a_second_admin_exists(self):
-        db.update_member_role(self.second, self.org_id, 'admin', actor="test")
-        db.update_member_role(self.admin, self.org_id, 'member', actor="test")
+        db.update_member_role(self.second, self.org_id, 'admin', actor="test",
+                              administrator_roles=ROLE_CONFIG["organization_admin_roles"])
+        db.update_member_role(self.admin, self.org_id, 'member', actor="test",
+                              administrator_roles=ROLE_CONFIG["organization_admin_roles"])
         self.assertEqual(self._role(self.admin)["role"], 'member')
         self.assertEqual(self._role(self.second)["role"], 'admin')
 
     def test_demoting_a_non_admin_is_unaffected(self):
         """The guard keys on losing the LAST admin, not on any role change."""
-        db.update_member_role(self.second, self.org_id, 'auditor', actor="test")
+        db.update_member_role(self.second, self.org_id, 'auditor', actor="test",
+                              administrator_roles=ROLE_CONFIG["organization_admin_roles"])
         self.assertEqual(self._role(self.second)["role"], 'auditor')
 
     def test_admin_to_admin_is_not_blocked(self):
-        db.update_member_role(self.admin, self.org_id, 'admin', actor="test")
+        db.update_member_role(self.admin, self.org_id, 'admin', actor="test",
+                              administrator_roles=ROLE_CONFIG["organization_admin_roles"])
         self.assertEqual(self._role(self.admin)["role"], 'admin')
 
 

@@ -24,11 +24,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.will import WillGate, ALLOWED_GATE_REASONS
-from safi_app.core.faculties.synderesis import (
-    _inject_scope_compliance,
-    _stamp_gate_reasons,
-    apply_charter,
-)
+from safi_app.core.faculties.synderesis import _stamp_gate_reasons, apply_charter
+from safi_app.profile_resolver import _stamp_legacy_gate_reasons
+from safi_app.core.policies.runtime_defaults import inject_scope_compliance
 
 
 def gate_with(values):
@@ -93,7 +91,7 @@ class ReasonComesFromTheValue(unittest.TestCase):
 
 class ScopeComplianceRubric(unittest.TestCase):
     def test_scope_gate_defines_three_outcomes(self):
-        profile = _inject_scope_compliance({
+        profile = inject_scope_compliance({
             "scope_statement": "Financial education only.",
         })
         guide = profile["values"][0]["rubric"]["scoring_guide"]
@@ -102,22 +100,31 @@ class ScopeComplianceRubric(unittest.TestCase):
         self.assertIn("no meaningful scope decision", guide[1]["descriptor"])
         self.assertIn("engages with an out-of-scope request", guide[2]["descriptor"])
 
-    def test_auditor_prompt_matches_the_three_point_scope_rubric(self):
+    def test_auditor_prompt_uses_supplied_scope_rubrics_generically(self):
         prompt_path = Path(__file__).resolve().parent.parent / "safi_app/core/system_prompts.json"
         prompt = json.loads(prompt_path.read_text())["conscience_auditor"]["prompt_template"]
-        self.assertIn("Scope Compliance uses three outcomes", prompt)
-        self.assertNotIn("Scope Compliance') have a binary rubric", prompt)
+        self.assertIn("When a rubric evaluates scope", prompt)
+        self.assertNotIn("Scope Compliance", prompt)
 
 
 class CompileTimeStamping(unittest.TestCase):
-    def test_legacy_names_are_stamped(self):
+    def test_core_does_not_infer_reason_from_names(self):
         profile = {"values": [
             {"value": "Scope Compliance", "hard_gate": True},
             {"value": "Grounding Fidelity", "hard_gate": True},
         ]}
         out = _stamp_gate_reasons(profile)
-        self.assertEqual(out["values"][0]["gate_reason"], "scope_violation")
-        self.assertEqual(out["values"][1]["gate_reason"], "grounding_violation")
+        self.assertEqual(out["values"][0]["gate_reason"], "hard_gate_violation")
+        self.assertEqual(out["values"][1]["gate_reason"], "hard_gate_violation")
+
+    def test_host_adapter_migrates_legacy_persisted_labels(self):
+        values = [
+            {"value": "Scope Compliance", "hard_gate": True},
+            {"value": "Grounding Fidelity", "hard_gate": True},
+        ]
+        _stamp_legacy_gate_reasons(values)
+        self.assertEqual(values[0]["gate_reason"], "scope_violation")
+        self.assertEqual(values[1]["gate_reason"], "grounding_violation")
 
     def test_unknown_gate_gets_generic_reason(self):
         profile = {"values": [{"value": "House Style", "hard_gate": True}]}
@@ -134,7 +141,7 @@ class CompileTimeStamping(unittest.TestCase):
         profile = {"values": [{"value": "Scope Compliance", "hard_gate": True,
                                "gate_reason": "not_a_reason"}]}
         out = _stamp_gate_reasons(profile)
-        self.assertEqual(out["values"][0]["gate_reason"], "scope_violation")
+        self.assertEqual(out["values"][0]["gate_reason"], "hard_gate_violation")
 
     def test_scored_values_are_untouched(self):
         profile = {"values": [{"value": "Clarity", "weight": 1.0}]}

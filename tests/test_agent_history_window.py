@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app import create_app
 from safi_app.persistence import database as db
-from safi_app.core.faculties.synderesis import get_profile
+from safi_app.profile_resolver import get_profile
 from support import new_user
 
 

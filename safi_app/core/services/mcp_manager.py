@@ -117,7 +117,11 @@ def member_oauth_servers(user_id, org_id, role):
     servers = []
     try:
         from ...persistence import database as db
-        agents = db.list_agents(user_id, org_id, role or "member") or []
+        from ...role_config import ROLE_CONFIG
+        agents = db.list_agents(
+            user_id, org_id, role or ROLE_CONFIG["default_role"],
+            ROLE_CONFIG["visibility_roles"],
+        ) or []
     except Exception as e:
         log.warning("member agent lookup failed, offering no oauth servers: %s", e)
         agents = []
@@ -148,12 +152,13 @@ def member_oauth_servers(user_id, org_id, role):
 def member_can_connect(user_id, org_id, role, server_key) -> bool:
     """Whether this member may run the sign-in flow for this server.
 
-    Admins always may: the first connection is what discovers the catalog, and
+    Host-configured authority roles always may: the first connection is what discovers the catalog, and
     without it no policy can enable a tool for anyone. Everyone else needs an
     agent that is actually granted the server, which is the same rule the
     delegated connectors enforce on their login routes.
     """
-    if (role or "").lower() == "admin":
+    from ...role_config import ROLE_CONFIG
+    if role in ROLE_CONFIG["organization_admin_roles"]:
         return True
     for server in member_oauth_servers(user_id, org_id, role):
         if server["key"] == server_key:

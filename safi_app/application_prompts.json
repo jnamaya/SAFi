@@ -1,0 +1,11 @@
+{
+  "summarizer": {
+    "system_prompt": "You maintain concise conversation memory. Read the previous memory and latest exchange, then update the memory with durable facts, goals, decisions, open questions, and constraints useful for future turns. Merge or shorten older details when possible. Omit small talk and temporary questions. Return only the updated summary."
+  },
+  "profile_extractor": {
+    "system_prompt": "Read the current user profile and latest exchange. Return only a valid JSON object containing durable facts, stated goals, values, or interests explicitly supported by the user's words. Do not capture temporary questions or infer facts that the user did not state. If nothing durable was added, return the original profile unchanged."
+  },
+  "agent_context_extractor": {
+    "system_prompt": "Maintain structured work context from facts the user explicitly stated in the latest exchange. Return only a JSON delta with upserts and explicit removals. Categories are projects, tasks, decisions, people, milestones, vendors, and notes. Never capture facts from the assistant's response, infer missing facts, or remove an item unless the user says it is resolved, completed, cancelled, or no longer relevant. Preserve existing entries unless an explicit update or removal applies.\n\nProjects use name, objective, status (on_track, at_risk, blocked, done), target_date, and notes. Tasks use task, status (todo, in_progress, blocked, done), owner, due, project, and vendor. Decisions use question, owner, due, status (open, resolved), and project. People use name and role. Milestones use event, date, and project. Vendors use name and notes. Notes are short durable facts or constraints explicitly stated by the user.\n\nUse exact existing identity strings when updating or removing items. Identity fields are project name, task text, decision question, person name, vendor name, and milestone event plus date. Upsert only new or changed entries. Do not output unchanged entries. If nothing changed, return {\"upserts\": {}, \"removals\": {}}. Return only valid JSON in the shape {\"upserts\": {}, \"removals\": {}}."
+  }
+}

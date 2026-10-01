@@ -34,13 +34,13 @@ Usage
   # Full substantiation run: aggregates + adversarial classification + manifest
   python3 jailbreak_log_analysis.py /path/to/logs \
       --persona the_socratic_tutor --persona "the socratic tutor" \
-      --signatures ../../safi_app/core/threat_intel.py \
+       --signatures ../../safi_app/security_policy.py \
       --out summary.json --manifest manifest.sha256
 
   # Adjudication loop — the way to get a real attack count:
   #   1. emit the worksheet (publishable) and the transcripts (local only)
   python3 jailbreak_log_analysis.py /path/to/logs --persona the_socratic_tutor \
-      --signatures ../../safi_app/core/threat_intel.py \
+       --signatures ../../safi_app/security_policy.py \
       --sessions worksheet.csv --dump-sessions review.jsonl
   #   2. read review.jsonl, fill the verdict column of worksheet.csv
   #      (attack | benign | mixed + attack_turns), then:
@@ -60,7 +60,7 @@ Notes
   are NOT evidence of defensive performance and must not be reported as
   though they were.
 - --signatures classifies each prompt against INJECTION_SIGNATURES from a
-  threat_intel.py (loaded standalone; that module has no SAFi imports). This
+  security-policy data file (loaded standalone). This
   is a deterministic substring match, so the resulting count is a FLOOR on
   adversarial traffic, not a total: it misses paraphrase and plain-language
   coercion by design (see Benchmarks/PHASE0_IMPROVEMENT_PLAN.md §1). Report
@@ -282,7 +282,7 @@ def read_verdicts(path: str, sessions: dict, ids: dict) -> dict:
 
 
 def load_signatures(path: str) -> tuple[dict[str, list[str]], dict]:
-    """Load INJECTION_SIGNATURES from a standalone threat_intel.py.
+    """Load INJECTION_SIGNATURES from a standalone policy-data file.
 
     Returns (signatures, provenance). Provenance pins WHICH signature database
     produced the counts — the list grows over time, so a count without the
@@ -542,7 +542,7 @@ def main() -> None:
     if sigs:
         summary["adversarial_classification"] = {
             "method": "Deterministic substring match of each userPrompt against "
-                      "INJECTION_SIGNATURES from the pinned threat_intel.py.",
+                      "INJECTION_SIGNATURES from the selected policy-data file.",
             "interpretation": "FLOOR, not a total. Misses paraphrase and plain-language "
                               "coercion by design; report as 'at least N'.",
             "signature_source": sig_provenance,

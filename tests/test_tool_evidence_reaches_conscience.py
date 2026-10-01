@@ -121,7 +121,9 @@ class TestMergeSemantics(unittest.TestCase):
     def merge(retrieved_context, tool_evidence):
         if tool_evidence:
             return _apply_context_budget(
-                ([retrieved_context] if retrieved_context else []) + tool_evidence)
+                ([retrieved_context] if retrieved_context else []) + tool_evidence,
+                Config.MAX_CONTEXT_CHARS,
+            )
         return retrieved_context
 
     def test_tool_evidence_alone(self):
@@ -178,17 +180,16 @@ class TestWiring(unittest.TestCase):
                          "an execute_tool call site has no matching "
                          "tool_evidence.append — its output is invisible to the audit")
 
-    def test_args_available_on_both_history_branches(self):
-        # _args_str used to be defined only in the non-Gemini else-branch; the
-        # evidence block needs it on both, so it must be assigned before the split.
+    def test_args_are_formatted_before_the_provider_adapter(self):
+        # The routed provider owns history serialization; the core prepares a
+        # provider-neutral argument string before passing it along.
         src = inspect.getsource(orch.SAFi.process_prompt)
         assign = src.find("_args_str = json.dumps")
-        branch = src.find("if raw_turn and _use_gemini_history:")
+        branch = src.find("tool_call_history_entry(")
         self.assertNotEqual(assign, -1)
         self.assertNotEqual(branch, -1)
         self.assertLess(assign, branch,
-                        "_args_str must be assigned before the Gemini/other split "
-                        "or the evidence block NameErrors on the Gemini path")
+                        "arguments must be ready before provider-specific serialization")
 
 
 if __name__ == "__main__":

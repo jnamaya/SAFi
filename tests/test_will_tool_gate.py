@@ -3,7 +3,7 @@ Unit tests for WillGate.evaluate_tool_intent (Phase 6):
 
 - Allow-list block, read-only fast pass, deterministic approve.
 - Empty allowed_tools is deny-all; only an absent key (a profile not built
-  by synderesis.get_profile) skips the check.
+  by the profile adapter) skips the check.
 - Parameter constraints default-deny: an omitted constrained parameter is a
   violation (a tool's server-side default is unvetted), not a bypass.
 - _stamp_tool_authorization: advertised tools are the baseline, a policy's
@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.core.faculties.will import WillGate
 from safi_app.core.faculties.synderesis import _stamp_tool_authorization
+from safi_app.core.tool_connectors import CONNECTOR_TOOLS
 
 PROFILE = {
     "allowed_tools": ["send_email", "web_search"],
@@ -95,18 +96,18 @@ class TestToolAuthorizationCompile(unittest.TestCase):
         # "web_search" is a CONNECTOR that expands to two functions. The wizard is
         # connector-level; the Will matches function names exactly; so the compiler
         # expands. See tool_connectors.py and test_tool_connector_expansion.py.
-        p = _stamp_tool_authorization({"tools": ["web_search", "send_email"]})
+        p = _stamp_tool_authorization({"tools": ["web_search", "send_email"]}, CONNECTOR_TOOLS)
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news", "send_email"])
 
     def test_no_tools_stamps_empty_deny_all(self):
-        self.assertEqual(_stamp_tool_authorization({})["allowed_tools"], [])
-        self.assertEqual(_stamp_tool_authorization({"tools": None})["allowed_tools"], [])
+        self.assertEqual(_stamp_tool_authorization({}, CONNECTOR_TOOLS)["allowed_tools"], [])
+        self.assertEqual(_stamp_tool_authorization({"tools": None}, CONNECTOR_TOOLS)["allowed_tools"], [])
 
     def test_policy_allowed_tools_narrows(self):
         p = _stamp_tool_authorization({
             "tools": ["web_search", "send_email"],
             "will_rules": {"allowed_tools": ["web_search"]},
-        })
+        }, CONNECTOR_TOOLS)
         # send_email is dropped; web_search expands on both sides of the intersection.
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
 
@@ -116,14 +117,14 @@ class TestToolAuthorizationCompile(unittest.TestCase):
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": {"allowed_tools": ["web_news"]},
-        })
+        }, CONNECTOR_TOOLS)
         self.assertEqual(p["allowed_tools"], ["web_news"])
 
     def test_policy_cannot_grant_unadvertised_tools(self):
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": {"allowed_tools": ["web_search", "delete_files"]},
-        })
+        }, CONNECTOR_TOOLS)
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
         self.assertNotIn("delete_files", p["allowed_tools"])
 
@@ -131,7 +132,7 @@ class TestToolAuthorizationCompile(unittest.TestCase):
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": ["some legacy string rule"],
-        })
+        }, CONNECTOR_TOOLS)
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
 
     def test_param_constraints_hoisted_from_will_rules(self):
@@ -140,7 +141,7 @@ class TestToolAuthorizationCompile(unittest.TestCase):
             "will_rules": {"tool_parameter_constraints": {
                 "send_email": {"recipient_domain": ["example.org"]},
             }},
-        })
+        }, CONNECTOR_TOOLS)
         self.assertEqual(
             p["tool_parameter_constraints"]["send_email"]["recipient_domain"],
             ["example.org"],

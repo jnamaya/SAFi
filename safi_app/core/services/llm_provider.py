@@ -179,6 +179,31 @@ class LLMProvider:
         details = self.config.get("providers", {}).get(provider, {})
         return details.get("type") == "typesafe"
 
+    def tool_call_history_entry(self, tool_name: str, arguments: str,
+                                raw_turn: Optional[Dict[str, Any]] = None):
+        """Represent a proposed tool call in the routed model's history format."""
+        route = self.config.get("routes", {}).get("intellect", {})
+        provider = route.get("provider")
+        details = self.config.get("providers", {}).get(provider, {})
+        if details.get("type") == "gemini" and raw_turn:
+            from google.genai import types
+            return types.Content(**raw_turn)
+        return (
+            f"SYSTEM OBSERVATION: Model requested tool {tool_name} "
+            f"with arguments: {arguments}"
+        )
+
+    def tool_result_history_entry(self, tool_name: str, result: str):
+        """Represent a tool result in the routed model's history format."""
+        route = self.config.get("routes", {}).get("intellect", {})
+        provider = route.get("provider")
+        details = self.config.get("providers", {}).get(provider, {})
+        if details.get("type") == "gemini":
+            from google.genai import types
+            part = types.Part.from_function_response(name=tool_name, response={"result": result})
+            return types.Content(role="user", parts=[part])
+        return f"TOOL RESULT for {tool_name}:\n{result}"
+
     async def run_conscience_structured(
         self,
         *,

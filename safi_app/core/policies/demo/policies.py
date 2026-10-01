@@ -1,8 +1,8 @@
 """
 Demo Business-Unit Policies
 ===========================
-One policy per built-in demo agent. Seeded into the `policies` table at
-startup (see database._ensure_demo_agent_policies_exist) with is_demo=TRUE,
+One policy per built-in example agent. Seeded into the `policies` table at
+startup by the application bootstrap with is_demo=TRUE,
 then attached to each agent via its `policy_id` key.
 
 Why these exist: SAFi's pitch is that agents are governed by an external,

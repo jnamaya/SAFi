@@ -16,7 +16,35 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core import pii_validators as pv  # noqa: E402
+from safi_app.core import pii_validators as engine  # noqa: E402
+from safi_app.security_policy import PII_CATALOGUE  # noqa: E402
+
+
+class ConfiguredValidators:
+    VALIDATOR_KEYS = tuple(PII_CATALOGUE)
+
+    @staticmethod
+    def catalogue():
+        return engine.catalogue(PII_CATALOGUE)
+
+    @staticmethod
+    def normalize(keys):
+        return engine.normalize(keys, PII_CATALOGUE)
+
+    @staticmethod
+    def scan(text, enabled):
+        return engine.scan(text, enabled, PII_CATALOGUE)
+
+    @staticmethod
+    def redact(text, enabled):
+        return engine.redact(text, enabled, PII_CATALOGUE)
+
+    @staticmethod
+    def summarize(findings):
+        return engine.summarize(findings)
+
+
+pv = ConfiguredValidators()
 
 ALL = list(pv.VALIDATOR_KEYS)
 

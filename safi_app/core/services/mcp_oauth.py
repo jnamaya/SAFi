@@ -472,7 +472,7 @@ def revoke_all_mcp_tokens(user_id: str) -> Dict[str, bool]:
         key = str(provider)[len(PROVIDER_PREFIX):]
         try:
             results[key] = revoke_at_server(user_id, key, definitions.get(key) or {})
-        except Exception as exc:  # revoke_at_server already catches; belt and braces
+        except Exception as exc:  # revoke_at_server already catches; defensive redundancy
             log.warning("revocation at %s raised for %s: %s", key, user_id, exc)
             results[key] = False
     if results:

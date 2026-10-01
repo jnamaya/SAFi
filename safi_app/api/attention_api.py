@@ -14,6 +14,7 @@ from flask import Blueprint, jsonify, session
 
 from ..persistence import attention_store
 from ..persistence import tool_approval_store
+from ..role_config import ROLE_CONFIG
 from ..core.rbac import check_any_role
 
 attention_bp = Blueprint('attention_api', __name__)
@@ -105,15 +106,20 @@ def get_attention():
     # role-gated.
     if org_id:
         try:
-            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role')):
+            if tool_approval_store.is_reviewer(
+                org_id, user_id, user.get('role'),
+                reviewer_roles=ROLE_CONFIG["reviewer_roles"],
+            ):
                 agg = tool_approval_store.pending_summary(org_id)
                 if agg["count"]:
                     items.append(_item("tool_requests", agg))
         except Exception:
             pass
         try:
-            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role'),
-                                               kind='policy'):
+            if tool_approval_store.is_reviewer(
+                org_id, user_id, user.get('role'), kind='policy',
+                reviewer_roles=ROLE_CONFIG["reviewer_roles"],
+            ):
                 agg = tool_approval_store.pending_policy_summary(org_id)
                 if agg["count"]:
                     items.append(_item("policy_changes", agg))
@@ -158,8 +164,10 @@ def get_attention_actions():
 
     if org_id:
         try:
-            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role'),
-                                               kind='policy'):
+            if tool_approval_store.is_reviewer(
+                org_id, user_id, user.get('role'), kind='policy',
+                reviewer_roles=ROLE_CONFIG["reviewer_roles"],
+            ):
                 for r in tool_approval_store.list_policy_changes(org_id, 'pending'):
                     policy_changes.append({
                         "id": r["id"],
@@ -171,7 +179,10 @@ def get_attention_actions():
         except Exception:
             pass
         try:
-            if tool_approval_store.is_reviewer(org_id, user_id, user.get('role')):
+            if tool_approval_store.is_reviewer(
+                org_id, user_id, user.get('role'),
+                reviewer_roles=ROLE_CONFIG["reviewer_roles"],
+            ):
                 for r in tool_approval_store.list_requests(org_id, 'pending'):
                     tool_requests.append({
                         "id": r["id"],

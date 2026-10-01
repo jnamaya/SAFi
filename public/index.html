@@ -82,7 +82,7 @@
       scrollbar-width: none;
     }
 
-    /* FIX: Force hide the Exit button on Desktop (md breakpoint approx 768px) */
+    /* Force hide the Exit button on desktop (md breakpoint approx 768px) */
     @media (min-width: 768px) {
       #control-panel-back-btn {
         display: none !important;
@@ -106,7 +106,7 @@
       opacity: 1;
     }
 
-    /* FIX: Force audit modal to true full-screen on mobile (iOS Safari inset-0 quirk) */
+    /* Force audit modal to true full-screen on mobile (iOS Safari inset-0 quirk) */
     @media (max-width: 639px) {
       #conscience-modal {
         top: 0 !important;
@@ -254,8 +254,7 @@
           class="w-full hidden flex flex-col flex-1 min-h-0 bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
 
 
-          <!-- Floating Mobile Menu Toggle -->
-          <!-- Restored Mobile Header (Visible only on mobile) -->
+          <!-- Mobile header (visible only on mobile) -->
           <header
             class="w-full border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black z-20 shrink-0 md:hidden">
             <div class="w-full max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -554,8 +553,8 @@
               </div>
 
               <!-- Group: Organization — everything role-gated to
-                   admin/editor/auditor. The div keeps its historical
-                   nav-group-management id; app.js and tests target it. -->
+                   admin/editor/auditor. The div's id is nav-group-management;
+                   app.js and tests target it. -->
               <div class="mb-6" id="nav-group-management">
                 <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Organization</h3>
                     <ul class="space-y-0.5">

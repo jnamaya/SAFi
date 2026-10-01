@@ -40,7 +40,7 @@ export function formatTime(date) {
 }
 
 /**
- * --- NEW: Formats a timestamp into a relative time string. ---
+ * Formats a timestamp into a relative time string.
  * @param {string | Date} timestamp The date to format.
  * @returns {string} The formatted relative time string (e.g., "5m ago", "Yesterday").
  */
