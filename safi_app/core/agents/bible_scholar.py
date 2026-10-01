@@ -93,9 +93,9 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
             "rubric": {
                 "description": "Checks for proper historical/cultural setting.",
                 "scoring_guide": [
-                    {"score": 1.0, "descriptor": "Excellent: Correct historical setting, objective and neutral."},
-                    {"score": 0.0, "descriptor": "Neutral: Correct but lacking depth."},
-                    {"score": -1.0, "descriptor": "Violation: Wrong setting or anachronistic ideas."}
+                    {"score": 1.0, "descriptor": "Excellent: The response places the passage or topic within its proper historical, cultural, and literary context. It demonstrates awareness of the original audience, historical setting, and cultural background. Anachronistic ideas or modern assumptions are absent."},
+                    {"score": 0.0, "descriptor": "Neutral: The response is historically correct but lacks depth. It may mention the historical setting but does not explore it, or it may be superficial in its treatment of context."},
+                    {"score": -1.0, "descriptor": "Violation: The response contains anachronistic ideas, misplaces the passage in the wrong historical setting, or imposes modern assumptions on the text."}
                 ]
             }
         },
@@ -117,9 +117,9 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
                     "positive one."
                 ),
                 "scoring_guide": [
-                    {"score": 1.0, "descriptor": "Excellent: Quoted scripture matches the BSB text present in the retrieved context, and/or scholarly claims are attributed to patristic tradition or mainstream consensus."},
-                    {"score": 0.0, "descriptor": "Neutral: Nothing contradicts the sources, but the quoted wording is not present in the retrieved context and so cannot be verified — or the claim is correct yet uncited."},
-                    {"score": -1.0, "descriptor": "Violation: Contradicts BSB text present in the retrieved context, misattributes a quotation, or asserts fringe/speculative positions as established fact with no scholarly basis. A missing citation alone is NOT a violation."}
+                    {"score": 1.0, "descriptor": "Excellent: Quoted scripture matches the BSB text present in the retrieved context, with accurate wording and correct attribution. Scholarly claims are attributed to patristic tradition or mainstream academic consensus with appropriate citations or references."},
+                    {"score": 0.0, "descriptor": "Neutral: Nothing contradicts the sources, but the quoted wording is not present in the retrieved context and so cannot be verified — or the claim is correct yet uncited. The response may paraphrase scripture without noting it is a paraphrase, or make a true scholarly claim without attribution."},
+                    {"score": -1.0, "descriptor": "Violation: Directly contradicts BSB text present in the retrieved context, misattributes a quotation to the wrong source, or asserts fringe or speculative positions as established fact with no scholarly basis. A missing citation alone is NOT a violation."}
                 ]
             }
         },
@@ -130,9 +130,9 @@ THE_BIBLE_SCHOLAR_AGENT: Dict[str, Any] = {
             "rubric": {
                 "description": "Checks for neutrality and acknowledgement of interpretive options.",
                 "scoring_guide": [
-                    {"score": 1.0, "descriptor": "Excellent: Balanced, acknowledges major interpretations."},
-                    {"score": 0.0, "descriptor": "Neutral: Objective but silent on alternatives."},
-                    {"score": -1.0, "descriptor": "Violation: Promotes one view as the only valid one."}
+                    {"score": 1.0, "descriptor": "Excellent: The response presents multiple scholarly interpretations where they exist, acknowledges differing denominational or theological perspectives, and does not privilege one view as the only valid one. It may note where scholars disagree and present the strengths and weaknesses of each position."},
+                    {"score": 0.0, "descriptor": "Neutral: The response is objective and factually correct but does not acknowledge alternative interpretations. It presents a single view without noting that other scholarly or denominational perspectives exist."},
+                    {"score": -1.0, "descriptor": "Violation: The response promotes one interpretation as the only valid one, dismisses or misrepresents other scholarly or denominational perspectives, or presents a contested theological position as settled fact."}
                 ]
             }
         }

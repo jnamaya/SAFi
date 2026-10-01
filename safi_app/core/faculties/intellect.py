@@ -14,19 +14,8 @@ import json
 import logging
 import re
 # Retriever is imported lazily inside __init__ — see the note there.
+from ...config import Config
 from ...persistence import database as db
-
-# Ceiling on assembled retrieval context, in characters. This is the single choke
-# point every agent and both retrieval paths pass through, which is why the bound
-# lives here rather than in the retriever: semantic search is naturally capped at
-# k=5, but a citation lookup on a reference corpus returns a whole section, and
-# the worst observed case measured 59 chunks / ~20k chars / ~5k tokens — spent
-# TWICE per turn, since the Conscience audits against the same context the
-# Intellect drafted from.
-#
-# 8000 leaves every commonly requested full section observed (~6.3k) untouched
-# and trims only real outliers.
-_MAX_CONTEXT_CHARS = 8000
 
 
 # Follow-up turns carry no retrievable content of their own. "Yes, give me the
@@ -108,21 +97,35 @@ def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
 
 
 def _apply_context_budget(chunks: List[str]) -> str:
-    """Join retrieved chunks up to the budget, and SAY SO when anything is dropped.
+    """Join retrieved chunks, up to Config.MAX_CONTEXT_CHARS, and SAY SO when
+    anything is dropped.
 
-    Silence would be the dangerous option: an agent handed two-thirds of a
-    requested passage with no indication has every reason to present it as the
-    whole. A grounding-fidelity value exists to catch exactly that, so the
-    truncation has to be visible to the model rather than inferred by it.
+    This is the single choke point every agent and both retrieval paths pass
+    through — which is why the bound is applied here rather than in the
+    retriever — and the Conscience audits the same block, so it is paid for
+    twice a turn.
 
-    Whole chunks are kept or dropped — never cut mid-chunk, which would end a
-    passage mid-sentence and invite the model to complete it from memory.
+    The default is no bound. Truncating retrieval is not a pure token cost:
+    the dropped evidence leaves the Conscience unable to verify what the
+    Intellect asserted, and the notice that follows tells the model the
+    passage is incomplete and not to complete it from memory. Both suppress
+    confidence on exactly the grounding-fidelity values the notice exists to
+    protect. `k` on the retriever bounds a runaway corpus; this remains an
+    operator override for deployments that would rather pay the tokens.
+
+    When a bound IS set, whole chunks are kept or dropped — never cut
+    mid-chunk, which would end a passage mid-sentence and invite the model to
+    complete it from memory.
     """
+    limit = Config.MAX_CONTEXT_CHARS
+    if not limit:
+        return "\n\n".join(chunks)
+
     kept: List[str] = []
     used = 0
     for chunk in chunks:
         cost = len(chunk) + 2  # the "\n\n" join
-        if kept and used + cost > _MAX_CONTEXT_CHARS:
+        if kept and used + cost > limit:
             break
         kept.append(chunk)
         used += cost

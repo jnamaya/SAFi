@@ -13,7 +13,7 @@ import re
 import logging
 import threading
 from fastembed import TextEmbedding
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Env overrides exist so production can point off-disk; defaults are anchored
 # to the app root so imports work no matter the caller's CWD (systemd, the safi
@@ -241,47 +241,67 @@ class Retriever:
         citation_regex = re.compile(r'(\d?\s?[A-Za-z]+)\s(\d+)')
         return citation_regex.search(query) is not None
 
-    def _keyword_search(self, query: str, k: int = 50) -> List[int]:
+    def _keyword_search(self, query: str, k: Optional[int] = None) -> List[int]:
         self.log.info(f"Performing keyword search for: {query}")
         citation_regex = re.compile(r'(\d?\s?[A-Za-z]+)\s(\d+)')
         matches = citation_regex.finditer(query)
-        if not matches: 
+        if not matches:
             return []
 
         all_indices = set()
         for match in matches:
             book = match.group(1).strip().lower()
             chapter = int(match.group(2).strip())
-            
+            # A trailing ":<verse>" (or " <verse>" after a colon-less citation)
+            # narrows the request to that verse. Without this the regex matched
+            # book+chapter only, so "Psalm 119:105" returned the whole chapter.
+            verse = None
+            tail = query[match.end():]
+            vm = re.match(r'\s*:?\s*(\d+)', tail)
+            if vm:
+                verse = int(vm.group(1))
+
             candidate_indices = []
             for i, meta in enumerate(self.metadata):
                 book_to_check = ''
-                chapter_to_check = -1 
+                chapter_to_check = -1
+                start_verse = end_verse = None
 
                 if 'metadata' in meta and isinstance(meta.get('metadata'), dict):
                     # nested shape (bsb_chunks.json)
                     book_to_check = meta['metadata'].get('book', '').lower()
                     chapter_to_check = meta['metadata'].get('chapter')
+                    start_verse = meta['metadata'].get('start_verse')
+                    end_verse = meta['metadata'].get('end_verse')
                 else:
                     # flat shape (SAFi, old bible_asv)
                     book_to_check = meta.get('book', '').lower()
                     chapter_to_check = meta.get('chapter')
+                    start_verse = meta.get('start_verse')
+                    end_verse = meta.get('end_verse')
 
-                if book_to_check == book and chapter_to_check == chapter:
-                    candidate_indices.append(i)
+                if book_to_check != book or chapter_to_check != chapter:
+                    continue
+                # Chunks overlap (~4 verses each), so a verse falls inside any
+                # chunk spanning it. Chunks without verse metadata cannot be
+                # placed, so they are kept rather than dropped — better the
+                # whole chapter than a gap the model cannot see.
+                if verse is not None and start_verse is not None and end_verse is not None:
+                    if not (start_verse <= verse <= end_verse):
+                        continue
+                candidate_indices.append(i)
 
             all_indices.update(candidate_indices)
 
-        # Honour k. It was accepted and ignored, so a citation returned the WHOLE
-        # chapter however long: "Psalm 119" came back as 59 chunks / ~20k chars,
-        # and that context is paid for twice per turn (Intellect drafts with it,
-        # then Conscience audits with it). Indices are sorted, so slicing keeps
-        # the opening of the passage rather than an arbitrary subset.
-        #
-        # This is a backstop, not the real bound — the character budget in
-        # intellect.py is what usually trims, and unlike this slice it tells the
-        # model the passage was cut.
-        return sorted(list(all_indices))[:k]
+        ordered = sorted(all_indices)
+        # k is a backstop for a caller that asks for one, NOT a bound on a
+        # citation. Slicing a chapter by k silently returns its opening: at
+        # k=50 "Psalm 119" lost verses 148-176, and at k=5 "Psalm 119:105"
+        # answered from verses 1-20 and never reached verse 105 at all. A
+        # chapter is bounded anyway (the longest is 176 verses), and the
+        # character budget that used to trim here is now operator-set and
+        # unlimited by default, so an uncapped citation arrives whole.
+        return ordered if k is None else ordered[:k]
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         if not self.index or not self.model or not self.metadata:
@@ -293,9 +313,14 @@ class Retriever:
         # Citation queries skip the vector path entirely: "John 3:16" has no
         # useful embedding neighbourhood, so an exact book/chapter match beats
         # the nearest neighbours.
+        #
+        # k is deliberately NOT passed on: a citation is a precise request, and
+        # slicing it would answer with the opening of the chapter rather than
+        # the verse asked for (see _keyword_search). It used to be pinned to 50
+        # here, which also silently discarded the caller's k.
         if self.kb_name.lower().startswith("bible") and self._is_citation_query(query):
             self.log.info("Bible citation detected, using keyword search.")
-            indices_to_return = self._keyword_search(query, k=50) 
+            indices_to_return = self._keyword_search(query)
         
         # Fall through to semantic search when the citation matched nothing.
         if not indices_to_return:

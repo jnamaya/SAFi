@@ -24,13 +24,15 @@ import logging
 import re
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from safi_app.config import Config
 from safi_app.core import orchestrator as orch
 from safi_app.core.faculties.conscience import ConscienceAuditor
-from safi_app.core.faculties.intellect import _apply_context_budget, _MAX_CONTEXT_CHARS
+from safi_app.core.faculties.intellect import _apply_context_budget
 
 TOOL_RESULT = '[{"title": "Introducing SAFi", "snippet": "January 27, 2026 - open source"}]'
 ARGS = '{"query": "site:selfalignmentframework.com SAFi articles"}'
@@ -135,10 +137,22 @@ class TestMergeSemantics(unittest.TestCase):
         self.assertEqual(self.merge("RAG ONLY", []), "RAG ONLY")
         self.assertEqual(self.merge("", []), "")
 
-    def test_oversized_evidence_says_so_rather_than_silently_dropping(self):
+    def test_unlimited_by_default_keeps_every_chunk(self):
+        # The default must reach the Conscience whole: dropped evidence cannot be
+        # verified, and the truncation notice tells the model not to complete the
+        # passage from memory. Both cost confidence on grounding fidelity.
         big = [f"[TOOL RESULT — web_search #{i}]\n" + ("x" * 3000) for i in range(6)]
         merged = self.merge("", big)
-        self.assertLess(len(merged), _MAX_CONTEXT_CHARS + 600)
+        self.assertEqual(Config.MAX_CONTEXT_CHARS, 0)
+        self.assertNotIn("CONTEXT TRUNCATED", merged)
+        for i in range(6):
+            self.assertIn(f"web_search #{i}", merged)
+
+    def test_oversized_evidence_says_so_rather_than_silently_dropping(self):
+        big = [f"[TOOL RESULT — web_search #{i}]\n" + ("x" * 3000) for i in range(6)]
+        with unittest.mock.patch.object(Config, "MAX_CONTEXT_CHARS", 8000):
+            merged = self.merge("", big)
+        self.assertLess(len(merged), 8000 + 600)
         self.assertIn("CONTEXT TRUNCATED", merged,
                       "silent truncation would look like fabrication to the auditor")
 

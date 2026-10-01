@@ -559,7 +559,7 @@ class Config:
         return bool(cls.ENABLE_LOCAL_LOGIN or cls.smtp_configured())
 
     # Character budget for the work-context memory injected into the prompt each
-    # turn (the RAG equivalent is _MAX_CONTEXT_CHARS = 8000 in intellect.py).
+    # turn (the RAG equivalent is MAX_CONTEXT_CHARS above).
     # Read-side only: the stored memory is never truncated, oldest entries are
     # simply left out of the injection and the model is told so. 0 disables.
     AGENT_MEMORY_MAX_CHARS = int(os.environ.get("SAFI_AGENT_MEMORY_MAX_CHARS", "12000"))
@@ -758,6 +758,20 @@ class Config:
     _raw_history_turns = os.environ.get("SAFI_HISTORY_TURNS", "3").strip().lower()
     HISTORY_TURNS = 0 if _raw_history_turns in ("all", "unlimited", "-1") else int(_raw_history_turns or 3)
     HISTORY_MAX_CHARS = int(os.environ.get("SAFI_HISTORY_MAX_CHARS", "40000"))
+
+    # --- RAG RETRIEVAL CONTEXT ---
+    # Ceiling on the assembled retrieval context handed to the Intellect, in
+    # characters. The Conscience audits against the same block, so this is paid
+    # for twice a turn.
+    #
+    # Default is UNLIMITED. Truncation is not merely a token cost: the dropped
+    # evidence makes the Conscience's claims unverifiable, and the truncation
+    # notice tells the model the passage is incomplete and not to fill the gap
+    # from memory. Both suppress confidence on exactly the grounding-fidelity
+    # values the notice was written to protect. k on the retriever remains the
+    # backstop against a runaway corpus; this is the operator's override.
+    _raw_max_context = os.environ.get("SAFI_MAX_CONTEXT_CHARS", "unlimited").strip().lower()
+    MAX_CONTEXT_CHARS = 0 if _raw_max_context in ("", "all", "unlimited", "-1") else int(_raw_max_context)
 
     @classmethod
     def validate(cls) -> None:
