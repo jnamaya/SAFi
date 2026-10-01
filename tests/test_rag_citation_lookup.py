@@ -38,6 +38,18 @@ def _retriever(metadata):
 # Psalm 119 has 176 verses; the real index chunks it into 59 overlapping pieces.
 PSALM_119 = [_chunk("Psalm", 119, s, min(s + 3, 176)) for s in range(1, 177, 3)]
 JOHN_3 = [_chunk("John", 3, s, s + 3) for s in range(1, 37, 3)]
+# Luke 9's real chunk boundaries, which the lectionary reading rides on.
+LUKE_9 = ([_chunk("Luke", 9, s, s + 3) for s in range(1, 56, 3)]
+          + [_chunk("Luke", 9, 55, 59), _chunk("Luke", 9, 58, 62), _chunk("Luke", 9, 61, 62)])
+
+
+def _covered_verses(retriever, query):
+    """Every verse number the returned chunks actually contain."""
+    verses = set()
+    for i in retriever._keyword_search(query):
+        md = retriever.metadata[i]["metadata"]
+        verses.update(range(md["start_verse"], md["end_verse"] + 1))
+    return verses
 
 
 class AVerseNarrowsTheChapter(unittest.TestCase):
@@ -72,6 +84,52 @@ class AVerseNarrowsTheChapter(unittest.TestCase):
             meta = r.metadata[i]["metadata"]
             self.assertEqual(meta["book"], "John")
             self.assertEqual(meta["chapter"], 3)
+
+
+class AVerseRangeIsTheWholeRange(unittest.TestCase):
+    """A lectionary reading is a RANGE, and the first verse is not the range.
+
+    Reading only the leading verse of "Luke 9:57-62" returned the single chunk
+    holding verse 57 (verses 55-59). Verses 60-62 were then absent from the
+    audit material, the Intellect completed them from memory, and Textual
+    Fidelity scored 0 for exactly that reason — a gap the retrieval created.
+    """
+
+    def test_the_tail_of_the_range_is_retrieved(self):
+        r = _retriever(LUKE_9)
+        covered = _covered_verses(r, "Luke 9:57-62")
+        for verse in (57, 58, 59, 60, 61, 62):
+            self.assertIn(verse, covered,
+                          f"verse {verse} of the requested reading is missing")
+
+    def test_every_verse_of_the_range_is_covered_without_gaps(self):
+        r = _retriever(LUKE_9)
+        covered = _covered_verses(r, "Luke 9:57-62")
+        self.assertEqual(set(range(57, 63)) - covered, set(),
+                         "the requested span must arrive unbroken")
+
+    def test_the_preceding_chunks_of_the_chapter_are_not_dragged_in(self):
+        r = _retriever(LUKE_9)
+        covered = _covered_verses(r, "Luke 9:57-62")
+        self.assertNotIn(1, covered, "the chapter opening is not part of the reading")
+        self.assertNotIn(54, covered)
+
+    def test_an_en_dash_range_is_the_same_range(self):
+        r = _retriever(LUKE_9)
+        self.assertEqual(r._keyword_search("Luke 9:57–62"),
+                         r._keyword_search("Luke 9:57-62"))
+
+    def test_a_single_verse_is_still_one_chunk(self):
+        r = _retriever(LUKE_9)
+        covered = _covered_verses(r, "Luke 9:57")
+        self.assertTrue(57 in covered)
+        self.assertNotIn(62, covered, "one verse must not pull in the range around it")
+
+    def test_a_disjoint_list_spans_its_own_extremes(self):
+        r = _retriever(PSALM_119)
+        covered = _covered_verses(r, "Psalm 119:10, 20-25")
+        self.assertIn(10, covered)
+        self.assertIn(25, covered)
 
 
 class AChapterCitationIsNotTrimmed(unittest.TestCase):

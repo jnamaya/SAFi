@@ -252,14 +252,22 @@ class Retriever:
         for match in matches:
             book = match.group(1).strip().lower()
             chapter = int(match.group(2).strip())
-            # A trailing ":<verse>" (or " <verse>" after a colon-less citation)
-            # narrows the request to that verse. Without this the regex matched
-            # book+chapter only, so "Psalm 119:105" returned the whole chapter.
-            verse = None
+            # Everything after "book chapter" that is still a citation narrows
+            # the request: a single verse ("Psalm 119:105") or, far more often
+            # for a lectionary, a RANGE ("Luke 9:57-62").
+            #
+            # The range is the whole span, not just its first verse. Matching
+            # only "57" returned one chunk — verses 55-59 — for the day's
+            # reading of 57-62, so verses 60-62 were absent and the agent
+            # completed the passage from memory, which is precisely what the
+            # Textual Fidelity value exists to catch.
+            verse_lo = verse_hi = None
             tail = query[match.end():]
-            vm = re.match(r'\s*:?\s*(\d+)', tail)
-            if vm:
-                verse = int(vm.group(1))
+            span = re.match(r'[\s:;]*([\d\s,;:–—\-]+)', tail)
+            if span:
+                numbers = [int(n) for n in re.findall(r'\d+', span.group(1))]
+                if numbers:
+                    verse_lo, verse_hi = min(numbers), max(numbers)
 
             candidate_indices = []
             for i, meta in enumerate(self.metadata):
@@ -282,12 +290,12 @@ class Retriever:
 
                 if book_to_check != book or chapter_to_check != chapter:
                     continue
-                # Chunks overlap (~4 verses each), so a verse falls inside any
-                # chunk spanning it. Chunks without verse metadata cannot be
-                # placed, so they are kept rather than dropped — better the
-                # whole chapter than a gap the model cannot see.
-                if verse is not None and start_verse is not None and end_verse is not None:
-                    if not (start_verse <= verse <= end_verse):
+                # Chunks overlap (~4 verses each), so every chunk that touches
+                # ANY verse of the span is kept. Chunks without verse metadata
+                # cannot be placed, so they are kept rather than dropped —
+                # better the whole chapter than a gap the model cannot see.
+                if verse_lo is not None and start_verse is not None and end_verse is not None:
+                    if end_verse < verse_lo or start_verse > verse_hi:
                         continue
                 candidate_indices.append(i)
 
