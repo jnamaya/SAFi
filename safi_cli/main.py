@@ -118,7 +118,7 @@ def interactive_repl(
     try:
         while True:
             try:
-                line = input("\n[safi]> ").strip()
+                line = input("\n[SAFi]> ").strip()
             except (KeyboardInterrupt, EOFError):
                 ui.console.print("\n[dim]Session terminated.[/dim]")
                 break
