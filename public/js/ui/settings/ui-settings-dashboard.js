@@ -640,7 +640,7 @@ function toolCallsCard(calls) {
     if (!Array.isArray(calls) || calls.length === 0) return '';
     const rows = calls.map(c => {
         // Orchestrator records use tool/params; harness tool proposals use
-        // tool_name/parameters, and returned OpenCode results use
+        // tool_name/parameters, and returned client (e.g. safi-cli) results use
         // tool_name/arguments. Read all three shapes so older and newer turns
         // remain legible in the same audit timeline.
         const tool = c.tool || c.tool_name || 'unknown tool';

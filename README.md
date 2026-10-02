@@ -83,7 +83,7 @@ Each role here starts from a different question.
 SAFi does not require you to rebuild your existing agent stack.
 
 - **[Evaluate an existing agent](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway)** — Use the /evaluate gateway to govern the output of an agent you have already built. Your orchestration, prompts, and tool layer can stay where they are.
-- **[Use OpenCode with Docker](docs/OPENCODE_DOCKER.md)** — Run the OpenAI-compatible gateway alongside SAFi and connect OpenCode to a selected policy.
+- **[Use SAFi CLI](docs/DEVELOPER_GUIDE.md)** — Run the native governed CLI assistant in your terminal to inspect and work with local repositories.
 - **[Run the quick start](#quick-start)** — Clone the repository and run SAFi locally with Docker and a database.
 - **[Read the developer guide](docs/DEVELOPER_GUIDE.md)** — Explore the repository layout, architecture, policy authoring, tool authorization, and integration surfaces.
 - **[Find a good first issue](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** — Review accessible contribution opportunities and open an issue when you find something worth improving.

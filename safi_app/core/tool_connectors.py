@@ -45,7 +45,7 @@ from typing import Dict, Iterable, List, Tuple
 # Derived from mcp_manager.get_tools_for_agent() and pinned by the test named above.
 # Single-function connectors are listed too, so callers never need to special-case them.
 CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
-    # opencode's full tool vocabulary, not only the four SAFi implements. The
+    # The coding harness full tool vocabulary, not only the four SAFi implements. The
     # Will matches tool names exactly, so a name this table omits can never be
     # authorized and the agent is refused every turn it tries to use it.
     # Order matches get_tools_for_agent's emission order, which

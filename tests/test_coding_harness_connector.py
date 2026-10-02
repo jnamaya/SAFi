@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, "/app")
 
 from safi_app.core.mcp_servers.coding_harness import (  # noqa: E402
+    CODING_HARNESS_TOOL_NAMES,
     OPENCODE_TOOL_NAMES,
     SAFI_EXECUTED_TOOLS,
     read_file,
@@ -54,6 +55,7 @@ class VocabularyTests(unittest.TestCase):
 
     def test_no_duplicates(self):
         self.assertEqual(len(OPENCODE_TOOL_NAMES), len(set(OPENCODE_TOOL_NAMES)))
+        self.assertEqual(CODING_HARNESS_TOOL_NAMES, OPENCODE_TOOL_NAMES)
 
     def test_executed_subset_is_real_subset(self):
         self.assertTrue(SAFI_EXECUTED_TOOLS.issubset(set(OPENCODE_TOOL_NAMES)))

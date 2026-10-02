@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for the harness tool-call loop and tool-result persistence.
 
-WHY THIS EXISTS. The opencode harness drives tool calling natively and re-sends
+WHY THIS EXISTS. A coding harness drives tool calling natively and re-sends
 the user's ORIGINAL message on every turn. That is fine while the model is
 making progress and catastrophic when it is not: one real conversation reached
 896 persisted rows, 97 identical `glob("**/conscience.py")` proposals and 15
@@ -343,7 +343,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                  ],
              }) as get_audit:
             response = self.client.get(
-                f"/harness/progress/{message_id}?user_id=opencode-harness",
+                f"/harness/progress/{message_id}?user_id=coding-harness",
                 headers={"X-API-KEY": "policy-key"},
             )
 
@@ -351,7 +351,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {
             "progress": ["checking_request", "analyzing"], "complete": False,
         })
-        get_audit.assert_called_once_with(message_id, user_id="opencode-harness")
+        get_audit.assert_called_once_with(message_id, user_id="coding-harness")
 
     def test_progress_endpoint_rejects_missing_api_key(self):
         response = self.client.get(
@@ -379,7 +379,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                 "/harness/process_prompt",
                 json={
                     "message": "Review this file",
-                    "user_id": "opencode-harness",
+                    "user_id": "coding-harness",
                     "conversation_id": "oc_test_harness",
                     "agent": "coding_harness",
                     "tools": [tool],

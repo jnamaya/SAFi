@@ -1,4 +1,4 @@
-"""Governed software-engineering profile for OpenCode and similar clients."""
+"""Governed software-engineering profile for SAFi CLI and coding-harness clients."""
 from typing import Any, Dict
 
 

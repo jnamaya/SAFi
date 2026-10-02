@@ -2,13 +2,12 @@
 
 WHY THIS EXISTS
 ---------------
-opencode proposes tools by bare name ("task", "todowrite", "edit"). WillGate
+Coding clients propose tools by bare name ("task", "bash", "edit"). WillGate
 matches those names EXACTLY against profile["allowed_tools"], so any name no
 connector declares can never be authorized and the agent collects a violation
-on every turn it tries to work. That is not a hypothetical: a real session was
-refused with `Tool 'task' is not authorized for this agent profile`.
+on every turn it tries to work.
 
-So this connector declares opencode's full tool vocabulary, which makes those
+So this connector declares the coding harness tool vocabulary, which makes those
 names resolvable, describable and grantable. A declaration is NOT an
 implementation — see EXECUTION below.
 
@@ -17,12 +16,11 @@ EXECUTION: WHO RUNS WHAT
 The read-only repository tools (read, grep, glob, list) are implemented here and
 run inside SAFi. The rest are declared but NOT executed by SAFi:
 
-  * opencode owns execution for the tools it advertises. It runs `bash`, `write`
-    and `edit` on the HOST, under opencode's own permission prompts, and reports
-    results back as tool messages.
-  * task, todowrite, skill, lsp, question and webfetch/websearch are opencode's
-    own orchestration primitives. They have no SAFi equivalent, and inventing
-    one would be a different product.
+  * The client (e.g. safi-cli) owns execution for the tools it advertises. It runs
+    `bash`, `write` and `edit` on the HOST, under client permission prompts, and
+    reports results back as tool messages.
+  * task, todowrite, skill, lsp, question and webfetch/websearch are client-side
+    primitives or extended harness orchestration tools.
 
 execute_tool() returns an explicit error for these rather than pretending.
 The alternative — a shell or file-write executor inside the SAFi container — is
@@ -558,21 +556,21 @@ async def list_directory(path: str = ".", limit: int = _MAX_RESULTS) -> str:
     return await asyncio.to_thread(_work)
 
 
-# The connector's full vocabulary: opencode 1.18.34's model-facing tool set,
-# taken from the shipped bundle's tool registry and permission list. Declaring
-# a name is what makes it resolvable by the catalog and grantable by a policy;
-# it is not a claim that SAFi implements it (see EXECUTION in the module
+# The connector's full vocabulary: coding harness model-facing tool set.
+# Declaring a name is what makes it resolvable by the catalog and grantable by a
+# policy; it is not a claim that SAFi implements it (see EXECUTION in the module
 # docstring). SAFI_EXECUTED_TOOLS marks the ones SAFi runs; the rest are
-# executed by the coding-agent client. Order matches get_tools_for_agent's
+# executed by the client (e.g. safi-cli). Order matches get_tools_for_agent's
 # emission order, which test_tool_connector_expansion asserts.
-OPENCODE_TOOL_NAMES: Tuple[str, ...] = (
+CODING_HARNESS_TOOL_NAMES: Tuple[str, ...] = (
     "read", "grep", "glob", "list",
     "bash", "write", "edit", "patch",
     "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
 )
+OPENCODE_TOOL_NAMES: Tuple[str, ...] = CODING_HARNESS_TOOL_NAMES
 
 # Declared and SAFi-executed. Everything else in the vocabulary is a
 # client-side primitive; execute_tool returns an explicit refusal for those.
 SAFI_EXECUTED_TOOLS = frozenset({"read", "grep", "glob", "list"})
 
-BUILTIN_TOOL_FUNCTIONS: Tuple[str, ...] = OPENCODE_TOOL_NAMES
+BUILTIN_TOOL_FUNCTIONS: Tuple[str, ...] = CODING_HARNESS_TOOL_NAMES

@@ -49,14 +49,14 @@ log = logging.getLogger(__name__)
 def coding_harness_declaration_only() -> frozenset:
     """Names the coding_harness connector declares but SAFi does not execute.
 
-    opencode's vocabulary minus the four repository tools implemented in
+    Harness vocabulary minus the four repository tools implemented in
     core/mcp_servers/coding_harness.py. Kept as a helper rather than inlined so
     dispatch and the catalog agree on the split from one definition.
     """
     from ..mcp_servers.coding_harness import (
-        OPENCODE_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
+        CODING_HARNESS_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
     )
-    return frozenset(OPENCODE_TOOL_NAMES) - SAFI_EXECUTED_TOOLS
+    return frozenset(CODING_HARNESS_TOOL_NAMES) - SAFI_EXECUTED_TOOLS
 
 
 
@@ -433,10 +433,10 @@ class MCPManager:
                 },
             })
 
-            # The rest of opencode's vocabulary. These are DECLARED so the Will
+            # The rest of the harness vocabulary. These are DECLARED so the Will
             # can authorize them and the picker can offer them, because the gate
             # matches names exactly and an undeclared name is a guaranteed
-            # refusal. SAFi does not execute them: opencode runs them on the
+            # refusal. SAFi does not execute them: the client runs them on the
             # host and reports results back as tool messages. Descriptions say
             # so plainly, so the model does not expect SAFi to have done it.
             declared_only = [
@@ -867,7 +867,7 @@ class MCPManager:
             from ..mcp_servers.coding_harness import list_directory
             return await list_directory(arguments.get("path", "."))
 
-        # The remainder of opencode's vocabulary is DECLARED by the
+        # The remainder of the coding harness vocabulary is DECLARED by the
         # coding_harness connector but executed by the coding-agent client, not by
         # SAFi. Say so explicitly: a bare "not found" reads as a bug, and worse
         # would leave the caller believing the command had been refused for a

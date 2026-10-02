@@ -11,10 +11,6 @@ __pycache__/
 .env
 gateways/*.env
 !gateways/*.env.example
-# Local OpenCode config can contain a policy API key; it is not part of SAFi's
-# runtime image.
-opencode.json
-opencode.jsonc
 
 # Logs and runtime data
 logs/

@@ -68,11 +68,6 @@ if [ "${SERVICE}" = "graph-gateway" ]; then
     exec python scripts/graph_gateway.py
 fi
 
-if [ "${SERVICE}" = "opencode-gateway" ]; then
-    echo "OpenAI-compatible OpenCode gateway on :${SAFI_OPENAI_PORT:-5002}"
-    exec python integrations/opencode_gateway.py
-fi
-
 if [ "${SERVICE}" = "purge" ]; then
     echo "Retention purge scheduler: first run in 5 minutes, then every 24h."
     sleep 300   # let the app finish first-boot schema migrations

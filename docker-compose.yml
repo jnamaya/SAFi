@@ -209,40 +209,6 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
-  # ── OpenCode gateway (optional) ───────────────────────────────────────────────
-  # OpenAI-compatible facade for OpenCode. It runs in this image, talks to the
-  # app over the private Compose network, and publishes only on host loopback by
-  # default. The per-policy API key belongs in gateways/opencode-gateway.env,
-  # never in this image or the app's environment.
-  #
-  # Start with: docker compose --profile opencode up -d opencode-gateway
-  # If OpenCode runs on another machine, terminate TLS in a reverse proxy and
-  # point OpenCode at that HTTPS URL; do not publish this plain-HTTP port broadly.
-  opencode-gateway:
-    build: .
-    pull_policy: build
-    image: safi:latest
-    profiles: ["opencode"]
-    env_file:
-      - path: ./gateways/opencode-gateway.env
-        required: false
-    environment:
-      SERVICE: opencode-gateway
-      SAFI_OPENAI_HOST: "0.0.0.0"
-      SAFI_OPENAI_PORT: "5002"
-      SAFI_OPENAI_API_URL: "http://app:5000/api/harness/process_prompt"
-      SAFI_OPENAI_PROGRESS_URL: "http://app:5000/api/harness/progress"
-      SAFI_OPENAI_PERSONA: "safi"
-      SAFI_OPENAI_MODELS: "coding_harness,safi"
-      SAFI_OPENAI_AGENT_MAP: '{"coding_harness":"coding_harness"}'
-      SAFI_OPENAI_CONNECTOR_MAP: '{"coding_harness":["coding_harness"]}'
-    ports:
-      - "127.0.0.1:${OPENCODE_GATEWAY_PORT:-5002}:5002"
-    depends_on:
-      app:
-        condition: service_started
-    restart: unless-stopped
-
 volumes:
   db_data:
   vector_store:
