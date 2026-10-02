@@ -34,6 +34,34 @@ from typing import Any, Optional, Tuple
 from .provider_governance import active_org
 
 _ACTIVE_AGENT: ContextVar[Optional[str]] = ContextVar("safi_active_agent", default=None)
+_REQUEST_USAGE: ContextVar[Optional[dict]] = ContextVar("safi_request_usage", default=None)
+
+
+def begin_request_usage() -> None:
+    """Start request-local usage capture without sharing counts across turns."""
+    _REQUEST_USAGE.set({})
+
+
+def capture_call_usage(route: str, provider: str, model: str,
+                       tokens_in: int, tokens_out: int) -> None:
+    """Keep actual provider counts available to the current response adapter."""
+    current = _REQUEST_USAGE.get()
+    if current is None:
+        return
+    updated = dict(current)
+    updated[str(route)] = {
+        "provider": str(provider),
+        "model": str(model),
+        "input_tokens": int(tokens_in),
+        "output_tokens": int(tokens_out),
+    }
+    _REQUEST_USAGE.set(updated)
+
+
+def request_call_usage(route: str) -> Optional[dict]:
+    """Copy a route's latest exact token counts from this request, if reported."""
+    usage = (_REQUEST_USAGE.get() or {}).get(str(route))
+    return dict(usage) if usage else None
 
 # USD per 1M tokens (input, output), matched by longest substring of the model
 # name. Estimates for display, not billing records: Claude rates verified against

@@ -46,6 +46,20 @@ from ..tool_connectors import (
 log = logging.getLogger(__name__)
 
 
+def coding_harness_declaration_only() -> frozenset:
+    """Names the coding_harness connector declares but SAFi does not execute.
+
+    opencode's vocabulary minus the four repository tools implemented in
+    core/mcp_servers/coding_harness.py. Kept as a helper rather than inlined so
+    dispatch and the catalog agree on the split from one definition.
+    """
+    from ..mcp_servers.coding_harness import (
+        OPENCODE_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
+    )
+    return frozenset(OPENCODE_TOOL_NAMES) - SAFI_EXECUTED_TOOLS
+
+
+
 def is_guest(user_id: str = "", email: str = "") -> bool:
     """A demo/sandbox account, created by the public demo login.
 
@@ -350,6 +364,132 @@ class MCPManager:
 
         tools = []
 
+        if "coding_harness" in allowed_tools:
+            tools.append({
+                "name": "read",
+                "description": (
+                    "Read a UTF-8 text file from the workspace. Line numbers are "
+                    "1-indexed; offset and limit count lines, so a large file can "
+                    "be read in slices."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path, absolute or relative to the workspace root."},
+                        "offset": {"type": "integer", "description": "First line to read (1-indexed, default 1)."},
+                        "limit": {"type": "integer", "description": "Maximum lines to return (default 2000)."},
+                    },
+                    "required": ["path"],
+                },
+            })
+
+            tools.append({
+                "name": "grep",
+                "description": (
+                    "Search file contents with a regular expression and return "
+                    "the matching file, line number and text. Binary files and "
+                    "build directories are skipped."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "description": "Python regular expression to search for."},
+                        "path": {"type": "string", "description": "File or directory to search (default the workspace root)."},
+                        "include": {"type": "string", "description": "Glob filter on filenames, e.g. '*.py'."},
+                        "limit": {"type": "integer", "description": "Maximum matches to return (default 100)."},
+                    },
+                    "required": ["pattern"],
+                },
+            })
+
+            tools.append({
+                "name": "glob",
+                "description": (
+                    "Find files by glob pattern and return workspace-relative "
+                    "paths, e.g. '**/*.py'. Dotfiles and dependency directories "
+                    "are excluded."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "description": "Glob pattern, e.g. '**/*.py' or 'safi_app/**/*.py'."},
+                        "path": {"type": "string", "description": "Directory to search under (default the workspace root)."},
+                    },
+                    "required": ["pattern"],
+                },
+            })
+
+            tools.append({
+                "name": "list",
+                "description": (
+                    "List the entries of one directory, with directories listed "
+                    "before files. Not recursive; use glob to search a tree."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Directory path (default the workspace root)."},
+                    },
+                },
+            })
+
+            # The rest of opencode's vocabulary. These are DECLARED so the Will
+            # can authorize them and the picker can offer them, because the gate
+            # matches names exactly and an undeclared name is a guaranteed
+            # refusal. SAFi does not execute them: opencode runs them on the
+            # host and reports results back as tool messages. Descriptions say
+            # so plainly, so the model does not expect SAFi to have done it.
+            declared_only = [
+                ("bash", "Run a shell command. Executed by the coding-agent "
+                         "client on the host, not by SAFi.",
+                 {"command": {"type": "string", "description": "Command line to run."}}, ["command"]),
+                ("write", "Create or overwrite a file. Executed by the "
+                          "coding-agent client, not by SAFi.",
+                 {"filePath": {"type": "string"}, "content": {"type": "string"}},
+                 ["filePath", "content"]),
+                ("edit", "Replace an exact string in a file. Executed by the "
+                         "coding-agent client, not by SAFi.",
+                 {"filePath": {"type": "string"}, "oldString": {"type": "string"},
+                  "newString": {"type": "string"}},
+                 ["filePath", "oldString", "newString"]),
+                ("patch", "Apply a diff to a file. Executed by the "
+                          "coding-agent client, not by SAFi.",
+                 {"filePath": {"type": "string"}}, ["filePath"]),
+                ("webfetch", "Fetch a URL. Executed by the coding-agent "
+                             "client, not by SAFi.",
+                 {"url": {"type": "string"}}, ["url"]),
+                ("websearch", "Search the web. Executed by the coding-agent "
+                              "client, not by SAFi.",
+                 {"query": {"type": "string"}}, ["query"]),
+                ("task", "Delegate a unit of work to a subagent. Executed by "
+                         "the coding-agent client, not by SAFi.",
+                 {"description": {"type": "string"}, "prompt": {"type": "string"},
+                  "subagent_type": {"type": "string"}},
+                 ["description", "prompt"]),
+                ("todowrite", "Record a task list. Executed by the "
+                              "coding-agent client, not by SAFi.",
+                 {"todos": {"type": "array", "items": {"type": "object"}}}, ["todos"]),
+                ("skill", "Invoke a named skill. Executed by the coding-agent "
+                          "client, not by SAFi.",
+                 {"name": {"type": "string"}}, ["name"]),
+                ("lsp", "Query a language server. Executed by the coding-agent "
+                        "client, not by SAFi.",
+                 {"operation": {"type": "string"}}, ["operation"]),
+                ("question", "Ask the user a question. Executed by the "
+                             "coding-agent client, not by SAFi.",
+                 {"question": {"type": "string"}}, ["question"]),
+            ]
+            for name, desc, props, required in declared_only:
+                tools.append({
+                    "name": name,
+                    "description": desc,
+                    "input_schema": {
+                        "type": "object",
+                        "properties": props,
+                        "required": required,
+                    },
+                })
+
         if "get_stock_price" in allowed_tools:
              tools.append({
                 "name": "get_stock_price",
@@ -526,6 +666,107 @@ class MCPManager:
                         "icon": "globe"
                     }
                 ]
+            },
+            {
+                # Read-only repository inspection. The picker offers these as
+                # individual functions rather than as one "coding_harness" card,
+                # because the policy step decides tool by tool which of them an
+                # agent may use — the same rule discovered MCP servers follow.
+                # Saving stores the connector name, which expand_connectors
+                # turns back into these four.
+                "category": "Coding Harness",
+                "tools": [
+                    {
+                        "name": "read",
+                        "label": "Read File",
+                        "description": "Read a text file from the workspace, by line offset.",
+                        "icon": "file-text"
+                    },
+                    {
+                        "name": "grep",
+                        "label": "Search File Contents",
+                        "description": "Regex-search file contents and return matching lines.",
+                        "icon": "search"
+                    },
+                    {
+                        "name": "glob",
+                        "label": "Find Files",
+                        "description": "Find files by glob pattern, e.g. **/*.py.",
+                        "icon": "folder-search"
+                    },
+                    {
+                        "name": "list",
+                        "label": "List Directory",
+                        "description": "List the entries of one directory.",
+                        "icon": "folder"
+                    },
+                    {
+                        "name": "bash",
+                        "label": "Shell Command",
+                        "description": "Run a shell command (executed by the agent client).",
+                        "icon": "terminal"
+                    },
+                    {
+                        "name": "write",
+                        "label": "Write File",
+                        "description": "Create or overwrite a file (executed by the agent client).",
+                        "icon": "file-plus"
+                    },
+                    {
+                        "name": "edit",
+                        "label": "Edit File",
+                        "description": "Replace an exact string in a file (executed by the agent client).",
+                        "icon": "edit"
+                    },
+                    {
+                        "name": "patch",
+                        "label": "Apply Patch",
+                        "description": "Apply a diff to a file (executed by the agent client).",
+                        "icon": "git-pull-request"
+                    },
+                    {
+                        "name": "webfetch",
+                        "label": "Fetch URL",
+                        "description": "Fetch a URL (executed by the agent client).",
+                        "icon": "download"
+                    },
+                    {
+                        "name": "websearch",
+                        "label": "Web Search",
+                        "description": "Search the web (executed by the agent client).",
+                        "icon": "globe"
+                    },
+                    {
+                        "name": "task",
+                        "label": "Subagent Task",
+                        "description": "Delegate work to a subagent (executed by the agent client).",
+                        "icon": "users"
+                    },
+                    {
+                        "name": "todowrite",
+                        "label": "Task List",
+                        "description": "Record a task list (executed by the agent client).",
+                        "icon": "list-checks"
+                    },
+                    {
+                        "name": "skill",
+                        "label": "Skill",
+                        "description": "Invoke a named skill (executed by the agent client).",
+                        "icon": "sparkles"
+                    },
+                    {
+                        "name": "lsp",
+                        "label": "Language Server",
+                        "description": "Query a language server (executed by the agent client).",
+                        "icon": "code"
+                    },
+                    {
+                        "name": "question",
+                        "label": "Ask User",
+                        "description": "Ask the user a question (executed by the agent client).",
+                        "icon": "help-circle"
+                    }
+                ]
             }
         ] + self._discovered_categories(org_id, guest)
 
@@ -600,6 +841,47 @@ class MCPManager:
         """
         self.log.info(f"Executing tool '{tool_name}' with args {arguments}")
         
+        if tool_name == "read":
+            from ..mcp_servers.coding_harness import read_file
+            return await read_file(
+                arguments.get("path", ""),
+                arguments.get("offset", 1),
+                arguments.get("limit", 2000),
+            )
+
+        if tool_name == "grep":
+            from ..mcp_servers.coding_harness import grep
+            return await grep(
+                arguments.get("pattern", ""),
+                arguments.get("path", "."),
+                arguments.get("include"),
+                arguments.get("limit", 100),
+            )
+
+        if tool_name == "glob":
+            from ..mcp_servers.coding_harness import glob_files
+            return await glob_files(
+                arguments.get("pattern", ""), arguments.get("path", "."))
+
+        if tool_name == "list":
+            from ..mcp_servers.coding_harness import list_directory
+            return await list_directory(arguments.get("path", "."))
+
+        # The remainder of opencode's vocabulary is DECLARED by the
+        # coding_harness connector but executed by the coding-agent client, not by
+        # SAFi. Say so explicitly: a bare "not found" reads as a bug, and worse
+        # would leave the caller believing the command had been refused for a
+        # governance reason when it simply has no local executor.
+        if tool_name in coding_harness_declaration_only():
+            return json.dumps({
+                "error": (
+                    f"Tool '{tool_name}' is provided by the coding-agent client, "
+                    "which executes it and returns the result. SAFi governs and "
+                    "records the call but does not run it."
+                ),
+                "executed_by": "client",
+            })
+
         if tool_name == "get_stock_price":
             from ..mcp_servers.fiduciary import get_stock_price
             return await get_stock_price(arguments["ticker"])

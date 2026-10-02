@@ -4,7 +4,7 @@ The request path. One turn of SAFi, in the order the governance phases run:
   Phase 0  PhaseZeroGate on the user prompt. Deterministic, no model, blocks
            on the same input every run.
   Phase 2  Intellect: a text draft, or a tool loop in which Will
-           authorizes every step by exact name (also deterministic).
+            authorizes every step by exact name (also deterministic).
   Phase    _finalize_draft — the single commit path for EVERY draft
   3 - 5    producer: Will W1 structure -> Conscience audit -> coverage
            fail-closed -> hard gates -> Spirit aggregate and threshold. The
@@ -20,6 +20,12 @@ _is_correctable_gate and _ship_system_failure_notice.
 Everything the turn decided is assembled once as `governance_record` and
 written by update_audit_results, which also owns the encrypted
 governance_records row and the audit hash chain.
+
+Client-owned-tool mode (OpenCode, Claude Code) is a second execution branch in
+this same request path: the tool catalogue/results come from the adapter, Will
+and Conscience gate each proposal, and an approved proposal is returned to that
+client for execution. Its next request re-enters this method with the tool
+result; final drafts still use the same `_finalize_draft` path as web chat.
 """
 from __future__ import annotations
 import json
@@ -47,6 +53,7 @@ from .faculties.intellect import _apply_context_budget
 # by safi_app/__init__.py, so this manifest-covered file neither knows any
 # plugin's name nor triggers content registration.
 from .plugins.registry import plugins_for
+from .tool_connectors import CONNECTOR_TOOLS
 
 # Unlimited-turns mode still bounds the DB read: "every row in the conversation"
 # is the intent, but an unbounded LIMIT on a thread that has run for months is a
@@ -133,6 +140,49 @@ def _render_history(messages, max_chars: int) -> str:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 AUDIT_PARAM_MAXLEN = 120
+HARNESS_TOOL_REPEAT_LIMIT = 5
+HARNESS_PROGRESS_LABELS = {
+    "checking_request": "Checking request safeguards…",
+    "analyzing": "Analyzing the request…",
+    "checking_tool": "Checking the proposed tool call…",
+    "structure": "Checking response structure…",
+    "auditing": "Auditing the response against policy…",
+    "alignment": "Checking governance alignment…",
+    "finalizing": "Finalizing the governed response…",
+}
+
+
+def record_harness_progress(store, message_id: str, code: str) -> None:
+    """Journal a fixed, non-reasoning progress phase for harness clients."""
+    label = HARNESS_PROGRESS_LABELS.get(code)
+    if label:
+        store.update_message_reasoning(
+            message_id, label, phase="harness", extra={"progress_code": code}
+        )
+
+
+def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
+                                    limit=HARNESS_TOOL_REPEAT_LIMIT):
+    """Count exact prior results in the current client-owned tool loop only."""
+    if not isinstance(tool_results, list):
+        return 0
+    summary = (
+        f"[tool_call] {tool_name}"
+        f"({json.dumps(parameters or {}, sort_keys=True, default=str)})"
+    )
+    seen = 0
+    for result in tool_results:
+        if not isinstance(result, dict):
+            continue
+        result_summary = (
+            f"[tool_call] {result.get('tool_name', 'unknown')}"
+            f"({json.dumps(result.get('arguments') or {}, sort_keys=True, default=str)})"
+        )
+        if result_summary == summary:
+            seen += 1
+            if seen >= limit:
+                break
+    return seen
 
 
 def _tool_audit_entry(tool_name, parameters, decision, reason, agent_turn=None):
@@ -416,6 +466,8 @@ class SAFi:
         garbled output). Returns the ledger — possibly still degraded, in which
         case the caller fails closed."""
         ledger: List[Dict[str, Any]] = []
+        self._last_conscience_failure = None
+        last_empty_ledger_failure = None
         for attempt in (1, 2):
             try:
                 ledger = await self.conscience.evaluate(
@@ -426,15 +478,42 @@ class SAFi:
                     recent_history=recent_history or "",
                 )
             except Exception as e:
-                self.log.exception(f"ConscienceAuditor.evaluate() failed (attempt {attempt}): {e}")
+                self._last_conscience_failure = self._safe_audit_failure_reason(e)
+                self.log.error(
+                    "ConscienceAuditor.evaluate() failed (attempt %d): %s",
+                    attempt, self._safe_audit_failure_reason(e),
+                )
                 ledger = []
+            if not ledger:
+                last_empty_ledger_failure = getattr(
+                    self, "_last_conscience_failure", None
+                )
             # Ungoverned agent (no values) has nothing to audit — accept as-is.
             if not self.values or self._ledger_covers_values(ledger):
+                self._last_conscience_failure = None
                 return ledger
             if attempt == 1:
                 self.log.warning("[Governance | Phase 4] Audit degraded — retrying Conscience once.")
                 self.store.update_message_reasoning(message_id, "Re-auditing response...")
+        self._last_conscience_failure = last_empty_ledger_failure
         return ledger
+
+    @staticmethod
+    def _safe_audit_failure_reason(exc: Exception) -> str:
+        """A bounded, credential-safe explanation for an unavailable audit."""
+        status = getattr(exc, "status_code", None)
+        provider = getattr(exc, "provider", None)
+        endpoint = getattr(exc, "endpoint", None)
+        detail = getattr(exc, "detail", None)
+        if status is not None and provider:
+            message = f"{provider} returned HTTP {status}"
+            if endpoint:
+                message += f" from {endpoint}"
+            if detail:
+                message += f": {str(detail)[:300]}"
+            return message
+        text = str(exc).split("\n", 1)[0]
+        return text[:400] or exc.__class__.__name__
 
     async def _finalize_draft(
         self,
@@ -445,6 +524,7 @@ class SAFi:
         message_id: str,
         label: str = "",
         recent_history: str = "",
+        progress_callback=None,
     ) -> Dict[str, Any]:
         """Unified governance commit path for ANY candidate draft — initial text,
         tool-loop synthesis, blocked-tool reflexion, or Spirit reflexion retry.
@@ -464,6 +544,8 @@ class SAFi:
         """
         tag = f" | {label}" if label else ""
 
+        if progress_callback:
+            progress_callback("structure")
         self.store.update_message_reasoning(message_id, "Checking response structure...")
         is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
         if not is_valid_struct and structure_reason == "missing_disclaimer":
@@ -482,6 +564,8 @@ class SAFi:
             return {"verdict": "violation", "stage": "structure", "reason": structure_reason,
                     "ledger": [], "spirit_assessment": None, "draft": a_t}
 
+        if progress_callback:
+            progress_callback("auditing")
         self.store.update_message_reasoning(message_id, "Auditing response for compliance...")
         ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id, recent_history)
 
@@ -490,7 +574,9 @@ class SAFi:
         # agent's values, the draft cannot ship unaudited.
         if self.values and not self._ledger_covers_values(ledger):
             self.log.error(f"[Governance | Phase 4{tag}] Audit unavailable/degraded — failing closed.")
-            return {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable",
+            reason = getattr(self, "_last_conscience_failure", None) or "audit_unavailable"
+            self._last_conscience_failure = None
+            return {"verdict": "violation", "stage": "audit", "reason": reason,
                     "ledger": ledger, "spirit_assessment": None, "draft": a_t}
 
         if ledger:
@@ -506,6 +592,8 @@ class SAFi:
             return {"verdict": "violation", "stage": "hard_gate", "reason": E_hard,
                     "ledger": ledger, "spirit_assessment": None, "draft": a_t}
 
+        if progress_callback:
+            progress_callback("alignment")
         self.store.update_message_reasoning(message_id, "Computing alignment score...")
         spirit_assessment = self.spirit.integrate(ledger)
         D_spirit, E_spirit = self.will_gate.evaluate_spirit_score(spirit_assessment)
@@ -516,6 +604,37 @@ class SAFi:
         return {"verdict": D_spirit, "stage": "spirit", "reason": E_spirit,
                 "ledger": ledger, "spirit_assessment": spirit_assessment, "draft": a_t}
 
+    def _record_harness_progress(self, message_id: str, code: str) -> None:
+        record_harness_progress(self.store, message_id, code)
+
+    async def _audit_client_tool_proposal(
+        self, user_prompt: str, tool_summary: str, reflection: str,
+        retrieved_context: str, recent_history: str,
+    ) -> Tuple[str, str, List[Dict[str, Any]]]:
+        """Check configured hard gates before returning a client-owned tool call."""
+        hard_gates = [value for value in (self.values or []) if value.get("hard_gate")]
+        if not hard_gates:
+            return "approve", "no_hard_gates_defined", []
+        auditor = ConscienceAuditor(
+            llm_provider=self.conscience.llm_provider,
+            values=hard_gates,
+            profile=self.conscience.profile,
+            prompt_config=self.conscience.prompt_config,
+        )
+        try:
+            ledger = await auditor.evaluate(
+                final_output=tool_summary,
+                user_prompt=user_prompt,
+                reflection=reflection or "",
+                retrieved_context=retrieved_context or "",
+                recent_history=recent_history or "",
+            )
+        except Exception:
+            self.log.exception("Harness tool-proposal hard-gate audit failed closed.")
+            return "violation", "hard_gate_unscored", []
+        decision, reason = self.will_gate.evaluate_hard_gates(ledger or [])
+        return decision, reason, ledger or []
+
     async def process_prompt(
         self,
         user_prompt: str,
@@ -524,7 +643,11 @@ class SAFi:
         user_name: Optional[str] = None,
         override_message_id: Optional[str] = None,
         org_id: Optional[str] = None,
-        user_timezone: Optional[str] = None
+        user_timezone: Optional[str] = None,
+        client_owned_tools: Optional[List[Dict[str, Any]]] = None,
+        client_tool_results: Optional[List[Dict[str, Any]]] = None,
+        client_recent_turns: Optional[str] = None,
+        client_workspace_context: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         The one request path. Gates, redirects and retries are decided here;
@@ -541,7 +664,84 @@ class SAFi:
 
         now_utc = datetime.now(timezone.utc)
         current_date_string = _current_date_line(now_utc, user_timezone)
-        prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {user_prompt}"
+        client_owned = client_owned_tools is not None
+        profile_for_turn = dict(self.profile or {})
+        original_intellect_profile = getattr(self.intellect_engine, "profile", None)
+        original_will_profile = getattr(self.will_gate, "profile", None)
+        original_conscience_profile = getattr(self.conscience, "profile", None)
+        client_tool_results = [
+            item for item in (client_tool_results or []) if isinstance(item, dict)
+        ] if client_owned else []
+        prompt_for_intellect = user_prompt
+        prompt_for_storage = user_prompt
+        if client_owned:
+            all_client_tool_names = {
+                str(tool.get("name")) for tool in client_owned_tools
+                if isinstance(tool, dict) and tool.get("name")
+            }
+            allowed_tool_names = set((self.profile or {}).get("allowed_tools") or [])
+            advertised_client_tool_names = set()
+            for tool in client_owned_tools:
+                if not isinstance(tool, dict) or not tool.get("name"):
+                    continue
+                name = str(tool["name"])
+                if name in CONNECTOR_TOOLS:
+                    advertised_client_tool_names.update(CONNECTOR_TOOLS[name])
+                else:
+                    advertised_client_tool_names.add(name)
+            # Client tools are proposed by the connected harness per request.
+            # The policy remains the upper bound: intersect the client catalogue
+            # with its allow-list before offering schemas to Intellect. This also
+            # makes the compiled profile the single source of Will authorization.
+            declared_harness_tools = set(CONNECTOR_TOOLS["coding_harness"])
+            profile_for_turn["allowed_tools"] = sorted(
+                advertised_client_tool_names & declared_harness_tools
+                & allowed_tool_names
+            )
+            # The dispatcher sees only the policy-authorized subset of offered
+            # tool schemas. This prevents the client vocabulary from bypassing
+            # the profile/policy intersection while allowing provider aliases
+            # such as client-specific filePath arguments to pass unchanged to Will.
+            filtered_client_tools = [
+                tool for tool in client_owned_tools
+                if isinstance(tool, dict)
+                and (
+                    (set(CONNECTOR_TOOLS.get(tool.get("name"), (tool.get("name"),)))
+                     & set(profile_for_turn["allowed_tools"]))
+                )
+            ]
+            self.intellect_engine.profile = profile_for_turn
+            self.will_gate.profile = profile_for_turn
+            self.conscience.profile = profile_for_turn
+            client_owned_tools = filtered_client_tools
+            context = client_workspace_context if isinstance(client_workspace_context, dict) else {}
+            workspace_lines = []
+            for key, label in (("working_directory", "Client working directory"),
+                               ("workspace_root", "Client workspace root")):
+                value = context.get(key)
+                if isinstance(value, str) and value.startswith("/") and len(value) <= 2048:
+                    workspace_lines.append(f"{label}: {value}")
+            if workspace_lines:
+                workspace_lines.append(
+                    "Use these client-reported paths when choosing files; do not assume `/workspace`."
+                )
+                prompt_for_intellect = (
+                    "[Client workspace metadata]\n" + "\n".join(workspace_lines)
+                    + "\n[/Client workspace metadata]\n\n" + prompt_for_intellect
+                )
+            tool_history = "\n\n".join(
+                f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
+                f"{item.get('arguments', {})}\n{item.get('result', '')}"
+                for item in client_tool_results
+            )
+            if tool_history:
+                prompt_for_intellect = f"{prompt_for_intellect}\n\n{tool_history}"
+            prompt_for_storage = prompt_for_intellect
+        else:
+            self.intellect_engine.profile = profile_for_turn
+            self.will_gate.profile = profile_for_turn
+            self.conscience.profile = profile_for_turn
+        prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {prompt_for_intellect}"
 
         try:
             # Title derives from the first message, so decide it before inserting.
@@ -553,7 +753,7 @@ class SAFi:
             # UNIQUE key, rolls the whole turn back (so no orphaned duplicate
             # user row is left behind — the flaw of the old two-insert path),
             # and returns False so we drop the double-submit cleanly.
-            if not self.store.insert_turn_atomic(conversation_id, user_prompt, message_id):
+            if not self.store.insert_turn_atomic(conversation_id, prompt_for_storage, message_id):
                 self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
                 return { "finalOutput": "", "messageId": message_id, "duplicate": True }
 
@@ -609,6 +809,9 @@ class SAFi:
         if turns:
             recent_window = recent_window[-(turns * 2):]
         recent_turns_text = _render_history(recent_window, max_chars)
+        if client_owned and isinstance(client_recent_turns, str):
+            recent_turns_text = client_recent_turns[-12000:]
+            record_harness_progress(self.store, message_id, "checking_request")
         
         # Read-only snapshot for the coaching feedback below. The authoritative
         # EMA commit at the end of the turn re-reads mu under a row lock
@@ -694,6 +897,8 @@ class SAFi:
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
         # --- PHASE 2: Generate Proposal (Intellect) ---
+        if client_owned:
+            record_harness_progress(self.store, message_id, "analyzing")
         self.store.update_message_reasoning(message_id, "Drafting a response...")
         intent, r_t, retrieved_context = await self.intellect_engine.generate(
             user_prompt=prompt_with_date,
@@ -705,7 +910,9 @@ class SAFi:
             agent_context_json=agent_context_for_prompt,
             user_name=user_name,
             user_id=user_id,
-            message_id=message_id
+            message_id=message_id,
+            tools_override=client_owned_tools if client_owned else None,
+            tool_results_supplied=len(client_tool_results),
         )
 
         # Accumulated across the tool loop so the governance CAPTURE carries it
@@ -729,7 +936,12 @@ class SAFi:
         # retrieved third-party content is the one vector into the model the
         # signature gate does not cover. Nothing downstream re-scans it either:
         # it reaches the Conscience as evidence and the draft as grounding.
-        tool_evidence: List[str] = []
+        tool_evidence: List[str] = [
+            f"[TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
+            f"{json.dumps(item.get('arguments') or {}, sort_keys=True, default=str)}]\n"
+            f"{item.get('result', '')}"
+            for item in client_tool_results
+        ] if client_owned else []
 
         if intent is None:
             msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
@@ -763,18 +975,46 @@ class SAFi:
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
-            # Journalled AFTER the verdict, deliberately. evaluate_tool_intent is
-            # fully deterministic (no LLM, no awaits), so nothing is gained by
-            # pinging the UI first — and writing first meant an APPROVED and a
-            # BLOCKED tool call left identical audit entries, with the denial
-            # visible only in the application log. One entry per intent now
-            # carries the tool, the verdict and the reason into the hash chain.
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
-                profile=self.profile or {}
+                profile=profile_for_turn
             )
+            tool_preflight_ledger = []
+            tool_summary = (
+                f"[tool_call] {tool_name}"
+                f"({json.dumps(parameters or {}, sort_keys=True, default=str)})"
+            )
+            loop_stopped = False
+            if client_owned and tool_decision == "approve":
+                self._record_harness_progress(message_id, "checking_tool")
+                (tool_decision, tool_reason,
+                 tool_preflight_ledger) = await self._audit_client_tool_proposal(
+                    user_prompt,
+                    tool_summary,
+                    r_t or "",
+                    retrieved_context or "",
+                    recent_turns_text,
+                )
+                if tool_decision == "approve":
+                    repeats = count_current_turn_tool_repeats(
+                        client_tool_results, tool_name, parameters,
+                        HARNESS_TOOL_REPEAT_LIMIT,
+                    )
+                    if repeats >= HARNESS_TOOL_REPEAT_LIMIT:
+                        loop_stopped = True
+                        tool_decision = "violation"
+                        tool_reason = (
+                            f"Refused: this exact call already appears {repeats} times "
+                            f"in this user turn without progress (circuit breaker limit "
+                            f"{HARNESS_TOOL_REPEAT_LIMIT})."
+                        )
+
+            # Journal only after both deterministic Will and any configured
+            # client-tool hard-gate checks have reached a verdict.
             _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
+            if tool_preflight_ledger:
+                _entry["preflightLedger"] = tool_preflight_ledger
             tool_audit.append(_entry)
             self.store.update_message_reasoning(
                 message_id,
@@ -784,7 +1024,123 @@ class SAFi:
                 extra=_entry,
             )
 
-            if tool_decision == "approve":
+            if client_owned:
+                if tool_decision == "approve":
+                    safe_parameters = parameters or {}
+                    if tool_name == "read" and not safe_parameters.get("path"):
+                        safe_parameters = {
+                            **safe_parameters,
+                            "path": safe_parameters.get("filePath", ""),
+                        }
+                    self._record_harness_progress(message_id, "finalizing")
+                    tool_event = [{
+                        "tool_name": tool_name,
+                        "parameters": safe_parameters,
+                        "decision": tool_decision,
+                        "reason": tool_reason,
+                    }]
+                    governance_record = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "mode": "harness_integration",
+                        "turnKind": "tool_proposal",
+                        "clientToolProposal": True,
+                        "userPrompt": user_prompt,
+                        "recentTurns": recent_turns_text,
+                        "intellectDraft": tool_summary,
+                        "finalOutput": tool_summary,
+                        "willDecision": tool_decision,
+                        "willReason": tool_reason,
+                        "profileValues": self.values,
+                        "conscienceLedger": [],
+                        "toolProposalLedger": tool_preflight_ledger,
+                        "spiritScore": None,
+                        "toolCalls": tool_event,
+                        "policyId": (self.profile or {}).get("policy_id"),
+                        "policyVersion": (self.profile or {}).get("policy_version"),
+                        "orgId": org_id or (self.profile or {}).get("org_id"),
+                        "userId": user_id,
+                        "agentName": self.active_profile_name,
+                        "intellectModel": self.intellect_model,
+                        "conscienceModel": self.conscience_model,
+                    }
+                    self.store.update_audit_results(
+                        message_id, tool_preflight_ledger, None,
+                        f"Tool intent gate: {tool_decision} — {tool_reason}",
+                        self.active_profile_name, self.values, None,
+                        policy_id=(self.profile or {}).get("policy_id"),
+                        policy_version=(self.profile or {}).get("policy_version"),
+                        model_attribution=self.model_attribution,
+                        will_decision=tool_decision,
+                        will_stage="tool_intent",
+                        governance_record=governance_record,
+                    )
+                    self.store.update_message_content(
+                        message_id, tool_summary, audit_status="complete"
+                    )
+                    self._append_log(governance_record)
+                    return {
+                        "type": "tool_call",
+                        "tool_name": tool_name,
+                        "parameters": safe_parameters,
+                        "messageId": message_id,
+                        "newTitle": new_title,
+                        "willDecision": tool_decision,
+                        "willReason": tool_reason,
+                        "audit_status": "complete",
+                    }
+
+                if tool_name == "task" and loop_stopped:
+                    a_t = (
+                        "I stopped the repeated tool request because it made no progress. "
+                        "Please narrow the task or ask for a specific file or operation."
+                    )
+                    D_t = "violation"
+                    E_t = tool_reason
+                    self.store.update_message_content(
+                        message_id, a_t, audit_status="complete"
+                    )
+                    return {
+                        "finalOutput": a_t,
+                        "newTitle": new_title,
+                        "willDecision": D_t,
+                        "willReason": E_t,
+                        "messageId": message_id,
+                        "audit_status": "complete",
+                    }
+
+                # A denied client-owned proposal returns a user-facing draft
+                # without advertising tools again. SAFi never dispatches client
+                # tools through its own MCP executor.
+                self.log.warning(f"WillGate blocked client tool '{tool_name}'. Reason: {tool_reason}")
+                observation = (
+                    f"SYSTEM OBSERVATION: The Will gatekeeper rejected the client tool "
+                    f"'{tool_name}'. Reason: {tool_reason}. Do not attempt to call it again. "
+                    "Explain that the tool request was not authorized and offer a safe alternative."
+                )
+                reflexion_intent, r_t, retrieved_context = await self.intellect_engine.generate(
+                    user_prompt=f"{prompt_with_date}\n\n{observation}",
+                    memory_summary=memory_summary,
+                    recent_turns=recent_turns_text,
+                    spirit_feedback=spirit_feedback,
+                    plugin_context=plugin_context_data,
+                    user_profile_json=current_profile_json,
+                    agent_context_json=agent_context_for_prompt,
+                    user_name=user_name,
+                    user_id=user_id,
+                    message_id=message_id,
+                    tools_override=[],
+                    tool_results_supplied=len(client_tool_results),
+                )
+                a_t = (
+                    reflexion_intent.get("content")
+                    if reflexion_intent and reflexion_intent.get("type") == "text"
+                    else f"I'm sorry, I was unable to complete that action. {tool_reason}"
+                )
+                D_t = "approve"
+                E_t = f"Tool '{tool_name}' blocked: {tool_reason}."
+
+            elif tool_decision == "approve":
+
                 MAX_AGENT_TURNS = self.profile.get('max_agent_turns') or self.config.MAX_AGENT_TURNS
                 agent_history = [prompt_with_date]
                 current_tool_name = tool_name
@@ -861,7 +1217,7 @@ class SAFi:
                     follow_decision, follow_reason = await self.will_gate.evaluate_tool_intent(
                         tool_name=current_tool_name,
                         parameters=current_parameters,
-                        profile=self.profile or {}
+                        profile=profile_for_turn
                     )
                     _entry = _tool_audit_entry(current_tool_name, current_parameters,
                                                follow_decision, follow_reason,
@@ -941,7 +1297,9 @@ class SAFi:
                     agent_context_json=agent_context_for_prompt,
                     user_name=user_name,
                     user_id=user_id,
-                    message_id=message_id
+                    message_id=message_id,
+                    tools_override=[] if client_owned else None,
+                    tool_results_supplied=len(client_tool_results),
                 )
 
                 a_t = reflexion_intent.get("content") or "" if reflexion_intent and reflexion_intent.get("type") == "text" else f"I'm sorry, I was unable to complete that action. {tool_reason}"
@@ -969,9 +1327,18 @@ class SAFi:
                 self.max_context_chars,
             )
 
+        if client_owned:
+            self.intellect_engine.profile = original_intellect_profile
+            self.will_gate.profile = original_will_profile
+            self.conscience.profile = original_conscience_profile
+
         # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
         result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id,
-                                            recent_history=recent_turns_text)
+                                            recent_history=recent_turns_text,
+                                            progress_callback=(
+                                                (lambda code: self._record_harness_progress(message_id, code))
+                                                if client_owned else None
+                                            ))
         # _finalize_draft may deterministically repair the draft (e.g. append a
         # missing mandatory disclaimer) — commit what was actually audited.
         a_t = result.get("draft", a_t)
@@ -990,6 +1357,16 @@ class SAFi:
                 failing_ledger=result["ledger"],
                 blocked_draft=a_t,
                 will_stage=result["stage"],
+                governance_record_extra={
+                    "auditFailureReason": result["reason"]
+                } if result["stage"] == "audit" else None,
+                notice=(
+                    "I'm sorry — I couldn't complete the policy audit for this response, "
+                    "so I withheld it. Please try again shortly."
+                ) if result["stage"] == "audit" else None,
+                audit_failure_reason=(
+                    result["reason"] if result["stage"] == "audit" else None
+                ),
             )
 
         # Content-correction hard gates (reason mapped to ethical_violation
@@ -1070,6 +1447,8 @@ class SAFi:
                 user_id=user_id,
                 message_id=message_id,
                 precomputed_retrieved_context=retrieved_context,
+                tools_override=[] if client_owned else None,
+                tool_results_supplied=0,
             )
 
             a_t_spirit = (
@@ -1180,6 +1559,8 @@ class SAFi:
             self.mu_history.append(mu_new_vector)
 
         # --- PHASE 6: Safe Execution (Will) ---
+        if client_owned:
+            self._record_harness_progress(message_id, "finalizing")
         self.store.update_message_reasoning(message_id, "Preparing your answer...")
         self.store.update_message_content(message_id, a_t, audit_status="complete")
 
@@ -1208,7 +1589,13 @@ class SAFi:
             # can answer "what did the agent DO" and not only "what did it say".
             # Same entries as the hash chain (see _tool_audit_entry); parameter
             # values are clipped, so this stays small even on a 5-turn loop.
-            "toolCalls": tool_audit,
+            # Internal tools carry their Will verdicts here. Client-owned tools
+            # have an individual proposal audit row per handoff; the final turn
+            # stores the returned executions/results in the form the Audit Hub
+            # labels "executed".
+            "toolCalls": tool_audit + (client_tool_results if client_owned else []),
+            "toolOnlyTurn": bool(client_owned and not ledger and not client_tool_results),
+            "clientToolProposal": bool(client_owned and not ledger and not client_tool_results),
             "finalOutput": a_t,
             "willDecision": D_t,
             "willReason": E_t,
@@ -1534,6 +1921,8 @@ class SAFi:
         blocked_draft: str = "",
         notice: Optional[str] = None,
         will_stage: Optional[str] = None,
+        audit_failure_reason: Optional[str] = None,
+        governance_record_extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Ship a deterministic notice for internal governance failures
         (audit unavailable/degraded, structural check failed) — and, with a
@@ -1566,6 +1955,8 @@ class SAFi:
         # rock-bottom score in the dashboard). The failing audit's ledger is
         # preserved in the log entry so the dashboard can show WHY the draft failed.
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
+        if audit_failure_reason:
+            note = f"{note} Audit detail: {audit_failure_reason[:400]}"
 
         _sm_readonly = self.store.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         zeros = [0.0] * max(1, len(self.spirit.values))
@@ -1579,6 +1970,7 @@ class SAFi:
             "finalOutput": notice,
             "willDecision": "redirected",
             "willReason": violation_type,
+            "auditFailureReason": (audit_failure_reason or "")[:400],
             "isRedirect": True,
             "originalLedger": failing_ledger or [],
             "blockedDraft": self._redact_pii(blocked_draft or "", org_id),
@@ -1601,6 +1993,8 @@ class SAFi:
             "intellectModel": self.intellect_model,
             "conscienceModel": self.conscience_model,
         }
+        if governance_record_extra:
+            governance_record.update(governance_record_extra)
 
         self.store.update_audit_results(message_id, [], None, note, self.active_profile_name, self.values, None,
                                 policy_id=(self.profile or {}).get("policy_id"),

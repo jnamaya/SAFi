@@ -21,6 +21,9 @@ safi_memory.db
 gateways/*.env
 !gateways/*.env.example
 
+# Local OpenCode client config — carries a live policy API key, never committed
+/opencode.json
+
 # Python
 __pycache__/
 *.py[cod]

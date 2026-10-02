@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
 from safi_app.core.services import usage_tracking as ut
+from safi_app.core.services.llm_provider import LLMProvider
 
 
 class ExtractUsage(unittest.TestCase):
@@ -55,6 +56,20 @@ class ExtractUsage(unittest.TestCase):
         self.assertIsNone(ut.extract_usage("anthropic", object()))
         self.assertIsNone(ut.extract_usage("gemini", None))
         self.assertIsNone(ut.extract_usage("unknown_provider", SimpleNamespace()))
+
+    def test_request_usage_capture_is_per_turn_and_per_route(self):
+        ut.begin_request_usage()
+        ut.capture_call_usage("intellect", "openai", "gpt-6", 1200, 80)
+        ut.capture_call_usage("conscience", "anthropic", "claude", 900, 45)
+        self.assertEqual(ut.request_call_usage("intellect"), {
+            "provider": "openai", "model": "gpt-6",
+            "input_tokens": 1200, "output_tokens": 80,
+        })
+        self.assertEqual(ut.request_call_usage("conscience")["input_tokens"], 900)
+
+        ut.begin_request_usage()
+        self.assertIsNone(ut.request_call_usage("intellect"),
+                          "a later request must not inherit the previous turn's counts")
 
 
 class UsageRowsArePerOrg(unittest.TestCase):
@@ -139,6 +154,20 @@ class RecordUsageNeverBreaksATurn(unittest.TestCase):
         self.assertEqual(captured["org_id"], org)
         self.assertEqual(captured["agent"], "fiduciary")
         self.assertEqual(captured["route"], "conscience")
+
+    def test_provider_response_usage_is_also_exposed_to_the_current_turn(self):
+        provider = LLMProvider.__new__(LLMProvider)
+        provider.log = mock.Mock()
+        ut.begin_request_usage()
+        with mock.patch.object(ut, "extract_usage", return_value=(1500, 90)), \
+             mock.patch.object(ut, "record_usage"):
+            provider._capture_usage(
+                "intellect", "openai", "gpt-6", "openai", object()
+            )
+        self.assertEqual(ut.request_call_usage("intellect"), {
+            "provider": "openai", "model": "gpt-6",
+            "input_tokens": 1500, "output_tokens": 90,
+        })
 
 
 class PriceMap(unittest.TestCase):

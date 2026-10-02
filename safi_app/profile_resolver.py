@@ -161,7 +161,13 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     raw_agent = _load_profile(name)
     if not raw_agent:
         raise KeyError(f"Unknown profile '{name}'.")
-    agent = json.loads(json.dumps(raw_agent))
+    # Round-trip through JSON to get a private copy that is also guaranteed to
+    # be JSON-clean, since callers (e.g. /api/me) return this dict directly to
+    # the client. DB-sourced agents carry datetime metadata (created_at,
+    # updated_at) that plain json.dumps rejects, which broke profile
+    # resolution for any DB-backed agent. Coerce non-JSON types to their string
+    # form rather than failing the whole profile.
+    agent = json.loads(json.dumps(raw_agent, default=str))
     _stamp_legacy_gate_reasons(agent.get("values"))
 
     effective_policy_id = policy_id or agent.get("policy_id")

@@ -85,6 +85,7 @@ COPY --from=deps /opt/venv /opt/venv
 COPY safi_app/ ./safi_app/
 COPY public/   ./public/
 COPY scripts/  ./scripts/
+COPY integrations/ ./integrations/
 COPY rag/      ./rag/
 COPY wsgi.py   .
 

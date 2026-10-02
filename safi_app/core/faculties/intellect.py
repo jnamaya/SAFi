@@ -170,6 +170,8 @@ class IntellectEngine:
         message_id: Optional[str] = None,
         plugin_context: Optional[Dict[str, Any]] = None,
         precomputed_retrieved_context: Optional[str] = None,
+        tools_override: Optional[List[Dict[str, Any]]] = None,
+        tool_results_supplied: int = 0,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
         """
         Generates a typed intent proposal without executing any tools.
@@ -181,13 +183,29 @@ class IntellectEngine:
               A tool invocation proposal the orchestrator must gate before executing.
           - None
               A hard provider failure; caller should inspect self.last_error.
+
+        tools_override replaces the MCP tool catalogue for this call, in the
+        same name/description/input_schema shape. A coding harness (opencode,
+        Claude Code) owns and executes its own tools, so it supplies the
+        catalogue per request; Intellect still only proposes the call. It wins
+        over MCP because the harness is the only party that can actually run
+        them — an MCP server listed here would advertise tools this process
+        cannot reach.
+
+        tool_results_supplied is the count of tool outputs the caller has
+        already embedded in user_prompt for this turn. It only changes how the
+        tool catalogue is framed; it never executes anything.
         """
+
         self.last_error = None
 
         # --- 0. Tools, for informing the LLM only; never executed here ---
-        tools: List[Dict[str, Any]] = []
-        if self.mcp_manager:
-            tools = await self.mcp_manager.get_tools_for_agent(self.profile)
+        if tools_override is not None:
+            tools: List[Dict[str, Any]] = list(tools_override)
+        else:
+            tools = []
+            if self.mcp_manager:
+                tools = await self.mcp_manager.get_tools_for_agent(self.profile)
 
         # --- 1. RAG & Plugin Context ---
         if precomputed_retrieved_context is not None:
@@ -336,7 +354,23 @@ class IntellectEngine:
 
         tools_injection = ""
         if tools:
-            tools_injection = "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n" + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+            # A harness re-sends the same catalogue on the follow-up turn that
+            # already carries the tool output. Telling the model it "MUST use"
+            # the tools at that point makes it re-issue the identical call
+            # forever, because the tool result arrives as plain prompt text and
+            # nothing marks it as already collected. When results are present,
+            # the instruction becomes "use what you have, do not re-request".
+            if tool_results_supplied:
+                tools_injection = (
+                    f"AVAILABLE TOOLS ({tool_results_supplied} result(s) for this turn are ALREADY "
+                    "included above under 'TOOL RESULT'):\n"
+                    + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+                    + "\nAnswer the user now using that output. Do NOT call a tool whose result is "
+                    "already present. Only call a tool if something genuinely still missing is needed, "
+                    "and never repeat a call already answered above."
+                )
+            else:
+                tools_injection = "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n" + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
 
         system_prompt = "\n\n".join(filter(None, [
             worldview,

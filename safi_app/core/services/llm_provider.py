@@ -74,6 +74,21 @@ MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
 LOCAL_MAX_TOKENS = int(os.environ.get("SAFI_LOCAL_MAX_TOKENS", "1024"))
 
 
+class ProviderRequestError(RuntimeError):
+    """Safe, structured summary of a rejected provider API request."""
+
+    def __init__(self, provider: str, endpoint: str, status_code=None, detail=""):
+        self.provider = str(provider or "unknown")
+        self.endpoint = str(endpoint or "")
+        self.status_code = status_code
+        self.detail = str(detail or "")[:500]
+        status = f" HTTP {status_code}" if status_code is not None else ""
+        message = f"{self.provider}{status} rejected request to {self.endpoint or 'provider endpoint'}"
+        if self.detail:
+            message += f": {self.detail}"
+        super().__init__(message)
+
+
 # Set when a provider reports that it stopped because the output budget ran out,
 # rather than because the model finished. A ContextVar, not an attribute: one
 # LLMProvider instance is shared by every concurrent request against the same
@@ -123,6 +138,25 @@ def _is_openai_flagship(model_name: str) -> bool:
     """
     m = (model_name or "").lower()
     return m.startswith("gpt-") and not m.startswith("gpt-oss")
+
+
+def _provider_error_detail(response) -> str:
+    """Extract provider-supplied error text without echoing request contents."""
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error", payload)
+        if isinstance(error, dict):
+            for key in ("message", "detail", "code", "type"):
+                value = error.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:500]
+        elif isinstance(error, str):
+            return error.strip()[:500]
+    text = getattr(response, "text", "")
+    return text.strip()[:500] if isinstance(text, str) else ""
 
 
 class LLMProvider:
@@ -315,7 +349,13 @@ class LLMProvider:
                     headers={"Authorization": f"Bearer {api_key}"},
                     json=payload,
                 )
-                response.raise_for_status()
+                if response.is_error:
+                    raise ProviderRequestError(
+                        provider_name,
+                        "/systemone",
+                        response.status_code,
+                        _provider_error_detail(response),
+                    )
                 result = response.json()
 
         answers = result.get("answers")
@@ -368,11 +408,13 @@ class LLMProvider:
             tokens_in = int(usage.get("input_tokens", 0))
             tokens_out = int(usage.get("output_tokens", 0))
             if tokens_in or tokens_out:
-                from .usage_tracking import record_usage
+                from .usage_tracking import capture_call_usage, record_usage
+                actual_model = result.get("model") or model_name
+                capture_call_usage(
+                    "conscience", provider_name, actual_model, tokens_in, tokens_out
+                )
                 record_usage(
-                    "conscience", provider_name,
-                    result.get("model") or model_name,
-                    tokens_in, tokens_out,
+                    "conscience", provider_name, actual_model, tokens_in, tokens_out,
                 )
         except (TypeError, ValueError):
             self.log.warning("Typed Conscience backend returned malformed token usage; not recording it.")
@@ -436,9 +478,10 @@ class LLMProvider:
         """Record the call's token counts for the Usage & Cost tab (backlog 61).
         Attribution (org, agent) comes from context vars; failures are logged
         and swallowed inside usage_tracking — never a broken turn."""
-        from .usage_tracking import extract_usage, record_usage
+        from .usage_tracking import capture_call_usage, extract_usage, record_usage
         usage = extract_usage(provider_type, resp)
         if usage:
+            capture_call_usage(route, provider_name, model_name, usage[0], usage[1])
             record_usage(route, provider_name, model_name, usage[0], usage[1])
 
     async def _chat_completion(

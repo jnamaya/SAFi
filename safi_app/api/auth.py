@@ -1095,6 +1095,16 @@ def get_me():
             db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
             user_details['active_profile'] = Config.DEFAULT_PROFILE
             user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
+        except Exception:
+            # Unexpected failure (e.g. an agent row carrying a field the
+            # compiler cannot handle). Serve the default profile so login
+            # still works, but keep the stored preference: resetting it here
+            # would silently discard the user's choice over a transient bug
+            # and mask the underlying error from the person who has to fix it.
+            current_app.logger.exception(
+                "Falling back to default profile for '%s'.", active_profile_name
+            )
+            user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
     
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL

@@ -639,19 +639,28 @@ function textCard(title, body, help = '') {
 function toolCallsCard(calls) {
     if (!Array.isArray(calls) || calls.length === 0) return '';
     const rows = calls.map(c => {
-        const approved = c.decision === 'approve';
-        // A denial is the interesting row, so it gets the colour. Reuses the
-        // score chip's vocabulary rather than inventing a second one.
-        const badge = approved
-            ? `<span class="text-xs font-semibold" style="color:#15803d">approved</span>`
-            : `<span class="text-xs font-semibold" style="color:#b91c1c">${esc(c.decision || 'blocked')}</span>`;
-        const params = c.params && Object.keys(c.params).length
-            ? Object.entries(c.params).map(([k, v]) => `${esc(k)}=${esc(String(v))}`).join(', ')
+        // Orchestrator records use tool/params; harness tool proposals use
+        // tool_name/parameters, and returned OpenCode results use
+        // tool_name/arguments. Read all three shapes so older and newer turns
+        // remain legible in the same audit timeline.
+        const tool = c.tool || c.tool_name || 'unknown tool';
+        const rawParams = c.params ?? c.parameters ?? c.arguments ?? {};
+        const paramsObject = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)
+            ? rawParams : {};
+        const hasResult = Object.prototype.hasOwnProperty.call(c, 'result');
+        const status = c.decision === 'approve' ? 'approved'
+            : (c.decision === 'violation' || c.decision === 'blocked') ? 'blocked'
+            : c.decision || (hasResult ? 'executed' : 'proposed');
+        const statusColor = status === 'approved' || status === 'executed' ? '#15803d'
+            : status === 'blocked' ? '#b91c1c' : '#6b7280';
+        const badge = `<span class="text-xs font-semibold" style="color:${statusColor}">${esc(status)}</span>`;
+        const params = Object.keys(paramsObject).length
+            ? Object.entries(paramsObject).map(([k, v]) => `${esc(k)}=${esc(String(v))}`).join(', ')
             : '—';
         return `
             <div class="px-4 py-3 border-b border-gray-100 dark:border-neutral-800 last:border-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                    <code class="text-sm font-semibold">${esc(c.tool || 'unknown tool')}</code>
+                    <code class="text-sm font-semibold">${esc(tool)}</code>
                     ${badge}
                     ${c.agent_turn ? `<span class="text-xs text-gray-400">step ${esc(String(c.agent_turn))}</span>` : ''}
                 </div>
@@ -662,7 +671,7 @@ function toolCallsCard(calls) {
     return `
         <div class="rounded-lg border border-gray-200 dark:border-neutral-700">
             <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">Tools used</div>
-            <div class="px-4 pt-2 text-xs text-gray-400">Every tool call the agent proposed, and the Will's verdict on it before it ran. Parameter values are truncated in the record.</div>
+            <div class="px-4 pt-2 text-xs text-gray-400">Tool proposals and the Will's verdicts, plus calls returned by the harness.</div>
             ${rows}
         </div>`;
 }
@@ -716,6 +725,28 @@ async function renderDetail(messagePk) {
 
     const failingRows = (Array.isArray(r.originalLedger) ? r.originalLedger : [])
         .filter(row => row && typeof row === 'object' && Number(row.score || 0) <= -1);
+    const hasPolicyAudit = Array.isArray(r.conscienceLedger) && r.conscienceLedger.length > 0
+        && !r.clientToolProposal && r.turnKind !== 'tool_proposal';
+    const toolOnlyTurn = r.toolOnlyTurn === true || r.clientToolProposal === true
+        || r.turnKind === 'tool_proposal'
+        || (ev.will_stage === 'tool_intent' && !hasPolicyAudit);
+    const hasToolProposalLedger = Array.isArray(r.toolProposalLedger) && r.toolProposalLedger.length > 0;
+    const auditFailureReason = r.auditFailureReason || r.willReason || null;
+    const policyAuditState = hasPolicyAudit && !toolOnlyTurn
+        ? null
+        : toolOnlyTurn && !hasToolProposalLedger
+            ? 'This is a tool handoff, not a response draft. SAFi checked the proposed tool against the agent and policy allow-lists; the coding client executes it and sends the result back for the response audit.'
+            : toolOnlyTurn
+                ? 'This is a tool handoff, not a response draft. SAFi checked the tool authorization and evaluated these tool-proposal safeguards; the final response is audited when the coding client returns the result.'
+                : ev.will_stage === 'phase_zero'
+                    ? 'No policy audit was run: the request was blocked by the pre-generation safety gate.'
+                : ev.will_stage === 'structure'
+                    ? 'No policy audit was run: the draft failed the response-structure check before Conscience.'
+                    : ev.will_stage === 'audit'
+                        ? `The policy audit could not be completed successfully. See the Decision tab and reasoning log for the failure.${auditFailureReason ? ` Detail: ${auditFailureReason}` : ''}`
+                        : !r.conscienceLedger
+                            ? 'No policy audit record is available for this turn. It may be a legacy record from before value-by-value ledgers were stored.'
+                            : 'No value-by-value evaluation was recorded for this turn.';
 
     const sectionHtml = {
         draft: `
@@ -744,7 +775,7 @@ async function renderDetail(messagePk) {
                     </div>` : ''}
                 ${r.blockedDraft ? textCard('Blocked draft', esc(r.blockedDraft)) : ''}
             </div>`,
-        audit: (Array.isArray(r.conscienceLedger) && r.conscienceLedger.length)
+        audit: hasPolicyAudit && !toolOnlyTurn
             ? renderConscienceReport({
                 ledger: r.conscienceLedger,
                 spirit_score: r.spiritScore,
@@ -756,7 +787,7 @@ async function renderDetail(messagePk) {
                 final_output: r.finalOutput || null,
                 values: auditValues,
             }, 'ah-')
-            : `<p class="text-sm text-gray-400">No value-by-value evaluation was recorded for this turn${ev.will_stage === 'phase_zero' ? ' — it was blocked before the audit stage' : ''}.</p>`,
+            : `<div class="space-y-3"><p class="text-sm text-gray-400">${esc(policyAuditState)}</p>${toolOnlyTurn && hasToolProposalLedger ? `<div class="space-y-2">${r.toolProposalLedger.map(row => `<div class="text-sm"><span class="font-medium">${esc(row.value || 'safeguard')}</span> — ${esc(row.score > 0 ? 'passed' : row.score < 0 ? 'failed' : 'neutral')}<span class="text-gray-500">: ${esc(row.reason || '')}</span></div>`).join('')}</div>` : ''}</div>`,
         alignment: `
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-3">

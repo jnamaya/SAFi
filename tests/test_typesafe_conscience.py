@@ -187,6 +187,9 @@ def hosted_jev(monkeypatch):
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
+        self.status_code = 200
+        self.is_error = False
+        self.text = json.dumps(payload)
 
     def raise_for_status(self):
         return None
@@ -198,8 +201,11 @@ class _FakeResponse:
 class _FakeAsyncClient:
     calls = []
     response = {}
+    factory_error = None
 
     def __init__(self, timeout):
+        if self.factory_error is not None:
+            raise self.factory_error
         self.timeout = timeout
 
     async def __aenter__(self):
@@ -211,6 +217,38 @@ class _FakeAsyncClient:
     async def post(self, url, *, headers, json):
         self.calls.append({"url": url, "headers": headers, "json": json})
         return _FakeResponse(self.response)
+
+
+def test_typesafe_400_is_normalized_with_safe_error_details(monkeypatch, hosted_jev):
+    _FakeAsyncClient.calls = []
+    _FakeAsyncClient.factory_error = None
+
+    class FailingAsyncClient(_FakeAsyncClient):
+        async def post(self, url, *, headers, json):
+            self.calls.append({"url": url, "headers": headers, "json": json})
+            response = _FakeResponse({"error": {"message": "invalid question shape"}})
+            response.status_code = 400
+            response.is_error = True
+            response.text = '{"error":{"message":"invalid question shape"}}'
+            return response
+
+    monkeypatch.setattr(provider_module.httpx, "AsyncClient", FailingAsyncClient)
+    monkeypatch.setattr(deployment_keys, "resolve_provider_key", lambda _p, _env: "test-key")
+    provider = _typesafe_provider()
+
+    with pytest.raises(provider_module.ProviderRequestError) as caught:
+        asyncio.run(provider.run_conscience_structured(
+            state={"final_output": "safe answer"},
+            rubrics=[_rubric()],
+            instructions="score the answer",
+        ))
+
+    assert caught.value.status_code == 400
+    assert caught.value.provider == "typesafe"
+    assert caught.value.endpoint == "/systemone"
+    assert caught.value.detail == "invalid question shape"
+    assert "test-key" not in str(caught.value)
+    assert FailingAsyncClient.calls
 
 
 def _typesafe_provider():

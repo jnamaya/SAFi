@@ -5,6 +5,7 @@ import time
 import threading
 import hashlib
 import re
+import uuid
 from flask import Blueprint, session, jsonify, request, Response, current_app
 from datetime import datetime, timezone
 
@@ -12,12 +13,32 @@ from ..persistence import database as db
 from ..persistence import sharing_store
 from ..persistence import conversation_sharing_store
 from ..runtime_factory import build_safi
+from ..core.orchestrator import (
+    HARNESS_PROGRESS_LABELS,
+    HARNESS_TOOL_REPEAT_LIMIT,
+    count_current_turn_tool_repeats,
+)
 from ..profile_resolver import get_profile, list_profiles, AGENTS
 from ..core.services import provider_governance as pg
 from ..core.services.model_routing import resolve_effective_faculty_models
 from ..core import provenance
 from ..config import Config
 from ..role_config import ROLE_CONFIG
+
+def harness_intellect_token_usage():
+    """OpenAI-compatible usage for the model call that filled the context."""
+    from ..core.services.usage_tracking import request_call_usage
+
+    usage = request_call_usage("intellect")
+    if not usage:
+        return None
+    tokens_in = max(0, int(usage.get("input_tokens", 0)))
+    tokens_out = max(0, int(usage.get("output_tokens", 0)))
+    return {
+        "prompt_tokens": tokens_in,
+        "completion_tokens": tokens_out,
+        "total_tokens": tokens_in + tokens_out,
+    }
 
 conversations_bp = Blueprint('conversations', __name__)
 
@@ -1573,3 +1594,794 @@ def export_chat_history(conversation_id):
         mimetype='application/json',
         headers={'Content-Disposition': f'attachment;filename=SAFi-Export-{filename_title}.json'}
     )
+
+
+def _normalize_workspace_context(raw_context):
+    """Accept only bounded absolute path metadata from the harness gateway."""
+    if not isinstance(raw_context, dict):
+        return {}
+    normalized = {}
+    for key in ("working_directory", "workspace_root"):
+        value = raw_context.get(key)
+        if (isinstance(value, str) and value.startswith("/") and len(value) <= 2048
+                and not any(ch in value for ch in ("\x00", "\r", "\n"))):
+            normalized[key] = os.path.normpath(value)
+    return normalized
+
+
+def _normalize_harness_tools(raw_tools, workspace_context=None):
+    """Convert harness OpenAI-format tool specs into the MCP shape Intellect expects.
+
+    Harnesses advertise tools as {"type": "function", "function": {name,
+    description, parameters}}; the provider layer reads name/description/
+    input_schema. Anything already in MCP shape passes through, and malformed
+    entries are dropped rather than failing the turn — a harness advertising a
+    bad tool should still get a governed answer, just without that tool.
+    """
+    if not isinstance(raw_tools, list):
+        return []
+
+    normalized = []
+    for entry in raw_tools:
+        if not isinstance(entry, dict):
+            continue
+        spec = entry.get("function") if entry.get("type") == "function" else entry
+        if not isinstance(spec, dict):
+            continue
+        name = spec.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        params = spec.get("parameters")
+        if not isinstance(params, dict):
+            params = spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {"type": "object", "properties": {}}
+        description = spec.get("description") or ""
+        if workspace_context and name in {"read", "grep", "glob", "list"}:
+            working = workspace_context.get("working_directory")
+            root = workspace_context.get("workspace_root")
+            known_paths = []
+            if working:
+                known_paths.append(f"OpenCode working directory: {working}.")
+            if root and root != working:
+                known_paths.append(f"OpenCode workspace root: {root}.")
+            if known_paths:
+                description += (
+                    "\n\n" + " ".join(known_paths)
+                    + " Resolve file names relative to the reported working directory; "
+                    "do not guess a `/workspace` path. If the user asks whether a file "
+                    "exists, whether you can access it, or asks you to review it, verify "
+                    "with the filesystem tools and answer from their result rather than "
+                    "answering hypothetically."
+                )
+        normalized.append({
+            "name": name,
+            "description": description,
+            "input_schema": params,
+        })
+    return normalized
+
+
+@conversations_bp.route('/harness/progress/<message_id>', methods=['GET'])
+def harness_progress_endpoint(message_id):
+    """Authenticated, minimal progress feed for the OpenAI-compatible gateway."""
+    api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+    if api_key.startswith("Bearer "):
+        api_key = api_key.split(" ", 1)[1]
+    policy_id = db.get_policy_id_by_api_key(api_key) if api_key else None
+    if not policy_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    user_id = request.args.get("user_id", "")
+    try:
+        message_id = str(uuid.UUID(message_id))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({"error": "Invalid message id"}), 400
+    audit_result = db.get_audit_result(message_id, user_id=user_id)
+    if audit_result is None:
+        return jsonify({"error": "Progress not found"}), 404
+    row_policy_id = audit_result.get("policy_id")
+    if row_policy_id and str(row_policy_id) != str(policy_id):
+        return jsonify({"error": "Progress not found"}), 404
+    reasoning_log = audit_result.get("reasoning_log")
+    if isinstance(reasoning_log, str):
+        try:
+            reasoning_log = json.loads(reasoning_log)
+        except (ValueError, TypeError):
+            reasoning_log = []
+    allowed_codes = set(HARNESS_PROGRESS_LABELS)
+    progress_codes = []
+    seen_codes = set()
+    for entry in reasoning_log if isinstance(reasoning_log, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        code = entry.get("progress_code")
+        if code in allowed_codes and code not in seen_codes:
+            seen_codes.add(code)
+            progress_codes.append(code)
+    progress = {
+        "progress": progress_codes,
+        "complete": audit_result.get("status") == "complete",
+    }
+    response = jsonify(progress)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def _legacy_harness_process_prompt_endpoint():
+    """Unregistered pre-orchestrator implementation; client turns use SAFi.process_prompt."""
+    raise RuntimeError("Retired harness path; dispatch client turns through SAFi.process_prompt().")
+
+    """
+    Harness integration endpoint for opencode and Claude Code.
+
+    Streams the Intellect's output and lets the harness drive tool calling
+    natively. Governance (Conscience audit, Will gates, Spirit alignment)
+    runs post-turn on the full conversation.
+
+    Protocol:
+    1. Harness sends {message, conversation_id, agent, tools?, tool_results?,
+       workspace_context?, recent_turns?}
+    2. SAFi streams Intellect output (text chunks or tool_call requests)
+    3. If tool_call: harness executes natively, sends tool_results back
+    4. Repeat until text response
+    5. SAFi audits full conversation, returns governed result
+    """
+    api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+    if api_key.startswith("Bearer "):
+        api_key = api_key.split(" ")[1]
+
+    policy_id = db.get_policy_id_by_api_key(api_key)
+    if not policy_id:
+        return jsonify({"error": "Unauthorized: Invalid Policy API Key"}), 401
+
+    data = request.json or {}
+    user_id = data.get('user_id')
+    user_prompt = data.get('message')
+    conversation_id = data.get('conversation_id')
+    agent_key = data.get('agent', 'safi')
+    workspace_context = _normalize_workspace_context(data.get('workspace_context'))
+    tools = _normalize_harness_tools(data.get('tools'), workspace_context)
+    tool_results = data.get('tool_results', [])
+    recent_turns = data.get('recent_turns', '')
+    if not isinstance(recent_turns, str):
+        recent_turns = ''
+    recent_turns = recent_turns[-12000:]
+
+    if not all([user_id, user_prompt, conversation_id]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if not isinstance(conversation_id, str) or len(conversation_id.strip()) > db.CONVERSATION_ID_MAX_LEN:
+        return jsonify({
+            "error": f"'conversation_id' must be at most {db.CONVERSATION_ID_MAX_LEN} characters.",
+            "code": "CONVERSATION_ID_TOO_LONG",
+        }), 400
+    conversation_id = conversation_id.strip()
+
+    # One id per turn, minted here and reused by every writer below. The gateway
+    # supplies it on streaming requests so it can poll the minimal progress feed.
+    # The audit
+    # row is only reachable through chat_history.message_id, so a fresh uuid at
+    # each call site would leave the turn's governance record orphaned.
+    requested_message_id = data.get("message_id")
+    if requested_message_id:
+        try:
+            message_id = str(uuid.UUID(str(requested_message_id)))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": "Invalid message_id"}), 400
+    else:
+        message_id = str(uuid.uuid4())
+
+    try:
+        user_details = db.get_user_details(user_id)
+        if not user_details:
+            db.upsert_user({
+                "sub": user_id,
+                "id": user_id,
+                "name": f"Bot User {user_id[-4:]}",
+                "email": f"{user_id}@bot.safinstitute.org",
+                "picture": ""
+            })
+            db.update_user_profile(user_id, agent_key)
+
+        if hasattr(db, 'upsert_external_conversation'):
+            db.upsert_external_conversation(conversation_id, user_id, title="Harness Chat")
+        else:
+            db.ensure_conversation_access(user_id, conversation_id)
+
+        selected_intellect = Config.INTELLECT_MODEL
+        selected_conscience = Config.CONSCIENCE_MODEL
+        org_id = (user_details.get('org_id') if user_details else None)
+        if not org_id:
+            org_id = (db.get_policy(policy_id) or {}).get('org_id')
+        selected_intellect, selected_conscience = resolve_effective_faculty_models(
+            Config,
+            selected_intellect,
+            selected_conscience,
+            org_id,
+            intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
+            conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+        )
+
+        saf_system = global_safi_cache.get_or_create(
+            agent_key,
+            selected_intellect,
+            None,
+            selected_conscience,
+            policy_id=policy_id
+        )
+        from ..core.services.usage_tracking import begin_request_usage
+        begin_request_usage()
+
+        # The adapter stops at authentication, client-protocol normalization,
+        # and persona selection. All governed phases—including Will W1 draft
+        # structure, hard gates, Spirit, persistence, and external-tool handoff—
+        # run through the core orchestrator.
+        result = await saf_system.process_prompt(
+            user_prompt,
+            user_id,
+            conversation_id,
+            user_name="Harness",
+            override_message_id=message_id,
+            org_id=org_id,
+            client_owned_tools=tools,
+            client_tool_results=tool_results,
+            client_recent_turns=recent_turns,
+            client_workspace_context=workspace_context,
+        )
+        if result.get("will_stage") == "audit" or result.get("willReason") == "Intellect failed.":
+            return jsonify({
+                **result,
+                "backend_error": True,
+                "error": result.get("willReason") or result.get("finalOutput"),
+            }), 502
+        result["token_usage"] = harness_intellect_token_usage()
+        return provenance.mark_json_response(jsonify(result))
+
+        # Persist the turn BEFORE generating, mirroring the orchestrator. Without
+        # the chat_history row, update_audit_results finds nothing to attach the
+        # governance record to and the turn never reaches the Audit Hub.
+        #
+        # activate_org first: it sets the org that stamps governance_records and,
+        # just as importantly, the provider allow-list every LLM dispatch below
+        # checks. Unset, that allow-list is None and provider governance fails
+        # open — the one path where any provider could be reached.
+        pg.activate_org(org_id)
+        # The harness supplies its own conversation id, so the row has to exist
+        # before chat_history's foreign key will accept a turn. Same external-bot
+        # entry point the public bot uses.
+        db.ensure_conversation_access(user_id, conversation_id)
+
+        # The API adapter ends here: the orchestrator owns all governance phases,
+        # W1, the external-tool handoff, Spirit, and the per-turn audit commit.
+        result = await saf_system.process_prompt(
+            user_prompt,
+            user_id,
+            conversation_id,
+            user_name="Harness",
+            override_message_id=message_id,
+            org_id=org_id,
+            client_owned_tools=tools,
+            client_tool_results=tool_results,
+            client_recent_turns=recent_turns,
+            client_workspace_context=workspace_context,
+        )
+        if result.get("will_stage") == "audit" or result.get("willReason") == "Intellect failed.":
+            return jsonify({
+                **result,
+                "backend_error": True,
+                "error": result.get("willReason") or result.get("finalOutput"),
+            }), 502
+        result["token_usage"] = harness_intellect_token_usage()
+        return provenance.mark_json_response(jsonify(result))
+
+        # Build the prompt with tool results from previous turns BEFORE the
+        # insert, because what gets persisted must be what the model was
+        # actually given. This used to persist `user_prompt` and drop the tool
+        # history on the floor, so chat_history held only the user's words: a
+        # reviewer could not see a single tool result the agent had ever seen,
+        # and the omission was invisible precisely because the record looked
+        # complete. Tool results are part of the turn.
+        full_prompt = user_prompt
+        if workspace_context:
+            workspace_lines = []
+            if workspace_context.get("working_directory"):
+                workspace_lines.append(
+                    f"OpenCode working directory: {workspace_context['working_directory']}"
+                )
+            if workspace_context.get("workspace_root"):
+                workspace_lines.append(
+                    f"OpenCode workspace root: {workspace_context['workspace_root']}"
+                )
+            workspace_lines.append(
+                "Use these client-reported paths when choosing files; do not assume `/workspace`."
+            )
+            full_prompt = (
+                "[OpenCode workspace metadata]\n" + "\n".join(workspace_lines)
+                + "\n[/OpenCode workspace metadata]\n\n" + full_prompt
+            )
+        if tool_results:
+            tool_history = "\n".join([
+                f"TOOL RESULT — {tr.get('tool_name', 'unknown')} called with {tr.get('arguments', {})}\n{tr.get('result', '')}"
+                for tr in tool_results
+            ])
+            full_prompt = f"{full_prompt}\n\n{tool_history}"
+
+        if not saf_system.store.insert_turn_atomic(conversation_id, full_prompt, message_id):
+            return jsonify({
+                "error": "Duplicate message_id for this turn.",
+                "code": "duplicate_message_id",
+                "messageId": message_id,
+            }), 409
+
+        record_harness_progress(saf_system, message_id, "checking_request")
+
+        # Run Phase 0 injection gate
+        _will_rules = (saf_system.profile or {}).get("will_rules", {})
+        agent_blacklist = (
+            _will_rules.get("early_prompt_blacklist", [])
+            if isinstance(_will_rules, dict) else []
+        )
+        is_safe, gate_reason = saf_system.phase_zero.evaluate_prompt(
+            user_prompt, agent_blacklist, saf_system._pii_enabled(org_id)
+        )
+        if not is_safe:
+            # Commit the block rather than returning bare. A row inserted above
+            # and then abandoned would sit pending forever, and the refused turn
+            # is precisely what an auditor needs to see — so it gets the same
+            # empty-ledger governance record the orchestrator writes on its
+            # blocked path.
+            _blocked_notice = "I'm sorry — I cannot process this request under governance rules."
+            try:
+                record_harness_progress(saf_system, message_id, "finalizing")
+                saf_system.store.update_message_content(
+                    message_id, _blocked_notice, audit_status="complete"
+                )
+                saf_system.store.update_audit_results(
+                    message_id, [], None, gate_reason,
+                    agent_key, saf_system.values, None,
+                    policy_id=(saf_system.profile or {}).get("policy_id"),
+                    policy_version=(saf_system.profile or {}).get("policy_version"),
+                    model_attribution=saf_system.model_attribution,
+                    will_decision="redirected",
+                    will_stage="phase_zero",
+                    governance_record={
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "mode": "harness_integration",
+                        "userPrompt": user_prompt,
+                        "recentTurns": recent_turns,
+                        "intellectDraft": None,
+                        "intellectReflection": "",
+                        "toolCalls": tool_results,
+                        "finalOutput": _blocked_notice,
+                        "willDecision": "redirected",
+                        "willReason": gate_reason,
+                        "profileValues": saf_system.values,
+                        "conscienceLedger": [],
+                        "spiritScore": None,
+                        "spiritNote": gate_reason,
+                        "policyId": (saf_system.profile or {}).get("policy_id"),
+                        "policyVersion": (saf_system.profile or {}).get("policy_version"),
+                        "orgId": org_id or (saf_system.profile or {}).get("org_id"),
+                        "userId": user_id,
+                        "agentName": agent_key,
+                        "intellectModel": selected_intellect,
+                        "conscienceModel": selected_conscience,
+                    },
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Harness block audit failed — turn left pending."
+                )
+            return jsonify({
+                "finalOutput": _blocked_notice,
+                "willDecision": "redirected",
+                "willReason": gate_reason,
+                "messageId": message_id,
+                "audit_status": "complete"
+            })
+
+        # Generate with tools
+        record_harness_progress(saf_system, message_id, "analyzing")
+        intent, r_t, retrieved_context = await saf_system.intellect_engine.generate(
+            user_prompt=full_prompt,
+            memory_summary=saf_system.store.fetch_conversation_summary(conversation_id),
+            recent_turns=recent_turns,
+            spirit_feedback="",
+            plugin_context={},
+            user_profile_json="{}",
+            agent_context_json="{}",
+            user_name="Harness",
+            user_id=user_id,
+            message_id=message_id,
+            tools_override=tools or None,
+            tool_results_supplied=len(tool_results),
+        )
+
+        if intent is None:
+            return jsonify({
+                "finalOutput": "I encountered an internal error processing your request.",
+                "willDecision": "violation",
+                "willReason": "Intellect failed.",
+                "messageId": message_id,
+                "audit_status": "complete"
+            })
+
+        # Tool proposal turn. This branch used to return immediately, which did
+        # two bad things: the proposal shipped ungoverned (no allow-list, no
+        # parameter-constraint check), and the AI row that insert_turn_atomic
+        # left pending was never finalised, so every tool-using turn became an
+        # orphan that no auditor could ever see. Gate it, then commit the turn
+        # as its own governance record. The conscience ledger is legitimately
+        # empty because there is no assistant prose to audit yet — the verdict
+        # here comes from the tool-intent gate, and toolCalls records why.
+        if intent.get("type") == "tool_call":
+            tool_name = intent.get("tool_name")
+            tool_params = intent.get("parameters", {}) or {}
+            record_harness_progress(saf_system, message_id, "checking_tool")
+            tool_decision, tool_reason = await saf_system.will_gate.evaluate_tool_intent(
+                tool_name, tool_params, saf_system.profile or {}
+            )
+            tool_summary = (
+                f"[tool_call] {tool_name}"
+                f"({json.dumps(tool_params, sort_keys=True, default=str)})"
+            )
+            tool_preflight_ledger = []
+            tool_preflight_blocked = False
+            if tool_decision != "violation":
+                (tool_decision, tool_reason,
+                 tool_preflight_ledger) = await audit_harness_tool_proposal(
+                    saf_system,
+                    user_prompt,
+                    tool_summary,
+                    reflection=r_t or "",
+                    retrieved_context=retrieved_context or "",
+                    recent_turns=recent_turns,
+                )
+                tool_preflight_blocked = tool_decision == "violation"
+            # Circuit breaker. The harness drives tool calling natively and
+            # re-sends the user's original message each turn, so a model that
+            # cannot make progress repeats itself forever: a real conversation
+            # reached 97 identical `glob` proposals and 15 identical reads of a
+            # path that does not exist, 896 persisted rows, no exit. The Will
+            # cannot catch this — every proposal is legitimately authorised, so
+            # it approves every one of them. Only a repetition counter can.
+            #
+            # Count only the native tool results for this user turn, not the
+            # long-lived conversation's entire audit history. The gateway now
+            # joins each result to its actual name/arguments and excludes old
+            # turns; this catches alternations without letting a past failed
+            # session block a fresh request with the same operation.
+            loop_stopped = False
+            if tool_decision != "violation":
+                repeats = count_current_turn_tool_repeats(
+                    tool_results, tool_name, tool_params,
+                    HARNESS_TOOL_REPEAT_LIMIT,
+                )
+                if repeats >= HARNESS_TOOL_REPEAT_LIMIT:
+                    loop_stopped = True
+                    tool_decision = "violation"
+                    tool_reason = (
+                        f"Refused: this exact call already appears {repeats} "
+                        f"times in this user turn without the conversation progressing "
+                        f"(circuit breaker limit {HARNESS_TOOL_REPEAT_LIMIT}). "
+                        f"Repeating it is not making progress, so the loop is "
+                        f"broken here rather than left to run."
+                    )
+            tool_event = [{
+                "tool_name": tool_name,
+                "parameters": tool_params,
+                "decision": tool_decision,
+                "reason": tool_reason,
+            }]
+            record_harness_progress(saf_system, message_id, "finalizing")
+
+            try:
+                saf_system.store.update_audit_results(
+                    message_id, tool_preflight_ledger, None,
+                    f"Tool intent gate: {tool_decision} — {tool_reason}",
+                    agent_key, saf_system.values, None,
+                    policy_id=(saf_system.profile or {}).get("policy_id"),
+                    policy_version=(saf_system.profile or {}).get("policy_version"),
+                    model_attribution=saf_system.model_attribution,
+                    will_decision=tool_decision,
+                    will_stage="tool_intent",
+                    governance_record={
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "mode": "harness_integration",
+                        "turnKind": "tool_proposal",
+                        "userPrompt": user_prompt,
+                        "recentTurns": recent_turns,
+                        "intellectDraft": tool_summary,
+                        "finalOutput": (
+                            harness_refusal_for_gate(tool_reason)
+                            if tool_preflight_blocked else tool_summary
+                        ),
+                        "willDecision": tool_decision,
+                        "willReason": tool_reason,
+                        "profileValues": saf_system.values,
+                        "conscienceLedger": [],
+                        "spiritScore": None,
+                        "toolCalls": tool_event,
+                        "policyId": (saf_system.profile or {}).get("policy_id"),
+                        "policyVersion": (saf_system.profile or {}).get("policy_version"),
+                        "orgId": org_id or (saf_system.profile or {}).get("org_id"),
+                        "userId": user_id,
+                        "agentName": agent_key,
+                        "intellectModel": selected_intellect,
+                        "conscienceModel": selected_conscience,
+                    },
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Tool-proposal governance persist failed — proposal still gated."
+                )
+
+            try:
+                saf_system.store.update_message_content(
+                    message_id, tool_summary, audit_status="complete"
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Tool-proposal row finalisation failed."
+                )
+
+            if tool_decision == "violation":
+                if loop_stopped:
+                    refusal = (
+                        "I have proposed this identical tool call repeatedly "
+                        "without getting anywhere, so I stopped rather than loop again."
+                    )
+                elif tool_preflight_blocked:
+                    refusal = harness_refusal_for_gate(tool_reason)
+                else:
+                    refusal = (
+                        "I proposed a tool call that this deployment's governance "
+                        f"policy does not permit ({tool_reason}). I will not run it."
+                    )
+                return jsonify({
+                    "finalOutput": refusal,
+                    "willDecision": "violation",
+                    "willReason": tool_reason,
+                    "messageId": message_id,
+                    "audit_status": "complete",
+                    "loop_stopped": loop_stopped,
+                })
+
+            return jsonify({
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "parameters": tool_params,
+                "messageId": message_id,
+                "willDecision": tool_decision,
+                "willReason": tool_reason,
+                "token_usage": harness_intellect_token_usage(),
+                "audit_status": "complete",
+            })
+
+        # Text response — run governance
+        draft_output = intent.get("content", "")
+
+        # Run Conscience audit
+        record_harness_progress(saf_system, message_id, "auditing")
+        ledger = await saf_system.conscience.evaluate(
+            final_output=draft_output,
+            user_prompt=user_prompt,
+            reflection=r_t or "",
+            retrieved_context=retrieved_context or "",
+            recent_history=recent_turns,
+        )
+
+        # Enforce the audit verdict. The comment used to claim we ran the Will
+        # hard gate before constructing any client-visible output. Hard gates
+        # carry weight 0.0 and are excluded from the Spirit aggregate, so the
+        # hard-gate check must precede it, as in the orchestrator.
+        will_stage = None
+        if not ledger:
+            will_decision, will_reason = "violation", "Audit failed — empty ledger"
+            will_stage = "audit"
+        else:
+            will_decision, will_reason = saf_system.will_gate.evaluate_hard_gates(ledger)
+            if will_decision == "violation":
+                will_stage = "hard_gate"
+
+        # Run Spirit alignment and its Will threshold. The old harness branch
+        # computed a Spirit score for telemetry but never asked Will to gate it.
+        spirit_score = None
+        spirit_note = None
+        record_harness_progress(saf_system, message_id, "alignment")
+        if will_decision == "approve":
+            spirit_assessment = saf_system.spirit.integrate(ledger)
+            spirit_decision, spirit_reason = saf_system.will_gate.evaluate_spirit_score(
+                spirit_assessment
+            )
+            if spirit_decision != "approve":
+                will_decision, will_reason = spirit_decision, spirit_reason
+                will_stage = "spirit"
+            spirit_score, spirit_note, _, _, _, _ = saf_system.spirit.compute(ledger, {})
+
+        # A hard-gate or Spirit failure is a BLOCK, not an annotation on text
+        # that still gets sent to the user. Keep the model's draft in the
+        # governance record for review, but only return deterministic refusal
+        # copy to OpenCode.
+        final_output = harness_output_after_gate(
+            draft_output, will_decision, will_reason
+        )
+        record_harness_progress(saf_system, message_id, "finalizing")
+
+        # Build governance record
+        governance_record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": "harness_integration",
+            "userPrompt": user_prompt,
+            "recentTurns": recent_turns,
+            "intellectDraft": draft_output,
+            "intellectReflection": r_t or "",
+            "finalOutput": final_output,
+            "willDecision": will_decision,
+            "willReason": will_reason,
+            "profileValues": saf_system.values,
+            "conscienceLedger": ledger,
+            "spiritScore": spirit_score,
+            "spiritNote": spirit_note,
+            "toolCalls": tool_results,
+            "policyId": (saf_system.profile or {}).get("policy_id"),
+            "policyVersion": (saf_system.profile or {}).get("policy_version"),
+            "orgId": org_id or (saf_system.profile or {}).get("org_id"),
+            "userId": user_id,
+            "agentName": agent_key,
+            "intellectModel": selected_intellect,
+            "conscienceModel": selected_conscience,
+        }
+
+        # Persist audit results
+        saf_system.store.update_audit_results(
+            message_id, ledger, spirit_score, spirit_note,
+            agent_key, saf_system.values, None,
+            policy_id=(saf_system.profile or {}).get("policy_id"),
+            policy_version=(saf_system.profile or {}).get("policy_version"),
+            model_attribution=saf_system.model_attribution,
+            will_decision=will_decision,
+            will_stage=will_stage,
+            governance_record=governance_record
+        )
+
+        # Persist the assistant text on the row insert_turn_atomic left pending,
+        # so the transcript in the Audit Hub shows the reply and not an empty
+        # placeholder.
+        try:
+            saf_system.store.update_message_content(
+                message_id, final_output, audit_status="complete"
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Harness reply persist failed — governance record unaffected."
+            )
+
+        result = {
+            "finalOutput": final_output,
+            "willDecision": will_decision,
+            "willReason": will_reason,
+            "messageId": message_id,
+            "conscienceLedger": ledger,
+            "spirit_score": spirit_score,
+            "spiritNote": spirit_note,
+            "audit_status": "complete",
+            "aiProvenance": provenance.ai_marker(model=selected_intellect),
+            "token_usage": harness_intellect_token_usage(),
+        }
+
+        try:
+            result["spirit_scores_history"] = db.spirit_score_history_for_message(message_id)
+        except Exception:
+            pass
+
+        return provenance.mark_json_response(jsonify(result))
+
+    except Exception as e:
+        import traceback
+        current_app.logger.error(f"Harness Processing Error: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"finalOutput": "I encountered an internal error processing your request."}), 500
+
+
+@conversations_bp.route('/harness/process_prompt', methods=['POST'])
+async def harness_process_prompt_endpoint():
+    """Authenticate and translate client fields, then enter SAFi's orchestrator."""
+    api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+    if api_key.startswith("Bearer "):
+        api_key = api_key.split(" ", 1)[1]
+    policy_id = db.get_policy_id_by_api_key(api_key)
+    if not policy_id:
+        return jsonify({"error": "Unauthorized: Invalid Policy API Key"}), 401
+
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+    user_prompt = data.get("message")
+    conversation_id = data.get("conversation_id")
+    agent_key = data.get("agent", "safi")
+    if not all([user_id, user_prompt, conversation_id]):
+        return jsonify({"error": "Missing required fields"}), 400
+    if not isinstance(conversation_id, str) or len(conversation_id.strip()) > db.CONVERSATION_ID_MAX_LEN:
+        return jsonify({
+            "error": f"'conversation_id' must be at most {db.CONVERSATION_ID_MAX_LEN} characters.",
+            "code": "CONVERSATION_ID_TOO_LONG",
+        }), 400
+    conversation_id = conversation_id.strip()
+
+    requested_message_id = data.get("message_id")
+    if requested_message_id:
+        try:
+            message_id = str(uuid.UUID(str(requested_message_id)))
+        except (ValueError, TypeError, AttributeError):
+            return jsonify({"error": "Invalid message_id"}), 400
+    else:
+        message_id = str(uuid.uuid4())
+
+    workspace_context = _normalize_workspace_context(data.get("workspace_context"))
+    tools = _normalize_harness_tools(data.get("tools"), workspace_context)
+    raw_results = data.get("tool_results", [])
+    tool_results = [item for item in raw_results if isinstance(item, dict)] \
+        if isinstance(raw_results, list) else []
+    recent_turns = data.get("recent_turns", "")
+    recent_turns = recent_turns[-12000:] if isinstance(recent_turns, str) else ""
+
+    try:
+        user_details = db.get_user_details(user_id)
+        if not user_details:
+            db.upsert_user({
+                "sub": user_id,
+                "id": user_id,
+                "name": f"Bot User {user_id[-4:]}",
+                "email": f"{user_id}@bot.safinstitute.org",
+                "picture": "",
+            })
+            db.update_user_profile(user_id, agent_key)
+
+        if hasattr(db, "upsert_external_conversation"):
+            db.upsert_external_conversation(conversation_id, user_id, title="Harness Chat")
+        else:
+            db.ensure_conversation_access(user_id, conversation_id)
+
+        org_id = (user_details.get("org_id") if user_details else None)
+        if not org_id:
+            org_id = (db.get_policy(policy_id) or {}).get("org_id")
+        selected_intellect = Config.INTELLECT_MODEL
+        selected_conscience = Config.CONSCIENCE_MODEL
+        selected_intellect, selected_conscience = resolve_effective_faculty_models(
+            Config,
+            selected_intellect,
+            selected_conscience,
+            org_id,
+            intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
+            conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+        )
+        saf_system = global_safi_cache.get_or_create(
+            agent_key,
+            selected_intellect,
+            None,
+            selected_conscience,
+            policy_id=policy_id,
+        )
+        pg.activate_org(org_id)
+        db.ensure_conversation_access(user_id, conversation_id)
+
+        from ..core.services.usage_tracking import begin_request_usage
+        begin_request_usage()
+        result = await saf_system.process_prompt(
+            user_prompt,
+            user_id,
+            conversation_id,
+            user_name="Harness",
+            override_message_id=message_id,
+            org_id=org_id,
+            client_owned_tools=tools,
+            client_tool_results=tool_results,
+            client_recent_turns=recent_turns,
+            client_workspace_context=workspace_context,
+        )
+        result["token_usage"] = harness_intellect_token_usage()
+        result.setdefault("aiProvenance", provenance.ai_marker(model=selected_intellect))
+        return provenance.mark_json_response(jsonify(result))
+    except Exception:
+        current_app.logger.exception("Harness adapter failed while dispatching the governed turn.")
+        return jsonify({
+            "finalOutput": "I encountered an internal error processing your request.",
+            "messageId": message_id,
+        }), 500

@@ -283,8 +283,8 @@ class ToolCallsReachTheAuditHubAndTheExport(unittest.TestCase):
                          "expected the definition plus both call sites")
         self.assertEqual(src.count("tool_audit.append(_entry)"), 2,
                          "both gate sites must accumulate into the capture")
-        self.assertIn('"toolCalls": tool_audit', src,
-                      "the capture must carry the accumulated tool loop")
+        self.assertIn('"toolCalls": (client_tool_results + tool_audit) if client_owned else tool_audit', src,
+                      "client tool results and native tool audit must both reach the capture")
 
     def test_12_a_toolless_turn_still_has_a_defined_list(self):
         """tool_audit is initialised before the intent dispatch, so a plain text
@@ -306,7 +306,8 @@ class ToolCallsReachTheAuditHubAndTheExport(unittest.TestCase):
                       "the card exists but is never rendered")
         i = js.index("function toolCallsCard")
         card = js[i:i + 2400]
-        for needed in ("c.tool", "c.decision", "c.reason", "c.params"):
+        for needed in ("c.tool || c.tool_name", "c.decision", "c.reason",
+                       "c.params ?? c.parameters ?? c.arguments"):
             with self.subTest(field=needed):
                 self.assertIn(needed, card,
                               f"the card does not surface {needed}")
@@ -317,8 +318,12 @@ class ToolCallsReachTheAuditHubAndTheExport(unittest.TestCase):
         self.assertIn("${badge}", card,
                       "the verdict badge is built but never interpolated into the "
                       "row — the decision would not be visible")
-        self.assertIn("${esc(c.tool", card.replace("|| 'unknown tool'", ""),
-                      "the tool name is not interpolated into the row")
+        self.assertIn("${esc(tool)}", card,
+                      "the normalized tool name is not interpolated into the row")
+        for status in ("approved", "blocked", "executed", "proposed"):
+            with self.subTest(status=status):
+                self.assertIn(status, card,
+                              "tool results must not be mislabeled as blocked")
 
 
 class BothGateSitesJournalAfterTheVerdict(unittest.TestCase):
@@ -338,7 +343,10 @@ class BothGateSitesJournalAfterTheVerdict(unittest.TestCase):
                                 "expected both the first-intent and follow-up gate sites")
         for pos in gates:
             with self.subTest(offset=pos):
-                after = self.src[pos:pos + 1200]
+                entry_pos = self.src.find("_tool_audit_entry(", pos)
+                self.assertGreaterEqual(entry_pos, pos,
+                                        "tool verdict must be built into an audit entry")
+                after = self.src[entry_pos:entry_pos + 700]
                 # Assert the PROPERTY, not the syntax: the verdict is built into
                 # an audit entry and that entry is what gets journaled. An earlier
                 # version of this test looked for a literal '"decision"' at the
