@@ -52,6 +52,7 @@ in; nothing here assumes the tree is the repo this file ships in.
 """
 import asyncio
 import fnmatch
+import io
 import json
 import logging
 import os
@@ -128,12 +129,7 @@ def _resolve_within_root(candidate: str, root: Optional[Path] = None) -> Path:
     return target
 
 
-def _looks_binary(path: Path) -> bool:
-    try:
-        with path.open("rb") as fh:
-            block = fh.read(_TEXT_SNIFF_BYTES)
-    except OSError:
-        return False
+def _is_binary_buffer(block: bytes) -> bool:
     if not block:
         return False
     if b"\x00" in block:
@@ -142,6 +138,15 @@ def _looks_binary(path: Path) -> bool:
         1 for b in block if b in (9, 10, 13) or 32 <= b <= 126 or b >= 128
     )
     return printable / len(block) < 0.75
+
+
+def _looks_binary(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            block = fh.read(_TEXT_SNIFF_BYTES)
+    except OSError:
+        return False
+    return _is_binary_buffer(block)
 
 
 def _is_hidden_or_skipped(path: Path, root: Path) -> bool:
@@ -259,6 +264,12 @@ def _grep_files(
     except re.error as exc:
         raise ValueError(f"Invalid regular expression: {exc}")
 
+    glob_regexes = (
+        [re.compile(fnmatch.translate(v)) for v in _glob_variants(glob_filter)]
+        if glob_filter
+        else None
+    )
+
     matches: List[Dict[str, Any]] = []
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
@@ -271,8 +282,8 @@ def _grep_files(
                 continue
             path = current / filename
             rel = path.relative_to(root).as_posix()
-            if glob_filter and not (
-                fnmatch.fnmatch(rel, glob_filter) or fnmatch.fnmatch(filename, glob_filter)
+            if glob_regexes and not any(
+                r.match(rel) or r.match(filename) for r in glob_regexes
             ):
                 continue
             if _is_hidden_or_skipped(path, root):
@@ -283,21 +294,26 @@ def _grep_files(
             if _is_forbidden_file(path, root):
                 continue
             try:
-                if path.stat().st_size > _MAX_FILE_BYTES or _looks_binary(path):
+                if path.stat().st_size > _MAX_FILE_BYTES:
                     continue
-                text = path.read_text(encoding="utf-8", errors="replace")
+                with path.open("rb") as raw_fh:
+                    sniff = raw_fh.read(_TEXT_SNIFF_BYTES)
+                    if _is_binary_buffer(sniff):
+                        continue
+                    raw_fh.seek(0)
+                    with io.TextIOWrapper(raw_fh, encoding="utf-8", errors="replace") as text_fh:
+                        for lineno, line in enumerate(text_fh, start=1):
+                            if regex.search(line):
+                                matches.append({
+                                    "file": rel,
+                                    "line": lineno,
+                                    "text": line.strip()[:300],
+                                })
+                                if len(matches) >= limit:
+                                    return matches
             except OSError as exc:
                 logger.debug("grep skipped %s: %s", rel, exc)
                 continue
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                if regex.search(line):
-                    matches.append({
-                        "file": rel,
-                        "line": lineno,
-                        "text": line.strip()[:300],
-                    })
-                    if len(matches) >= limit:
-                        return matches
     return matches
 
 
@@ -355,26 +371,34 @@ async def read_file(path: str, offset: int = 1, limit: int = _DEFAULT_READ_LIMIT
                     "read limit. Use grep to locate the relevant lines."
                 ),
             })
-        if _looks_binary(target):
-            return json.dumps({
-                "error": f"{path} appears to be a binary file and was not read."
-            })
+        start = max(1, int(offset or 1))
+        max_requested = max(1, min(int(limit or _DEFAULT_READ_LIMIT), _MAX_READ_LINES))
+        end = start + max_requested
 
+        window: List[str] = []
+        total = 0
         try:
-            text = target.read_text(encoding="utf-8", errors="replace")
+            with target.open("rb") as raw_fh:
+                sniff = raw_fh.read(_TEXT_SNIFF_BYTES)
+                if _is_binary_buffer(sniff):
+                    return json.dumps({
+                        "error": f"{path} appears to be a binary file and was not read."
+                    })
+                raw_fh.seek(0)
+                with io.TextIOWrapper(raw_fh, encoding="utf-8", errors="replace") as text_fh:
+                    for lineno, line in enumerate(text_fh, start=1):
+                        total = lineno
+                        if start <= lineno < end:
+                            window.append(line.rstrip("\r\n"))
         except OSError as exc:
             return json.dumps({"error": f"Cannot read {path}: {exc}"})
 
-        lines = text.splitlines()
-        total = len(lines)
-        start = max(1, int(offset or 1))
         # Clamp rather than error: asking past the end is an off-by-one, and
         # answering with the tail is more useful than refusing.
         if start > total:
             return json.dumps({
                 "error": f"offset {start} is past the end of {path} ({total} lines)."
             })
-        window = lines[start - 1: start - 1 + max(1, min(int(limit or _DEFAULT_READ_LIMIT), _MAX_READ_LINES))]
         body = "\n".join(
             f"{start + i}: {line}" for i, line in enumerate(window)
         )

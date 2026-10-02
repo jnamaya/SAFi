@@ -314,8 +314,8 @@ class LLMProvider:
                 "type": "choice",
                 "instructions": {
                     "question": f"Which scoring-guide level best describes the final output for {value}?",
-                    "guidance": instructions,
                     "rubric_description": str(rubric.get("description") or ""),
+                    "guidance": instructions,
                 },
                 "criteria": criteria,
             }

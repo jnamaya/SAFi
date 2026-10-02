@@ -3,6 +3,20 @@ import * as api from '../../core/api.js';
 import { openPolicyWizard } from '../ui-policy-wizard.js';
 import { renderProfileDetailsModal } from './ui-settings-agents.js';
 
+// Constraint count must handle both shapes of will_rules: legacy
+// list-of-rules, and the structured dict (whose .length is undefined).
+function constraintCount(wr) {
+    if (Array.isArray(wr)) return wr.length;
+    if (wr && typeof wr === 'object') {
+        const sr = wr.structural_requirements || {};
+        return (wr.early_prompt_blacklist || []).length
+            + (sr.banned_markdown_syntaxes || []).length
+            + (sr.require_disclaimer ? 1 : 0)
+            + (Array.isArray(wr.allowed_tools) ? 1 : 0);
+    }
+    return 0;
+}
+
 // --- NEW: Governance Tab Rendering ---
 export async function renderSettingsGovernanceTab() {
     ui._ensureElements();
@@ -32,20 +46,6 @@ export async function renderSettingsGovernanceTab() {
         // Split Policies
         const demoPolicies = allPolicies.filter(p => p.is_demo);
         const myPolicies = allPolicies.filter(p => !p.is_demo);
-
-        // Constraint count must handle both shapes of will_rules: legacy
-        // list-of-rules, and the structured dict (whose .length is undefined).
-        const constraintCount = (wr) => {
-            if (Array.isArray(wr)) return wr.length;
-            if (wr && typeof wr === 'object') {
-                const sr = wr.structural_requirements || {};
-                return (wr.early_prompt_blacklist || []).length
-                    + (sr.banned_markdown_syntaxes || []).length
-                    + (sr.require_disclaimer ? 1 : 0)
-                    + (Array.isArray(wr.allowed_tools) ? 1 : 0);
-            }
-            return 0;
-        };
 
         const renderPolicyCard = (p, isReadOnly) => `
             <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow mb-3">
@@ -334,7 +334,7 @@ async function openPolicyHistory(policyId, policyName, canEdit) {
                 pre.textContent =
                   `PURPOSE & MANDATE:\n${v.worldview || '(none)'}\n\n` +
                   `VALUES (${vals.length}): ${vals.join(', ') || '(none)'}\n` +
-                  `CONSTRAINTS: ${(v.will_rules || []).length}\n` +
+                  `CONSTRAINTS: ${constraintCount(v.will_rules)}\n` +
                   `SCOPE: ${(v.policy_config || {}).scope_statement || '(none)'}`;
             } else { pre.textContent = 'Failed to load version.'; }
         }));

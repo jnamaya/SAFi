@@ -128,6 +128,18 @@ export function closeWizard(skipReload = false) {
 }
 
 // --- HYDRATION: map a DB policy (possibly legacy shape) to wizard state ---
+// A standard's label and explanation are stored under `value`/`definition` by
+// the demo seeder and the policy API, but every reader in this wizard expects
+// `name`/`description`. Without this mapping a seeded policy renders the label
+// field as the literal string "undefined" — JS stringifying the missing key.
+function normalizeStandard(v) {
+    if (!v || typeof v !== 'object') return v;
+    const out = { ...v };
+    if (out.name === undefined && out.value !== undefined) out.name = out.value;
+    if (out.description === undefined && out.definition !== undefined) out.description = out.definition;
+    return out;
+}
+
 function hydratePolicy(existingPolicy) {
     const init = getInitialState();
     // Tolerate policy_config arriving as a JSON string. The server is supposed to
@@ -181,7 +193,7 @@ function hydratePolicy(existingPolicy) {
         scope_statement: cfg.scope_statement || "",
 
         early_prompt_blacklist: blacklist,
-        values:                 existingPolicy.values_weights || [],
+        values:                 (existingPolicy.values_weights || []).map(normalizeStandard),
         structural_requirements: structural,
         allowed_tools:          allowed,
         will_rules:             legacyList,

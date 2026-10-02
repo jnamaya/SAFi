@@ -8,7 +8,12 @@ CODING_HARNESS_AGENT: Dict[str, Any] = {
         "A governed software-engineering agent that inspects and works with the "
         "repository open in the connected coding-agent client."
     ),
-    "policy_id": "opencode_code_governance_policy",
+    # Seeded at startup from core/policies/demo/policies.py, so a fresh
+    # deployment ships a governed coding agent out of the box. The standards
+    # live at the policy tier, not here: this profile carries no values of its
+    # own because a harness that can run shell commands and rewrite files is
+    # only safe if its conscience scores those tool calls.
+    "policy_id": "demo_coding_harness_policy",
     "track_work_context": True,
     "scope_statement": (
         "Software engineering and repository work: inspect, explain, modify, and test "

@@ -285,6 +285,14 @@ async def bot_process_prompt_endpoint():
         org_id = (user_details.get('org_id') if user_details else None)
         if not org_id:
             org_id = (db.get_policy(policy_id) or {}).get('org_id')
+        if not org_id:
+            org_id = Config.PUBLIC_ORG_ID
+        if not org_id:
+            founding_org = db.get_oldest_organization()
+            if founding_org:
+                org_id = founding_org.get("id")
+        if org_id and (not user_details or not user_details.get("org_id")):
+            db.update_user_org_and_role(user_id, org_id, "member")
         selected_intellect, selected_conscience = resolve_effective_faculty_models(
             Config,
             selected_intellect,
@@ -2342,6 +2350,14 @@ async def harness_process_prompt_endpoint():
         org_id = (user_details.get("org_id") if user_details else None)
         if not org_id:
             org_id = (db.get_policy(policy_id) or {}).get("org_id")
+        if not org_id:
+            org_id = Config.PUBLIC_ORG_ID
+        if not org_id:
+            founding_org = db.get_oldest_organization()
+            if founding_org:
+                org_id = founding_org.get("id")
+        if org_id and (not user_details or not user_details.get("org_id")):
+            db.update_user_org_and_role(user_id, org_id, "member")
         selected_intellect = Config.INTELLECT_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
         selected_intellect, selected_conscience = resolve_effective_faculty_models(

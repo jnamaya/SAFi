@@ -175,52 +175,22 @@ class ToolResultPersistenceTests(unittest.TestCase):
         self.assertIn("client_recent_turns", orch_src)
 
 
-class HardGateEnforcementTests(unittest.TestCase):
+class ToolGateEnforcementTests(unittest.TestCase):
     def setUp(self):
-        self.scope_gate = {
-            "value": "Scope Compliance",
-            "hard_gate": True,
-            "gate_reason": "scope_violation",
-            "rubric": {"description": "scope", "scoring_guide": []},
-        }
-        self.system = SimpleNamespace(
-            values=[self.scope_gate],
-            conscience=SimpleNamespace(
-                llm_provider=object(), profile={}, prompt_config={}
-            ),
-            log=SimpleNamespace(exception=lambda *args, **kwargs: None),
-        )
-        self.will = WillGate(None, values=[self.scope_gate], profile={})
-        self.system.will_gate = self.will
+        self.will = WillGate(None, values=[], profile={"allowed_tools": ["websearch"]})
 
-    def _audit(self, score):
-        class FakeAuditor:
-            def __init__(self, **kwargs):
-                self.values = kwargs["values"]
+    def test_will_gate_authorizes_allowed_tool_proposal(self):
+        decision, reason = asyncio.run(self.will.evaluate_tool_intent(
+            "websearch", {"query": "python"}, {"allowed_tools": ["websearch"]}
+        ))
+        self.assertEqual(decision, "approve")
 
-            async def evaluate(self, **kwargs):
-                self.kwargs = kwargs
-                return [{"value": "Scope Compliance", "score": score, "reason": "test"}]
-
-        self.system.will_gate = self.will
-        with patch("safi_app.core.orchestrator.ConscienceAuditor", FakeAuditor):
-            return asyncio.run(SAFi._audit_client_tool_proposal(
-                self.system,
-                "Tell me an unrelated joke.",
-                '[tool_call] websearch({"query":"jokes"})',
-                reflection="",
-                retrieved_context="",
-                recent_history="Prior software task.",
-            ))
-
-    def test_scope_hard_gate_blocks_before_native_tool_execution(self):
-        decision, reason, ledger = self._audit(-1.0)
-        self.assertEqual((decision, reason), ("violation", "scope_violation"))
-        self.assertEqual(ledger[0]["score"], -1.0)
-
-    def test_in_scope_hard_gate_allows_the_tool_proposal(self):
-        decision, reason, _ = self._audit(1.0)
-        self.assertEqual((decision, reason), ("approve", "hard_gates_passed"))
+    def test_will_gate_blocks_unauthorized_tool_proposal(self):
+        decision, reason = asyncio.run(self.will.evaluate_tool_intent(
+            "delete_database", {}, {"allowed_tools": ["websearch"]}
+        ))
+        self.assertEqual(decision, "violation")
+        self.assertIn("not authorized", reason)
 
     def test_shared_finalizer_runs_w1_before_audit(self):
         calls = []
@@ -283,7 +253,7 @@ class HardGateEnforcementTests(unittest.TestCase):
         src = (Path(conv.__file__).resolve().parent.parent / "core"
                / "orchestrator.py").read_text()
         api_src = Path(conv.__file__).read_text()
-        self.assertIn("_audit_client_tool_proposal(", src)
+        self.assertIn("will_gate.evaluate_tool_intent(", src)
         self.assertIn("client_owned_tools=tools", api_src)
         self.assertIn("recent_history=recent_turns_text", src)
         self.assertIn("self._finalize_draft(", src)

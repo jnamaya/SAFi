@@ -182,7 +182,7 @@ function renderValuesList(policyData) {
         card.innerHTML = `
             <div class="flex justify-between items-start mb-4 gap-4">
                 <input type="text" id="${nameId}" class="flex-1 font-bold text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 px-1 py-1 transition-all" 
-                    value="${v.name}" placeholder="e.g. Data Privacy, Accuracy, Regulatory Compliance">
+                    value="${v.name || v.value || ''}" placeholder="e.g. Data Privacy, Accuracy, Regulatory Compliance">
                     
                 <button class="text-gray-400 hover:text-red-500 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="window.removePolicyValue(${idx})">
                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -190,7 +190,7 @@ function renderValuesList(policyData) {
             </div>
             
             <textarea id="${descId}" class="w-full text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 hover:border-green-300 focus:border-green-500 rounded-lg p-3 resize-none h-24 outline-none transition-all mb-4"
-                placeholder="Brief description of this standard...">${v.description || ''}</textarea>
+                placeholder="Brief description of this standard...">${v.description || v.definition || ''}</textarea>
             
             <div class="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-100 dark:border-neutral-700">
                 <div class="flex items-center gap-3">
@@ -366,7 +366,7 @@ export function validateValuesStep(policyData) {
         return false;
     }
     for (const v of policyData.values) {
-        const name = v.name || 'Unnamed standard';
+        const name = v.name || v.value || 'Unnamed standard';
         if (!hasUsableCriteria(v)) {
             ui.showToast(
                 v.hard_gate

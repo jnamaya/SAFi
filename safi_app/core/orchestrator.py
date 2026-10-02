@@ -607,34 +607,6 @@ class SAFi:
     def _record_harness_progress(self, message_id: str, code: str) -> None:
         record_harness_progress(self.store, message_id, code)
 
-    async def _audit_client_tool_proposal(
-        self, user_prompt: str, tool_summary: str, reflection: str,
-        retrieved_context: str, recent_history: str,
-    ) -> Tuple[str, str, List[Dict[str, Any]]]:
-        """Check configured hard gates before returning a client-owned tool call."""
-        hard_gates = [value for value in (self.values or []) if value.get("hard_gate")]
-        if not hard_gates:
-            return "approve", "no_hard_gates_defined", []
-        auditor = ConscienceAuditor(
-            llm_provider=self.conscience.llm_provider,
-            values=hard_gates,
-            profile=self.conscience.profile,
-            prompt_config=self.conscience.prompt_config,
-        )
-        try:
-            ledger = await auditor.evaluate(
-                final_output=tool_summary,
-                user_prompt=user_prompt,
-                reflection=reflection or "",
-                retrieved_context=retrieved_context or "",
-                recent_history=recent_history or "",
-            )
-        except Exception:
-            self.log.exception("Harness tool-proposal hard-gate audit failed closed.")
-            return "violation", "hard_gate_unscored", []
-        decision, reason = self.will_gate.evaluate_hard_gates(ledger or [])
-        return decision, reason, ledger or []
-
     async def process_prompt(
         self,
         user_prompt: str,
@@ -729,9 +701,15 @@ class SAFi:
                     "[Client workspace metadata]\n" + "\n".join(workspace_lines)
                     + "\n[/Client workspace metadata]\n\n" + prompt_for_intellect
                 )
+            def _bound_result(val: Any, max_chars: int = 16_000) -> str:
+                s = val if isinstance(val, str) else (json.dumps(val, default=str) if val is not None else "")
+                if len(s) > max_chars:
+                    return s[:max_chars] + f"\n... [tool result truncated ({len(s)} characters total)]"
+                return s
+
             tool_history = "\n\n".join(
                 f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
-                f"{item.get('arguments', {})}\n{item.get('result', '')}"
+                f"{item.get('arguments', {})}\n{_bound_result(item.get('result', ''))}"
                 for item in client_tool_results
             )
             if tool_history:
@@ -987,34 +965,21 @@ class SAFi:
             )
             loop_stopped = False
             if client_owned and tool_decision == "approve":
-                self._record_harness_progress(message_id, "checking_tool")
-                (tool_decision, tool_reason,
-                 tool_preflight_ledger) = await self._audit_client_tool_proposal(
-                    user_prompt,
-                    tool_summary,
-                    r_t or "",
-                    retrieved_context or "",
-                    recent_turns_text,
+                repeats = count_current_turn_tool_repeats(
+                    client_tool_results, tool_name, parameters,
+                    HARNESS_TOOL_REPEAT_LIMIT,
                 )
-                if tool_decision == "approve":
-                    repeats = count_current_turn_tool_repeats(
-                        client_tool_results, tool_name, parameters,
-                        HARNESS_TOOL_REPEAT_LIMIT,
+                if repeats >= HARNESS_TOOL_REPEAT_LIMIT:
+                    loop_stopped = True
+                    tool_decision = "violation"
+                    tool_reason = (
+                        f"Refused: this exact call already appears {repeats} times "
+                        f"in this user turn without progress (circuit breaker limit "
+                        f"{HARNESS_TOOL_REPEAT_LIMIT})."
                     )
-                    if repeats >= HARNESS_TOOL_REPEAT_LIMIT:
-                        loop_stopped = True
-                        tool_decision = "violation"
-                        tool_reason = (
-                            f"Refused: this exact call already appears {repeats} times "
-                            f"in this user turn without progress (circuit breaker limit "
-                            f"{HARNESS_TOOL_REPEAT_LIMIT})."
-                        )
 
-            # Journal only after both deterministic Will and any configured
-            # client-tool hard-gate checks have reached a verdict.
+            # Journal only after both deterministic Will gate and circuit breaker checks have reached a verdict.
             _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
-            if tool_preflight_ledger:
-                _entry["preflightLedger"] = tool_preflight_ledger
             tool_audit.append(_entry)
             self.store.update_message_reasoning(
                 message_id,
@@ -1593,7 +1558,7 @@ class SAFi:
             # have an individual proposal audit row per handoff; the final turn
             # stores the returned executions/results in the form the Audit Hub
             # labels "executed".
-            "toolCalls": tool_audit + (client_tool_results if client_owned else []),
+            "toolCalls": (client_tool_results + tool_audit) if client_owned else tool_audit,
             "toolOnlyTurn": bool(client_owned and not ledger and not client_tool_results),
             "clientToolProposal": bool(client_owned and not ledger and not client_tool_results),
             "finalOutput": a_t,

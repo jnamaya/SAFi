@@ -120,7 +120,8 @@ class PathConfinementTests(unittest.TestCase):
 
     def setUp(self):
         self._saved = os.environ.get("SAFI_CODE_REVIEW_ROOT")
-        os.environ["SAFI_CODE_REVIEW_ROOT"] = "/app"
+        self._root = "/app" if Path("/app/safi_app").exists() else str(Path(__file__).resolve().parent.parent)
+        os.environ["SAFI_CODE_REVIEW_ROOT"] = self._root
         import importlib
         import safi_app.core.mcp_servers.coding_harness as mod
         self.mod = importlib.reload(mod)
@@ -135,18 +136,18 @@ class PathConfinementTests(unittest.TestCase):
         importlib.reload(mod)
 
     def test_reads_a_real_file(self):
-        out = json.loads(asyncio.run(read_file("/app/safi_app/core/mcp_servers/coding_harness.py")))
+        out = json.loads(asyncio.run(read_file(f"{self._root}/safi_app/core/mcp_servers/coding_harness.py")))
         self.assertIn("Coding-harness MCP server", out["content"])
 
     def test_lists_a_real_directory(self):
-        out = json.loads(asyncio.run(list_directory("/app/safi_app/core/mcp_servers")))
+        out = json.loads(asyncio.run(list_directory(f"{self._root}/safi_app/core/mcp_servers")))
         self.assertTrue(any(e["name"] == "coding_harness.py" for e in out["entries"]))
 
     def test_glob_and_grep_find_real_content(self):
-        out = json.loads(asyncio.run(glob_files("**/*.py", "/app/safi_app/core/mcp_servers")))
+        out = json.loads(asyncio.run(glob_files("**/*.py", f"{self._root}/safi_app/core/mcp_servers")))
         self.assertGreater(out["file_count"], 0)
         self.assertTrue(any(f.endswith("coding_harness.py") for f in out["files"]))
-        found = json.loads(asyncio.run(grep("SAFI_EXECUTED_TOOLS", "/app/safi_app/core/mcp_servers")))
+        found = json.loads(asyncio.run(grep("SAFI_EXECUTED_TOOLS", f"{self._root}/safi_app/core/mcp_servers")))
         self.assertGreater(found["match_count"], 0)
 
     def test_recursive_pattern_matches_depth_zero_too(self):
@@ -157,7 +158,7 @@ class PathConfinementTests(unittest.TestCase):
         no match, zero results, while `*.py` found the same files. The pattern a
         model reaches for first silently returned nothing.
         """
-        scope = "/app/safi_app/core/mcp_servers"
+        scope = f"{self._root}/safi_app/core/mcp_servers"
         recursive = json.loads(asyncio.run(glob_files("**/*.py", scope)))
         shallow = json.loads(asyncio.run(glob_files("*.py", scope)))
         self.assertEqual(recursive["file_count"], shallow["file_count"])
@@ -166,9 +167,9 @@ class PathConfinementTests(unittest.TestCase):
     def test_traversal_outside_root_is_refused(self):
         for bad in (
             "/etc/passwd",
-            "/app/../../etc/passwd",
+            f"{self._root}/../../etc/passwd",
             "../../../etc/shadow",
-            "/app/safi_app/../../etc/hosts",
+            f"{self._root}/safi_app/../../etc/hosts",
         ):
             out = json.loads(asyncio.run(read_file(bad)))
             self.assertIn("error", out, f"{bad} was not refused")
@@ -180,7 +181,7 @@ class PathConfinementTests(unittest.TestCase):
         These may legitimately not exist in the container; what matters is that
         if one does, it is refused rather than read.
         """
-        for bad in ("/app/.env", "/app/.git/config", "/app/.ssh/id_rsa"):
+        for bad in (f"{self._root}/.env", f"{self._root}/.git/config", f"{self._root}/.ssh/id_rsa"):
             out = json.loads(asyncio.run(read_file(bad)))
             if "error" not in out:
                 self.fail(f"{bad} was read instead of refused")
