@@ -7,7 +7,8 @@ set -e
 INSTALL_DIR="${HOME}/.local/share/safi-cli"
 BIN_DIR="${HOME}/.local/bin"
 
-echo "=== SAFi Governed Coding Assistant — CLI Installer ==="
+echo "=== SAFi Governed Agent Interface — CLI Installer ==="
+
 
 # 1. Check Python 3
 if ! command -v python3 &>/dev/null; then

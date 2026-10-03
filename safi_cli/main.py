@@ -456,7 +456,8 @@ def interactive_repl(
 def main():
     parser = argparse.ArgumentParser(
         prog="safi",
-        description="SAFi Governed Coding Assistant — Direct, audited repository engineering.",
+        description="SAFi Governed Agent Interface — Direct, policy-audited agentic workspace.",
+
     )
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")

@@ -14,7 +14,8 @@ console = Console()
 
 def print_banner(workspace_root: str, agent: str, api_url: str):
     banner_text = Text()
-    banner_text.append("SAFi Governed Coding Assistant\n", style="bold green")
+    banner_text.append("SAFi Governed Agent Interface\n", style="bold green")
+
     banner_text.append("Agent: ", style="bold")
     banner_text.append(f"{agent}  ", style="cyan")
     banner_text.append("Endpoint: ", style="bold")

@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "safi-cli"
 version = "0.1.0"
-description = "SAFi Governed Coding Assistant CLI"
+description = "SAFi Governed Agent Interface CLI"
+
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
