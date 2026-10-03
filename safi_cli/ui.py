@@ -2,7 +2,7 @@
 
 import json
 from typing import Any, Dict, List, Optional
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
@@ -24,43 +24,182 @@ def print_banner(workspace_root: str, agent: str, api_url: str):
     console.print(Panel(banner_text, border_style="green", expand=False))
 
 
-def print_tool_proposal(name: str, args: Dict[str, Any], will_decision: str, will_reason: Optional[str] = None):
+from rich import box
+
+_spirit_history: List[float] = []
+
+def _get_sparkline(data: List[float], width: int = 10) -> str:
+    if not data:
+        return ""
+    plot_data = data[-width:]
+    chars = " ▂▃▄▅▆▇█"
+    min_val, max_val = min(plot_data), max(plot_data)
+    if max_val == min_val:
+        return chars[len(chars)//2] * len(plot_data)
+
+    return "".join(chars[int((v - min_val) / (max_val - min_val) * (len(chars) - 1))] for v in plot_data)
+
+PRICING_PER_1M = {
+    "claude-3-5-sonnet": (3.00, 15.00),
+    "claude-3-sonnet": (3.00, 15.00),
+    "claude-3-opus": (15.00, 75.00),
+    "claude-3-haiku": (0.25, 1.25),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (5.00, 15.00),
+}
+
+def _estimate_cost(model_name: str, in_t: int, out_t: int) -> Optional[float]:
+    model_lower = model_name.lower()
+    for k, v in PRICING_PER_1M.items():
+        if k in model_lower:
+            return (in_t / 1_000_000) * v[0] + (out_t / 1_000_000) * v[1]
+    return None
+
+_session_in_tokens: int = 0
+_session_out_tokens: int = 0
+_session_cost: float = 0.0
+
+def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
+    """Build the Governance Scorecard panel to be displayed on the right."""
+    global _session_in_tokens, _session_out_tokens, _session_cost
+
+    ledger = result.get("conscienceLedger") or []
+    spirit_score = result.get("spirit_score") or result.get("spiritScore")
+
+    panels = []
+
+    # Alignment Score
+    if spirit_score is not None:
+        val = float(spirit_score)
+        _spirit_history.append(val)
+        spark = _get_sparkline(_spirit_history, width=8)
+        spirit_text = Text(f"📈 {val:.3f}  {spark}", style="cyan", justify="center")
+        panels.append(Panel(spirit_text, title="[bold]ALIGNMENT SCORE", border_style="blue"))
+
+    # Conscience Table
+    table = Table(expand=True, show_header=False, box=None)
+    table.add_column("Metric")
+    table.add_column("Score", justify="right")
+
+    has_scores = False
+    for entry in ledger:
+        score = entry.get("score")
+        if score is None:
+            continue
+
+        has_scores = True
+        val = entry.get("value") or "Standard"
+        score_val = float(score)
+        if score_val >= 0.7:
+            table.add_row(f"✅ {val}", Text(f"+{score_val:.2f}", style="green"))
+        elif score_val >= 0.0:
+            table.add_row(f"⚠️ {val}", Text(f"+{score_val:.2f}", style="yellow"))
+        else:
+            table.add_row(f"🛑 {val}", Text(f"{score_val:.2f}", style="red"))
+
+    if has_scores:
+        panels.append(Panel(table, title="[bold]POLICY AUDIT", border_style="dim"))
+
+    # Model and Token Stats
+    token_usage = result.get("token_usage")
+    ai_prov = result.get("aiProvenance")
+    stats_content = []
+
+    model_name_for_cost = None
+    if ai_prov and isinstance(ai_prov, dict):
+        model_name = ai_prov.get("model")
+        if model_name:
+            model_name_for_cost = model_name
+            stats_content.append(Text(f"Model: {model_name}", style="dim"))
+
+    if token_usage and isinstance(token_usage, dict):
+        in_t = token_usage.get("prompt_tokens", 0)
+        out_t = token_usage.get("completion_tokens", 0)
+
+        _session_in_tokens += in_t
+        _session_out_tokens += out_t
+
+        cost_str = ""
+        sess_cost_str = ""
+        if model_name_for_cost:
+            cost = _estimate_cost(model_name_for_cost, in_t, out_t)
+            if cost is not None:
+                _session_cost += cost
+
+                if 0 < cost < 0.0001:
+                    cost_str = " (<$0.0001)"
+                elif cost >= 0.0001:
+                    cost_str = f" (${cost:.4f})"
+
+                if 0 < _session_cost < 0.0001:
+                    sess_cost_str = " (<$0.0001)"
+                elif _session_cost >= 0.0001:
+                    sess_cost_str = f" (${_session_cost:.4f})"
+
+        stats_content.append(Text(f"Turn Tokens: {in_t} in | {out_t} out{cost_str}", style="dim"))
+        stats_content.append(Text(f"Session Total: {_session_in_tokens} in | {_session_out_tokens} out{sess_cost_str}", style="dim"))
+
+    if stats_content and has_scores:
+        panels.append(Panel(Group(*stats_content), title="[bold]MODEL STATS", border_style="dim"))
+
+    if not panels:
+        return Text("")
+
+    return Panel(Group(*panels), title="[bold]Compliance Audit", border_style="magenta")
+
+
+def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
+    will_decision = res.get("willDecision", "approved")
+    will_reason = res.get("willReason")
     is_approved = will_decision in ("approve", "approved")
     decision_style = "bold green" if is_approved else "bold red"
     icon = "" if is_approved else "⛔ "
 
-    title = f"Will Gate: [{decision_style}]{will_decision.upper()}[/] -> Tool '{name}'" if is_approved else f"⛔ Will Gate: [{decision_style}]{will_decision.upper()}[/] -> Tool '{name}'"
+    title_text = Text(f"{icon}[{will_decision.upper()}] -> {name}", style=decision_style)
     if will_reason:
-        title += f" ({will_reason})"
+        title_text.append(f"  # {will_reason}", style="dim")
 
-    # Format arguments
-    content = Text()
+    # Format left content
+    items = [title_text]
+
     if name == "bash":
         cmd = args.get("command", "")
-        console.print(Panel(Syntax(cmd, "bash", theme="monokai", line_numbers=False), title=title, border_style="cyan"))
-        return
+        items.append(Syntax(cmd, "bash", theme="monokai", line_numbers=False, padding=(0, 0, 0, 2)))
     elif name in ("edit", "write"):
         path = args.get("path", "")
-        content.append(f"File: {path}\n", style="bold")
         if name == "edit":
-            content.append("Target to replace:\n", style="red")
-            content.append(f"{args.get('target', '')}\n", style="dim")
-            content.append("Replacement:\n", style="green")
-            content.append(f"{args.get('replacement', '')}", style="green")
+            target = args.get('target', '')
+            replacement = args.get('replacement', '')
+
+            import difflib
+            diff_lines = list(difflib.unified_diff(
+                target.splitlines(keepends=True),
+                replacement.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                n=3
+            ))
+            diff_text = "".join(diff_lines)
+            items.append(Text(f"  File: {path}", style="bold"))
+            items.append(Syntax(diff_text if diff_text else replacement, "diff", theme="monokai", padding=(0, 0, 0, 2)))
         else:
             code = args.get("content", "")
-            preview = code[:500] + ("\n... [truncated]" if len(code) > 500 else "")
-            content.append(preview)
-        console.print(Panel(content, title=title, border_style="cyan"))
-        return
-
-    # Default tool display
-    args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
-    if is_approved:
-        console.print(f"[bold green]Will Gate:[/] [bold cyan]{name}[/]({args_str})")
+            preview = code[:300] + ("\n... [truncated]" if len(code) > 300 else "")
+            items.append(Text(f"  File: {path}", style="bold"))
+            items.append(Syntax(preview, "python", theme="monokai", padding=(0, 0, 0, 2)))
     else:
-        console.print(f"[bold red]⛔ Will Gate [{will_decision}]:[/] [bold cyan]{name}[/]({args_str})")
+        # Default tool display
+        args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
+        items.append(Text(f"  Arguments: {args_str}", style="cyan"))
 
+    left_renderable = Group(*items)
+
+    # Build Grid
+    grid = Table.grid(expand=True, padding=(0, 1))
+    grid.add_column("left", ratio=3)
+    grid.add_column("right", ratio=1)
+    grid.add_row(left_renderable, _build_scoreboard_panel(res))
+    console.print(grid)
 
 
 def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = True) -> bool:
@@ -83,69 +222,19 @@ def print_tool_result_summary(name: str, result: str):
     if len(first_line) > 100:
         first_line = first_line[:100] + "..."
     line_count = len(preview)
-    console.print(f"  [dim green]✓ Executed {name}: {first_line} ({line_count} lines)[/dim green]")
+    console.print(f"  [dim green]↳ ✓ Executed {name}: {first_line} ({line_count} lines)[/dim green]")
 
 
-def print_final_output(text: str):
+def print_final_output(text: str, res: Dict[str, Any]):
+    left_renderable = Panel(Markdown(text), title="[bold green]Governed Response[/]", border_style="green")
+    right_panel = _build_scoreboard_panel(res)
+
     console.print()
-    console.print(Panel(Markdown(text), title="[bold green]Governed Response[/]", border_style="green"))
-
-
-def print_governance_scorecard(result: Dict[str, Any]):
-    """Render Conscience rubric scores, Spirit EMA drift, and Will gate decisions."""
-    ledger = result.get("conscienceLedger") or []
-    will_decision = result.get("willDecision", "unknown")
-    will_reason = result.get("willReason")
-    spirit_score = result.get("spirit_score")
-    if spirit_score is None:
-        spirit_score = result.get("spiritScore")
-    spirit_note = result.get("spiritNote") or ""
-
-    table = Table(title="SAFi Governance Compliance Scorecard", border_style="dim")
-    table.add_column("Standard / Rubric", style="bold")
-    table.add_column("Verdict", justify="center")
-    table.add_column("Score", justify="right")
-    table.add_column("Assessment", style="dim")
-
-    for entry in ledger:
-        val = entry.get("value") or "Standard"
-        score = entry.get("score")
-        reason = entry.get("reason") or entry.get("descriptor") or ""
-
-        if score is not None:
-            score_val = float(score)
-            if score_val >= 0.7:
-                verdict = "[green]✓ PASS[/green]"
-                score_str = f"[green]{score_val:+.2f}[/green]"
-            elif score_val >= 0.0:
-                verdict = "[yellow]⚠ WARN[/yellow]"
-                score_str = f"[yellow]{score_val:+.2f}[/yellow]"
-            else:
-                verdict = "[red]✗ FAIL[/red]"
-                score_str = f"[red]{score_val:+.2f}[/red]"
-        else:
-            verdict = "[dim]AUDIT[/dim]"
-            score_str = "-"
-
-        table.add_row(val, verdict, score_str, reason[:80] + ("..." if len(reason) > 80 else ""))
-
-    console.print(table)
-
-    summary = Text()
-    summary.append("Will Gate Decision: ", style="bold")
-    decision_color = "green" if will_decision in ("approve", "approved") else "red"
-    summary.append(f"{will_decision.upper()} ", style=f"bold {decision_color}")
-    if will_reason:
-        summary.append(f"({will_reason}) ", style="dim")
-
-    if spirit_score is not None:
-        summary.append(" | Spirit EMA Score: ", style="bold")
-        summary.append(f"{float(spirit_score):.3f}", style="cyan")
-
-    if spirit_note:
-        summary.append(f"\nSpirit: {spirit_note}", style="italic dim")
-
-    console.print(Panel(summary, border_style="blue", expand=False))
+    grid = Table.grid(expand=True, padding=(0, 1))
+    grid.add_column("left", ratio=3)
+    grid.add_column("right", ratio=1)
+    grid.add_row(left_renderable, right_panel)
+    console.print(grid)
 
 
 def print_error(message: str):

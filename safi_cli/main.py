@@ -32,7 +32,7 @@ def run_agent_turn(
     try:
         for step in range(max_steps):
             try:
-                with ui.console.status("[bold cyan]Consulting SAFi Governed Engine...[/]"):
+                with ui.console.status("[bold cyan]Thinking...[/]"):
                     res = client.send_turn(
                         user_id=user_id,
                         conversation_id=conversation_id,
@@ -53,7 +53,7 @@ def run_agent_turn(
                 will_decision = res.get("willDecision", "approved")
                 will_reason = res.get("willReason")
 
-                ui.print_tool_proposal(tool_name, args, will_decision, will_reason)
+                ui.print_tool_proposal(tool_name, args, res)
 
                 # If WillGate blocked the proposal, SAFi does not expect client execution
                 if will_decision not in ("approve", "approved"):
@@ -81,8 +81,7 @@ def run_agent_turn(
 
             # Terminal answer reached
             final_text = res.get("finalOutput") or ""
-            ui.print_final_output(final_text)
-            ui.print_governance_scorecard(res)
+            ui.print_final_output(final_text, res)
             return res
 
         ui.print_error(f"Reached maximum tool loop iterations ({max_steps}).")

@@ -978,6 +978,40 @@ class SAFi:
                         f"{HARNESS_TOOL_REPEAT_LIMIT})."
                     )
 
+            # Antecedent Conscience Pre-Flight:
+            # Operative / Mutating actions (e.g. edit, write, bash) undergo an antecedent
+            # policy audit before execution is authorized. Speculative/inquisitive actions
+            # (read, grep, glob, list) pass through WillGate deterministically without latency.
+            if tool_decision == "approve" and tool_name in ("edit", "write", "bash"):
+                self.store.update_message_reasoning(
+                    message_id,
+                    f"Auditing policy compliance for '{tool_name}'...",
+                    phase="gather",
+                )
+                try:
+                    tool_preflight_ledger = await self.conscience.evaluate_tool_preflight(
+                        tool_name=tool_name,
+                        parameters=parameters,
+                        user_prompt=user_prompt,
+                    )
+                except Exception as exc:
+                    self.log.warning(f"Antecedent tool preflight audit failed: {exc}")
+                    tool_preflight_ledger = []
+
+                if tool_preflight_ledger:
+                    for entry in tool_preflight_ledger:
+                        try:
+                            score = float(entry.get("score", 0))
+                        except (TypeError, ValueError):
+                            score = 0.0
+                        if score < 0.0:
+                            tool_decision = "violation"
+                            tool_reason = (
+                                f"Policy preflight blocked '{tool_name}' on "
+                                f"{entry.get('value')}: {entry.get('reason', 'unsafe operation')}"
+                            )
+                            break
+
             # Journal only after both deterministic Will gate and circuit breaker checks have reached a verdict.
             _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
             tool_audit.append(_entry)
@@ -1016,7 +1050,7 @@ class SAFi:
                         "willDecision": tool_decision,
                         "willReason": tool_reason,
                         "profileValues": self.values,
-                        "conscienceLedger": [],
+                        "conscienceLedger": tool_preflight_ledger,
                         "toolProposalLedger": tool_preflight_ledger,
                         "spiritScore": None,
                         "toolCalls": tool_event,
@@ -1052,6 +1086,8 @@ class SAFi:
                         "willDecision": tool_decision,
                         "willReason": tool_reason,
                         "audit_status": "complete",
+                        "conscienceLedger": tool_preflight_ledger,
+                        "toolProposalLedger": tool_preflight_ledger,
                     }
 
                 if tool_name == "task" and loop_stopped:
