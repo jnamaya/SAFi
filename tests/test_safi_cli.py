@@ -167,7 +167,8 @@ class TestSafiCliTurn(unittest.TestCase):
 
 
 from unittest.mock import patch
-from safi_cli.main import prompt_switch_agent, AVAILABLE_AGENTS
+from safi_cli.main import prompt_switch_agent, prompt_command_menu, AVAILABLE_AGENTS
+
 
 
 class TestSafiCliAgentSwitching(unittest.TestCase):
@@ -281,8 +282,45 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         self.assertEqual(new_agent, "coding_harness")
         self.assertEqual(client.api_key, "coding-key")
 
+    def test_prompt_command_menu_exit(self):
+        client = MagicMock()
+        with patch("builtins.input", return_value="6"):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+        self.assertTrue(should_exit)
+
+    def test_prompt_command_menu_new(self):
+        client = MagicMock()
+        with patch("builtins.input", return_value="new"):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+        self.assertFalse(should_exit)
+        self.assertNotEqual(conv, "conv-1")
+
+    def test_prompt_command_menu_cancel(self):
+        client = MagicMock()
+        with patch("builtins.input", return_value=""):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+        self.assertFalse(should_exit)
+        self.assertEqual(agent, "coding_harness")
+        self.assertEqual(conv, "conv-1")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

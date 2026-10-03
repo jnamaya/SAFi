@@ -220,6 +220,130 @@ def prompt_switch_agent(
     return target_agent, new_conv
 
 
+COMMAND_OPTIONS = [
+    ("agents", "Switch Agent Persona", "Select an agent persona (coding, fiduciary, health, etc.)"),
+    ("new", "New Session", "Start a fresh conversation session with a new session ID"),
+    ("clear", "Clear Screen", "Clear the terminal screen and reprint the session header"),
+    ("config", "View Configuration", "Show backend URL, active session, and Policy API keys"),
+    ("help", "Help & Docs", "Show command descriptions and syntax"),
+    ("exit", "Exit CLI", "Exit SAFi interactive assistant"),
+]
+
+
+def show_config(client: SafiClient, workspace_root: Path, current_agent: str, current_conv: str):
+    """Display current runtime settings and Policy API key status."""
+    from rich.table import Table
+    from rich import box
+
+    ui.console.print(f"\n[bold cyan]SAFi CLI Configuration[/]")
+    ui.console.print(f"  [dim]Backend URL:[/]     {client.api_url}")
+    ui.console.print(f"  [dim]Workspace:[/]       {workspace_root}")
+    ui.console.print(f"  [dim]Active Agent:[/]    [bold green]{current_agent}[/]")
+    ui.console.print(f"  [dim]Active Session:[/]  [cyan]{current_conv}[/]")
+    ui.console.print(f"  [dim]Config File:[/]     {config.CONFIG_FILE}\n")
+
+    table = Table(title="Policy API Keys by Persona", box=box.ROUNDED)
+    table.add_column("Agent Key", style="cyan bold")
+    table.add_column("Title", style="green")
+    table.add_column("Policy API Key", style="magenta")
+
+    for k, v in AVAILABLE_AGENTS.items():
+        key_val = config.resolve_agent_api_key(k)
+        if key_val:
+            masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 14 else "••••••••"
+            status = f"[green]✓ Configured ({masked})[/green]"
+        else:
+            status = "[yellow]⚠️  Key Needed[/yellow]"
+        table.add_row(k, v["title"], status)
+
+    ui.console.print(table)
+
+
+def print_help():
+    """Print help menu."""
+    ui.console.print("""[bold]Available Slash Commands:[/]
+  [cyan]/[/]                 Open command menu (agents, new session, config, etc.)
+  [cyan]/agents[/]           Interactive agent persona selector & Policy API key status
+  [cyan]/agent <name>[/]     Switch directly to an agent persona (e.g. [bold]/agent fiduciary[/])
+  [cyan]/new[/]              Start a fresh conversation session
+  [cyan]/clear[/]            Clear the terminal screen
+  [cyan]/config[/]           View backend URL and Policy API key status
+  [cyan]/help[/]             Show this help menu
+  [cyan]exit, quit, :q[/]    Exit SAFi CLI
+""")
+
+
+def prompt_command_menu(
+    current_agent: str,
+    client: SafiClient,
+    workspace_root: Path,
+    current_conv: str,
+) -> tuple[str, str, bool]:
+    """Display the interactive slash command menu when the user types '/'."""
+    from rich.table import Table
+    from rich import box
+
+    table = Table(title="SAFi Command Menu", box=box.ROUNDED)
+    table.add_column("#", style="bold yellow", width=3, justify="right")
+    table.add_column("Command", style="cyan bold")
+    table.add_column("Action", style="green")
+    table.add_column("Description", style="dim")
+
+    for idx, (cmd, action, desc) in enumerate(COMMAND_OPTIONS, 1):
+        table.add_row(str(idx), f"/{cmd}", action, desc)
+
+    ui.console.print(table)
+    try:
+        choice = input("\nSelect an option [# or command] (or press Enter to cancel): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return current_agent, current_conv, False
+
+    if not choice:
+        return current_agent, current_conv, False
+
+    choice_clean = choice.lstrip("/").lower().strip()
+
+    # Map number choice to command
+    if choice_clean.isdigit():
+        idx = int(choice_clean) - 1
+        if 0 <= idx < len(COMMAND_OPTIONS):
+            choice_clean = COMMAND_OPTIONS[idx][0]
+
+    if choice_clean in ("agents", "agent", "switch"):
+        new_agent, new_conv = prompt_switch_agent(
+            current_agent=current_agent,
+            client=client,
+            workspace_root=workspace_root,
+        )
+        return new_agent, new_conv, False
+
+    elif choice_clean == "new":
+        new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{new_conv}[/]")
+        return current_agent, new_conv, False
+
+    elif choice_clean == "clear":
+        os.system("cls" if os.name == "nt" else "clear")
+        ui.print_banner(str(workspace_root), current_agent, client.api_url)
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("config", "keys"):
+        show_config(client, workspace_root, current_agent, current_conv)
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("help", "?"):
+        print_help()
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("exit", "quit", ":q"):
+        ui.console.print("[dim]Goodbye.[/dim]")
+        return current_agent, current_conv, True
+
+    else:
+        ui.console.print(f"[bold red]Unknown command:[/] '{choice}'. Type [bold]/[/] to see options.")
+        return current_agent, current_conv, False
+
+
 def interactive_repl(
     client: SafiClient,
     workspace_root: Path,
@@ -233,7 +357,7 @@ def interactive_repl(
     current_agent = agent
     ui.print_banner(str(workspace_root), current_agent, client.api_url)
     ui.console.print(
-        "[dim]Type your prompt, or 'exit' to quit. Type '/' to switch agent personas, '/new' for a fresh session, or '/help'.[/dim]\n"
+        "[dim]Type your prompt, or 'exit' to quit. Type '/' for command options, '/new' for a fresh session, or '/help'.[/dim]\n"
     )
 
     # Setup readline history
@@ -256,15 +380,36 @@ def interactive_repl(
 
             if not line:
                 continue
-            if line.lower() in ("exit", "quit", ":q"):
+            if line.lower() in ("exit", "quit", ":q", "/exit", "/quit"):
                 ui.console.print("[dim]Goodbye.[/dim]")
                 break
+
+            if line == "/":
+                current_agent, current_conv, should_exit = prompt_command_menu(
+                    current_agent=current_agent,
+                    client=client,
+                    workspace_root=workspace_root,
+                    current_conv=current_conv,
+                )
+                if should_exit:
+                    break
+                continue
+
             if line.lower() == "/new":
                 current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
                 continue
 
-            if line == "/" or line.lower() in ("/agents", "/list-agents"):
+            if line.lower() == "/clear":
+                os.system("cls" if os.name == "nt" else "clear")
+                ui.print_banner(str(workspace_root), current_agent, client.api_url)
+                continue
+
+            if line.lower() in ("/config", "/keys"):
+                show_config(client, workspace_root, current_agent, current_conv)
+                continue
+
+            if line.lower() in ("/agents", "/list-agents"):
                 current_agent, current_conv = prompt_switch_agent(
                     current_agent=current_agent,
                     client=client,
@@ -284,15 +429,9 @@ def interactive_repl(
                 continue
 
             if line.lower() in ("/help", "/?"):
-                ui.console.print("""[bold]Available Slash Commands:[/]
-  [cyan]/[/]                 Interactive agent persona selector & switcher
-  [cyan]/agents[/]           List available agent personas and API key status
-  [cyan]/agent <name>[/]     Switch directly to an agent persona (e.g. [bold]/agent fiduciary[/])
-  [cyan]/new[/]              Start a fresh conversation session
-  [cyan]/help[/]             Show this help menu
-  [cyan]exit, quit, :q[/]    Exit SAFi CLI
-""")
+                print_help()
                 continue
+
 
             run_agent_turn(
                 client=client,
