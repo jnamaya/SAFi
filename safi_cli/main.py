@@ -1,12 +1,17 @@
-"""SAFi CLI main entrypoint — interactive & single-shot governed coding assistant."""
-
 import argparse
 import os
-import readline
 import sys
 import uuid
 from pathlib import Path
 from typing import Optional
+
+try:
+    import readline
+except ImportError:
+    try:
+        import pyreadline3 as readline
+    except ImportError:
+        readline = None
 
 from . import config, tools, ui
 from .client import SafiClient, SafiClientError
@@ -91,6 +96,34 @@ def run_agent_turn(
         return None
 
 
+AVAILABLE_AGENTS = {
+    "coding_harness": {
+        "title": "Coding Assistant",
+        "description": "Direct, audited repository engineering & software development",
+    },
+    "fiduciary": {
+        "title": "The Fiduciary",
+        "description": "Market-aware financial analyst, portfolio educator & data-driven guide",
+    },
+    "health_navigator": {
+        "title": "Health Navigator",
+        "description": "Evidence-based health literature, clinical navigation & wellness guide",
+    },
+    "socratic_tutor": {
+        "title": "Socratic Tutor",
+        "description": "Pedagogical inquiry, conceptual reasoning & critical thinking coach",
+    },
+    "bible_scholar": {
+        "title": "Bible Scholar",
+        "description": "Scriptural hermeneutics, historical-grammatical exegesis & theology",
+    },
+    "safi_steward": {
+        "title": "SAFi Steward",
+        "description": "Platform administration, policy governance & compliance stewardship",
+    },
+}
+
+
 def interactive_repl(
     client: SafiClient,
     workspace_root: Path,
@@ -101,13 +134,16 @@ def interactive_repl(
     max_steps: int = DEFAULT_MAX_STEPS,
 ):
     """Start an interactive command-line session."""
-    ui.print_banner(str(workspace_root), agent, client.api_url)
-    ui.console.print("[dim]Type your prompt, or 'exit'/'quit' to quit. Press Ctrl+C to cancel a running turn. Use '/new' for a fresh session.[/dim]\n")
+    current_agent = agent
+    ui.print_banner(str(workspace_root), current_agent, client.api_url)
+    ui.console.print(
+        "[dim]Type your prompt, or 'exit' to quit. Use '/agents' to list personas, '/agent <name>' to switch, or '/new' for a fresh session.[/dim]\n"
+    )
 
     # Setup readline history
     config.ensure_config_dir()
     hist_file = str(config.HISTORY_FILE)
-    if os.path.exists(hist_file):
+    if readline and os.path.exists(hist_file):
         try:
             readline.read_history_file(hist_file)
         except OSError:
@@ -117,7 +153,7 @@ def interactive_repl(
     try:
         while True:
             try:
-                line = input("\n[SAFi]> ").strip()
+                line = input(f"\n[SAFi:{current_agent}]> ").strip()
             except (KeyboardInterrupt, EOFError):
                 ui.console.print("\n[dim]Session terminated.[/dim]")
                 break
@@ -132,22 +168,60 @@ def interactive_repl(
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
                 continue
 
+            if line.lower() in ("/agents", "/list-agents"):
+                from rich.table import Table
+                from rich import box
+                table = Table(title="Available SAFi Agent Personas", box=box.ROUNDED)
+                table.add_column("Agent Key", style="cyan bold")
+                table.add_column("Title", style="green")
+                table.add_column("Description", style="dim")
+                for k, v in AVAILABLE_AGENTS.items():
+                    active_marker = " [bold yellow](active)[/]" if k == current_agent else ""
+                    table.add_row(f"{k}{active_marker}", v["title"], v["description"])
+                ui.console.print(table)
+                continue
+
+            if line.lower().startswith(("/agent", "/switch")):
+                parts = line.split(maxsplit=1)
+                if len(parts) < 2 or not parts[1].strip():
+                    ui.console.print(f"[bold yellow]Current agent:[/] [cyan]{current_agent}[/]. Use [bold]/agent <name>[/] to switch, or [bold]/agents[/] to list.")
+                    continue
+                new_agent = parts[1].strip()
+                current_agent = new_agent
+                current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+                agent_info = AVAILABLE_AGENTS.get(new_agent, {})
+                title = agent_info.get("title", new_agent)
+                ui.console.print(f"[bold green]✓ Switched active agent to:[/] [bold cyan]{new_agent}[/] ([green]{title}[/])")
+                ui.console.print(f"[dim]Started fresh session:[/] [cyan]{current_conv}[/]")
+                continue
+
+            if line.lower() in ("/help", "/?"):
+                ui.console.print("""[bold]Available Slash Commands:[/]
+  [cyan]/agents[/]           List all available agent personas
+  [cyan]/agent <name>[/]     Switch active agent persona (e.g. [bold]/agent fiduciary[/])
+  [cyan]/new[/]              Start a fresh conversation session
+  [cyan]/help[/]             Show this help menu
+  [cyan]exit, quit, :q[/]    Exit SAFi CLI
+""")
+                continue
+
             run_agent_turn(
                 client=client,
                 prompt=line,
                 workspace_root=workspace_root,
                 conversation_id=current_conv,
                 user_id=user_id,
-                agent=agent,
+                agent=current_agent,
                 auto_approve=auto_approve,
                 max_steps=max_steps,
             )
 
     finally:
-        try:
-            readline.write_history_file(hist_file)
-        except OSError:
-            pass
+        if readline:
+            try:
+                readline.write_history_file(hist_file)
+            except OSError:
+                pass
 
 
 def main():
