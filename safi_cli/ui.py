@@ -59,10 +59,24 @@ _session_in_tokens: int = 0
 _session_out_tokens: int = 0
 _session_cost: float = 0.0
 
+def _record_turn_telemetry(result: Dict[str, Any]):
+    """Accumulate session token and cost counters across turns."""
+    global _session_in_tokens, _session_out_tokens, _session_cost
+    token_usage = result.get("token_usage")
+    ai_prov = result.get("aiProvenance")
+    if token_usage and isinstance(token_usage, dict):
+        in_t = token_usage.get("prompt_tokens", 0)
+        out_t = token_usage.get("completion_tokens", 0)
+        _session_in_tokens += in_t
+        _session_out_tokens += out_t
+        if ai_prov and isinstance(ai_prov, dict) and ai_prov.get("model"):
+            cost = _estimate_cost(ai_prov.get("model"), in_t, out_t)
+            if cost is not None:
+                _session_cost += cost
+
+
 def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
     """Build the Governance Scorecard panel to be displayed on the right."""
-    global _session_in_tokens, _session_out_tokens, _session_cost
-
     ledger = result.get("conscienceLedger") or []
     spirit_score = result.get("spirit_score") or result.get("spiritScore")
 
@@ -116,25 +130,20 @@ def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
         in_t = token_usage.get("prompt_tokens", 0)
         out_t = token_usage.get("completion_tokens", 0)
 
-        _session_in_tokens += in_t
-        _session_out_tokens += out_t
-
         cost_str = ""
         sess_cost_str = ""
         if model_name_for_cost:
             cost = _estimate_cost(model_name_for_cost, in_t, out_t)
             if cost is not None:
-                _session_cost += cost
-
                 if 0 < cost < 0.0001:
                     cost_str = " (<$0.0001)"
                 elif cost >= 0.0001:
                     cost_str = f" (${cost:.4f})"
 
-                if 0 < _session_cost < 0.0001:
-                    sess_cost_str = " (<$0.0001)"
-                elif _session_cost >= 0.0001:
-                    sess_cost_str = f" (${_session_cost:.4f})"
+        if 0 < _session_cost < 0.0001:
+            sess_cost_str = " (<$0.0001)"
+        elif _session_cost >= 0.0001:
+            sess_cost_str = f" (${_session_cost:.4f})"
 
         stats_content.append(Text(f"Turn Tokens: {in_t} in | {out_t} out{cost_str}", style="dim"))
         stats_content.append(Text(f"Session Total: {_session_in_tokens} in | {_session_out_tokens} out{sess_cost_str}", style="dim"))
@@ -149,6 +158,7 @@ def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
 
 
 def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
+    _record_turn_telemetry(res)
     will_decision = res.get("willDecision", "approved")
     will_reason = res.get("willReason")
     is_approved = will_decision in ("approve", "approved")
@@ -159,8 +169,25 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     if will_reason:
         title_text.append(f"  # {will_reason}", style="dim")
 
-    # Format left content
     items = [title_text]
+
+    # Inline Policy Preflight Audit: Display rubric badges directly on the thinking stream
+    ledger = res.get("toolProposalLedger") or res.get("conscienceLedger") or []
+    audit_tags = []
+    for entry in ledger:
+        score = entry.get("score")
+        if score is not None:
+            val = entry.get("value", "")
+            s_val = float(score)
+            if s_val >= 0.7:
+                audit_tags.append(f"[green]✓ {val}[/green]")
+            elif s_val >= 0.0:
+                audit_tags.append(f"[yellow]⚠ {val}[/yellow]")
+            else:
+                audit_tags.append(f"[red]✗ {val}[/red]")
+
+    if audit_tags:
+        items.append(Text.from_markup(f"  [dim]Policy Check:[/] " + "  ".join(audit_tags)))
 
     if name == "bash":
         cmd = args.get("command", "")
@@ -192,14 +219,7 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
         args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
         items.append(Text(f"  Arguments: {args_str}", style="cyan"))
 
-    left_renderable = Group(*items)
-
-    # Build Grid
-    grid = Table.grid(expand=True, padding=(0, 1))
-    grid.add_column("left", ratio=3)
-    grid.add_column("right", ratio=1)
-    grid.add_row(left_renderable, _build_scoreboard_panel(res))
-    console.print(grid)
+    console.print(Group(*items))
 
 
 def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = True) -> bool:
@@ -226,15 +246,19 @@ def print_tool_result_summary(name: str, result: str):
 
 
 def print_final_output(text: str, res: Dict[str, Any]):
+    _record_turn_telemetry(res)
     left_renderable = Panel(Markdown(text), title="[bold green]Governed Response[/]", border_style="green")
     right_panel = _build_scoreboard_panel(res)
 
     console.print()
-    grid = Table.grid(expand=True, padding=(0, 1))
-    grid.add_column("left", ratio=3)
-    grid.add_column("right", ratio=1)
-    grid.add_row(left_renderable, right_panel)
-    console.print(grid)
+    if right_panel and (not isinstance(right_panel, Text) or right_panel.plain.strip()):
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column("left", ratio=3)
+        grid.add_column("right", ratio=1)
+        grid.add_row(left_renderable, right_panel)
+        console.print(grid)
+    else:
+        console.print(left_renderable)
 
 
 def print_error(message: str):
