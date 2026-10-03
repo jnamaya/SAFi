@@ -402,6 +402,101 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(kwargs["client_workspace_context"]["workspace_root"], "/repo")
         self.assertEqual(kwargs["override_message_id"], "f9c06f6b-6133-4976-87d2-d5c7dc5d1e83")
 
+    def test_harness_uses_agent_policy_when_switching_to_fiduciary(self):
+        fake_safi = SimpleNamespace(
+            profile={"policy_id": "demo_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
+            process_prompt=AsyncMock(return_value={"finalOutput": "financial advice", "audit_status": "complete"}),
+        )
+        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="coding-policy-1"), \
+             patch.object(conv.db, "get_user_details", return_value={"org_id": "org-1"}), \
+             patch.object(conv.db, "upsert_external_conversation", create=True), \
+             patch.object(conv.db, "ensure_conversation_access"), \
+             patch.object(conv, "resolve_effective_faculty_models", return_value=("i", "c")), \
+             patch.object(conv.global_safi_cache, "get_or_create", return_value=fake_safi) as mock_get_or_create, \
+             patch.object(conv.pg, "activate_org"), \
+             patch.object(conv, "harness_intellect_token_usage", return_value=None):
+            response = self.client.post(
+                "/agentic/process_prompt",
+                json={
+                    "message": "What is NVDA P/E ratio?",
+                    "user_id": "cli-user",
+                    "conversation_id": "conv-1",
+                    "agent": "fiduciary",
+                },
+                headers={"X-API-KEY": "coding-policy-key"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        # Verify get_or_create received the fiduciary policy, NOT the API key's coding policy
+        mock_get_or_create.assert_called_once()
+        call_kwargs = mock_get_or_create.call_args.kwargs
+        self.assertEqual(call_kwargs.get("policy_id"), "demo_financial_advisory_policy")
+        self.assertEqual(mock_get_or_create.call_args.args[0], "fiduciary")
+        data = response.get_json()
+        self.assertEqual(data.get("policyName"), "Financial Advisory Policy")
+        self.assertEqual(data.get("policyId"), "demo_financial_advisory_policy")
+
+    def test_harness_uses_api_key_policy_for_coding_harness(self):
+        fake_safi = SimpleNamespace(
+            profile={"policy_id": "coding-policy-1", "policy_name": "Org Coding Policy"},
+            process_prompt=AsyncMock(return_value={"finalOutput": "coding answer", "audit_status": "complete"}),
+        )
+        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="coding-policy-1"), \
+             patch.object(conv.db, "get_user_details", return_value={"org_id": "org-1"}), \
+             patch.object(conv.db, "upsert_external_conversation", create=True), \
+             patch.object(conv.db, "ensure_conversation_access"), \
+             patch.object(conv, "resolve_effective_faculty_models", return_value=("i", "c")), \
+             patch.object(conv.global_safi_cache, "get_or_create", return_value=fake_safi) as mock_get_or_create, \
+             patch.object(conv.pg, "activate_org"), \
+             patch.object(conv, "harness_intellect_token_usage", return_value=None):
+            response = self.client.post(
+                "/agentic/process_prompt",
+                json={
+                    "message": "Refactor this function",
+                    "user_id": "cli-user",
+                    "conversation_id": "conv-1",
+                    "agent": "coding_harness",
+                },
+                headers={"X-API-KEY": "coding-policy-key"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        # Verify get_or_create received the API key's policy for coding_harness
+        mock_get_or_create.assert_called_once()
+        call_kwargs = mock_get_or_create.call_args.kwargs
+        self.assertEqual(call_kwargs.get("policy_id"), "coding-policy-1")
+
+    def test_harness_respects_explicit_client_policy_id(self):
+        fake_safi = SimpleNamespace(
+            profile={"policy_id": "custom-override-policy", "policy_name": "Custom Policy"},
+            process_prompt=AsyncMock(return_value={"finalOutput": "custom answer", "audit_status": "complete"}),
+        )
+        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="key-policy"), \
+             patch.object(conv.db, "get_user_details", return_value={"org_id": "org-1"}), \
+             patch.object(conv.db, "upsert_external_conversation", create=True), \
+             patch.object(conv.db, "ensure_conversation_access"), \
+             patch.object(conv, "resolve_effective_faculty_models", return_value=("i", "c")), \
+             patch.object(conv.global_safi_cache, "get_or_create", return_value=fake_safi) as mock_get_or_create, \
+             patch.object(conv.pg, "activate_org"), \
+             patch.object(conv, "harness_intellect_token_usage", return_value=None):
+            response = self.client.post(
+                "/agentic/process_prompt",
+                json={
+                    "message": "Test prompt",
+                    "user_id": "cli-user",
+                    "conversation_id": "conv-1",
+                    "agent": "fiduciary",
+                    "policy_id": "custom-override-policy",
+                },
+                headers={"X-API-KEY": "key"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mock_get_or_create.assert_called_once()
+        call_kwargs = mock_get_or_create.call_args.kwargs
+        self.assertEqual(call_kwargs.get("policy_id"), "custom-override-policy")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

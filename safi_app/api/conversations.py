@@ -1804,12 +1804,24 @@ async def agentic_process_prompt_endpoint():
             intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
         )
+        from ..profile_resolver import _load_profile
+        agent_data = _load_profile(agent_key)
+        agent_policy_id = agent_data.get("policy_id") if agent_data else None
+
+        client_policy_id = data.get("policy_id")
+        if client_policy_id:
+            target_policy_id = client_policy_id
+        elif agent_policy_id and agent_key != "coding_harness":
+            target_policy_id = agent_policy_id
+        else:
+            target_policy_id = policy_id or agent_policy_id
+
         saf_system = global_safi_cache.get_or_create(
             agent_key,
             selected_intellect,
             None,
             selected_conscience,
-            policy_id=policy_id,
+            policy_id=target_policy_id,
         )
         pg.activate_org(org_id)
         db.ensure_conversation_access(user_id, conversation_id)
@@ -1828,6 +1840,13 @@ async def agentic_process_prompt_endpoint():
             client_recent_turns=recent_turns,
             client_workspace_context=workspace_context,
         )
+        saf_profile = getattr(saf_system, "profile", {}) or {}
+        if not result.get("policyName"):
+            result["policyName"] = saf_profile.get("policy_name")
+        if not result.get("policyId"):
+            result["policyId"] = saf_profile.get("policy_id")
+
+
         intellect_tokens = harness_faculty_token_usage("intellect")
         conscience_tokens = harness_faculty_token_usage("conscience")
 

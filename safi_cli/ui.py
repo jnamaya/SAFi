@@ -145,7 +145,9 @@ def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
             table.add_row(f"🛑 {val}", Text(f"{score_val:.2f}", style="red"))
 
     if has_scores:
-        panels.append(Panel(table, title="[bold]POLICY AUDIT", border_style="dim"))
+        policy_title = result.get("policyName") or result.get("policyId")
+        title = f"[bold]POLICY AUDIT: {policy_title}" if policy_title else "[bold]POLICY AUDIT"
+        panels.append(Panel(table, title=title, border_style="dim"))
 
     # Models Stats Breakdown
     models_usage = result.get("models_usage") or {}
