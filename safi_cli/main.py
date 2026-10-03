@@ -124,6 +124,102 @@ AVAILABLE_AGENTS = {
 }
 
 
+def prompt_switch_agent(
+    current_agent: str,
+    client: SafiClient,
+    workspace_root: Path,
+    requested_agent: Optional[str] = None,
+) -> tuple[str, str]:
+    """Interactively select or switch to an agent persona, prompting for its Policy API key if not yet configured."""
+    from rich.table import Table
+    from rich import box
+
+    agent_keys = list(AVAILABLE_AGENTS.keys())
+    target_agent = None
+
+    if requested_agent:
+        req = requested_agent.strip().lower()
+        if req in AVAILABLE_AGENTS:
+            target_agent = req
+        else:
+            if req.isdigit() and 1 <= int(req) <= len(agent_keys):
+                target_agent = agent_keys[int(req) - 1]
+            else:
+                for k, v in AVAILABLE_AGENTS.items():
+                    if req in v["title"].lower() or req in k:
+                        target_agent = k
+                        break
+        if not target_agent:
+            ui.console.print(f"[bold red]Unknown agent persona:[/] [yellow]'{requested_agent}'[/]. Use [bold]/[/] to see available options.")
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+    if not target_agent:
+        table = Table(title="Available SAFi Agent Personas", box=box.ROUNDED)
+        table.add_column("#", style="bold yellow", width=3, justify="right")
+        table.add_column("Agent Key", style="cyan bold")
+        table.add_column("Title", style="green")
+        table.add_column("Policy API Key", style="magenta")
+        table.add_column("Description", style="dim")
+
+        for idx, (k, v) in enumerate(AVAILABLE_AGENTS.items(), 1):
+            active_marker = " [bold yellow](active)[/]" if k == current_agent else ""
+            key_val = config.resolve_agent_api_key(k)
+            key_status = "[green]✓ Configured[/green]" if key_val else "[yellow]⚠️  Key Needed[/yellow]"
+            table.add_row(str(idx), f"{k}{active_marker}", v["title"], key_status, v["description"])
+
+        ui.console.print(table)
+        try:
+            choice = input("\nSelect an agent [# or name] (or press Enter to cancel): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+        if not choice:
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+        choice_lower = choice.lower()
+        if choice.isdigit() and 1 <= int(choice) <= len(agent_keys):
+            target_agent = agent_keys[int(choice) - 1]
+        elif choice_lower in AVAILABLE_AGENTS:
+            target_agent = choice_lower
+        else:
+            for k, v in AVAILABLE_AGENTS.items():
+                if choice_lower in v["title"].lower() or choice_lower in k:
+                    target_agent = k
+                    break
+
+        if not target_agent:
+            ui.console.print(f"[bold red]Invalid selection:[/] '{choice}'.")
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+    # Check Policy API key for target_agent
+    agent_info = AVAILABLE_AGENTS.get(target_agent, {})
+    agent_title = agent_info.get("title", target_agent)
+    agent_key_val = config.resolve_agent_api_key(target_agent)
+
+    if not agent_key_val:
+        ui.console.print(f"\n[bold yellow]🔑 No Policy API Key found for '{agent_title}' ({target_agent}).[/]")
+        ui.console.print("[dim]Each agent is governed by a separate domain policy and requires its own Policy API Key.[/dim]")
+        try:
+            entered_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            ui.console.print("[dim]Switch cancelled.[/dim]")
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+        if not entered_key:
+            ui.console.print(f"[dim]Agent switch cancelled: no API key provided for {target_agent}.[/dim]")
+            return current_agent, config.resolve_session_id(str(workspace_root))
+
+        config.save_agent_api_key(target_agent, entered_key)
+        agent_key_val = entered_key
+        ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
+
+    client.api_key = agent_key_val
+    new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+    ui.console.print(f"[bold green]✓ Switched active agent to:[/] [bold cyan]{target_agent}[/] ([green]{agent_title}[/])")
+    ui.console.print(f"[dim]Started fresh session:[/] [cyan]{new_conv}[/]")
+    return target_agent, new_conv
+
+
 def interactive_repl(
     client: SafiClient,
     workspace_root: Path,
@@ -137,7 +233,7 @@ def interactive_repl(
     current_agent = agent
     ui.print_banner(str(workspace_root), current_agent, client.api_url)
     ui.console.print(
-        "[dim]Type your prompt, or 'exit' to quit. Use '/agents' to list personas, '/agent <name>' to switch, or '/new' for a fresh session.[/dim]\n"
+        "[dim]Type your prompt, or 'exit' to quit. Type '/' to switch agent personas, '/new' for a fresh session, or '/help'.[/dim]\n"
     )
 
     # Setup readline history
@@ -168,37 +264,30 @@ def interactive_repl(
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
                 continue
 
-            if line.lower() in ("/agents", "/list-agents"):
-                from rich.table import Table
-                from rich import box
-                table = Table(title="Available SAFi Agent Personas", box=box.ROUNDED)
-                table.add_column("Agent Key", style="cyan bold")
-                table.add_column("Title", style="green")
-                table.add_column("Description", style="dim")
-                for k, v in AVAILABLE_AGENTS.items():
-                    active_marker = " [bold yellow](active)[/]" if k == current_agent else ""
-                    table.add_row(f"{k}{active_marker}", v["title"], v["description"])
-                ui.console.print(table)
+            if line == "/" or line.lower() in ("/agents", "/list-agents"):
+                current_agent, current_conv = prompt_switch_agent(
+                    current_agent=current_agent,
+                    client=client,
+                    workspace_root=workspace_root,
+                )
                 continue
 
             if line.lower().startswith(("/agent", "/switch")):
                 parts = line.split(maxsplit=1)
-                if len(parts) < 2 or not parts[1].strip():
-                    ui.console.print(f"[bold yellow]Current agent:[/] [cyan]{current_agent}[/]. Use [bold]/agent <name>[/] to switch, or [bold]/agents[/] to list.")
-                    continue
-                new_agent = parts[1].strip()
-                current_agent = new_agent
-                current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
-                agent_info = AVAILABLE_AGENTS.get(new_agent, {})
-                title = agent_info.get("title", new_agent)
-                ui.console.print(f"[bold green]✓ Switched active agent to:[/] [bold cyan]{new_agent}[/] ([green]{title}[/])")
-                ui.console.print(f"[dim]Started fresh session:[/] [cyan]{current_conv}[/]")
+                req = parts[1].strip() if len(parts) > 1 else None
+                current_agent, current_conv = prompt_switch_agent(
+                    current_agent=current_agent,
+                    client=client,
+                    workspace_root=workspace_root,
+                    requested_agent=req,
+                )
                 continue
 
             if line.lower() in ("/help", "/?"):
                 ui.console.print("""[bold]Available Slash Commands:[/]
-  [cyan]/agents[/]           List all available agent personas
-  [cyan]/agent <name>[/]     Switch active agent persona (e.g. [bold]/agent fiduciary[/])
+  [cyan]/[/]                 Interactive agent persona selector & switcher
+  [cyan]/agents[/]           List available agent personas and API key status
+  [cyan]/agent <name>[/]     Switch directly to an agent persona (e.g. [bold]/agent fiduciary[/])
   [cyan]/new[/]              Start a fresh conversation session
   [cyan]/help[/]             Show this help menu
   [cyan]exit, quit, :q[/]    Exit SAFi CLI
@@ -263,8 +352,8 @@ def main():
 
     # Save key / URL commands
     if args.set_key:
-        config.save_config({"api_key": args.set_key.strip()})
-        ui.console.print(f"[bold green]✓ Saved API key to {config.CONFIG_FILE}[/]")
+        config.save_agent_api_key(args.agent, args.set_key.strip())
+        ui.console.print(f"[bold green]✓ Saved Policy API key for '{args.agent}' to {config.CONFIG_FILE}[/]")
         sys.exit(0)
 
     if args.set_url:
@@ -272,17 +361,30 @@ def main():
         ui.console.print(f"[bold green]✓ Saved API URL to {config.CONFIG_FILE}[/]")
         sys.exit(0)
 
-    # Resolve settings
-    api_key = config.resolve_api_key(args.api_key)
+    # Resolve settings for the targeted agent
+    target_agent = args.agent
+    api_key = config.resolve_agent_api_key(target_agent, args.api_key)
     if not api_key:
-        ui.print_error(
-            "No SAFi API key found.\n\n"
-            "Set it via:\n"
-            "  • export SAFI_API_KEY=sk-safi-...\n"
-            "  • safi --set-key sk-safi-...\n"
-            "  • safi -k sk-safi-... 'your prompt'"
+        agent_title = AVAILABLE_AGENTS.get(target_agent, {}).get("title", target_agent)
+        ui.console.print(
+            f"[bold yellow]🔑 No Policy API Key found for '{agent_title}' ({target_agent}).[/]\n"
+            f"[dim]Each agent persona is governed by its own domain policy and requires its own Policy API Key.[/dim]"
         )
-        sys.exit(1)
+        try:
+            api_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(1)
+        if not api_key:
+            ui.print_error(
+                f"No SAFi Policy API key provided for '{target_agent}'.\n\n"
+                "You can also set it via:\n"
+                f"  • export SAFI_API_KEY_{target_agent.upper()}=sk-safi-...\n"
+                f"  • safi --set-key sk-safi-... -a {target_agent}"
+            )
+            sys.exit(1)
+        config.save_agent_api_key(target_agent, api_key)
+        ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
+
 
     api_url = config.resolve_api_url(args.api_url)
     workspace_root = Path(args.workspace).resolve()

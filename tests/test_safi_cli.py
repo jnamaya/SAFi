@@ -166,5 +166,123 @@ class TestSafiCliTurn(unittest.TestCase):
         self.assertEqual(client.send_turn.call_count, 2)
 
 
+from unittest.mock import patch
+from safi_cli.main import prompt_switch_agent, AVAILABLE_AGENTS
+
+
+class TestSafiCliAgentSwitching(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cfg_file = Path(self.temp_dir.name) / "config.json"
+        self.patch_cfg = patch.object(config, "CONFIG_FILE", self.cfg_file)
+        self.patch_cfg_dir = patch.object(config, "CONFIG_DIR", Path(self.temp_dir.name))
+        self.patch_cfg.start()
+        self.patch_cfg_dir.start()
+
+    def tearDown(self):
+        self.patch_cfg.stop()
+        self.patch_cfg_dir.stop()
+        self.temp_dir.cleanup()
+
+    def test_per_agent_key_storage_and_resolution(self):
+        # Save key for fiduciary
+        config.save_agent_api_key("fiduciary", "sk-fiduciary-123")
+        # Save key for coding_harness
+        config.save_agent_api_key("coding_harness", "sk-coding-456")
+
+        self.assertEqual(config.resolve_agent_api_key("fiduciary"), "sk-fiduciary-123")
+        self.assertEqual(config.resolve_agent_api_key("coding_harness"), "sk-coding-456")
+        self.assertIsNone(config.resolve_agent_api_key("health_navigator"))
+
+        # Test environment variable override
+        with patch.dict(os.environ, {"SAFI_API_KEY_HEALTH_NAVIGATOR": "sk-env-health"}):
+            self.assertEqual(config.resolve_agent_api_key("health_navigator"), "sk-env-health")
+
+    def test_prompt_switch_agent_with_existing_key(self):
+        config.save_agent_api_key("fiduciary", "sk-fiduciary-key")
+        client = MagicMock()
+        client.api_key = "old-key"
+
+        new_agent, new_conv = prompt_switch_agent(
+            current_agent="coding_harness",
+            client=client,
+            workspace_root=Path("."),
+            requested_agent="fiduciary",
+        )
+
+        self.assertEqual(new_agent, "fiduciary")
+        self.assertEqual(client.api_key, "sk-fiduciary-key")
+        self.assertIsNotNone(new_conv)
+
+    def test_prompt_switch_agent_prompts_and_saves_missing_key(self):
+        client = MagicMock()
+        client.api_key = "coding-key"
+
+        with patch("builtins.input", return_value="sk-new-financial-key"):
+            new_agent, new_conv = prompt_switch_agent(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                requested_agent="fiduciary",
+            )
+
+        self.assertEqual(new_agent, "fiduciary")
+        self.assertEqual(client.api_key, "sk-new-financial-key")
+        # Check saved to config
+        saved_key = config.resolve_agent_api_key("fiduciary")
+        self.assertEqual(saved_key, "sk-new-financial-key")
+
+    def test_prompt_switch_agent_via_number_selection(self):
+        config.save_agent_api_key("fiduciary", "sk-fiduciary-key")
+        client = MagicMock()
+        client.api_key = "coding-key"
+
+        # "2" corresponds to fiduciary in AVAILABLE_AGENTS
+        with patch("builtins.input", return_value="2"):
+            new_agent, new_conv = prompt_switch_agent(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                requested_agent=None,
+            )
+
+        self.assertEqual(new_agent, "fiduciary")
+        self.assertEqual(client.api_key, "sk-fiduciary-key")
+
+    def test_prompt_switch_agent_cancelled_on_empty_choice(self):
+        client = MagicMock()
+        client.api_key = "coding-key"
+
+        with patch("builtins.input", return_value=""):
+            new_agent, new_conv = prompt_switch_agent(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                requested_agent=None,
+            )
+
+        # Should remain on current agent
+        self.assertEqual(new_agent, "coding_harness")
+        self.assertEqual(client.api_key, "coding-key")
+
+    def test_prompt_switch_agent_cancelled_on_empty_key_input(self):
+        client = MagicMock()
+        client.api_key = "coding-key"
+
+        # User chooses fiduciary (2), but presses Enter when asked for key
+        with patch("builtins.input", side_effect=["2", ""]):
+            new_agent, new_conv = prompt_switch_agent(
+                current_agent="coding_harness",
+                client=client,
+                workspace_root=Path("."),
+                requested_agent=None,
+            )
+
+        self.assertEqual(new_agent, "coding_harness")
+        self.assertEqual(client.api_key, "coding-key")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
